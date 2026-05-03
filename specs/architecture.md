@@ -430,41 +430,153 @@ are first-class translations, not afterthoughts.
 
 ## 7. Batch Processing
 
+A 30 TB library means jobs that run for hours per file and weeks per
+library. Three properties are non-negotiable:
+
+1. **Real-time durability** — every transcribed second is persisted before
+   the worker moves on. A power loss after 4 h of transcription must not
+   cost more than the in-flight segment (typically ≤30 s of audio).
+2. **First-class pause/resume** — the user must be able to pause any video
+   at any moment and resume it later from the exact second it stopped, even
+   across process restarts, host reboots, or backend swaps.
+3. **No re-work** — resuming, recovering from a crash, or upgrading the
+   worker must never re-transcribe an audio range whose segments are already
+   in the DB.
+
+These properties are enforced primarily inside the `transcribe` stage,
+because it is the only long-running stage; other stages are short enough
+that simple "claim → work → commit" suffices. The job record carries the
+state machine and progress accounting for all stages.
+
 ### 7.1 Job store
 
 ```sql
 CREATE TABLE processing_jobs (
-    id            BIGSERIAL PRIMARY KEY,
-    video_id      UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    stage         TEXT NOT NULL,            -- scan|probe|extract|transcribe|index|thumb
-    state         TEXT NOT NULL,            -- pending|claimed|running|done|failed|cancelled
-    priority      INT  NOT NULL DEFAULT 100,-- lower = sooner
-    attempts      INT  NOT NULL DEFAULT 0,
-    max_attempts  INT  NOT NULL DEFAULT 3,
-    claimed_by    TEXT,                     -- worker id
-    claimed_at    TIMESTAMPTZ,
-    not_before    TIMESTAMPTZ,              -- backoff target
-    error         TEXT,
-    progress      REAL,                     -- 0..1
-    metrics       JSONB,                    -- runtime, model, etc.
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    finished_at   TIMESTAMPTZ
+    id                       BIGSERIAL PRIMARY KEY,
+    video_id                 UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    stage                    TEXT NOT NULL,           -- scan|probe|extract|transcribe|index|thumb
+    state                    TEXT NOT NULL,           -- see 7.2 state machine
+    priority                 INT  NOT NULL DEFAULT 100,
+    attempts                 INT  NOT NULL DEFAULT 0,
+    max_attempts             INT  NOT NULL DEFAULT 3,
+    claimed_by               TEXT,                    -- worker id
+    claimed_at               TIMESTAMPTZ,
+    last_heartbeat_at        TIMESTAMPTZ,             -- updated every 5 s while running
+    not_before               TIMESTAMPTZ,             -- backoff target
+    error                    TEXT,
+
+    ----- Progress accounting (all stages, but most meaningful for transcribe) -----
+    total_duration_seconds   REAL,                    -- audio length to process
+    processed_seconds        REAL NOT NULL DEFAULT 0, -- audio committed to DB
+    segments_completed       INT  NOT NULL DEFAULT 0,
+    last_segment_end_sec     REAL NOT NULL DEFAULT 0, -- canonical resume offset
+    estimated_remaining_sec  REAL,                    -- wall-clock ETA, EWMA
+    realtime_factor          REAL,                    -- audio_sec / wall_sec, EWMA
+    progress_updated_at      TIMESTAMPTZ,
+
+    ----- Pause / control -----
+    pause_requested          BOOLEAN NOT NULL DEFAULT false,
+    cancel_requested         BOOLEAN NOT NULL DEFAULT false,
+    paused_at                TIMESTAMPTZ,
+    paused_at_sec            REAL,                    -- audio offset where pause took effect
+    paused_reason            TEXT,                    -- "user" | "shutdown" | "budget" | "policy"
+    resumed_at               TIMESTAMPTZ,
+    resume_count             INT  NOT NULL DEFAULT 0,
+
+    metrics                  JSONB,                   -- runtime, model, backend, …
+    created_at               TIMESTAMPTZ DEFAULT now(),
+    finished_at              TIMESTAMPTZ
 );
+
 CREATE INDEX ON processing_jobs (state, priority, not_before);
 CREATE INDEX ON processing_jobs (video_id, stage);
+CREATE INDEX ON processing_jobs (state, last_heartbeat_at)
+    WHERE state IN ('claimed', 'running', 'resuming');
+CREATE INDEX ON processing_jobs (pause_requested) WHERE pause_requested = true;
 ```
 
-### 7.2 Claim loop
+The `last_segment_end_sec` field is the **canonical resume offset**: it is
+advanced inside the same DB transaction that inserts the segment row(s) it
+covers (see §7.6). It is the single source of truth for "where do we pick
+up from?" — the worker never trusts wall clock, file mtime, or external
+checkpoints for resume positioning.
 
-Each worker runs:
+### 7.2 Job state machine
+
+States and the only legal transitions:
+
+```
+                              ┌──────────────┐
+                              │   PENDING    │◄──────────────┐
+                              └──────┬───────┘               │
+                          claim()   │                        │ retry()
+                                    ▼                        │
+                              ┌──────────────┐               │
+                              │   CLAIMED    │               │
+                              └──────┬───────┘               │
+                          start()   │                        │
+                                    ▼                        │
+                              ┌──────────────┐    fail()     │
+                       ┌──────┤   RUNNING    ├──────────────►┤
+                       │      └──┬─────────┬─┘               │
+                       │         │         │                 │
+                pause_         done()      cancel_           │
+                requested        │         requested         │
+                       │         │         │                 │
+                       ▼         ▼         ▼                 │
+                ┌────────────┐ ┌─────┐  ┌──────────┐         │
+                │   PAUSED   │ │ DONE│  │CANCELLED │         │
+                └─────┬──────┘ └─────┘  └──────────┘         │
+                      │                                      │
+              resume()│                                      │
+                      ▼                                      │
+                ┌────────────┐                               │
+                │  RESUMING  │                               │
+                └─────┬──────┘                               │
+                      │  (rebuild context, then →RUNNING)    │
+                      ▼                                      │
+                ┌────────────┐                               │
+                │   RUNNING  ├──────────────────────────────►┘
+                └────────────┘
+                                      ┌─────────────┐
+                                      │   FAILED    │ (terminal once attempts ≥ max_attempts)
+                                      └─────────────┘
+```
+
+| State        | Meaning                                                                             |
+|--------------|-------------------------------------------------------------------------------------|
+| `pending`    | In queue, eligible for claim.                                                       |
+| `claimed`    | A worker has reserved it; setup not yet started. Has `claimed_by`, `claimed_at`.    |
+| `running`    | Actively executing. Heartbeats every 5 s; progress fields tick in real time.        |
+| `paused`     | Stopped at `paused_at_sec`. Holds no worker. Resume restarts from that offset.      |
+| `resuming`   | A worker has picked up a paused job and is rebuilding context (loading model, seeking the audio decoder). Short-lived; fails forward to `running`. |
+| `done`       | Terminal success. `finished_at` set.                                                |
+| `failed`     | Terminal failure (attempts exhausted). `error` populated.                           |
+| `cancelled`  | Terminal user-initiated abort.                                                      |
+
+Notes:
+- `paused` and `cancelled` are reached from `running` by the worker itself,
+  in response to the `pause_requested` / `cancel_requested` flags. The API
+  never mutates the live state directly — it only sets the request flag.
+- `failed` is reached when `attempts >= max_attempts`; otherwise a transient
+  failure flips back to `pending` with `not_before = now() + backoff`.
+
+### 7.3 Claim loop
 
 ```sql
 UPDATE processing_jobs
-   SET state = 'claimed', claimed_by = $worker_id, claimed_at = now()
+   SET state             = 'claimed',
+       claimed_by        = $worker_id,
+       claimed_at        = now(),
+       last_heartbeat_at = now(),
+       attempts          = attempts + 1
  WHERE id = (
    SELECT id FROM processing_jobs
-    WHERE state = 'pending'
+    WHERE state IN ('pending', 'paused')
+      AND (state = 'pending'                                  -- normal claim
+           OR (state = 'paused' AND pause_requested = false)) -- resume claim
       AND (not_before IS NULL OR not_before <= now())
+      AND cancel_requested = false
       AND stage = ANY($supported_stages)
     ORDER BY priority, id
     FOR UPDATE SKIP LOCKED
@@ -473,10 +585,13 @@ UPDATE processing_jobs
 RETURNING *;
 ```
 
-`SKIP LOCKED` lets N workers contend without blocking each other. On SQLite
-(single-user), the workers are in-process and use an asyncio lock instead.
+Resuming a paused job is the same operation as claiming a fresh one, except
+the worker reads `last_segment_end_sec` and seeks its inputs there before
+flipping the state to `resuming` → `running`. `SKIP LOCKED` keeps N workers
+contention-free. On SQLite the workers share a process and use an asyncio
+lock instead.
 
-### 7.3 Concurrency model
+### 7.4 Concurrency model
 
 Workers declare what stages they can run and how many of each they can run
 concurrently. Defaults:
@@ -492,7 +607,7 @@ concurrently. Defaults:
 Limits are enforced by per-stage semaphores in the worker process. A
 GPU-bound stage acquires a process-global lock keyed by device id.
 
-### 7.4 Priority scheduling
+### 7.5 Priority scheduling
 
 Priority is an integer; lower wins. Defaults:
 - 50 — user-initiated (clicked "Process now")
@@ -503,18 +618,208 @@ Priority is an integer; lower wins. Defaults:
 The user can override per-video or per-library. The UI exposes
 "Move to front of queue" on every video.
 
-### 7.5 Resume on crash
+### 7.6 Real-time progress persistence
 
-- `claimed` jobs older than 30 min with no heartbeat are reverted to
-  `pending` by a cron tick. Heartbeats are written every 60 s while running.
-- Stages write outputs to `…/.tmp/{uuid}` and `os.replace()` to the final
-  path on success. A crash mid-write leaves a stray temp file that the next
-  scan removes.
-- `transcribe` checkpoints every N segments to a JSON file in the sidecar
-  directory; on resume, transcription continues from the last checkpoint
-  rather than from zero.
+The transcribe stage emits segments incrementally as the STT backend
+produces them. Each segment is durably committed before the worker is
+allowed to move on:
 
-### 7.6 Throughput estimate (30 TB)
+```python
+async def run_transcribe(ctx, job, video):
+    transcript = await ensure_transcript_row(video, job)
+    seek_from = job.last_segment_end_sec  # 0.0 on a fresh job
+
+    async with audio_decoder(video, start_sec=seek_from) as audio, \
+               stt.session(language=video.detected_language) as stt:
+
+        async for segment in stt.transcribe_stream(audio):
+            # Single transaction: segment row + job progress + heartbeat.
+            async with ctx.db.begin() as tx:
+                await tx.execute(insert_segment_stmt, {
+                    "transcript_id": transcript.id,
+                    "seq":           job.segments_completed + 1,
+                    "start_sec":     segment.start,
+                    "end_sec":       segment.end,
+                    "text":          segment.text,
+                    "speaker":       segment.speaker,
+                    "confidence":    segment.confidence,
+                })
+                await tx.execute(advance_job_progress_stmt, {
+                    "id":                       job.id,
+                    "segments_completed_delta": 1,
+                    "processed_seconds":        segment.end - seek_from,
+                    "last_segment_end_sec":     segment.end,
+                    "realtime_factor":          ewma(job.realtime_factor, rt_factor),
+                    "estimated_remaining_sec":  estimate_remaining(job, segment),
+                    "progress_updated_at":      "now()",
+                    "last_heartbeat_at":        "now()",
+                })
+
+            # Cooperative cancel/pause check after each commit.
+            if await ctx.should_pause(job.id):
+                await mark_paused(job.id, at_sec=segment.end, reason="user")
+                return PauseResult(at_sec=segment.end)
+            if await ctx.should_cancel(job.id):
+                await mark_cancelled(job.id, at_sec=segment.end)
+                return CancelResult(at_sec=segment.end)
+
+    await mark_done(job.id)
+```
+
+Key properties:
+
+- **Atomic per-segment commit.** The `segments` insert and the
+  `processing_jobs` progress update share one transaction. If the process
+  dies between segments, the DB is consistent: the last `segments` row's
+  `end_sec` always equals `processing_jobs.last_segment_end_sec`.
+- **Granularity is "one Whisper segment"** (typically 5–30 s). This is the
+  natural cut point of the STT backend; cutting finer would split sentences
+  and degrade subtitle quality. Coarser (e.g., minutes) would cost
+  unacceptable rework on crash.
+- **Audio-time progress, not wall-clock.** `processed_seconds` is the sum
+  of audio durations actually transcribed, not how long the worker has been
+  running. The UI shows "1h 23m 17s of 4h 12m" — meaningful even if the
+  worker stalled, swapped backends, or migrated hosts.
+- **EWMA for ETA.** `realtime_factor` is exponentially smoothed
+  (α = 0.2) so a single slow segment doesn't make the ETA jitter. ETA is
+  `(total_duration - processed) / realtime_factor`.
+- **Heartbeat coupling.** The progress UPDATE doubles as the heartbeat,
+  saving a separate write. A pure heartbeat tick still fires every 5 s in
+  case a single segment takes longer than the stale-claim window
+  (relevant for very slow CPU backends).
+
+Sidecar files (`.srt`, `.vtt`) are **only** written when the job reaches
+`done`. While the job is in flight, partial subtitles can be rendered on
+demand by querying `transcript_segments` — the DB is the live truth, no
+intermediate file format to keep in sync.
+
+### 7.7 Pause and resume
+
+**Pause is cooperative.** The API marks `pause_requested = true`; the
+running worker checks the flag after every committed segment and exits
+cleanly:
+
+```
+1. UI calls POST /api/jobs/{id}/pause
+2. API: UPDATE processing_jobs SET pause_requested=true WHERE id=$id
+3. Worker (next segment boundary):
+   a. Commits the current segment (no segments are ever lost or duplicated)
+   b. UPDATE … SET state='paused',
+                  paused_at=now(),
+                  paused_at_sec=last_segment_end_sec,
+                  paused_reason='user',
+                  pause_requested=false,
+                  claimed_by=NULL
+   c. Releases GPU lock and exits the stage.
+4. WS /ws/jobs broadcasts the new state.
+```
+
+If the worker is stuck inside a single segment for longer than
+`pause_grace_sec` (default 60 s), the API offers a "Force pause" button
+which flips the job to `paused` without waiting and reverts
+`last_segment_end_sec` to the last committed value. The in-flight segment is
+discarded (it was never persisted) and will be re-transcribed on resume.
+
+**Resume is just a claim against `paused`.** The claim loop already accepts
+`paused` rows whose `pause_requested = false` (§7.3). The worker that picks
+up the job:
+
+1. Sets state to `resuming`, increments `resume_count`, sets `resumed_at`.
+2. Reloads the STT backend, decoder, and any in-memory context (the prompt
+   for Whisper is rebuilt from the last K segments' text — preserving
+   continuity across the resume seam).
+3. Opens the audio decoder seeked to `last_segment_end_sec` (FFmpeg
+   `-ss {sec}` for fast-forward seek; for VBR sources, decoder-level seek
+   to the nearest preceding keyframe and discard the lead-in).
+4. Sets state to `running`. The transcribe loop continues identically to
+   §7.6, with `seek_from = last_segment_end_sec`.
+
+**Audio-offset, not segment-index, is the resume key.** Backend or model
+upgrades may emit different segment boundaries; an offset in seconds
+survives those changes, while a segment index does not.
+
+### 7.8 Graceful shutdown
+
+The worker traps `SIGTERM` and `SIGINT` and treats them as a global pause:
+
+```
+1. Signal received → ctx.shutdown_requested.set()
+2. The transcribe loop's per-segment check sees both should_pause and
+   shutdown_requested:
+     - Commit the current segment (already inside §7.6's transaction).
+     - Mark all this worker's running jobs paused with reason='shutdown'.
+     - Release GPU locks; close decoder pipes.
+3. Worker process exits 0.
+4. On next start, the reaper (§7.9) finds no stale 'claimed'/'running'
+   rows because the shutdown converted them to 'paused' cleanly. The
+   workers re-claim them as resumes; the user sees no interruption beyond
+   "paused for shutdown" in the job history.
+```
+
+Shutdown deadline: the worker waits up to `shutdown_grace_sec` (default
+120 s) for the in-flight segment to commit. If the deadline expires, the
+worker is allowed to exit with the in-flight segment uncommitted —
+correctness is preserved (the partial segment was never persisted), at the
+cost of re-transcribing that ≤30 s on resume. A second SIGTERM forces
+immediate exit with the same correctness guarantee.
+
+A second SIGINT (Ctrl-C twice) is interpreted as "abort, don't even wait
+for the segment" — same outcome as the deadline path.
+
+### 7.9 Crash recovery
+
+Crashes are the same problem as graceful shutdown, minus the cooperation:
+
+- **Reaper.** A periodic task (every 30 s) scans for jobs in
+  `claimed`/`running`/`resuming` whose `last_heartbeat_at < now() -
+  stale_claim_sec` (default 90 s, > 3× heartbeat interval). It flips them
+  to `paused` with `paused_reason='crash'`, `paused_at_sec =
+  last_segment_end_sec`. They become re-claimable like any other paused
+  job.
+- **No replay log needed.** The DB already holds the durable history:
+  every committed segment is in `transcript_segments`, and
+  `last_segment_end_sec` matches by construction (§7.6). Recovery is
+  resume; resume is a normal claim.
+- **Atomic file writes for non-DB outputs.** Stages that produce files
+  (`subtitle_gen`, `thumbnail`, HLS segmenter) write to
+  `…/.tmp/{uuid}` and `os.replace()` to the final path on success. A crash
+  mid-write leaves a stray temp file that the next scan removes. These
+  stages are short — they always re-run from scratch on resume; no
+  intermediate checkpoint is needed.
+- **No JSON sidecar checkpoints.** The DB *is* the checkpoint. A previous
+  draft of this design used `.maktaba/transcripts/{hash}.partial.json`
+  files; that approach was rejected because it created two sources of truth
+  for resume position (file vs. DB) and a bug in either could re-transcribe
+  hours of audio. Sidecar `.srt`/`.vtt` files are now strictly outputs of
+  successful jobs, never inputs to a resume.
+
+### 7.10 Progress reporting to the UI
+
+The worker's per-segment commit (§7.6) bumps `progress_updated_at`. A
+listener (Postgres `LISTEN/NOTIFY` in prod, polling on SQLite) pushes
+deltas into the WebSocket fan-out:
+
+```json
+{
+  "type":   "job.progress",
+  "id":     842,
+  "video_id": "…",
+  "stage":  "transcribe",
+  "state":  "running",
+  "total_duration_seconds": 15124.0,
+  "processed_seconds":      4988.5,
+  "segments_completed":     742,
+  "last_segment_end_sec":   4988.5,
+  "realtime_factor":        0.32,
+  "estimated_remaining_sec": 31738.4,
+  "updated_at": "2026-05-03T15:42:11.218Z"
+}
+```
+
+The UI throttles renders to 1 Hz per visible job — the message firehose can
+go higher without the browser melting.
+
+### 7.11 Throughput estimate (30 TB)
 
 Assume average 2 GB / hour of content → 30 TB ≈ 15,000 hours. On Apple
 Silicon M-series with `mlx-whisper large-v3` at ~0.3× realtime, single GPU:
@@ -860,11 +1165,24 @@ content properly so Safari (the strictest) plays back without reload loops.
 ```
 GET    /api/jobs                         ?state&stage&video&cursor
 GET    /api/jobs/{id}
-POST   /api/jobs/{id}/cancel
-POST   /api/jobs/{id}/retry              → resets attempts
+POST   /api/jobs/{id}/pause              → sets pause_requested
+POST   /api/jobs/{id}/pause?force=true   → flips state immediately, drops in-flight segment
+POST   /api/jobs/{id}/resume             → makes a paused job re-claimable
+POST   /api/jobs/{id}/cancel             → sets cancel_requested
+POST   /api/jobs/{id}/retry              → resets attempts (failed → pending)
+
+POST   /api/videos/{id}/pause            → pauses every active job for this video
+POST   /api/videos/{id}/resume           → resumes every paused job for this video
+
 GET    /api/queue/stats                  → per-stage counts and ETA
-WS     /ws/jobs                          → live job state
+WS     /ws/jobs                          → live job state + progress (see §7.10)
 ```
+
+`pause`, `resume`, and `cancel` are idempotent: re-issuing a request that
+matches the current state (or pending request flag) returns 200 with the
+unchanged job. The endpoints never block on the worker; they set flags and
+return immediately. Clients observe the actual state transition over the
+WebSocket.
 
 ### 9.6 Collections, tags, speakers
 
@@ -1197,10 +1515,12 @@ maktaba doctor                 # checks ffmpeg, GPU, DB, write perms
  ┌──────────────────────────────────────────────────────────────────────┐
  │  job(extract) claimed → ffmpeg pipes 16k mono PCM into                │
  │  job(transcribe) — same worker, GPU lock held                         │
- │  → segments emitted incrementally, checkpointed to                    │
- │    .maktaba/transcripts/{hash}.partial.json                            │
- │  → on completion: transcripts + transcript_segments rows               │
- │  state → TRANSCRIBED                                                  │
+ │  → for each STT segment (5–30 s of audio):                            │
+ │      one DB tx commits the segment row + advances                     │
+ │      processing_jobs.last_segment_end_sec + heartbeats.               │
+ │      User can pause / process can crash between any two segments;     │
+ │      resume picks up from last_segment_end_sec exactly.               │
+ │  → on completion: state → TRANSCRIBED                                 │
  └──────────────────────────────────────────────────────────────────────┘
               │
               ▼
