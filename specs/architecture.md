@@ -1,7 +1,8 @@
 # Maktaba — Architecture
 
-> Self-hosted media intelligence platform. Plex-class library and streaming, plus
-> "every word in every video is searchable." Arabic-first, language-agnostic.
+> Self-hosted media intelligence platform. Plex-class library, streaming, and
+> apps for every screen — plus "every word in every video is searchable."
+> Arabic-first, language-agnostic.
 
 ---
 
@@ -9,129 +10,291 @@
 
 ### 1.1 What Maktaba is
 
-Maktaba is a self-hosted application that turns a folder tree of video files
+Maktaba is a self-hosted media platform that turns a folder tree of video files
 (lectures, sermons, interviews, archives, films) into a searchable, streamable,
-intelligently-organized library. It is positioned as a Plex alternative, but
-its differentiator is **content intelligence**: every video is transcribed,
-segmented, indexed for full-text and semantic search, and exposed through a
-web UI where the user can jump to the exact second a phrase was spoken.
+intelligently-organized library, watchable on every screen the household owns.
+It is positioned as a **full Plex alternative** — library, transcoding origin,
+and first-party apps for web, mobile, desktop, and TV — and its differentiator
+on top of that is **content intelligence**: every video is transcribed,
+segmented, indexed for full-text and semantic search, and the user can jump
+to the exact second any phrase was spoken from any client.
 
 The target deployment is a single user / single household with 30 TB+ of
 content on a NAS or workstation, with the option to scale horizontally to
-multi-user installations later. The first-class language is Arabic (مكتبة =
-"library"), with full Unicode and bidirectional-text correctness throughout,
-but the STT and indexing layers are language-agnostic.
+multi-user installations later. The first-class language is Arabic
+(مكتبة = "library"), with full Unicode and bidirectional-text correctness
+throughout, but the STT and indexing layers are language-agnostic.
 
-### 1.2 Top-level components
+### 1.2 Top-level architecture
+
+Three backend services and a unified client surface, sharing one Postgres
+for state and one media volume for bytes:
 
 ```
-                        ┌──────────────────────────────────────────────┐
-                        │                  Web UI (SPA)                │
-                        │     React + TypeScript + Vite + Tailwind     │
-                        └───────────────┬───────────────┬──────────────┘
-                                        │ REST          │ WebSocket
-                                        ▼               ▼
-                        ┌──────────────────────────────────────────────┐
-                        │           API Gateway (FastAPI)              │
-                        │   /library  /search  /stream  /jobs  /admin  │
-                        └─┬─────────┬──────────┬──────────┬────────┬───┘
-                          │         │          │          │        │
-                          ▼         ▼          ▼          ▼        ▼
-                  ┌──────────┐ ┌─────────┐ ┌────────┐ ┌──────┐ ┌────────┐
-                  │ Library  │ │ Search  │ │ Stream │ │ Jobs │ │ Config │
-                  │ Service  │ │ Service │ │ Service│ │  API │ │  API   │
-                  └────┬─────┘ └────┬────┘ └───┬────┘ └──┬───┘ └────┬───┘
-                       │            │          │         │          │
-                       ▼            ▼          ▼         ▼          ▼
-       ┌────────────────────────────────────────────────────────────────────┐
-       │                        Domain Core (pure Python)                   │
-       │   models · pipeline contracts · scheduling · hashing · settings    │
-       └─────┬──────────────┬───────────────┬──────────────┬────────────────┘
-             │              │               │              │
-             ▼              ▼               ▼              ▼
-     ┌─────────────┐ ┌─────────────┐ ┌────────────┐ ┌──────────────┐
-     │  Metadata   │ │  ChromaDB   │ │   FTS5     │ │ Object Cache │
-     │ (Postgres / │ │  (vectors,  │ │ (SQLite,   │ │  (thumbs,    │
-     │   SQLite)   │ │  on-disk)   │ │  segments) │ │   HLS, SRT)  │
-     └─────────────┘ └─────────────┘ └────────────┘ └──────────────┘
-
-                     ─── separate process group ───
-       ┌────────────────────────────────────────────────────────────────────┐
-       │                       Worker Pool (background)                     │
-       │   Scanner · Probe · AudioExtract · Transcribe · Index · Thumbnails │
-       │   coordinated through the Job Store; GPU-bound stages serialized   │
-       └────────────────────────────────────────────────────────────────────┘
-                                        ▲
-                                        │ filesystem events (watchdog)
-       ┌────────────────────────────────┴───────────────────────────────────┐
-       │                         Media Storage (read-mostly)                │
-       │              /libraries/{name}/...   ·   /var/maktaba/             │
-       └────────────────────────────────────────────────────────────────────┘
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │                            Client surface                             │
+   │   Web (PWA · React+Vite)   ·   iOS / Android (Capacitor wrappers)     │
+   │   Desktop (Tauri)          ·   tvOS (Swift) · Android TV (Kotlin)     │
+   └────────────────┬─────────────────────────┬────────────────────────────┘
+                    │ HTTPS / WSS             │ HLS / DASH (HTTPS, range)
+                    ▼                         ▼
+   ┌────────────────────────────────┐   ┌──────────────────────────────────┐
+   │     API Service  (Go 1.23)     │   │     Streaming Service  (Go)      │
+   │  REST + GraphQL + WebSocket    │◄─►│  HLS / DASH origin               │
+   │  Auth · libraries · search     │gRPC│  on-the-fly transcode + remux   │
+   │  job orchestration · settings  │   │  subtitle mux · range serving    │
+   │  watch progress · collections  │   │  thumbnail / sprite generation   │
+   └─────┬───────────────────┬──────┘   └──────────┬───────────────────────┘
+         │ gRPC              │                     │
+         │                   │ Postgres            │ Postgres + media volume
+         ▼                   ▼                     ▼
+   ┌──────────────────┐  ┌────────────────────────────────────────────────┐
+   │ Pipeline Service │  │            PostgreSQL 16 (or SQLite)           │
+   │  (Python 3.12)   │◄─┤   metadata · jobs · FTS · LISTEN/NOTIFY pub/sub │
+   │  STT · embed.    │  └────────────────────────────────────────────────┘
+   │  Chroma · diariz.│                              ▲
+   │  worker pool     │                              │
+   └────┬─────────────┘                              │
+        │                                            │
+        ▼                                            │
+   ┌────────────────────┐                            │
+   │  ChromaDB on disk  │                            │
+   │  HF model cache    │────────────────────────────┘
+   │  watchdog → roots  │
+   └────────────────────┘
 ```
 
-The **API process** and the **worker process** are separate so that long
-transcription jobs cannot stall HTTP responses, and so the worker can be
-restarted, scaled, or pinned to specific hardware (e.g., an Apple Silicon box
-with MLX) independently of the UI.
+Each backend service owns one concern:
 
-### 1.3 Design principles
+- **API Service (Go)** — every request that isn't a media byte. Auth, library
+  CRUD, search orchestration (FTS + Chroma fan-in), job control, settings,
+  watch state, real-time WebSocket progress. Stateless behind Postgres.
+- **Streaming Service (Go)** — every media byte. HLS and DASH manifests,
+  on-the-fly transcoding/remuxing via FFmpeg subprocesses, range-request
+  direct play, subtitle muxing, sprite/poster cache. Stateless across
+  requests; coordinates only via Postgres for session pinning.
+- **Pipeline Service (Python)** — every ML/AI byte. Whisper STT (MLX / CUDA /
+  CPU / API), multilingual embeddings, ChromaDB indexing, diarization, the
+  filesystem watcher. Owns the worker pool that drains the job queue.
 
-- **Modular stages over monolithic pipelines.** Each pipeline stage implements
-  a small interface (`run(item) -> result`), and stages communicate only
-  through the job store. Replacing the STT engine should not touch the
-  scanner, the indexer, or the UI.
+The client surface is a single React PWA wrapped natively for mobile via
+Capacitor and for desktop via Tauri, with native Swift / Kotlin only for the
+two TV platforms where browser APIs aren't enough (§6).
+
+### 1.3 Why this language split
+
+The mandate is "one person ships a Plex-class platform with content
+intelligence." That ranks **time-to-market and operational simplicity above
+raw performance** at every layer where they conflict. The split below is the
+minimum number of languages that gets each layer to production grade without
+paying a velocity tax.
+
+| Layer                         | Language                | Why this and not the alternatives                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|-------------------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ML / AI pipeline              | **Python 3.12+**        | Whisper (incl. `mlx-whisper` and `faster-whisper`), ChromaDB, sentence-transformers, pyannote, Hugging Face — everything we depend on is Python-native. Calling them via a remote runtime from Rust/Go would buy nothing and cost the iteration speed ML work demands.                                                                                                                                                                                      |
+| API + business logic          | **Go 1.23+**            | ASP.NET Core (C#) and Spring (Java) are battle-tested for this layer, but adding a third runtime alongside Python and the streaming server's runtime is operational tax for a one-person project. Go gives strong typing, first-class HTTP/2, first-class gRPC, generics that are sufficient for the domain, and single-binary deployment. The deciding factor: the streaming server (next row) is also Go, and we want shared models, middleware, and FFmpeg wrappers between them. |
+| Streaming origin              | **Go 1.23+**            | The hot path is FFmpeg-as-subprocess plus byte-pumping. Both Rust and Go are dramatically faster than the FFmpeg work itself, so the framing layer is not the bottleneck. Rust would offer marginal CPU/memory wins and stronger zero-copy primitives, but at the cost of a second backend language. Go's `net/http`, `io.Copy`, and goroutine-per-connection model handle thousands of concurrent range requests trivially. We pick Go and put **API and Streaming in the same monorepo** — sharing `internal/auth`, `internal/db`, `internal/ffmpeg`, `internal/telemetry` — but ship them as **two independent binaries** so streaming can scale separately and API restarts don't drop watch sessions. |
+| Web client                    | **TypeScript / React + Vite** | PWA-quality so the same codebase wraps into mobile and desktop. RTL- and bidi-correct out of the box; mature ecosystem (Video.js / Vidstack) for HLS playback and caption rendering.                                                                                                                                                                                                                                                                                  |
+| Mobile wrappers (iOS/Android) | **Capacitor** over the web app | Reuses the React codebase; native plugin layer for background download, file association, push notifications, native player handoff. One UI to maintain instead of two.                                                                                                                                                                                                                                                                                                |
+| Desktop wrapper (mac/Win/Linux) | **Tauri** over the web app | Native window chrome, file associations, system tray, OS-level codec hardware paths via the embedded WebView. ~10 MB binaries vs. Electron's ~120 MB. Same React codebase.                                                                                                                                                                                                                                                                                                |
+| TV apps (tvOS / Android TV)   | **Swift / SwiftUI** + **Kotlin / Jetpack Compose** | Both TV platforms have a broken-or-absent PWA story. Remote-control input, focus engine, and 4K HDR codec hardware paths warrant native. These are the only places we eat the cost of a separate UI codebase, and only because nothing else works.                                                                                                                                                                                                                |
+
+**Explicitly rejected:**
+
+- **C# (.NET) for the API.** ASP.NET Core is excellent and EF Core is the
+  best ORM in this matrix, but adding the .NET runtime alongside Python and
+  Go means three deployment toolchains, three test runners, three dependency
+  graphs, three Dockerfiles. The marginal gain over Go for our specific
+  business logic (CRUD, auth, search orchestration, WebSocket fan-out) does
+  not justify the operational cost.
+- **Rust for the streaming server.** Real wins (lower latency, lower memory,
+  better safety), but FFmpeg subprocess time dominates the wall-clock and
+  `ffmpeg-next` is a thinner ecosystem than Go's `os/exec` plus a clean byte
+  pipeline. Reconsider in v2 if Go's GC or per-connection memory becomes a
+  measurable problem; not in v1.
+- **Splitting API and Streaming into two repos.** Same language, mostly
+  shared models. One monorepo, two `cmd/` entry points, shared `internal/`.
+  Two binaries at deploy time, one codebase at dev time.
+- **React Native or Flutter for mobile.** A second UI codebase that has to
+  track the web one. Capacitor over the same React app is the
+  one-person-friendly bet.
+- **Electron for desktop.** Tauri's WebView-based model is dramatically
+  smaller, faster to launch, and uses the OS's hardware video pipeline.
+
+### 1.4 Service topology & communication
+
+There are exactly four state-bearing surfaces in the system:
+
+| Surface                | Owner                          | Other services' access                        |
+|------------------------|--------------------------------|-----------------------------------------------|
+| PostgreSQL             | shared (with strict ownership per table set) | All services read; only the owning service writes its tables. |
+| Media volume (read)    | shared (filesystem)            | Streaming and Pipeline read; nobody writes.    |
+| Cache volume (HLS, thumbs, sprites) | Streaming Service | API reads URLs from Postgres; Pipeline doesn't touch. |
+| ChromaDB on disk       | Pipeline Service               | API queries via gRPC, never directly on disk. |
+
+**Inter-service contracts:**
+
+- **API ↔ Pipeline** — gRPC, mostly query-side. The API calls Pipeline for
+  query-time embedding (`Embed(text) → vector`), search-side reranking, and
+  ad-hoc operations like "transcribe this clip with backend X right now."
+  Bulk job control flows through Postgres, not gRPC: the API enqueues jobs
+  by INSERT and Pipeline workers claim them with `SELECT … FOR UPDATE SKIP
+  LOCKED` (§7). One DB transaction, full visibility, no extra service.
+- **API ↔ Streaming** — gRPC for session lifecycle (`OpenSession`,
+  `CloseSession`, `EvictHashCache`) and capability negotiation. Stream URLs
+  themselves are signed by the API and consumed directly by clients against
+  Streaming over plain HTTPS, so byte traffic never round-trips the API.
+- **Postgres LISTEN/NOTIFY** — pub/sub for "job state changed", "new video
+  ready", "subtitle index updated". The API translates these into
+  per-client WebSocket frames. No Redis, no Kafka, no NATS — the queue
+  Maktaba already runs is the bus Maktaba already runs.
+- **Filesystem events** — the Pipeline Service owns the watcher; the
+  Streaming Service receives no FS events and only reads files when a
+  manifest request asks it to.
+
+We deliberately do **not** introduce a separate message broker (Redis,
+RabbitMQ, NATS). For a 30 TB / single-household deployment, Postgres
+LISTEN/NOTIFY plus the existing `processing_jobs` table is sufficient
+through the lifetime of v1 and most of v2. A broker is added the day a
+measurable component contention demands it, not before.
+
+### 1.5 Design principles
+
+- **One language per concern, no overlap.** Python does ML, Go does servers,
+  TypeScript does UI. A new feature does not shop across runtimes; it
+  belongs to whichever service owns the relevant state.
+- **Modular pipeline stages.** Each Python pipeline stage implements a small
+  interface (`run(item) -> result`) and communicates only through the job
+  store. Replacing the STT engine does not touch the scanner, the indexer,
+  the API, or the UI.
 - **Content-addressable identity.** A video is identified by its
   `content_hash` (BLAKE3 of the first + last 4 MiB plus file size). Renaming,
-  moving, or copying a file does not cause re-processing.
-- **Idempotent, resumable jobs.** Every stage can be re-run safely. Crash
-  during transcription leaves no partial subtitle file in the library —
-  outputs are written to a temp path and atomically renamed.
-- **Sidecar outputs.** Generated artifacts (`.srt`, `.vtt`, `.json` segments,
-  thumbnails) live next to the source file in a hidden `.maktaba/` directory,
-  so the library remains portable and a Plex/VLC user can still consume the
-  subtitles directly.
-- **Graceful degradation.** Vector search down? Fall back to FTS. STT
-  unavailable? The video is still browsable and streamable. Thumbnails
-  missing? Fall back to a placeholder. No single component failure should
-  break browsing.
+  moving, or copying a file does not cause re-processing on either Pipeline
+  (no redundant transcribe) or Streaming (cache stays warm).
+- **Idempotent, resumable jobs.** Every pipeline stage can be re-run safely.
+  A crash during transcription leaves no partial subtitle file in the
+  library — outputs are written to a temp path and atomically renamed.
+- **Sidecar outputs.** Generated artifacts (`.srt`, `.vtt`, segment JSON,
+  thumbnails) live next to the source file in a hidden `.maktaba/`
+  directory, so the library remains portable and a Plex/VLC user could still
+  consume the subtitles directly.
+- **Graceful degradation across services.** Pipeline down? Library still
+  browses and streams; only new ingest stops. Streaming down? Library still
+  browses and search still works; only playback breaks. API down? Streaming
+  honors signed URLs already in flight. No single component failure should
+  break the whole platform.
 
 ---
 
 ## 2. Tech Stack
 
-| Layer              | Choice                                       | Rationale                                                                 |
-|--------------------|----------------------------------------------|---------------------------------------------------------------------------|
-| Language           | Python 3.12+                                 | Async-native, ecosystem for ML/media, matches existing skeleton.          |
-| API                | FastAPI + Uvicorn (or Hypercorn for HTTP/2)  | Async, OpenAPI-first, WebSockets, Pydantic validation.                    |
-| Domain models      | Pydantic v2 + SQLAlchemy 2.x                 | Single source of truth between API and DB.                                |
-| Metadata DB        | PostgreSQL 16 (prod) · SQLite (single-user)  | Same SQLAlchemy models; Postgres scales, SQLite is zero-ops for home use. |
-| Full-text search   | SQLite FTS5 with `unicode61` + `arabic` rules · or Postgres `tsvector` | FTS5 is excellent for sidecar use; Postgres FTS for multi-user.           |
-| Vector search      | ChromaDB (persistent client, DuckDB+Parquet) | On-disk, embedded, no extra service.                                      |
-| Embeddings         | `multilingual-e5-large` (default) · pluggable | Strong on Arabic and English, sentence-level.                             |
-| Job queue          | Custom Postgres/SQLite-backed queue         | One DB, one transaction, full visibility, easy to debug.                  |
-| Filesystem watch   | `watchdog`                                   | Cross-platform inotify/FSEvents/ReadDirectoryChangesW.                    |
-| Media probe        | `ffprobe` via `ffmpeg-python`                | Already in deps; canonical metadata source.                               |
-| Audio extraction   | FFmpeg (CLI)                                 | Streaming pipe to STT, no intermediate file when possible.                |
-| STT engine         | Whisper (MLX on Apple Silicon, CUDA elsewhere) | Already in deps; best Arabic OSS model; pluggable.                        |
-| Streaming          | HLS via FFmpeg segmenter; direct MP4 fallback | Browser-native, supports adaptive bitrate later.                          |
-| Thumbnails         | FFmpeg `select` filter + `Pillow`            | One sprite + chapter posters per video.                                   |
-| Frontend           | React 18 + TypeScript + Vite + Tailwind      | Mature; RTL-friendly with `dir="rtl"`.                                    |
-| Player             | Video.js or Vidstack                         | HLS, sidecar VTT, captions, chapter markers out of the box.               |
-| Packaging          | uv / Hatch                                   | Fast resolver; matches existing pyproject.                                |
-| Container          | Docker Compose (api, worker, postgres)       | Reproducible single-host deploy.                                          |
-| Config             | Pydantic Settings + TOML + env override      | Layered: defaults → file → env → CLI flag.                                |
-| Logging            | `structlog` + JSON sink                      | Structured, grep-able, ready for ELK/Loki.                                |
-| Telemetry          | OpenTelemetry (optional)                     | Off by default; opt-in for prod.                                          |
+### 2.1 By service
 
-**Why not Celery/Redis?** A 30 TB single-user library has dozens of jobs
-in flight, not millions. A Postgres-backed queue with `SELECT … FOR UPDATE
-SKIP LOCKED` gives us atomic claim, full visibility through the same DB the
-UI already reads, and one fewer service to run. Redis can be added later as a
-cache for hot library queries; it is not required for correctness.
+**API Service (Go 1.23+):**
+
+| Concern            | Choice                                  | Rationale                                                                       |
+|--------------------|-----------------------------------------|---------------------------------------------------------------------------------|
+| HTTP framework     | `chi` + `net/http`                       | Stdlib-first; battle-tested router; trivial middleware composition.             |
+| GraphQL            | `gqlgen` (schema-first)                  | Code-gen from `.graphql`; type-safe resolvers; subscriptions via WebSocket.     |
+| ORM / SQL          | `sqlc` + `pgx/v5`                        | Generated typed Go from raw SQL — keeps the schema DDL canonical, no ORM magic. |
+| Migrations         | `goose` (or `atlas`)                     | Embedded, single binary; runs at boot or via `maktaba migrate`.                 |
+| Auth               | JWT (RS256) + cookie sessions; argon2id passwords | Mobile/TV clients use bearer tokens; web uses httpOnly cookies + CSRF.    |
+| Validation         | `go-playground/validator/v10`            | Struct-tag-driven request validation.                                           |
+| WebSocket          | `coder/websocket` (formerly nhooyr)      | Modern, context-aware, no goroutine-per-connection internals.                   |
+| gRPC client        | `google.golang.org/grpc`                 | Talks to Pipeline (embeddings, ad-hoc transcribe) and Streaming (sessions).     |
+| Background tasks   | Native goroutines + Postgres LISTEN      | No external scheduler; the API is mostly request-response.                      |
+| Config             | `viper` + env overrides                  | Layered (defaults → TOML → env → flags).                                        |
+| Logging            | `slog` (stdlib) + JSON handler           | Stdlib structured logging; grep-friendly; OTel-bridge available.                |
+| Telemetry          | OpenTelemetry SDK (opt-in)               | Traces flow across services via gRPC/HTTP propagators.                          |
+
+**Streaming Service (Go 1.23+):**
+
+| Concern            | Choice                                  | Rationale                                                                       |
+|--------------------|-----------------------------------------|---------------------------------------------------------------------------------|
+| HTTP framework     | `chi` + `net/http`                       | Same as API; shared `internal/http` middleware (logging, recovery, signed-URL). |
+| Range serving      | `http.ServeContent` + custom HEAD path   | Conditional GETs, `Accept-Ranges`, byte ranges; Safari-correct.                 |
+| HLS / DASH         | FFmpeg subprocess (HLS muxer + dashenc)  | Battle-tested manifest generation; we orchestrate, FFmpeg muxes.                |
+| Transcode pool     | Per-host semaphore + per-session FFmpeg  | Capped concurrency; graceful eviction under pressure.                           |
+| Probe cache        | LRU in-memory + Postgres `media_info`    | Avoid re-probing on every manifest request.                                     |
+| Subtitle muxing    | Native VTT writer + FFmpeg passthrough   | Generated subs join HLS via `#EXT-X-MEDIA:TYPE=SUBTITLES`.                      |
+| Image generation   | `disintegration/imaging` + FFmpeg        | Posters, sprite sheets, chapter thumbs.                                         |
+| Cache GC           | LRU on disk (default 50 GiB cap)          | Bounded; survives restarts.                                                     |
+| Config             | `viper` (shared `internal/config`)       | Same loader as API; `[streaming]` section.                                      |
+
+**Pipeline Service (Python 3.12+):**
+
+| Concern            | Choice                                       | Rationale                                                                 |
+|--------------------|----------------------------------------------|---------------------------------------------------------------------------|
+| Async runtime      | `asyncio` + `anyio`                          | Native to Python 3.12; required for streaming STT.                        |
+| gRPC server        | `grpc.aio`                                   | Async server; one process per worker box.                                 |
+| Worker loop        | Custom claim loop on Postgres                | Same `SELECT … FOR UPDATE SKIP LOCKED` queue the API enqueues into.       |
+| DB access          | `asyncpg` (Postgres) / `aiosqlite` (SQLite)  | No ORM; thin SQL layer mirrors the Go side's `sqlc` queries.              |
+| Domain models      | Pydantic v2                                  | Validation at service boundaries; serialize to gRPC via `betterproto`.    |
+| STT engines        | `mlx-whisper` · `faster-whisper` · `openai`  | One per backend; chosen at runtime per library.                           |
+| Embeddings         | `sentence-transformers` (`multilingual-e5-large`) | Strong on Arabic and English, sentence-level.                        |
+| Vector store       | ChromaDB (persistent client, DuckDB+Parquet) | On-disk, embedded, no extra service.                                      |
+| Diarization        | `pyannote.audio` (opt-in)                    | Heavyweight; off by default, on per library.                              |
+| Filesystem watch   | `watchdog`                                   | Cross-platform inotify / FSEvents / ReadDirectoryChangesW.                |
+| Media probe        | `ffmpeg-python` for ffprobe                  | Canonical metadata source; output written to Postgres.                    |
+| Packaging          | `uv` + `pyproject.toml`                      | Fast resolver; matches existing skeleton.                                 |
+| Logging            | `structlog` → JSON                           | Same shape as Go side; one log pipeline.                                  |
+
+**Shared infrastructure:**
+
+| Concern            | Choice                                       | Rationale                                                                 |
+|--------------------|----------------------------------------------|---------------------------------------------------------------------------|
+| Metadata DB        | PostgreSQL 16 (prod) · SQLite (dev/single-user) | One source of truth; sqlc-generated Go and asyncpg Python share the schema. |
+| Full-text search   | Postgres `tsvector` (multi-user) · SQLite FTS5 (single-user) | Strong Arabic support via `unicode61 remove_diacritics 2`.        |
+| Pub/sub            | Postgres `LISTEN/NOTIFY`                     | One transaction, one bus; no Redis/NATS/Kafka in v1.                      |
+| IPC schemas        | Protobuf 3 + gRPC                            | One `.proto` source generates Go and Python clients.                      |
+| Container runtime  | Docker + Compose                              | Reproducible single-host deploy; one `docker-compose.yml` brings it all up.|
+| Reverse proxy / TLS| Caddy (default) · nginx (optional)            | Caddy auto-issues certs and routes `/api`, `/stream`, `/` cleanly.        |
+
+**Web / Mobile / Desktop:**
+
+| Concern            | Choice                                       | Rationale                                                                 |
+|--------------------|----------------------------------------------|---------------------------------------------------------------------------|
+| Web framework      | React 18 + TypeScript + Vite + Tailwind      | Mature; RTL-friendly with `dir="rtl"`.                                    |
+| Router / data      | TanStack Router + TanStack Query             | Type-safe routes; cache + invalidation that matches the WS-driven UI.     |
+| Player             | Vidstack (or Video.js fallback)              | HLS + DASH, sidecar VTT, captions, chapter markers, mobile-friendly.      |
+| State              | Zustand (UI state) + TanStack Query (server) | No Redux ceremony; small surface.                                         |
+| GraphQL client     | `graphql-request` + codegen                  | Lightweight; types generated from server schema.                          |
+| PWA shell          | `vite-plugin-pwa` + Workbox                  | Background sync, offline metadata, installable on iOS/Android.            |
+| Mobile wrapper     | Capacitor 6                                  | Native shell over the web app; native player handoff plugin.              |
+| Desktop wrapper    | Tauri 2                                      | ~10 MB binary, native menus, file association, system tray.               |
+| TV: tvOS           | Swift / SwiftUI + AVPlayer                   | Native focus engine, AVPlayer for HLS, top-shelf integration.             |
+| TV: Android TV     | Kotlin + Jetpack Compose for TV + ExoPlayer  | Native focus, ExoPlayer for adaptive streaming, Leanback row APIs.        |
+
+### 2.2 Why these defaults
+
+- **Why not Celery / Redis / Kafka?** A 30 TB single-household library has
+  dozens of jobs in flight, not millions. A Postgres-backed queue with
+  `SELECT … FOR UPDATE SKIP LOCKED` gives atomic claim, full visibility
+  through the same DB the UI already reads, and one fewer service to run.
+- **Why not an ORM in Go?** `sqlc` reads the same SQL DDL the Python side
+  reads and generates typed Go without runtime reflection. The schema
+  remains canonical; neither runtime can drift from it silently.
+- **Why GraphQL alongside REST?** REST is the boring high-cacheability
+  surface for streaming/manifest URLs and webhooks. GraphQL is the
+  composable surface for client-driven views (a TV "row" needs a different
+  shape than a phone "list"). One server (`gqlgen`) emits both from shared
+  resolvers.
+- **Why JWT + cookies?** Web sets httpOnly secure cookies. Mobile/TV apps
+  store a refresh token in Keychain/Keystore and present a short-lived
+  bearer JWT to both the API and Streaming. Streaming validates JWTs
+  offline against the API's RS256 public key — the API doesn't need to be
+  reachable for an in-flight watch session to keep playing.
 
 ---
 
-## 3. Core Pipeline
+## 3. Pipeline Service
+
+The Pipeline Service is the Python backend. It owns every ML/AI byte: STT,
+embeddings, ChromaDB, diarization, the filesystem watcher, and the worker
+pool that drains the job queue. It exposes a small gRPC surface for the API
+Service (query-time embedding, ad-hoc transcribe, model-info) but its main
+loop is the queue claim — bulk work is enqueued by the API as Postgres
+INSERTs (§7) and consumed here without an extra hop.
 
 Pipeline stages are implemented as classes that conform to a small `Stage`
 protocol:
@@ -316,39 +479,204 @@ search settings panel. RRF avoids score-scale incompatibility.
 
 ---
 
-## 4. Media Server
+## 4. Streaming Service
 
-Maktaba serves video to the browser through three modes, in preference order:
+The Streaming Service is the Plex-class media origin: it speaks HLS and DASH,
+serves direct-play byte ranges, transcodes or remuxes on the fly when the
+client can't play the source, multiplexes subtitle tracks, generates posters
+and sprite sheets, and supports session-pinned adaptive playback. It is
+written in Go, deployed as its own binary, and shares only Postgres and the
+read-only media volume with the rest of the system.
 
-1. **Direct play.** If the file is MP4/H.264/AAC and the browser supports it,
-   stream the file with HTTP Range requests. Zero CPU cost.
-2. **HLS remux (no transcode).** If the codecs are browser-compatible but the
-   container is MKV/AVI, FFmpeg re-segments on the fly into HLS without
-   re-encoding (`-c copy`). Low CPU.
-3. **HLS transcode.** Fallback for HEVC/AV1/etc. on browsers without support.
-   FFmpeg encodes to H.264 + AAC. CPU-expensive; capped concurrency.
+It does **not** touch the video catalog: it is told "stream `video_id`" via
+a signed URL minted by the API, looks up the file path and probe metadata in
+Postgres, and from there onward only reads bytes. This means the Streaming
+binary can be scaled, restarted, or pinned to a specific NIC/host independent
+of the API.
 
-Each rendition is keyed by `(content_hash, resolution, codec_profile)` and
-cached under `/var/maktaba/cache/hls/{hash[:2]}/{hash}/...`. Old segments are
-GC'd by an LRU policy (default 50 GiB cap).
+### 4.1 Playback modes
 
-**Subtitles** are served as VTT sidecars referenced from the HLS manifest
-(`#EXT-X-MEDIA:TYPE=SUBTITLES`). The browser handles rendering — Maktaba
-never burns subtitles into the video stream. Sidecar `.srt` files inside the
-library folder are auto-discovered and exposed alongside generated ones.
+In order of preference per request:
 
-**Thumbnails:**
+1. **Direct play.** If the file's container, video codec, audio codec, and
+   profile are on the client's reported capability list, stream the file
+   with HTTP range requests (`206 Partial Content`). Zero transcoding,
+   zero remuxing, zero CPU.
+2. **Direct stream (remux only).** If the codecs are compatible but the
+   container is wrong (MKV → MP4 fragmented for browsers, AVI → MP4 for
+   AppleTV), FFmpeg copies the streams (`-c copy`) into the target
+   container. Low CPU, no quality loss.
+3. **HLS / DASH adaptive transcode.** Fallback for HEVC, AV1, VP9-on-Safari,
+   uncommon audio codecs (AC3, DTS), or constrained-bandwidth clients.
+   FFmpeg encodes to a ladder of H.264+AAC renditions; the manifest
+   advertises the rungs and the player picks dynamically. CPU-expensive;
+   per-host concurrency cap.
+
+The decision is made by a small **capability matrix** maintained per client
+profile (browser UA, iOS native, Android native, tvOS, AndroidTV) and
+overridable per session ("force HLS 720p" for a user on a slow link). The
+Streaming Service does not trust the client to volunteer capabilities for
+free — the API tells it during `OpenSession` what the client is.
+
+### 4.2 Session model
+
+A **streaming session** ties a client to a video for the duration of a watch:
+
+```
+client → API:  POST /api/stream/sessions {video_id, client_profile, audio_track?, subtitle_track?, start_sec?}
+API → Streaming (gRPC): OpenSession(...) → returns session_id, manifest_url, ttl
+API → client:  {session_id, manifest_url (signed JWT URL), expires_at}
+client → Streaming (HLS/DASH): GET {manifest_url}
+```
+
+Why sessions:
+
+- **Sticky transcoder.** Adaptive switching needs the same FFmpeg subprocess
+  per session so segment numbering stays monotonic. The session id pins the
+  worker.
+- **Concurrency accounting.** The Streaming Service knows exactly how many
+  active transcodes it owns and refuses new ones above the per-host cap,
+  rather than letting CPU thrash.
+- **Watch-progress reporting.** Clients POST progress to
+  `/api/stream/sessions/{id}/progress`; the API persists it to
+  `playback_state`. WebSocket fanouts let other devices show "you watched
+  to 23:14 on your phone."
+- **Bandwidth caps.** A session can be capped (`max_bitrate_kbps`) for
+  cellular users or per-user quotas.
+- **Clean teardown.** On `CloseSession`, the FFmpeg subprocess is killed,
+  the per-session HLS segments outside the rolling window are GC'd, and
+  the slot is released.
+
+Sessions live in `streaming_sessions` (Postgres). Stale sessions (no segment
+fetch in 90 s) are reaped every 30 s.
+
+### 4.3 HLS manifest
+
+```
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-INDEPENDENT-SEGMENTS
+
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud-default",NAME="Arabic",LANGUAGE="ar",DEFAULT=YES,AUTOSELECT=YES,URI="audio/ar/index.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud-default",NAME="English",LANGUAGE="en",AUTOSELECT=YES,URI="audio/en/index.m3u8"
+
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Arabic (auto)",LANGUAGE="ar",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,URI="subs/ar.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",AUTOSELECT=NO,FORCED=NO,URI="subs/en.m3u8"
+
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2",AUDIO="aud-default",SUBTITLES="subs"
+1080p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="aud-default",SUBTITLES="subs"
+720p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=854x480,CODECS="avc1.42c01e,mp4a.40.2",AUDIO="aud-default",SUBTITLES="subs"
+480p/index.m3u8
+```
+
+For DASH the equivalent MPD is generated; both are produced by the same
+FFmpeg invocation when transcoding (`-f hls` + `-f dash` to separate paths
+sharing one encode is not supported, so DASH is opt-in per session).
+
+### 4.4 Transcode pipeline
+
+A single FFmpeg subprocess per session writes:
+- `1080p/seg-N.ts`, `720p/seg-N.ts`, `480p/seg-N.ts`
+- `audio/{lang}/seg-N.aac` per selected language
+- `subs/{lang}/seg-N.vtt` per selected subtitle (generated from
+  `transcript_segments` for auto-generated subs; remuxed from sidecar SRT
+  for external ones)
+
+```go
+ffmpeg -ss {start_sec} -i {input} \
+  -map 0:v:0 -filter:v "scale=-2:1080" -c:v libx264 -preset veryfast -crf 22 \
+  -map 0:v:0 -filter:v "scale=-2:720"  -c:v libx264 -preset veryfast -crf 23 \
+  -map 0:v:0 -filter:v "scale=-2:480"  -c:v libx264 -preset veryfast -crf 24 \
+  -map 0:a:0 -c:a aac -b:a 128k -ac 2 \
+  -f hls -hls_time 4 -hls_list_size 6 -hls_flags independent_segments+delete_segments \
+  -hls_segment_filename "{session_dir}/v%v/seg-%d.ts" -master_pl_name index.m3u8 \
+  -var_stream_map "v:0,a:0,name:1080p v:1,a:0,name:720p v:2,a:0,name:480p" \
+  {session_dir}/v%v/index.m3u8
+```
+
+Hardware acceleration is auto-detected: VideoToolbox on Apple Silicon
+(`-hwaccel videotoolbox -c:v h264_videotoolbox`), NVENC on NVIDIA
+(`h264_nvenc`), QuickSync on Intel (`h264_qsv`). Falls back to libx264 on
+unknown hardware.
+
+### 4.5 Subtitle handling
+
+Three sources, all exposed as VTT to the player:
+
+1. **Auto-generated** (from `transcript_segments`). Rendered live by the
+   Streaming Service from the DB — never read from a `.vtt` file. This
+   means the user sees subtitles as soon as the first segments are
+   indexed, even before transcription is fully complete.
+2. **Sidecar SRT/VTT** in the library folder (`{name}.{lang}.srt`).
+   Auto-discovered by the Pipeline Service during scan; converted to VTT
+   on first request and cached.
+3. **Embedded** in the container (MKV `S_TEXT/UTF8` etc.). Extracted on
+   first request via `ffmpeg -map 0:s:N -c:s webvtt`.
+
+Subtitles are **never burned in.** The player handles rendering. Clients
+that don't support sidecar subtitles (rare) can request burned-in mode per
+session, which forces a transcode.
+
+### 4.6 Chapters
+
+Three sources, picked in order:
+
+1. Embedded chapters from the container (`ffprobe -show_chapters`).
+2. Chapters defined manually by the user via the API.
+3. Inferred chapters from transcript-level topic shifts (cosine drop between
+   adjacent segment embeddings > threshold), capped at one chapter per
+   ~3 minutes of content.
+
+Stored in `chapters`; served as part of the manifest's
+`#EXT-X-DATERANGE:CLASS="chapter"` markers (HLS) or as a sidecar
+`chapters.json` resource referenced from the API.
+
+### 4.7 Watch progress sync
+
+The player POSTs `{position_sec, completed?}` to the API every 10 s and on
+pause/seek. The API writes to `playback_state (user_id, video_id)` and
+fans out to other sessions over `WS /ws/playback/{video_id}`, so:
+
+- A user starting a video on their phone sees "Resume at 23:14" on their
+  TV the moment they pick it up.
+- "Watched" state (`completed = true` once `position_sec / duration > 0.95`)
+  is synced across clients in real time.
+- Per-client "next up" computations stay consistent.
+
+### 4.8 Cache layout
+
+```
+/var/maktaba/cache/streaming/
+├── direct/                      # transient buffers for direct-play range serves
+├── remux/{hash[:2]}/{hash}/     # short-lived remuxed MP4s (LRU)
+├── hls/{session_id}/            # per-session live HLS segments
+├── posters/{hash[:2]}/{hash}.jpg
+├── sprites/{hash[:2]}/{hash}.{webp,vtt}
+└── thumbs/{hash[:2]}/{hash}/chapter-{n}.jpg
+```
+
+`hls/{session_id}/` is purged on `CloseSession` or session reap.
+`remux/`, `posters/`, `sprites/`, `thumbs/` are LRU-capped (default 50 GiB
+combined). Posters and sprites are pre-generated by the Pipeline Service at
+the `thumbnail` stage and reused indefinitely; the Streaming Service serves
+them as static files.
+
+### 4.9 Thumbnails and previews
+
+Generated at the `thumbnail` pipeline stage (Pipeline Service), stored in the
+shared cache:
+
 - One **poster** per video (auto-selected at 10% of duration, ignoring black
-  frames via `blackdetect`).
-- One **sprite sheet** of preview thumbs at 10-second intervals, displayed
-  on player scrub.
+  frames via `blackdetect`; user can override).
+- One **sprite sheet** of preview thumbs at 10-second intervals (WebP), with
+  a sidecar VTT mapping time → sprite cell. Used by the player for scrub
+  preview.
 - Optional **chapter posters**, one per detected chapter.
 
-**Chapter detection** runs in the indexer stage:
-1. Use embedded chapters from the container if present.
-2. Else, infer chapters from transcript-level topic shifts (cosine drop
-   between adjacent segment embeddings > threshold) → coarse chapters.
-3. Cap at one chapter per ~3 minutes of content; let the user override.
+The Streaming Service serves these as plain HTTP — no transformation, no
+session.
 
 ---
 
@@ -363,9 +691,13 @@ profile. Libraries are first-class to support setups like:
 
 ### 5.1 Folder watching
 
-Each library spawns one `watchdog` observer. Events are debounced (default
-2 s) so that copies in progress are not picked up mid-write. A file is
-considered settled when its size has not changed for one debounce interval.
+The Pipeline Service owns the watcher; the API and Streaming services
+receive no filesystem events. Each library spawns one `watchdog` observer.
+Events are debounced (default 2 s) so that copies in progress are not
+picked up mid-write. A file is considered settled when its size has not
+changed for one debounce interval. New `videos` rows trigger a Postgres
+NOTIFY (`channel = "videos.new"`); the API listens and pushes WebSocket
+updates to subscribed clients.
 
 ### 5.2 Auto-categorization
 
@@ -391,19 +723,63 @@ Categorization is done lazily after `INDEXED`:
 
 ---
 
-## 6. Web UI
+## 6. Clients: Web & Apps
 
-A single-page React app served from the API at `/`. The same FastAPI process
-serves the static bundle in production; in dev, Vite proxies `/api` to it.
+Maktaba ships first-party clients on every screen the household uses. The
+strategy is **one shared web codebase wrapped natively where possible, two
+native TV codebases where it isn't.** A single React app runs as the PWA, in
+the Capacitor mobile shells, and in the Tauri desktop shell; tvOS and
+Android TV are the only places we maintain a second UI codebase.
 
-### 6.1 Pages
+### 6.1 Recommended app strategy (and why not the alternatives)
 
-- **Home** — recently added, in-progress, recommended ("more like what you
-  watch").
+We evaluated three options:
+
+- **Option A — Native everywhere** (Swift/SwiftUI for iOS+macOS+tvOS,
+  Kotlin for Android+AndroidTV, C#/WinUI for Windows, GTK for Linux). Best
+  per-platform UX. **Rejected**: a solo developer cannot maintain six native
+  codebases plus the web app and ever ship features evenly. Plex itself
+  has dozens of engineers and still ships features unevenly across native
+  apps.
+- **Option B — Cross-platform UI framework** (React Native or Flutter for
+  mobile, Electron for desktop). One mobile codebase, one desktop codebase,
+  one web codebase = three UI codebases. **Rejected**: still doubles UI
+  surface vs. the web; React Native's Video player story for HLS+DASH
+  with sidecar VTT and adaptive bitrate is fragile; Flutter requires
+  re-implementing the entire UI.
+- **Option C — PWA + thin native wrappers** ✅ **chosen**. One React
+  codebase becomes the web app, the iOS app (Capacitor), the Android app
+  (Capacitor), and the desktop app (Tauri). TV apps are the only native
+  codebases — and they have to be, because tvOS doesn't have a usable PWA
+  story and Android TV's web-based "Cast Receiver" model is not a
+  full-screen app.
+
+This means: **one UI to design, one UI to translate, one UI to test**, plus
+two thin shells (Capacitor and Tauri) and two native TV apps that share
+nothing with the web but do share the API contract.
+
+### 6.2 Web (PWA)
+
+A React 18 single-page app served from the API binary at `/`. The same Go
+process serves the static bundle in production; in dev, Vite proxies `/api`
+and `/stream` to the corresponding service.
+
+PWA features:
+
+- Installable on iOS Safari, Android Chrome, desktop Chromium.
+- Service worker caches the app shell, library list, recent search results.
+  Video bytes are never cached — they go through the Streaming Service.
+- "Add to Home Screen" is the offline-installation path for users who don't
+  want the wrapped mobile app.
+
+**Pages:**
+
+- **Home** — recently added, in-progress (across devices), recommended
+  ("more like what you watch").
 - **Library** — paginated grid, filterable by language, type, duration,
   speaker, tag, library.
-- **Video detail** — player, transcript-as-sidebar (clickable, syncs with
-  playback), chapter list, metadata, related videos.
+- **Video detail** — player (Vidstack), transcript-as-sidebar (clickable,
+  syncs with playback), chapter list, metadata, related videos.
 - **Search** — single search box, hybrid results with highlighted snippets
   and timestamp deep-links (`/watch/{id}?t=3725.4`).
 - **Speakers** — per-speaker page with all known appearances.
@@ -412,19 +788,95 @@ serves the static bundle in production; in dev, Vite proxies `/api` to it.
 - **Settings** — libraries, STT backends, language preferences, search
   weights, cache caps, integrations.
 
-### 6.2 Internationalization & RTL
+**Internationalization & RTL:** the shell supports `dir="rtl"` and
+`dir="ltr"` per-route based on the active UI language. Transcript snippets
+render with Unicode bidi isolates (`⁨...⁩`) so mixed Arabic/English text
+aligns correctly even when results from different languages are
+interleaved. Arabic UI strings are first-class translations, not
+afterthoughts.
 
-The shell supports `dir="rtl"` and `dir="ltr"` per-route based on the active
-UI language. Transcript snippets render with Unicode bidi isolates
-(`⁨...⁩`) so that mixed Arabic/English text aligns correctly even
-when results from different languages are interleaved. The Arabic UI strings
-are first-class translations, not afterthoughts.
-
-### 6.3 Live updates
+**Live updates:**
 
 - WebSocket `/ws/jobs` — job state changes, progress percent, ETA.
 - WebSocket `/ws/library/{id}` — newly discovered or processed videos.
+- WebSocket `/ws/playback/{video_id}` — cross-device watch progress.
 - Server-sent events as a fallback where WebSocket is blocked.
+
+### 6.3 Mobile (iOS / Android — Capacitor)
+
+The same React app, packaged with **Capacitor 6** into a native iOS and
+Android shell. Capacitor provides the bridge to native APIs without
+rewriting the UI:
+
+- **Native player handoff.** A custom plugin opens the system AVPlayer
+  (iOS) / ExoPlayer (Android) for full-screen playback, including AirPlay,
+  Picture-in-Picture, and lock-screen controls. The HLS manifest URL from
+  the API is handed off; metadata (title, poster, duration) is published
+  via `MPNowPlayingInfoCenter` / Android `MediaSession`.
+- **Background download** — Maktaba can download a video to the device for
+  offline viewing (uses the system download manager; resumable, survives
+  app suspension).
+- **Push notifications** — "library scan complete", "new video ready"
+  (opt-in, via APNs / FCM bridged through the API).
+- **Deep links** — `maktaba://watch/{video_id}?t=...` opens the in-app
+  player at the timestamp.
+- **Auth keychain** — refresh tokens stored in iOS Keychain / Android
+  Keystore.
+
+App Store distribution is via TestFlight initially; Play Store internal
+testing track. Self-hosters can sideload via Xcode / `adb install` or,
+later, side-loading marketplaces.
+
+### 6.4 Desktop (macOS / Windows / Linux — Tauri)
+
+The same React app, packaged with **Tauri 2** into a native shell using the
+OS's WebView (WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux).
+
+- ~10 MB binary vs. Electron's ~120 MB; ~80 MB RAM at idle vs. ~400 MB.
+- Native menus (File, Edit, View, Library, Window, Help).
+- Native file association — double-clicking a `.maktaba` shortcut opens the
+  app pointed at that server.
+- System tray with playback controls and "next up" preview.
+- Native fullscreen and HDR video paths via the WebView's hardware decoder.
+- Auto-updater built into Tauri (signed delta updates).
+
+Distribution: signed `.dmg` (notarized) for macOS, `.msi` for Windows,
+`.AppImage` and `.deb` for Linux.
+
+### 6.5 TV apps (tvOS — Swift, Android TV — Kotlin)
+
+These are the only fully native UIs in the system. The remote-control input
+model (focus engine, swipe gestures, voice search) and the 4K HDR codec
+hardware paths warrant native; PWA on TV is, in practice, unusable.
+
+**tvOS (Swift / SwiftUI + AVPlayer):**
+- SwiftUI views built around the native focus engine.
+- AVPlayer for HLS playback, including HDR (HLG, Dolby Vision where
+  available), AirPlay, and the system scrub UI.
+- Top Shelf integration: "Continue Watching" surfaced on the home screen.
+- Siri Remote: voice search dispatches to `/api/search/suggest`.
+
+**Android TV (Kotlin / Jetpack Compose for TV + ExoPlayer):**
+- Compose for TV with the Leanback row layouts.
+- ExoPlayer for HLS / DASH adaptive playback.
+- Recommendations channel on the Android TV home screen.
+
+Both TV apps share the same JSON API as every other client. There is no
+separate "TV API"; the client renders different layouts from the same
+GraphQL queries (`tvDashboard`, `tvRow`, etc.).
+
+### 6.6 Shared client surface
+
+Every client talks to:
+
+- `https://{host}/api` — REST + GraphQL + WebSocket (API Service).
+- `https://{host}/stream` — HLS / DASH / range (Streaming Service).
+
+The web bundle, Capacitor shells, and Tauri shell all consume the same
+GraphQL schema with generated TypeScript types (`graphql-codegen`). The
+native TV apps consume hand-written Swift / Kotlin clients generated from
+the same `.graphql` schema (`apollo-ios` / `apollo-kotlin`). Schema is the
+single source of truth for what every client can ask for.
 
 ---
 
@@ -1079,9 +1531,27 @@ CREATE TABLE saved_searches (
 
 ## 9. API Design
 
-All endpoints are JSON. Errors follow RFC 9457 problem+json. Pagination is
-cursor-based (`?cursor=...&limit=...`) with `next` and `prev` returned in the
-response envelope.
+The API Service (Go) exposes three surfaces on one port:
+
+- **REST** under `/api/*` for CRUD, control, and webhooks. JSON,
+  cursor-paginated (`?cursor=...&limit=...`), errors as RFC 9457
+  `application/problem+json`.
+- **GraphQL** at `/graphql` (and `/graphql/subscriptions` for WebSocket) for
+  client-driven view composition. Schema-first via `gqlgen`; resolvers
+  share the same domain code as the REST handlers.
+- **WebSocket** under `/ws/*` for fire-and-forget broadcast streams (job
+  progress, library updates, watch sync). Subscriptions that need
+  per-query selection use GraphQL subscriptions instead.
+
+The Streaming Service (Go) exposes its own surface on a different port (or
+under `/stream/*` if behind a reverse proxy):
+
+- HLS / DASH / direct-play HTTP under `/stream/*`. JWT-signed URLs from the
+  API; bytes only.
+
+The endpoints below are the REST surface. The GraphQL schema mirrors the
+same domain types (`Library`, `Video`, `Segment`, `Job`, `Session`,
+`Speaker`, `Collection`, `Tag`).
 
 ### 9.1 Library
 
@@ -1148,17 +1618,39 @@ Search response shape:
 
 ### 9.4 Streaming
 
+The API mints sessions; the Streaming Service serves bytes. Two surfaces:
+
+**API Service** (session lifecycle):
 ```
-GET    /api/stream/{video_id}/manifest.m3u8
-GET    /api/stream/{video_id}/seg/{n}.ts
-GET    /api/stream/{video_id}/direct      → 206 Partial Content with Range
-GET    /api/stream/{video_id}/subs/{lang}.vtt
-GET    /api/stream/{video_id}/poster.jpg
-GET    /api/stream/{video_id}/sprite.json   → sprite map
+POST   /api/stream/sessions              {video_id, client_profile, audio_track?, subtitle_track?, start_sec?}
+                                         → {session_id, manifest_url, expires_at}
+GET    /api/stream/sessions/{id}         → session info, bitrate ladder, current rendition
+DELETE /api/stream/sessions/{id}         → close session, free transcoder slot
+POST   /api/stream/sessions/{id}/progress {position_sec, completed?}
+GET    /api/stream/capabilities          → server capabilities (codecs, hwaccel, max bitrate)
+```
+
+`manifest_url` is a signed URL (`/stream/{session_id}/manifest.m3u8?sig=...`)
+valid for `expires_at`; the client passes it to the player and the player
+talks to the Streaming Service directly.
+
+**Streaming Service** (bytes only):
+```
+GET    /stream/{session_id}/manifest.m3u8        → HLS master
+GET    /stream/{session_id}/manifest.mpd         → DASH (if requested)
+GET    /stream/{session_id}/{rendition}/index.m3u8
+GET    /stream/{session_id}/{rendition}/seg-{n}.ts
+GET    /stream/{session_id}/audio/{lang}/seg-{n}.aac
+GET    /stream/{session_id}/subs/{lang}.vtt      → live-rendered from DB
+GET    /stream/direct/{video_id}                 → 206 Partial Content (signed JWT in query)
+GET    /stream/posters/{video_id}.jpg
+GET    /stream/sprites/{video_id}.{webp,vtt}
 ```
 
 Range-request handling supports HEAD, conditional requests, and partial
 content properly so Safari (the strictest) plays back without reload loops.
+All Streaming endpoints validate a JWT signature against the API's RS256
+public key; the Streaming Service does not call back to the API to authorize.
 
 ### 9.5 Processing
 
@@ -1211,9 +1703,48 @@ GET        /api/system/version
 
 ### 9.8 Auth
 
-Single-user mode: an env-configured admin token; UI stores it after first
-boot. Multi-user mode: argon2id passwords, session cookies (httpOnly,
-sameSite=lax), CSRF tokens for state-changing requests.
+Two surfaces, one identity:
+
+- **Web** — argon2id-hashed passwords, login via `POST /api/auth/login`,
+  httpOnly secure cookies (`sameSite=lax`), CSRF tokens for state-changing
+  requests.
+- **Mobile / desktop / TV** — argon2id login → short-lived bearer JWT
+  (RS256, 15 min) + opaque refresh token (30 d, stored in
+  Keychain/Keystore). Refresh via `POST /api/auth/refresh`.
+
+The same JWT authenticates against the Streaming Service; Streaming
+validates offline against the API's published JWKS
+(`GET /api/.well-known/jwks.json`), so an in-flight watch session keeps
+playing even if the API restarts.
+
+**Single-user mode** still works: an env-configured admin token bypasses
+the user table entirely; the UI stores it after first boot. This is the
+zero-configuration path for self-hosters.
+
+### 9.9 Inter-service gRPC
+
+The internal gRPC schema (not exposed to clients) lives in
+`shared/proto/`:
+
+```protobuf
+service Pipeline {
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+  rpc Transcribe(TranscribeRequest) returns (stream TranscribeEvent);
+  rpc ListBackends(google.protobuf.Empty) returns (BackendList);
+  rpc HealthCheck(google.protobuf.Empty) returns (HealthStatus);
+}
+
+service Streaming {
+  rpc OpenSession(OpenSessionRequest) returns (Session);
+  rpc CloseSession(CloseSessionRequest) returns (google.protobuf.Empty);
+  rpc EvictHashCache(EvictRequest) returns (google.protobuf.Empty);
+  rpc HealthCheck(google.protobuf.Empty) returns (HealthStatus);
+}
+```
+
+`shared/proto/` generates Go (via `protoc-gen-go-grpc`) and Python (via
+`grpc_tools.protoc`) clients; both are checked in so neither side needs
+the other's runtime to build.
 
 ---
 
@@ -1245,13 +1776,26 @@ sameSite=lax), CSRF tokens for state-changing requests.
 
 ### 10.3 Horizontal scale-out
 
-- The API process is stateless behind a single Postgres; add replicas
-  freely.
-- Workers are stateless; add boxes by pointing them at the same Postgres and
-  shared media volume (NFS / SMB / S3+rclone).
-- ChromaDB persistent client is single-writer; for multi-writer scale-out,
-  swap the embedding function for a Chroma server deployment or for Qdrant
-  behind the same `VectorStore` interface.
+Each service scales on its own axis:
+
+- **API Service.** Stateless behind a single Postgres; add Go replicas
+  behind any L7 load balancer. WebSocket fan-out uses Postgres
+  LISTEN/NOTIFY so any replica receives every event.
+- **Streaming Service.** Stateless across requests; sticky-session routing
+  (consistent hash on `session_id`) keeps a session pinned to the box that
+  owns its FFmpeg process. Sessions can be migrated by closing and
+  reopening (the client resumes from `position_sec`).
+- **Pipeline Service.** Workers are stateless; add boxes by pointing them
+  at the same Postgres and shared media volume (NFS / SMB / S3+rclone).
+  GPU-bound stages take a per-device lock; CPU stages run with
+  per-host concurrency caps.
+- **Postgres.** A single primary handles the entire household indefinitely
+  (the dominant write rate is one row per ~10 s of audio transcribed). Add
+  read replicas only if search QPS becomes a bottleneck — unlikely below
+  thousands of users.
+- **ChromaDB.** Persistent client is single-writer; for multi-writer
+  scale-out, swap to a ChromaDB server deployment or to Qdrant behind the
+  same `VectorStore` interface in the Pipeline Service.
 
 ### 10.4 Cost control
 
@@ -1259,21 +1803,29 @@ sameSite=lax), CSRF tokens for state-changing requests.
 - The job orchestrator refuses to claim API-backed transcribe jobs once the
   cap is hit; jobs return to `pending` with `not_before = next month`.
 - A "dry run" cost estimate is shown before bulk re-processing.
+- Streaming transcodes are CPU-budgeted: per-host max concurrent transcodes
+  defaults to `(num_cores / 4)`; new sessions above the cap fall back to
+  direct play with a quality cap, or queue with a "starting soon" UI hint.
 
 ---
 
 ## 11. Configuration
+
+One config file per service, all reading shared `[database]` and
+`[telemetry]` sections from a top-level include. `viper` (Go) and
+`pydantic-settings` (Python) both support TOML + env override out of the
+box, so the same file shape works across runtimes.
 
 ### 11.1 Layered configuration
 
 ```
 defaults (in code)
   ↓ overridden by
-/etc/maktaba/config.toml          (system-wide)
+/etc/maktaba/{service}.toml       (system-wide, per service)
   ↓ overridden by
-$MAKTABA_HOME/config.toml         (per-user)
+$MAKTABA_HOME/{service}.toml      (per-user, per service)
   ↓ overridden by
-environment variables (MAKTABA_*)
+environment variables (MAKTABA_{SERVICE}_*)
   ↓ overridden by
 CLI flags
   ↓ overridden by
@@ -1281,10 +1833,10 @@ DB-stored settings (UI-editable)  (last write wins for runtime knobs)
 ```
 
 DB-backed settings are limited to runtime knobs (search weights, cache
-caps, library configs); secrets (API keys, DB URLs) live only in env or
-config file.
+caps, library configs); secrets (DB URL, JWT keys, API keys) live only in
+env or config file.
 
-### 11.2 Example `config.toml`
+### 11.2 Example `api.toml`
 
 ```toml
 [app]
@@ -1292,13 +1844,76 @@ home              = "/var/maktaba"
 log_level         = "info"
 admin_token_env   = "MAKTABA_ADMIN_TOKEN"
 
+[server]
+listen            = "0.0.0.0:8080"
+public_origin     = "https://maktaba.local"
+
 [database]
-url               = "postgresql+psycopg://maktaba@localhost/maktaba"
-# url             = "sqlite+aiosqlite:////var/maktaba/maktaba.db"
+url               = "postgres://maktaba:@/maktaba?host=/var/run/postgresql"
+# url             = "sqlite:///var/maktaba/maktaba.db"
+
+[auth]
+jwt_private_key_env = "MAKTABA_JWT_PRIVATE_KEY_PEM"
+jwt_public_key_env  = "MAKTABA_JWT_PUBLIC_KEY_PEM"
+access_ttl_sec      = 900
+refresh_ttl_sec     = 2592000        # 30 days
+argon2_memory_kib   = 65536
+cookie_secure       = true
+cookie_samesite     = "lax"
 
 [search]
 fts_weight        = 0.5
 semantic_weight   = 0.5
+
+[grpc]
+pipeline_addr     = "127.0.0.1:50051"
+streaming_addr    = "127.0.0.1:50052"
+```
+
+### 11.3 Example `streaming.toml`
+
+```toml
+[server]
+listen            = "0.0.0.0:8081"
+grpc_listen       = "127.0.0.1:50052"
+public_origin     = "https://maktaba.local"
+
+[database]
+url               = "postgres://maktaba:@/maktaba?host=/var/run/postgresql"
+
+[auth]
+jwt_public_key_env = "MAKTABA_JWT_PUBLIC_KEY_PEM"   # offline JWT validation
+
+[ffmpeg]
+binary            = "/usr/local/bin/ffmpeg"
+hwaccel           = "auto"             # videotoolbox | nvenc | qsv | none | auto
+preset            = "veryfast"
+
+[transcode]
+max_concurrent    = 4
+ladder            = ["1080p", "720p", "480p"]
+hls_segment_sec   = 4
+
+[cache]
+root              = "/var/maktaba/cache/streaming"
+max_gib           = 50
+session_idle_sec  = 90
+```
+
+### 11.4 Example `pipeline.toml`
+
+```toml
+[app]
+home              = "/var/maktaba"
+log_level         = "info"
+
+[grpc]
+listen            = "127.0.0.1:50051"
+
+[database]
+url               = "postgresql+asyncpg://maktaba@localhost/maktaba"
+
+[search]
 embedding_model   = "intfloat/multilingual-e5-large"
 embedding_device  = "auto"             # mlx | cuda | cpu | auto
 
@@ -1314,12 +1929,6 @@ initial_prompt_ar = "بسم الله الرحمن الرحيم"
 api_key_env       = "OPENAI_API_KEY"
 model             = "whisper-1"
 max_usd_per_month = 50
-
-[media]
-ffmpeg            = "/usr/local/bin/ffmpeg"
-ffprobe           = "/usr/local/bin/ffprobe"
-hls_cache_gib     = 50
-thumb_interval_sec= 10
 
 [workers]
 concurrency       = { scan = 4, probe = 4, extract = 2, transcribe = 1, index = 4, thumbnail = 2 }
@@ -1337,160 +1946,271 @@ language          = "auto"
 stt_profile       = "default"
 ```
 
-### 11.3 Secrets
+### 11.5 Secrets
 
-- `MAKTABA_ADMIN_TOKEN` — bootstrap admin token.
-- `MAKTABA_DATABASE_URL` — DB URL with credentials.
-- `OPENAI_API_KEY` (and equivalents) — per-backend.
+- `MAKTABA_ADMIN_TOKEN` — bootstrap admin token (single-user mode).
+- `MAKTABA_DATABASE_URL` — overrides `[database].url`.
+- `MAKTABA_JWT_PRIVATE_KEY_PEM` / `MAKTABA_JWT_PUBLIC_KEY_PEM` — RS256
+  keys; private key is read by the API only, public key by both API and
+  Streaming.
+- `OPENAI_API_KEY` (and equivalents) — per-backend, Pipeline only.
 
-Secrets are never logged, never returned by `/api/settings`, and never sent
-to the worker over the wire — workers read them from their own env.
+Secrets are never logged, never returned by `/api/settings`, and never
+shared between services that don't need them (the Streaming Service never
+sees the JWT private key or any STT backend keys).
 
 ---
 
-## 12. Project Structure
+## 12. Project Structure & Deployment
+
+### 12.1 Monorepo layout
+
+The repo is one tree with one language per top-level subdir. Each backend
+language has its own build tool and dependency graph; `shared/` holds the
+contracts (proto schemas, SQL migrations, fixtures) that cross language
+boundaries.
 
 ```
-maktaba/
-├── pyproject.toml
+Maktaba/
 ├── README.md
-├── docker/
-│   ├── Dockerfile.api
-│   ├── Dockerfile.worker
-│   └── docker-compose.yml
-├── alembic/                         # DB migrations
-│   ├── env.py
-│   └── versions/
-├── specs/
-│   └── architecture.md              # this document
-├── frontend/                        # standalone React app
+├── Makefile                          # top-level: bring up everything for dev
+├── docker-compose.yml                # full-stack local: api + streaming + pipeline + postgres + caddy
+│
+├── api/                              # Go — REST + GraphQL + WebSocket
+│   ├── go.mod
+│   ├── cmd/
+│   │   └── api/main.go               # entry point: `go run ./cmd/api`
+│   ├── internal/
+│   │   ├── config/                   # viper-based loader
+│   │   ├── http/                     # chi router, middleware, problem+json
+│   │   ├── graphql/                  # gqlgen resolvers
+│   │   ├── ws/                       # WebSocket fan-out + Postgres LISTEN
+│   │   ├── auth/                     # JWT issuance, argon2id, JWKS
+│   │   ├── db/                       # sqlc-generated queries
+│   │   ├── domain/                   # libraries, videos, search orchestration
+│   │   ├── grpcclient/               # pipeline + streaming clients
+│   │   └── jobs/                     # enqueue, pause/resume, status
+│   ├── sqlc.yaml
+│   └── Dockerfile
+│
+├── streaming/                        # Go — HLS / DASH / direct play
+│   ├── go.mod
+│   ├── cmd/
+│   │   └── streaming/main.go
+│   ├── internal/
+│   │   ├── config/
+│   │   ├── http/                     # signed-URL middleware, range serving
+│   │   ├── grpcserver/               # OpenSession / CloseSession
+│   │   ├── sessions/                 # session store + reaper
+│   │   ├── transcode/                # FFmpeg orchestration, hwaccel detection
+│   │   ├── manifest/                 # HLS + DASH writers
+│   │   ├── subtitles/                # live VTT renderer from DB
+│   │   └── cache/                    # LRU on-disk cache
+│   └── Dockerfile
+│
+├── pipeline/                         # Python — ML/AI workers + gRPC server
+│   ├── pyproject.toml                # uv / hatch
+│   ├── src/maktaba_pipeline/
+│   │   ├── __init__.py
+│   │   ├── cli.py                    # `maktaba-pipeline serve | worker | scan | …`
+│   │   ├── settings.py               # pydantic-settings
+│   │   ├── grpc_server.py            # asyncio gRPC server (Embed, Transcribe, …)
+│   │   ├── db/                       # asyncpg / aiosqlite, mirrors sqlc queries
+│   │   ├── domain/                   # identity (BLAKE3), state machine, search fusion
+│   │   ├── pipeline/
+│   │   │   ├── stages/               # scan, probe, extract, transcribe, …
+│   │   │   └── runner.py             # claim loop, heartbeat, retry
+│   │   ├── stt/                      # backends: whisper_mlx, faster_whisper, openai_api
+│   │   ├── search/                   # fts adapter, chroma adapter, embeddings, fusion
+│   │   ├── media/                    # ffmpeg wrappers, thumbnails, subtitle writers
+│   │   ├── library/                  # watcher, auto-tag, categorization
+│   │   └── tasks/                    # reaper, cache GC, nightly recluster
+│   ├── tests/
+│   └── Dockerfile
+│
+├── web/                              # TypeScript — React + Vite PWA
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── index.html
-│   └── src/
-│       ├── main.tsx
-│       ├── routes/
-│       ├── components/
-│       ├── lib/api.ts
-│       └── i18n/
-│           ├── ar.json
-│           └── en.json
-├── maktaba/                         # Python package
-│   ├── __init__.py
-│   ├── cli.py                       # `maktaba serve | worker | scan | …`
-│   ├── settings.py                  # Pydantic Settings, layered config
-│   ├── logging.py
+│   ├── public/
+│   │   └── manifest.webmanifest
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── routes/                   # TanStack Router routes
+│   │   ├── pages/
+│   │   ├── components/               # Vidstack player, transcript sidebar, …
+│   │   ├── lib/
+│   │   │   ├── api.ts                # REST client
+│   │   │   ├── graphql.ts            # graphql-request + generated types
+│   │   │   └── ws.ts
+│   │   └── i18n/
+│   │       ├── ar.json
+│   │       └── en.json
+│   └── Dockerfile
+│
+├── apps/
+│   ├── mobile/                       # Capacitor — wraps web/
+│   │   ├── ios/                      # generated Xcode project
+│   │   ├── android/                  # generated Gradle project
+│   │   ├── capacitor.config.ts
+│   │   └── plugins/native-player/    # AVPlayer / ExoPlayer handoff
+│   ├── desktop/                      # Tauri — wraps web/
+│   │   ├── src-tauri/
+│   │   │   ├── Cargo.toml
+│   │   │   ├── tauri.conf.json
+│   │   │   └── src/main.rs
+│   │   └── icons/
+│   ├── tvos/                         # Swift / SwiftUI native app
+│   │   ├── Maktaba.xcodeproj/
+│   │   └── Sources/
+│   │       ├── App/
+│   │       ├── Features/             # Home, Library, Player, Search, Settings
+│   │       └── API/                  # Apollo-generated GraphQL client
+│   └── androidtv/                    # Kotlin / Compose for TV
+│       ├── build.gradle.kts
+│       └── src/main/java/io/maktaba/tv/
+│
+├── shared/
+│   ├── proto/                        # gRPC schemas — one source of truth
+│   │   ├── pipeline.proto
+│   │   ├── streaming.proto
+│   │   ├── common.proto
+│   │   ├── gen/go/                   # checked-in generated Go
+│   │   └── gen/python/               # checked-in generated Python
+│   ├── graphql/
+│   │   └── schema.graphql            # consumed by gqlgen + graphql-codegen
 │   ├── db/
-│   │   ├── __init__.py
-│   │   ├── engine.py                # async engine + session
-│   │   ├── models/
-│   │   │   ├── library.py
-│   │   │   ├── video.py
-│   │   │   ├── transcript.py
-│   │   │   ├── job.py
-│   │   │   ├── collection.py
-│   │   │   ├── speaker.py
-│   │   │   └── user.py
-│   │   └── repositories/            # data access; no business logic
-│   │       ├── videos.py
-│   │       ├── transcripts.py
-│   │       └── jobs.py
-│   ├── domain/                      # pure-Python core
-│   │   ├── identity.py              # content hashing
-│   │   ├── states.py                # video state machine
-│   │   ├── pipeline.py              # Stage protocol + orchestration
-│   │   └── search.py                # hybrid fusion, query model
-│   ├── pipeline/
-│   │   ├── stages/
-│   │   │   ├── scan.py
-│   │   │   ├── probe.py
-│   │   │   ├── audio_extract.py
-│   │   │   ├── transcribe.py        # delegates to stt backends
-│   │   │   ├── subtitle_gen.py
-│   │   │   ├── index.py
-│   │   │   ├── thumbnail.py
-│   │   │   └── chapter_detect.py
-│   │   └── runner.py                # worker loop, claim/heartbeat/retry
-│   ├── stt/
-│   │   ├── base.py                  # STTBackend protocol + types
-│   │   ├── registry.py
-│   │   ├── whisper_mlx.py
-│   │   ├── whisper_cpu.py
-│   │   ├── whisper_cuda.py
-│   │   └── openai_api.py
-│   ├── search/
-│   │   ├── fts.py                   # FTS5 / Postgres tsvector
-│   │   ├── vector.py                # ChromaDB adapter
-│   │   ├── embeddings.py            # pluggable embedder
-│   │   ├── fusion.py                # RRF
-│   │   └── service.py               # public hybrid search API
-│   ├── media/
-│   │   ├── ffmpeg.py                # subprocess wrapper, async
-│   │   ├── hls.py                   # remux/transcode + manifest
-│   │   ├── thumbnails.py
-│   │   └── subtitles.py             # SRT/VTT writers and parsers
-│   ├── library/
-│   │   ├── service.py               # CRUD + categorization
-│   │   ├── watcher.py               # watchdog observers
-│   │   └── auto_tag.py
-│   ├── api/
-│   │   ├── app.py                   # FastAPI factory
-│   │   ├── deps.py                  # auth, DB session, rate limit
-│   │   ├── routers/
-│   │   │   ├── libraries.py
-│   │   │   ├── videos.py
-│   │   │   ├── search.py
-│   │   │   ├── stream.py
-│   │   │   ├── jobs.py
-│   │   │   ├── collections.py
-│   │   │   ├── tags.py
-│   │   │   ├── speakers.py
-│   │   │   ├── settings.py
-│   │   │   └── ws.py                # WebSocket endpoints
-│   │   └── static.py                # serves the built frontend
-│   ├── auth/
-│   │   ├── tokens.py
-│   │   └── users.py
-│   └── tasks/
-│       ├── reaper.py                # reclaim stale claimed jobs
-│       ├── retention.py             # HLS cache GC
-│       └── recluster.py             # nightly topic clustering
-└── tests/
-    ├── conftest.py
-    ├── unit/
-    │   ├── test_identity.py
-    │   ├── test_states.py
-    │   ├── test_fusion.py
-    │   └── test_subtitles.py
-    ├── integration/
-    │   ├── test_pipeline_e2e.py     # tiny sample WAV → segments → SRT
-    │   ├── test_search_hybrid.py
-    │   └── test_jobs_concurrency.py # SKIP LOCKED behavior
-    └── fixtures/
-        └── samples/                 # short royalty-free clips
+│   │   ├── migrations/               # goose-format SQL, shared by Go and Python
+│   │   │   ├── 0001_init.sql
+│   │   │   ├── 0002_jobs.sql
+│   │   │   └── ...
+│   │   └── queries/                  # sqlc input + asyncpg reference
+│   └── fixtures/
+│       └── samples/                  # short royalty-free clips for tests
+│
+├── deploy/
+│   ├── docker/
+│   │   ├── caddy/Caddyfile
+│   │   └── postgres/init.sql
+│   ├── compose/
+│   │   ├── docker-compose.yml        # the canonical self-host bundle
+│   │   ├── docker-compose.mac.yml    # overlay: bind to host FFmpeg + MLX
+│   │   └── docker-compose.dev.yml    # overlay: live-reload mounts
+│   ├── homebrew/
+│   │   └── maktaba.rb                # `brew install maktaba/tap/maktaba`
+│   └── launchd/                      # macOS service plists
+│       ├── io.maktaba.api.plist
+│       ├── io.maktaba.streaming.plist
+│       └── io.maktaba.pipeline.plist
+│
+└── specs/
+    └── architecture.md               # this document
 ```
 
-### 12.1 CLI surface
+### 12.2 Build & dev workflow
+
+The `Makefile` exposes one verb per common operation; under the hood it
+delegates to each language's native tooling:
 
 ```
-maktaba serve                  # run API
-maktaba worker [--stages ...]  # run a worker
-maktaba scan [--library NAME]  # one-shot scan
-maktaba reprocess --library NAME --from-stage transcribe
-maktaba search "query" [--lang ar]
-maktaba export-subtitles --video ID --format srt
-maktaba migrate                # alembic upgrade head
-maktaba doctor                 # checks ffmpeg, GPU, DB, write perms
+make dev              # docker compose -f deploy/compose/docker-compose.yml \
+                      #                -f deploy/compose/docker-compose.dev.yml up
+make build            # parallel: go build (api, streaming) + uv build pipeline + vite build web
+make test             # go test ./... + pytest pipeline + vitest web
+make proto            # regenerate gRPC clients from shared/proto into checked-in dirs
+make migrate          # goose up against DATABASE_URL
+make lint             # golangci-lint + ruff + tsc + eslint
+make apps             # build mobile (capacitor sync), desktop (tauri build), tvos (xcodebuild)
 ```
 
-### 12.2 Conventions
+There is no top-level "monorepo tool" (Nx, Bazel, Turborepo) — each
+language's native toolchain stays in charge of its own subtree, and the
+`Makefile` orchestrates across them.
 
+### 12.3 Per-service CLIs
+
+Each Go binary takes flags directly; the Python service has its own CLI:
+
+```
+# API Service (Go)
+maktaba-api serve [--config /etc/maktaba/api.toml]
+maktaba-api migrate                 # goose-driven schema migrations
+maktaba-api adduser <username>      # interactive password prompt
+
+# Streaming Service (Go)
+maktaba-streaming serve [--config /etc/maktaba/streaming.toml]
+maktaba-streaming probe <video_id>  # debug: dump capabilities + cached probe
+maktaba-streaming gc                # one-shot cache sweep
+
+# Pipeline Service (Python)
+maktaba-pipeline serve              # gRPC server + worker pool (default)
+maktaba-pipeline worker --stages transcribe,index
+maktaba-pipeline scan --library NAME
+maktaba-pipeline reprocess --library NAME --from-stage transcribe
+maktaba-pipeline doctor             # ffmpeg, GPU, DB, write perms, model cache
+```
+
+### 12.4 Deployment
+
+**Mac single-host (the user's primary target).** Two paths, both supported:
+
+1. **`docker compose up`** — One YAML brings the four containers (Postgres,
+   API, Streaming, Pipeline) plus a Caddy reverse proxy that terminates
+   TLS and routes `/api`, `/graphql`, `/ws`, `/stream`, and `/` to the
+   right service. The compose overlay `docker-compose.mac.yml` bind-mounts
+   the host's FFmpeg and exposes the GPU/Neural Engine for MLX
+   transcription. This is the recommended path.
+2. **`brew install maktaba`** — A Homebrew tap installs the three native
+   binaries (Go API, Go Streaming, Python pipeline as a `uv`-managed
+   venv), creates `/usr/local/var/maktaba/`, drops three `launchd` plists,
+   and starts them. No Docker, no Postgres-in-a-container — uses the
+   user's local Postgres or installs one. This is the "I already have
+   Postgres and want native MLX" path.
+
+Both paths land at `https://maktaba.local` (mDNS) by default; Caddy's
+local-CA mode auto-issues a trusted cert to the machine's keychain.
+
+**Linux self-host (NAS, workstation).** `docker compose up` is the only
+supported path; Caddy auto-issues Let's Encrypt certs against the user's
+domain.
+
+**Multi-host scale-out (future).** Each binary can be promoted to its own
+host:
+- Postgres on its own VM with WAL archiving.
+- N copies of API behind any L7 LB.
+- M copies of Streaming behind a sticky-session LB (consistent hash on
+  `session_id` cookie).
+- K copies of Pipeline pointed at the same shared media volume; GPU stages
+  are pinned to GPU hosts.
+
+There is no Kubernetes requirement at any scale; Compose + a small
+`systemd` unit per host is sufficient through the lifetime of v1.
+
+### 12.5 Conventions
+
+**Go (api, streaming):**
+- `errors.Is`/`errors.As` everywhere; never string-match on errors.
+- Context propagation in every public function.
+- `slog` with one global logger; no `fmt.Println`.
+- Generated code (sqlc, gqlgen, protobuf) lives next to the file that
+  consumes it and is checked in.
+
+**Python (pipeline):**
 - `from __future__ import annotations` everywhere; PEP 695 generics.
 - Async by default; sync only at FFmpeg subprocess and Whisper boundaries.
 - All paths through `pathlib.Path`; never raw strings.
 - All times stored as UTC `datetime`; client converts.
-- Tests are runnable without GPU (Whisper backend is mocked in unit tests;
-  one integration test uses a 5-second WAV and tiny model).
+
+**TypeScript (web):**
+- Strict mode on; no `any` outside generated types.
+- `tsc --noEmit` runs in CI; `eslint` and `prettier` enforce style.
+- All API access via generated types from `shared/graphql/schema.graphql`.
+
+**Cross-cutting:**
+- All times stored UTC; clients render with the user's timezone.
+- All UUIDs are v7 (sortable); never v4 in user-visible IDs.
+- Tests for each service are runnable in isolation against a SQLite test
+  DB; integration tests run against Postgres in CI.
 
 ---
 
@@ -1541,11 +2261,16 @@ maktaba doctor                 # checks ffmpeg, GPU, DB, write perms
 ## Appendix B — Out of scope (v1)
 
 - Multi-tenant SaaS hosting and billing.
-- Mobile native apps (the web UI is responsive; mobile apps come later).
 - Live ingestion (streaming sources). Maktaba is for archives, not live feeds.
 - Translation between languages on the fly (transcripts are stored in source
   language; translation can be added as an extra stage later).
 - DRM-protected content.
+- Cast / AirPlay receiver targets (clients can AirPlay/Cast *to* a TV, but
+  Maktaba does not run a Cast Receiver app).
+
+**In scope but staged later:** the TV apps (tvOS, Android TV) ship after the
+PWA + mobile + desktop wave; native TV codebases are real work and gated on
+the API surface stabilizing.
 
 ## Appendix C — Open questions to resolve before v1
 
@@ -1559,3 +2284,9 @@ maktaba doctor                 # checks ffmpeg, GPU, DB, write perms
    account? Token is simpler but less safe on a shared LAN.
 5. **GPU sharing across boxes** — do we bother with a remote-worker model in
    v1, or assume one machine owns transcription?
+6. **GraphQL vs. REST priority** — ship GraphQL from day one (more work, but
+   the right shape for TV apps later) or REST-first and add GraphQL when the
+   TV apps land?
+7. **Tauri 2 maturity** — confirm the WebView-based desktop story handles
+   our HLS player needs across macOS/Windows/Linux, or fall back to Electron
+   for desktop-only.
