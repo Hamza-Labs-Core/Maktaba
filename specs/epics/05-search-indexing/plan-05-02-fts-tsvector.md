@@ -144,23 +144,24 @@ pipeline/src/maktaba_pipeline/
     │       └── test_fts_table_name_consistent_across_engines.py
 shared/db/
 ├── migrations/
-│   ├── 0021_fts_tsvector_arabic_config.sql
-│   ├── 0022_transcript_units_tsv_column.sql
+│   ├── 0019_fts_tsvector_arabic_config.sql
+│   ├── 0021_transcript_units_tsv_column.sql
 │   ├── 0023_transcript_units_tsv_indexes.post.sql       # CONCURRENTLY (post-step)
 │   ├── 0024_transcripts_fts_view_postgres.sql
 │   └── sqlite/
-│       └── 0021_transcripts_fts_virtual_table.sql       # SQLite-only
+│       └── 0020_transcripts_fts_virtual_table.sql       # SQLite-only
 └── tsearch/
     ├── arabic.dict             # placeholder mapping file (Snowball-shape)
     └── arabic_simple.config    # documentation: how the config is built
 ```
 
-(The migration numbering picks up where Story 5.1 ends; Plan 5.1 owns
-0020.)
+(Slots 0019–0024 are claimed by this plan in the canonical
+[migration manifest](../../../shared/db/migrations/MANIFEST.md). Slot
+0017 — `transcript_units` itself — is owned by [plan-05-01](plan-05-01-unit-chunking.md).)
 
 ### 2.2 SQL — Postgres
 
-#### 2.2.1 `0021_fts_tsvector_arabic_config.sql` — SQL helpers
+#### 2.2.1 `0019_fts_tsvector_arabic_config.sql` — SQL helpers
 
 ```sql
 -- Plan 5.2 / Story 5.2 — Postgres FTS support.
@@ -268,7 +269,7 @@ ALTER TEXT SEARCH CONFIGURATION public.arabic_simple
 COMMIT;
 ```
 
-#### 2.2.2 `0022_transcript_units_tsv_column.sql` — column
+#### 2.2.2 `0021_transcript_units_tsv_column.sql` — column
 
 ```sql
 -- Add the stored generated column. Index lives in the post-step file.
@@ -325,7 +326,7 @@ COMMIT;
 
 ### 2.3 SQL — SQLite
 
-#### 2.3.1 `sqlite/0021_transcripts_fts_virtual_table.sql`
+#### 2.3.1 `sqlite/0020_transcripts_fts_virtual_table.sql`
 
 ```sql
 -- SQLite path. Runs only on dev/test and embedded deployments.
@@ -390,7 +391,7 @@ every connection from the Pipeline. The migration uses placeholder
 `maktaba_normalize_sqlite(...)`; on first use it must exist. The
 function body is the Python `arabic_normalize` from §2.4.1.
 
-Migration runner step: after applying `0021_transcripts_fts_virtual_table.sql`,
+Migration runner step: after applying `0020_transcripts_fts_virtual_table.sql`,
 re-issue the trigger DDL with the function-call form. We split the
 trigger creation into two files for clarity:
 
@@ -423,7 +424,7 @@ END;
 """Arabic + Unicode normalization for FTS.
 
 This module is the SOURCE OF TRUTH for what 'normalized' means; the SQL
-maktaba_normalize() function in 0021_fts_tsvector_arabic_config.sql is a
+maktaba_normalize() function in 0019_fts_tsvector_arabic_config.sql is a
 mirror, kept in sync via test_normalize_postgres_matches_python.
 
 Goals:
@@ -812,7 +813,7 @@ We add one new convention: a sidecar `.json` per migration that lists
 files to copy into the tsearch_data directory:
 
 ```json
-// shared/db/migrations/0021_fts_tsvector_arabic_config.sql.json
+// shared/db/migrations/0019_fts_tsvector_arabic_config.sql.json
 {
   "tsearch_files": [
     {"src": "shared/db/tsearch/arabic.stop", "dst_basename": "arabic.stop"}
@@ -880,12 +881,12 @@ SEARCH_FTS = {
 | 7 | `pipeline/src/maktaba_pipeline/search/fts/sqlite.py` | `SqliteFtsClient`, `register_normalize_udf` | `test_sqlite_fts_*` |
 | 8 | `shared/db/tsearch/arabic.stop` | stopword list | (n/a) |
 | 9 | `shared/db/tsearch/arabic_simple.config` | docstring file (no DDL) | (n/a) |
-| 10 | `shared/db/migrations/0021_fts_tsvector_arabic_config.sql` | `maktaba_normalize`, `language_to_regconfig`, `arabic_simple` config | `test_migration_creates_normalize_function`, `test_normalize_postgres_matches_python` |
-| 11 | `shared/db/migrations/0021_fts_tsvector_arabic_config.sql.json` | tsearch sidecar | covered by migration test |
-| 12 | `shared/db/migrations/0022_transcript_units_tsv_column.sql` | `transcript_units.tsv` | `test_migration_adds_tsv_column` |
+| 10 | `shared/db/migrations/0019_fts_tsvector_arabic_config.sql` | `maktaba_normalize`, `language_to_regconfig`, `arabic_simple` config | `test_migration_creates_normalize_function`, `test_normalize_postgres_matches_python` |
+| 11 | `shared/db/migrations/0019_fts_tsvector_arabic_config.sql.json` | tsearch sidecar | covered by migration test |
+| 12 | `shared/db/migrations/0021_transcript_units_tsv_column.sql` | `transcript_units.tsv` | `test_migration_adds_tsv_column` |
 | 13 | `shared/db/migrations/0023_transcript_units_tsv_indexes.post.sql` | `transcript_units_tsv`, `transcript_units_text_norm_trgm` | `test_migration_concurrent_indexes_present` |
 | 14 | `shared/db/migrations/0024_transcripts_fts_view_postgres.sql` | `transcripts_fts` view | `test_view_columns_match_sqlite_fts5` |
-| 15 | `shared/db/migrations/sqlite/0021_transcripts_fts_virtual_table.sql` | virtual table + 3 triggers | `test_sqlite_triggers_keep_fts_in_sync` |
+| 15 | `shared/db/migrations/sqlite/0020_transcripts_fts_virtual_table.sql` | virtual table + 3 triggers | `test_sqlite_triggers_keep_fts_in_sync` |
 | 16 | `shared/db/migrations/sqlite/0022_transcripts_fts_triggers_with_normalize.sql` | normalize-aware triggers | `test_sqlite_normalize_udf_used_by_trigger` |
 
 ---

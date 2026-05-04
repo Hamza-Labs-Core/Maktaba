@@ -55,7 +55,7 @@ type: plan
                     ▼
    ┌──────────────────────────────────┐  (3) gRPC call
    │ stages/probe.py                  │   MediaService.Probe(path)
-   │  - reads videos.fs_path           │──────────────────────────┐
+   │  - reads videos.path           │──────────────────────────┐
    │  - calls media_grpc.Probe()       │                          │
    │  - on result: persist + advance   │                          │
    └────────────────┬─────────────────┘                          ▼
@@ -409,7 +409,7 @@ class ProbeStage:
         # 1. Look up the file path. The video row was created by the scanner.
         async with ctx.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, fs_path, state FROM videos WHERE id=$1", job.video_id,
+                "SELECT id, path, state FROM videos WHERE id=$1", job.video_id,
             )
         if row is None:
             return FailedTerminal(f"video {job.video_id} vanished")
@@ -422,11 +422,11 @@ class ProbeStage:
         # 2. Call gRPC.
         try:
             resp = await ctx.media.Probe(
-                pb.ProbeRequest(path=row["fs_path"]),
+                pb.ProbeRequest(path=row["path"]),
                 timeout=ctx.settings.probe_timeout_s,
             )
         except grpc.aio.AioRpcError as e:
-            return _outcome_for_grpc_error(e, row["fs_path"])
+            return _outcome_for_grpc_error(e, row["path"])
 
         # 3. Persist + advance, all in one tx.
         try:
@@ -602,11 +602,18 @@ async def advance_video_state(
 
 
 async def enqueue_extract_job(conn: asyncpg.Connection, video_id) -> None:
+    # The partial unique index (slot 0002, plan-06-01) is keyed on
+    # (video_id, stage) WHERE state IN
+    # ('pending','claimed','running','paused','resuming'). Postgres only
+    # binds ON CONFLICT to a partial unique index when the WHERE
+    # predicate matches **exactly**, so we repeat the full state list
+    # here.
     await conn.execute(
         """
         INSERT INTO processing_jobs (video_id, stage, state)
         VALUES ($1, 'extract', 'pending')
-        ON CONFLICT (video_id, stage) WHERE state IN ('pending','running')
+        ON CONFLICT (video_id, stage)
+            WHERE state IN ('pending','claimed','running','paused','resuming')
         DO NOTHING;
         """,
         video_id,
@@ -759,7 +766,7 @@ from tests.fakes import FakeMediaStub, make_probe_response
 
 @pytest.mark.asyncio
 async def test_lecture_writes_media_info(stage_ctx, seed_video):
-    video_id = await seed_video(state="discovered", fs_path="/x/lecture.mkv")
+    video_id = await seed_video(state="discovered", path="/x/lecture.mkv")
     resp = make_probe_response(
         container="matroska",
         duration_sec=3612.45,
@@ -784,7 +791,7 @@ async def test_lecture_writes_media_info(stage_ctx, seed_video):
 
 @pytest.mark.asyncio
 async def test_silent_video_goes_ready_no_audio(stage_ctx, seed_video):
-    video_id = await seed_video(state="discovered", fs_path="/x/silent.mp4")
+    video_id = await seed_video(state="discovered", path="/x/silent.mp4")
     stage_ctx.media = FakeMediaStub({
         "/x/silent.mp4": make_probe_response(audio=[]),
     })
@@ -803,7 +810,7 @@ async def test_silent_video_goes_ready_no_audio(stage_ctx, seed_video):
 
 @pytest.mark.asyncio
 async def test_replay_is_noop(stage_ctx, seed_video):
-    video_id = await seed_video(state="discovered", fs_path="/x/lecture.mkv")
+    video_id = await seed_video(state="discovered", path="/x/lecture.mkv")
     resp = make_probe_response(audio=[("ara", "aac", True)])
     stage_ctx.media = FakeMediaStub({"/x/lecture.mkv": resp})
 

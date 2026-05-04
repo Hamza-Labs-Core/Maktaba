@@ -13,9 +13,9 @@
 
 | # | Decision | Source | Rationale |
 |---|----------|--------|-----------|
-| D1 | The state-machine package lives in **both** Go (`shared/states/` consumed by the Go scanner per [plan-01-01 D1](plan-01-01-file-discovery.md)) and Python (`pipeline/src/maktaba_pipeline/domain/states.py` per the story). Both implementations import the same JSON manifest at `shared/states/states.json` so the enum and transition table cannot drift. | Story names Python paths only. | The Go scanner (plan-01-01) needs the same enum to enqueue `DISCOVERED` rows and run the watcher's `→ MISSING` flip from [plan-01-03](story-01-03-filesystem-watcher-plan.md). Generating two language bindings from one manifest is cheap; letting them diverge is not. |
+| D1 | The state-machine package lives in **both** Go (`shared/states/` consumed by the Go scanner per [plan-01-01 D1](plan-01-01-file-discovery.md)) and Python (`pipeline/src/maktaba_pipeline/domain/states.py` per the story). Both implementations import the same JSON manifest at `shared/states/states.json` so the enum and transition table cannot drift. | Story names Python paths only. | The Go scanner (plan-01-01) needs the same enum to enqueue `DISCOVERED` rows and run the watcher's `→ MISSING` flip from [plan-01-03](plan-01-03-filesystem-watcher.md). Generating two language bindings from one manifest is cheap; letting them diverge is not. |
 | D2 | `advance_after_stage(video_id, trigger, outcome)` accepts a **superset** of the canonical 7 stage names. The extra triggers — `filesystem`, `library`, `integrity` — cover the side-channel transitions the story enumerates (any → MISSING / SUPERSEDED / CORRUPTED). | Refines the story's "advance_after_stage is the only mutator" rule. | The story names `advance_after_stage` as the sole writer and lists three non-stage callers (filesystem watcher, library merge, integrity sweep). Renaming the function or adding parallel mutators would re-introduce the very fragmentation the story closes. |
-| D3 | The migration filename is **`0003_video_states_and_stages.sql`**, owning both `videos.state` and `processing_jobs.stage` CHECK constraints in one transaction. | Matches the story's "`000X_video_states_and_stages.sql`" placeholder; slot 0003 reserved by [plan-01-05](story-01-05-PLAN.md) §6.2. | Two CHECKs, one rewrite of legacy `'thumb'` rows, one transaction. Splitting into two migrations buys nothing and exposes a window in which one CHECK is in place but the other is not. |
+| D3 | The migration filename is **`0004_video_states_and_stages.sql`**, owning both `videos.state` and `processing_jobs.stage` CHECK constraints in one transaction. | Slot 0004 assigned by the canonical [migration manifest](../../../shared/db/migrations/MANIFEST.md); depends on slots 0001 (videos) and 0002 (processing_jobs). | Two CHECKs, one rewrite of legacy `'thumb'` rows, one transaction. Splitting into two migrations buys nothing and exposes a window in which one CHECK is in place but the other is not. |
 | D4 | Transition validity is enforced **in application code**, not by a SQL trigger. The CHECK constraint enforces only set membership. | Story acceptance: "an attempt to transition outside the allowed set raises `IllegalStateTransition`" — application-layer language. | Transitions depend on the *trigger* (a stage outcome vs. a filesystem event), which a CHECK cannot see. Application-layer enforcement gives rich errors and is identically testable from Go and Python. A future ADR can promote a subset to a SQL trigger if observability demands it; for v1 the row-level lock taken by `advance_after_stage` is sufficient. |
 | D5 | `FAILED` is **terminal with no exit transitions**. A user wishing to retry resets via a separate operator command (`maktaba video reset --id …`) that drops and re-creates the row from `content_hash`; that command is not part of this story. | Story marks FAILED as "terminal-bad" with no listed exit. | Avoids ambiguity. The reset path can be added in Epic 24 (Disaster Recovery) without changing this enum. |
 | D6 | The state machine module ships **no public mutator other than** `AdvanceAfterStage` / `advance_after_stage`. Any direct `UPDATE videos SET state = …` outside the module is a lint failure (`forbidigo` rule in Go, `ruff` custom check in Python). | Story acceptance: "the **only** code path that mutates `videos.state`". | The story's invariant is meaningful only if it is mechanically enforced. A hand-rolled UPDATE somewhere in Epic 9 would silently break the FSM. Lint catches it at PR time. |
@@ -42,7 +42,7 @@ the migration §6, transition table §4, and enum §3 are language-agnostic.
         ┌──────────────────┐         ┌──────────────────┐        ┌──────────────────┐
         │ shared/states/   │         │ pipeline/.../    │        │ shared/db/       │
         │ states_gen.go    │         │ domain/states.py │        │ migrations/      │
-        │ (Go enum +       │         │ domain/stages.py │        │ 0003_*.sql       │
+        │ (Go enum +       │         │ domain/stages.py │        │ 0004_*.sql       │
         │  transition tbl) │         │ (Py enum + tbl)  │        │ (CHECK in lock)  │
         └────────┬─────────┘         └────────┬─────────┘        └────────┬─────────┘
                  │                            │                           │
@@ -332,14 +332,14 @@ tables hold only fully-specified `(from, trigger, outcome) → to` rows.
 
 ---
 
-## 6. Migration `0003_video_states_and_stages.sql`
+## 6. Migration `0004_video_states_and_stages.sql`
 
 ### 6.1 Postgres
 
 ```sql
 -- +goose Up
 -- ============================================================================
--- 0003 — Video states & processing-job stages.
+-- 0004 — Video states & processing-job stages.
 --
 -- Adds CHECK constraints on videos.state and processing_jobs.stage to enforce
 -- the canonical enums in shared/states/states.json. Rewrites legacy
@@ -393,7 +393,7 @@ ALTER TABLE videos
 ALTER TABLE processing_jobs
     DROP CONSTRAINT IF EXISTS processing_jobs_stage_valid;
 
--- We do NOT rewrite 'thumbnail' back to 'thumb' because pre-0003 code
+-- We do NOT rewrite 'thumbnail' back to 'thumb' because pre-0004 code
 -- read either name from a string column; the legacy code path tolerated
 -- the new value as readonly. Restoring the old spelling is a manual
 -- decision, not a migration default.
@@ -406,15 +406,15 @@ COMMIT;
 SQLite cannot drop a CHECK constraint in place; the down direction
 rebuilds the table. The up direction can use `CREATE TABLE IF NOT
 EXISTS` plus index re-creation. The full SQLite SQL is in
-`shared/db/migrations/0003_video_states_and_stages.sqlite.sql`,
-selected by `goose -dialect sqlite3` per [plan-01-05](story-01-05-PLAN.md) §6.
+`shared/db/migrations/0004_video_states_and_stages.sqlite.sql`,
+selected by `goose -dialect sqlite3` per [plan-01-05](plan-01-05-schema-decisions.md) §6.
 
 ### 6.3 Idempotency
 
 Both sides start with `DROP CONSTRAINT IF EXISTS`, so a half-applied
 migration recovers cleanly. The legacy-rewrite UPDATE is naturally
 idempotent (a second run rewrites zero rows). Tests in §10 nail this
-down (`test_migration_0003_idempotent`).
+down (`test_migration_0004_idempotent`).
 
 ### 6.4 Why no transition trigger
 
@@ -888,12 +888,12 @@ cannot cover both. Both run in `make lint`.
 | `test_state_enum_matches_spec` | Unit | py | `set(State) == {…12 names…}`; from story acceptance. |
 | `test_stage_enum_matches_spec` | Unit | py | `set(Stage) == {…7 names…}`; from story acceptance. |
 | **Migration** | | | |
-| `test_migration_0003_adds_check_videos` | DB-fixture | go | After 0003, `videos_state_valid` exists; INSERT of `state='nonsense'` fails. |
-| `test_migration_0003_adds_check_jobs` | DB-fixture | go | After 0003, `processing_jobs_stage_valid` exists; INSERT of `stage='thumb'` fails. |
-| `test_migration_0003_rewrites_thumb` | DB-fixture | go | Pre-seed `processing_jobs(stage='thumb')` at version 0002; run 0003; row now reads `'thumbnail'`. |
+| `test_migration_0004_adds_check_videos` | DB-fixture | go | after 0004, `videos_state_valid` exists; INSERT of `state='nonsense'` fails. |
+| `test_migration_0004_adds_check_jobs` | DB-fixture | go | after 0004, `processing_jobs_stage_valid` exists; INSERT of `stage='thumb'` fails. |
+| `test_migration_0004_rewrites_thumb` | DB-fixture | go | Pre-seed `processing_jobs(stage='thumb')` at version 0002; run 0003; row now reads `'thumbnail'`. |
 | `test_check_constraints_reject_legacy` | DB-fixture | go | Story acceptance restated: `videos(state='thumb')` and `processing_jobs(stage='thumb')` both fail INSERT. |
-| `test_migration_0003_idempotent` | DB-fixture | go | Running 0003 twice is a no-op (DROP IF EXISTS / ADD pattern). |
-| `test_migration_0003_down_then_up` | DB-fixture | go | `goose down 0003 && goose up` round-trips the constraints. |
+| `test_migration_0004_idempotent` | DB-fixture | go | Running 0004 twice is a no-op (DROP IF EXISTS / ADD pattern). |
+| `test_migration_0004_down_then_up` | DB-fixture | go | `goose down 0004 && goose up` round-trips the constraints. |
 | **Transition matrix** | | | |
 | `test_allowed_transitions_table_complete` | Unit | both | Story acceptance: every pair (from, to) in the diagram is reachable; every pair *not* in the diagram is rejected by `lookup` (Go) / `allowed_transitions.get` (Py). |
 | `test_advance_each_canonical_edge` | Integration | both | Parametrized over the 11 explicit rows in §4: seed a video at `from`, call `advance_after_stage(trigger, outcome)`, assert state == `to`. |
@@ -1034,7 +1034,7 @@ func TestAdvance_ConcurrentSerializes(t *testing.T) {
 ### 10.2 Migration test — `api/internal/db/migrations_state_test.go`
 
 ```go
-func TestMigration0003_RewritesThumb(t *testing.T) {
+func TestMigration0004_RewritesThumb(t *testing.T) {
     pool := testdb.OpenAtVersion(t, "0002")
     lib  := testdb.MustCreateLibrary(t, pool, "x", nil)
     vid  := testdb.MustInsertVideo(t, pool, lib.ID, "h", "/p")
@@ -1045,7 +1045,7 @@ func TestMigration0003_RewritesThumb(t *testing.T) {
         vid.ID,
     )
 
-    require.NoError(t, testdb.MigrateUpTo(pool, "0003"))
+    require.NoError(t, testdb.MigrateUpTo(pool, "0004"))
 
     var stage string
     require.NoError(t, pool.QueryRow(ctx,
@@ -1253,15 +1253,15 @@ to a test in §10.
 - [ ] `set(Trigger)` is the 10-element superset.
 
 ### Migration
-- [ ] `0003_video_states_and_stages.sql` exists in `shared/db/migrations/`
+- [ ] `0004_video_states_and_stages.sql` exists in `shared/db/migrations/`
   (Postgres + SQLite variants).
 - [ ] `videos_state_valid` CHECK constraint is present after migration.
 - [ ] `processing_jobs_stage_valid` CHECK constraint is present after
   migration.
 - [ ] Legacy `'thumb'` rows are rewritten to `'thumbnail'` before the
-  CHECK lands (`test_migration_0003_rewrites_thumb`).
-- [ ] Migration is idempotent (`test_migration_0003_idempotent`).
-- [ ] Down + up round-trips (`test_migration_0003_down_then_up`).
+  CHECK lands (`test_migration_0004_rewrites_thumb`).
+- [ ] Migration is idempotent (`test_migration_0004_idempotent`).
+- [ ] Down + up round-trips (`test_migration_0004_down_then_up`).
 
 ### Transition enforcement
 - [ ] `advance_after_stage(video_id, trigger, outcome)` is the **only**

@@ -80,7 +80,7 @@ file ──► [tail 4 MiB] ──┤
 | `pipeline/internal/identity/hasher_bench_test.go` | Benchmarks (real disk + sparse fixture) |
 | `pipeline/internal/identity/io_budget_test.go` | I/O accounting test (≤ 8 MiB reads) |
 | `pipeline/internal/identity/doc.go` | Package docstring + invariants |
-| `shared/db/migrations/0003_content_hash.sql` | Adds column + constraints (see §4) |
+| `shared/db/migrations/0003_videos_content_hash.sql` | Adds column + constraints (see §4) |
 | `shared/db/queries/identity.sql` | sqlc input — insert/lookup queries |
 
 ### 2.2 Modified files
@@ -117,18 +117,30 @@ var Default = Hasher{}
 
 ### 2.4 Algorithm (prose)
 
+The canonical formula — applied uniformly for every file size, no
+shortcuts — is:
+
+```
+content_hash = BLAKE3( first_HT_bytes || last_HT_bytes || size_le_u64 )
+```
+
+where `HT = min(HeadTail, size)`. The two regions may overlap (or be
+identical, for files smaller than HeadTail), but they are still emitted
+to the hasher twice. Codifying this without short-circuiting is the only
+way the hash stays stable across the size = `2*HeadTail` boundary.
+
 Given a file of `size` bytes:
 
 1. Open it once. `O_RDONLY`. No `O_DIRECT`; we *want* the page cache to keep tails warm for re-scans.
-2. If `size <= 2 * HeadTail` (default 8 MiB), `io.Copy` the whole file into the hasher. This is the "small file" branch: head and tail overlap, and full hashing is cheaper than two seeks.
-3. Otherwise:
-   - `pread(buf[:HeadTail], 0)` — read head.
-   - `pread(buf[:HeadTail], size - HeadTail)` — read tail.
-   - `hasher.Write(head)`; `hasher.Write(tail)`.
-4. Append `size` as little-endian `uint64` (8 bytes) to the hasher.
-5. `hex.EncodeToString(hasher.Sum(nil))` — 64 lowercase hex chars.
+2. Compute `ht = min(HeadTail, size)`.
+3. `pread(buf[:ht], 0)` — read head; `hasher.Write(head)`.
+4. `pread(buf[:ht], size - ht)` — read tail (may overlap head; for
+   `size <= HeadTail` the two reads return the same bytes);
+   `hasher.Write(tail)`.
+5. Append `size` as little-endian `uint64` (8 bytes) to the hasher.
+6. `hex.EncodeToString(hasher.Sum(nil))` — 64 lowercase hex chars.
 
-Step 4 is what makes a 1-byte append flip the hash even when both head and tail are unchanged.
+Step 5 is what makes a 1-byte append flip the hash even when both head and tail are unchanged.
 
 ## 3. Go code scaffolding
 
@@ -192,36 +204,44 @@ func (h Hasher) HashFile(path string) (string, int64, error) {
     }
     size := fi.Size()
 
-    hex, err := h.HashReader(f, size)
-    return hex, size, err
+    sum, err := h.HashReader(f, size)
+    return sum, size, err
 }
 
 // HashReader hashes via ReaderAt — used by tests with bytes.Reader / sparse fixtures.
+//
+// The canonical formula is BLAKE3( head || tail || size_le_u64 ), where
+// head = first ht bytes, tail = last ht bytes, ht = min(HeadTail, size).
+// For size <= HeadTail the two regions are the same byte range; we still
+// write them to the hasher twice so the formula is uniform across sizes.
 func (h Hasher) HashReader(r io.ReaderAt, size int64) (string, error) {
     ht := h.headTail()
+    if size < ht {
+        ht = size
+    }
     hasher := blake3.New(32, nil)
 
-    if size <= 2*ht {
-        // Small-file branch: stream entire file, no seeking.
-        if err := streamAll(r, size, hasher); err != nil {
+    headBuf := make([]byte, ht)
+    if _, err := io.ReadFull(io.NewSectionReader(r, 0, ht), headBuf); err != nil {
+        return "", fmt.Errorf("identity: read head: %w", err)
+    }
+    if _, err := hasher.Write(headBuf); err != nil {
+        return "", err
+    }
+
+    tailOff := size - ht
+    if tailOff == 0 {
+        // size <= HeadTail: head and tail are the same byte range. Honor
+        // the formula by writing the buffer to the hasher a second time.
+        if _, err := hasher.Write(headBuf); err != nil {
             return "", err
         }
     } else {
-        buf := make([]byte, ht)
-
-        // Head.
-        if _, err := io.ReadFull(io.NewSectionReader(r, 0, ht), buf); err != nil {
-            return "", fmt.Errorf("identity: read head: %w", err)
-        }
-        if _, err := hasher.Write(buf); err != nil {
-            return "", err
-        }
-
-        // Tail.
-        if _, err := io.ReadFull(io.NewSectionReader(r, size-ht, ht), buf); err != nil {
+        tailBuf := make([]byte, ht)
+        if _, err := io.ReadFull(io.NewSectionReader(r, tailOff, ht), tailBuf); err != nil {
             return "", fmt.Errorf("identity: read tail: %w", err)
         }
-        if _, err := hasher.Write(buf); err != nil {
+        if _, err := hasher.Write(tailBuf); err != nil {
             return "", err
         }
     }
@@ -239,39 +259,13 @@ func (h Hasher) HashReader(r io.ReaderAt, size int64) (string, error) {
     return hex.EncodeToString(sum), nil
 }
 
-// streamAll copies `size` bytes from a ReaderAt into w using a single 1 MiB buffer.
-func streamAll(r io.ReaderAt, size int64, w io.Writer) error {
-    const chunk = 1 << 20
-    buf := make([]byte, chunk)
-    var off int64
-    for off < size {
-        n := int64(chunk)
-        if size-off < n {
-            n = size - off
-        }
-        read, err := r.ReadAt(buf[:n], off)
-        if read > 0 {
-            if _, werr := w.Write(buf[:read]); werr != nil {
-                return werr
-            }
-        }
-        if err != nil && err != io.EOF {
-            return fmt.Errorf("identity: stream read at %d: %w", off, err)
-        }
-        off += int64(read)
-        if read == 0 {
-            break
-        }
-    }
-    return nil
-}
 ```
 
 Why `io.NewSectionReader` instead of `f.ReadAt` directly? It gives us a clean `io.Reader` for `io.ReadFull`, which handles short reads from network filesystems without us reinventing the loop.
 
 ## 4. Database migrations
 
-`shared/db/migrations/0003_content_hash.sql` — applied on top of the `videos` table from §8.1 of architecture.md (migration `0001_init.sql`).
+`shared/db/migrations/0003_videos_content_hash.sql` — applied on top of the `videos` table from §8.1 of architecture.md (migration `0001_init_libraries_and_videos.sql`).
 
 ```sql
 -- +goose Up
@@ -288,23 +282,21 @@ ALTER TABLE videos
     UNIQUE (library_id, content_hash);
 
 -- 3. Validate the hash format at the SQL boundary so corrupt rows can never
---    sneak in via a buggy worker. 64 lowercase hex chars.
+--    sneak in via a buggy worker. 64 lowercase hex chars (lukechampine.com/blake3
+--    only emits lowercase, so the constraint is tight by construction).
 ALTER TABLE videos
     ADD CONSTRAINT videos_content_hash_format_chk
     CHECK (content_hash ~ '^[0-9a-f]{64}$');
 
--- 4. additional_paths lives inside metadata to keep the row narrow.
---    Default to empty array so application code can always JSON-append.
-ALTER TABLE videos
-    ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
-
--- 5. Index for "find me every row in this library by content hash" — covers
+-- 4. Index for "find me every row in this library by content hash" — covers
 --    the duplicate-detection path on insert.
 CREATE INDEX IF NOT EXISTS videos_content_hash_lookup_idx
     ON videos (content_hash);
 
--- 6. Functional index over the additional_paths array so that
+-- 5. Functional index over the additional_paths array so that
 --    "which row owns this path?" is fast even after a rename round-trip.
+--    The `metadata` JSONB column itself is owned by 0001
+--    (plan-01-05 schema decisions); we only index the array here.
 CREATE INDEX IF NOT EXISTS videos_additional_paths_gin_idx
     ON videos USING GIN ((metadata -> 'additional_paths'));
 
@@ -314,7 +306,6 @@ CREATE INDEX IF NOT EXISTS videos_additional_paths_gin_idx
 -- +goose StatementBegin
 DROP INDEX IF EXISTS videos_additional_paths_gin_idx;
 DROP INDEX IF EXISTS videos_content_hash_lookup_idx;
-ALTER TABLE videos DROP COLUMN IF EXISTS metadata;
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS videos_content_hash_format_chk;
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS videos_library_content_hash_key;
 ALTER TABLE videos ADD CONSTRAINT videos_content_hash_key UNIQUE (content_hash);
@@ -450,7 +441,7 @@ The scanner already keeps `(path, mtime, size)` in a per-library cache (Story 1.
 | `TestHashGoldenVector_4MiBPattern` | Static fixture (`bytes.Repeat([]byte{0xAB}, 4*MiB)`) → hex matches a hand-computed expected value. Locks the algorithm forever. |
 | `TestHashIsDeterministic` | Hash same fixture twice in the same process → equal. |
 | `TestHashIsStableAcrossOpens` | Hash, close, reopen, hash → equal. Catches state leaks. |
-| `TestHashSmallFileFullContent` | 1 MiB file: `HashReader(...)` matches plain `BLAKE3(content || size_le_u64)`. Asserts the small-file branch does **not** fall through head+tail logic. |
+| `TestHashSmallFileHeadTailFormula` | 1 MiB file (`size < HeadTail`): `HashReader(...)` matches `BLAKE3(content || content || size_le_u64)`. Asserts the small-file path applies the canonical head+tail formula uniformly (head and tail collapse to the same byte range, so the body is fed to the hasher twice). |
 | `TestHashChangesOnSizeChange` | Append 1 byte → hex differs. (Pins the size suffix.) |
 | `TestHashChangesOnByteFlip` | Flip byte at offset 100 in a 16 MiB file → hex differs. |
 | `TestHashEqualHeadTailDifferentMiddleStillCollides` | Two 16 MiB files with identical head, tail, and size but different middle → hex is **identical**. *Documents the known limitation.* The story accepts this trade-off; the test exists so we notice if anyone "fixes" it without updating the spec. |
@@ -530,8 +521,8 @@ func TestHashIsDeterministic(t *testing.T) {
     }
 }
 
-func TestHashSmallFileFullContent(t *testing.T) {
-    body := bytes.Repeat([]byte{0xCD}, MiB) // 1 MiB << 8 MiB
+func TestHashSmallFileHeadTailFormula(t *testing.T) {
+    body := bytes.Repeat([]byte{0xCD}, MiB) // 1 MiB << 4 MiB HeadTail
     p := filepath.Join(t.TempDir(), "small.bin")
     mustWriteFile(t, p, body)
 
@@ -540,8 +531,11 @@ func TestHashSmallFileFullContent(t *testing.T) {
         t.Fatal(err)
     }
 
-    // Reference: BLAKE3(body || size_le_u64) — full content branch.
+    // Reference: BLAKE3(head || tail || size_le_u64). For files smaller
+    // than HeadTail, head and tail are the SAME byte range, so the body
+    // is written to the hasher twice — same shape as the large-file path.
     h := blake3.New(32, nil)
+    h.Write(body)
     h.Write(body)
     var sb [8]byte
     binary.LittleEndian.PutUint64(sb[:], uint64(len(body)))
@@ -705,7 +699,7 @@ func benchHashFileSize(b *testing.B, size int64) {
 func BenchmarkHashFile_1GB(b *testing.B)  { benchHashFileSize(b, 1024*MiB) }
 func BenchmarkHashFile_16MiB(b *testing.B) { benchHashFileSize(b, 16*MiB) }
 func BenchmarkHashFile_4MiB_SmallBranch(b *testing.B) {
-    benchHashFileSize(b, 4*MiB) // exercises the streamAll path
+    benchHashFileSize(b, 4*MiB) // exercises the head==tail overlap path
 }
 ```
 
@@ -713,9 +707,9 @@ func BenchmarkHashFile_4MiB_SmallBranch(b *testing.B) {
 
 | Case | Behaviour | Where it's pinned |
 |---|---|---|
-| File `< 8 MiB` | Stream entire content into hasher; head/tail branch is bypassed. | `streamAll` branch, `TestHashSmallFileFullContent` |
-| Zero-byte file | Hash of `size_le_u64 = 0` only. Valid 64-char hex. | `TestHashZeroByteFile` |
-| File of exactly `8 MiB` | Falls into small-file branch (`size <= 2*HeadTail`). Equivalent to BLAKE3(content‖size). | Branch condition is `<=`, not `<` |
+| File `< 4 MiB` | Head and tail are the same byte range; the file content is written to the hasher twice, then the size suffix. Same formula as the large-file path. | `TestHashSmallFileHeadTailFormula` |
+| Zero-byte file | Hash of `size_le_u64 = 0` only (no head/tail bytes to write). Valid 64-char hex. | `TestHashZeroByteFile` |
+| File between 4 and 8 MiB | Head and tail overlap in the middle; both reads still happen, both ranges are written to the hasher. | `TestHashOverlappingHeadTail` |
 | Symlink | `os.Open` follows symlinks; hashed path = target. **Symlinks themselves do not become videos rows** — the scanner's walk (Story 1.1) decides whether to follow. Identity treats whatever it gets as a regular file. | `IsRegular()` check |
 | FIFO / device / socket | Rejected with `"not a regular file"` error; scanner skips and logs WARN. | `fi.Mode().IsRegular()` check |
 | Sparse holes | BLAKE3 reads holes as zero bytes — accepted. Two sparse files of different total sizes never collide because of the size suffix. | `TestHashIOBudget_30GBSparse` |
@@ -749,7 +743,7 @@ Before this story is marked done:
 - [ ] `lukechampine.com/blake3` added to `pipeline/go.mod`; `go.sum` updated.
 
 **Database**
-- [ ] `shared/db/migrations/0003_content_hash.sql` applies cleanly on a fresh `0001_init.sql` schema.
+- [ ] `shared/db/migrations/0003_videos_content_hash.sql` applies cleanly on a fresh `0001_init_libraries_and_videos.sql` schema.
 - [ ] `goose down` reverts cleanly; tested in CI.
 - [ ] `videos_library_content_hash_key` exists; the old global `videos_content_hash_key` is gone.
 - [ ] `videos_content_hash_format_chk` rejects non-64-char and uppercase hex inputs (verified by SQL test).

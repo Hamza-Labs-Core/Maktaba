@@ -70,47 +70,16 @@
 | `api/internal/search/highlight_test.go` | Unit tests for excerpt + bidi. |
 | `api/internal/search/filter_test.go` | Unit tests for filter translation. |
 | `shared/db/queries/search.sql` | sqlc inputs. |
-| `shared/db/migrations/0014_transcript_units_fts.sql` | FTS index on `transcript_units`. |
 | `api/internal/chroma/client.go` | Thin HTTP client for Chroma. |
 
 ## 3. SQL — FTS index
 
-`shared/db/migrations/0014_transcript_units_fts.sql`:
-
-```sql
--- +goose Up
--- +goose StatementBegin
-ALTER TABLE transcript_units
-  ADD COLUMN IF NOT EXISTS search_tsv tsvector
-  GENERATED ALWAYS AS (
-    -- 'simple' dictionary preserves Arabic words verbatim;
-    -- the unicode61 normalization layer handles diacritics.
-    to_tsvector('simple', coalesce(text, ''))
-  ) STORED;
-
-CREATE INDEX IF NOT EXISTS transcript_units_search_tsv_idx
-  ON transcript_units USING GIN (search_tsv);
-
--- Suggest endpoint uses a btree-on-text prefix index. Native PG prefix
--- search via `text_pattern_ops` covers ASCII; for Arabic we add a
--- pg_trgm GIN index for trigram matching (still cheap on suggest budgets).
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS transcript_units_text_trgm_idx
-  ON transcript_units USING GIN (text gin_trgm_ops);
-
--- +goose StatementEnd
-
--- +goose Down
--- +goose StatementBegin
-DROP INDEX IF EXISTS transcript_units_text_trgm_idx;
-DROP INDEX IF EXISTS transcript_units_search_tsv_idx;
-ALTER TABLE transcript_units DROP COLUMN IF EXISTS search_tsv;
--- +goose StatementEnd
-```
-
-The SQLite mirror creates `transcript_units_fts` virtual table with
-`tokenize='unicode61 remove_diacritics 2'` plus the standard
-`INSERT/UPDATE/DELETE` triggers.
+This plan owns no migrations of its own. The `transcript_units.tsv`
+generated column, the GIN index, and the SQLite FTS5 virtual table are
+all owned by [plan-05-02](../05-search-indexing/plan-05-02-fts-tsvector.md)
+at slots 0019–0024. The only addition this plan declares is the
+`pg_trgm` extension + trigram index for typeahead — which lands as
+part of the same slot family in plan-05-02.
 
 ## 4. Type definitions
 

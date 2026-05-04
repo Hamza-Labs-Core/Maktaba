@@ -345,18 +345,25 @@ class FtsQuery:
         return await self._query_sqlite(terms, filters, limit)
 
     async def _query_pg(self, terms, filters, limit):
-        where_sql, where_args = filters.to_sql(start_index=2)
+        # plan-05-02 D4 ships language_to_regconfig(text); we use it so the
+        # tokenizer at search time matches the tokenizer that built the
+        # column (otherwise Arabic-aware indexing is silently disabled).
+        # Filters carry the language; default is 'arabic' when filters
+        # omit it, identical to plan-05-02's default at write time.
+        where_sql, where_args = filters.to_sql(start_index=3)
+        lang = filters.language or "arabic"
         sql = f"""
             SELECT u.id,
-                   ts_rank(u.tsv, plainto_tsquery('simple', $1)) AS score
+                   ts_rank(u.tsv,
+                           plainto_tsquery(language_to_regconfig($1::text), $2)) AS score
               FROM transcript_units u
-             WHERE u.tsv @@ plainto_tsquery('simple', $1)
+             WHERE u.tsv @@ plainto_tsquery(language_to_regconfig($1::text), $2)
                {where_sql}
              ORDER BY score DESC, u.id ASC
              LIMIT {int(limit)}
         """
         async with self.db.acquire() as conn:
-            rows = await conn.fetch(sql, " ".join(terms), *where_args)
+            rows = await conn.fetch(sql, lang, " ".join(terms), *where_args)
         return [(r["id"], float(r["score"])) for r in rows]
 
     async def _query_sqlite(self, terms, filters, limit):

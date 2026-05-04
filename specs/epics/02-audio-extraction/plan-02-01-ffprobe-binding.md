@@ -1,12 +1,18 @@
-# Plan 01-03 — Metadata Extraction via FFprobe
+# Plan 02-01 — FFprobe Binding (Go shared package)
 
-> **Note on scope.** This plan covers FFprobe-based metadata extraction. The
-> canonical user-facing spec is
-> [story-02-01-audio-probe.md](../02-audio-extraction/story-02-01-audio-probe.md)
-> (acceptance criteria, edge cases, test cases). The architecture
-> ([§3.2 Probe](../../architecture.md)) places the probe **stage** inside the
-> Python Pipeline Service, but the FFprobe binding itself is implemented in
-> Go as a shared package — `internal/ffmpeg/probe` — used by:
+> **Note on scope.** This plan covers the Go FFprobe binding — the
+> low-level shared package that all three services (Streaming, API,
+> Pipeline) call to inspect media files. The Python pipeline stage that
+> orchestrates the probe job (claim, gRPC call, persist, advance the
+> FSM) lives in [plan-02-01-audio-probe.md](plan-02-01-audio-probe.md);
+> both plans implement the same story
+> ([story-02-01-audio-probe.md](story-02-01-audio-probe.md)) at
+> different layers.
+>
+> The architecture ([§3.2 Probe](../../architecture.md)) places the
+> probe **stage** inside the Python Pipeline Service, but the FFprobe
+> binding itself is implemented in Go as a shared package —
+> `internal/ffmpeg/probe` — used by:
 >
 > - the Streaming Service for the live probe-cache (architecture §2.1, "Probe cache"),
 > - the API Service when it needs synchronous metadata (e.g. on manual scan),
@@ -60,7 +66,7 @@
               │    UPSERT videos.duration_sec                     │
               │    UPSERT media_info (one row per video_id)       │
               │    UPSERT audio_tracks (UNIQUE video_id, index)   │
-              │    UPSERT subtitle_streams (new in this plan)     │
+              │    raw_ffprobe carries embedded subtitle stream   │
               │    UPDATE videos.state = 'probed' (or            │
               │           'ready_no_audio' if no audio streams)   │
               │    INSERT processing_jobs(stage='extract', …)     │
@@ -151,9 +157,8 @@ Flag rationale:
 | &nbsp;&nbsp;language | `tags.language` (ISO 639-3); else `und` (never NULL) | `audio_tracks.language` |
 | &nbsp;&nbsp;title | `tags.title` | `audio_tracks.title` |
 | &nbsp;&nbsp;is_default | `disposition.default == 1` | `audio_tracks.is_default` |
-| Embedded subtitle streams | every stream where `codec_type=subtitle` | `subtitle_streams` rows (new) |
-| &nbsp;&nbsp;index, codec, language, title, is_default, is_forced, is_hearing_impaired | matching stream fields and disposition flags | columns of `subtitle_streams` |
-| `has_subtitles` | derived: `len(subtitle_streams) > 0` | `media_info.has_subtitles` |
+| Embedded subtitle streams | every stream where `codec_type=subtitle` | `media_info.raw_ffprobe -> 'streams'` (no dedicated table) |
+| `has_subtitles` | derived: `count of subtitle streams > 0` | `media_info.has_subtitles` |
 | Chapters | `chapters[]` → seq, start_sec, end_sec, title | `chapters` table (Epic 8) |
 | Raw JSON | full ffprobe stdout, kept verbatim | `media_info.raw_ffprobe` (jsonb) |
 
@@ -577,61 +582,25 @@ func PersistProbe(ctx context.Context, q *db.Queries, videoID uuid.UUID, m probe
 ## 4. Database migrations
 
 The `videos`, `media_info`, and `audio_tracks` tables already exist
-(architecture §8.1). This story:
+(architecture §8.1). This plan owns **no new migrations**:
 
-- **Adds** the `subtitle_streams` table — embedded subtitle streams need
-  per-stream rows so Epic 4 can pick them later without re-probing.
-- **Adds** indexes that the probe stage's idempotent upserts rely on.
-- **Adds** the `READY_NO_AUDIO` state to the existing FSM check (Story 1.6
-  owns the canonical FSM, but we make sure the value is allowed).
+- The 12-state `videos.state` CHECK (which already includes
+  `ready_no_audio`) is owned by [plan-01-06](../01-scanner/plan-01-06-video-state-machine.md)
+  at slot 0004.
+- A partial index on `audio_tracks(video_id) WHERE is_default` is rolled
+  into [plan-06-01](../06-job-queue/plan-06-01-schema-indexes.md) (which
+  already owns the index family for hot lookups).
+- **Embedded subtitle streams are NOT given their own table.** The
+  per-stream details live in `media_info.raw_ffprobe` JSONB; the only
+  flag this plan persists is `media_info.has_subtitles`. When Epic 04
+  needs to pick a stream for embedded extraction it reads
+  `raw_ffprobe -> 'streams'` and writes to the canonical
+  `subtitle_files` table (slot 0015, owned by
+  [plan-04-03](../04-subtitles/plan-04-03-external-discovery.md)) with
+  `is_embedded=true`.
 
-```sql
--- migrations/000NN_subtitle_streams.up.sql
-BEGIN;
-
-CREATE TABLE subtitle_streams (
-    id                   BIGSERIAL PRIMARY KEY,
-    video_id             UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    index                INT  NOT NULL,                  -- ffmpeg stream index
-    codec                TEXT,                            -- subrip, ass, mov_text, hdmv_pgs_subtitle, …
-    language             TEXT NOT NULL DEFAULT 'und',
-    title                TEXT,
-    is_default           BOOLEAN NOT NULL DEFAULT false,
-    is_forced            BOOLEAN NOT NULL DEFAULT false,
-    is_hearing_impaired  BOOLEAN NOT NULL DEFAULT false,
-    UNIQUE (video_id, index)
-);
-CREATE INDEX ON subtitle_streams (video_id);
-CREATE INDEX ON subtitle_streams (language);
-
--- audio_tracks already has UNIQUE (video_id, index); we add a partial index
--- on the default track so 'pick the default audio' is O(1).
-CREATE INDEX IF NOT EXISTS audio_tracks_default_idx
-    ON audio_tracks (video_id) WHERE is_default;
-
--- videos.state allowed values (Story 1.6 owns the canonical list; this is a
--- defensive check that can be widened by later migrations).
-ALTER TABLE videos
-    DROP CONSTRAINT IF EXISTS videos_state_check;
-ALTER TABLE videos
-    ADD  CONSTRAINT videos_state_check
-    CHECK (state IN (
-        'discovered', 'probed', 'audio_extracted', 'transcribed',
-        'indexed', 'thumbnailed', 'ready', 'ready_no_audio',
-        'failed', 'missing'
-    ));
-
-COMMIT;
-```
-
-```sql
--- migrations/000NN_subtitle_streams.down.sql
-BEGIN;
-ALTER TABLE videos DROP CONSTRAINT IF EXISTS videos_state_check;
-DROP INDEX IF EXISTS audio_tracks_default_idx;
-DROP TABLE IF EXISTS subtitle_streams;
-COMMIT;
-```
+This collapses what used to be a `subtitle_streams` table back to
+architecture §8.1's lone `subtitle_files` table. No schema deviation.
 
 ### sqlc queries (selected)
 
@@ -653,19 +622,23 @@ ON CONFLICT (video_id) DO UPDATE SET
     probed_at = now();
 
 -- name: UpsertAudioTrack :exec
+-- The 'disposition' JSONB column is added by slot 0009
+-- (plan-02-02-track-selection); we always supply it because plan-02-02
+-- reads it for commentary/descriptions filtering. On a probe replay we
+-- refresh the disposition (it's the only field that ever drifts in the
+-- harmless cases — codec/channels do not).
 INSERT INTO audio_tracks (video_id, index, codec, channels, sample_rate,
-                          language, title, is_default)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-ON CONFLICT (video_id, index) DO NOTHING;
+                          language, title, is_default, disposition)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+ON CONFLICT (video_id, index) DO UPDATE SET
+    disposition = EXCLUDED.disposition;
 -- Probe is idempotent; the file's audio layout doesn't change between probes.
 -- If it does (rare; mid-file codec change), we deliberately keep the first
--- result rather than racing.
+-- (codec, channels, sample_rate, language) tuple rather than racing.
 
--- name: UpsertSubtitleStream :exec
-INSERT INTO subtitle_streams (video_id, index, codec, language, title,
-                              is_default, is_forced, is_hearing_impaired)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-ON CONFLICT (video_id, index) DO NOTHING;
+-- Embedded subtitle streams are NOT given their own table; the
+-- per-stream details land in media_info.raw_ffprobe JSONB
+-- (see UpsertMediaInfo above) and the boolean media_info.has_subtitles.
 
 -- name: UpdateVideoDuration :exec
 UPDATE videos SET duration_sec = $2, updated_at = now() WHERE id = $1;
@@ -676,9 +649,16 @@ WHERE id = $1 AND state = $2;
 -- Conditional update so a replay (state already moved past) is a silent no-op.
 
 -- name: EnqueueExtractJob :exec
+-- The partial unique index from slot 0002 (plan-06-01) is keyed on
+-- (video_id, stage) WHERE state IN
+-- ('pending','claimed','running','paused','resuming'). Postgres only
+-- binds ON CONFLICT to a partial unique index when the WHERE predicate
+-- matches **exactly**, so we repeat the full state list here.
 INSERT INTO processing_jobs (video_id, stage, state)
 VALUES ($1, 'extract', 'pending')
-ON CONFLICT (video_id, stage) WHERE state IN ('pending','running') DO NOTHING;
+ON CONFLICT (video_id, stage)
+    WHERE state IN ('pending','claimed','running','paused','resuming')
+DO NOTHING;
 ```
 
 ---
@@ -689,7 +669,7 @@ ON CONFLICT (video_id, stage) WHERE state IN ('pending','running') DO NOTHING;
 |---|---|---|
 | T1 | `parse_lecture_h264_aac_arabic` | Golden: `media_info` row matches expected; `audio_tracks` has 1 row with `language='ara'`, `is_default=true`. |
 | T2 | `parse_multiaudio_three_tracks` | 3 `audio_tracks` rows; `is_default` set on the disposition-default stream only. |
-| T3 | `parse_subtitle_streams` | 2 `subtitle_streams` rows; `media_info.has_subtitles=true`. |
+| T3 | `parse_subtitle_streams_in_raw_ffprobe` | `media_info.raw_ffprobe -> 'streams'` includes 2 entries with `codec_type='subtitle'`; `media_info.has_subtitles=true`. |
 | T4 | `parse_no_audio` | `audio_tracks` empty; downstream caller advances state to `READY_NO_AUDIO`; no extract job. |
 | T5 | `parse_undefined_language` | Audio row has `language='und'`, never NULL. |
 | T6 | `parse_attached_picture_skipped` | A `video` stream with `disposition.attached_pic=1` is **not** treated as the main video; codec falls through to the next video stream. |
@@ -969,7 +949,7 @@ plus the implementation invariants this plan adds.
 - [ ] A `processing_jobs(stage='extract', state='pending')` row is enqueued exactly once.
 - [ ] An audioless video moves `discovered → ready_no_audio` and **does not** enqueue extract.
 - [ ] Replaying probe is idempotent: same row counts, same job counts, same state.
-- [ ] Embedded subtitle streams populate `subtitle_streams`; `media_info.has_subtitles` reflects the count.
+- [ ] Embedded subtitle streams are reflected in `media_info.raw_ffprobe -> 'streams'` and the boolean `media_info.has_subtitles`. (No `subtitle_streams` table — Epic 04 reads stream details from the JSONB when it needs them.)
 - [ ] Embedded chapters populate `chapters` (Epic 8 consumer).
 
 **Implementation invariants**
@@ -987,6 +967,6 @@ plus the implementation invariants this plan adds.
 - [ ] `/healthz` includes a `probe.binary_present` sub-check.
 - [ ] Structured log entries include `path`, `duration_ms`, `streams.audio`, `streams.video`, `streams.subtitle`, and `error.kind` on failure.
 - [ ] An OpenTelemetry span `ffmpeg.probe` wraps each call; attributes mirror the log fields.
-- [ ] Migration `subtitle_streams` is reversible (`down.sql` drops cleanly).
+- [ ] No new migrations are added by this plan; all schema dependencies are slot-numbered in the canonical [migration manifest](../../../shared/db/migrations/MANIFEST.md).
 - [ ] All 15 tests in §5 pass on CI (Linux + macOS) against the pinned ffprobe version (`6.x` or `7.x`).
 - [ ] Property-equivalent Python wrapper exists in `pipeline/.../probe.py` and shells out to the same Go binary via gRPC `MediaService.Probe` — Pipeline does not maintain a parallel parser.

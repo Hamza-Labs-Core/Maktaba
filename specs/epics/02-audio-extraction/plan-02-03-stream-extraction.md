@@ -199,10 +199,10 @@ ffmpeg \
   -map 0:a:{audio_index} -vn -sn -dn \
   -ac 1 -ar 16000 -sample_fmt s16 \
   -f wav \
-  {cache_dir}/{content_hash}.wav.tmp
+  {cache_dir}/{content_hash}-a{audio_index}.wav.tmp
 ```
 
-After successful exit, `os.replace()` to `{cache_dir}/{content_hash}.wav`.
+After successful exit, `os.replace()` to `{cache_dir}/{content_hash}-a{audio_index}.wav`.
 The `.tmp` suffix is the architecture-§7.9 atomic-write contract; a crash
 mid-write leaves a stray `.tmp` that the cache GC removes at startup.
 
@@ -607,13 +607,16 @@ class AudioFileExtractor:
         self._cache_dir = cache_dir
         self._runner = runner or FFmpegRunner()
 
-    def cache_path(self, content_hash: str) -> Path:
-        return self._cache_dir / f"{content_hash}.wav"
+    def cache_path(self, content_hash: str, audio_index: int) -> Path:
+        # Per-track filename so multi-audio videos do not collide on the
+        # same content_hash. Plan-02-04 reads this same shape; both plans
+        # must agree.
+        return self._cache_dir / f"{content_hash}-a{audio_index}.wav"
 
     async def extract(
         self, spec: ExtractSpec, content_hash: str
     ) -> Path:
-        out = self.cache_path(content_hash)
+        out = self.cache_path(content_hash, spec.audio_index)
         if out.exists() and out.stat().st_size > 44:  # WAV header is 44 bytes
             return out
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -637,8 +640,8 @@ class AudioFileExtractor:
         tmp.replace(out)
         return out
 
-    def remove_cache(self, content_hash: str) -> None:
-        path = self.cache_path(content_hash)
+    def remove_cache(self, content_hash: str, audio_index: int) -> None:
+        path = self.cache_path(content_hash, audio_index)
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -1098,7 +1101,7 @@ Worst case: ≤ 200 KiB per worker process attributable to extract.
 ### 6.1 Migration
 
 ```sql
--- migrations/000NN_extract_error_envelope.up.sql
+-- migrations/0010_extract_error_envelope.up.sql
 BEGIN;
 
 -- processing_jobs.error: TEXT → JSONB to fit the {kind, returncode,
@@ -1119,13 +1122,14 @@ ALTER TABLE audio_tracks
 -- audio_cache: ledger of cached WAV files written by file-mode extract.
 -- The ledger is the source of truth; the on-disk file is a byproduct.
 CREATE TABLE audio_cache (
-    content_hash    TEXT PRIMARY KEY,        -- BLAKE3 from Story 1.2
+    content_hash    TEXT NOT NULL,           -- BLAKE3 from Story 1.2
     audio_index     INT  NOT NULL,
     path            TEXT NOT NULL,           -- absolute, inside cache_dir
     size_bytes      BIGINT NOT NULL,
     duration_sec    REAL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    last_used_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (content_hash, audio_index)
 );
 CREATE INDEX ON audio_cache (last_used_at);
 
@@ -1133,7 +1137,7 @@ COMMIT;
 ```
 
 ```sql
--- migrations/000NN_extract_error_envelope.down.sql
+-- migrations/0010_extract_error_envelope.down.sql
 BEGIN;
 DROP TABLE IF EXISTS audio_cache;
 ALTER TABLE audio_tracks DROP COLUMN IF EXISTS last_extracted_at;
@@ -1549,7 +1553,7 @@ plus the implementation invariants this plan adds.
 
 - [ ] Given a `videos` row in `PROBED` and a selected audio track, `extract` spawns FFmpeg with the exact argv in §2.3 (down to flag order).
 - [ ] The PCM stream is yielded as an async iterator with default 64 KiB chunks; each chunk is sample-aligned.
-- [ ] Given an STT backend with `requires_file=True`, the WAV is written to `~/.maktaba/cache/audio/{content_hash}.wav` via tmp + `os.replace`; an `audio_cache` row is written.
+- [ ] Given an STT backend with `requires_file=True`, the WAV is written to `~/.maktaba/cache/audio/{content_hash}-a{audio_index}.wav` via tmp + `os.replace`; an `audio_cache` row is written.
 - [ ] On `done` / `failed` / `cancelled`, the WAV is unlinked and the `audio_cache` row deleted. On `paused`, both are retained for resume reuse.
 - [ ] Given a renamed text file (or other un-decodable input), the job state is `failed` with `error.kind = "ffmpeg_decode"`, `error.detail.returncode > 0`, `error.detail.stderr_tail` populated; no PCM is treated as authoritative.
 - [ ] Given `pause_requested=true` mid-extract, FFmpeg exits within 5 s (SIGTERM → SIGKILL); the worker reports `paused`. No FFmpeg processes survive the teardown.

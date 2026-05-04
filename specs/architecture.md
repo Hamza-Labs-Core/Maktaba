@@ -1527,6 +1527,64 @@ CREATE TABLE saved_searches (
 );
 ```
 
+### 8.6 Plan-introduced schema extensions
+
+The base schema in §8.1–§8.5 is what every service can rely on. Implementation
+plans extend it with additional columns and tables; CI rejects any SQL that
+references a column or table not in §8.1–§8.5 **or** the table below. The
+single source of truth for slot numbering is
+[`shared/db/migrations/MANIFEST.md`](../shared/db/migrations/MANIFEST.md).
+
+**Column extensions to base tables.**
+
+| Base table | Column | Type | Owning plan | Slot |
+|------------|--------|------|-------------|------|
+| `videos` | `metadata` | `JSONB NOT NULL DEFAULT '{}'` | plan-01-05 | 0001 |
+| `videos` | `last_seen_at` | `TIMESTAMPTZ` | plan-01-05 | 0007 |
+| `videos` | `deleted_at` | `TIMESTAMPTZ` | plan-01-05 | 0007 |
+| `audio_tracks` | `disposition` | `JSONB NOT NULL DEFAULT '{}'` | plan-02-02 | 0009 |
+| `audio_tracks` | `detected_language` | `TEXT` (ISO-639-3) | plan-02-02 | 0009 |
+| `audio_tracks` | `detected_language_confidence` | `REAL` (0..1) | plan-02-02 | 0009 |
+| `audio_tracks` | `last_extracted_at` | `TIMESTAMPTZ` | plan-02-03 | 0010 |
+| `processing_jobs` | full `architecture.md §7.1` shape + `payload JSONB` + CHECK constraints | — | plan-06-01 | 0002 |
+| `processing_jobs` | `error` | `JSONB` (replaces base `TEXT`) | plan-02-03 | 0010 |
+| `transcripts` | `is_active` | `BOOLEAN NOT NULL DEFAULT true` | plan-03-05 | 0012 |
+| `transcripts` | `metadata` | `JSONB NOT NULL DEFAULT '{}'` | plan-03-05 | 0012 |
+| `transcripts` | `last_indexed_segment_seq` | `INT NOT NULL DEFAULT 0` | plan-05-05 | 0025 |
+| `transcripts` (UNIQUE) | drops `(video_id, audio_track_id, backend, model)` global UNIQUE; replaced with partial UNIQUE on `is_active = true` | — | plan-03-05 | 0012 |
+| `subtitle_files` | `is_embedded`, `is_default`, `flags`, `size_bytes`, `mtime_ns`, `track_index`, `metadata`, `revived_count`, `deleted_at` | various | plan-04-03 | 0015 |
+| `transcript_units` (table itself) | new — search-time chunks of transcript text | — | plan-05-01 | 0017 |
+| `transcript_units` | `tsv` (generated `tsvector`) | `tsvector` | plan-05-02 | 0021 |
+| `transcript_units` | `indexed_at_in_chroma` | `TIMESTAMPTZ` | plan-05-05 | 0025 |
+| `chapters` | `lang`, `confidence`, `metadata` | `TEXT`, `REAL`, `JSONB` | plan-05-07 | 0026 |
+| `chapters` (UNIQUE) | `(video_id, source, seq)` (instead of base `(video_id, seq)`) so `inferred` / `embedded` / `manual` can coexist | — | plan-05-07 | 0026 |
+
+**Plan-introduced tables.**
+
+| Table | Owning plan | Slot | Purpose |
+|-------|-------------|------|---------|
+| `library_scan_state` | plan-01-05 | 0006 | Per-library scan watermarks + counters; carries `cancel_requested`/`progress_pct` (plan-01-04). |
+| `purge_log` | plan-01-05 | 0006 | Audit trail for `--purge-missing` deletions. |
+| `audio_cache` | plan-02-03 | 0010 | Ledger of cached extracted-WAV files keyed by `(content_hash, audio_index)`. |
+| `track_selection_decisions` | plan-02-02 | 0009 | One row per video: which rule fired and which tracks won. Debugging aid for "why did it pick that track?" |
+| `stt_usage` | plan-03-04 | 0011 | Per-chunk billing ledger for paid STT backends (OpenAI). |
+| `transcript_units` | plan-05-01 | 0017 | Search-time chunks (~200 chars) materialized from `transcript_segments`. |
+| `vector_index_dead_letter` | plan-05-05 | 0025 | DLQ for Chroma indexing failures. |
+| `search_suggestion_terms` | plan-05-06 | 0027 | Typeahead corpus (saved searches + speakers + ngrams). |
+
+**REVIEW resolutions baked into §8.6.**
+
+- The `transcripts (video_id, audio_track_id, backend, model)` UNIQUE
+  in §8.1 is **replaced** by a partial unique index on
+  `is_active = true` (REVIEW §1.1.b; plan-03-05).
+- The `subtitle_files.is_embedded` distinction (REVIEW §1.1.c; plan-04-03)
+  joins `is_external` so the table can describe sidecars, embedded
+  extractions, and pipeline-generated artifacts in one shape.
+- The SQLite FTS5 virtual table at §8.3 keys on
+  `transcript_id`/`unit_id` (instead of `video_id`/`segment_id`)
+  because the unit grain is what the indexer feeds (REVIEW §1.1.d;
+  plan-05-02).
+
 ---
 
 ## 9. API Design

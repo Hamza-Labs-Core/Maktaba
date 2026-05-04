@@ -97,7 +97,7 @@ Per-track language flow (Section 7) sits between `probe` and `select_track` for 
 | `pipeline/tests/media/test_iso639.py` | Normalization unit tests. |
 | `pipeline/tests/pipeline/stages/test_select_track_stage.py` | Integration test against an in-memory SQLite (mirrors prod schema via `shared/db/migrations/`). |
 | `pipeline/tests/media/test_langid_probe.py` | Mocks ffmpeg + whisper-cpp; asserts confidence threshold + persisted columns. |
-| `shared/db/migrations/0007_track_selection.sql` | `track_selection_decisions` audit table; `audio_tracks.detected_language` + confidence; `videos.metadata.track_override` is JSONB so no migration needed. |
+| `shared/db/migrations/0009_audio_tracks_extensions.sql` | `track_selection_decisions` audit table; `audio_tracks.detected_language` + confidence; `videos.metadata.track_override` is JSONB so no migration needed. |
 | `shared/db/queries/track_selection.sql` | sqlc input — read tracks/lib, write decision, enqueue extract jobs. |
 | `api/internal/tracks/preview.go` | `GET /api/videos/{id}/tracks` handler. |
 | `api/internal/tracks/preview_test.go` | Handler tests. |
@@ -783,7 +783,7 @@ A small Go package keeps a parallel mapping for the API's preview rendering. It 
 
 ## 5. Database changes
 
-### 5.1 Migration `0007_track_selection.sql`
+### 5.1 Migration `0009_audio_tracks_extensions.sql`
 
 ```sql
 -- +goose Up
@@ -1374,7 +1374,7 @@ Before this story is marked done:
 - [ ] `pipeline/internal/iso639` mirrors the Python normalizer; cross-language parity test passes.
 
 **Database**
-- [ ] `shared/db/migrations/0007_track_selection.sql` applies cleanly on a fresh prior schema; `goose down` reverts cleanly (tested in CI).
+- [ ] `shared/db/migrations/0009_audio_tracks_extensions.sql` applies cleanly on a fresh prior schema; `goose down` reverts cleanly (tested in CI).
 - [ ] `audio_tracks.detected_language` column accepts only 3-letter lowercase ISO 639 codes via `audio_tracks_detected_lang_format_chk`.
 - [ ] `audio_tracks.detected_language_confidence` is in [0,1] via `audio_tracks_detected_lang_conf_range_chk`.
 - [ ] `track_selection_decisions` has a row per video after `select_track` runs; re-running replaces the row.

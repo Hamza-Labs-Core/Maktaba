@@ -10,8 +10,8 @@
 
 | Concern | Decision |
 |---|---|
-| Migration file | `shared/db/migrations/0010_processing_jobs.sql` (Postgres) and `0010_processing_jobs.sqlite.sql` (SQLite). |
-| Numbering | Continues the sequence: `0007` (track selection, Epic 2), `0008` (audio probe), `0009` (extract artifacts) → `0010` is the queue. The four indexes ship in the same file. |
+| Migration file | `shared/db/migrations/0002_processing_jobs.sql` (Postgres) and `0002_processing_jobs.sqlite.sql` (SQLite). |
+| Numbering | Slot `0002` per the canonical [migration manifest](../../../shared/db/migrations/MANIFEST.md): `processing_jobs` is a foundation table that ships immediately after slot `0001` (libraries + videos). Earlier plans (notably plan-01-01's enqueue path) declare a hard dependency on this slot landing first. The four indexes ship in the same file. |
 | Helper code | `pipeline/src/maktaba_pipeline/db/jobs.py` — async helpers backed by `asyncpg` (Postgres) and `aiosqlite` (SQLite); a thin `enqueue` function lives here. |
 | Notify trigger | Postgres `AFTER INSERT` trigger on `processing_jobs` emits `pg_notify('jobs.new', payload::text)`. SQLite has no LISTEN/NOTIFY → a Python-side fanout shim publishes to an in-process `asyncio.Queue` keyed by channel name. |
 | Out of scope | The claim loop (Story 6.2), heartbeat (6.3), pause/resume (6.4), retries (6.5), reaper (6.6). This story stops at "row exists; one notify fires; uniqueness holds." |
@@ -84,8 +84,8 @@ The four indexes are sized to the four query shapes that touch
 
 | Path | Purpose |
 |---|---|
-| `shared/db/migrations/0010_processing_jobs.sql` | Postgres migration: table, all 4 indexes, partial unique index for liveness, CHECK constraints, NOTIFY trigger. |
-| `shared/db/migrations/0010_processing_jobs.sqlite.sql` | SQLite variant (no partial CHECK on enums; no trigger; type swaps). |
+| `shared/db/migrations/0002_processing_jobs.sql` | Postgres migration: table, all 4 indexes, partial unique index for liveness, CHECK constraints, NOTIFY trigger. |
+| `shared/db/migrations/0002_processing_jobs.sqlite.sql` | SQLite variant (no partial CHECK on enums; no trigger; type swaps). |
 | `pipeline/src/maktaba_pipeline/db/jobs.py` | `enqueue()`, `get_job()`, type stubs `Job`, `JobState`, `Stage`. |
 | `pipeline/src/maktaba_pipeline/db/pubsub.py` | Channel-name constants (`JOBS_NEW = 'jobs.new'`, etc.) and the in-process bus shim used in SQLite mode. |
 | `pipeline/tests/db/test_jobs_enqueue.py` | Unit tests for §6 below. |
@@ -218,7 +218,7 @@ or `aiosqlite.Connection`; the same call site works against both.
 
 ## 3. Database migration — Postgres
 
-`shared/db/migrations/0010_processing_jobs.sql`:
+`shared/db/migrations/0002_processing_jobs.sql`:
 
 ```sql
 -- +goose Up
@@ -360,7 +360,7 @@ DROP TABLE IF EXISTS processing_jobs;
 
 ### 3.1 Migration — SQLite variant
 
-`shared/db/migrations/0010_processing_jobs.sqlite.sql`:
+`shared/db/migrations/0002_processing_jobs.sqlite.sql`:
 
 ```sql
 -- +goose Up
@@ -896,8 +896,8 @@ No new heavy deps. The notify trigger is plain `pg_notify`; no extension require
 Before this story is marked done:
 
 **Migration**
-- [ ] `shared/db/migrations/0010_processing_jobs.sql` applies cleanly on a fresh Postgres schema; `goose down` reverts cleanly.
-- [ ] `shared/db/migrations/0010_processing_jobs.sqlite.sql` applies cleanly on a fresh SQLite schema.
+- [ ] `shared/db/migrations/0002_processing_jobs.sql` applies cleanly on a fresh Postgres schema; `goose down` reverts cleanly.
+- [ ] `shared/db/migrations/0002_processing_jobs.sqlite.sql` applies cleanly on a fresh SQLite schema.
 - [ ] All four indexes from architecture §7.1 are present (introspection test passes).
 - [ ] The unique partial index `processing_jobs_one_live_per_video_stage` exists.
 - [ ] The CHECK constraints for `stage`, `state`, `priority`, `attempts`, and `last_segment_end_sec` reject the negative cases listed in §6.1.

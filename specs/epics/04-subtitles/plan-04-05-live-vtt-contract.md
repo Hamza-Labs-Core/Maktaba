@@ -112,7 +112,7 @@ filter, exposes only the columns subtitle generation needs, and has its
 own composite index for window queries.
 
 ```sql
--- shared/db/migrations/0019_transcript_segments_view.sql
+-- shared/db/migrations/0016_transcript_segments_view.sql
 -- Owns: transcript_segments_v read view + (video_id, start_sec) index.
 -- Idempotent on re-run: CREATE OR REPLACE VIEW + CREATE INDEX IF NOT EXISTS.
 -- Dependencies: 0007 transcripts/transcript_segments,
@@ -159,7 +159,7 @@ beyond the story's explicit list because the live endpoint needs it
 (D5); future readers that don't care can ignore it.
 
 SQLite has no `CREATE OR REPLACE VIEW`; the SQLite shim in
-`shared/db/migrations/sqlite/0019_*.sql` does `DROP VIEW IF EXISTS …;
+`shared/db/migrations/sqlite/0016_*.sql` does `DROP VIEW IF EXISTS …;
 CREATE VIEW …;`.
 
 ### 2.2 The HTTP contract
@@ -650,8 +650,8 @@ the producer-facing changes.
 
 | Order | File | Owner story | Symbols introduced | Tests gating |
 |-------|------|-------------|--------------------|--------------|
-| 1 | `shared/db/migrations/0019_transcript_segments_view.sql` | **4.5 (this)** | view `transcript_segments_v`, indexes `transcript_segments_video_start_idx`, `transcript_segments_seq_idx` | `test_view_excludes_superseded_transcripts`, `test_view_index_supports_window_query`, `test_migration_idempotent` |
-| 2 | `shared/db/migrations/sqlite/0019_transcript_segments_view.sql` | **4.5 (this)** | same view, no `OR REPLACE` | sqlite test fixture loads |
+| 1 | `shared/db/migrations/0016_transcript_segments_view.sql` | **4.5 (this)** | view `transcript_segments_v`, indexes `transcript_segments_video_start_idx`, `transcript_segments_seq_idx` | `test_view_excludes_superseded_transcripts`, `test_view_index_supports_window_query`, `test_migration_idempotent` |
+| 2 | `shared/db/migrations/sqlite/0016_transcript_segments_view.sql` | **4.5 (this)** | same view, no `OR REPLACE` | sqlite test fixture loads |
 | 3 | `specs/contracts/live-vtt.openapi.yaml` | **4.5 (this)** | OpenAPI 3.1 stanza for `GET /v1/videos/{id}/subtitles.vtt` (paths, headers, error schemas) | contract diff against the Go handler in CI (Epic 8 test) |
 | 4 | `specs/contracts/vtt-format.md` | **4.5 (this)** | normative spec of the VTT body shape (NOTE preamble, cue ID format, speaker tag, escaping, bidi isolation) | reference fixtures in `specs/fixtures/live-vtt/` |
 | 5 | `specs/fixtures/live-vtt/empty.vtt`, `partial.vtt`, `done.vtt`, `absent.vtt` | **4.5 (this)** | golden fixtures matching §2.7 | parsed by `pyvtt` and W3C WebVTT validator in CI |
@@ -1035,9 +1035,9 @@ def test_fixtures_pass_w3c_webvtt_validator(fixture):
 ```python
 async def test_view_migration_is_idempotent(db_factory):
     db = await db_factory.fresh()
-    await apply_migration(db, "0019_transcript_segments_view.sql")
+    await apply_migration(db, "0016_transcript_segments_view.sql")
     # Re-applying must not error.
-    await apply_migration(db, "0019_transcript_segments_view.sql")
+    await apply_migration(db, "0016_transcript_segments_view.sql")
 
     # The view exists.
     row = await db.fetchrow(
@@ -1093,7 +1093,7 @@ async def test_view_migration_is_idempotent(db_factory):
 - [ ] **A13** `?seek=N` drops cues whose `end_sec ≤ N`; the response remains valid VTT. (`TestHandleLiveVTT_SeekDropsEarlierCues`)
 - [ ] **A14** Streaming Service subscribes to `LISTEN segments.committed` and evicts its in-process ETag cache on each NOTIFY; the cache stores only headers, never cue bodies. Reconnects automatically on disconnect. (`TestNotifyListener_EvictsCacheOnSegmentCommit`, `TestCacheTTLCoalesces`)
 - [ ] **A15** Every fixture in `specs/fixtures/live-vtt/` passes the W3C WebVTT validator. (`test_fixtures_pass_w3c_webvtt_validator`)
-- [ ] **A16** Migration `0019_transcript_segments_view.sql` applies cleanly on fresh and populated DBs and is idempotent on re-run. (`test_view_migration_is_idempotent`)
+- [ ] **A16** Migration `0016_transcript_segments_view.sql` applies cleanly on fresh and populated DBs and is idempotent on re-run. (`test_view_migration_is_idempotent`)
 
 ---
 
