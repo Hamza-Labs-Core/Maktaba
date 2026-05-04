@@ -78,6 +78,48 @@
 | `api/internal/http/poster.go` | Use `httpsec.SafeFetcher`. |
 | `pipeline/src/maktaba_pipeline/grpc_server.py` | `ExtractEmbeddedSubtitle` validates `stream_index` against probed streams. |
 
+### 2.3a Schema validation with `validator/v10`
+
+Request structs decoded by chi handlers are validated with
+`go-playground/validator/v10`. Failed validation is mapped to
+`problem+json type="validation-failed"`:
+
+```go
+type CreateLibraryReq struct {
+    Name string   `json:"name" validate:"required,min=1,max=128"`
+    Root string   `json:"root" validate:"required,filepath"`
+    Tags []string `json:"tags" validate:"omitempty,dive,alphanum,max=32"`
+}
+
+var validate = validator.New(validator.WithRequiredStructEnabled())
+
+func decodeAndValidate[T any](r *http.Request) (T, error) {
+    var v T
+    if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+        return v, fmt.Errorf("decode: %w", err)
+    }
+    if err := validate.Struct(v); err != nil {
+        return v, err  // *validator.ValidationErrors
+    }
+    return v, nil
+}
+
+// In the handler:
+req, err := decodeAndValidate[CreateLibraryReq](r)
+if err != nil {
+    var verr validator.ValidationErrors
+    if errors.As(err, &verr) {
+        problem(w, 400, TypeValidationFailed, fieldList(verr))
+        return
+    }
+    problem(w, 400, TypeInvalidArgument, "")
+    return
+}
+```
+
+`fieldList(verr)` emits the offending field names but never the raw
+values (see EC: validation rejection contains the offending value).
+
 ### 2.3 Path canonicalizer
 
 `shared/paths/canonical.go`:
@@ -108,11 +150,15 @@ func CanonicalUnderRoots(p string, roots []string) (string, error) {
     if strings.ContainsRune(p, 0) {
         return "", ErrNULByte
     }
-    // Reject obvious traversal patterns BEFORE filepath.Abs would
-    // collapse them, so an attacker can't sneak a `..` past a normalized
-    // root that still contains a parent of the real root.
-    if strings.Contains(p, "..") {
-        return "", ErrTraversal
+    // Reject ".." as a path COMPONENT (not a substring — a filename
+    // like "report..final.pdf" is legal). Split on os.PathSeparator
+    // BEFORE filepath.Abs would collapse them, so an attacker can't
+    // sneak a `..` past a normalized root that still contains a parent
+    // of the real root.
+    for _, c := range strings.Split(filepath.Clean(p), string(os.PathSeparator)) {
+        if c == ".." {
+            return "", ErrTraversal
+        }
     }
     abs, err := filepath.Abs(p)
     if err != nil { return "", err }
@@ -288,6 +334,22 @@ The dialer's `Control` hook fires *after* DNS resolution but *before*
 the connect, so `http://169.254.169.254/` and DNS-rebinding attacks
 both fail. The same callback intercepts each redirect's resolved IP.
 
+**Platform note.** `syscall.RawConn` and the `Control` callback signature
+above are supported on Linux and Darwin (Maktaba's two server targets
+per architecture §1.4). On Windows the signature differs (`Control`
+takes `uintptr` rather than `syscall.RawConn`); since Maktaba does not
+ship a Windows server, we hard-fail the build on `GOOS=windows` for
+this package via a build tag:
+
+```go
+//go:build linux || darwin
+```
+
+A separate stub file `safe_fetcher_windows.go` returns
+`fmt.Errorf("httpsec: not supported on windows")` from `New()` so
+client-side cross-compilation (e.g., a developer running `go build`
+on Windows) fails fast with a clear message.
+
 ### 2.7 VTT/SRT sanitization
 
 `pipeline/src/maktaba_pipeline/subtitles/sanitize.py`:
@@ -318,6 +380,38 @@ The same sanitizer is called from:
 * `subtitles/vtt_writer.py` before writing a cue to disk.
 * `subtitles/srt_loader.py` when ingesting a sidecar SRT.
 
+### 2.8a Probe output size-bound (AC5)
+
+`ffprobe` output is bounded to a fixed maximum (1 MiB) before parsing,
+to prevent a hostile media file from causing the pipeline to allocate
+an arbitrary-size JSON document:
+
+```python
+PROBE_OUTPUT_LIMIT = 1 << 20  # 1 MiB
+
+async def probe(path: Path) -> ProbeResult:
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-print_format", "json",
+        "-show_format", "-show_streams", "--", str(path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out_chunks: list[bytes] = []
+    total = 0
+    async for chunk in proc.stdout:
+        total += len(chunk)
+        if total > PROBE_OUTPUT_LIMIT:
+            proc.kill()
+            await proc.wait()
+            raise ProbeTooLarge(f"ffprobe output exceeded {PROBE_OUTPUT_LIMIT} bytes")
+        out_chunks.append(chunk)
+    await proc.wait()
+    return parse_probe(b"".join(out_chunks))
+```
+
+The Go `argv.Run` equivalent caps `cmd.CombinedOutput()` via a
+`bytes.Buffer` with a write-limit wrapper.
+
 ### 2.8 ExtractEmbeddedSubtitle gate (AC6)
 
 `pipeline/src/maktaba_pipeline/grpc_server.py`:
@@ -335,6 +429,24 @@ async def ExtractEmbeddedSubtitle(self, request, context):
                             f"requested index {request.stream_index}")
     # ... proceed to ffmpeg via exec.argv.run with explicit args.
 ```
+
+### 2.8b Go vs Python parity matrix
+
+The Go and Python implementations of the helpers above intentionally
+diverge in a few places; this matrix is the source of truth.
+
+| Concern | Go (`shared/...`) | Python (`pipeline/...`) | Parity? |
+|---|---|---|---|
+| Path canonicalizer | `paths.CanonicalUnderRoots` | `paths.canonical_under_roots` | **Same semantics**; both reject `..` components, NUL bytes, and out-of-root via symlink resolution. |
+| argv subprocess | `shared/exec.Run` (CombinedOutput, capped) | `pipeline.exec.argv.run` (subprocess_exec, capped) | **Same semantics**; Python uses `asyncio.subprocess` because the pipeline is async. |
+| Output size cap | `bytes.Buffer` with write limit | per-chunk total accumulator | **Same semantics**, different idioms. |
+| SSRF safe fetcher | `httpsec.SafeFetcher` (Linux/Darwin) | not implemented (pipeline does not fetch user-supplied URLs) | **Go-only by design**; the pipeline's only outbound HTTP is to the configured STT/embedding backends, which are loaded from the secret registry. |
+| Subtitle sanitizer | not implemented (pipeline owns subtitles) | `subtitles.sanitize_cue` | **Python-only by design**. |
+| Path-lint | `tools/path-lint.go` (AST) | `tools/path-lint.py` (`ast.NodeVisitor`) | **Same intent**; each language's lint targets that language's idioms. |
+| Validator | `go-playground/validator/v10` | `pydantic` (already used in pipeline) | **Equivalent**; both reject NaN, range violations, and length caps. |
+
+Differences are deliberate: the API/streaming services don't render
+subtitles, and the pipeline doesn't fetch operator-supplied URLs.
 
 ### 2.9 Validation problem-types
 
@@ -366,6 +478,7 @@ type-specific message.
 | `TestSymlinkAboveRootRejected` | A directory `library/sneak` symlinked to `/etc` → `CanonicalUnderRoots` returns `ErrOutsideRoot`. |
 | `TestNULByteRejected` | A path with `\x00` → `ErrNULByte`; never reaches `os.Open`. |
 | `TestPathLintCatchesDirectOpen` | A fixture `pipeline/sneak.py` doing `open(path)` on a user-supplied var fails the lint. |
+| `TestFilenameWithDoubleDotAccepted` | A file named `report..final.pdf` (literal `..` substring, not a component) is **accepted** by `CanonicalUnderRoots`; component-wise check distinguishes substring `..` from path-component `..`. |
 
 ### 3.2 Command injection (TC2)
 
@@ -399,6 +512,14 @@ type-specific message.
 |---|---|
 | `TestExtractInvalidIndex` | Probed video has 2 subtitle streams; `ExtractEmbeddedSubtitle(stream_index=5)` returns `INVALID_ARGUMENT`; ffmpeg never spawns. |
 | `TestExtractNegativeIndex` | `stream_index=-1` returns `INVALID_ARGUMENT`. |
+
+### 3.6 Probe output size-bound (AC5)
+
+| Test | What it pins |
+|---|---|
+| `TestProbeOutputCappedAt1MiB` | A pathological media file producing ffprobe JSON > 1 MiB: the pipeline kills the process and returns `ProbeTooLarge`; never tries to parse the oversized output. |
+| `TestProbeOutputUnderCapSucceeds` | A normal file (~10 KiB ffprobe output) parses cleanly. |
+| `TestArgvRunOutputCap` | The Go `exec.Run` wrapper caps combined output at the configured limit; truncation returns a sentinel error. |
 
 ## 4. Edge cases
 

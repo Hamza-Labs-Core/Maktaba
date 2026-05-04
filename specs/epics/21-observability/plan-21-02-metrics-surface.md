@@ -9,10 +9,11 @@
 | Concern | Decision |
 |---|---|
 | Library | Go: `prometheus/client_golang` v2; Python: `prometheus_client`; TS: opt-in browser POST. |
-| Ports | api 9100, streaming 9101, pipeline 9102. Bind `127.0.0.1` by default. |
+| Ports | api 9100, streaming 9101, pipeline 9102 — **bound by plan-21-04** (admin-port mux owner). This plan only registers `/metrics` against the shared mux. Bind `127.0.0.1` by default. |
+| Mux ownership | `shared/admin/mux.go` is owned by **plan-21-04**. `/healthz` and `/readyz` register there too; one process binds the admin port and routes coexist on the same mux. |
 | Native histograms | Prometheus 2.40+ exponential native; fallback to fixed buckets if `--enable-feature=native-histograms` not advertised. |
-| Cardinality lint | Static walker over `MetricVec` `WithLabelValues`/`Labels` plus registration sites. |
-| Auth | Localhost binding by default; opt-in `expose_metrics_publicly: true` enables bearer auth. |
+| Cardinality lint | Static walker over `MetricVec` `WithLabelValues`/`Labels` plus registration sites. Banned-label allowlist is config-driven (`shared/metrics/cardinality_allowlist.yaml`), not hard-coded. |
+| Auth | Localhost binding by default; opt-in `expose_metrics_publicly: true` enables bearer auth. `/metrics` and `/healthz`/`/readyz` follow the same admin-port auth posture. |
 
 ## 1. Project layout
 
@@ -59,6 +60,20 @@ When the runtime reports native-histogram support, the buckets are ignored; fall
 
 ## 3. Baseline metrics — Go
 
+**Naming convention (canonical).** HTTP-request metrics use the **shared
+name** `http_request_duration_seconds` across api/streaming, distinguished
+by a `service` label (`service="api"` etc.) that is added at registry
+init time via a constant-label option. Per-service prefixes
+(`api_request_duration_seconds`, `streaming_request_duration_seconds`)
+are explicitly avoided so dashboards and alert rules can use a single
+`sum by (service, route_template)(rate(http_request_duration_seconds_bucket[…]))`
+expression. Service-internal metrics (transcoding, pipeline) keep their
+service-prefixed names because they are not cross-service comparable.
+
+This decision supersedes story AC1's literal phrasing; the AC is met by
+the `service` label, which provides identical groupability with lower
+cardinality risk than a metric per service.
+
 ```go
 // shared/metrics/go/registry.go
 var (
@@ -96,40 +111,87 @@ var (
 )
 ```
 
-## 4. HTTP handler with bearer auth (opt-in)
+## 4. `/metrics` registration on the shared admin mux
+
+The admin-port mux (`shared/admin/mux.go`) is owned by **plan-21-04**. This
+plan does **not** call `http.ListenAndServe`; instead it registers the
+`/metrics` route against the shared mux that plan-21-04 binds. Bearer
+auth is applied at the mux's auth layer (also owned by plan-21-04) so
+that `/metrics` and `/readyz` share a single auth posture.
 
 ```go
 // shared/metrics/go/http.go
 type Config struct {
-    Bind            string
-    Public          bool
-    BearerToken     string  // required if Public
+    Public      bool
+    BearerToken string  // required if Public
 }
 
-func Serve(cfg Config) error {
-    mux := http.NewServeMux()
-    h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now()})
+// Register attaches /metrics to the admin-mux owned by plan-21-04.
+// The admin server (one per service) binds 127.0.0.1:9100/9101/9102.
+func Register(adminMux *adminmux.Mux, cfg Config) error {
+    h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{
+        EnableOpenMetrics: true, ProcessStartTime: time.Now(),
+    })
     if cfg.Public {
         if cfg.BearerToken == "" { return errors.New("public metrics requires a bearer token") }
         h = bearerWrap(cfg.BearerToken, h)
     }
-    mux.Handle("/metrics", h)
-    return http.ListenAndServe(cfg.Bind, mux)
+    adminMux.Handle("/metrics", h)
+    return nil
 }
 ```
 
 `bearerWrap` checks `Authorization: Bearer <tok>` constant-time.
 
+Cross-link: `shared/admin/mux.go` declared and bound by
+[plan-21-04 §1](plan-21-04-health-readiness-probes.md). Caddyfile / systemd
+exposure documented in plan-22-03.
+
 ## 5. Cardinality lint
+
+The lint reads its banned-label regex and per-label allowlist from
+`shared/metrics/cardinality_allowlist.yaml` so new bounded-cardinality
+labels (e.g., `kid_id`) can be added without code changes:
+
+```yaml
+# shared/metrics/cardinality_allowlist.yaml
+banned_labels:
+  - id
+  - user_id
+  - video_id
+  - session_id
+  - path
+  - url
+  - library_id
+  - email
+banned_suffixes:
+  - _id
+allow:
+  # Bounded sets that pass the suffix filter. Each entry has a reason.
+  - label: kid_id
+    reason: "DRM key ids are bounded by issuance cadence (≤100/day)."
+```
 
 ```go
 // shared/metrics/go/lint/cardinality_lint.go
 //go:build cardlint
 
-var bannedLabel = regexp.MustCompile(`^(id|user_id|video_id|session_id|path|url|library_id|email)$`)
-var bannedSuffix = regexp.MustCompile(`_id$`)
+type Rules struct {
+    BannedLabels   []string `yaml:"banned_labels"`
+    BannedSuffixes []string `yaml:"banned_suffixes"`
+    Allow          []struct {
+        Label  string `yaml:"label"`
+        Reason string `yaml:"reason"`
+    } `yaml:"allow"`
+}
 
 func main() {
+    rules := loadRules("shared/metrics/cardinality_allowlist.yaml")
+    bannedLabel := regexp.MustCompile("^(" + strings.Join(rules.BannedLabels, "|") + ")$")
+    bannedSuffix := regexp.MustCompile("(" + strings.Join(rules.BannedSuffixes, "|") + ")$")
+    allowed := map[string]bool{}
+    for _, a := range rules.Allow { allowed[a.Label] = true }
+
     fset := token.NewFileSet()
     pkgs, _ := packages.Load(...)
     var fail bool
@@ -141,10 +203,9 @@ func main() {
                 if t != "prometheus.HistogramOpts" && t != "prometheus.CounterOpts" && t != "prometheus.GaugeOpts" {
                     return true
                 }
-                // Look for parent NewXxxVec call; arg list contains label names.
-                // Walk up via path; details elided for brevity.
                 for _, lab := range labelsFor(comp, p) {
-                    if bannedLabel.MatchString(lab) || (bannedSuffix.MatchString(lab) && lab != "kid_id") {
+                    if allowed[lab] { continue }
+                    if bannedLabel.MatchString(lab) || bannedSuffix.MatchString(lab) {
                         fmt.Fprintf(os.Stderr, "FAIL: high-cardinality label %q at %s\n", lab, fset.Position(comp.Pos()))
                         fail = true
                     }
@@ -157,7 +218,9 @@ func main() {
 }
 ```
 
-Allowlist override: a comment `// metrics:allow-label-cardinality reason="bounded set"` on the line registers an exception.
+Allowlist override at the call site: a comment
+`// metrics:allow-label-cardinality reason="bounded set"` on the line
+registers a one-off exception (in addition to the YAML allowlist).
 
 ## 6. Streaming/pipeline-specific metrics
 
@@ -182,6 +245,15 @@ PIPELINE_STAGE_DURATION = Histogram(
 ```
 
 ## 7. Web vitals endpoint (browser opt-in)
+
+Route registered on the **public API mux** (not the admin mux) so the
+browser can reach it. The handler is gated by `WebVitalsEnabled` and a
+per-session rate limiter:
+
+```go
+// api/internal/router/router.go (excerpt)
+r.Post("/api/web-vitals", handlers.WebVitals)   // browser opt-in beacon
+```
 
 ```go
 // api/internal/handlers/web_vitals.go

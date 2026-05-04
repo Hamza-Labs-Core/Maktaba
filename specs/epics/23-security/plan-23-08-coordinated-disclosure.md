@@ -13,7 +13,8 @@
 | Disclosure address | GitHub Security Advisories (GHSA) primary; backup email `security@maktaba.io`. |
 | SECURITY.md | Top-level repo file; documents address, SLA (3 business days ack, 90 days fix-or-coordinated-disclosure), scope. |
 | Tracking | Private GHSA drafts during embargo; published advisory on fix. |
-| Patch release | Re-uses the release workflow from Story 22.5; tagged on a `release/v*.x` branch when the fix is on a non-main branch. |
+| CVE assignment | **GHSA is the canonical CVE assignment route via [GitHub Security Advisories](https://docs.github.com/en/code-security/security-advisories/repository-security-advisories/about-repository-security-advisories).** GitHub is a CVE Numbering Authority (CNA); publishing a GHSA from the repo automatically requests a CVE through GitHub's CNA workflow. We do not file CVEs through MITRE directly. |
+| Patch release | Re-uses the release workflow from [plan-22-05](../22-devops-delivery/plan-22-05-release-management.md); tagged on a `release/v*.x` branch when the fix is on a non-main branch. The release workflow's `guard` job already accepts `release/*` tags (plan-22-05 §). |
 | Client surface | "What version am I running?" button in the web client wires to `/api/system/version` (Story 22.5) and renders advisories pulled from a static feed published with each release. |
 | Out of scope | The actual CVE fixes (per-incident); SBOM mechanics (23.7); legal/policy beyond what fits in SECURITY.md. |
 
@@ -51,6 +52,8 @@
 | `SECURITY.md` | Disclosure policy. |
 | `docs/security/incident-runbook.md` | Internal runbook for the maintainer-on-call. |
 | `docs/security/postmortem-template.md` | Template for non-public retrospectives. |
+| `security/age-pubkey.txt` | The maintainers' age public key (referenced from SECURITY.md for encrypted email reports). |
+| `advisories.schema.json` | JSON Schema validating the structure of `advisories.json` (used by `tools/publish-advisory.sh` and `TestAdvisoryJsonSchema`). |
 | `web/src/lib/advisories.ts` | Fetches `advisories.json`; matches by version range. |
 | `web/src/components/AboutDialog.tsx` | "What version am I running?" + advisory list. |
 | `tools/publish-advisory.sh` | Adds an entry to `advisories.json`, signs, opens a PR. |
@@ -240,6 +243,13 @@ export function applicable(advisories: Advisory[], v: string = currentVersion): 
 
 ### 2.7 Patch-release wiring
 
+The patch-release flow re-uses the release workflow defined in
+[plan-22-05 — release management](../22-devops-delivery/plan-22-05-release-management.md).
+This plan adds only the coordination layer (advisory publication
+timing); the actual release mechanics (branch protection rules,
+required-status-checks, tag → release.yml dispatch, multi-arch image
+build, signing) are owned by plan-22-05.
+
 `RELEASING.md` adds the patch-release flow:
 
 ```
@@ -248,12 +258,12 @@ export function applicable(advisories: Advisory[], v: string = currentVersion): 
 2. Cherry-pick the security fix and the regression test.
 3. Bump VERSION; run tools/bump-version.sh.
 4. Push the branch; tag v1.0.5.
-5. Wait for release.yml to publish images, binaries, and the GH release.
-6. Publish the GHSA from draft.
+5. Wait for release.yml (plan-22-05) to publish images, binaries, and the GH release.
+6. Publish the GHSA from draft (this triggers the GHSA→CVE assignment via GitHub's CNA workflow).
 7. Run tools/publish-advisory.sh to add to advisories.json on main.
 ```
 
-The release workflow's `guard` job (Story 22.5) accepts tags on
+The release workflow's `guard` job (plan-22-05) accepts tags on
 `release/*` branches.
 
 ## 3. Test plan

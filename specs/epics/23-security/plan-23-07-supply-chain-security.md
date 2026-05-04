@@ -9,12 +9,14 @@
 
 | Concern | Decision |
 |---|---|
-| SBOM | `cyclonedx-go` (Go), `cyclonedx-py` (Python), `@cyclonedx/cyclonedx-npm` (Node). Generated per release artifact; published as `*.cdx.json` alongside the binary/image. |
+| SBOM | `cyclonedx-gomod` (Go), `cyclonedx-py` (Python), `@cyclonedx/cyclonedx-npm` (Node). Generated per release artifact; published as `*.cdx.json` alongside the binary/image. (Note: `cyclonedx-go` is the underlying library; the **CLI tool for Go** is `cyclonedx-gomod`.) |
 | CVE scanning | `govulncheck` (Go), `pip-audit` (Python), `npm audit` (Node). Wired into CI lint gate's tail; fails on high. Suppression mechanism mirrors Story 22.4's lints.json. |
 | Base-image pin enforcement | `tools/dockerfile-pin-lint.sh` (lint gate) refuses any `FROM` without `@sha256:`. |
-| Dependency upgrades | `renovate.json` (no Dependabot — Renovate's grouping is more flexible). Weekly schedule + auto-merge for security updates. |
+| Dependency upgrades | `renovate.json` (no Dependabot — Renovate's grouping is more flexible). Weekly schedule + auto-merge for security updates **gated on full CI green** (the security PR must pass the smoke gate from [plan-22-01](../22-devops-delivery/plan-22-01-ci-pipeline.md) before automerge fires). |
 | Suppressions | `security/suppressions/<cve-id>.md` with rationale, owner, expiry. Expired files fail CI. |
-| Out of scope | Disclosure/response process (Story 23.8); release signing (Story 22.2). |
+| Signing | **SBOM artifacts are signed with `minisign`** (this plan). **Container images are signed with `cosign`** (owned by [plan-22-02](../22-devops-delivery/plan-22-02-reproducible-builds.md)). Both signing keys are loaded from env via the [plan-23-04](plan-23-04-secrets-management.md) registry (`MAKTABA_MINISIGN_KEY_PATH` and `COSIGN_PRIVATE_KEY` respectively). |
+| Air-gapped builds | `GOFLAGS=-insecure`, `pip --no-verify`, `pnpm --strict-ssl=false`, and `git config http.sslVerify false` are **forbidden**. Air-gapped builds use a locally-cached vendor tree (`go mod vendor`, `uv export --frozen`, `pnpm fetch`) populated via a separately-audited mirror. The supply-chain gate is **not** bypassed; it runs against the vendor tree. |
+| Out of scope | Disclosure/response process (Story 23.8); release signing for images (plan-22-02 cosign). |
 
 ## 1. Architecture diagram
 
@@ -122,10 +124,15 @@ jobs:
         run: tools/dockerfile-pin-lint.sh
 
       - name: govulncheck (api)
-        run: cd api && go run golang.org/x/vuln/cmd/govulncheck@latest ./... || tools/cve-suppress.sh govulncheck-api
+        # NOTE: govulncheck takes its mode flag BEFORE the package
+        # spec — `govulncheck -mode source ./...` (NOT `govulncheck
+        # ./... -mode source`). The `tools/cve-suppress.sh` wrapper
+        # validates positional-arg parsing and rejects flag-after-spec
+        # invocations.
+        run: cd api && go run golang.org/x/vuln/cmd/govulncheck@latest -mode source ./... || tools/cve-suppress.sh govulncheck-api
 
       - name: govulncheck (streaming)
-        run: cd streaming && go run golang.org/x/vuln/cmd/govulncheck@latest ./... || tools/cve-suppress.sh govulncheck-streaming
+        run: cd streaming && go run golang.org/x/vuln/cmd/govulncheck@latest -mode source ./... || tools/cve-suppress.sh govulncheck-streaming
 
       - name: pip-audit (pipeline)
         run: cd pipeline && uv run pip-audit -r <(uv export --frozen --no-hashes) --strict || tools/cve-suppress.sh pip-audit
@@ -223,7 +230,9 @@ Renovate's `pinDigests` rule keeps the `@sha256:` values current.
     "enabled": true,
     "labels": ["security"],
     "automerge": true,
-    "automergeType": "branch"
+    "automergeType": "branch",
+    "automergeStrategy": "squash",
+    "_comment_automerge_gate": "automerge requires full CI green; plan-22-01's required-status-checks (smoke gate, supply-chain gate, build) must pass before Renovate merges. The branch-protection rule on main enforces this server-side; Renovate respects it."
   },
   "pinDigests": true,
   "packageRules": [
@@ -309,7 +318,7 @@ Major bumps still require human review.
 |---|---|---|
 | False-positive CVE (EC1) | Operator creates `security/suppressions/CVE-X.md` with rationale + expiry. CI accepts during the validity window; expired files fail the lint. | `TestSuppressionLetsThrough`, `TestExpiredSuppressionFails` |
 | Vendored Go module CVE (EC2) | `govulncheck` runs against the vendor tree (default behavior); a vendored CVE fails until the vendor is rebuilt. | `TestGovulncheckHighFails` |
-| Air-gapped builds (EC3) | `make build-airgap` produces a tarball that includes all deps (`go mod vendor`, `uv export`, `pnpm install --offline`); CI smoke tests an offline install with `--network=none`. The supply-chain gate is bypassed for the air-gapped fixture (no public DBs reachable). | `TestAirgapBuild` |
+| Air-gapped builds (EC3) | `make build-airgap` produces a tarball that includes all deps (`go mod vendor`, `uv export --frozen`, `pnpm fetch` then `--offline`); CI smoke tests an offline install with `--network=none`. The supply-chain gate **is NOT bypassed** — it runs against the vendor tree using a pre-fetched CVE database snapshot. `GOFLAGS=-insecure`, `--no-verify`, `--strict-ssl=false`, and `http.sslVerify=false` are forbidden everywhere; the lint gate greps for these patterns. | `TestAirgapBuild`, `TestNoInsecureFlagsInRepo` |
 | Renovate API rate-limit | Renovate's GitHub-app token retries with backoff; the schedule constraint (`before 9am on monday`) bounds concurrency. | n/a |
 | New CVE published mid-PR | A PR opened before the CVE is published merges fine; the next PR after publication fails until either the dep is bumped or a suppression is added. | `TestNewCveFailsNextPr` |
 | Suppression for the wrong scope | The `scope:` field in the frontmatter must match the failing tool's name; a `pip-audit` suppression doesn't shield `govulncheck`. | `TestSuppressionScopeMismatchFails` |

@@ -41,14 +41,22 @@ shared/db/migrations/
 
 ## 2. Events table schema
 
+> **Plan-introduced extension to story AC3.** Story 19.2 AC3 specifies
+> only `(id, channel, payload, created_at)` for the durable replay row. This
+> plan adds nullable `user_id`/`library_id` columns to enable per-user replay
+> filtering (`§5` `events_user_id_id_idx`) and library-scoped fan-out without
+> a JSON probe. These columns are an explicit override of AC3 and require
+> the story to be amended; tracking under cross-cutting §1.1 of
+> `PLAN_REVIEW_18_24.md`.
+
 ```sql
 -- 00xx_events_table.sql
 CREATE TABLE events (
     id          BIGSERIAL PRIMARY KEY,
     channel     TEXT NOT NULL,
     payload     JSONB NOT NULL,
-    user_id     UUID,
-    library_id  UUID,
+    user_id     UUID,                    -- plan-introduced extension to AC3
+    library_id  UUID,                    -- plan-introduced extension to AC3
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX events_channel_id_idx     ON events (channel, id DESC);
@@ -60,6 +68,17 @@ CREATE INDEX events_user_id_id_idx     ON events (user_id, id DESC) WHERE user_i
 
 ## 3. Publish path
 
+> **Design override (vs Story AC3).** Story AC3 implies small payloads
+> *could* ride NOTIFY alone (no row in `events`). This plan persists a row
+> AND emits NOTIFY for every publish, regardless of payload size. Rationale:
+> uniform `last_event_id` replay semantics (TC3, TC4) and a single retention
+> story (`pruner`). The cost is one extra row per event — negligible at the
+> capacity floor (Story 19.1) and bounded by the 7-day retention. NOTIFY-only
+> events would require a separate "transient" channel and complicate replay;
+> we accept the row-write tax in exchange for a simpler durable contract.
+> The `ref:true` marker (see below) signals to listeners that the
+> NOTIFY payload was truncated and the row must be fetched by id.
+
 ```go
 // eventbus/postgres.go
 func (b *PGBus) Publish(ctx context.Context, ev Event) error {
@@ -70,8 +89,15 @@ func (b *PGBus) Publish(ctx context.Context, ev Event) error {
     `, ev.Channel, ev.Payload, ev.UserID, ev.LibraryID).Scan(&id)
     if err != nil { return err }
 
-    payload, _ := json.Marshal(map[string]any{"id": id, "ch": ev.Channel})
-    if len(payload) > 8192 {
+    // Fast-path NOTIFY: embed payload inline when it fits within the 8 KiB
+    // bound. Listeners with `ref:false` can dispatch directly without a
+    // round-trip to `events`. Large payloads set `ref:true` and listeners
+    // must fetch the row by id.
+    inline, _ := json.Marshal(map[string]any{"id": id, "ch": ev.Channel, "data": ev.Payload})
+    var payload []byte
+    if len(inline) <= 8192 {
+        payload = inline
+    } else {
         // AC3: NOTIFY payload bound at 8 KiB → notify with id only
         payload, _ = json.Marshal(map[string]any{"id": id, "ch": ev.Channel, "ref": true})
     }
@@ -97,10 +123,22 @@ func (b *PGBus) Listen(ctx context.Context, ch chan<- Event) error {
             case <-ctx.Done(): return
             case n := <-pl.Notify:
                 if n == nil { continue }                 // overflow signal
-                var hdr struct{ ID int64; Ch string; Ref bool }
+                var hdr struct{
+                    ID   int64           `json:"id"`
+                    Ch   string          `json:"ch"`
+                    Ref  bool            `json:"ref"`
+                    Data json.RawMessage `json:"data"`
+                }
                 _ = json.Unmarshal([]byte(n.Extra), &hdr)
-                ev, err := b.fetchByID(ctx, hdr.ID)      // always fetch row → consistent payload
-                if err == nil { ch <- ev }
+                // Fast-path: when ref==false the publisher inlined the payload
+                // and we can dispatch without a round-trip. Only fetch the row
+                // by id when ref==true (truncated payload).
+                if hdr.Ref {
+                    ev, err := b.fetchByID(ctx, hdr.ID)
+                    if err == nil { ch <- ev }
+                } else {
+                    ch <- Event{ID: hdr.ID, Channel: hdr.Ch, Payload: hdr.Data}
+                }
             }
         }
     }()
@@ -151,8 +189,8 @@ func (r *Replay) Stream(ctx context.Context, userID uuid.UUID, after int64, w Me
 // eventbus/overflow.go
 type OverflowDetector struct {
     drops       atomic.Int64
-    window      time.Duration            // 60 s
-    threshold   int64                    // 100
+    window      time.Duration            // overflow_window_sec (default 60 s)
+    threshold   int64                    // overflow_threshold (default 100)
     pollMode    atomic.Bool
     pollTrigger func()
 }
@@ -248,6 +286,14 @@ Stand up two replicas; LB round-robins 1,000 requests with same Bearer JWT. All 
 ### TC4 — Retention
 Backfill 7-day-old rows. Run pruner. Assert: rows older than 7d gone, `MAX(id)` continues from the surviving sequence value (no rollback). New publishes get `id > previous max`.
 
+### TC5 — EC1 NOTIFY-overflow detection latency
+Force the listener into a `pq.ListenerEventDisconnected` / "queue overflow" state by suspending the listener goroutine while publishing past the
+`overflow_threshold` within `overflow_window_sec`. Capture the timestamp of
+the first drop and the timestamp at which `pollMode.Load()` flips to `true`.
+Assert: `pollModeFlipAt - firstDropAt ≤ 5 s` (story EC1) and that subsequent
+events are observed by all subscribers within an additional
+`poll_fallback_interval_ms` window. Reconnect and assert `pollMode` clears.
+
 ## 11. Edge cases summary
 
 | Case | Source | Handling |
@@ -264,7 +310,11 @@ Backfill 7-day-old rows. Run pruner. Assert: rows older than 7d gone, `MAX(id)` 
 api:
   events:
     notify_payload_max_bytes: 8192
-    overflow_threshold_per_minute: 100
+    # OverflowDetector: trip into poll mode when more than `overflow_threshold`
+    # drops occur within a sliding window of `overflow_window_sec` seconds.
+    # (Replaces the old conflated `overflow_threshold_per_minute` knob.)
+    overflow_threshold: 100
+    overflow_window_sec: 60
     poll_fallback_interval_ms: 250
     retention_days: 7
     prune_interval: 1h

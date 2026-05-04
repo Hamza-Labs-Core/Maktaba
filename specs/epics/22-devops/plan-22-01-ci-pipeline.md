@@ -10,8 +10,8 @@
 | Concern | Decision |
 |---|---|
 | Workflow files | `.github/workflows/ci.yml` (PR + push), `.github/workflows/release.yml` (tag-driven, owned by Story 22.5). Reusable jobs live in `.github/workflows/_*.yml`. |
-| Job orchestrator | GitHub Actions matrix; `needs:` graph wires the six gates so they run in parallel. |
-| Branch protection | Required status checks: `lint`, `unit`, `integration`, `e2e`, `perf-ci`, `build-artifacts`. Configured via Terraform in `deploy/github/branch-protection.tf` so the rules are reviewable. |
+| Job orchestrator | GitHub Actions matrix; `needs:` graph wires the gates so they run in parallel. |
+| Branch protection | Required status check: `ci-success` (the rollup). Underlying gates: `lint`, `unit`, `integration`, `e2e`, `perf-ci`, `build-artifacts`, `native-apps` (tvOS + Android TV), `generate-drift`. Configured via Terraform in `deploy/github/branch-protection.tf` so the rules are reviewable. |
 | Force-merge override | Branch protection rule "Allow force pushes by admins" stays off; the override is a `force-merge: <reason>` line in the PR body validated by `.github/workflows/_pr-body-check.yml`. |
 | Out of scope | Release publishing (Story 22.5), SBOM/CVE gates (Story 23.7), reproducibility flags (Story 22.2 — this plan only invokes those flags, doesn't define them). |
 
@@ -47,11 +47,14 @@
 | `.github/workflows/_e2e.yml` | Reusable e2e gate (compose stack). |
 | `.github/workflows/_perf-ci.yml` | Reusable perf-ci gate. |
 | `.github/workflows/_build-artifacts.yml` | Reusable build-artifacts gate (matrix on three OS/arch). |
+| `.github/workflows/_native-apps.yml` | Reusable native-app lint/test gate: `xcodebuild test` (tvOS) on macOS runner; `gradle test` and `gradle :app:connectedAndroidTest` (Android TV) on Linux runner with KVM. |
+| `.github/workflows/_generate-drift.yml` | Reusable generated-code drift gate: runs `make generate && git diff --exit-code` to catch drift between hand-edited inputs (sqlc queries, gqlgen schema, .proto files) and the checked-in generated outputs (arch §12.5 says generated code is checked in). |
 | `.github/workflows/_pr-body-check.yml` | PR body section validator (force-merge override, changelog gate hand-off). |
-| `Makefile` | Targets `lint`, `test-unit`, `test-integration`, `test-e2e`, `perf-ci`, `build` invoked by both CI and developers (Story 22.8 AC-3). |
+| `Makefile` | Targets `lint`, `test-unit`, `test-integration`, `test-e2e`, `perf-ci`, `build`, `generate` invoked by both CI and developers (Story 22.8 AC-3). |
 | `deploy/github/branch-protection.tf` | Terraform: required checks, no force pushes. |
 | `.github/CODEOWNERS` | Reviewer routing. |
 | `.github/labeler.yml` | `docs-only` label rule used by EC3. |
+| `pipeline/.python-version` | Pinned Python version consumed by `actions/setup-python@v5` and local `uv`. Committed to git. |
 
 ### 2.2 Modified files
 
@@ -129,6 +132,16 @@ jobs:
     if: needs.changes.outputs.docs_only != 'true'
     uses: ./.github/workflows/_build-artifacts.yml
 
+  native-apps:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_native-apps.yml
+
+  generate-drift:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_generate-drift.yml
+
   pr-body-check:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
@@ -136,7 +149,13 @@ jobs:
   ci-success:
     # The single status check pinned by branch protection. All gates report
     # to this one job; branch protection only needs to require ci-success.
-    needs: [lint, unit, integration, e2e, perf-ci, build-artifacts, pr-body-check]
+    # Skipped jobs (docs-only PRs, fork PRs) report `skipped` not `success`;
+    # the rollup distinguishes the two: `failure` and `cancelled` block,
+    # while `skipped` is treated as pass only when the upstream `if:` guard
+    # legitimately suppressed the gate (docs-only or fork-skip path). Any
+    # other `skipped` status (e.g., a needed gate skipped by mistake) is
+    # surfaced as a failure to avoid silently green merges.
+    needs: [lint, unit, integration, e2e, perf-ci, build-artifacts, native-apps, generate-drift, pr-body-check]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -185,6 +204,86 @@ jobs:
 `make lint` is the developer-facing shell; CI calls the same target so
 parity (TC3, AC-3 in Story 22.8) is automatic.
 
+### 2.4a Native-apps gate
+
+`.github/workflows/_native-apps.yml` covers the Swift (`apps/tvos/`)
+and Kotlin (`apps/androidtv/`) trees that arch §12.1 declares first-
+class. The gate runs in two matrix legs so a failure surfaces with the
+offending platform in the job name:
+
+```yaml
+on: { workflow_call: {} }
+jobs:
+  tvos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      - name: xcodebuild test (tvOS simulator)
+        working-directory: apps/tvos
+        run: |
+          xcodebuild \
+            -scheme Maktaba \
+            -destination 'platform=tvOS Simulator,name=Apple TV' \
+            -resultBundlePath build/test.xcresult \
+            test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: tvos-test-result, path: apps/tvos/build/test.xcresult }
+
+  androidtv:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Unit tests
+        working-directory: apps/androidtv
+        run: ./gradlew test
+      - name: Connected Android tests (KVM emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: android-tv
+          arch: x86_64
+          script: ./gradlew :app:connectedAndroidTest
+          working-directory: apps/androidtv
+```
+
+### 2.4b Generated-code drift gate
+
+`.github/workflows/_generate-drift.yml`:
+
+```yaml
+on: { workflow_call: {} }
+jobs:
+  generate-drift:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: api/go.mod, cache: true }
+      - uses: actions/setup-python@v5
+        with: { python-version-file: pipeline/.python-version }
+      - uses: astral-sh/setup-uv@v3
+      - name: Run generators
+        run: make generate
+      - name: Assert no drift
+        run: |
+          # `make generate` runs sqlc, gqlgen, and protoc-gen-go. Arch
+          # §12.5 mandates the generated outputs are checked in, so any
+          # drift between the input schemas and the committed output is
+          # a CI-blocking error.
+          git diff --exit-code
+```
+
 ### 2.5 Unit gate
 
 `.github/workflows/_unit.yml`:
@@ -204,7 +303,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: web/.nvmrc, cache: pnpm, cache-dependency-path: web/pnpm-lock.yaml }
       - run: pnpm -C web install --frozen-lockfile
-      - run: uv sync --frozen --directory pipeline
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen
       - run: make test-unit
 ```
 
@@ -222,13 +323,16 @@ jobs:
     runs-on: ubuntu-22.04
     services:
       postgres:
-        image: postgres:16@sha256:<DIGEST>
+        # Tag-pinned for readability; @sha256 digest is filled in via the
+        # separate digest-pinning step below (see 2.6a). Renovate writes
+        # the digest into a YAML-valid string when bumping versions.
+        image: postgres:16.4-alpine3.20  # DIGEST_TODO
         env: { POSTGRES_PASSWORD: maktaba, POSTGRES_DB: maktaba }
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
       chroma:
-        image: ghcr.io/chroma-core/chroma:0.5.5@sha256:<DIGEST>
+        image: ghcr.io/chroma-core/chroma:0.5.5  # DIGEST_TODO
         ports: ['8000:8000']
         options: --health-cmd "curl -fsS localhost:8000/api/v1/heartbeat"
     env:
@@ -243,6 +347,19 @@ jobs:
 
 Service container digests are pinned (Story 22.7-supply-chain-style) and
 bumped via Renovate.
+
+### 2.6a Digest pinning step
+
+CI workflow files use the form `image: <repo>:<tag>  # DIGEST_TODO` so
+that they are valid YAML on every checkout. A separate Renovate
+configuration (`.github/renovate.json`) and a `tools/pin-digests.sh`
+helper run on a scheduled job to rewrite each `# DIGEST_TODO` marker
+into the corresponding `@sha256:<digest>` suffix and open a PR. The
+`# DIGEST_TODO` marker is intentional: its presence means "Renovate has
+not yet pinned this image", and a CI lint forbids the marker on the
+release branches (see Story 22.5). The two-step approach keeps the
+files YAML-valid in the source tree without literal `<DIGEST>`
+placeholders that fail validation as written.
 
 ### 2.7 E2E gate
 
@@ -373,6 +490,7 @@ config doesn't change.
 | `TestForkSkipsE2E` (EC2) | A PR opened from a fork sees `e2e` and `perf-ci` skipped with a comment; the gates report `success` (skipped jobs do not block). |
 | `TestDocsOnlyPath` (EC3) | A PR touching only `specs/**` skips lint/unit/integration/e2e/perf/build; `ci-success` is green via the if-guard. |
 | `TestWallClock` (AC-4) | A green PR's wall-clock is < 20 min on the matrix runners; tracked in CI metrics. |
+| `TestNoVerifyBypassedCaughtByCi` | A commit pushed with `git commit --no-verify` containing a `gofmt` violation skips the local pre-commit hook but is caught by the CI lint gate; merge is blocked. (Pre-commit setup itself lives in Story 22.8; the CI safety net is owned here.) |
 
 ### 4.2 Local parity tests
 
@@ -410,10 +528,13 @@ plan uses `@v3` shorthand for readability.
 ## 7. Acceptance checklist
 
 **Workflow**
-- [ ] Six gates (`lint`, `unit`, `integration`, `e2e`, `perf-ci`, `build-artifacts`) defined as reusable workflows.
-- [ ] `ci-success` rollup is the only required status check.
+- [ ] Eight gates (`lint`, `unit`, `integration`, `e2e`, `perf-ci`, `build-artifacts`, `native-apps`, `generate-drift`) defined as reusable workflows.
+- [ ] `ci-success` rollup is the only required status check; rollup distinguishes `failure`/`cancelled` (block) from legitimately `skipped` (pass).
 - [ ] Build matrix covers `linux/amd64`, `linux/arm64`, `darwin/arm64`.
+- [ ] Native-apps gate runs `xcodebuild test` (tvOS, macOS runner) and `gradle test` + `gradle :app:connectedAndroidTest` (Android TV, Linux runner with KVM).
+- [ ] Generate-drift gate runs `make generate && git diff --exit-code` to catch sqlc/gqlgen/proto drift (arch §12.5).
 - [ ] Path-filter labels docs-only PRs and skips heavy gates.
+- [ ] `pipeline/.python-version` committed to git (consumed by `actions/setup-python` and local uv).
 
 **Branch protection**
 - [ ] Terraform applied; main branch requires `ci-success`.

@@ -99,7 +99,13 @@ func ServerInterceptor() grpc.UnaryServerInterceptor {
             if !errors.As(err, &e) { e = New(CatUnknown, err, nil) }
             md := metadata.New(map[string]string{ErrorIDMetaKey: e.ID.String()})
             _ = grpc.SetTrailer(ctx, md)
-            return resp, status.Error(codes.Internal, e.Error())
+            // Preserve the original gRPC status code if the handler
+            // returned a typed status error (e.g., NotFound,
+            // PermissionDenied). Only collapse to Internal when no
+            // usable code is present (i.e., a bare Go error).
+            code := status.Code(err)
+            if code == codes.Unknown { code = codes.Internal }
+            return resp, status.Error(code, e.Error())
         }
         return resp, err
     }
@@ -172,6 +178,7 @@ func InitSentry(dsn string) error {
         BeforeSend: func(ev *sentry.Event, _ *sentry.EventHint) *sentry.Event {
             ev.Request = nil                          // strip URLs/headers
             ev.User = sentry.User{}
+            ev.ServerName = ""                        // strip hostname (PII per ops)
             return ev
         },
     })
@@ -236,7 +243,7 @@ While webhook is unreachable, drive 100 errors. Send SIGTERM. After 5 s, the ser
 | EC2 Sentry DSN typo | story | Log once, continue. |
 | EC3 shutdown | story | 5 s drain → drop file. |
 | Webhook secret in URL | impl | URL is treated as `sensitive=true`; only host logged. |
-| UUIDv7 unsupported on stdlib version | impl | Use `github.com/gofrs/uuid/v5`; pinned. |
+| UUIDv7 import path | impl | Use `github.com/google/uuid` v1.6+ — `uuid.NewV7()` is available there. Pin in `go.mod` (`require github.com/google/uuid v1.6.0`). All `uuid` references in this plan use that import path; do not mix with `gofrs/uuid`. |
 
 ## 9. Configuration
 
@@ -247,14 +254,31 @@ errors:
     rate_per_minute: 10
     circuit_threshold: 5
     circuit_open_seconds: 60
+    max_queue_size: 1000        # in-memory backlog cap; overflow → drop_file
   sentry:
     dsn_env: MAKTABA_SENTRY_DSN
   drop_file: /var/log/maktaba/error_drop_log
 ```
 
+> Note: spelling is `max_queue_size`/`MaxQueueSize` (snake_case in YAML,
+> PascalCase in Go). Earlier drafts used a misspelled key; the canonical
+> name above is the only accepted form.
+
 ## 10. Dependencies
 
 - Story 21.1 (logger emits the error line; propagates `error_id`).
-- Story 21.6 (audit log for security errors).
-- Story 21.8 (privacy redaction list).
-- Epic 6 (job rows include `last_error_id` column).
+- Story 21.6 (audit log for security errors). `error_id` is carried in
+  `audit_log.payload->>'error_id'` (NOT a top-level column); plan-21-06
+  is the canonical owner of the column shape.
+- Story 21.8 (privacy redaction list). **`error_id` is exempt from
+  redaction**: it is a UUIDv7 generated server-side, never derived from
+  user input, and is required end-to-end for cross-service correlation.
+  plan-21-08's redactor passes `error_id` through unchanged regardless
+  of where it appears (log attribute, span attribute, webhook payload).
+- Epic 6 — this plan introduces the `processing_jobs.last_error_id`
+  column (UUID, nullable, references the most recent `error_id` for the
+  job). The migration is owned by plan-06 (job-state) per cross-cutting
+  ownership; this plan registers the value at error emission time.
+  plan-21-07 reads `processing_jobs.last_error_id` for the queue-stats
+  "last 50 errors" surface. If plan-06 has not yet shipped the column,
+  Epic 21.5 ships its own migration as a dependency hand-off.

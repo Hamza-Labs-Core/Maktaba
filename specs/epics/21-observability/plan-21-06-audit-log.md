@@ -7,12 +7,28 @@
 
 ## 0. Scope and placement
 
+> **Canonical schema ownership.** This plan is the **sole creator** of
+> the `audit_log` table. Architecture §8.6.1 defines the canonical shape;
+> the schema in §2 below is a literal implementation of that section.
+> Prior plans that created `audit_log` are **superseded**:
+> - [plan-09-17](../09-library-management/plan-09-17-library-audit.md)
+>   must execute `DROP TABLE IF EXISTS audit_log` and `DROP VIEW IF
+>   EXISTS library_audit, security_audit` before re-running.
+> - This plan's migration runs **first** in dependency order so any
+>   downstream plan that inserts into `audit_log` (Epics 09, 12, 19,
+>   21.05/07, 23, 24) compiles against the canonical column set.
+> - Epic 12 plan-12-10 wrote `category='device'`; the CHECK enum below
+>   includes `'device'` (and `'session'`, `'job'`) so existing inserts
+>   continue to succeed.
+
 | Concern | Decision |
 |---|---|
-| Schema owner | This story owns `audit_log`. `library_audit` and `security_audit` tables in earlier drafts collapse into views. |
+| Schema owner | This plan is the sole creator of `audit_log` (architecture §8.6.1). Prior plans (plan-09-17) are superseded; `library_audit`/`security_audit` collapse into views. |
 | File mirror | `/var/maktaba/audit/audit.log` JSON-Lines. Only used when DB unreachable; replayed on reconnect. |
 | Append-only | `BEFORE UPDATE OR DELETE` trigger raises exception. Retention via `DETACH PARTITION` + `DROP TABLE`. |
 | Read audit | Every API read against audit emits a `data` audit row (read-audit). |
+| `error_id` linkage | Stored in `payload->>'error_id'` (NOT a top-level column). plan-21-05 is the producer; plan-21-07 reads via `payload->>'error_id'` and `processing_jobs.last_error_id`. |
+| `target_id` typing | `TEXT` (handles UUIDs, library hashes, video ids, device ids, session ids). Consumers casting to UUID must qualify with a `target_kind` filter or use `payload->>'target_uuid'`. |
 
 ## 1. Project layout
 
@@ -44,31 +60,59 @@ cmd/maktaba-admin/
 
 ## 2. Schema
 
+The schema below is the literal canonical shape from architecture §8.6.1.
+Field-by-field rationale for the CHECK enum:
+
+| Category   | Owner / producer                                        |
+|------------|---------------------------------------------------------|
+| `library`  | Epic 09 (library lifecycle, library_audit endpoint)     |
+| `security` | Epic 09/23 (auth-adjacent events not under `auth`)      |
+| `device`   | Epic 12 (device pairing/revocation)                     |
+| `admin`    | Admin actions (Story 21.6 retention CLI, Story 23 ops)  |
+| `auth`     | Epic 10/23 (login, refresh, lockout, rate-limit events) |
+| `data`     | Read-audit rows + Story 24 corruption events            |
+| `config`   | Settings changes (Story 19/23 admin-config writes)      |
+| `keys`     | Epic 10 RS256 keys, Story 23 key rotation               |
+| `job`      | plan-21-07 job pipeline (`event='job.error'` etc.)      |
+
 ```sql
 -- 00xx_audit_log.sql
+-- Canonical schema per architecture §8.6.1. SOLE CREATOR of audit_log.
+-- Older plans that created the table (plan-09-17) are superseded and
+-- must DROP TABLE IF EXISTS audit_log before re-running.
+
 CREATE TABLE audit_log (
     id           BIGSERIAL,
-    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    category     TEXT NOT NULL CHECK (category IN ('auth','library','admin','data','config','keys')),
+    category     TEXT NOT NULL CHECK (category IN (
+                   'library','security','device','admin',
+                   'auth','data','config','keys','job'
+                 )),
     event        TEXT NOT NULL,
-    actor_user   UUID NULL,
+    actor_user   UUID NULL REFERENCES users(id) ON DELETE SET NULL,
     actor_ip     INET NULL,
     actor_ua     TEXT NULL,
     target_kind  TEXT NULL,
-    target_id    TEXT NULL,
+    target_id    TEXT NULL,                          -- TEXT, not UUID; handles every id shape
     payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    dedupe_key   TEXT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     clock_source TEXT NOT NULL DEFAULT 'db',
-    PRIMARY KEY (id, occurred_at)
-) PARTITION BY RANGE (occurred_at);
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
 
 CREATE TABLE audit_log_default PARTITION OF audit_log DEFAULT;
 -- bootstrap one month
 CREATE TABLE audit_log_y2026m05 PARTITION OF audit_log
   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
 
-CREATE INDEX audit_log_category_occurred_at_idx ON audit_log (category, occurred_at DESC);
-CREATE INDEX audit_log_actor_user_occurred_at_idx ON audit_log (actor_user, occurred_at DESC) WHERE actor_user IS NOT NULL;
-CREATE INDEX audit_log_target_idx ON audit_log (target_kind, target_id, occurred_at DESC);
+CREATE INDEX audit_log_category_created_at_idx ON audit_log (category, created_at DESC);
+CREATE INDEX audit_log_actor_user_created_at_idx ON audit_log (actor_user, created_at DESC) WHERE actor_user IS NOT NULL;
+CREATE INDEX audit_log_target_idx ON audit_log (target_kind, target_id, created_at DESC);
+CREATE INDEX audit_log_dedupe_key_idx ON audit_log (dedupe_key) WHERE dedupe_key IS NOT NULL;
+-- error_id resolves to payload->>'error_id'; helper expression index
+-- so plan-21-07 'last 50 errors' lookups stay fast.
+CREATE INDEX audit_log_error_id_idx ON audit_log ((payload->>'error_id'))
+  WHERE payload ? 'error_id';
 
 -- Append-only trigger
 CREATE OR REPLACE FUNCTION audit_log_block_mutate() RETURNS trigger AS $$
@@ -81,13 +125,25 @@ CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION audit_log_block_mutate();
 
--- Views consumed by existing endpoints
+-- Views consumed by existing endpoints. NOTE: views cannot carry their
+-- own indexes; query planners use the underlying partition indexes.
+-- plan-21-07 EXPLAIN expectations therefore target
+-- `audit_log_y<NNNN>m<MM>` partitions, not the view names.
 CREATE VIEW audit_log_security AS
-    SELECT * FROM audit_log WHERE category IN ('auth','admin','keys');
+    SELECT * FROM audit_log WHERE category IN ('auth','admin','keys','security');
 
 CREATE VIEW audit_log_library AS
     SELECT * FROM audit_log WHERE category = 'library';
 ```
+
+**Primary-key choice (`BIGSERIAL` vs UUIDv7).** `BIGSERIAL` allocates a
+*per-partition* sequence under PostgreSQL's declarative partitioning,
+so cross-partition collisions are not possible (each partition is its
+own sequence-bearing relation; rows are unique per (id, created_at)
+which is the partition key + sequence). If a future deployment shards
+audit emission across multiple writers (e.g., per-region replicas),
+this plan switches to UUIDv7 (`uuid_generate_v7()`) — until then,
+`BIGSERIAL` is retained for index density.
 
 ## 3. Emit (Go)
 
@@ -237,10 +293,10 @@ RunE: func(cmd *cobra.Command, args []string) error {
 func (h *Handler) ListLibraryAudit(w http.ResponseWriter, r *http.Request) {
     libID := chi.URLParam(r, "id")
     rows, err := h.db.QueryContext(r.Context(), `
-        SELECT id, occurred_at, event, actor_user, actor_ip, payload
+        SELECT id, created_at, event, actor_user, actor_ip, payload
           FROM audit_log_library
          WHERE target_kind='library' AND target_id=$1
-         ORDER BY occurred_at DESC LIMIT 200`, libID)
+         ORDER BY created_at DESC LIMIT 200`, libID)
     if err != nil { http.Error(w, err.Error(), 500); return }
     defer rows.Close()
     out := []AuditRow{}

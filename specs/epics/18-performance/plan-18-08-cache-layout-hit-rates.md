@@ -9,9 +9,10 @@
 | Concern | Decision |
 |---|---|
 | Caches in scope | HLS segments (disk LRU); embedding (in-mem LRU); probe (in-mem LRU + DB-backed); JWKS (TTL); FTS prepared statements (Go `sql.Stmt` LRU). |
-| Metrics naming | `<cache>_cache_hits_total`, `<cache>_cache_misses_total`, `<cache>_cache_size_{bytes,entries}`. Label `cache="hls_segment"` etc. |
+| Metrics naming | **Single metric name with a `cache` label** is the canonical convention: `cache_hits_total{cache="hls_segment"}`, `cache_misses_total{cache="…"}`, `cache_size_bytes{cache="…"}`, `cache_size_entries{cache="…"}`. We do NOT publish per-cache prefixed names (e.g. `embedding_cache_hits_total`) — they cause cardinality double-counting and break shared dashboards. |
+| Admin endpoints | **Whole-cache flush** is owned here: `POST /admin/cache/{name}/flush` is the canonical URL. Per-key segment eviction (`POST /admin/cache/segments/evict?hash=…&rendition=…&seg=…`) is a different operation owned by plan-18-03. |
 | Eviction policy | Each cache instance carries `Policy{Kind: "lru" | "ttl" | "lru_size_singleflight", Capacity: ...}`. |
-| Admin endpoints | `POST /admin/cache/{name}/flush` on the owning service. CLI alias: `maktaba-streaming gc`. |
+| Admin endpoint shape | `POST /admin/cache/{name}/flush` on the owning service (this plan owns it). CLI alias: `maktaba-streaming gc`. |
 | Out of scope | Cache size tuning (Epic 19); persistent on-disk index for embeddings (out of v1). |
 
 ## 1. Project layout
@@ -98,9 +99,15 @@ func NewReporter(caches []Cache, reg prometheus.Registerer) *Reporter {
 func (r *Reporter) Tick() {
     for _, c := range r.caches {
         s := c.Stats()
-        // Counters reset to zero between ticks would lose data; we use a
-        // per-cache "last observed" delta.
-        // (Implementation detail elided.)
+        // Counters never reset to zero on Tick — Prometheus counters are
+        // monotonic. Each Cache implementation owns a monotonic uint64 for
+        // hits/misses; the Reporter publishes the absolute value via Add()
+        // on the delta since the last observation. The "last observed"
+        // value is held in `r.lastObserved[c.Name()]` (a map of struct{
+        // hits, misses uint64 }), and on Tick we compute
+        // delta = current - last, call hits.WithLabelValues(name).Add(delta),
+        // and update last = current. Process restart resets last to zero,
+        // which matches Prometheus' counter-restart detection.
         r.size.WithLabelValues(c.Name()).Set(float64(s.SizeBytes))
         r.items.WithLabelValues(c.Name()).Set(float64(s.Entries))
     }
@@ -122,6 +129,8 @@ func (h *Handler) Flush(w http.ResponseWriter, r *http.Request) {
 }
 
 // router:
+// Canonical whole-cache flush — owned by this plan. Per-key segment
+// eviction lives at POST /admin/cache/segments/evict (plan-18-03).
 r.With(adminAuthOnly).Post("/admin/cache/{name}/flush", h.Flush)
 ```
 
@@ -173,33 +182,42 @@ Eviction kind: **`lru_size_singleflight`** — exposed via `Policy()`.
 
 ```go
 // api/internal/cache/jwks.go
+//
+// JWT/JWKS validation uses github.com/lestrrat-go/jwx/v2/jwk for parsing
+// the JWKS document and exposing JOSE-friendly public keys. We do NOT use
+// golang.org/x/crypto/ssh — that package speaks SSH wire format, not JWS,
+// and its PublicKey type is unrelated to JOSE verification.
+import (
+    "github.com/lestrrat-go/jwx/v2/jwk"
+)
+
 type JWKS struct {
     issuer string
     ttl    time.Duration
     mu     sync.RWMutex
-    keys   map[string]ssh.PublicKey
+    set    jwk.Set            // parsed JWKS; per-kid lookup via set.LookupKeyID
     expiry time.Time
 }
 
-func (c *JWKS) Get(ctx context.Context, kid string) (ssh.PublicKey, error) {
+func (c *JWKS) Get(ctx context.Context, kid string) (jwk.Key, error) {
     c.mu.RLock()
-    if time.Now().Before(c.expiry) {
-        if k, ok := c.keys[kid]; ok { c.mu.RUnlock(); return k, nil }
+    if time.Now().Before(c.expiry) && c.set != nil {
+        if k, ok := c.set.LookupKeyID(kid); ok { c.mu.RUnlock(); return k, nil }
     }
     c.mu.RUnlock()
     return c.refresh(ctx, kid)
 }
 
-func (c *JWKS) refresh(ctx context.Context, kid string) (ssh.PublicKey, error) {
+func (c *JWKS) refresh(ctx context.Context, kid string) (jwk.Key, error) {
     c.mu.Lock(); defer c.mu.Unlock()
-    if time.Now().Before(c.expiry) {
-        if k, ok := c.keys[kid]; ok { return k, nil }
+    if time.Now().Before(c.expiry) && c.set != nil {
+        if k, ok := c.set.LookupKeyID(kid); ok { return k, nil }
     }
-    keys, err := c.fetch(ctx)
+    set, err := jwk.Fetch(ctx, c.issuer+"/.well-known/jwks.json")
     if err != nil { return nil, err }
-    c.keys = keys
+    c.set = set
     c.expiry = time.Now().Add(c.ttl)
-    if k, ok := keys[kid]; ok { return k, nil }
+    if k, ok := set.LookupKeyID(kid); ok { return k, nil }
     return nil, errKidMissing
 }
 ```
@@ -208,7 +226,7 @@ EC1 mapping: TTL = 5 min default → new keys picked up within ≤ 5 min.
 
 ## 7. Probe cache invalidation (EC3)
 
-Already covered in Story 18.3 plan; the cache key is `(path, size, mtime)`. On change → cache miss → re-probe. The DB row update uses `INSERT … ON CONFLICT (video_id) DO UPDATE SET probe_data = EXCLUDED.probe_data` (atomic).
+Already covered in Story 18.3 plan; the cache key is `content_hash` (architecture §1.5 canonical identity). When file bytes change, the scanner recomputes `content_hash` → cache miss → re-probe. Renames and moves leave `content_hash` unchanged and therefore reuse the cached entry. The DB row update writes to `media_info.raw_ffprobe` JSONB (architecture line 1335) via `INSERT … ON CONFLICT (video_id) DO UPDATE SET raw_ffprobe = EXCLUDED.raw_ffprobe` (atomic).
 
 ## 8. Test cases
 
@@ -249,10 +267,11 @@ got, _ = c.Get("bar"); require.Equal(t, v2, got)
 // adversarial: even if a hypothetical hash collided, full-text key prevents mix-up
 ```
 
-### EC3 — Probe invalidation on (size, mtime) change
-- Probe video → cached.
-- `os.Truncate(file, oldSize)` then `os.Chtimes(file, ...)` to bump mtime.
-- Next `OpenSession` re-probes; DB row updated atomically; in-mem entry replaced.
+### EC3 — Probe invalidation on content_hash change
+- Probe video → cached (key = `content_hash`).
+- Modify file bytes; scanner recomputes `content_hash`.
+- Next `OpenSession` sees a new key → re-probes; `media_info.raw_ffprobe` updated atomically; in-mem entry under the new key.
+- Pure rename/move (bytes unchanged) keeps `content_hash` and therefore the cached entry — no re-probe.
 
 ## 9. Edge cases summary
 
@@ -260,31 +279,45 @@ got, _ = c.Get("bar"); require.Equal(t, v2, got)
 |---|---|---|
 | EC1 JWKS rotation | story | TTL refresh; configurable. |
 | EC2 embed key collision | story | Cache keys are full text, not hash. |
-| EC3 probe (size, mtime) | story | `(path,size,mtime)` cache key. |
+| EC3 probe `content_hash` | story | Canonical identity key per architecture §1.5; survives moves/renames. |
 | Flush concurrent with read | impl | `sync.RWMutex`; readers hold RLock; flush takes Lock. |
 | Disk-cache flush partial fail | impl | Walks dir; collects errors; returns `errors.Join` so partial success is still reported. |
 | Metric counter wrap | impl | `uint64`; never resets except on process restart. |
 
 ## 10. Configuration
 
-```yaml
-caches:
-  hls_segment:
-    kind: lru_size_singleflight
-    max_gib: 50
-    low_water_pct: 95
-  probe:
-    kind: lru
-    max_entries: 4096
-  embedding:
-    kind: lru
-    max_entries: 10000
-  jwks:
-    kind: ttl
-    ttl_seconds: 300
-  fts_stmt:
-    kind: lru
-    max_entries: 256
+This block **extends** architecture §11.3 — the canonical TOML keys
+`[cache] root` and `[cache] max_gib` continue to govern on-disk root and
+total-budget; the per-cache settings below add policy details that §11.3
+does not enumerate. Implementations should merge this block under the
+existing `[cache]` table rather than introduce a parallel top-level key.
+
+```toml
+# Extends architecture §11.3 [cache] section
+[cache]
+root    = "/var/cache/maktaba"   # canonical (arch §11.3)
+max_gib = 50                      # canonical (arch §11.3)
+
+[cache.hls_segment]
+kind          = "lru_size_singleflight"
+max_gib       = 50                # may equal or be < cache.max_gib
+low_water_pct = 95
+
+[cache.probe]
+kind        = "lru"
+max_entries = 4096
+
+[cache.embedding]
+kind        = "lru"
+max_entries = 10000
+
+[cache.jwks]
+kind        = "ttl"
+ttl_seconds = 300
+
+[cache.fts_stmt]
+kind        = "lru"
+max_entries = 256
 ```
 
 ## 11. Runbook

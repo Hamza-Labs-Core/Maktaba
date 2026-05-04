@@ -9,7 +9,7 @@
 | Concern | Decision |
 |---|---|
 | Owner | `pipeline/maktaba_pipeline/` (Python 3.12). |
-| Stages | `transcribe`, `index`, `thumbnail`, `embed`, `diarize`. |
+| Stages | Canonical pipeline stages per architecture: `scan`, `probe`, `extract`, `transcribe`, `subtitle_gen`, `index`, `thumbnail`. The `index` stage is composite — it does FTS upsert into `transcripts_fts` **plus** Chroma vector upsert in one transactional batch (architecture §3 / §8.4). Embedding and diarization are sub-steps of `transcribe`/`index` rather than top-level stages. |
 | Telemetry | Prometheus client; one histogram per stage `pipeline_stage_duration_seconds{stage}`. |
 | Budgets registered | `shared/perf_budgets.yaml` references; assertions live in the perf harness. |
 | Out of scope | Worker-pool architecture (Epic 6 job-queue); model selection (Epic 3 transcription). |
@@ -21,11 +21,13 @@ pipeline/
 ├── maktaba_pipeline/
 │   ├── stages/
 │   │   ├── __init__.py
-│   │   ├── transcribe.py       # Whisper MLX/faster-whisper
-│   │   ├── index.py            # FTS upsert + Chroma upsert
-│   │   ├── thumbnail.py        # FFmpeg sprite + posters
-│   │   ├── embed.py
-│   │   └── diarize.py
+│   │   ├── scan.py             # filesystem walker
+│   │   ├── probe.py            # ffprobe → media_info.raw_ffprobe
+│   │   ├── extract.py          # audio extract for transcription
+│   │   ├── transcribe.py       # Whisper MLX/faster-whisper (embed sub-step internal)
+│   │   ├── subtitle_gen.py     # WebVTT/SRT emission
+│   │   ├── index.py            # FTS upsert + Chroma upsert (composite)
+│   │   └── thumbnail.py        # FFmpeg sprite + posters
 │   ├── metrics.py              # Prometheus histograms
 │   ├── runner.py               # one-shot stage CLI for benchmarks
 │   └── benchmarks/
@@ -95,19 +97,39 @@ class Transcriber:
 
 Backend selection (priority): `mlx` if `arch=arm64` and `mlx-whisper` importable → `faster-whisper` GPU → `faster-whisper` CPU → API.
 
+**Fallback throughput floor**: when MLX is unavailable and faster-whisper CPU is engaged, the pinned target is **≥ 1.0× realtime** (i.e. transcribe a 60-minute audio in ≤ 60 minutes wall-clock). The 4× target only applies to the MLX or GPU paths. EC3 asserts the relaxed `≥ 1.0×` value.
+
 ## 4. Index stage (≥ 50 seg/s)
 
 ```python
 # stages/index.py
-def index_segments(db, chroma, video_id: str, segments: list[Segment]) -> None:
+#
+# Schema reference (architecture line ~1369-1379):
+#   transcripts(id UUID PK, video_id UUID FK, language, source, created_at)
+#   transcript_segments(
+#     id BIGSERIAL PK, transcript_id UUID FK,
+#     seq INT, start_sec REAL, end_sec REAL, text, speaker, confidence
+#   )
+# Note: transcript_segments joins to videos via transcripts.video_id;
+# there is no direct video_id column on transcript_segments.
+def index_segments(db, chroma, video_id: str, transcript_id: str,
+                   language: str, source: str, segments: list[Segment]) -> None:
     with StageTimer("index"):
-        # FTS: single multi-row INSERT
+        # 1) Insert/upsert transcript row first (parent FK target).
+        db.execute(
+            "INSERT INTO transcripts(id, video_id, language, source) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET language=EXCLUDED.language",
+            (transcript_id, video_id, language, source),
+        )
+        # 2) Bulk-insert canonical transcript_segments columns.
         db.execute_values(
-            "INSERT INTO segments(...) VALUES %s",
-            [(s.id, s.video_id, s.start, s.end, s.text) for s in segments],
+            "INSERT INTO transcript_segments"
+            "(transcript_id, seq, start_sec, end_sec, text) VALUES %s",
+            [(transcript_id, s.seq, s.start_sec, s.end_sec, s.text) for s in segments],
             page_size=500,
         )
-        # Chroma: batched upsert
+        # 3) Chroma vector upsert (paired with FTS upsert in same stage).
         chroma.upsert(
             ids=[s.id for s in segments],
             embeddings=[s.embedding for s in segments],
@@ -201,7 +223,7 @@ Fixture `arabic-english-codeswitch-20min.wav` (Arabic with English proper nouns)
 30 s clip. RT-multiple meaningless; assert wall-clock ≤ 60 s.
 
 ### EC3 — GPU fallback
-Set `MAKTABA_FORCE_MLX_FAILURE=1` env var. Run transcribe; assert: stage logs `mlx → faster-whisper fallback`, `pipeline_fallback_total{from_to="mlx_to_faster"}` == 1, transcribe completes (relaxed budget).
+Set `MAKTABA_FORCE_MLX_FAILURE=1` env var. Run transcribe; assert: stage logs `mlx → faster-whisper fallback`, `pipeline_fallback_total{from_to="mlx_to_faster"}` == 1, and the relaxed throughput floor `rt >= 1.0` holds (i.e. ≥ 1× realtime CPU).
 
 ## 8. Edge case implementation
 
@@ -220,23 +242,33 @@ def _select_backend(cfg) -> Backend:
 
 ## 9. Configuration
 
+Keys here align to architecture §11.4 `concurrency.*` map. Only the canonical
+top-level stages appear in `concurrency`; embedding lives inside `transcribe`/`index`
+and diarization inside `transcribe`, so neither has its own concurrency knob.
+
 ```yaml
 # pipeline/config.yaml
 concurrency:
+  scan: 1
+  probe: 2
+  extract: 2
   transcribe: 1
+  subtitle_gen: 2
   index: 4
   thumbnail: 2
-  embed: 2
 
 worker_timeout_s:
+  scan: 600
+  probe: 120
+  extract: 600
   transcribe: 7200
+  subtitle_gen: 300
   index: 600
   thumbnail: 600
-  embed: 600
 
 models:
   transcribe: "whisper-large-v3"
-  embed: "intfloat/multilingual-e5-large"
+  embed: "intfloat/multilingual-e5-large"   # used inside index stage
 ```
 
 ## 10. Metrics summary

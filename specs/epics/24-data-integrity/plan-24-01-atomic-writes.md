@@ -9,11 +9,12 @@
 
 | Concern | Decision |
 |---|---|
-| Helper module | `pipeline/src/maktaba_pipeline/media/atomic_write.py`. Single function `atomic_write_bytes(path, content, *, fsync=True)` plus a `atomic_write_stream(path)` context manager for large files. |
-| Filesystem assumption | POSIX `rename(2)` atomicity on the same filesystem. Cross-FS rename uses copy + atomic-rename within the destination FS. |
+| Helper module | `pipeline/src/maktaba_pipeline/media/atomic_write.py`. Single function `atomic_write_bytes(path, content, *, fsync=True)` plus a `atomic_write_stream(path)` context manager for large files. The helper signature documents `EXDEV` cross-FS fallback (copy + atomic-rename within destination FS). |
+| Filesystem assumption | POSIX `rename(2)` atomicity on the same filesystem. Cross-FS rename uses copy + atomic-rename within the destination FS (`EXDEV` path). |
+| HLS segments | **Scoped out** here per Epic 8 §4.8: `.m4s`/`.ts` segment writes are owned by the streaming origin (Epic 8) and use a different write-then-publish strategy (write into a staging dir, atomic `rename` of the directory tree). Do not route HLS segments through this helper. |
 | Lint | `tools/atomic-write-lint.py` walks `pipeline/src/` for `open(path, "w")` / `Path.write_*` calls outside the helper. |
 | Reaper | `pipeline/src/maktaba_pipeline/tasks/reaper.py` already exists per architecture §7; this plan adds a `sweep_stale_temps` step. |
-| Out of scope | DB writes (Story 24.3); the on-disk encoding format itself (Epic 4 owns subtitles, Epic 8 owns sprites). |
+| Out of scope | DB writes (Story 24.3); HLS segments (Epic 8 §4.8); the on-disk encoding format itself (Epic 4 owns subtitles, Epic 8 owns sprites). |
 
 ## 1. Architecture diagram
 
@@ -93,6 +94,12 @@ def atomic_write_bytes(
     NOT atomic (some SMB shares), the helper falls back to
     `(write, fsync, rename, fsync_dir)` which is still durable, just not
     truly atomic; a documented warning is logged.
+
+    On `EXDEV` (the temp dir somehow ends up on a different filesystem
+    than `path`'s dir — e.g., bind mount inside `parent`), the helper
+    uses `shutil.copyfile + os.replace + os.unlink(tmp)` so the rename
+    happens on the destination filesystem. This is the documented
+    cross-FS fallback path; readers never observe a partial file.
     """
     p = Path(path)
     parent = p.parent
@@ -193,6 +200,15 @@ _cache: dict[str, _Capability] = {}
 _lock = Lock()
 
 def supports_atomic_rename(mount: str) -> bool:
+    """Returns True iff the mount has been observed to atomically rename.
+
+    Used by `atomic_write_bytes` to decide whether to take the fast path
+    (single `os.replace`) or the SMB/network-share fallback path
+    (write + fsync + rename + fsync_dir + log). Initial value is True
+    (optimistic); flipped to False on first observed `EXDEV`/
+    `EOPNOTSUPP` via `mark_unsupported`. The boolean is consulted on
+    every write — not vestigial.
+    """
     with _lock:
         c = _cache.get(mount)
         if c: return c.atomic_rename
@@ -208,9 +224,14 @@ def mark_unsupported(path, op: str) -> None:
         if op == "fsync_dir":     c.fsync_dir     = False
 
 def _probe(mount: str) -> _Capability:
-    # Best-effort: probe is "we hope rename works"; fall through on first
-    # observed EXDEV/EOPNOTSUPP. The Network-share fallback below is
-    # invoked from atomic_write_bytes when probe says "no".
+    # Best-effort initial probe: filesystem-type sniff via os.statvfs +
+    # /proc/mounts (Linux) or `getmntinfo` (macOS). Known-non-atomic
+    # types (cifs, smbfs, nfsv3) start with `atomic_rename=False`;
+    # everything else starts True and is downgraded by mark_unsupported
+    # on first observed EXDEV/EOPNOTSUPP.
+    fstype = _detect_fstype(mount)
+    if fstype in {"cifs", "smbfs", "nfs", "nfs3"}:
+        return _Capability(atomic_rename=False, fsync_dir=False)
     return _Capability(atomic_rename=True, fsync_dir=True)
 ```
 
@@ -225,10 +246,14 @@ from pathlib import Path
 STALE_TMP_AGE = 24 * 60 * 60  # 24 h
 
 def sweep_stale_temps(library_root: Path) -> int:
-    """Remove `*.tmp.*` files older than 24 h under the library root."""
+    """Remove `*.tmp.*` files older than 24 h under the library root.
+
+    The glob uses `**` so it matches both flat layouts
+    (`.maktaba/foo.tmp.<n>`) and nested layouts (`.maktaba/<vid>/.../*.tmp.<n>`).
+    """
     removed = 0
     cutoff = time.time() - STALE_TMP_AGE
-    for tmp in library_root.rglob(".maktaba/*/*.tmp.*"):
+    for tmp in library_root.rglob(".maktaba/**/*.tmp.*"):
         try:
             if tmp.stat().st_mtime < cutoff:
                 tmp.unlink(missing_ok=True)
@@ -324,7 +349,7 @@ CI runs the lint as part of the `lint-py` make target.
 | File mode mismatch | Default 0o644; callers requiring restricted modes pass `perm=0o600`. | `TestPermArgHonored` |
 | Concurrent atomic writes to same path | Each writer's temp has a random suffix; the `os.replace` is racy but each call leaves the file in a consistent state — last writer wins. Documented. | `TestConcurrentWriteLastWins` |
 | Disk full leaves pending temp | Caught by `errno==ENOSPC` cleanup; covered. | `TestEnospcLeavesNoTemp` |
-| Path with shared `.tmp.*` glob from another tool | Sweeper's glob is scoped to `.maktaba/*/*.tmp.*`; the tool's other temp files (e.g., FFmpeg's `*.muxer.tmp`) are not under `.maktaba/` per layout. | n/a |
+| Path with shared `.tmp.*` glob from another tool | Sweeper's glob is scoped to `.maktaba/**/*.tmp.*`; the tool's other temp files (e.g., FFmpeg's `*.muxer.tmp`) are not under `.maktaba/` per layout. | n/a |
 
 ## 5. Dependencies
 

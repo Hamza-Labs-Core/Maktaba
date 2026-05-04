@@ -54,6 +54,15 @@ func PSS(pid int) (int64, error) {
 
 ```go
 // meter/rss_darwin.go (CGO via mach task_info)
+//
+// IMPORTANT: task_for_pid is a privileged Mach call. To inspect another
+// process the binary must be either:
+//   (a) signed with `com.apple.security.cs.debugger` entitlement
+//       (and the codesign-signed identity must be in the system's
+//       Accessibility / Developer Tools allowlist), OR
+//   (b) running as root.
+// In our soak harness we self-inspect (target == os.Getpid()), which works
+// without entitlements. Cross-process inspection in CI requires step (a).
 //go:build darwin
 package meter
 /*
@@ -65,12 +74,15 @@ import "unsafe"
 func PSS(pid int) (int64, error) {
     var task C.task_t
     var info C.mach_task_basic_info_data_t
+    // count is in/out: tell task_info how big our buffer is, it writes back
+    // how many fields it actually populated. Must be addressable.
     count := C.mach_msg_type_number_t(C.MACH_TASK_BASIC_INFO_COUNT)
     if rc := C.task_for_pid(C.mach_task_self_(), C.int(pid), &task); rc != 0 {
-        return 0, fmt.Errorf("task_for_pid: %d", rc)
+        return 0, fmt.Errorf("task_for_pid: %d (needs entitlement on Darwin)", rc)
     }
     if rc := C.task_info(task, C.MACH_TASK_BASIC_INFO,
-        (*C.integer_t)(unsafe.Pointer(&info)), &count); rc != 0 {
+        (*C.integer_t)(unsafe.Pointer(&info)),
+        (*C.mach_msg_type_number_t)(&count)); rc != 0 {
         return 0, fmt.Errorf("task_info: %d", rc)
     }
     return int64(info.resident_size), nil
@@ -172,6 +184,10 @@ import "runtime"
 
 func init() {
     expvar.Publish("goroutines", expvar.Func(func() any { return runtime.NumGoroutine() }))
+    // expvar.Publish accepts any expvar.Var; expvar.Func returns `any`,
+    // so the JSON wire form for memstats_pause_total_ns is the bare number
+    // (e.g. `12345678`). Consumers MUST parse it as a numeric string —
+    // strconv.ParseUint(string(raw), 10, 64) — not as a JSON object.
     expvar.Publish("memstats_pause_total_ns", expvar.Func(func() any {
         var m runtime.MemStats; runtime.ReadMemStats(&m); return m.PauseTotalNs
     }))
@@ -197,27 +213,53 @@ async def emit_loop():
 
 ## 7. Per-service envelopes
 
-Codified in `tests/soak/envelopes.yaml` (loaded by harness):
+**Single source of truth**: per-service envelopes live in
+`shared/perf_budgets.yaml` under the top-level `envelopes:` section
+(schema defined in plan-18-01 §3 — `name`, `profile`, `max_value`, `ci_pr`).
+The soak harness reads `envelopes:` from `shared/perf_budgets.yaml`; there is
+no parallel `tests/soak/envelopes.yaml`. A `tests/soak/envelopes.override.yaml`
+file MAY exist for soak-test-only overrides (e.g. CI-runner-specific
+allowances), and is merged on top of the canonical file at harness startup.
+The override file is not the source of truth for any budget.
+
+Example expected entries in `shared/perf_budgets.yaml`:
 
 ```yaml
-api:
-  idle_rss_max_mib: 80
-  steady_rss_max_mib: 250
-  steady_qps: 200
-  slope_max_mib_per_h: 1.0
+envelopes:
+  - name: api.idle_rss_mib
+    profile: mac-m2-8gb
+    max_value: 80
+    ci_pr: false
+  - name: api.steady_rss_mib
+    profile: mac-m2-8gb
+    max_value: 250
+    ci_pr: false
+  - name: api.rss_slope_mib_per_h
+    profile: mac-m2-8gb
+    max_value: 1.0
+    ci_pr: false
 
-streaming:
-  idle_rss_max_mib: 100
-  steady_rss_max_mib: 300
-  parent_only: true
-  steady_concurrent_transcodes: 8
-  slope_max_mib_per_h: 1.0
+  - name: streaming.idle_rss_mib
+    profile: mac-m2-8gb
+    max_value: 100
+    ci_pr: false
+  - name: streaming.steady_rss_mib_parent
+    profile: mac-m2-8gb
+    max_value: 300
+    ci_pr: false
 
-pipeline:
-  idle_rss_max_mib: 600
-  steady_overhead_mib: 500
-  per_model_rss_mib: 4500
-  slope_max_mib_per_h: 1.0
+  - name: pipeline.idle_rss_mib
+    profile: mac-m2-8gb
+    max_value: 600
+    ci_pr: false
+  - name: pipeline.steady_overhead_mib
+    profile: mac-m2-8gb
+    max_value: 500
+    ci_pr: false
+  - name: pipeline.per_model_rss_mib
+    profile: mac-m2-8gb
+    max_value: 4500     # measured peak for whisper-large-v3 MLX on M2
+    ci_pr: false
 ```
 
 ## 8. Pipeline shared-page accounting (EC2)
@@ -254,7 +296,7 @@ Workers are launched via `multiprocessing.Process`. Harness sums PSS across the 
 ## 11. CI integration
 
 - Burst + goroutine-leak run on every PR (~10 min).
-- 24-h soak runs nightly on dedicated `mac-m2-8gb-soak` and `linux-x86-16gb-soak` self-hosted runners; failure pages on-call.
+- 24-h soak runs nightly on dedicated `mac-m2-8gb-soak` and `linux-amd64-16gb-soak` self-hosted runners; failure pages on-call.
 
 ## 12. Dependencies
 

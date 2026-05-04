@@ -10,8 +10,9 @@
 |---|---|
 | Tagging | Go `//go:build unit`, `//go:build integration`, `//go:build e2e`. Python `pytest.mark.unit/integration/e2e`. TS `*.unit.spec.ts`, `*.int.spec.ts`, `*.e2e.spec.ts`. |
 | Per-tier runner | Make targets `make test-unit`, `make test-integration`, `make test-e2e`; CI matrix runs them in parallel. |
-| Soft cap warning | Custom test reporter emits `WARN` at 100 ms unit / 5 s int / 30 s e2e. Hard fail at 3×. |
+| Soft cap warning | Uniform 100 ms per-test soft cap across Go, Python, and Vitest in the unit tier (story-20-01 AC2/AC4); 5 s integration / 30 s e2e. Custom reporter emits `WARN` on breach; hard fail at 3×. |
 | I/O isolation | Go: net dialer hook in unit tier rejects all dials; Python: `socket.socket = forbidden`; TS: vitest `setupFiles` patches `fetch`/`net`. |
+| TV platforms | tvOS uses XCUITest + XCTest run via `xcodebuild test` on a macOS runner. Android TV uses JUnit5 + Espresso (instrumented) + Compose-test run via `gradle :app:connectedAndroidTest` on a Linux runner with KVM. Both belong to the e2e tier; their per-platform suites live alongside their app sources. |
 | Out of scope | Specific test content (per-feature stories own that). |
 
 ## 1. Project layout
@@ -48,6 +49,7 @@ import (
     "fmt"
     "net"
     "testing"
+    "time"
 )
 
 func init() { SetUnitDialerGuard() }
@@ -98,28 +100,45 @@ def _forbid_sockets():
     yield
     socket.socket = real
 
-def pytest_runtest_call(item):
-    if item.get_closest_marker("unit") and item.duration > 0.3:
-        item.warn(pytest.PytestWarning(f"unit test {item.nodeid} took {item.duration:.2f}s"))
+
+# Tier soft caps (seconds); aligned with story-20-01 AC4.
+_TIER_SOFT_CAP_SEC = {"unit": 0.1, "integration": 5.0, "e2e": 30.0}
+
+
+def pytest_collection_modifyitems(config, items):
+    """Apply a per-tier hard timeout (3× soft cap) via pytest.mark.timeout."""
+    for item in items:
+        for tier, cap in _TIER_SOFT_CAP_SEC.items():
+            if item.get_closest_marker(tier):
+                item.add_marker(pytest.mark.timeout(int(cap * 3)))
+                break
+
+
+def pytest_runtest_logreport(report):
+    """Emit a WARN line when a test breaches its tier's soft cap.
+
+    Reads `report.duration` (set by pytest after the call phase). The hard fail
+    at 3× the cap is enforced by the timeout marker added in
+    `pytest_collection_modifyitems`.
+    """
+    if report.when != "call":
+        return
+    for tier, cap in _TIER_SOFT_CAP_SEC.items():
+        if any(k.startswith(f"{tier}") for k in getattr(report, "keywords", {})):
+            if report.duration > cap:
+                print(f"WARN: {tier} test {report.nodeid} took "
+                      f"{report.duration:.3f}s > soft cap {cap:.3f}s")
+            break
 ```
 
-Soft-cap fail:
+Markers and `pytest-timeout` are declared in `pyproject.toml`:
 
-```python
+```toml
 # pyproject.toml
 [tool.pytest.ini_options]
 markers = ["unit", "integration", "e2e"]
-```
-
-Per-mark hard timeouts via `pytest-timeout`:
-
-```ini
-[tool.pytest.ini_options]
-timeout = 0
-[tool.pytest.ini_options.tier_caps]
-unit = 0.3
-integration = 15
-e2e = 90
+# Per-test hard timeout is added per-marker by the
+# `pytest_collection_modifyitems` hook above; no global timeout here.
 ```
 
 ## 4. TS guards
@@ -131,17 +150,40 @@ export default defineConfig({
     test: {
         include: ['**/*.unit.spec.ts'],
         setupFiles: ['shared/testtier/ts/netguard.ts'],
-        testTimeout: 300,
-        slowTestThreshold: 100,
+        testTimeout: 300,            // 3× the 100 ms soft cap (AC4 hard-fail)
+        slowTestThreshold: 100,      // matches the 100 ms unit soft cap
     },
 });
 ```
 
 ```ts
 // shared/testtier/ts/netguard.ts
-const blocked = (..._: any[]) => { throw new Error('unit tests must not use fetch/network'); };
-globalThis.fetch = blocked as any;
-import('node:net').then(net => { (net as any).Socket = class { constructor(){ throw new Error('blocked'); } }; });
+import { vi } from 'vitest';
+
+const blocked = (..._: unknown[]): never => {
+    throw new Error('unit tests must not use fetch/network');
+};
+
+// Block fetch eagerly (synchronous; runs before user code).
+globalThis.fetch = blocked as unknown as typeof fetch;
+
+// Replace `node:net` synchronously via vi.mock so any subsequent `import 'node:net'`
+// in user code resolves to this stub (the previous `import('node:net').then(...)`
+// raced with user-code imports that had already pulled `Socket`).
+vi.mock('node:net', async () => {
+    const actual = await vi.importActual<typeof import('node:net')>('node:net');
+    class BlockedSocket {
+        constructor() {
+            throw new Error('unit tests must not open sockets');
+        }
+    }
+    return {
+        ...actual,
+        Socket: BlockedSocket,
+        createConnection: blocked,
+        connect: blocked,
+    };
+});
 ```
 
 ## 5. CI matrix
@@ -160,8 +202,7 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    services:
-      docker: { image: docker:dind }
+    # GitHub-hosted runners already have Docker pre-installed; no docker:dind service needed.
     steps:
       - uses: actions/checkout@v4
       - run: make test-integration
@@ -173,9 +214,40 @@ jobs:
       - uses: actions/checkout@v4
       - run: make test-e2e
     timeout-minutes: 18
+
+  tv-tvos:
+    # tvOS XCUITest + XCTest, run on a macOS runner via xcodebuild.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild test -scheme MaktabaTV -destination 'platform=tvOS Simulator,name=Apple TV'
+    timeout-minutes: 20
+
+  tv-android:
+    # Android TV JUnit5 + Espresso (instrumented) + Compose-test, run on Linux with KVM enabled.
+    runs-on: ubuntu-latest-kvm
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./gradlew :app:connectedAndroidTest -PtvTarget=true
+    timeout-minutes: 25
 ```
 
-PR green-to-merge wall-clock = `max(unit, integration, e2e)` ≤ 18 min, well inside 20 min budget.
+PR green-to-merge wall-clock = `max(unit, integration, e2e)` ≤ 18 min. The
+budget breakdown for the e2e job (the slowest path):
+
+| Phase | Budget |
+|---|---|
+| `actions/checkout` + tool setup | ~1 min |
+| docker compose build + image cache restore | ~2 min |
+| Fixture seed + service warm-up | ~1 min |
+| Playwright e2e tests (12 min cap) | ≤ 12 min |
+| Artifact upload on failure | ~2 min |
+| **Total** | **≤ 18 min** |
+
+This sits inside the 20 min PR budget (story-20-01 AC2). The TV jobs run in
+the same matrix but are not on the PR critical path — they live behind a
+`workflow_dispatch` and a nightly schedule. Their per-platform time budget is
+documented separately in their suite READMEs.
 
 ## 6. Make targets
 
@@ -212,7 +284,7 @@ func startPostgres(t *testing.T) testcontainers.Container {
     var c testcontainers.Container
     var err error
     for i := 0; i < 2; i++ {                                  // one retry
-        c, err = postgres.RunContainer(ctx, postgres.WithImage("postgres:16"))
+        c, err = postgres.RunContainer(ctx, postgres.WithImage("postgres:16.4-alpine3.20"))
         if err == nil { return c }
     }
     t.Fatalf("postgres testcontainer failed: %v", err)

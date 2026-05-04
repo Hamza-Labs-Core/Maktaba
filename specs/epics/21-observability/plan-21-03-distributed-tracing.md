@@ -61,16 +61,25 @@ func Init(service, env, endpoint string) (func(context.Context) error, error) {
     )
     if err != nil { return nil, err }
 
+    // Story 21.3 sets the OTLP buffer cap at 10 MiB.
+    // 10 MiB / ~1 KiB per span ≈ 10240 spans queued.
     tp := sdktrace.NewTracerProvider(
         sdktrace.WithBatcher(exp,
-            sdktrace.WithMaxQueueSize(8192),
+            sdktrace.WithMaxQueueSize(10_240),
             sdktrace.WithMaxExportBatchSize(512),
         ),
         sdktrace.WithResource(res),
         sdktrace.WithSampler(NewSampler()),
     )
     otel.SetTracerProvider(tp)
-    otel.SetTextMapPropagator(propagation.TraceContext{})
+    // Composite propagator so both W3C trace context and Baggage flow
+    // across HTTP/gRPC and (manually) NOTIFY payloads. Baggage carries
+    // optional auxiliary key/value pairs (e.g., `tenant`, `library_id`)
+    // that downstream spans can sample on.
+    otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+        propagation.TraceContext{},
+        propagation.Baggage{},
+    ))
     return tp.Shutdown, nil
 }
 ```
@@ -104,7 +113,7 @@ func (s *composite) Description() string { return "composite head sampler" }
 // shared/tracing/go/http_middleware.go
 func HTTP(routeBudget func(string) time.Duration) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
-        h := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        handler := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             t0 := time.Now()
             ww := wrapWriter(w)
             next.ServeHTTP(ww, r)
@@ -119,11 +128,11 @@ func HTTP(routeBudget func(string) time.Duration) func(http.Handler) http.Handle
             sp.SetAttributes(attribute.String("http.route_template", routeTemplateOf(r)))
             // hash q (EC3)
             if q := r.URL.RawQuery; q != "" {
-                h := sha256.Sum256([]byte(q))
-                sp.SetAttributes(attribute.String("http.url.query_hash", hex.EncodeToString(h[:8])))
+                sum := sha256.Sum256([]byte(q))
+                sp.SetAttributes(attribute.String("http.url.query_hash", hex.EncodeToString(sum[:8])))
             }
         }), "http")
-        return h
+        return handler
     }
 }
 ```
@@ -179,7 +188,10 @@ def init(service: str, env: str, endpoint: str | None) -> None:
     trace.set_tracer_provider(provider)
     set_global_textmap(TraceContextTextMapPropagator())
     GrpcInstrumentorServer().instrument()
-    Psycopg2Instrumentor().instrument(skip_dep_check=True, enable_commenter=False)
+    # Pipeline DB driver is asyncpg per architecture §2 (line 231); use
+    # the matching instrumentor. AsyncPGInstrumentor wraps the asyncpg
+    # connection methods to emit DB spans.
+    AsyncPGInstrumentor().instrument()
 ```
 
 ## 8. Browser tracer
@@ -213,6 +225,70 @@ export function instrumentSearch(fn: (q: string) => Promise<unknown>) {
 }
 ```
 
+## 8.1 Postgres LISTEN/NOTIFY trace continuity
+
+Architecture §1.4 + §7.10 drive WebSocket fan-out via Postgres
+`LISTEN/NOTIFY`. The pgx tracer wraps query execution but does not
+propagate `traceparent` through NOTIFY payloads, so job-progress traces
+break at the bus. To preserve trace continuity end-to-end (worker →
+NOTIFY → API listener → WS client) the API encodes `traceparent` (and
+`tracestate`/`baggage` if present) into the JSON NOTIFY payload, and the
+LISTEN side reconstitutes the span context via
+`propagation.TraceContext.Extract`.
+
+```go
+// shared/tracing/go/notify.go
+
+// EmitNotify publishes a JSON-encoded NOTIFY payload that carries the
+// active span's traceparent. The structural shape is:
+//   {"traceparent": "...", "tracestate": "...", "data": {…}}
+func EmitNotify(ctx context.Context, db *sql.DB, channel string, data any) error {
+    carrier := propagation.MapCarrier{}
+    otel.GetTextMapPropagator().Inject(ctx, carrier)
+    env := struct {
+        Traceparent string         `json:"traceparent,omitempty"`
+        Tracestate  string         `json:"tracestate,omitempty"`
+        Baggage     string         `json:"baggage,omitempty"`
+        Data        any            `json:"data"`
+    }{
+        Traceparent: carrier["traceparent"],
+        Tracestate:  carrier["tracestate"],
+        Baggage:     carrier["baggage"],
+        Data:        data,
+    }
+    body, _ := json.Marshal(env)
+    _, err := db.ExecContext(ctx, "SELECT pg_notify($1, $2)", channel, string(body))
+    return err
+}
+
+// HandleListen extracts the trace context from a NOTIFY payload and
+// returns a context whose active span continues the originating trace.
+// Callers wrap their listener loop with this so emitted log lines and
+// downstream HTTP/gRPC calls inherit the same trace_id.
+func HandleListen(ctx context.Context, payload string) (context.Context, json.RawMessage, error) {
+    var env struct {
+        Traceparent string          `json:"traceparent,omitempty"`
+        Tracestate  string          `json:"tracestate,omitempty"`
+        Baggage     string          `json:"baggage,omitempty"`
+        Data        json.RawMessage `json:"data"`
+    }
+    if err := json.Unmarshal([]byte(payload), &env); err != nil {
+        return ctx, nil, err
+    }
+    carrier := propagation.MapCarrier{
+        "traceparent": env.Traceparent,
+        "tracestate":  env.Tracestate,
+        "baggage":     env.Baggage,
+    }
+    return otel.GetTextMapPropagator().Extract(ctx, carrier), env.Data, nil
+}
+```
+
+Smoke test (`TC4` below): a worker emits `pg_notify` while inside a
+traced span; the API listener consumes the NOTIFY, fans out to a WS
+client; the test asserts the WS client's recorded `trace_id` equals the
+worker's originating `trace_id`.
+
 ## 9. Buffer cap & circuit (EC1)
 
 ```go
@@ -225,7 +301,9 @@ otlptracehttp.WithRetry(otlptracehttp.RetryConfig{
 }),
 ```
 
-`MaxQueueSize` (8192 spans × ~1 KiB each ≈ 8 MiB) bounds memory; once full, further spans dropped with metric `otel_traces_dropped_total` increment. Never blocks the calling goroutine.
+`MaxQueueSize` (10240 spans × ~1 KiB each ≈ 10 MiB) bounds memory per the
+story; once full, further spans dropped with metric
+`otel_traces_dropped_total` increment. Never blocks the calling goroutine.
 
 ## 10. Test cases
 
@@ -237,6 +315,25 @@ Enable tracing. Issue 1,000 fast 200-OK requests. Collector receives ~10 traces 
 
 ### TC3 — Disabled-by-default
 Boot fresh; `[telemetry].otlp_endpoint` empty. `lsof -i -P` on each service shows no outbound conn to any OTLP host. `netstat -na | grep -E "443|4317|4318"` shows no ESTABLISHED beyond expected (DB, gRPC peers).
+
+### TC4 — gRPC propagation (both legs)
+Stand up an in-process server with `otelgrpc.UnaryServerInterceptor` and
+a client dialed with `otelgrpc.UnaryClientInterceptor`. The client opens
+a span, calls `Pipeline.HealthCheck`. Assert: (a) the server-side
+recorded span's `parent_span_id` equals the client-side span's
+`span_id`; (b) `trace_id` is identical on both sides; (c) the streaming
+flavor (`Pipeline.Transcribe`) preserves the same trace across each
+streamed message in both directions.
+
+### TC5 — LISTEN/NOTIFY trace continuity
+A pipeline worker, inside an active span, calls `EmitNotify(ctx, db,
+"job_progress", …)`. The API LISTEN loop consumes the payload, calls
+`HandleListen`, then forwards a JSON message over `WS /ws/jobs?job_id=…`
+to a connected client. The client (also instrumented) records the
+received message with the trace context decoded from the in-message
+fields. Assert the worker's originating `trace_id` equals the trace_id
+visible at the WS client. Cross-cutting reference:
+[PLAN_REVIEW_18_24.md §5](../../PLAN_REVIEW_18_24.md).
 
 ### EC1 — Endpoint unreachable
 Block OTLP host via firewall. Drive load. Observe: spans drop after queue full; `otel_traces_dropped_total` increments; service latency unaffected (within 1 ms p99).

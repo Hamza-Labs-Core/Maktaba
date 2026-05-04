@@ -4,21 +4,26 @@
 > Story states *what* and *why*; this plan states *how*.
 > Argon2id and the user table are already owned by
 > [Epic 10 Story 10.1](../10-auth-security/plan-10-01-user-store.md);
-> JWT issuance/refresh by [Epic 10 Stories 10.3 and 10.4](../10-auth-security/plan-10-03-native-login.md).
+> JWT issuance/refresh by [Epic 10 Stories 10.3 and 10.4](../10-auth-security/plan-10-03-native-login.md);
+> JWKS publishing and the signing-key/JWKS document by
+> [Epic 10 Story 10.6](../10-auth-security/plan-10-06-rs256-keys-jwks.md).
 > This plan adds the security-hardening surface on top: rehash on
-> login, JWKS publishing + rotation, single-user mode bypass, and the
-> cross-service JWKS cache.
+> login, single-user mode bypass, and the cross-service JWKS cache.
+> Per [PLAN_REVIEW_18_24 §2](../../PLAN_REVIEW_18_24.md), the JWT
+> private key is loaded from the `MAKTABA_JWT_PRIVATE_KEY_PEM` env var
+> (architecture §11.5 canonical); there is no `signing_keys` DB table
+> owned by this plan. JWKS document construction is owned by plan-10-06.
 
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
 | Argon2id rehash on login | Implemented in `api/internal/auth/login.go`; uses the `needsRehash` return value of `auth.Verify` from [Story 10.1](../10-auth-security/plan-10-01-user-store.md). |
-| JWKS endpoint | `GET /api/.well-known/jwks.json` — public, no auth. Owned by `api/internal/auth/jwks.go`. |
-| Key rotation | `maktaba-api keys rotate` CLI; daemon helper `auth.KeyRotator` runs in-process for the auto-rotation path. |
+| JWKS endpoint | Owned by [plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md); not duplicated here. |
+| Signing-key store | Owned by [plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md): private key loaded from `MAKTABA_JWT_PRIVATE_KEY_PEM` env (arch §11.5); historic public keys (KIDs) tracked by plan-10-06 if/when rotation history is needed. |
 | Streaming JWKS cache | `streaming/internal/auth/jwks_cache.go`. TTL ≤ 5 min, ETag-aware refresh, fail-closed. |
-| Single-user mode | `MAKTABA_ADMIN_TOKEN` env-supplied opaque bearer; mapped to sentinel UUID `00000000-0000-0000-0000-000000000001` (Story 19.8). |
-| Out of scope | Login UI (Story 10.2/10.3); refresh-token rotation mechanics (Story 10.4); CSRF token implementation (covered by Story 10.2 — referenced here only for AC2). |
+| Single-user mode | `MAKTABA_ADMIN_TOKEN` env-supplied opaque bearer; mapped to sentinel UUID `00000000-0000-0000-0000-000000000001` (Story 19.8). Single-user-mode short-circuit is enabled when `auth.multi_user=false` (default for fresh installs). |
+| Out of scope | Login UI (Story 10.2/10.3); refresh-token rotation mechanics (Story 10.4); CSRF token implementation (covered by Story 10.2 — referenced here only for AC2); JWKS document/key store (plan-10-06). |
 
 ## 1. Architecture diagram
 
@@ -32,10 +37,12 @@
                                              ▼
                                      ┌───────────────────────────┐
                                      │ api/internal/auth/jwt.go  │
-                                     │  signs RS256 w/ active key│
+                                     │  signs RS256 with key     │
+                                     │  loaded from              │
+                                     │  MAKTABA_JWT_PRIVATE_KEY_PEM
                                      └───────┬───────────────────┘
                                              │
-                                  GET /.well-known/jwks.json (public)
+                                  GET /.well-known/jwks.json (plan-10-06)
                                              │
                              ┌───────────────┼─────────────────┐
                              ▼               ▼                 ▼
@@ -50,14 +57,14 @@
 | Path | Purpose |
 |---|---|
 | `api/internal/auth/login.go` | Login handler with rehash-on-login. |
-| `api/internal/auth/jwks.go` | JWKS document builder + handler. |
-| `api/internal/auth/keys.go` | Active/historic signing key store; rotation. |
 | `api/internal/auth/admintoken.go` | Single-user mode bearer-token middleware. |
-| `api/cmd/api/keys.go` | CLI: `maktaba-api keys rotate`, `keys list`. |
 | `streaming/internal/auth/jwks_cache.go` | Streaming-side cache; ETag/If-None-Match aware. |
-| `shared/db/migrations/0040_signing_keys.sql` (+ sqlite) | Stored signing keys. |
-| `shared/db/queries/signing_keys.sql` | sqlc queries. |
 | Tests — `*_test.go` per file plus `api/internal/auth/integration_test.go` for the cross-service JWKS cache. |
+
+JWKS handler (`api/internal/auth/jwks.go`), key store (`api/internal/auth/keys.go`),
+the `keys rotate`/`keys list` CLI, and any signing-key persistence are
+owned by [plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md).
+This plan does not introduce a `signing_keys` migration.
 
 ### 2.2 Modified files
 
@@ -67,127 +74,61 @@
 | `api/internal/config/config.go` | Add `[auth]` keys: `multi_user`, `key_rotation_period`, `key_overlap`, `clock_skew_seconds`. |
 | `streaming/internal/config/config.go` | Add `[auth]` `jwks_url`, `jwks_cache_ttl`, `clock_skew_seconds`. |
 
-### 2.3 Schema — signing keys
+### 2.3 Signing-key store (deferred to plan-10-06)
 
-`0040_signing_keys.sql`:
+The signing-key store, JWKS document construction, and rotation
+mechanics are owned by
+[plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md). Per
+architecture §11.5, the JWT private key is loaded from
+`MAKTABA_JWT_PRIVATE_KEY_PEM` (env-only — there is no DB-encrypted
+storage). Public-key history (KIDs) for JWKS publication is also
+plan-10-06's responsibility.
 
-```sql
--- +goose Up
--- +goose StatementBegin
-CREATE TABLE signing_keys (
-    kid           TEXT PRIMARY KEY,
-    algorithm     TEXT NOT NULL DEFAULT 'RS256',
-    public_pem    TEXT NOT NULL,
-    private_pem   TEXT NOT NULL,         -- encrypted at rest by application
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    activated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    retired_at    TIMESTAMPTZ,           -- NULL until rotation; key is still
-                                         -- served via JWKS until purge_after.
-    purge_after   TIMESTAMPTZ
-);
-CREATE INDEX signing_keys_active_idx
-    ON signing_keys (retired_at, purge_after);
--- +goose StatementEnd
-```
+There is no `MAKTABA_KEY_ENCRYPTION_KEY` and no `signing_keys` table in
+this plan.
 
-The `private_pem` column is encrypted with the value of
-`MAKTABA_KEY_ENCRYPTION_KEY` (32-byte env var) using AES-256-GCM. If the
-env var is absent, the API refuses to start in multi-user mode (single-
-user mode skips the signing-key path entirely; it doesn't issue JWTs).
+### 2.4 Active-key picker (deferred to plan-10-06)
 
-### 2.4 Active-key picker
-
-`api/internal/auth/keys.go`:
-
-```go
-type KeyStore struct {
-    db        *db.Queries
-    encKey    []byte
-    cache     atomic.Pointer[KeyCache]
-    rotation  time.Duration   // default 90d
-    overlap   time.Duration   // default 30d
-}
-
-type KeyCache struct {
-    Active   *rsaKey
-    Historic []*rsaKey       // not retired (still in JWKS)
-    LoadedAt time.Time
-}
-
-// Active returns the currently-active signing key.
-func (s *KeyStore) Active(ctx context.Context) (*rsaKey, error) {
-    c := s.cache.Load()
-    if c != nil && time.Since(c.LoadedAt) < 30*time.Second {
-        return c.Active, nil
-    }
-    return s.refresh(ctx)
-}
-
-// JWKS returns every non-purged key as a JWKS document.
-func (s *KeyStore) JWKS(ctx context.Context) ([]byte, string /*etag*/, error) {
-    keys, err := s.db.SelectSigningKeysForJWKS(ctx)
-    if err != nil { return nil, "", err }
-    doc := jwks.Document{Keys: make([]jwks.Key, 0, len(keys))}
-    for _, k := range keys {
-        doc.Keys = append(doc.Keys, jwks.RSAFromPEM(k.Kid, k.PublicPem))
-    }
-    body, _ := json.Marshal(doc)
-    sum := sha256.Sum256(body)
-    return body, fmt.Sprintf(`W/"%x"`, sum[:8]), nil
-}
-
-// Rotate creates a new active key; flips current active → "historic"
-// (retired_at = now, purge_after = now + overlap).
-func (s *KeyStore) Rotate(ctx context.Context) (string /*new kid*/, error) {
-    priv, err := rsa.GenerateKey(rand.Reader, 3072)
-    if err != nil { return "", err }
-    encrypted := s.encrypt(privPEM(priv))
-    kid := newKid()
-    return kid, s.db.WithTx(ctx, func(q *db.Queries) error {
-        if err := q.RetireActiveSigningKey(ctx,
-            time.Now(), time.Now().Add(s.overlap)); err != nil {
-            return err
-        }
-        return q.InsertSigningKey(ctx, db.InsertSigningKeyParams{
-            Kid: kid, Algorithm: "RS256",
-            PublicPem: pubPEM(&priv.PublicKey), PrivatePem: encrypted,
-        })
-    })
-}
-```
+The `Active(ctx)` accessor and any rotation API are exposed by
+plan-10-06. JWT minting (§2.5 below) calls into that package; this plan
+does not duplicate the implementation.
 
 ### 2.5 JWT issuance
 
-`api/internal/auth/jwt.go` (extends Story 10.3):
+`api/internal/auth/jwt.go` (extends Story 10.3). The user UUID is
+carried in the standard `sub` claim only (no `usr` mirror); audience is
+emitted via `RegisteredClaims.Audience` only (no separate `aud` field).
 
 ```go
 type AccessClaims struct {
-    Sub       string   `json:"sub"`         // user UUID
-    Usr       string   `json:"usr"`         // user UUID (mirror; required by streaming)
     Lib       []string `json:"lib"`         // library UUIDs
     IsAdmin   bool     `json:"is_admin"`
-    Aud       string   `json:"aud"`         // streaming | streaming-direct | streaming-static
-    jwt.RegisteredClaims
+    jwt.RegisteredClaims                    // Sub = user UUID; Aud = ["streaming"|"streaming-direct"|"streaming-static"]
 }
 
 func (m *Minter) MintAccess(ctx context.Context, u User, libs []string, aud string) (string, error) {
-    k, err := m.keys.Active(ctx)
+    k, err := m.keys.Active(ctx)  // implementation in plan-10-06
     if err != nil { return "", err }
     now := time.Now().UTC()
     tok := jwt.NewWithClaims(jwt.SigningMethodRS256, AccessClaims{
-        Sub: u.ID.String(), Usr: u.ID.String(), Lib: libs, IsAdmin: u.IsAdmin, Aud: aud,
+        Lib: libs, IsAdmin: u.IsAdmin,
         RegisteredClaims: jwt.RegisteredClaims{
-            Iss: m.iss, Aud: jwt.ClaimStrings{aud},
-            Iat: jwt.NewNumericDate(now),
-            Nbf: jwt.NewNumericDate(now.Add(-30 * time.Second)),  // EC1 skew tolerance
-            Exp: jwt.NewNumericDate(now.Add(15 * time.Minute)),
-            Jti: uuid.NewString(),
+            Subject:   u.ID.String(),
+            Issuer:    m.iss,
+            Audience:  jwt.ClaimStrings{aud},
+            IssuedAt:  jwt.NewNumericDate(now),
+            NotBefore: jwt.NewNumericDate(now.Add(-30 * time.Second)),  // EC1 skew tolerance
+            ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+            ID:        uuid.NewString(),
         },
     })
     tok.Header["kid"] = k.Kid
     return tok.SignedString(k.Priv)
 }
 ```
+
+Streaming-side verifiers read the user UUID from `claims.Subject` (no
+separate `usr` claim required).
 
 The `kid` header is mandatory; verifiers reject tokens without it
 (streaming returns 403 with `type: kid-missing`). The `aud` shape is
@@ -304,18 +245,23 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 ### 2.8 Single-user mode bypass
 
-`api/internal/auth/admintoken.go`:
+`api/internal/auth/admintoken.go`. The bypass is enabled when
+`auth.multi_user=false` (single-user mode); in multi-user mode it is a
+no-op even if `MAKTABA_ADMIN_TOKEN` is set.
 
 ```go
 const SentinelUserID = "00000000-0000-0000-0000-000000000001"
 
 type AdminToken struct {
     expected []byte         // sha256 of MAKTABA_ADMIN_TOKEN
-    enabled  bool           // false when auth.multi_user=true
+    enabled  bool           // true only when auth.multi_user=false AND env set
 }
 
-func NewAdminToken(env, mode string) AdminToken {
-    if mode == "multi_user" || env == "" {
+// NewAdminToken constructs the middleware. multiUser==true disables the
+// bypass entirely (returns a no-op middleware); multiUser==false enables
+// it iff env is non-empty.
+func NewAdminToken(env string, multiUser bool) AdminToken {
+    if multiUser || env == "" {
         return AdminToken{enabled: false}
     }
     sum := sha256.Sum256([]byte(env))
@@ -344,36 +290,16 @@ func (a AdminToken) Middleware(next http.Handler) http.Handler {
 }
 ```
 
-`auth.multi_user=true` short-circuits the admin token entirely (the
-config value is loaded at startup; rotation requires a restart per
-EC3).
+`auth.multi_user=true` disables the admin-token middleware entirely
+(the bypass only fires in single-user mode where `multi_user=false`).
+The config value is loaded at startup; rotation of the bypass token
+requires a restart per EC3.
 
-### 2.9 Key-rotation daemon
+### 2.9 Key-rotation daemon (deferred to plan-10-06)
 
-`api/internal/auth/keys.go` adds:
-
-```go
-func (s *KeyStore) Daemon(ctx context.Context) {
-    t := time.NewTicker(1 * time.Hour)
-    defer t.Stop()
-    for {
-        select {
-        case <-ctx.Done(): return
-        case <-t.C:
-            active, err := s.db.GetActiveSigningKey(ctx)
-            if err != nil { continue }
-            if time.Since(active.ActivatedAt) >= s.rotation {
-                _, _ = s.Rotate(ctx)
-            }
-            _ = s.db.PurgeExpiredSigningKeys(ctx, time.Now())
-        }
-    }
-}
-```
-
-Auto-rotation is enabled by default in `serve` mode. The CLI command
-allows manual rotation when an immediate rotation is required (Story
-23.6 EC: keys leaked).
+Auto-rotation, the rotation daemon, and the `keys rotate` CLI are
+owned by [plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md).
+This plan does not duplicate the implementation.
 
 ## 3. Test plan
 
@@ -387,10 +313,12 @@ allows manual rotation when an immediate rotation is required (Story
 
 ### 3.2 JWKS rollover (TC3)
 
+JWKS-document and rollover behaviour is owned by plan-10-06 tests; the
+streaming-cache tests below pin the **client** half of the contract.
+
 | Test | What it pins |
 |---|---|
-| `TestJWKSContainsActiveAndHistoric` | After `keys rotate`, `/api/.well-known/jwks.json` returns both keys; tokens signed before rotation still verify until expiry. |
-| `TestStreamingValidatesAcrossOverlap` | Within the 30-day overlap, streaming validates tokens signed by the previous key; outside overlap, rejects with 403 `type: unknown-kid`. |
+| `TestStreamingValidatesAcrossOverlap` | Within the rotation overlap window (plan-10-06), streaming validates tokens signed by the previous key; outside overlap, rejects with 403 `type: unknown-kid`. |
 | `TestStreamingJWKSCacheETag` | Two refreshes within TTL — second uses `If-None-Match`; the server returns 304; the cache stays warm. |
 | `TestStreamingJWKSFailClosedOnRefresh` | Network failure during refresh; existing keys still serve until TTL; after TTL with no refresh, requests are rejected. |
 
@@ -419,7 +347,7 @@ allows manual rotation when an immediate rotation is required (Story
 | JWKS publishing under high load | The handler returns the cached body with a `max-age=300, public` header; 304 served on `If-None-Match`. | `TestJWKSCacheable` |
 | `kid` mismatch from a forgery | `subtle.ConstantTimeCompare` is unnecessary — the lookup is by exact string and a missing key produces 403 `type: unknown-kid`. | `TestForgedKidRejected` |
 | Algorithm confusion attack | Verifier hard-codes `jwt.WithValidMethods([]string{"RS256"})`; HS256 forgeries refused. | `TestAlgConfusionRefused` |
-| `private_pem` decryption fails on startup | The API logs and refuses to serve in multi-user mode; in single-user mode, the path is bypassed entirely (no JWTs minted). | `TestEncryptedKeyDecryptFailureRefuses` |
+| `MAKTABA_JWT_PRIVATE_KEY_PEM` missing or unparseable on startup | The API logs and refuses to serve in multi-user mode; in single-user mode, the path is bypassed entirely (no JWTs minted). Owned by plan-10-06; cross-checked here. | `TestPrivateKeyLoadFailureRefuses` |
 | Streaming caches the JWKS after a rotation but before the API publishes | TTL ≤ 5 min bounds the staleness; the streaming verifier treats `unknown-kid` as a refresh trigger, retrying once. | `TestStreamingForcesRefreshOnUnknownKid` |
 | JWKS endpoint exposed unauthenticated | Yes — it must be. The endpoint contains only public keys; CSRF protection is not required (no state change). | n/a |
 
@@ -429,8 +357,7 @@ allows manual rotation when an immediate rotation is required (Story
 |---|---|---|
 | `github.com/golang-jwt/jwt/v5` | latest | RS256 sign/verify. |
 | `golang.org/x/crypto/argon2` | already | Hashing (Story 10.1). |
-| `crypto/rsa`, `crypto/rand` | stdlib | Key generation. |
-| `crypto/aes`, `crypto/cipher` | stdlib | Private-key encryption at rest. |
+| `crypto/rsa`, `crypto/rand` | stdlib | RSA key handling (key generation lives in plan-10-06 tooling). |
 | `crypto/subtle` | stdlib | Constant-time compares. |
 
 ## 6. Acceptance checklist
@@ -445,15 +372,12 @@ allows manual rotation when an immediate rotation is required (Story
 - [ ] Skew tolerance 30 s on both api and streaming.
 
 **JWKS**
-- [ ] `/api/.well-known/jwks.json` exposes all non-purged public keys.
-- [ ] ETag + 304 supported.
-- [ ] Streaming cache TTL ≤ 5 min; fail-closed on refresh failures.
+- [ ] `/api/.well-known/jwks.json` (built by plan-10-06) is consumed by the streaming cache.
+- [ ] Streaming cache supports `If-None-Match` (304); TTL ≤ 5 min; fail-closed on refresh failures.
 
-**Rotation**
-- [ ] `maktaba-api keys rotate` mints a new key, retires the previous one with overlap.
-- [ ] Rotation daemon runs hourly in `serve` mode.
+**Rotation** — owned by [plan-10-06](../10-auth-security/plan-10-06-rs256-keys-jwks.md). This plan only verifies that the streaming cache picks up rotated keys within TTL.
 
 **Single-user mode**
-- [ ] `MAKTABA_ADMIN_TOKEN` middleware honored.
+- [ ] `MAKTABA_ADMIN_TOKEN` middleware honored when `auth.multi_user=false`.
 - [ ] Sentinel UUID used as `auth.User.ID`.
-- [ ] `auth.multi_user=true` disables the bypass.
+- [ ] `auth.multi_user=true` disables the bypass even with the env var set.

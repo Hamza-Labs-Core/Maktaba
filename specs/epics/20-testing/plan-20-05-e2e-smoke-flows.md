@@ -9,10 +9,10 @@
 | Concern | Decision |
 |---|---|
 | Stack | `deploy/compose/test.yml` — api + streaming + pipeline + postgres + chromadb. |
-| Runner | Playwright Test on Chromium (and Webkit for the player flow). |
+| Runner | Playwright Test on Chromium only. (See EC1 for why we drop the Webkit project on Linux CI.) |
 | Visual diff | `@playwright/test`'s `expect(page).toHaveScreenshot()` with 0.5 % pixel ratio threshold. |
 | Reports | HTML report into `web/playwright-report/`; trace zip into `test-results/`. |
-| Network | `--block-service-worker=false` only for warm-load tests; otherwise no external network beyond compose. |
+| Network | Service workers allowed for warm-load tests via Playwright's `serviceWorkers: 'allow'` in `use:` (the previous `--block-service-worker=false` is not a real Playwright flag). Otherwise no external network beyond compose. |
 
 ## 1. Project layout
 
@@ -48,17 +48,25 @@ export default defineConfig({
     timeout: 90_000,
     expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.005 } },
     fullyParallel: false,                       // shared compose stack
-    retries: process.env.CI ? 1 : 0,            // AC4 retry only at e2e tier
+    retries: process.env.CI ? 1 : 0,            // retry-once at e2e tier per Story 20.8
     reporter: [['html', { open: 'never' }], ['junit', { outputFile: 'junit.xml' }]],
     use: {
         baseURL: 'http://localhost:8080',
         trace: 'retain-on-failure',
         video: 'retain-on-failure',
         screenshot: 'only-on-failure',
+        // Allow service workers so warm-load flows hit the SW cache. The
+        // previous `--block-service-worker=false` is not a Playwright option;
+        // the correct knob is `serviceWorkers: 'allow' | 'block'`.
+        serviceWorkers: 'allow',
     },
     projects: [
+        // Chromium-only on Linux CI. The Webkit (Desktop Safari) project is
+        // intentionally dropped because Linux Webkit's HLS support diverges
+        // from native Safari — `Vidstack` falls back to MSE and the player
+        // flow's MSE branch is exercised by the Chromium project anyway.
+        // Native Safari is covered by the macOS spot-check in EC1.
         { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-        { name: 'webkit',   use: { ...devices['Desktop Safari'] } },
     ],
     globalSetup: require.resolve('./helpers/global-setup'),
     globalTeardown: require.resolve('./helpers/global-teardown'),
@@ -146,6 +154,14 @@ test('dropped video transitions processing → ready', async ({ page, request })
 ## 7. Flow 03 — Search jump-to-timestamp
 
 ```ts
+// `seed` is the e2e fixture facade. `expected.firstHitTs` is the second
+// offset of the first segment that matches the test's Arabic query
+// (precomputed by the seed generator). Path:
+//   import { seed } from '../helpers/fixtures';
+// where `helpers/fixtures.ts` re-exports the JSON committed at
+// `web/e2e/helpers/seed.json` (`{ video: {...}, expected: { firstHitTs: 12.3, ... } }`).
+import { seed } from '../helpers/fixtures';
+
 test('search "بسم الله" jumps to correct ts', async ({ page }) => {
     await page.goto('/search');
     await page.getByPlaceholder('Search videos').fill('بسم الله');
@@ -218,18 +234,20 @@ Modify `home.css` to introduce a 1 px LTR-only padding. Re-run flow 05; assert i
 
 | Case | Source | Handling |
 |---|---|---|
-| EC1 Headless Chrome HLS | story | Project `chromium` uses Vidstack JS player; project `webkit` uses native HLS. Flow 03 runs in both projects. |
+| EC1 Headless Chrome HLS | story | Chromium project uses the Vidstack JS player (MSE). Native-Safari HLS is covered by a macOS spot-check, not by a Linux-CI Webkit project (Webkit on Linux behaves differently from Safari). |
 | EC2 Capacitor mobile | story | Maestro flow `library_open.yaml` runs separately on iOS sim; not part of `make e2e`. |
-| EC3 tvOS / Android TV | story | Documented out-of-scope; their own per-platform suites. |
-| Compose port collision | impl | Use random host ports; helper writes baseURL after up(). |
-| Test artifact disk usage | impl | `--max-failures=5` in CI; old reports rotated by retention policy. |
+| EC3 tvOS / Android TV | story | Documented out-of-scope here; their own per-platform suites (XCUITest / JUnit5 + Compose-test) live in the platform repos. |
+| Compose port collision | impl | The compose file binds container ports to **random host ports** (`ports: ["0:8080"]`). After `docker compose up -d --wait`, `helpers/stack.ts` calls `docker compose port web 8080` and a `wait_for_port` poll to obtain the actual host:port; that value is written into `process.env.PLAYWRIGHT_BASE_URL` and consumed by the `use.baseURL` resolver. This eliminates collisions when multiple PR workflows share a runner. |
+| Test artifact disk usage | impl | `--max-failures=5` is passed on the **CLI** invocation (Playwright doesn't accept it as a config key), and old reports are rotated by retention policy. |
 
 ## 12. Make targets
 
 ```makefile
 .PHONY: e2e
 e2e:
-	pnpm --filter web exec playwright test
+	# `--max-failures=5` is a CLI-only flag (not a config option) — placed
+	# here rather than in playwright.config.ts.
+	pnpm --filter web exec playwright test --max-failures=5
 ```
 
 CI:

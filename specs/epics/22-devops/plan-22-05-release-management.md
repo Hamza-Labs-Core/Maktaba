@@ -11,9 +11,9 @@
 | Concern | Decision |
 |---|---|
 | Trigger | Pushing a `vMAJOR.MINOR.PATCH` tag onto a green main commit triggers `.github/workflows/release.yml`. Tags only — no "release the artifacts CI happened to produce." |
-| Version surface | `internal/version/version.go` is embedded into every Go binary; Pipeline reads `pyproject.toml`'s version; web reads `package.json`. A single `VERSION` file at the repo root is the source of truth that all four read at build time. |
+| Version surface | `shared/go/version/` (Go module `github.com/maktaba/shared/go/version`, owned by Story 22.2 §0) is embedded into every Go binary via `-X` ldflags; Pipeline reads `pyproject.toml`'s version; web reads `package.json`. A single `VERSION` file at the repo root is the source of truth that all four read at build time. |
 | Changelog | `CHANGELOG.md` follows Keep-a-Changelog. CI's `_changelog-gate.yml` requires every PR to add an entry under `Unreleased` unless labeled `docs-only`. |
-| Mobile/desktop versions | Tagged separately: `mobile-vN.M.P`, `desktop-vN.M.P`, `tvos-vN.M.P` — each pinned to a platform `vN.M.P` via `compatibleApiVersion`. |
+| Mobile/desktop versions | Tagged separately: `mobile-vN.M.P`, `desktop-vN.M.P`, `tvos-vN.M.P` — each pinned to a platform `vN.M.P` via the custom `mobileAppCompatibility` field (Capacitor has no built-in `compatibleApiVersion`). The mobile API client reads the field on startup and refuses to talk to incompatible API versions. |
 | Out of scope | Mobile/desktop *signing* (Story 22.7); upgrade/rollback (Story 22.6); hotfix branch policy beyond what's documented in EC1. |
 
 ## 1. Architecture diagram
@@ -43,7 +43,7 @@ git tag v1.2.0 → push
 | Path | Purpose |
 |---|---|
 | `VERSION` | Single line: `1.2.0`. Source of truth for embedded versions. |
-| `internal/version/version.go` | Shared helper for the two Go services. |
+| `shared/go/version/version.go` | Shared helper for the two Go services (lives in its own `github.com/maktaba/shared/go/version` module — Story 22.2 §0). |
 | `pipeline/src/maktaba_pipeline/__about__.py` | `__version__ = "1.2.0"`. Bumped by `tools/bump-version.sh`. |
 | `web/src/version.ts` | Same; `export const version = "1.2.0"`. |
 | `tools/bump-version.sh` | Idempotent rewrite of all four version files. |
@@ -67,12 +67,23 @@ git tag v1.2.0 → push
 
 ### 2.3 Version helper
 
-`internal/version/version.go`:
+`shared/go/version/version.go` (module path
+`github.com/maktaba/shared/go/version`; api + streaming consume it via
+`replace github.com/maktaba/shared/go/version => ../shared/go/version`
+in their respective `go.mod` files — see Story 22.2 §0):
 
 ```go
 package version
 
-// All three are populated via -ldflags at build time (Story 22.2).
+import (
+    "strconv"
+    "time"
+)
+
+// All three are populated via -ldflags at build time (Story 22.2). The
+// dev fallback is `dev-<short-sha>` when the linker did not set Tag —
+// see `Current()` below — so an unstamped binary still surfaces a
+// recognizable, sortable identifier instead of the bare literal "dev".
 var (
     Tag       = "dev"          // e.g., "v1.2.0"
     Sha       = "unknown"      // git rev-parse HEAD
@@ -82,13 +93,24 @@ var (
 type Info struct {
     Tag       string `json:"tag"`
     Sha       string `json:"sha"`
-    BuildTime string `json:"build_time"` // RFC3339
+    BuildTime string `json:"build_time"` // RFC3339, or "dev" when unstamped
 }
 
 func Current() Info {
-    t, _ := strconv.ParseInt(BuildTime, 10, 64)
-    bt := time.Unix(t, 0).UTC().Format(time.RFC3339)
-    return Info{Tag: Tag, Sha: Sha, BuildTime: bt}
+    tag := Tag
+    if tag == "dev" && Sha != "unknown" && len(Sha) >= 7 {
+        // Mark dev builds with their commit so two unstamped binaries
+        // are distinguishable.
+        tag = "dev-" + Sha[:7]
+    }
+    var bt string
+    if BuildTime == "0" {
+        bt = "dev"
+    } else {
+        t, _ := strconv.ParseInt(BuildTime, 10, 64)
+        bt = time.Unix(t, 0).UTC().Format(time.RFC3339)
+    }
+    return Info{Tag: tag, Sha: Sha, BuildTime: bt}
 }
 ```
 
@@ -169,14 +191,37 @@ new=$1
 [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] \
   || { echo "Invalid semver: $new" >&2; exit 1; }
 
-echo "$new" > VERSION
-sed -i "s/^__version__ = .*/__version__ = \"$new\"/" pipeline/src/maktaba_pipeline/__about__.py
-sed -i "s/^export const version = .*/export const version = \"$new\";/" web/src/version.ts
-sed -i "s/^version = .*/version = \"$new\"/" pipeline/pyproject.toml
+# `sed -i` is BSD/GNU-incompatible: GNU accepts `-i ''` as the empty
+# in-place suffix; BSD requires `-i ''`. The portable pattern is to
+# write to a `.bak` copy and remove it after — works on both.
+portable_sed() {
+  local pattern="$1" file="$2"
+  sed -i.bak "$pattern" "$file" && rm "${file}.bak"
+}
 
-# Cut Unreleased into a new section header.
+echo "$new" > VERSION
+portable_sed "s/^__version__ = .*/__version__ = \"$new\"/" pipeline/src/maktaba_pipeline/__about__.py
+portable_sed "s/^export const version = .*/export const version = \"$new\";/" web/src/version.ts
+
+# pyproject.toml has multiple `version = …` lines (e.g., under
+# [tool.poetry], [tool.uv], [project], [build-system.requires]). Anchor
+# on the [project] section header explicitly so we never edit a
+# tool-table version by accident. `tomlq` would be cleaner, but we
+# avoid the extra dep; the awk variant below is deterministic.
+awk -v new="$new" '
+  /^\[project\]/ { in_project = 1; print; next }
+  /^\[/ && !/^\[project\]/ { in_project = 0; print; next }
+  in_project && /^version *=/ { print "version = \"" new "\""; next }
+  { print }
+' pipeline/pyproject.toml > pipeline/pyproject.toml.new \
+  && mv pipeline/pyproject.toml.new pipeline/pyproject.toml
+
+# Cut Unreleased into a new section header. The `\n` literal embedded
+# in a sed replacement is a GNU extension; portable_sed keeps the
+# substitution on one line and uses a literal newline via $'…'.
 today=$(date -u +%Y-%m-%d)
-sed -i "s/^## \[Unreleased\]/## [Unreleased]\n### Added\n### Changed\n### Fixed\n\n## [$new] — $today/" CHANGELOG.md
+section=$'## [Unreleased]\\\n### Added\\\n### Changed\\\n### Fixed\\\n\\\n## ['"$new"$'] \xe2\x80\x94 '"$today"
+portable_sed "s/^## \[Unreleased\]/${section}/" CHANGELOG.md
 ```
 
 The release flow runs `bump-version` on a release branch *before*
@@ -200,12 +245,23 @@ permissions:
 jobs:
   guard:
     runs-on: ubuntu-22.04
+    outputs:
+      tag_sha: ${{ steps.tag.outputs.tag_sha }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: Tag must point at main HEAD
+      - name: Resolve tag SHA
+        id: tag
         run: |
           tag_sha=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+          # Export for both later steps in this job (via env) and other
+          # jobs (via the `outputs:` declaration above). Bash variables
+          # and unscoped `$tag_sha` references do NOT propagate between
+          # `run:` blocks — see PLAN_REVIEW §22-05.
+          echo "tag_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=$tag_sha" >> "$GITHUB_ENV"
+      - name: Tag must point at main HEAD
+        run: |
           main_sha=$(git rev-parse origin/main)
           # Hotfix branches are exempt: the tag must be on a `release/v*.x`
           # branch instead, asserted by EC1 below.
@@ -337,7 +393,7 @@ the labels with the matching SHA.
 |---|---|---|
 | Hotfix on old minor (EC1) | Maintainer cuts `release/v1.1.x` from the previous tag; cherry-picks; tags `v1.1.1`. The release workflow's `guard` job recognizes `release/*` branches as a valid alternative to `main`. | `TestHotfixReleaseBranchAccepted` |
 | Pre-release identifier (EC2) | `vX.Y.Z-rc.N` tags trigger the same workflow. The Homebrew tap update is skipped; GitHub release marked `prerelease`. | `TestRcSkipsHomebrew` |
-| Mobile app version (EC3) | `apps/mobile/capacitor.config.ts` carries `compatibleApiVersion: ">=1.2.0 <2.0.0"`; the API rejects connections from a mobile client whose tag falls outside; UI shows a clear update prompt. | `TestMobileCompatGate` |
+| Mobile app version (EC3) | `apps/mobile/capacitor.config.ts` carries a custom `mobileAppCompatibility` field — Capacitor has no built-in `compatibleApiVersion`. Shape: `mobileAppCompatibility: { minApiVersion: "1.0.0", maxApiVersion: "<2.0.0" }`. Stored either via the `appVersion` extras block on `capacitor.config.ts` or under `package.json#maktaba.api_compatibility`; the mobile API client reads the field on startup and refuses to talk to incompatible API versions. The API server independently enforces the same range. | `TestMobileCompatGate` |
 | Tagging an old commit by mistake | `guard` job asserts the tag commit is on main or a `release/*` branch; tags on feature branches fail. | `TestTagMustBeOnMain` |
 | CI never ran on the tag commit | The guard runs `gh run list --commit ${sha}`; if no green CI run exists, fail. | `TestRequireCiGreen` |
 | Release notes empty | `awk` extracts the section by heading match; if empty, `gh release create` still publishes but a soft warning logs "empty release notes — did you forget to bump VERSION?". | `TestEmptyReleaseNotesWarn` |

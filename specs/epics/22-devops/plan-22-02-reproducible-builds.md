@@ -10,10 +10,11 @@
 
 | Concern | Decision |
 |---|---|
-| Go reproducibility | `-trimpath -ldflags='-buildid= -X main.version=…'`, vendored deps under `api/vendor/` and `streaming/vendor/`, `GOFLAGS=-mod=vendor`. `SOURCE_DATE_EPOCH` exported by the build script. |
+| Top-level Go module ownership | Three Go modules at the repo root: `api/` (`go.mod`, `module github.com/maktaba/api`), `streaming/` (`go.mod`, `module github.com/maktaba/streaming`), and `shared/go/version/` (`go.mod`, `module github.com/maktaba/shared/go/version`). Both `api/go.mod` and `streaming/go.mod` declare `replace github.com/maktaba/shared/go/version => ../shared/go/version` so the version-stamping helper is shared without `replace` polluting downstream consumers. A sibling `shared/go/migrations/` module re-exports `shared/db/migrations/*.sql` via `embed.FS` (the `//go:embed` directive cannot escape the package directory, so the embed must live alongside the SQL files). The migrations module is documented here, owned at the build-flag level, and consumed by Story 22.4's `api/cmd/api/migrate.go`. |
+| Go reproducibility | `-trimpath -ldflags='-buildid= -s -w -X github.com/maktaba/shared/go/version.Tag=… -X github.com/maktaba/shared/go/version.Sha=… -X github.com/maktaba/shared/go/version.BuildTime=…'`, vendored deps under `api/vendor/`, `streaming/vendor/`, and `shared/go/version/vendor/`, `GOFLAGS=-mod=vendor -trimpath`. `SOURCE_DATE_EPOCH` exported by the build script; banner timestamps in dependent libraries are suppressed via `-buildid=` and the `-X` overrides — no post-build `sed` rewrite. |
 | Python reproducibility | `uv lock` + `uv export --frozen`; `cibuildwheel` for native-extension wheels. |
 | Web reproducibility | `pnpm` lockfile + `vite build` with `rollup.output.entryFileNames` deterministic; sorted globs. |
-| Container reproducibility | `ko` for the three Go images and the web image (Caddy-fronted static), `docker buildx --provenance=true --sbom=true` for the Python pipeline image (because of native deps), pinned base images by digest. |
+| Container reproducibility | Dockerfiles remain authoritative for `api/`, `streaming/`, and `web/` per arch §12.1 (Option A from PLAN_REVIEW_18_24 §22-02). `web/Dockerfile` is multi-stage with Node + Caddy; `api/Dockerfile` and `streaming/Dockerfile` produce the same `ko`-shaped layout (distroless `cgr.dev/chainguard/static`). `.ko.yaml` is added as a *backend-only* (api + streaming) opt-in alternative used by the release workflow; CI's build-artifacts gate exercises both paths and the size guard accepts either. The Python pipeline image uses `docker buildx --provenance=true --sbom=true` because of native deps, with pinned base images by digest. |
 | Signing | `cosign sign` with keyless OIDC for images, `minisign` for binaries; pubkey published in `SECURITY.md`. |
 | Out of scope | CVE/SBOM gates (Story 23.7); release publishing (Story 22.5 wires this plan's outputs to `gh release`); mobile/desktop signing (Story 22.7). |
 
@@ -50,8 +51,12 @@
 | `tools/build.sh` | Single bash entry that all build paths run through. Sets `SOURCE_DATE_EPOCH`, `TZ=UTC`, `LANG=C.UTF-8`, dispatches to the right tool. |
 | `tools/sign.sh` | `cosign sign` + `minisign -S` wrapper; reads keys from env. |
 | `tools/verify-reproducibility.sh` | Build twice in two temp dirs, diff the sha256s; used in CI by TC1. |
-| `tools/.go-build-flags` | Single source for `-trimpath -ldflags '-buildid= -s -w -X …'`. |
-| `api/vendor/`, `streaming/vendor/` | `go mod vendor` output, checked in. |
+| `tools/.go-build-flags` | Single source for `-trimpath -ldflags '-buildid= -s -w -X github.com/maktaba/shared/go/version.Tag=… …'`. |
+| `shared/go/version/go.mod` | Module `github.com/maktaba/shared/go/version`; declares the `Tag`, `Sha`, `BuildTime` package-level vars overridden via `-X`. |
+| `shared/go/version/version.go` | Implementation of the version package; consumed by api + streaming through `replace` directives. |
+| `shared/go/migrations/go.mod` | Module `github.com/maktaba/shared/go/migrations`; sibling of `shared/db/migrations/` and re-exports the SQL files via `embed.FS` so callers in `api/cmd/api/` (and any future migrator) can import the embed without violating Go's "embed cannot escape the package directory" rule. |
+| `shared/go/migrations/migrations.go` | Holds `//go:embed *.sql` and exports `var FS embed.FS`. The `*.sql` files are symlinked or vendored from `shared/db/migrations/` at build time via a `go:generate` directive. |
+| `api/vendor/`, `streaming/vendor/`, `shared/go/version/vendor/` | `go mod vendor` output, checked in. |
 | `pipeline/uv.lock` | uv lockfile, checked in. |
 | `web/pnpm-lock.yaml` | Already present; locked for byte-stable builds. |
 | `.github/workflows/_reproducibility-check.yml` | CI job for TC1. |
@@ -62,7 +67,8 @@
 | Path | Change |
 |---|---|
 | `Makefile` | `build` delegates to `tools/build.sh`. |
-| `api/Dockerfile`, `streaming/Dockerfile`, `web/Dockerfile` | Replaced with `ko` config (`.ko.yaml`) — build images via `ko build`. |
+| `api/Dockerfile`, `streaming/Dockerfile`, `web/Dockerfile` | Retained per arch §12.1. `api/Dockerfile` and `streaming/Dockerfile` use a multi-stage build that copies the static binary onto `cgr.dev/chainguard/static@sha256:<digest>`. `web/Dockerfile` keeps the Node→Caddy two-stage shape (Story 22.3). |
+| `.ko.yaml` | Added as the backend-only (`api`, `streaming`) opt-in alternative; used by the release workflow when `MAKTABA_BACKEND_BUILDER=ko`. The Dockerfiles remain the canonical CI path. |
 | `pipeline/Dockerfile` | Pinned base by digest, `BUILDKIT_INLINE_CACHE=0`, `--provenance=true`. |
 | `web/vite.config.ts` | Sorted output, fixed chunk-name template. |
 | `pipeline/pyproject.toml` | `[build-system] requires = …`, pinned. |
@@ -85,10 +91,22 @@ export GOFLAGS="${GOFLAGS:-} -mod=vendor"
 GO_FLAGS=$(cat tools/.go-build-flags)
 VERSION=$(git describe --tags --dirty --always)
 GIT_SHA=$(git rev-parse HEAD)
+
+# Suppress non-deterministic banner timestamps at the build layer:
+#  -buildid= zeroes Go's per-build identifier.
+#  -s -w strips DWARF + symbol table.
+#  -X overrides imported package vars so the binary doesn't need a
+#  post-build sed rewrite (which is fragile and matches unrelated
+#  strings — see PLAN_REVIEW §22-02).
+# Any third-party library that bakes "Built on <timestamp>" into a
+# string is opted out via its documented build flag (typically
+# `-X path/to/pkg.BuildDate=$SOURCE_DATE_EPOCH`); GOFLAGS picks up
+# the additional flags below.
+export GOFLAGS="${GOFLAGS:-} -trimpath"
 LDFLAGS="-buildid= -s -w \
-  -X maktaba/internal/version.Tag=${VERSION} \
-  -X maktaba/internal/version.Sha=${GIT_SHA} \
-  -X maktaba/internal/version.BuildTime=${SOURCE_DATE_EPOCH}"
+  -X github.com/maktaba/shared/go/version.Tag=${VERSION} \
+  -X github.com/maktaba/shared/go/version.Sha=${GIT_SHA} \
+  -X github.com/maktaba/shared/go/version.BuildTime=${SOURCE_DATE_EPOCH}"
 
 case "${1:-all}" in
   api)
@@ -102,9 +120,13 @@ case "${1:-all}" in
     ;;
   web)
     cd web && pnpm build --emptyOutDir
-    # Strip non-deterministic banner timestamps if present.
-    find dist -name '*.js' -o -name '*.css' \
-      | xargs -I{} sh -c "sed -i 's/Built on .*/Built on REPRODUCIBLE/' {}"
+    # Reproducibility comes from the build itself (vite.config.ts pins
+    # entry/asset names, Rollup output is sorted, CSS-module hashes are
+    # content-derived). We do NOT post-process dist with `sed` — see
+    # PLAN_REVIEW §22-02: the previous heuristic mangled unrelated text
+    # and was BSD/GNU-incompatible. Any third-party library that bakes a
+    # build timestamp into the bundle is patched via its own
+    # `define`/`replace` Vite plugin, not text rewriting.
     ;;
   images)
     KO_DOCKER_REPO=ghcr.io/maktaba ko build --bare --sbom=spdx --tags="${VERSION}" \
@@ -148,27 +170,36 @@ discovery (filesystem nondeterminism).
 
 ### 2.5 Container determinism
 
-Go images via `ko`:
+Go images use the canonical `api/Dockerfile` and `streaming/Dockerfile`
+(arch §12.1). The Dockerfiles consume the binaries produced by
+`tools/build.sh` and copy them onto a digest-pinned distroless base
+(`cgr.dev/chainguard/static`). For backend-only releases that opt in
+via `MAKTABA_BACKEND_BUILDER=ko`, `.ko.yaml` builds the `api` and
+`streaming` images without a Dockerfile:
 
 ```yaml
-# .ko.yaml
-defaultBaseImage: cgr.dev/chainguard/static:latest@sha256:<DIGEST>
+# .ko.yaml — backend-only, opt-in alternative.
+defaultBaseImage: cgr.dev/chainguard/static:latest  # DIGEST_TODO (Renovate)
 defaultPlatforms: [linux/amd64, linux/arm64]
 builds:
 - id: api
   dir: ./api
   main: ./cmd/api
-  ldflags: ['-buildid=', '-s', '-w', '-X maktaba/internal/version.Tag={{.Env.VERSION}}']
+  ldflags: ['-buildid=', '-s', '-w', '-X github.com/maktaba/shared/go/version.Tag={{.Env.VERSION}}']
   env: [CGO_ENABLED=0, GOOS=linux]
 - id: streaming
   dir: ./streaming
   main: ./cmd/streaming
-  ldflags: ['-buildid=', '-s', '-w', '-X maktaba/internal/version.Tag={{.Env.VERSION}}']
+  ldflags: ['-buildid=', '-s', '-w', '-X github.com/maktaba/shared/go/version.Tag={{.Env.VERSION}}']
   env: [CGO_ENABLED=0, GOOS=linux]
 ```
 
 `ko` produces byte-stable OCI images by construction (sorted layers,
-zeroed timestamps from `SOURCE_DATE_EPOCH`).
+zeroed timestamps from `SOURCE_DATE_EPOCH`); the Dockerfile path
+matches that property because it copies the same `tools/build.sh`
+output onto the same digest-pinned base. The web image is *always*
+built from `web/Dockerfile` because it requires Node for the multi-
+stage Vite build — `ko` only handles Go binaries.
 
 Python image — `pipeline/Dockerfile`:
 
@@ -340,8 +371,10 @@ on demand on `release/*` branches.
 ## 6. Acceptance checklist
 
 **Go**
-- [ ] `go build` uses `-trimpath -ldflags='-buildid=' -mod=vendor`.
+- [ ] `go build` uses `-trimpath -ldflags='-buildid= -s -w -X github.com/maktaba/shared/go/version.…' -mod=vendor`.
 - [ ] `tools/.go-build-flags` is the single source of truth for ldflags.
+- [ ] `shared/go/version/` is its own Go module; api + streaming consume it via `replace` in their go.mod files.
+- [ ] `shared/go/migrations/` is its own Go module that re-exports the SQL migrations as `embed.FS`; consumed by `api/cmd/api/migrate.go` (Story 22.4).
 - [ ] `verify-reproducibility.sh` passes for two runs on the same OS/arch.
 
 **Python**
@@ -352,9 +385,12 @@ on demand on `release/*` branches.
 - [ ] `pnpm-lock.yaml` checked in; `vite build` byte-stable across runs.
 
 **Containers**
-- [ ] Go images built via `ko` with platform digest pins.
+- [ ] Go images built via `api/Dockerfile` and `streaming/Dockerfile` (canonical) with digest-pinned `cgr.dev/chainguard/static` base.
+- [ ] Web image built via `web/Dockerfile` (multi-stage Node + Caddy).
+- [ ] `.ko.yaml` is the opt-in backend-only alternative; CI exercises both paths under the size guard.
 - [ ] Python image base pinned via `.base-digest`.
 - [ ] All four images signed via `cosign`.
+- [ ] `vendor/` directories listed in arch §12.1 (filed as a separate arch follow-up); `.gitignore` does NOT exclude `vendor/`.
 
 **Signing**
 - [ ] Maintainer minisign pubkey published in `SECURITY.md`.

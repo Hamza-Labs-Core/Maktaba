@@ -9,9 +9,12 @@
 | Concern | Decision |
 |---|---|
 | Coverage tools | Go `go test -cover` + `gocover-cobertura`; Python `coverage.py`; TS `vitest --coverage` (v8). |
+| Path glob form | Uniform `/...` glob form for both Go and Python package selectors in this plan and `floors.yaml`. Trailing slashes are not used. Any earlier `path/` style in the codebase is rewritten to `path/...`. |
 | Excludes | sqlc/gqlgen/pb/codegen patterns excluded per language. |
 | Per-package floors | `tools/coverage/floors.yaml` — single source of truth. |
+| Per-test soft cap | 100 ms uniform across Go, Python, and Vitest in the unit tier — matches story-20-01 AC4 / plan-20-01 §3, §4. |
 | Error-path lint | Custom Go AST walker: every public `func ... error` must have at least one test exercising the error return. |
+| Critical-path mutation gates | `signed-URL` (`api/internal/signed_url`) is on the mutation-test critical path — story AC requires zero surviving mutants. The mutation gate fails the build if any mutant in this package survives. |
 | Mutation testing | Weekly: `go-mutesting` for Go critical paths, `mutmut` for Python. |
 | Out of scope | Integration coverage (different goal). |
 
@@ -46,16 +49,20 @@ packages:
     floor: 80
   - path: streaming/internal/manifest/...
     floor: 90
-  - path: pipeline/src/maktaba_pipeline/domain/
+  - path: pipeline/src/maktaba_pipeline/domain/...
     floor: 85
-  - path: web/src/lib/
+  - path: web/src/lib/...
     floor: 80
 
 excludes:
   go:
     - "**/*.gen.go"
     - "**/*.pb.go"
-    - "**/zz_*.go"            # sqlc convention
+    # sqlc emits these specific filenames; exclude them rather than the
+    # nonexistent `zz_*.go` convention.
+    - "**/db.go"
+    - "**/models.go"
+    - "**/*.sql.go"
     - "shared/proto/**"
     - "**/mock_*.go"
   python:
@@ -150,10 +157,14 @@ report=mutation-$(date +%Y%m%d).json
 go-mutesting --config=tools/coverage/mutation/go_mutesting.yaml --json > "$report"
 surviving_auth=$(jq '.results | map(select(.path | startswith("api/internal/auth"))) | map(select(.killed == false)) | length' "$report")
 surviving_hash=$(jq '.results | map(select(.path | startswith("shared/contenthash"))) | map(select(.killed == false)) | length' "$report")
+surviving_signedurl=$(jq '.results | map(select(.path | startswith("api/internal/signed_url"))) | map(select(.killed == false)) | length' "$report")
 echo "auth_survivors=$surviving_auth"
 echo "hash_survivors=$surviving_hash"
+echo "signed_url_survivors=$surviving_signedurl"
 [ "$surviving_auth" -le 5 ] || { echo "auth survivors > 5"; exit 1; }
 [ "$surviving_hash" -eq 0 ] || { echo "hash survivors > 0"; exit 1; }
+# Story AC: signed-URL package must have zero surviving mutants.
+[ "$surviving_signedurl" -eq 0 ] || { echo "signed_url survivors > 0"; exit 1; }
 ```
 
 ### Python
@@ -172,15 +183,41 @@ tests_dir=pipeline/tests/unit
 // tools/coverage/lint_no_init.go
 //go:build initlint
 
+// Module-root `cmd/` directories are exempt from the init() ban (entry-point
+// binaries legitimately use init for flag wiring). Nested directories that
+// happen to be named `cmd` (e.g. `internal/cmd/...`) are NOT exempt — those
+// are library code and must remain init-free per Story 20.3 EC3.
+//
+// We compute the module root once (the directory containing go.mod) and
+// only treat a directory as "the cmd dir" when its parent is the module
+// root. `vendor/` is always skipped.
+
 func main() {
     fset := token.NewFileSet()
-    err := filepath.Walk(".", func(path string, info os.FileInfo, _ error) error {
-        if info.IsDir() && (info.Name() == "cmd" || info.Name() == "vendor") { return filepath.SkipDir }
+    moduleRoot, err := findModuleRoot(".")
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "lint_no_init: cannot find go.mod: %v\n", err)
+        os.Exit(1)
+    }
+    cmdDir := filepath.Join(moduleRoot, "cmd")
+
+    err = filepath.Walk(".", func(path string, info os.FileInfo, _ error) error {
+        if info.IsDir() {
+            if info.Name() == "vendor" {
+                return filepath.SkipDir
+            }
+            // Skip the module-root `cmd/` subtree only.
+            abs, _ := filepath.Abs(path)
+            if abs == cmdDir {
+                return filepath.SkipDir
+            }
+            return nil
+        }
         if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") { return nil }
         f, _ := parser.ParseFile(fset, path, nil, 0)
         for _, d := range f.Decls {
             if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "init" && fn.Recv == nil {
-                fmt.Fprintf(os.Stderr, "init() forbidden outside cmd/: %s\n", fset.Position(fn.Pos()))
+                fmt.Fprintf(os.Stderr, "init() forbidden outside <module>/cmd/: %s\n", fset.Position(fn.Pos()))
                 os.Exit(1)
             }
         }
@@ -188,9 +225,24 @@ func main() {
     })
     if err != nil { os.Exit(1) }
 }
+
+// findModuleRoot returns the absolute path of the directory containing go.mod.
+func findModuleRoot(start string) (string, error) {
+    abs, err := filepath.Abs(start)
+    if err != nil { return "", err }
+    for d := abs; ; {
+        if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+            return d, nil
+        }
+        parent := filepath.Dir(d)
+        if parent == d { return "", fmt.Errorf("no go.mod found above %s", abs) }
+        d = parent
+    }
+}
 ```
 
-Exception: `cmd/*` may use `init()` (tools).
+Exception: `<module-root>/cmd/*` may use `init()` (entry-point binaries).
+Nested `cmd` directories are not exempt.
 
 ## 7. Test cases
 
@@ -207,7 +259,10 @@ Mutate an `==` to `!=` in `auth/verify.go` (synthetic). Nightly mutation run. As
 File with one test covering the only valid input. Lint flags missing error-path test.
 
 ### EC2 — Generated counted
-Add `pkg/foo/zz_generated.go`. `make coverage:gate` runs and prints "skipping zz_generated.go (excluded)" and the floor calculation excludes it.
+Add a sqlc-generated file (e.g. `api/internal/queries/db.go`,
+`api/internal/queries/models.go`, or `api/internal/queries/foo.sql.go`).
+`make coverage:gate` runs and prints "skipping ... (excluded)" and the
+floor calculation excludes the generated file.
 
 ### EC3 — `init()` forbidden
 Add `init()` to a non-`cmd` package; lint exits non-zero with file path.
@@ -226,9 +281,19 @@ Add `init()` to a non-`cmd` package; lint exits non-zero with file path.
 
 ```yaml
 # tools/coverage/floors.yaml (extends section 2 with run options)
+#
+# `-coverpkg=./...` is intentionally scoped to the unit tier only. Running it
+# alongside integration tests would conflate the two coverage reports because
+# Go applies coverage instrumentation to the entire matched set during a
+# single `go test` invocation. Integration coverage uses an explicit
+# allowlist that excludes test-helpers under `./tests/integration/...`.
 run:
   go:
-    cmd: "go test -tags=unit -coverpkg=./... -coverprofile=cover.out ./... && gocover-cobertura < cover.out > cover.xml"
+    # Unit tier: instrument every package under the module root.
+    cmd_unit: "go test -tags=unit -coverpkg=./... -coverprofile=cover.unit.out ./... && gocover-cobertura < cover.unit.out > cover.unit.xml"
+    # Integration tier: explicit allowlist; excludes `./tests/integration/...`
+    # so test helpers don't show up as production code in the report.
+    cmd_integration: "go test -tags=integration -coverpkg=./internal/...,./api/... -coverprofile=cover.int.out ./tests/integration/... && gocover-cobertura < cover.int.out > cover.int.xml"
   python:
     cmd: "coverage run -m pytest -m unit && coverage xml -o cover.python.xml"
   ts:

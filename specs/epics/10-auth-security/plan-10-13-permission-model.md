@@ -6,42 +6,62 @@
 > and minted by [Story 10.3](plan-10-03-native-login.md) /
 > [Story 10.8](plan-10-08-signed-url-minter.md).
 
-## 0. Scope and placement
+## 0. Canonical schema and authz interface (cross-epic)
+
+This plan creates the **canonical `library_acl(library_id, user_id, role)`
+table** with the **three-role model `role IN ('admin', 'editor', 'viewer')`**
+(architecture §8.6 line 1690 canonical).
+**[plan-23-02 — Authorization and ACLs (Epic 23)](../23-security/plan-23-02-authorization-acls.md)
+is the canonical implementation** of the full authorization semantics
+(role matrix, middleware, lint, streaming-side checks). This plan ships:
+
+- The schema with the three-role check constraint.
+- A minimal `Authz.Can(ctx, Action, Resource) error` stub matching the
+  canonical signature defined by plan-23-02.
+- The default `'admin'` role on the `role` column so existing
+  single-user installs continue to work without manual back-fills.
+
+Detailed authorization semantics (full role matrix, audience-action
+mapping, request-scoped role caching) **are deferred to plan-23-02**.
+
+Cross-link: [plan-23-02 — Authorization and ACLs (Epic 23)](../23-security/plan-23-02-authorization-acls.md).
+
+## 0.1 Scope and placement
 
 | Concern | Decision |
 |---|---|
-| Migration file | `shared/db/migrations/0025_library_acl.sql` and `.sqlite.sql`. |
-| Authz interface | `api/internal/auth/authz.go` — `Authz.Can(ctx, action, resourceID) (bool, error)`. |
-| v1 policy | Compiled-in switch table in `authz.go`; v2 will read role configs from DB. |
+| Migration file | `shared/db/migrations/0025_library_acl.sql` and `.sqlite.sql` — three-role schema. |
+| Authz interface | `api/internal/auth/authz.go` — **canonical signature** `Authz.Can(ctx context.Context, action Action, resource Resource) error` matched by [plan-23-02](../23-security/plan-23-02-authorization-acls.md). |
+| v1 minimal stub | This plan ships a minimal `Can` that reads the `role` column and returns `nil` for any `(admin|editor|viewer)` row matching the resource's `LibraryID()` (admin everywhere, editor and viewer for `Read`/`Stream`). Full role matrix and middleware live in plan-23-02. |
 | Per-user filters | `api/internal/auth/scope.go` — `OwnerScope(ctx)` returns the user_id for filtering `playback_state` and `saved_searches` queries. |
 | 403 envelope | Generic `type: forbidden` (do not leak resource existence). |
-| Out of scope | RBAC beyond admin/viewer (v2). SSO/OIDC (v2). 2FA (v2). |
+| Out of scope | Full role-matrix enforcement (deferred to [plan-23-02](../23-security/plan-23-02-authorization-acls.md)); SSO/OIDC (v2); 2FA (v2). |
 
 ## 1. Architecture diagram
 
 ```
-                      ┌────────────────────────────────────┐
-                      │ library_acl                         │
-                      │  user_id   library_id               │
-                      │  ────────  ──────────               │
-                      │  (FK→users) (FK→libraries)          │
-                      │  PRIMARY KEY (user_id, library_id)  │
-                      └────────────────────────────────────┘
+                      ┌─────────────────────────────────────────────┐
+                      │ library_acl                                  │
+                      │  library_id  user_id  role                   │
+                      │  ──────────  ───────  ─────────────          │
+                      │  (FK→libs)  (FK→user) admin|editor|viewer    │
+                      │  PRIMARY KEY (library_id, user_id)           │
+                      └─────────────────────────────────────────────┘
                                   ▲
                                   │ used by
                                   │
        ┌──────────────────────────┴──────────────────────────┐
        │                                                       │
-┌───────────────────┐                              ┌───────────────────────┐
-│ LibACL.Libraries  │                              │ Authz.Can(ctx, action, │
-│ ForUser(uid)      │                              │   resourceID)          │
-│   used by:        │                              │   - admin? → allow      │
-│   - JWT minter    │                              │   - "*.write" → admin   │
-│   - signed-URL    │                              │   - "*.read" → check    │
-│   - middleware    │                              │     library_acl         │
-└───────────────────┘                              │   - per-user resources  │
-                                                   │     check OwnerScope    │
-                                                   └───────────────────────┘
+┌───────────────────┐                              ┌────────────────────────────┐
+│ LibACL.Libraries  │                              │ Authz.Can(ctx, action, res) │
+│ ForUser(uid)      │                              │   (canonical sig: matches   │
+│   used by:        │                              │    plan-23-02)              │
+│   - JWT minter    │                              │   - admin? → nil            │
+│   - signed-URL    │                              │   - role lookup on          │
+│   - middleware    │                              │     library_acl             │
+└───────────────────┘                              │   - role+action check       │
+                                                   │     (full matrix in 23-02)  │
+                                                   └────────────────────────────┘
                                                               ▲
                                                               │
                                               ┌──────────────────────┐
@@ -101,35 +121,59 @@ const (
     ActionSettingsWrite Action = "settings.write"
 )
 
-type Authz interface {
-    Can(ctx context.Context, action Action, resourceID uuid.UUID) (bool, error)
+// Resource is the canonical resource interface shared with plan-23-02.
+// LibraryID returns the empty string for system-wide (admin-only)
+// resources.
+type Resource interface {
+    LibraryID() string
 }
 
-var ErrForbidden = errors.New("authz: forbidden")
+// Authz.Can returns nil iff the caller is permitted to perform action
+// on resource. The signature matches plan-23-02 (canonical) so the
+// two implementations are interchangeable. plan-23-02 ships the full
+// role-matrix implementation; this plan ships a minimal stub.
+type Authz interface {
+    Can(ctx context.Context, action Action, resource Resource) error
+}
+
+var (
+    ErrForbidden       = errors.New("authz: forbidden")
+    ErrUnauthenticated = errors.New("authz: unauthenticated")
+)
 ```
 
 ```go
 // api/internal/auth/lib_acl.go
 type LibACL interface {
+    // LibrariesForUser returns the libraries the user has any role on.
     LibrariesForUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+    // RoleForUser returns the user's role on the library, or "" if none.
+    RoleForUser(ctx context.Context, userID, libraryID uuid.UUID) (string, error)
     AllLibraryIDs(ctx context.Context) ([]uuid.UUID, error)
-    Grant(ctx context.Context, userID, libraryID uuid.UUID) error
-    Revoke(ctx context.Context, userID, libraryID uuid.UUID) error
+    // Grant inserts or updates the (user, library) → role row.
+    Grant(ctx context.Context, libraryID, userID uuid.UUID, role string) error
+    Revoke(ctx context.Context, libraryID, userID uuid.UUID) error
 }
 ```
 
 ## 3. Database migration — Postgres
 
-`shared/db/migrations/0025_library_acl.sql`:
+`shared/db/migrations/0025_library_acl.sql`. Schema is the canonical
+three-role shape per architecture §8.6 (column order: `library_id,
+user_id, role`). The `role` default of `'admin'` makes existing
+single-user installs continue to work without a back-fill (the sentinel
+admin user gets every row as `'admin'`).
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE library_acl (
-    user_id     UUID NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
     library_id  UUID NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
+    role        TEXT NOT NULL DEFAULT 'admin'
+                  CHECK (role IN ('admin', 'editor', 'viewer')),
     granted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (user_id, library_id)
+    PRIMARY KEY (library_id, user_id)
 );
 
 -- "list libraries for user X" — primary read shape, but also used by
@@ -137,7 +181,9 @@ CREATE TABLE library_acl (
 CREATE INDEX library_acl_by_user ON library_acl (user_id);
 
 -- "list users with access to library L" — used by admin UIs and audit.
-CREATE INDEX library_acl_by_library ON library_acl (library_id);
+-- Already covered by the PK on (library_id, user_id) for "given lib"
+-- queries; we keep an explicit role index for "list editors of L".
+CREATE INDEX library_acl_by_library_role ON library_acl (library_id, role);
 -- +goose StatementEnd
 
 -- +goose Down
@@ -152,14 +198,16 @@ DROP TABLE IF EXISTS library_acl;
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE library_acl (
-    user_id     TEXT NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
     library_id  TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
+    role        TEXT NOT NULL DEFAULT 'admin'
+                  CHECK (role IN ('admin', 'editor', 'viewer')),
     granted_at  TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-    PRIMARY KEY (user_id, library_id)
+    PRIMARY KEY (library_id, user_id)
 );
 
-CREATE INDEX library_acl_by_user    ON library_acl (user_id);
-CREATE INDEX library_acl_by_library ON library_acl (library_id);
+CREATE INDEX library_acl_by_user           ON library_acl (user_id);
+CREATE INDEX library_acl_by_library_role   ON library_acl (library_id, role);
 -- +goose StatementEnd
 
 -- +goose Down
@@ -174,28 +222,28 @@ DROP TABLE IF EXISTS library_acl;
 
 ```sql
 -- name: ListLibraryACLForUser :many
-SELECT library_id FROM library_acl WHERE user_id = $1 ORDER BY library_id;
+SELECT library_id, role FROM library_acl WHERE user_id = $1 ORDER BY library_id;
 
 -- name: ListAllLibraryIDs :many
 SELECT id FROM libraries ORDER BY id;
 
 -- name: GrantLibraryACL :exec
-INSERT INTO library_acl (user_id, library_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING;
+INSERT INTO library_acl (library_id, user_id, role)
+VALUES ($1, $2, $3)
+ON CONFLICT (library_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
 -- name: RevokeLibraryACL :execrows
 DELETE FROM library_acl WHERE user_id = $1 AND library_id = $2;
 
 -- name: ListUsersWithLibraryAccess :many
-SELECT u.id, u.username, u.is_admin
+SELECT u.id, u.username, u.is_admin, la.role
   FROM library_acl la
   JOIN users u ON u.id = la.user_id
  WHERE la.library_id = $1
  ORDER BY u.username;
 ```
 
-## 5. Authz implementation
+## 5. Authz implementation (minimal stub; full semantics in plan-23-02)
 
 ```go
 // api/internal/auth/authz.go
@@ -204,45 +252,47 @@ type authz struct {
     cfg    Config
 }
 
-func (a *authz) Can(ctx context.Context, action Action, resourceID uuid.UUID) (bool, error) {
+// Can returns nil iff the user is permitted to perform action on resource.
+// This is the minimal stub: admin users pass everything; non-admins pass
+// any 'read'/'stream' action when they have ANY role on the library, and
+// pass 'write'/'ingest' only with role='admin' or 'editor'. Full role-
+// matrix semantics are provided by plan-23-02.
+func (a *authz) Can(ctx context.Context, action Action, res Resource) error {
     user, ok := UserFromContext(ctx)
-    if !ok { return false, nil }   // anonymous → deny
-    if user.IsAdmin { return true, nil }
-
-    switch action {
-    case ActionLibraryRead:
-        libs, err := a.libACL.LibrariesForUser(ctx, user.ID)
-        if err != nil { return false, err }
-        for _, l := range libs { if l == resourceID { return true, nil } }
-        return false, nil
-
-    case ActionVideoRead:
-        // resourceID is the video id. Resolve its library, then ACL-check.
-        libID, err := a.lookupVideoLibrary(ctx, resourceID)
-        if err != nil { return false, err }
-        return a.Can(ctx, ActionLibraryRead, libID)
-
-    case ActionVideoWrite:
-        return false, nil   // admin-only — already returned true above
-
-    case ActionLibraryWrite, ActionSettingsWrite:
-        return false, nil   // admin-only
-
-    case ActionSearchRead, ActionSettingsRead:
-        return true, nil    // any authenticated user
-
-    default:
-        return false, nil
+    if !ok {
+        return ErrUnauthenticated
     }
-}
-
-func (a *authz) lookupVideoLibrary(ctx context.Context, videoID uuid.UUID) (uuid.UUID, error) {
-    // Cache resolution via the in-process video metadata cache when present;
-    // fall back to a SELECT library_id FROM videos WHERE id=$1.
-    // (Same in-memory shape as Streaming's probe cache, populated lazily.)
-    return a.cfg.VideoLibraryLookup(ctx, videoID)
+    if user.IsAdmin {
+        return nil
+    }
+    libID := res.LibraryID()
+    if libID == "" {
+        return ErrForbidden  // system-wide actions are admin-only
+    }
+    role, err := a.libACL.RoleForUser(ctx, user.ID, uuid.MustParse(libID))
+    if err != nil {
+        return ErrForbidden
+    }
+    switch action {
+    case ActionLibraryRead, ActionVideoRead, ActionSearchRead, ActionSettingsRead:
+        // any role suffices
+        if role != "" {
+            return nil
+        }
+    case ActionLibraryWrite, ActionVideoWrite, ActionSettingsWrite:
+        if role == "admin" || role == "editor" {
+            return nil
+        }
+    }
+    return ErrForbidden
 }
 ```
+
+The full role matrix (admin can do everything, editor can read+write,
+viewer can read only, plus the streaming-side audience checks) lives
+in [plan-23-02](../23-security/plan-23-02-authorization-acls.md). This
+stub is enough to satisfy the tests in §9 without contradicting the
+canonical implementation.
 
 The `OwnerScope(ctx)` helper wraps queries that should be filtered:
 
@@ -311,11 +361,18 @@ The video handler:
 
 ```go
 // api/internal/http/videos.go (additions)
+type videoResource struct{ libID string }
+func (v videoResource) LibraryID() string { return v.libID }
+
 func getVideo(authz auth.Authz, q *db.Queries) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         vid := uuid.MustParse(chi.URLParam(r, "id"))
-        ok, err := authz.Can(r.Context(), auth.ActionVideoRead, vid)
-        if err != nil || !ok {
+        libID, err := lookupVideoLibrary(r.Context(), vid)
+        if err != nil {
+            problem(w, http.StatusForbidden, "forbidden", "")
+            return
+        }
+        if err := authz.Can(r.Context(), auth.ActionVideoRead, videoResource{libID: libID.String()}); err != nil {
             problem(w, http.StatusForbidden, "forbidden", "")
             return
         }
@@ -350,8 +407,10 @@ Used by both the access-token mint (10.3) and the signed-URL mint (10.8).
 
 | Test | What it pins |
 |---|---|
-| `TestGrantThenList` | After Grant(uid, lib1), ListLibraryACLForUser(uid) returns [lib1]. |
-| `TestGrantIdempotent` | Grant twice → ON CONFLICT → no duplicate row. |
+| `TestGrantWithRoleThenList` | After Grant(lib1, uid, "viewer"), ListLibraryACLForUser(uid) returns [(lib1, "viewer")]. |
+| `TestGrantUpdatesRoleOnConflict` | Grant(lib1, uid, "viewer") then Grant(lib1, uid, "editor") → row's role is "editor"; no duplicate. |
+| `TestRoleCheckConstraint` | Inserting role='owner' (not in admin/editor/viewer) fails the CHECK constraint. |
+| `TestDefaultRoleIsAdmin` | INSERT without role specified yields role='admin'. |
 | `TestRevokeRemovesRow` | Revoke returns 1; second call returns 0. |
 | `TestCascadeOnUserDelete` | Delete user → all their library_acl rows gone. |
 | `TestCascadeOnLibraryDelete` | Delete library → all rows for that lib gone. |
@@ -361,12 +420,13 @@ Used by both the access-token mint (10.3) and the signed-URL mint (10.8).
 
 | Test | What it pins |
 |---|---|
-| `TestAdminAllowedAll` | is_admin=true → `Can(_, video.write, _) == true`. |
-| `TestAnonDeniedAll` | No user in ctx → `Can(_, video.read, _) == false`. |
-| `TestVideoReadAllowedWhenLibraryGranted` | Grant lib L; video V in L → `Can(_, video.read, V) == true`. |
-| `TestVideoReadDeniedWhenLibraryNotGranted` | No grant; video V in L → false. |
-| `TestLibraryWriteRequiresAdmin` | Non-admin → false. |
-| `TestSettingsReadAllowedForAuth` | Any authenticated user → true. |
+| `TestAdminAllowedAll` | is_admin=true → `Can(_, video.write, _) == nil`. |
+| `TestAnonDeniedAll` | No user in ctx → `Can(_, video.read, _) == ErrUnauthenticated`. |
+| `TestVideoReadAllowedForViewer` | Grant lib L role=viewer; video V in L → `Can(_, video.read, videoResource{L}) == nil`. |
+| `TestVideoWriteDeniedForViewer` | Grant lib L role=viewer → `Can(_, video.write, videoResource{L}) == ErrForbidden`. |
+| `TestVideoWriteAllowedForEditor` | Grant lib L role=editor → `Can(_, video.write, videoResource{L}) == nil`. |
+| `TestVideoReadDeniedWhenNoRole` | No grant → ErrForbidden. |
+| `TestLibraryWriteSystemWideRequiresAdmin` | system-wide resource (LibraryID=="") + non-admin → ErrForbidden. |
 
 ### 9.3 HTTP integration
 
@@ -407,11 +467,12 @@ No new dependencies.
 ## 12. Acceptance checklist
 
 **Schema**
-- [ ] `0025_library_acl.sql` applies; both indexes present; CASCADE from users + libraries.
+- [ ] `0025_library_acl.sql` applies; PK is `(library_id, user_id)`; `role` column has CHECK constraint admin|editor|viewer; default is `'admin'`; CASCADE from users + libraries.
 
 **Authz**
-- [ ] `Authz.Can` returns true for admin on every action.
-- [ ] AC-1 v1 policy table: `*.read` → ACL; `*.write` → admin.
+- [ ] `Authz.Can(ctx, Action, Resource) error` matches the canonical signature in plan-23-02.
+- [ ] `Can` returns nil for admin on every action.
+- [ ] Minimal stub: viewer/editor/admin role rows pass `Read`; editor/admin pass `Write`. Full role matrix deferred to plan-23-02.
 - [ ] AC-2: video detail handler filters `playback_state` to ctx user.
 - [ ] AC-3: saved-searches list filtered to ctx user.
 - [ ] AC-4: forbidden response is `403 type: forbidden` with no resource leak.
@@ -429,4 +490,4 @@ No new dependencies.
 
 **Docs**
 - [ ] README.md ticks story 10.13.
-- [ ] v2 plan note: replace per-user lib snapshot with role-based authz; add `lib_all` for admins.
+- [ ] Cross-link to plan-23-02 documented in §0; full role matrix deferred there.

@@ -8,6 +8,26 @@
 > its handler stubs remain. Schema columns (including `bundle_id`, required
 > for APNs topic routing on iOS/macOS/tvOS) are defined here.
 
+## 0.0 Audit-log dependency
+
+Audit-log writes from this plan go to **plan-21-06's canonical
+`audit_log` table** (architecture §8.6.1). `category='device'` is
+reserved per arch §8.6.1 for device registration / token rotation.
+Per `PLAN_REVIEW_18_24.md` §1.4 the canonical column names are:
+
+- `actor_user` (NOT `actor_user_id`)
+- `actor_ip` (NOT `ip`)
+- `target_id` (the device UUID, as text)
+- `target_kind = 'device'`
+- `payload` (JSONB; arbitrary event detail)
+- `dedupe_key` (optional string, e.g., `"device_register:<token_hash>"`)
+- `created_at` (TIMESTAMPTZ, default `now()`)
+
+Inserts in this plan (e.g., `Register`, `Revoke`, `cross_user_claim`)
+use these column names. The `category='device'` insert that
+`PLAN_REVIEW_07_13` previously flagged as failing is now valid against
+plan-21-06's CHECK enum (which includes `'device'`).
+
 ## 0. Scope and placement
 
 | Concern | Decision |
@@ -19,7 +39,7 @@
 | FCM | `pipeline/src/maktaba_pipeline/push_fanout/fcm.py` — HTTP v1 with Google service-account JWT. |
 | Secrets | TOML config `[push.apns]`, `[push.fcm]`. Read at boot; redaction filter (Epic 21 Story 21.1) covers `*-key`, `*-secret`, `*service_account*`. |
 | Cross-user token claim | 24 h grace before previous owner's row is hard-revoked. |
-| Audit | Per-call audit_log row (`category='device'`). |
+| Audit | Per-call audit_log row using plan-21-06's canonical schema (`category='device'`, `event`, `actor_user`, `actor_ip`, `target_id` = device UUID, `target_kind='device'`, `payload`, `dedupe_key`, `created_at`). See §0. |
 | Out of scope | Push UI (Story 12.4); downloaded-flag (Story 12.11). |
 
 ## 1. Schema
@@ -123,7 +143,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 1. UPSERT by `(user_id, token_hash)`. If row exists → update `last_seen_at`, `app_version`, `os_version`, `locale`, `categories`, `bundle_id`; un-revoke if previously revoked. Return `{Created:false}`.
 2. Otherwise check `token_hash` across all users; if owned by another, schedule `revoked_at = now() + 24h` on the previous owner's row + insert new row.
-3. Audit: `category='device', action=Created?'create':'update'`.
+3. Audit: insert into plan-21-06's `audit_log` with `category='device'`,
+   `event=Created?'device.register':'device.update'`, `actor_user`=user
+   id, `actor_ip`=client IP, `target_id`=device UUID,
+   `target_kind='device'`, `payload`={platform, app_version, locale},
+   `dedupe_key`=`"device_register:<token_hash_hex>"`. See §0.
 
 ### `PATCH /api/devices/{id}`, `DELETE`, `GET /api/me/devices`
 
@@ -181,7 +205,7 @@ Boot-time read; if neither is configured, worker emits a single warning and disa
 ## 6. Security & redaction
 
 - Plaintext token never returned by GET.
-- Audit log entries on `register`, `revoke`, `cross_user_claim`.
+- Audit log entries on `register`, `revoke`, `cross_user_claim` — all written to plan-21-06's canonical table with `category='device'` and the canonical column names (`actor_user`, `actor_ip`, `target_id`, `target_kind`, `payload`, `dedupe_key`, `created_at`). See §0.
 - Redaction filter (Epic 21 Story 21.1) masks anything that looks like an APNs/FCM token in logs (`token=********`).
 
 ## 7. Edge cases

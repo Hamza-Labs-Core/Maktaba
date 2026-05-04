@@ -8,7 +8,7 @@
 | Concern | Decision |
 |---|---|
 | Registry | `tools/flakes/registry.json` committed; updated only by CI bot. |
-| Auto-quarantine | Workflow runs nightly; tests with ≥ 3 flakes in 7 days are added to `tools/flakes/quarantined.txt`. Test runner reads the list and emits `t.Skip("quarantined: #ISSUE")`. |
+| Auto-quarantine | Workflow runs nightly; tests with ≥ 3 flakes in 7 days are added to `tools/flakes/quarantined.txt`. The skip helper emits the literal string the story specifies (story-20-08 AC2): `t.Skip("quarantined-flake-#" + iss)` (Go) — the message starts with the prefix `quarantined-flake-#` so log-grep tooling can identify quarantined skips uniformly. The Python equivalent is `pytest.skip(reason="quarantined-flake-#" + iss)`. |
 | Retry policy | Per-tier flag; unit/integration retries=0; e2e retries=1. |
 | Lints | Time-zone test ban; randomized order ban for ordering deps. |
 
@@ -93,6 +93,12 @@ on:
 jobs:
   record:
     runs-on: ubuntu-latest
+    # Skip cancelled or skipped workflow runs — they don't represent a real
+    # test outcome and would inflate the flake count if their JUnit output
+    # is partial. We only consider `success` (passed on retry → flake
+    # detection by the recorder) and `failure` (red-passing-on-rerun is
+    # already excluded by `tc.RetryHappened && tc.Passed`).
+    if: ${{ github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.conclusion != 'skipped' }}
     steps:
       - uses: actions/checkout@v4
       - run: gh run download ${{ github.event.workflow_run.id }} -n junit -D junit/
@@ -144,13 +150,27 @@ streaming/internal/range.TestCrossSegment #1280
 // tools/flakes/test_skip_helper.go
 //go:build unit || integration || e2e
 
-var quarantined map[string]string  // TestName → "#1234"
+import (
+    "bufio"
+    "os"
+    "path/filepath"
+    "strings"
+    "sync"
+    "testing"
+)
 
-func init() {
+// `init()` is banned outside <module-root>/cmd/* by plan-20-03 EC3, so
+// quarantine state is loaded lazily on first use via sync.Once.
+var (
+    quarantinedOnce sync.Once
+    quarantined     map[string]string  // TestName → "#1234"
+)
+
+func loadQuarantined() {
+    quarantined = map[string]string{}
     f, err := os.Open(filepath.Join(repoRoot(), "tools/flakes/quarantined.txt"))
     if err != nil { return }
     defer f.Close()
-    quarantined = map[string]string{}
     sc := bufio.NewScanner(f)
     for sc.Scan() {
         parts := strings.Fields(sc.Text())
@@ -158,21 +178,71 @@ func init() {
     }
 }
 
-// Helper used by every test file's TestMain via go:linkname or an explicit
-// SkipIfQuarantined(t) call at the top of t.Run blocks.
+// SkipIfQuarantined is the canonical entry point. Every test file calls it
+// as the first statement of every test function, and the lint in §8.3
+// enforces that. The skip message format matches story-20-08 AC2:
+// `quarantined-flake-#<issue>`.
 func SkipIfQuarantined(t *testing.T) {
+    quarantinedOnce.Do(loadQuarantined)
     if iss, ok := quarantined[t.Name()]; ok {
-        t.Skipf("quarantined-flake: %s", iss)
+        // iss already starts with `#` (e.g. "#1234"). The full skip message
+        // is therefore literally `quarantined-flake-#1234`, which matches
+        // the AC2-specified form `t.Skip("quarantined-flake-#" + iss)`.
+        t.Skip("quarantined-flake-" + iss)
     }
 }
 ```
 
-Convention: every test file calls `flakes.SkipIfQuarantined(t)` as the first statement. A lint enforces the call exists in tagged tests.
+Convention: every test file calls `flakes.SkipIfQuarantined(t)` as the
+first statement. The lint in §8.3 enforces this.
+
+### 5.1 Convention lint — every `t.Skip` must go through `SkipIfQuarantined`
+
+```go
+// tools/flakes/lint/skip_via_helper.go
+//go:build flakelint
+
+// Walk every *_test.go and assert:
+//
+//   1. Every test function (`func TestXxx(t *testing.T)` and `t.Run` body)
+//      either calls `flakes.SkipIfQuarantined(t)` as its first statement,
+//      OR contains no `t.Skip*` call.
+//   2. Every direct `t.Skip(msg)` / `t.Skipf(fmt, …)` whose first argument
+//      is a string literal must start with the `quarantined-flake-#`
+//      prefix. (Tests that legitimately need to skip for other reasons
+//      should still go through `SkipIfQuarantined` plus a wrapper that
+//      records the reason — keeping a uniform shape.)
+//
+// The walker uses `go/ast` and the `packages.Load` helper to resolve calls
+// to the `flakes` package by import path, so a renamed import still works.
+
+func main() {
+    // … find all test files, parse with go/parser, type-check via go/types …
+    // For each *ast.FuncDecl whose name starts with "Test":
+    //   firstStmt := fn.Body.List[0]
+    //   if !isCallTo(firstStmt, "flakes.SkipIfQuarantined", "t") {
+    //       reportIfAnyTSkipExists(fn)
+    //   }
+    //   for each *ast.CallExpr that is a t.Skip / t.Skipf:
+    //       if literalStringArg && !strings.HasPrefix(arg, "quarantined-flake-#") {
+    //           fail("t.Skip without quarantined-flake-# prefix at "+pos)
+    //       }
+}
+```
+
+The lint runs in `make lint:flake-skip`; failures block the PR.
 
 ## 6. SLA check (14 days)
 
 ```go
 // tools/flakes/sla_check.go
+import (
+    "time"
+
+    "github.com/maktaba/maktaba/internal/alerting"   // pager hook (Story 21.5)
+    "github.com/maktaba/maktaba/internal/gh"         // GitHub-issues helper
+)
+
 func main() {
     reg := loadRegistry("tools/flakes/registry.json")
     deadline := time.Now().AddDate(0, 0, -14)
@@ -180,8 +250,8 @@ func main() {
         if t.QuarantinedAt.IsZero() { continue }
         if t.QuarantinedAt.After(deadline) { continue }
         // SLA breach
-        gh.IssueComment(t.Issue, "🚨 14-day quarantine SLA breached. @"+t.Owner+" please fix or delete.")
-        // Page via existing alerting (Story 21.5)
+        gh.IssueComment(t.Issue, "14-day quarantine SLA breached. @"+t.Owner+" please fix or delete.")
+        // Page via existing alerting (Story 21.5).
         alerting.Page("flake-sla-breach", t.ID, t.Owner)
     }
 }
@@ -247,7 +317,7 @@ Unit-tier failure runs once, no retry. e2e failure retries once and passes; reco
 
 | Case | Source | Handling |
 |---|---|---|
-| EC1 infra hiccup | story | Recorder classifies failures: `flake_category=infra` (DNS, container start) is excluded from flake budget. Categories detected via regex on logs. |
+| EC1 infra hiccup | story | Recorder classifies failures: `flake_category=infra` (DNS, container start) is excluded from the flake budget. Detection uses **structured fields** when the runner emits JSON-formatted lines, falling back to **anchored** regex on log lines (anchored at the start of a line — `^[^\n]*`). The fallback regexes are listed in §11 `infra_categories` and each must be log-line-anchored to avoid matching the literal string inside an unrelated test name (e.g. `TestNoSuchHost` would otherwise match `no such host`). |
 | EC2 timezone | story | Banned via lint; tests use `clock.Inject(t)`. |
 | EC3 order dependency | story | Random shuffle on unit/integration; failures expose. |
 | Recorder run race | impl | Push uses `--force-with-lease` and back-off; rejection retries up to 3×. |
@@ -264,10 +334,17 @@ flakes:
     unit: 0
     integration: 0
     e2e: 1
-  infra_categories:
-    - "container start failed"
-    - "i/o timeout"
-    - "no such host"
+  # Preferred: classify via the structured `flake_category` field that the
+  # test runner emits on each failure (JSON line). When that field is
+  # missing, fall back to the anchored regexes below. Each pattern must
+  # match the **start** of a log line (`^...`) — substring matches against
+  # arbitrary positions produced false positives on test names that
+  # happened to contain the literal phrase.
+  infra_category_field: flake_category
+  infra_category_fallback_regexes:
+    - '^[A-Z]{1,5} +.*container start failed'
+    - '^[A-Z]{1,5} +.*i/o timeout'
+    - '^[A-Z]{1,5} +.*no such host'
 ```
 
 ## 12. Dashboards

@@ -46,7 +46,7 @@
 | `deploy/compose/docker-compose.dev.yml` | Dev overlay; bind mounts + dev images. |
 | `api/.air.toml`, `streaming/.air.toml` | air configs. |
 | `pipeline/dev-watch.sh` | Wraps `watchmedo`. |
-| `Makefile` (extended) | `dev`, `dev-down`, `lint`, `test`, `test-unit`, `test-integration`, `test-e2e`, `perf-ci`, `build`, `format`. |
+| `Makefile` (extended) | `dev`, `dev-down`, `lint`, `test`, `test-unit`, `test-integration`, `test-e2e`, `perf-ci`, `build`, `format`, `migrate`, `apps`. (`migrate` and `apps` are listed in arch §12.2; `migrate` shells to `tools/build.sh apps` is incorrect — see §2.7 for actual mapping.) |
 | `.pre-commit-config.yaml` | gofmt, ruff, prettier, trailing whitespace, EOF newline. |
 | `CONTRIBUTING.md` | The canonical workflow doc. |
 | `.editorconfig` | Tabs/spaces, line endings — one source. |
@@ -133,14 +133,21 @@ mounted at runtime — no copy at build time.
 
 ```toml
 root = "/src/api"
-tmp_dir = "/src/api/tmp"
+# tmp_dir lives OUTSIDE the bind-mounted source tree so that the
+# editor's filesystem watcher (VS Code, JetBrains, etc.) doesn't see
+# the rebuilt binary as a "user edit" and trigger another full reload
+# (PLAN_REVIEW §22-08). `/tmp/.air-api` is a tmpfs path inside the
+# container; it persists across air rebuilds but vanishes on container
+# stop. A repo-relative `.air-tmp/` would also work as long as it is
+# `.gitignore`d AND added to the editor's ignore list.
+tmp_dir = "/tmp/.air-api"
 
 [build]
-  cmd = "go build -o ./tmp/main ./cmd/api"
-  bin = "./tmp/main"
-  full_bin = "./tmp/main serve"
+  cmd = "go build -o /tmp/.air-api/main ./cmd/api"
+  bin = "/tmp/.air-api/main"
+  full_bin = "/tmp/.air-api/main serve"
   include_ext = ["go", "tpl", "tmpl", "html", "sql"]
-  exclude_dir = ["tmp", "vendor"]
+  exclude_dir = ["vendor", ".air-tmp"]
   delay = 200
   stop_on_error = true
 
@@ -199,7 +206,8 @@ the websocket URL the browser opens points at the host port mapping.
 `Makefile` (relevant section):
 
 ```make
-.PHONY: dev dev-down lint test test-unit test-integration test-e2e perf-ci build help
+.PHONY: dev dev-down lint test test-unit test-integration test-e2e \
+        perf-ci build help migrate apps generate
 
 COMPOSE_DEV = docker compose -f deploy/compose/docker-compose.yml \
                              -f deploy/compose/docker-compose.dev.yml
@@ -247,6 +255,16 @@ perf-ci:
 build:
 	tools/build.sh all
 
+migrate:             ## Run pending DB migrations against $MAKTABA_DATABASE_URL (arch §12.2)
+	cd api && go run ./cmd/api migrate up
+
+apps:                ## Build mobile, desktop, and TV apps (arch §12.2)
+	tools/build.sh apps
+
+generate:            ## Run sqlc, gqlgen, protoc; CI's generate-drift gate runs the same target (Story 22.1)
+	cd api && go generate ./...
+	cd streaming && go generate ./...
+
 format:
 	cd api && gofmt -w .
 	cd streaming && gofmt -w .
@@ -254,8 +272,11 @@ format:
 	cd web && pnpm prettier --write .
 
 help:                ## Print available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk -F':.*?## ' '{printf "%-20s %s\n", $$1, $$2}'
+	@# Pattern is POSIX-portable: BSD awk (default on macOS) and GNU
+	@# awk both honor -F as a literal split string. Avoid GNU-only
+	@# extensions like `gensub`, lookahead in regex, or `\b`.
+	@grep -E '^[a-zA-Z_-]+:[^=]*## ' $(MAKEFILE_LIST) | \
+	  awk 'BEGIN { FS = ":[^#]*## " } { printf "%-20s %s\n", $$1, $$2 }'
 ```
 
 CI's `_lint.yml`, `_unit.yml`, etc. invoke these exact targets — no
@@ -277,11 +298,16 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: ['--maxkb=512']
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  # `dnephin/pre-commit-golang` has been unmaintained since 2021 (last
+  # release v0.5.1). PLAN_REVIEW §22-08 — switched to the actively-
+  # maintained `tekwizely/pre-commit-golang` fork, which tracks Go 1.22+
+  # and modern golangci-lint. Local hooks below are the fallback if the
+  # fork is ever unavailable.
+  - repo: https://github.com/tekwizely/pre-commit-golang
+    rev: v1.0.0-rc.1
     hooks:
-      - id: go-fmt
-      - id: go-vet
+      - id: go-fmt-repo
+      - id: go-vet-repo-mod
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.0
     hooks:
@@ -362,7 +388,11 @@ Troubleshooting:
 | Test | What it pins |
 |---|---|
 | `TestPreCommitInstallsAndRuns` | `pre-commit install && pre-commit run --all-files` exits 0 on a clean tree. |
-| `TestNoVerifyBypassedCaughtByCi` (EC3) | A commit pushed with `--no-verify` containing a `gofmt` error fails CI's lint gate. |
+
+`TestNoVerifyBypassedCaughtByCi` (EC3) lives in plan-22-01 (CI
+pipeline) — the safety-net assertion belongs with the lint gate that
+catches the bypass, not with the local pre-commit setup. This plan
+links to it from the EC3 row below.
 
 ## 4. Edge cases
 
@@ -370,7 +400,7 @@ Troubleshooting:
 |---|---|---|
 | Apple Silicon vs Intel (EC1) | Both arches are tested; `make dev` selects the right base images via `--platform=$BUILDPLATFORM`. MLX features are gated behind a runtime check; on Intel they fall back to whisper.cpp. | `TestMakeDevOnIntelMac` (manual) |
 | Slow corporate proxy (EC2) | `MAKTABA_REGISTRY_MIRROR=https://mirror.corp/v2/` env makes Docker pull through the mirror; documented in CONTRIBUTING. | `TestMirrorEnvHonored` |
-| Pre-commit bypassed (EC3) | `--no-verify` is allowed locally; CI's lint gate catches it. The merge gate is the safety net. | `TestNoVerifyBypassedCaughtByCi` |
+| Pre-commit bypassed (EC3) | `--no-verify` is allowed locally; CI's lint gate catches it. The merge gate is the safety net. | `TestNoVerifyBypassedCaughtByCi` (lives in plan-22-01) |
 | Volume permissions on Linux | The dev images run as `1000:1000`; the bind-mounted source dirs are owned by the user (`stat $UID == 1000`). On non-1000-UID hosts, the `MAKTABA_UID` env overrides. | `TestNon1000UidLinux` |
 | Docker Desktop file-system slow (Mac) | The `:cached` mount option is set on every bind in `docker-compose.dev.yml` for Mac users (compose ignores it on Linux). | `TestMacBindCached` |
 | Air watching too many files | `.air.toml` excludes `vendor/` and `tmp/`; CPU under 5 % when idle. | `TestAirIdleCpu` |
@@ -401,8 +431,9 @@ Troubleshooting:
 - [ ] Web save → HMR in ≤ 1 s.
 
 **Parity**
-- [ ] CI runs `make lint`, `make test-*`, `make build` — no CI-only scripts.
+- [ ] CI runs `make lint`, `make test-*`, `make build`, `make migrate`, `make apps`, `make generate` — no CI-only scripts.
 - [ ] `make help` lists every target.
+- [ ] `make help` awk pattern is POSIX-portable (works on both BSD-awk default on macOS and GNU-awk on Linux).
 
 **Pre-commit**
 - [ ] `.pre-commit-config.yaml` covers gofmt, ruff, prettier, trailing whitespace, EOF, large-file guard, migration lint.

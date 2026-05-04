@@ -3,6 +3,14 @@
 > Companion to [story-19-05-database-scaling.md](story-19-05-database-scaling.md).
 > Streaming replica setup, daily backup, restore drill, migration safety lint.
 
+## 1. Query budgets pointer (AC1 → Story 18.7)
+
+**AC1 of Story 19.5 delegates the query-budget surface to Story 18.7.** The
+read-replica router (§3) and the lag monitor (§3) must respect the same
+budgets that 18.7 enforces on the primary; this plan does NOT redefine
+them. Any budget regression on the replica path is a 18.7 bug, not a 19.5
+bug. Cross-link: `specs/epics/18-performance/story-18-07-query-budgets.md`.
+
 ## 0. Scope and placement
 
 | Concern | Decision |
@@ -60,7 +68,15 @@ sudo -u postgres pg_basebackup \
     -h "$PRIMARY_HOST" -U "$REPL_USER" -D "$DATA_DIR" \
     -P -R --wal-method=stream
 
-# postgresql.auto.conf added by -R contains primary_conninfo + standby.signal
+# Postgres 12+ replaces the legacy `recovery.conf` with two pieces:
+#   - `postgresql.auto.conf` (written by `pg_basebackup -R`) holds
+#     primary_conninfo and any recovery GUCs.
+#   - `standby.signal` (created by `-R` in PG 12+) marks the data dir as
+#     a standby. There is no `recovery.conf` to write — the story's
+#     "recovery.conf" wording is stale and should be updated.
+test -f "$DATA_DIR/standby.signal" \
+    || { echo "standby.signal missing — pg_basebackup -R must run on PG 12+"; exit 1; }
+
 systemctl start postgresql@16-replica
 echo "Replica started — verify with: SELECT pg_is_in_recovery();"
 ```
@@ -94,6 +110,16 @@ func (r *Router) Write() *sql.DB { return r.primary }
 
 ```go
 // api/internal/dbroute/lag_monitor.go
+//
+// Lag detection cadence vs claim of "5 s detection":
+//   The router *probes* every 5 s — that's the detection cadence as seen by
+//   the request path. The *fault threshold* is 60 s of measured lag; we
+//   sample with hysteresis (open at 60 s, recover at ≤ 5 s) so a brief
+//   replay stall doesn't flap routing. Worst-case time from lag-going-bad
+//   to "router stops sending search to replica" is one tick (≤ 5 s) plus
+//   the time needed for `pg_last_xact_replay_timestamp()` to age past 60 s,
+//   so the door-to-door window is ~60–65 s. The 5 s claim refers to the
+//   probe cadence, not the fault threshold.
 func (m *LagMonitor) Run(ctx context.Context) {
     t := time.NewTicker(5 * time.Second); defer t.Stop()
     for {
@@ -206,9 +232,21 @@ var rules = []rule{
         scope: hotTables,
     },
     {
+        // The earlier `NOT NULL[^D]*$` end-of-line lookbehind was fragile:
+        // it false-fired on multi-line statements and false-passed any
+        // statement that happened to mention `D`. Replace with a list of
+        // explicit fragile fragments and (long-term) a SQL-parser pass.
+        // Each pattern is anchored to ALTER TABLE … ADD COLUMN and excludes
+        // forms with a DEFAULT clause; we accept some recall loss in
+        // exchange for fewer false hits.
         name: "ALTER TABLE … ADD COLUMN NOT NULL without DEFAULT",
-        match: regexp.MustCompile(`(?im)ALTER TABLE.*ADD COLUMN.*NOT NULL[^D]*$`).FindAllIndex,
-        hint:  "Add column nullable; backfill in a separate migration; then SET NOT NULL.",
+        match: matchAny(
+            // ADD COLUMN <name> <type> NOT NULL ; (no DEFAULT keyword on the line)
+            regexp.MustCompile(`(?im)\bALTER\s+TABLE\b[^;]*\bADD\s+COLUMN\b(?:(?!\bDEFAULT\b)[^;])*\bNOT\s+NULL\b(?:(?!\bDEFAULT\b)[^;])*;`).FindAllIndex,
+            // Same, terminated by end-of-statement-batch instead of `;`
+            regexp.MustCompile(`(?im)\bALTER\s+TABLE\b[^;]*\bADD\s+COLUMN\b(?:(?!\bDEFAULT\b)[^;])*\bNOT\s+NULL\b(?:(?!\bDEFAULT\b)[^;])*\z`).FindAllIndex,
+        ),
+        hint:  "Add column nullable; backfill in a separate migration; then SET NOT NULL. (For a SQL-parser-aware lint, see TODO/long-term.)",
     },
     {
         name: "DROP COLUMN on hot table",
@@ -253,6 +291,11 @@ Test fixture migration `9999_create_index.sql` with `CREATE INDEX foo_idx ON vid
 ## 9. Configuration
 
 ```yaml
+database:
+  # Per arch §10.3, a read replica is only stood up if search QPS becomes
+  # a bottleneck. Default is OFF; operators flip this when they have
+  # evidence (Story 21.5 metrics) that primary search is saturated.
+  read_replica_enabled: false
 api:
   db:
     primary_dsn: ${PG_PRIMARY_DSN}
@@ -263,6 +306,10 @@ backup:
   out_dir: /var/backups/maktaba
   retention_days: 14
 ```
+
+The router (§3) reads `database.read_replica_enabled` at startup; when
+`false` it never opens the replica pool and `Read()` always returns the
+primary. `replica_dsn` is consulted only when the flag is `true`.
 
 ## 10. Runbooks
 

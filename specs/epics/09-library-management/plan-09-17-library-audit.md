@@ -2,19 +2,46 @@
 
 > Companion to [story-09-17-library-audit.md](story-09-17-library-audit.md).
 > The story states *what* and *why*; this plan states *how*.
-> Owns the canonical `audit_log` table (jointly with Epic 10
-> Story 10.16) and the `category='library'` API surface.
 
-## 0. Scope and placement
+## 0. SUPERSEDED
+
+**Status: SUPERSEDED.** This plan's `audit_log` schema has been
+replaced by [plan-21-06](../21-observability/plan-21-06-audit-log.md)'s
+canonical schema (architecture §8.6.1). Per `PLAN_REVIEW_18_24.md` §1.4,
+plan-21-06 is now the single owner of the `audit_log` table shape.
+
+This plan's migration now `DROP TABLE IF EXISTS audit_log` (see §3.1
+below) so plan-21-06's migration is the sole creator. Library-audit
+**category-specific application logic** — rotation reports, partition
+management, the `GET /api/libraries/{id}/audit` reader — remains owned
+here, but operates against plan-21-06's table shape.
+
+**Canonical column names** (used by every section below):
+
+| Was (this plan, deprecated) | Now (plan-21-06 canonical) |
+|---|---|
+| `actor_user_id` | `actor_user` |
+| `ip` | `actor_ip` |
+| `ts` | `created_at` |
+| Primary key `(ts, id)` | `(id, created_at)` |
+| Time column `ts` | `created_at` |
+| `payload_jsonb` | `payload` |
+| Categories `('library','security')` | `('library','security','device','admin','auth','data','config','keys','job')` |
+
+The reader endpoint (`GET /api/libraries/{id}/audit`) and event
+constructors continue to work because they restrict to
+`category='library'`, which is still in the canonical enum.
+
+## 0.1 Scope and placement (post-supersede)
 
 | Concern | Decision |
 |---|---|
-| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `created_at`. Append-only via BEFORE UPDATE/DELETE triggers. Canonical `category IN ('library','security','device','admin')`. |
-| Partitioning | Monthly partitions named `audit_log_YYYY_MM`. A trigger function `audit_log_route_to_partition()` ensures the parent has the right child for each new INSERT (creating one on-demand). The partition-management cron (Epic 22) precreates the next 3 months. |
-| Writers | `api/internal/audit/writer.go` (Go) and `pipeline/src/maktaba_pipeline/audit/writer.py` (Python). Both insert into the parent `audit_log`; Postgres routes to the right partition. Best-effort: writes never block the calling tx and never raise on failure. |
-| HTTP route | `GET /api/libraries/{id}/audit?cursor=&limit=` — returns `category='library'` rows for the given library, newest-first, with cursor pagination. Owner/admin-only. |
-| Retention | Nightly trim job detaches partitions older than `audit_retention_days` (default 365), copies them to `s3://…/audit_archive/` (or local archive dir in single-host mode), and DROPs them from the live DB. Implementation lives with Epic 22; this story specifies the contract. |
-| Out of scope | The security-category writes (Epic 10 Story 10.16); the archive-storage backend choice (operator config). |
+| Schema | **Owned by plan-21-06.** This plan's migration now `DROP TABLE IF EXISTS audit_log` (see §3.1) so plan-21-06's migration is the sole creator. The table shape (columns, types, partitioning) is plan-21-06's. |
+| Partitioning | Plan-21-06 owns monthly partitions; this plan's library-audit retention/rotation operates against the same partition layout. |
+| Writers | `api/internal/audit/writer.go` (Go) and `pipeline/src/maktaba_pipeline/audit/writer.py` (Python) are owned by plan-21-06. Library callers continue to use them via the `WriteLibrary` helper. |
+| HTTP route | `GET /api/libraries/{id}/audit?cursor=&limit=` — returns `category='library'` rows for the given library, newest-first, with cursor pagination. Owner/admin-only. **Owned here.** |
+| Retention | Library-audit retention reports + admin UI **owned here**; the underlying detach/archive primitives are owned by plan-21-06 / Epic 22. |
+| Out of scope | `audit_log` table schema (now plan-21-06); device/security/data category writes (their owning epics). |
 
 ## 1. Architecture diagram
 
@@ -139,132 +166,68 @@ type AuditPage struct {
 
 ## 3. Database migration
 
-### 3.1 Postgres — `0045_audit_log.sql`
+### 3.1 Postgres — `0045_audit_log.sql` (SUPERSEDED, DROP-only)
+
+Per §0, plan-21-06 is the sole creator of `audit_log`. This plan's
+migration is now **drop-only** so plan-21-06's migration (which runs
+later in the manifest) is the sole `CREATE TABLE`. If a fresh DB never
+had this plan's prior `CREATE` apply, the DROP IF EXISTS is a no-op.
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 
-CREATE TABLE audit_log (
-    id              UUID NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),  -- canonical name
-    category        TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
-    event           TEXT NOT NULL CHECK (char_length(event) BETWEEN 1 AND 64),
-    actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
-    library_id      UUID REFERENCES libraries(id) ON DELETE SET NULL,
-    video_id        UUID REFERENCES videos(id) ON DELETE SET NULL,
-    ip              INET,
-    user_agent      TEXT CHECK (char_length(user_agent) <= 1024),
-    -- For dedupe of category='security' rows; partition key (created_at)
-    -- must be in the unique index per partitioned-table rules.
-    dedupe_key      TEXT,
-    payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb
-        CHECK (octet_length(payload_jsonb::text) <= 8 * 1024),
-    PRIMARY KEY (created_at, id)         -- composite for partitioning
-) PARTITION BY RANGE (created_at);
-
--- Append-only triggers — defined on the parent, inherited by children.
-CREATE OR REPLACE FUNCTION audit_log_no_mutation() RETURNS trigger AS $$
-BEGIN RAISE EXCEPTION 'audit_log is append-only'; END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
-    FOR EACH ROW EXECUTE FUNCTION audit_log_no_mutation();
-CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
-    FOR EACH ROW EXECUTE FUNCTION audit_log_no_mutation();
-
--- Indexes — created on each partition by a helper. The parent gets
--- "logical" indexes that Postgres propagates.
-CREATE INDEX audit_log_lookup
-    ON audit_log (category, created_at DESC);
-CREATE INDEX audit_log_actor
-    ON audit_log (actor_user_id, created_at DESC) WHERE actor_user_id IS NOT NULL;
-CREATE INDEX audit_log_library
-    ON audit_log (library_id, created_at DESC) WHERE library_id IS NOT NULL;
-
--- Security dedupe: partitioned-table unique indexes must include the
--- partition key (created_at). The (created_at, dedupe_key) composite
--- enforces "at most one security row per dedupe_key per
--- per-month-partition" — the practical guarantee callers need.
-CREATE UNIQUE INDEX audit_log_security_dedupe
-    ON audit_log (created_at, dedupe_key)
-    WHERE category = 'security' AND dedupe_key IS NOT NULL;
-
--- Bootstrap the current and next 2 monthly partitions.
-DO $$
-DECLARE
-    cur_start DATE := date_trunc('month', now())::date;
-    nxt       DATE;
-    i         INT;
-BEGIN
-    FOR i IN 0..2 LOOP
-        nxt := (cur_start + (i || ' month')::interval)::date;
-        EXECUTE format(
-          'CREATE TABLE IF NOT EXISTS audit_log_%s '
-          'PARTITION OF audit_log '
-          'FOR VALUES FROM (%L) TO (%L)',
-          to_char(nxt, 'YYYY_MM'),
-          nxt,
-          (nxt + interval '1 month')::date
-        );
-    END LOOP;
-END$$;
-
--- A small helper that the cron (Epic 22) calls to keep the next-month
--- partition pre-created so writes never blow up on month boundary.
-CREATE OR REPLACE FUNCTION audit_log_ensure_next_month_partition() RETURNS VOID
-LANGUAGE plpgsql AS $$
-DECLARE
-    nxt DATE := (date_trunc('month', now()) + interval '1 month')::date;
-BEGIN
-    EXECUTE format(
-      'CREATE TABLE IF NOT EXISTS audit_log_%s '
-      'PARTITION OF audit_log '
-      'FOR VALUES FROM (%L) TO (%L)',
-      to_char(nxt, 'YYYY_MM'),
-      nxt,
-      (nxt + interval '1 month')::date
-    );
-END;
-$$;
+-- 0045 is now a no-op-on-fresh-DB / cleanup-on-existing-DB migration.
+-- Plan-21-06's migration (runs later) creates the canonical audit_log.
+-- This DROP guards against an upgrader who applied an older 0045 that
+-- created the deprecated shape; the canonical plan-21-06 migration
+-- then creates the correct one.
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP FUNCTION IF EXISTS audit_log_no_mutation() CASCADE;
+DROP FUNCTION IF EXISTS audit_log_ensure_next_month_partition() CASCADE;
 
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP FUNCTION IF EXISTS audit_log_ensure_next_month_partition();
-DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log;
-DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
-DROP FUNCTION IF EXISTS audit_log_no_mutation();
-DROP TABLE IF EXISTS audit_log CASCADE;
+-- No-op: there is nothing to recreate; restore via plan-21-06's down.
 -- +goose StatementEnd
 ```
 
 ### 3.2 SQLite variant
 
-SQLite does not partition. The variant uses a single `audit_log` table
-with the same columns, the same CHECKs, and the same INSERT-only
-triggers. The retention job DELETEs by `created_at` instead of detaching.
-For a single-host SQLite deployment, this is acceptable.
+Same shape: drop-only, with plan-21-06's SQLite variant as the sole creator.
 
-### 3.3 sqlc queries
+### 3.3 sqlc queries (canonical column names)
+
+The reader query continues to operate against plan-21-06's table; the
+column names are updated to plan-21-06's canonical shape:
 
 ```sql
--- name: InsertAudit :exec
-INSERT INTO audit_log (id, created_at, category, event, actor_user_id,
-                       library_id, video_id, ip, user_agent,
-                       dedupe_key, payload_jsonb)
-VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb);
+-- name: InsertLibraryAudit :exec
+-- Inserts use plan-21-06's column names. category='library' is the
+-- only category this plan emits.
+INSERT INTO audit_log (id, category, event, actor_user, actor_ip,
+                       target_id, target_kind, payload, dedupe_key,
+                       created_at)
+VALUES (gen_random_uuid(), 'library', $1, $2, $3, $4, 'library',
+        $5::jsonb, $6, now());
 
 -- name: ListLibraryAudit :many
-SELECT id, created_at, event, actor_user_id, video_id, payload_jsonb
+SELECT id, created_at, event, actor_user, target_id, payload
   FROM audit_log
  WHERE category = 'library'
-   AND library_id = $1
+   AND target_id = $1::text                 -- library_id rendered as text
+   AND target_kind = 'library'
    AND (created_at, id) < ($2::timestamptz, $3::uuid)
  ORDER BY created_at DESC, id DESC
  LIMIT $4;
 ```
+
+Note the column renames vs the original draft: `actor_user` (not
+`actor_user_id`), `actor_ip` (not `ip`), `created_at` (not `ts`),
+`payload` (not `payload_jsonb`). These match plan-21-06's table
+exactly.
 
 ## 4. Code scaffolding
 
@@ -536,20 +499,21 @@ var auditArchiveCmd = &cobra.Command{
 
 ## 9. Acceptance checklist
 
-**Schema**
-- [ ] `audit_log` exists with the columns documented in the README.
-- [ ] BEFORE UPDATE / BEFORE DELETE triggers raise `append-only`.
-- [ ] Three partitions exist on migration apply (current + 2 future).
+**Schema (now owned by plan-21-06; this plan is supersede-only)**
+- [ ] This plan's `0045_audit_log.sql` is **DROP-only** (see §3.1).
+- [ ] plan-21-06's migration is the sole creator of `audit_log` with the canonical column shape (`actor_user`, `actor_ip`, `created_at`, `payload`, `dedupe_key`, etc.).
+- [ ] BEFORE UPDATE / BEFORE DELETE triggers raise `append-only` (owned by plan-21-06).
+- [ ] Three partitions exist on migration apply (current + 2 future) (owned by plan-21-06).
 
-**Code**
-- [ ] Go and Python audit writers exist; never block; never raise.
+**Code (this plan owns)**
 - [ ] `GET /api/libraries/{id}/audit` is wired and admin-only.
+- [ ] Library-event writers (Go + Python) call plan-21-06's `WriteLibrary` helper using canonical column names.
 - [ ] All callers use the writers (no inline `INSERT INTO audit_log`).
 
 **Behaviour (story acceptance criteria)**
-- [ ] AC-1: UPDATE/DELETE on the table raises.
+- [ ] AC-1: UPDATE/DELETE on the table raises (verified against plan-21-06's table).
 - [ ] AC-2: GET endpoint returns library-scoped, newest-first, paginated.
-- [ ] AC-3: nightly cron detaches and archives partitions older than `audit_retention_days`.
+- [ ] AC-3: nightly cron detaches and archives partitions older than `audit_retention_days` (cron job owned here; partition primitives owned by plan-21-06).
 
 **Observability**
 - [ ] Counter `audit_write_failed_total{reason=queue_full|db_error}`.

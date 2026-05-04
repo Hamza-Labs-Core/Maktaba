@@ -920,7 +920,7 @@ state machine and progress accounting for all stages.
 CREATE TABLE processing_jobs (
     id                       BIGSERIAL PRIMARY KEY,
     video_id                 UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    stage                    TEXT NOT NULL,           -- scan|probe|extract|transcribe|index|thumb
+    stage                    TEXT NOT NULL,           -- scan|probe|extract|transcribe|subtitle_gen|index|thumbnail
     state                    TEXT NOT NULL,           -- see 7.2 state machine
     priority                 INT  NOT NULL DEFAULT 100,
     attempts                 INT  NOT NULL DEFAULT 0,
@@ -2280,6 +2280,30 @@ stt_profile       = "default"
 Secrets are never logged, never returned by `/api/settings`, and never
 shared between services that don't need them (the Streaming Service never
 sees the JWT private key or any STT backend keys).
+
+JWT signing keys are read **only from environment variables**
+(`MAKTABA_JWT_PRIVATE_KEY_PEM` / `MAKTABA_JWT_PUBLIC_KEY_PEM`); they are
+not stored DB-encrypted. Rotation is handled by overlap (publish new
+public key in JWKS, rotate signer, retire old key) rather than by an
+in-DB key store.
+
+### 11.6 Telemetry
+
+Optional telemetry block (Epic 21). Defaults disabled.
+
+```toml
+[telemetry]
+enabled              = false
+otel_endpoint        = ""           # OTLP/gRPC; empty = no exporter
+sample_ratio         = 0.05         # head-based; 1.0 = sample all
+redact_attrs         = ["transcript_text", "search_query", "path"]
+sentry_dsn_env       = "MAKTABA_SENTRY_DSN"      # Epic 21.5 error reporter
+admin_listen         = "127.0.0.1:9100"          # /metrics + /healthz mux (Epic 21.4)
+```
+
+The `admin_listen` port hosts the merged admin mux (metrics, health,
+readiness) — owned by `plan-21-04`; `plan-21-02` registers `/metrics`
+against it.
 
 ---
 
