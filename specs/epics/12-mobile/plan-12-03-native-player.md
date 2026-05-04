@@ -85,15 +85,18 @@ public class NativePlayer: CAPPlugin {
         configureNowPlaying(call, player: player)
         observeProgress(player, sessionId: call.getString("sessionId") ?? "")
 
+        // Insert into the dictionary BEFORE present() so a fast close({handle})
+        // can find the entry — present() is async and may complete after the JS
+        // side has already received the resolve and called close.
+        let handle = UUID().uuidString
+        players[handle] = vc
+        call.resolve(["handle": handle])
+
         DispatchQueue.main.async {
             self.bridge?.viewController?.present(vc, animated: true) {
                 player.play()
             }
         }
-
-        let handle = UUID().uuidString
-        players[handle] = vc
-        call.resolve(["handle": handle])
     }
 
     private func observeProgress(_ player: AVPlayer, sessionId: String) {
@@ -107,11 +110,22 @@ public class NativePlayer: CAPPlugin {
         var info: [String: Any] = [:]
         info[MPMediaItemPropertyTitle] = call.getString("title") ?? "Maktaba"
         info[MPMediaItemPropertyPlaybackDuration] = call.getDouble("durationSec") ?? 0
-        if let posterUrl = call.getString("posterUrl"), let url = URL(string: posterUrl),
-           let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        }
+        // Publish title+duration immediately so lock-screen/Now Playing populate
+        // even before artwork is fetched.
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+
+        if let posterUrl = call.getString("posterUrl"), let url = URL(string: posterUrl) {
+            // Asynchronous fetch — never block the main `open` path on a network
+            // read, which can hang for many seconds on cellular.
+            URLSession.shared.dataTask(with: url) { data, _, _ in
+                guard let data, let img = UIImage(data: data) else { return }
+                DispatchQueue.main.async {
+                    var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                    info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+            }.resume()
+        }
     }
 }
 ```
@@ -164,10 +178,17 @@ class PlayerActivity : AppCompatActivity() {
             isActive = true
         }
 
-        startProgressTicker(intent.getStringExtra("sessionId")!!)
+        val sessionId = intent.getStringExtra("sessionId") ?: run {
+            Log.w(TAG, "no sessionId extra; finishing")
+            finish()
+            return
+        }
+        startProgressTicker(sessionId)
     }
 
     override fun onDestroy() { player.release(); session.release(); super.onDestroy() }
+
+    companion object { private const val TAG = "PlayerActivity" }
 }
 ```
 

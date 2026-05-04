@@ -46,7 +46,9 @@
         │       v0/index.m3u8, v0/seg-N.ts                   │
         │       v1/index.m3u8, v1/seg-N.ts                   │
         │       v2/index.m3u8, v2/seg-N.ts                   │
-        │       (also: a0/seg-N.aac if separate audio group) │
+        │       (audio is muxed into each variant via         │
+        │        var_stream_map; per architecture §9.4 there  │
+        │        is no separate /audio/{lang}/seg-N.aac route)│
         └─────────────────────┬──────────────────────────────┘
                               │
                               ▼ (manifest fetched by player)
@@ -331,16 +333,24 @@ func WriteMaster(w io.Writer, s *Session, audio []AudioTrack, subs []SubTrack, c
     b.WriteString("#EXT-X-VERSION:7\n")
     b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n\n")
 
+    // Use chapters.quoteEscape (defined in plan-08-12-chapter-delivery.md
+    // §2.5) for NAME and LANGUAGE values. We MUST NOT use Go's `%q` here
+    // because it escapes non-ASCII to `\uXXXX`, which mangles Arabic
+    // (and other) display names. quoteEscape only escapes `"` and `\`,
+    // leaving UTF-8 bytes intact — which is exactly what RFC 8216 §4.2
+    // quoted-string requires.
     for _, a := range audio {
         fmt.Fprintf(&b,
-            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud-default\",NAME=%q,LANGUAGE=%q,DEFAULT=%s,AUTOSELECT=YES,URI=%q\n",
-            a.Name, a.Lang, yesNo(a.Default), a.URI)
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud-default\",NAME=\"%s\",LANGUAGE=\"%s\",DEFAULT=%s,AUTOSELECT=YES,URI=\"%s\"\n",
+            chapters.QuoteEscape(a.Name), chapters.QuoteEscape(a.Lang), yesNo(a.Default), chapters.QuoteEscape(a.URI))
     }
     if !s.burnSubs {
         for _, sub := range subs {
             fmt.Fprintf(&b,
-                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=%q,LANGUAGE=%q,DEFAULT=%s,AUTOSELECT=%s,FORCED=NO,URI=%q\n",
-                sub.Name, sub.Lang, yesNo(sub.Default), yesNo(sub.AutoSelect), sub.URI)
+                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"%s\",LANGUAGE=\"%s\",DEFAULT=%s,AUTOSELECT=%s,FORCED=NO,URI=\"%s\"\n",
+                chapters.QuoteEscape(sub.Name), chapters.QuoteEscape(sub.Lang),
+                yesNo(sub.Default), yesNo(sub.AutoSelect),
+                chapters.QuoteEscape(sub.URI))
         }
     }
 
@@ -479,8 +489,9 @@ func (h *Handler) ServeSegment(w http.ResponseWriter, r *http.Request, s *Sessio
 
     w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
     w.Header().Set("Content-Type", "video/MP2T")
-    h.direct.ServeFile(w, r, path, &probe.Row{
-        Path: path, MIME: "video/MP2T",
+    // HLS .ts segment MIME is a fixed handler constant (no DB column).
+    h.direct.ServeFileWithContentType(w, r, path, "video/MP2T", &probe.Row{
+        Path: path,
     })
     h.metrics.SegmentsServed.WithLabelValues(variant).Inc()
 }
@@ -649,9 +660,19 @@ func TestBuildTranscodeArgs_BasicLadder(t *testing.T) {
     args := ffmpeg.BuildTranscodeArgs(plan)
     line := strings.Join(args, " ")
 
+    // BuildTranscodeArgs returns []string; joining with " " gives no
+    // shell quoting (the slice already separates flag and value). So
+    // the assertion must match what's actually produced: the next
+    // element after `-var_stream_map` is the literal map argument with
+    // no surrounding quotes.
+    varStreamMap := "v:0,a:0,name:1080p v:1,a:0,name:720p v:2,a:0,name:480p"
+
     require.Contains(t, line, "-i /m/in.mkv")
     require.Equal(t, 3, strings.Count(line, "-map 0:v:0"))
-    require.Contains(t, line, "-var_stream_map \"v:0,a:0,name:1080p v:1,a:0,name:720p v:2,a:0,name:480p\"")
+    require.Contains(t, line, "-var_stream_map "+varStreamMap)
+    // Belt-and-braces: also verify the map appears as its own element
+    // in the slice (i.e., FFmpeg will receive a single argv entry).
+    require.Contains(t, args, varStreamMap)
     require.Contains(t, line, "-g 48")
     require.Contains(t, line, "-keyint_min 48")
     require.Contains(t, line, "-sc_threshold 0")

@@ -228,7 +228,12 @@ func redactQueryParam(rawurl, name string) string {
     return u.String()
 }
 
-var sensitiveHeaders = []string{"Authorization", "Cookie", "X-Maktaba-CSRF", "X-Maktaba-Admin-Token"}
+// Note: there is no `X-Maktaba-Admin-Token` header. Story 10.9 carries
+// the admin token via the standard `Authorization: Bearer <token>`
+// header (already covered above) or the `mkt_admin_token` cookie
+// (covered by stripping `Cookie` wholesale). Do NOT add a third
+// surface here.
+var sensitiveHeaders = []string{"Authorization", "Cookie", "X-Maktaba-CSRF"}
 
 func stripSensitiveHeaders(h http.Header) http.Header {
     for _, k := range sensitiveHeaders {

@@ -8,10 +8,10 @@
 
 | Concern | Decision |
 |---|---|
-| Routes | `GET /api/videos`, `GET /api/videos/{id}`, `PATCH /api/videos/{id}`, `DELETE /api/videos/{id}`. |
+| Routes | `GET /api/videos`, `GET /api/videos/{id}`, `PATCH /api/videos/{id}`, `DELETE /api/videos/{id}`, `GET /api/videos/{id}/jobs`. |
 | Filtering | All filters live in URL query; SQL is parameterised; no filter is applied in-memory. |
-| FTS | `q=` filter routes to `tsvector @@ plainto_tsquery` (Postgres) or `videos_fts MATCH` (SQLite). The full search story (7.8) lives elsewhere; this is just a list-side narrow. |
-| Detail view | One round-trip via a CTE that joins `media_info`, `audio_tracks`, `chapters`, `tags`, `transcripts.id`, `playback_state`. |
+| FTS | `q=` filter on the list endpoint routes to a Postgres `tsvector @@ plainto_tsquery` against `videos.search_tsv` (title/description). The transcript-text FTS5 table `transcripts_fts` is owned by Story 7.8 and is **not** queried from this list endpoint. |
+| Detail view | One round-trip via a CTE that joins `audio_tracks`, `chapters`, `tags`, `transcripts.id`, `playback_state` (duration/size/poster live on `videos` itself per architecture §8). |
 | Out of scope | Search API proper (7.8), tag delta (7.14), processing control (7.5), the Pipeline-side cascade on delete (Epic 9). |
 
 ## 1. Architecture diagram
@@ -24,7 +24,8 @@
    │ filterBuilder                                                │
    │  builds (where, args) incrementally:                         │
    │    library_id  → "library_id = ANY($n)"  (multi-allowed)     │
-   │    language    → "detected_language = ANY($n)"               │
+   │    language    → EXISTS over active transcripts row's        │
+   │                  detected_language                           │
    │    type        → "content_type = ANY($n)"                    │
    │    tag         → "EXISTS (SELECT 1 FROM video_tags vt        │
    │                     JOIN tags t ON t.id=vt.tag_id            │
@@ -39,8 +40,8 @@
         ▼ one query, one round trip
    ┌──────────────────────────────────────────────────────────────┐
    │ WITH                                                         │
-   │   v   AS (SELECT * FROM videos WHERE id = $1),               │
-   │   mi  AS (SELECT * FROM media_info WHERE video_id = $1),     │
+   │   v   AS (SELECT * FROM videos WHERE id = $1                 │
+   │              AND deleted_at IS NULL),                        │
    │   tr  AS (SELECT array_agg(...) FROM audio_tracks ...),       │
    │   ch  AS (SELECT array_agg(...) FROM chapters ...),           │
    │   tg  AS (SELECT array_agg(...) FROM video_tags JOIN tags ...│
@@ -49,17 +50,29 @@
    │              DESC LIMIT 1),                                  │
    │   ps  AS (SELECT * FROM playback_state                       │
    │            WHERE user_id = $2 AND video_id = $1)             │
-   │ SELECT * FROM v, mi, tr, ch, tg, ts, ps;                     │
+   │ SELECT * FROM v, tr, ch, tg, ts, ps;                         │
+   └──────────────────────────────────────────────────────────────┘
+
+   GET /api/videos/{id}/jobs
+        │
+        ▼ list of processing_jobs rows for one video
+   ┌──────────────────────────────────────────────────────────────┐
+   │ SELECT id, stage, state, priority, attempts, last_error,     │
+   │        created_at, updated_at                                │
+   │   FROM processing_jobs                                       │
+   │  WHERE video_id = $1                                         │
+   │  ORDER BY created_at DESC, id DESC                           │
+   │  LIMIT $2;                                                   │
    └──────────────────────────────────────────────────────────────┘
 
    DELETE /api/videos/{id}?purge=true&confirm=<id>
         │
         ▼
    ┌──────────────────────────────────────────────────────────────┐
-   │ Tx: DELETE FROM videos WHERE id=$1   (cascade)               │
+   │ Tx: UPDATE videos SET deleted_at = now() WHERE id=$1         │
    │     INSERT INTO audit_log(category='library',action='video-purge',│
    │                            payload={path}, actor_user_id, ts)│
-   │ After commit → unlink source file                            │
+   │ After commit → unlink source file (only if ?purge=true)      │
    └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,9 +80,10 @@
 
 | Path | Purpose |
 |---|---|
-| `api/internal/videos/handler.go` | Routes + handlers. |
+| `api/internal/videos/handler.go` | Routes + handlers (incl. `GET /api/videos/{id}/jobs`). |
 | `api/internal/videos/list.go` | Filter/sort builder for the list endpoint. |
 | `api/internal/videos/detail.go` | Single-trip CTE detail query. |
+| `api/internal/videos/jobs.go` | `GET /api/videos/{id}/jobs` — read-only listing of `processing_jobs` rows for one video. |
 | `api/internal/videos/patch.go` | Field allow-list, deep clean. |
 | `api/internal/videos/delete.go` | Soft vs purge, audit row. |
 | `api/internal/videos/types.go` | DTOs. |
@@ -93,9 +107,12 @@
 CREATE INDEX IF NOT EXISTS videos_library_updated_idx
   ON videos (library_id, updated_at DESC, id DESC);
 
-CREATE INDEX IF NOT EXISTS videos_language_idx
-  ON videos (detected_language)
-  WHERE detected_language IS NOT NULL;
+-- detected_language now lives on `transcripts` (architecture §8). Index
+-- the active transcript row per video so the EXISTS subquery in the list
+-- handler stays cheap.
+CREATE INDEX IF NOT EXISTS transcripts_lang_active_idx
+  ON transcripts (video_id, detected_language)
+  WHERE superseded_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS videos_content_type_idx
   ON videos (content_type)
@@ -124,14 +141,16 @@ DROP INDEX IF EXISTS videos_search_tsv_idx;
 ALTER TABLE videos DROP COLUMN IF EXISTS search_tsv;
 DROP INDEX IF EXISTS video_tags_lookup_idx;
 DROP INDEX IF EXISTS videos_content_type_idx;
-DROP INDEX IF EXISTS videos_language_idx;
+DROP INDEX IF EXISTS transcripts_lang_active_idx;
 DROP INDEX IF EXISTS videos_library_updated_idx;
 -- +goose StatementEnd
 ```
 
 The SQLite mirror swaps the FTS column for an FTS5 virtual table
-(`videos_fts USING fts5(title, description, content=videos)` plus
-INSERT/UPDATE triggers); the partial indexes work on SQLite ≥ 3.8.
+covering `videos.title` and `videos.description`. The transcript-text FTS5
+table `transcripts_fts` (defined by Story 7.8 and architecture §8) is
+distinct from this title/description index — they live on different rows
+and serve different queries. The partial indexes work on SQLite ≥ 3.8.
 
 ## 4. Type definitions
 
@@ -170,13 +189,13 @@ type ListFilters struct {
 
 type ListItem struct {
     Video
-    DurationSec *float64   `json:"duration_sec"`
-    PosterURL   *string    `json:"poster_url"`
+    DurationSec *float64 `json:"duration_sec"` // sourced from videos.duration_sec
+    PosterPath  *string  `json:"poster_path"`  // sourced from videos.poster_path
+    SizeBytes   *int64   `json:"size_bytes"`   // sourced from videos.size_bytes
 }
 
 type Detail struct {
     Video
-    MediaInfo     *MediaInfo     `json:"media_info"`
     AudioTracks   []AudioTrack   `json:"audio_tracks"`
     Chapters      []Chapter      `json:"chapters"`
     Tags          []Tag          `json:"tags"`
@@ -228,7 +247,15 @@ func buildListSQL(f ListFilters, cur paginate.Cursor, limit int) (string, []any,
     }
 
     addUUIDAny("v.library_id", f.LibraryIDs)
-    addAny("v.detected_language", f.Languages)
+    // detected_language is on transcripts (architecture §8); filter via EXISTS.
+    if len(f.Languages) > 0 {
+        args = append(args, f.Languages)
+        where = append(where, fmt.Sprintf(`EXISTS (
+            SELECT 1 FROM transcripts t
+             WHERE t.video_id = v.id
+               AND t.superseded_at IS NULL
+               AND t.detected_language = ANY($%d))`, len(args)))
+    }
     addAny("v.content_type", f.ContentTypes)
 
     if len(f.Tags) > 0 {
@@ -252,8 +279,11 @@ func buildListSQL(f ListFilters, cur paginate.Cursor, limit int) (string, []any,
     }
     if sortCol == "" { sortCol = "updated_at" }
 
+    // Soft-delete: never list videos with deleted_at set.
+    where = append(where, "v.deleted_at IS NULL")
+
     spec := paginate.SortSpec{TimeCol: "v." + sortCol, IDCol: "v.id", Desc: true}
-    curFrag, curArgs := paginate.Where(spec, cur, len(args)+1)
+    curFrag, curArgs := paginate.Where(spec, cur, len(args)+1, paginate.IDKindUUID)
     if curFrag != "" {
         where = append(where, curFrag)
         args = append(args, curArgs...)
@@ -261,11 +291,13 @@ func buildListSQL(f ListFilters, cur paginate.Cursor, limit int) (string, []any,
 
     args = append(args, limit+1)
     sql := fmt.Sprintf(`
-        SELECT v.id, v.library_id, v.title, v.description, v.detected_language,
+        SELECT v.id, v.library_id, v.title, v.description,
+               (SELECT t.detected_language FROM transcripts t
+                  WHERE t.video_id = v.id AND t.superseded_at IS NULL
+                  ORDER BY t.created_at DESC LIMIT 1) AS detected_language,
                v.content_type, v.state, v.path, v.created_at, v.updated_at,
-               mi.duration_sec, v.poster_url
+               v.duration_sec, v.poster_path, v.size_bytes
           FROM videos v
-          LEFT JOIN media_info mi ON mi.video_id = v.id
          WHERE %s
          ORDER BY %s DESC, v.id DESC
          LIMIT $%d`,
@@ -282,7 +314,6 @@ func buildListSQL(f ListFilters, cur paginate.Cursor, limit int) (string, []any,
 -- name: GetVideoDetail :one
 SELECT
     v.*,
-    to_jsonb(mi.*) AS media_info,
     COALESCE(
       (SELECT jsonb_agg(to_jsonb(at.*) ORDER BY at.index)
          FROM audio_tracks at WHERE at.video_id = v.id), '[]'::jsonb
@@ -301,10 +332,23 @@ SELECT
       ORDER BY created_at DESC LIMIT 1) AS transcript_id,
     to_jsonb(ps.*) AS playback_state
   FROM videos v
-  LEFT JOIN media_info mi ON mi.video_id = v.id
   LEFT JOIN playback_state ps ON ps.video_id = v.id AND ps.user_id = $2
- WHERE v.id = $1;
+ WHERE v.id = $1
+   AND v.deleted_at IS NULL;
+
+-- name: ListVideoJobs :many
+SELECT id, video_id, stage, state, priority, attempts, last_error,
+       created_at, updated_at
+  FROM processing_jobs
+ WHERE video_id = $1
+ ORDER BY created_at DESC, id DESC
+ LIMIT $2;
 ```
+
+Note: `audio_tracks.id`, `chapters.id`, `subtitle_files.id`, `tags.id`,
+`processing_jobs.id` are all `BIGSERIAL` per architecture §8, so handler
+DTOs use `int64` (Go) / `bigint` (SQL) for those IDs. Only the parent
+`videos.id` and `transcripts.id` are UUIDs.
 
 The `playable` field is derived in code: `v.path != "" && fs.Stat(v.path)
 == nil` — but the spec says **don't stat per-request** for the list path,
@@ -376,16 +420,27 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-The audit row is inserted inside the same transaction as the DB delete:
+The audit row is inserted inside the same transaction as the soft-delete:
 
 ```sql
--- name: PurgeVideo :one
-WITH gone AS (DELETE FROM videos WHERE id = $1 RETURNING path)
+-- name: SoftDeleteVideo :one
+WITH gone AS (
+    UPDATE videos
+       SET deleted_at = now(), updated_at = now()
+     WHERE id = $1
+       AND deleted_at IS NULL
+     RETURNING path
+)
 INSERT INTO audit_log (category, action, payload, actor_user_id, ts)
 SELECT 'library', 'video-purge', jsonb_build_object('path', path), $2, now()
   FROM gone
 RETURNING (SELECT path FROM gone);
 ```
+
+`deleted_at` is set; the row stays so the Pipeline can finish in-flight
+jobs and the operator can investigate. The `?purge=true` branch additionally
+unlinks the on-disk file *after* the soft-delete commits. A separate Epic 9
+sweeper performs hard-delete + cascade well after the soft-delete window.
 
 ## 8. Test plan
 
@@ -393,7 +448,7 @@ RETURNING (SELECT path FROM gone);
 
 | Test | What it pins |
 |---|---|
-| `TestListBuilderLanguageFilter` | `?language=ar` → SQL contains `detected_language = ANY($1)` and arg is `[ar]`. |
+| `TestListBuilderLanguageFilter` | `?language=ar` → SQL contains an EXISTS subquery against `transcripts` with `detected_language = ANY($1)` and arg is `[ar]`. |
 | `TestListBuilderTagFilter` | `?tag=tafsir&tag=fiqh` → EXISTS subquery with `tags.name = ANY($n)`; both names in args. |
 | `TestListBuilderUnknownSort` | `?sort=banana` → 400 `invalid-sort`. |
 | `TestListBuilderQEmpty` | `?q=  ` (whitespace) → no FTS clause added. |
@@ -411,10 +466,13 @@ RETURNING (SELECT path FROM gone);
 | `TestPatchIgnoresState` | PATCH `{state: "ready"}` → 200; row's `state` unchanged. |
 | `TestPatchDescriptionTooLong` | PATCH with 16 KB description → 413 `payload-too-large`. |
 | `TestPatchTagsReplaces` | PATCH `{tags: [a, b]}` → tags become exactly `[a, b]` (replace semantic). |
-| `TestDeleteSoft` | DELETE `?purge=false` → 204; row gone; file still on disk. |
+| `TestDeleteSoft` | DELETE `?purge=false` → 204; row remains but `deleted_at IS NOT NULL`; the row no longer appears in list/detail; file still on disk. |
 | `TestDeletePurgeNoConfirm` | DELETE `?purge=true` → 412 `confirmation-required`. |
-| `TestDeletePurgeWithConfirm` | DELETE `?purge=true&confirm=<id>` → 204; file unlinked; `audit_log` has the row. |
+| `TestDeletePurgeWithConfirm` | DELETE `?purge=true&confirm=<id>` → 204; `deleted_at` set; file unlinked; `audit_log` has the row with `category='library'`. |
 | `TestDeletePurgeMissingFile` | File pre-deleted out-of-band → 204 with `Maktaba-Warning: file-not-found`. |
+| `TestVideoJobsList` | Seed three `processing_jobs` rows for one video, one for another → `GET /api/videos/{id}/jobs` returns exactly the three, newest first; each row has `id` (int64), `stage`, `state`, `priority`, `attempts`. |
+| `TestVideoJobsEmpty` | Video with no jobs → 200 with `{"items": []}`. |
+| `TestVideoJobsForDeletedVideo` | Soft-deleted video → 404 `not-found` (we don't expose jobs for deleted parents). |
 
 ### 8.3 Performance
 
@@ -442,9 +500,11 @@ RETURNING (SELECT path FROM gone);
 ## 10. Acceptance checklist
 
 - [ ] List endpoint supports the documented filter set; query is parameterised.
-- [ ] Detail endpoint completes in one DB round-trip (verified by query counter).
+- [ ] List endpoint filters out rows with `deleted_at IS NOT NULL`.
+- [ ] Detail endpoint completes in one DB round-trip (verified by query counter) and pulls duration/size/poster from `videos` directly (no `media_info` join).
+- [ ] `GET /api/videos/{id}/jobs` returns the `processing_jobs` rows for the video, newest first.
 - [ ] PATCH ignores fields outside `{title, description, tags}`.
-- [ ] DELETE with `purge=true` requires matching `confirm=<id>`; audit row is written.
+- [ ] DELETE soft-deletes by setting `videos.deleted_at`; with `purge=true` and matching `confirm=<id>`, the on-disk file is unlinked and an `audit_log` row with `category='library', action='video-purge'` is written.
 - [ ] Indexes from §3 land in `0012_videos_indexes.sql`.
 - [ ] All `Test*` cases pass on Postgres and SQLite (where applicable).
 - [ ] `specs/epics/07-api-server/README.md` ticks story 7.4.

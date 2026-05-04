@@ -1,8 +1,18 @@
 # Implementation Plan — Story 7.22 Device Registration for Push
 
 > Companion to [story-07-22-devices-register.md](story-07-22-devices-register.md).
-> API surface for vendor push tokens; soft-delete to support APNs/FCM
-> revocation feedback.
+> **STATUS: SUPERSEDED.** The canonical owner of the `devices` schema and
+> the device-registration migration is `plan-12-10-device-registration-api.md`
+> (architecture §8.2.3). This plan is retained only for the device-registration
+> HTTP handler stubs that 12-10 references during the Epic 12 rollout — it
+> no longer ships its own migration. `bundle_id` is preserved by the canonical
+> schema in 12-10; do **not** introduce a separate validator here.
+>
+> Concretely:
+> - The `0022_devices.sql` migration in §3 below is **deleted**. The schema
+>   in plan-12-10 is the single source of truth.
+> - The DTOs and handler/service code below remain as a sketch of the HTTP
+>   surface for 12-10 to mount once the schema is canonical.
 
 ## 0. Scope and placement
 
@@ -65,34 +75,11 @@
 
 ## 3. SQL — schema
 
-`shared/db/migrations/0022_devices.sql`:
-
-```sql
--- +goose Up
--- +goose StatementBegin
-CREATE TABLE devices (
-    id            UUID PRIMARY KEY,
-    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    platform      TEXT NOT NULL CHECK (platform IN ('ios','android','web')),
-    push_token    TEXT NOT NULL,
-    bundle_id     TEXT NOT NULL,
-    app_version   TEXT,
-    locale        TEXT,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at    TIMESTAMPTZ,
-    UNIQUE (user_id, platform, push_token)
-);
-
-CREATE INDEX devices_user_active
-    ON devices (user_id) WHERE revoked_at IS NULL;
--- +goose StatementEnd
-
--- +goose Down
--- +goose StatementBegin
-DROP TABLE IF EXISTS devices;
--- +goose StatementEnd
-```
+**REMOVED.** The `devices` schema is owned by `plan-12-10-device-registration-api.md`
+(architecture §8.2.3 documents the canonical columns including `bundle_id`).
+This plan no longer ships a `0022_devices.sql` migration. Refer to plan-12-10
+for the authoritative `CREATE TABLE devices (...)` statement and the
+`(user_id, platform, push_token)` uniqueness constraint.
 
 ## 4. Type definitions
 
@@ -124,10 +111,14 @@ type Device struct {
     RevokedAt    *time.Time `json:"revoked_at,omitempty"`
 }
 
+// bundle_id is preserved by the canonical schema in plan-12-10 (architecture
+// §8.2.3) but this plan does NOT enforce its presence with a validator
+// here — 12-10 owns the schema constraint. The DTO simply carries the
+// value through.
 type RegisterInput struct {
     Platform   Platform `json:"platform"   validate:"required,oneof=ios android web"`
     PushToken  string   `json:"push_token" validate:"required,min=1,max=4096"`
-    BundleID   string   `json:"bundle_id"  validate:"required,min=1,max=256"`
+    BundleID   string   `json:"bundle_id,omitempty"`
     AppVersion *string  `json:"app_version,omitempty"`
     Locale     *string  `json:"locale,omitempty"`
 }
@@ -370,7 +361,7 @@ versus an UPDATE (false), letting the handler pick 201 vs 200.
 | `TestNotifyAutoRevokeOnBadToken` | Stub bridge returns `ErrBadDeviceToken` → row's `revoked_at` set. |
 | `TestUserDeletedCascades` | Delete user → all their devices removed via FK cascade. |
 | `TestSameTokenDifferentUsers` | Two `user_id`s with the same `push_token` → both rows exist (verifying the unique key is `(user, platform, token)`, not `(token)`). |
-| `TestMissingBundleID` | POST without `bundle_id` → 422 (validator). |
+| `TestMissingBundleID` | POST without `bundle_id` is accepted at this layer; plan-12-10's schema or higher-layer validators decide whether to require it for the platform. |
 
 ## 10. Edge cases — handling table
 
@@ -389,7 +380,7 @@ versus an UPDATE (false), letting the handler pick 201 vs 200.
 
 ## 11. Acceptance checklist
 
-- [ ] `devices` schema + index land in `0022`.
+- [ ] `devices` schema lives in plan-12-10 (architecture §8.2.3). This plan **does not** ship a migration.
 - [ ] `POST /register` upserts by `(user, platform, push_token)`; returns 201 (new) / 200 (replaced).
 - [ ] Token rotation revokes prior rows for `(user, platform, bundle_id)`.
 - [ ] `DELETE /{id}` is a soft delete (`revoked_at`).

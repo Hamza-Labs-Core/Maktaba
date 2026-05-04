@@ -11,7 +11,7 @@
 | Distros | Ubuntu 22.04+, Debian 12+, Fedora 38+. |
 | Targets | x86_64 (AppImage + .deb); aarch64 best-effort. |
 | Display servers | Wayland + X11; fractional scaling honored. |
-| MIME registration | `.maktaba` + `application/x-mpegurl` opened via Maktaba (`.deb` only). |
+| MIME registration | `.maktaba` opened via Maktaba (`.deb` only). HLS playlists (`application/x-mpegurl`) intentionally omitted: HLS support is for cloud streams handled in-app, not local files we'd ingest. |
 | Out of scope | Snap/Flatpak (post-v1); Mac App Store-style sandboxing. |
 
 ## 1. tauri.conf.json (Linux section)
@@ -46,7 +46,7 @@ Comment=Self-hosted video library with full transcript search
 Exec=maktaba %U
 Icon=maktaba
 Categories=AudioVideo;Player;Network;
-MimeType=application/x-maktaba;application/x-mpegurl;
+MimeType=application/x-maktaba;
 Terminal=false
 StartupWMClass=maktaba
 ```
@@ -69,7 +69,39 @@ Tauri/WebKitGTK reads `GDK_SCALE` automatically. For fractional scaling on KDE/W
 
 ## 5. AppImage portability
 
-`bundleMediaFramework: true` packs gstreamer plugins so HLS playback works without distro-installed media packages. Final AppImage size target ≤ 90 MB.
+`bundleMediaFramework: true` packs gstreamer plugins so playback works without distro-installed media packages. Final AppImage size target ≤ 90 MB.
+
+**Trade-off note (vs architecture §6.4 ~10 MB binary target).** Only the
+AppImage carries the gstreamer payload; `.deb` and `.rpm` rely on the
+system gstreamer (declared via `depends`) and stay near 10 MB. The
+architecture's "~10 MB binary" promise applies to the macOS `.app`,
+Windows installer payload, and Linux `.deb`/`.rpm`; the AppImage is the
+deliberate exception because portability is its whole purpose.
+
+## 5.1 mDNS / avahi runtime probe
+
+Linux mDNS resolution depends on `avahi-daemon` being running (Story
+13.5). At startup, probe for it and degrade gracefully if absent:
+
+```rust
+fn avahi_running() -> bool {
+    std::process::Command::new("pgrep")
+        .arg("-x").arg("avahi-daemon")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+// In setup:
+#[cfg(target_os = "linux")]
+if !avahi_running() {
+    log::warn!("avahi-daemon not detected; mDNS discovery disabled. Manual server entry remains available.");
+    app.manage(MdnsDisabled);
+}
+```
+
+The in-app server-URL onboarding (Story 13.5 §4 manual entry) still
+works without avahi.
 
 ## 6. ARM64 (best-effort)
 
@@ -110,5 +142,5 @@ Build matrix adds `aarch64-unknown-linux-gnu`. Document GPU video decode caveats
 
 ## 11. Dependencies
 
-- Story 13.1 (shared Tauri base).
-- Story 13.5 (mDNS discovery).
+- Story 13.1 (shared Tauri base; single-instance lock §12 reused here).
+- Story 13.5 (mDNS discovery; avahi probe §5.1 above).

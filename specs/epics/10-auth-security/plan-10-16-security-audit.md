@@ -190,8 +190,15 @@ ALTER TABLE audit_log
   ADD COLUMN IF NOT EXISTS dedupe_key TEXT GENERATED ALWAYS AS
     (payload_jsonb ->> 'dedupe_key') STORED;
 
+-- Postgres rule: a unique index on a partitioned table MUST include
+-- every partition key column. `audit_log` is monthly-partitioned by
+-- `created_at` (Story 9.17), so the unique constraint is on
+-- (created_at, dedupe_key). The dedupe semantics still hold per
+-- minute-bucket because the bucket is encoded into `dedupe_key` itself
+-- (see §2.3 — `time.Now().Truncate(time.Minute).Unix()`); the
+-- `created_at` column just satisfies the partition-key requirement.
 CREATE UNIQUE INDEX IF NOT EXISTS audit_log_security_dedupe
-    ON audit_log (dedupe_key)
+    ON audit_log (created_at, dedupe_key)
     WHERE category = 'security' AND dedupe_key IS NOT NULL;
 
 -- +goose StatementEnd
@@ -256,9 +263,15 @@ func (s *sink) Record(ctx context.Context, ev AuditEvent) {
 
 ```sql
 -- name: InsertAuditLog :exec
+-- The ON CONFLICT target matches the partial unique index defined in
+-- migration 0026 (see §3): (created_at, dedupe_key) WHERE category =
+-- 'security' AND dedupe_key IS NOT NULL. The created_at column is
+-- required because audit_log is partitioned by created_at (monthly,
+-- Story 9.17); Postgres requires every partition key column in any
+-- unique index on a partitioned table.
 INSERT INTO audit_log (category, event, actor_user_id, subject, ip, payload_jsonb)
 VALUES ($1, $2, $3, $4, $5::inet, $6::jsonb)
-ON CONFLICT (dedupe_key) WHERE category = 'security' AND dedupe_key IS NOT NULL
+ON CONFLICT (created_at, dedupe_key) WHERE category = 'security' AND dedupe_key IS NOT NULL
 DO NOTHING;
 
 -- name: ListSecurityAudit :many

@@ -86,7 +86,10 @@ type Health struct {
     CheckedAt  time.Time                  `json:"checked_at"`
 }
 
-type Version struct {
+// VersionInfo is the response shape for GET /api/system/version. It is
+// distinct from the package-level `BuildVersion` constant (the actual
+// semver string) — naming them differently avoids the var/type clash.
+type VersionInfo struct {
     Version       string `json:"version"`
     BuildSHA      string `json:"build_sha"`
     BuildTime     string `json:"build_time"`
@@ -179,18 +182,22 @@ package system
 import "runtime"
 
 // Populated via:
-//   go build -ldflags "-X maktaba/api/internal/system.Version=$(git describe ...)
+//   go build -ldflags "-X maktaba/api/internal/system.BuildVersion=$(git describe ...)
 //                      -X maktaba/api/internal/system.BuildSHA=$(git rev-parse HEAD)
 //                      -X maktaba/api/internal/system.BuildTime=$(date -u +%FT%T)"
+//
+// `BuildVersion` is a package-level variable (not a type). The response
+// shape is `VersionInfo` (defined above). The two used to share the name
+// `Version`, which Go rightly rejects.
 var (
-    Version   = "dev"
-    BuildSHA  = "dev"
-    BuildTime = "dev"
+    BuildVersion = "dev"
+    BuildSHA     = "dev"
+    BuildTime    = "dev"
 )
 
-func versionInfo(schemaRev int) Version {
-    return Version{
-        Version: Version, BuildSHA: BuildSHA, BuildTime: BuildTime,
+func versionInfo(schemaRev int) VersionInfo {
+    return VersionInfo{
+        Version: BuildVersion, BuildSHA: BuildSHA, BuildTime: BuildTime,
         GoVersion: runtime.Version(), SchemaRev: schemaRev,
     }
 }

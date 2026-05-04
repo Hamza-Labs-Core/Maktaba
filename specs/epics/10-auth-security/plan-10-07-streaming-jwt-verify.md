@@ -308,6 +308,26 @@ func JWT(cache *jwks.Cache, libLookup sessions.LibLookup, policy AudPolicy, leew
 
             ctx := jwtlib.WithClaims(r.Context(), claims)
             next.ServeHTTP(w, r.WithContext(ctx))
+
+            // Story 10.16 audit emission: log a `streaming.direct.access`
+            // row when a direct-play 206 succeeds. We hook AFTER the
+            // handler runs so we know the response status; the audit
+            // is best-effort (a sink failure does not affect the
+            // response). Per Story 10.16's dedupe rules the row carries
+            // a per-minute bucketed dedupe_key keyed on (video_id, user_id).
+            //
+            // Only fires for the streaming-direct route — the manifest
+            // and static routes are noisier and not in the security
+            // event vocabulary.
+            if policy.SubKind == middleware.SubVideo &&
+                contains(policy.Allowed, "streaming-direct") &&
+                isPartialContentSuccess(r) {
+                audit.Record(r.Context(), auth.AuditStreamingDirectAccess{
+                    VideoID: wantSub,
+                    UserID:  uuid.MustParse(claims.Usr),
+                    IP:      clientIP(r),
+                })
+            }
         })
     }
 }
@@ -437,7 +457,7 @@ guarantee. If the listener is broken, rotation propagates via poll.
 | `TestBootstrapDeadlineExceeded` | Server always 500; timeout 1s → Bootstrap returns deadline error after ~1s. |
 | `TestStartFetchesEveryInterval` | Start with 100ms interval; 5 ticks → 5 fetches recorded by httptest. |
 | `TestFetchFailureMarksStale` | Server starts 200, then 500; cache transitions Fetched → Stale; LookupRSA still works against last-good keys. |
-| `TestRotationPickedUpVia LISTEN` | Insert a new DB key (triggering pg_notify) → listener fires onSignal → next request verifies the new kid within 1s without waiting for the 5-min poll. |
+| `TestRotationPickedUpViaLISTEN` | Insert a new DB key (triggering pg_notify) → listener fires onSignal → next request verifies the new kid within 1s without waiting for the 5-min poll. |
 
 ### 9.3 JWT middleware (`jwt_test.go`)
 

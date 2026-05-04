@@ -97,11 +97,13 @@ type HitMatch = {
 ### 4.2 Search request
 
 ```ts
+import { keepPreviousData } from '@tanstack/react-query';
+
 const search = useQuery({
   queryKey: ['search', q, mode, facets, cursor],
   queryFn: () => api.post('/search', { q, mode, facets, cursor, limit: 20 }),
   enabled: q.length >= 2,
-  keepPreviousData: true,
+  placeholderData: keepPreviousData,    // v5: replaces the v4 `keepPreviousData: true` option
   staleTime: 60_000,
 });
 ```

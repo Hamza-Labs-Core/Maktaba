@@ -2,6 +2,10 @@
 
 > Companion to [story-13-07-keyboard-shortcuts.md](story-13-07-keyboard-shortcuts.md).
 > Native menu accelerators + global media keys + the in-app layer from Story 11.9.
+>
+> ACL: see `plan-13-01-macos.md` §Capabilities. This story requires
+> `src-tauri/capabilities/shortcut.json` (granting
+> `global-shortcut:allow-register` and `global-shortcut:allow-unregister`).
 
 ## 0. Scope and placement
 
@@ -56,7 +60,10 @@ fn handle_menu(app: &AppHandle, id: &str) {
 }
 ```
 
-The "private" flag passes a query param (`?private=1`) the React layer reads; it disables the SW cache scope and uses an in-memory store.
+The "private" flag is implemented at the Tauri layer: the private
+window is built with its own `data_directory` under the OS temp dir, so
+cookies, localStorage, IndexedDB, and the service-worker cache are
+isolated from the main window. See §6 below for the snippet.
 
 ## 3. Global media keys
 
@@ -101,19 +108,41 @@ If `n > libraries.length`, no-op.
 
 ## 6. New private session
 
+A query string (`?private=1`) read by the web layer is **not** sufficient
+for actual privacy: WebView cookies, localStorage, IndexedDB, and the
+service-worker cache are all keyed off the OS-level data directory, so
+two windows sharing it leak credentials and history into the "private"
+window. Real isolation comes from giving the private window its own
+`data_directory`:
+
 ```rust
+use std::path::PathBuf;
+
 fn open_new_window(app: &AppHandle, private: bool) {
-    let url = if private { WebviewUrl::App("index.html?private=1".into()) }
-              else { WebviewUrl::App("index.html".into()) };
-    let _ = WebviewWindowBuilder::new(app, format!("w_{}", uuid::Uuid::new_v4()), url)
-        .inner_size(1280.0, 800.0).build();
+    let id = uuid::Uuid::new_v4();
+    let label = format!("w_{id}");
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        &label,
+        WebviewUrl::App("index.html".into()),
+    ).inner_size(1280.0, 800.0);
+
+    if private {
+        // Per-private-window data directory under the OS temp dir.
+        // Cleaned up by the OS / on next boot; no shared state with the main window.
+        let dir: PathBuf = std::env::temp_dir().join(format!("maktaba-private-{id}"));
+        std::fs::create_dir_all(&dir).ok();
+        builder = builder.data_directory(dir);
+    }
+
+    let _ = builder.build();
 }
 ```
 
-The web app reads `?private=1` from `window.location` and:
-- Skips SW registration.
-- Uses sessionStorage (not localStorage) for caches.
-- Uses in-memory TanStack QueryClient.
+The web app may still inspect `window.__TAURI_PRIVATE__` (set via an
+init script on the private window) to skip SW registration and choose
+in-memory TanStack stores, but the **storage isolation is enforced at
+the WebView level** by `data_directory`, not by web-side opt-ins.
 
 ## 7. Test cases
 

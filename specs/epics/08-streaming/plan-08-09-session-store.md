@@ -140,8 +140,62 @@ CREATE INDEX streaming_sessions_active_host
 DROP TABLE IF EXISTS streaming_sessions;
 ```
 
-The SQLite variant is identical except for the type swaps (UUID→TEXT,
-TIMESTAMPTZ→TEXT) used in earlier epics.
+The SQLite variant is required for single-user dev mode (Story 8.1
+config: `[db] driver = "sqlite"`). It uses TEXT for UUIDs/timestamps,
+the same CHECK constraints, and a slightly different reaper index because
+SQLite's partial-index syntax differs in older versions:
+
+```sql
+-- shared/db/migrations/0020_streaming_sessions.sqlite.sql
+-- +goose Up
+-- +goose StatementBegin
+
+CREATE TABLE streaming_sessions (
+    id              TEXT PRIMARY KEY,                       -- UUID v7 hex
+    video_id        TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    client_profile  TEXT NOT NULL,
+    mode            TEXT NOT NULL,
+    format          TEXT NOT NULL,
+    host            TEXT NOT NULL,
+    pid             INTEGER,
+    started_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    last_segment_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    closed_at       TEXT,
+    closed_reason   TEXT,
+    state           TEXT NOT NULL DEFAULT 'active',
+
+    CHECK (mode IN ('direct','remux','transcode','direct-degraded')),
+    CHECK (format IN ('hls','dash')),
+    CHECK (state IN ('active','queued')),
+    CHECK (closed_reason IS NULL OR closed_reason IN
+        ('api','idle','crash','evicted','user-stop','admin-evict',
+         'hw_failed_software_failed','store-insert-failed'))
+);
+
+CREATE INDEX streaming_sessions_reaper
+    ON streaming_sessions (last_segment_at)
+    WHERE closed_at IS NULL;
+
+CREATE INDEX streaming_sessions_user_video
+    ON streaming_sessions (user_id, video_id)
+    WHERE closed_at IS NULL;
+
+CREATE INDEX streaming_sessions_active_host
+    ON streaming_sessions (host)
+    WHERE closed_at IS NULL;
+
+-- +goose StatementEnd
+
+-- +goose Down
+DROP TABLE IF EXISTS streaming_sessions;
+```
+
+SQLite (3.8+) supports partial indexes, so the WHERE clauses match.
+Single-user dev mode uses one connection (no concurrent reapers across
+hosts), so SKIP LOCKED is not needed; the reaper instead opens a write
+transaction with `BEGIN IMMEDIATE` to take the database lock atomically
+(see §2.6 Reaper variant below).
 
 ### 2.4 sqlc queries — `shared/db/queries/streaming_sessions.sql`
 
@@ -176,12 +230,29 @@ UPDATE streaming_sessions
 -- threshold AND that aren't already closed. SKIP LOCKED so two reapers
 -- on different hosts don't block each other (the row-level lock is
 -- short-lived per row anyway).
+--
+-- Postgres variant — uses FOR UPDATE SKIP LOCKED.
 SELECT * FROM streaming_sessions
  WHERE closed_at IS NULL
    AND last_segment_at < $1
  ORDER BY last_segment_at ASC
  LIMIT 256
  FOR UPDATE SKIP LOCKED;
+```
+
+For SQLite (single-user dev mode) we use a query without `FOR UPDATE`
+and rely on a transaction-level lock instead:
+
+```sql
+-- name: SelectIdleForReap_SQLite :many
+-- SQLite has no row-level lock. The reaper wraps the SELECT in
+-- BEGIN IMMEDIATE so the database is held for write while it iterates
+-- — see the SQLite reaper variant in §2.6 below.
+SELECT * FROM streaming_sessions
+ WHERE closed_at IS NULL
+   AND last_segment_at < ?
+ ORDER BY last_segment_at ASC
+ LIMIT 256;
 ```
 
 ### 2.5 Heartbeat batching
@@ -305,6 +376,11 @@ func (w *Worker) Run(ctx context.Context) error {
 
 func (w *Worker) tick(ctx context.Context) error {
     threshold := w.Now().Add(-w.IdleAfter)
+    // The Store dispatches on driver: Postgres opens a transaction with
+    // FOR UPDATE SKIP LOCKED; SQLite opens a write transaction with
+    // BEGIN IMMEDIATE (see §2.5/2.6 SQLite reaper variant). Either way,
+    // the returned rows are exclusively held by this tick until we
+    // commit (post MarkClosed) or roll back.
     rows, err := w.Store.SelectIdleForReap(ctx, threshold)
     if err != nil {
         return err
@@ -343,6 +419,48 @@ func (w *Worker) tick(ctx context.Context) error {
     return nil
 }
 ```
+
+### 2.6.1 SQLite reaper transaction variant
+
+In SQLite mode there is no row-level lock, so we promote the whole
+tick to a single write transaction:
+
+```go
+// streaming/internal/sessionstore/store_sqlite.go
+package sessionstore
+
+// SelectIdleForReap_SQLite opens a BEGIN IMMEDIATE write transaction so
+// the read-then-update sequence atomically holds the database. The
+// caller (reaper.Worker.tick) does its kill+MarkClosed work inside the
+// returned transaction, then commits.
+//
+// Single-user dev mode never has cross-host reapers, so contention is
+// only with the segment handler's heartbeat batch — which retries on
+// SQLITE_BUSY and is short-lived.
+func (s *Store) SelectIdleForReap_SQLite(ctx context.Context, threshold time.Time) (*sql.Tx, []Row, error) {
+    tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+    if err != nil {
+        return nil, nil, err
+    }
+    if _, err := tx.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+        _ = tx.Rollback()
+        return nil, nil, err
+    }
+    rows, err := s.q.WithTx(tx).SelectIdleForReap_SQLite(ctx, threshold.Format(time.RFC3339Nano))
+    if err != nil {
+        _ = tx.Rollback()
+        return nil, nil, err
+    }
+    return tx, rows, nil
+}
+```
+
+The reaper's `tick` routes through `Store.SelectIdleForReap`, which
+dispatches on `s.driver` and either returns rows directly (Postgres,
+where the row locks live in the connection's implicit transaction) or
+returns rows + a `*sql.Tx` (SQLite, which the caller commits after
+MarkClosed). Both paths surface as the same Go-level signature to
+`tick` via a small adapter so the caller stays driver-agnostic.
 
 ### 2.7 Sticky routing
 

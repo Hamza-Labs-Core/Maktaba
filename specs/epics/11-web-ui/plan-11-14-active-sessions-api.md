@@ -172,7 +172,7 @@ return (<>
 | Two private windows same UA | Two rows; `is_current` distinguishes. |
 | Revoke an already-expired session | Idempotent 204. |
 | Race: revoke + refresh ~10 ms apart | Either succeeds (then revoked next call) or fails (token-revoked). Acceptable. |
-| PAT row dedup | `id` matches across `/api/me/tokens` and `/api/me/sessions`; clients can correlate. |
+| PAT row dedup | `id` matches across `/api/me/pats` and `/api/me/sessions`; clients can correlate. |
 
 ## 9. Test cases
 

@@ -192,6 +192,13 @@ CREATE TABLE refresh_tokens (
     user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     hash         TEXT NOT NULL,           -- argon2id($argon2id$v=19$...) of the secret
     family_id    UUID NOT NULL,           -- shared across rotation chain (Story 10.4)
+    -- device_id is set when the row is issued by a native-client login (this
+    -- plan) or pairing flow (Story 10.17). The web-cookie flow leaves it
+    -- NULL. ON DELETE CASCADE pairs with `devices(id)` per architecture
+    -- §8.6 so that a device row deletion (e.g., user revokes a device in
+    -- the device manager — Plan 12-11) reaps the device's refresh tokens
+    -- atomically.
+    device_id    UUID REFERENCES devices(id) ON DELETE CASCADE,
     issued_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at   TIMESTAMPTZ NOT NULL,
     revoked_at   TIMESTAMPTZ,
@@ -205,6 +212,10 @@ CREATE INDEX refresh_tokens_user_active
 -- Reaper helper: drop fully-expired-and-revoked rows after 90 days.
 CREATE INDEX refresh_tokens_reaper
     ON refresh_tokens (expires_at) WHERE revoked_at IS NOT NULL;
+
+-- Per-device lookup for the device manager (Epic 12 Plan 12-11).
+CREATE INDEX refresh_tokens_device
+    ON refresh_tokens (device_id) WHERE device_id IS NOT NULL AND revoked_at IS NULL;
 -- +goose StatementEnd
 
 -- +goose Down
@@ -223,6 +234,9 @@ CREATE TABLE refresh_tokens (
     user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     hash         TEXT NOT NULL,
     family_id    TEXT NOT NULL,
+    -- device_id matches the Postgres column; web-flow rows leave it NULL
+    -- (see architecture §8.6 and Plan 12-11).
+    device_id    TEXT REFERENCES devices(id) ON DELETE CASCADE,
     issued_at    TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     expires_at   TEXT NOT NULL,
     revoked_at   TEXT,
@@ -235,6 +249,9 @@ CREATE INDEX refresh_tokens_user_active
 
 CREATE INDEX refresh_tokens_reaper
     ON refresh_tokens (expires_at) WHERE revoked_at IS NOT NULL;
+
+CREATE INDEX refresh_tokens_device
+    ON refresh_tokens (device_id) WHERE device_id IS NOT NULL AND revoked_at IS NULL;
 -- +goose StatementEnd
 
 -- +goose Down
@@ -394,6 +411,28 @@ yields rows whose hashes cannot be inverted to plaintexts. Combined
 with the embedded id, the verify is both O(1) and constant-time.
 
 ## 6. Native login handler
+
+> **Sequencing note — `libACL.LibrariesForUser` stub.** This handler calls
+> `libACL.LibrariesForUser(ctx, user.ID)` to populate `Lib` in the access
+> token, but the real implementation lives in
+> [Story 10.13](plan-10-13-permission-model.md), which lands later in the
+> sequence (10.1 → 10.6 → 10.15 → 10.2/10.10 → **10.3/10.4** → … → 10.13).
+> To keep the dependency graph linear, this story ships a **stub** in
+> `api/internal/auth/lib_acl.go`:
+>
+> ```go
+> // STUB — replaced by Story 10.13. Until 10.13 lands, the v1 default
+> // (single-user / admin-only mode) returns "all known libraries" for
+> // any user. Story 10.13 swaps this out for a real library_acl-table
+> // join and removes the TODO.
+> func (s *stubLibACL) LibrariesForUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+>     // TODO(plan-10-13): replace with library_acl join.
+>     return s.allLibraryIDs(ctx)
+> }
+> ```
+>
+> The interface signature matches `Story 10.13`'s `LibACL`, so the swap
+> at 10.13 is drop-in. No handler call site changes when 10.13 lands.
 
 ```go
 // api/internal/http/auth_native.go
@@ -600,8 +639,10 @@ SQLite via the parametrized fixture.
 ## 11. Acceptance checklist
 
 **Migration**
-- [ ] `0022_refresh_tokens.sql` applies; both indexes present.
+- [ ] `0022_refresh_tokens.sql` applies; all three indexes present (`refresh_tokens_user_active`, `refresh_tokens_reaper`, `refresh_tokens_device`).
+- [ ] `device_id UUID REFERENCES devices(id) ON DELETE CASCADE` column exists per architecture §8.6 (consumed by Plan 12-11).
 - [ ] CASCADE from `users(id)` deletes refresh tokens.
+- [ ] CASCADE from `devices(id)` deletes refresh tokens for that device (web-flow rows have NULL device_id and are unaffected).
 
 **JWT**
 - [ ] Signed with RS256; verify rejects HS256 (alg-confusion guard).

@@ -7,7 +7,7 @@
 
 | Concern | Decision |
 |---|---|
-| Routes | `GET /api/settings`, `PATCH /api/settings`, `GET /api/settings/stt-backends`, `POST /api/settings/stt-test`. |
+| Routes | `GET /api/settings`, `PATCH /api/settings`, `GET /api/settings/stt-backends`, `POST /api/settings/stt-test`, plus the small static-config / system surface: `GET /.well-known/apple-app-site-association`, `GET /.well-known/assetlinks.json`, `GET /api/system/metrics` (Prometheus exposition), and `POST /api/me/password {current_password, new_password}`. |
 | Storage | New `app_settings(key, value, updated_at, updated_by)` table; trigger fires `NOTIFY settings_changed, '<key>'` on UPDATE/INSERT. |
 | Redaction | Centralised key allowlist: any key whose path contains `api_key`, `token`, `password`, `secret` is redacted. |
 | Runtime knobs | Whitelist of writable keys (`runtime` registry); writes outside the list → 403. |
@@ -165,6 +165,16 @@ var runtime = map[string]Validator{
     "shutdown_grace_sec":            intRange(1, 600),
     "stt.backend":                   stringEnum("whisper-mlx","faster-whisper","openai"),
     "stt.model":                     stringMaxLen(128),
+    // Stage parallelism caps. Keys correspond to the seven canonical
+    // stages (architecture §3): scan, probe, extract, transcribe,
+    // subtitle_gen, index, thumbnail.
+    "pipeline.parallelism.scan":         intRange(1, 64),
+    "pipeline.parallelism.probe":        intRange(1, 64),
+    "pipeline.parallelism.extract":      intRange(1, 64),
+    "pipeline.parallelism.transcribe":   intRange(1, 16),
+    "pipeline.parallelism.subtitle_gen": intRange(1, 64),
+    "pipeline.parallelism.index":        intRange(1, 64),
+    "pipeline.parallelism.thumbnail":    intRange(1, 64),
     // ... grow as new knobs land.
 }
 
@@ -319,8 +329,131 @@ func (s *Store) StartListener(ctx context.Context) {
 ## 9. STT backends + dry run
 
 `sttBackends` calls Pipeline gRPC `ListBackends` (Story 7.18) and caches
-60 s. `sttTest` calls Pipeline gRPC `RunSyntheticTranscribe(backend, config)`.
-Both are stubbed in tests via the gRPC fake.
+60 s. The Pipeline gRPC surface is canonically `Embed, Transcribe,
+ListBackends, HealthCheck` (architecture §9.9). There is **no**
+`RunSyntheticTranscribe` RPC.
+
+`sttTest` therefore drives the dry run through plain `Transcribe`. The API
+embeds a small fixture WAV (~3 s of canned speech, < 64 KB) at compile
+time and feeds it as the audio source:
+
+```go
+//go:embed testdata/stt_dryrun.wav
+var sttDryRunWav []byte
+
+func (s *service) sttTest(ctx context.Context, in STTTestRequest) (*STTTestResponse, error) {
+    started := s.clock()
+    grpcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+    defer cancel()
+    res, err := s.pipeline.Transcribe(grpcCtx, &pb.TranscribeRequest{
+        Backend: in.Backend,
+        Config:  configToStruct(in.Config),
+        Audio:   &pb.AudioSource{Inline: sttDryRunWav, Format: "wav"},
+        DryRun:  true, // Pipeline runs the model but does NOT persist segments
+    })
+    if err != nil {
+        return &STTTestResponse{OK: false, Error: err.Error(), StartedAt: started}, nil
+    }
+    return &STTTestResponse{
+        OK:         true,
+        LatencyMS:  s.clock().Sub(started).Milliseconds(),
+        SampleText: res.SampleText,
+        StartedAt:  started,
+    }, nil
+}
+```
+
+Both calls are stubbed in tests via the gRPC fake.
+
+## 9.1 Apple/Android association files
+
+These are tiny static JSON documents synthesized at server boot from the
+configured `ios.bundle_id` / `ios.team_id` and `android.package_id` /
+`android.cert_sha256` settings; both are served as `application/json`
+with a 30-day cache header so iOS/Android can fetch them at install time.
+
+```go
+type appleAASA struct {
+    Applinks struct {
+        Apps    []string `json:"apps"`
+        Details []struct {
+            AppID string   `json:"appID"`
+            Paths []string `json:"paths"`
+        } `json:"details"`
+    } `json:"applinks"`
+}
+
+type androidAssetlink struct {
+    Relation []string `json:"relation"`
+    Target   struct {
+        Namespace      string   `json:"namespace"`
+        PackageName    string   `json:"package_name"`
+        Sha256CertFP   []string `json:"sha256_cert_fingerprints"`
+    } `json:"target"`
+}
+
+func (h *handler) appleAASA(w http.ResponseWriter, r *http.Request) {
+    out := h.svc.buildAppleAASA() // synthesized from settings at boot
+    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Cache-Control", "public, max-age=2592000")
+    _ = json.NewEncoder(w).Encode(out)
+}
+
+func (h *handler) androidAssetlinks(w http.ResponseWriter, r *http.Request) {
+    out := h.svc.buildAndroidAssetlinks()
+    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Cache-Control", "public, max-age=2592000")
+    _ = json.NewEncoder(w).Encode([]androidAssetlink{out})
+}
+```
+
+Both routes mount above the auth middleware (no auth required; these are
+discovered by the OS).
+
+## 9.2 System metrics (`GET /api/system/metrics`)
+
+Prometheus exposition. Composed by `promhttp.HandlerFor(reg, opts)`. Story
+7.20 owns the registry — this handler simply mounts it on
+`/api/system/metrics` (architecture §9; the `/metrics` alias from 7.20
+remains for ops scrapers, this `/api/system/metrics` is the documented API
+surface).
+
+## 9.3 `POST /api/me/password`
+
+```go
+type PasswordChangeInput struct {
+    CurrentPassword string `json:"current_password" validate:"required"`
+    NewPassword     string `json:"new_password"     validate:"required,min=12,max=256"`
+}
+
+func (h *handler) mePassword(w http.ResponseWriter, r *http.Request) {
+    user := userFromCtx(r.Context())
+    var in PasswordChangeInput
+    if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+        httperror.Write(w, r, httperror.BadRequest("invalid json")); return
+    }
+    if err := validate(in); err != nil { httperror.Write(w, r, err); return }
+
+    // Argon2id verify of current. The auth package owns the parameters
+    // (Epic 10) — same kdf as login. Constant-time comparison.
+    ok, err := h.auth.VerifyPassword(r.Context(), user.ID, in.CurrentPassword)
+    if err != nil { httperror.Write(w, r, httperror.Internal("verify failed")); return }
+    if !ok {
+        httperror.Write(w, r, httperror.Forbidden(httperror.TypeForbidden, "current password mismatch"))
+        return
+    }
+    // Argon2id rehash with the current default parameters.
+    if err := h.auth.SetPassword(r.Context(), user.ID, in.NewPassword); err != nil {
+        httperror.Write(w, r, httperror.Internal("rehash failed")); return
+    }
+    // category='security' for the audit log.
+    h.audit.Append(r.Context(), audit.Entry{
+        Category: "security", Action: "user.password_changed",
+        ActorUserID: &user.ID,
+    })
+    w.WriteHeader(http.StatusNoContent)
+}
+```
 
 ## 10. SQL — sqlc inputs
 
@@ -393,6 +526,9 @@ SELECT key, value FROM app_settings;
 - [ ] Validators run before the upsert.
 - [ ] NOTIFY fires; 5 s poll backstop reconciles.
 - [ ] `GET /settings/stt-backends` cached 60 s.
-- [ ] `POST /settings/stt-test` runs the synthetic-speech round trip.
+- [ ] `POST /settings/stt-test` runs `Pipeline.Transcribe(audio=fixture, dry_run=true)` (no `RunSyntheticTranscribe` RPC).
+- [ ] `GET /.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` serve synthesized JSON from the iOS/Android settings keys.
+- [ ] `GET /api/system/metrics` exposes the Prometheus registry (Story 7.20 owns the registry; this story mounts the route).
+- [ ] `POST /api/me/password` verifies current password (argon2id), rehashes new password, audits with `category='security'`, returns 204.
 - [ ] All `Test*` cases pass.
 - [ ] `specs/epics/07-api-server/README.md` ticks story 7.15.

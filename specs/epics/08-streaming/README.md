@@ -62,7 +62,7 @@ CREATE TABLE streaming_sessions (
   started_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_segment_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   closed_at         TIMESTAMPTZ,
-  closed_reason     TEXT,                              -- 'api' | 'idle' | 'crash' | 'evicted'
+  closed_reason     TEXT,                              -- 'api' | 'idle' | 'crash' | 'evicted' | 'user-stop' | 'admin-evict' | 'hw_failed_software_failed' | 'store-insert-failed'
   state             TEXT NOT NULL DEFAULT 'active'     -- 'active' | 'queued'
 );
 CREATE INDEX streaming_sessions_reaper

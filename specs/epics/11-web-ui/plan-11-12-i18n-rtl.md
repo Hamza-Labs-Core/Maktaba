@@ -63,17 +63,27 @@ i18next.on('languageChanged', (lng) => {
 
 ## 3. URL routing for locale
 
+Routing uses **TanStack Router** (architecture §2.1) with file-based routes. The locale segment is captured via a path parameter on a layout route under `web/src/routes/$locale.tsx`:
+
 ```tsx
-// router setup
-{
-  path: '/:locale(en|ar)?/*',
-  loader: ({ params }) => {
-    if (params.locale && i18next.language !== params.locale) i18next.changeLanguage(params.locale);
+// web/src/routes/$locale.tsx
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import i18next from 'i18next';
+
+export const Route = createFileRoute('/$locale')({
+  beforeLoad: ({ params }) => {
+    if (!['en', 'ar'].includes(params.locale)) {
+      throw redirect({ to: '/$locale', params: { locale: 'en' } });
+    }
+    if (i18next.language !== params.locale) {
+      i18next.changeLanguage(params.locale);
+    }
   },
-}
+  component: () => <Outlet />,
+});
 ```
 
-A redirect at startup picks `/en` or `/ar` based on detector if the URL has no prefix.
+A root-level redirect at startup picks `/en` or `/ar` based on the detector if the URL has no prefix (implemented in the root route's `beforeLoad`).
 
 ## 4. Direction & logical CSS
 

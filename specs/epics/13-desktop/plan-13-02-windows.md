@@ -59,7 +59,52 @@ Tauri uses native title bar by default. High-DPI handled via `windows.high_dpi_a
 </Wix>
 ```
 
-`MainActivity` equivalent on the Rust side parses `argv[1]` for `*.maktaba` files and emits `app://open-shortcut` to the React layer (which fans out to Story 13.5's server picker).
+### Argv parser (Windows entry point)
+
+There is no `MainActivity` on Windows; that's Android terminology. The
+equivalent is the Rust `main.rs` argv parser inside
+`tauri::Builder::default().setup(...)`, which inspects the second-launch
+argv handed off by `tauri-plugin-single-instance` (see plan-13-01 §12)
+and emits an event to the React layer (which fans out to Story 13.5's
+server picker):
+
+```rust
+// main.rs (additions for Windows .maktaba handoff)
+.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    if let Some(path) = args.iter().skip(1).find(|a| a.ends_with(".maktaba")) {
+        let _ = app.emit("shortcut:open", path);
+    }
+}))
+.setup(|app| {
+    // First-launch argv: same parsing path.
+    let argv: Vec<String> = std::env::args().collect();
+    if let Some(path) = argv.iter().skip(1).find(|a| a.ends_with(".maktaba")) {
+        let _ = app.emit("shortcut:open", path);
+    }
+    Ok(())
+})
+```
+
+### Custom protocol (optional)
+
+If the React layer needs to receive shortcut handoffs as URLs rather than
+plain paths, register a Tauri custom URI scheme so `app://open-shortcut?...`
+is routable:
+
+```rust
+tauri::Builder::default()
+    .register_uri_scheme_protocol("app", |_app, _req| {
+        // Build response from the request URI; route into the web layer.
+        tauri::http::Response::builder().status(200).body(Vec::new()).unwrap()
+    })
+```
+
+Without this registration, do not refer to `app://open-shortcut` from the
+plan; the argv-event path above is sufficient.
 
 ## 4. WebView2 runtime
 
@@ -114,5 +159,6 @@ Build matrix in CI adds `aarch64-pc-windows-msvc`; we ship as "experimental" wit
 
 ## 11. Dependencies
 
-- Story 13.1 (shared Tauri base).
+- Story 13.1 (shared Tauri base; single-instance lock §12 used by §3
+  argv parser above).
 - Story 13.8 (auto-update updater is signed with the same cert).

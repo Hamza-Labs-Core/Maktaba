@@ -11,7 +11,7 @@
 | Plugin | `@capacitor/push-notifications` (official plugin), wrapped by `apps/mobile/plugins/push-bridge/` for category mapping + onboarding gates. |
 | Permissions | Asked **only** when user enters Queue page or finishes onboarding; never on first paint. |
 | Categories | Processing complete · New content added · Job failed · Subscription expiring. Toggleable in Settings → Notifications. |
-| Token registration | `POST /api/devices/register` from Story 12.10. |
+| Token registration | `POST /api/devices` from Story 12.10. Body uses canonical column names: `{platform, bundle_id?, token, app_version?, os_version?, locale?, categories?}`. |
 | Deep links | `maktaba://watch/{id}`, `maktaba://job/{id}` (Story 12.9). |
 | Out of scope | APNs/FCM server-side fan-out (Story 12.10). |
 
@@ -64,8 +64,11 @@ The Queue route shows `<PushPermissionPromptModal>` once if `state === 'prompt'`
 
 ```ts
 PushNotifications.addListener('registration', async (token) => {
-  await api.post('/devices/register', {
-    platform: Capacitor.getPlatform(),  // 'ios' | 'android'
+  const platform = Capacitor.getPlatform();  // 'ios' | 'android'
+  await api.post('/devices', {
+    platform,
+    // bundle_id is required by the server for iOS/macOS/tvOS (APNs topic).
+    ...(platform === 'ios' ? { bundle_id: getBundleId() } : {}),
     token: token.value,
     app_version: getAppVersion(),
     os_version: getOSVersion(),
@@ -124,7 +127,7 @@ Use OS defaults; we set `sound: 'default'` and `priority: 'high'` only for `proc
 | `permission prompt only on Queue first visit` | After visiting Library, `state === 'prompt'` but no modal; on Queue, modal renders. |
 | `dismissed flag persists` | After dismiss, modal does not show on Queue again. |
 | `token registration call shape` | POST body matches Story 12.10 contract; `Idempotency-Key` present. |
-| `category toggle PATCHes correctly` | Toggle "new_content" off → PATCH body `{ categories: { new_content: false, … } }`. |
+| `category toggle PATCHes correctly` | Toggle "new_content" off → PATCH body `{ categories: ["processing","job_failed","subscription"] }` (array of opted-in categories per architecture §8.2.3). |
 | `deep link routes correctly` | `maktaba://watch/abc` → `navigate('/watch/abc')`. |
 
 ### 8.2 Device

@@ -29,7 +29,7 @@
         ├─ if count(indexed videos) < 100: skip; emit metric.
         ├─ collect mean embeddings:
         │     SELECT id, mean_embedding FROM videos
-        │      WHERE library_id = $1 AND state IN ('INDEXED','READY')
+        │      WHERE library_id = $1 AND state IN ('indexed','ready','ready_no_audio')
         ├─ K = min(int(sqrt(N)/2), 32); K = max(K, 2)
         ├─ kmeans = MiniBatchKMeans(n_clusters=K, random_state=hash(library_id),
         │                           batch_size=4096, max_iter=200, n_init=3)
@@ -54,7 +54,7 @@
         ├─ DELETE FROM video_topics WHERE video_id = $1
         ├─ INSERT INTO video_topics (video_id, library_id, topic_id, score)
         │   VALUES ... (top 3)
-        └─ NOTIFY 'video.topics_updated', {video_id}
+        └─ publish(VIDEO_TOPICS_UPDATED, {video_id})  # constant per 09-01 §2.5
 ```
 
 ## 2. Implementation steps
@@ -72,6 +72,7 @@
 | `pipeline/tests/topics/test_assign.py` | Per-video tests per §6.2. |
 | `pipeline/tests/topics/test_labeler.py` | Labeler tests per §6.3. |
 | `shared/db/migrations/0037_topics.sql` | `library_topics`, `video_topics`, `videos.mean_embedding`. |
+| `shared/db/migrations/0037b_transcript_units.sql` | Owns the canonical `transcript_units` table (architecture). The closest "indexer-side" plan in Epic 9 owns this migration since the indexer is the writer. |
 | `shared/db/queries/topics.sql` | sqlc input — `UpsertTopic`, `DeleteTopicsAbove`, `ListVideoTopics`, `RenameTopic`. |
 
 ### 2.2 Modified files
@@ -80,7 +81,7 @@
 |---|---|
 | `pipeline/src/maktaba_pipeline/index/commit.py` | After commit, enqueue `topic_assign` for the video (if library.auto_tag_topics). |
 | `pipeline/src/maktaba_pipeline/jobs/dispatcher.py` | Add `topic_recluster` and `topic_assign` stages. |
-| `shared/db/migrations/0010_processing_jobs.sql` (revision) | Extend `stage` CHECK to include `topic_recluster`, `topic_assign`. (One migration, idempotent.) |
+| `shared/db/migrations/0037a_processing_jobs_stage_topic.sql` | New migration that ALTERs the `processing_jobs.stage` CHECK to include `topic_recluster`, `topic_assign`. Does **not** edit Epic 6's `0010_processing_jobs.sql` — that migration is immutable once shipped. Renumber sequentially after the last Epic 6 migration. |
 | `api/internal/handlers/libraries/topics.go` | The PATCH `/api/libraries/{id}/topics/{topic_id}` rename; owner/admin check. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.9. |
 
@@ -201,6 +202,42 @@ The `library_topics_topic_id_chk CHECK (topic_id < 32)` makes
 the per-library row count bounded; the K-shrunk delete in
 `run_recluster` uses `DeleteTopicsAbove`.
 
+### 3.1 `transcript_units` migration (canonical, owned here)
+
+`shared/db/migrations/0037b_transcript_units.sql`:
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+
+-- transcript_units is the canonical reranker/index unit (architecture).
+-- One row per (transcript, segment, sequence within segment); used by the
+-- index stage as the rerank target. Owned by the indexer-side plan
+-- (this plan); referenced by Stories 9.18 and downstream search.
+CREATE TABLE transcript_units (
+    id              BIGSERIAL PRIMARY KEY,
+    transcript_id   UUID    NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    video_id        UUID    NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    segment_id      BIGINT  NOT NULL REFERENCES transcript_segments(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    start_sec       REAL    NOT NULL,
+    end_sec         REAL    NOT NULL,
+    text            TEXT    NOT NULL,
+    language        TEXT,
+    CONSTRAINT transcript_units_time_chk CHECK (start_sec >= 0 AND end_sec > start_sec)
+);
+
+CREATE INDEX transcript_units_video         ON transcript_units (video_id, start_sec);
+CREATE INDEX transcript_units_segment_seq   ON transcript_units (segment_id, seq);
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS transcript_units;
+-- +goose StatementEnd
+```
+
 ## 4. Code scaffolding
 
 ### 4.1 `vec.pack_float32` / `unpack_float32`
@@ -234,7 +271,7 @@ async def run_recluster(db, library_id: UUID, *, settings,
     rows = await db.fetch(
         "SELECT id, mean_embedding FROM videos "
         " WHERE library_id = $1 "
-        "   AND state IN ('INDEXED','READY','READY_NO_AUDIO') "
+        "   AND state IN ('indexed','ready','ready_no_audio') "
         "   AND mean_embedding IS NOT NULL",
         library_id,
     )
@@ -296,7 +333,8 @@ async def run_recluster(db, library_id: UUID, *, settings,
         await assign_topics(db, video_id=r["id"], library_id=library_id)
 
     if bus is not None:
-        bus.publish("library.topics_updated",
+        # Channel constant from pipeline/db/pubsub.py (see 09-01 §2.5).
+        bus.publish(LIBRARY_TOPICS_UPDATED,
                     {"library_id": str(library_id), "K": K})
 ```
 
@@ -343,21 +381,32 @@ async def assign_topics(db, *, video_id: UUID,
 
 ### 4.4 `_ensure_mean_embedding`
 
+Per architecture §8.4, segment embeddings live **only in ChromaDB** —
+there is no `transcript_segments.embedding` column. The mean is computed
+from a ChromaDB query for the video's segments and cached on
+`videos.mean_embedding` (BYTEA, 768 × 4 bytes).
+
 ```python
+from ..chroma import chromadb_client
+
 async def _ensure_mean_embedding(db, video_id: UUID) -> np.ndarray | None:
     row = await db.fetchrow(
-        "SELECT mean_embedding FROM videos WHERE id=$1", video_id)
+        "SELECT mean_embedding, library_id FROM videos WHERE id=$1", video_id)
+    if row is None:
+        return None
     if row["mean_embedding"] is not None:
         return unpack_float32(row["mean_embedding"], EMBED_DIM)
 
-    seg_embs = await db.fetch(
-        "SELECT embedding FROM transcript_segments WHERE video_id=$1 "
-        "  AND embedding IS NOT NULL", video_id,
-    )
-    if not seg_embs:
+    # Pull this video's segment embeddings from ChromaDB (per-library
+    # collection, architecture §8.4). Each Chroma item carries the
+    # segment_id in metadata; we filter by video_id.
+    coll = chromadb_client.collection(row["library_id"])
+    res = coll.get(where={"video_id": str(video_id)},
+                   include=["embeddings"])
+    embeddings = res.get("embeddings") or []
+    if not embeddings:
         return None
-    arr = np.stack([unpack_float32(r["embedding"], EMBED_DIM)
-                    for r in seg_embs])
+    arr = np.asarray(embeddings, dtype=np.float32)
     mean = arr.mean(axis=0)
     n = np.linalg.norm(mean) or 1.0
     mean /= n
@@ -469,7 +518,7 @@ the embedder is down, the labeler raises `LabelerUnavailable` and
 | `scikit-learn` | ≥ 1.4 | `MiniBatchKMeans` |
 | `numpy` | ≥ 1.26 | Vector ops |
 | Embedder client | Epic 5 Story 5.3 | Labeler |
-| `transcript_segments.embedding` | Epic 5 Story 5.5 | Source for mean embedding |
+| ChromaDB per-library collection | architecture §8.4 | Source for mean embedding (segment embeddings live in Chroma, not Postgres). |
 
 ## 9. Acceptance checklist
 

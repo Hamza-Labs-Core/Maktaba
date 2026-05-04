@@ -163,7 +163,7 @@ func WriteDATERANGE(w io.Writer, chapters []Chapter, started time.Time) error {
             strconv.Itoa(c.Seq),
             startDate.Format("2006-01-02T15:04:05.000Z07:00"),
             c.EndSec-c.StartSec,
-            quoteEscape(c.Title),
+            QuoteEscape(c.Title),
         )
         if _, err := io.WriteString(w, line); err != nil {
             return err
@@ -172,8 +172,8 @@ func WriteDATERANGE(w io.Writer, chapters []Chapter, started time.Time) error {
     return nil
 }
 
-// quoteEscape escapes embedded double-quotes per RFC 8216 §4.2 quoted-string.
-func quoteEscape(s string) string {
+// QuoteEscape escapes embedded double-quotes per RFC 8216 §4.2 quoted-string.
+func QuoteEscape(s string) string {
     return strings.ReplaceAll(s, `"`, `\"`)
 }
 ```

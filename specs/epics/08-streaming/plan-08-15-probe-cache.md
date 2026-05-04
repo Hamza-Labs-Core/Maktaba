@@ -69,7 +69,7 @@
 
 | Path | Purpose |
 |---|---|
-| `streaming/internal/probe/types.go` | `Row`, `MediaInfo`, `AudioTrack`, `SubtitleTrack` structs. |
+| `streaming/internal/probe/types.go` | `Row` struct, plus `AudioTrack` / `SubtitleFile` view types. `MediaInfo` is re-exported from `streaming/internal/caps` (Story 8.2) so the matrix and the probe cache share one canonical struct — see §2.3. |
 | `streaming/internal/probe/cache.go` | `Cache` (LRU + by-hash secondary index). |
 | `streaming/internal/probe/db.go` | sqlc-backed `Fetch`. |
 | `streaming/internal/probe/lookup.go` | `Lookup` interface used everywhere; default impl wraps cache+singleflight+db. |
@@ -100,6 +100,8 @@ import (
     "time"
 
     "github.com/google/uuid"
+
+    "maktaba/streaming/internal/caps"
 )
 
 var (
@@ -107,38 +109,32 @@ var (
     ErrNotProbed  = errors.New("probe: video not probed")
 )
 
+// MediaInfo is the canonical media-properties struct defined in
+// streaming/internal/caps (Story 8.2). We re-export it here so callers
+// of the probe cache and callers of the matrix see the same type and
+// no conversion is needed at the boundary.
+type MediaInfo = caps.MediaInfo
+
 type Row struct {
     VideoID       uuid.UUID
     LibraryID     uuid.UUID
     Path          string
+    // Container is sourced from media_info.container (canonical schema:
+    // there is no `videos.container` column). Used by direct-play to
+    // derive the response Content-Type via a file-extension/container
+    // → MIME helper; never read from the DB.
     Container     string
     ContentHash   string       // BLAKE3 hex
     DurationSec   float64
     SizeBytes     int64
-    MIME          string
     UpdatedAt     time.Time
 
     MediaInfo     MediaInfo
     AudioTracks   []AudioTrack
-    SubtitleTracks []SubtitleTrack
-}
-
-type MediaInfo struct {
-    DurationSec    float64
-    BitrateKbps    int
-
-    VideoStreamIdx int
-    VideoCodec     string
-    VideoProfile   string
-    VideoLevel     string
-    Width, Height  int
-    HDR            string
-    HasBFrames     bool
-
-    AudioStreamIdx int   // default audio
-    AudioCodec     string
-    AudioChannels  int
-    AudioBitrateKbps int
+    // SubtitleFiles mirrors rows from the canonical `subtitle_files`
+    // table (NOT `subtitle_tracks`). Schema: id, video_id, transcript_id,
+    // format, language, path, is_external, created_at.
+    SubtitleFiles []SubtitleFile
 }
 
 type AudioTrack struct {
@@ -151,13 +147,18 @@ type AudioTrack struct {
     IsDefault   bool
 }
 
-type SubtitleTrack struct {
-    StreamIndex int
-    Codec       string
-    Lang        string
-    Title       string
-    IsDefault   bool
-    IsForced    bool
+// SubtitleFile reflects a row from `subtitle_files`. There is no
+// `stream_index` and no `is_forced` — those columns do not exist in
+// the canonical schema. External (sidecar) files have `is_external=true`
+// and a filesystem `path`.
+type SubtitleFile struct {
+    ID           int64
+    TranscriptID *int64  // nullable; set for transcript-derived tracks
+    Format       string  // 'srt','vtt','ass','sup', etc.
+    Language     string
+    Path         string
+    IsExternal   bool
+    CreatedAt    time.Time
 }
 ```
 
@@ -338,17 +339,26 @@ inner, err := lru.NewWithEvict[uuid.UUID, *Row](size, func(id uuid.UUID, row *Ro
 
 -- name: FetchVideoBundle :one
 -- Returns the join of videos, media_info, and a JSON aggregate of
--- audio_tracks and subtitle_tracks. The JSON aggregate keeps the query
+-- audio_tracks and subtitle_files. The JSON aggregate keeps the query
 -- to one round trip; sqlc's Go side decodes via jsoniter.
+--
+-- Schema notes (canonical):
+--   - `media_info.container` is the only container column. There is
+--     no `videos.container` and no `videos.mime`. The probe row's
+--     `container` field comes from `media_info.container`; MIME is
+--     derived at serve time from the file-extension helper, never
+--     read from the DB.
+--   - `subtitle_files` is the canonical subtitle table with columns
+--     id, video_id, transcript_id, format, language, path, is_external,
+--     created_at — there is no `stream_index` and no `is_forced`.
 SELECT
     v.id              AS video_id,
     v.library_id      AS library_id,
     v.path            AS path,
-    v.container       AS container,
+    mi.container      AS container,
     v.content_hash    AS content_hash,
     v.duration_sec    AS duration_sec,
     v.size_bytes      AS size_bytes,
-    v.mime            AS mime,
     v.updated_at      AS updated_at,
     mi.bitrate_kbps   AS bitrate_kbps,
     mi.video_stream_idx AS video_stream_idx,
@@ -377,13 +387,14 @@ SELECT
     ), '[]'::json) AS audio_json,
     COALESCE((
       SELECT json_agg(jsonb_build_object(
-                'stream_index', s.stream_index,
-                'codec', s.codec,
-                'lang', s.lang,
-                'title', s.title,
-                'is_default', s.is_default,
-                'is_forced', s.is_forced))
-        FROM subtitle_tracks s
+                'id', s.id,
+                'transcript_id', s.transcript_id,
+                'format', s.format,
+                'language', s.language,
+                'path', s.path,
+                'is_external', s.is_external,
+                'created_at', s.created_at))
+        FROM subtitle_files s
        WHERE s.video_id = v.id
     ), '[]'::json) AS subtitle_json
   FROM videos v
@@ -412,15 +423,17 @@ func (d *DB) Fetch(ctx context.Context, videoID uuid.UUID) (*Row, error) {
 
     audio, err := decodeAudioTracks(rec.AudioJSON)
     if err != nil { return nil, err }
-    subs, err := decodeSubtitleTracks(rec.SubtitleJSON)
+    subs, err := decodeSubtitleFiles(rec.SubtitleJSON)
     if err != nil { return nil, err }
 
     return &Row{
         VideoID: videoID, LibraryID: rec.LibraryID,
-        Path: rec.Path, Container: rec.Container,
+        Path: rec.Path,
+        Container:   rec.Container.String, // from media_info.container
         ContentHash: rec.ContentHash, DurationSec: rec.DurationSec.Float64,
-        SizeBytes: rec.SizeBytes, MIME: rec.Mime,
+        SizeBytes: rec.SizeBytes,
         UpdatedAt: rec.UpdatedAt.Time,
+        // MediaInfo is the alias for caps.MediaInfo — see types.go.
         MediaInfo: MediaInfo{
             DurationSec:      rec.DurationSec.Float64,
             BitrateKbps:      int(rec.BitrateKbps.Int32),
@@ -436,8 +449,11 @@ func (d *DB) Fetch(ctx context.Context, videoID uuid.UUID) (*Row, error) {
             AudioCodec:       rec.AudioCodec.String,
             AudioChannels:    int(rec.AudioChannels.Int32),
             AudioBitrateKbps: int(rec.AudioBitrateKbps.Int32),
+            // Container is canonical here too; callers that need just
+            // the container string can read either field.
+            Container:        rec.Container.String,
         },
-        AudioTracks: audio, SubtitleTracks: subs,
+        AudioTracks: audio, SubtitleFiles: subs,
     }, nil
 }
 ```
@@ -528,7 +544,7 @@ two audio tracks, one subtitle track.
 
 | Test | What it pins |
 |---|---|
-| `TestIntegration_FetchPopulatesAllFields` | LookupVideo → row carries all expected fields, including audio_tracks slice of length 2 and subtitle_tracks length 1. |
+| `TestIntegration_FetchPopulatesAllFields` | LookupVideo → row carries all expected fields, including audio_tracks slice of length 2 and subtitle_files length 1 (canonical schema). |
 | `TestIntegration_NoMediaInfo_ErrNotProbed` | Insert video without media_info → ErrNotProbed. |
 | `TestIntegration_QueryUnderLoad` | Postgres EXPLAIN shows the plan uses the `videos.id` PK + `media_info.video_id` index; latency p99 < 5 ms on local. |
 

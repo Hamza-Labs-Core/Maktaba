@@ -2,7 +2,7 @@
 
 > Companion to [story-11-06-settings-page.md](story-11-06-settings-page.md).
 > Backed by `/api/settings`, `/api/settings/stt-backends`, `/api/libraries`,
-> `/api/me/tokens` (Story 11.13), `/api/me/sessions` (Story 11.14).
+> `/api/me/pats` (Story 11.13), `/api/me/sessions` (Story 11.14).
 > Library purge confirmation per REVIEW §5.6 (typed name → `?confirm=`).
 
 ## 0. Scope and placement
@@ -13,7 +13,7 @@
 | Sections | Libraries · STT Backends · Search · Playback · Account · Appearance · About. |
 | Placement | `web/src/routes/settings/`, `web/src/features/settings/`. |
 | Form library | React Hook Form + Zod; schemas live next to each section. |
-| Optimistic locking | All `PATCH` calls send `If-Match: <updated_at>`; 409 surfaces "Reload and merge". |
+| Optimistic locking | All `PATCH` calls send `If-Unmodified-Since: <updated_at>` (HTTP-date from the row's `updated_at` timestamp); 412 / 409 surfaces "Reload and merge". `If-Match` is reserved for opaque ETags — we ship a timestamp, so `If-Unmodified-Since` is the standards-correct choice. |
 | Out of scope | Auth flows (Epic 10); telemetry opt-in (Epic 16); admin "Unlock user" backend (Epic 10 Story 10.11 owns). |
 
 ## 1. Component tree
@@ -77,19 +77,21 @@ type AppearancePrefs = { theme: 'light'|'dark'|'system'; uiLang: 'ar'|'en'; dens
 ### 4.1 Optimistic-lock helper
 
 ```ts
-async function patchSettings(payload, etag) {
-  const res = await api.patch('/settings', payload, { headers: { 'If-Match': etag }});
-  if (res.status === 409) throw new ConflictError(res.data);
+async function patchSettings(payload, updatedAt: string) {
+  const res = await api.patch('/settings', payload, {
+    headers: { 'If-Unmodified-Since': new Date(updatedAt).toUTCString() },
+  });
+  if (res.status === 412 || res.status === 409) throw new ConflictError(res.data);
   return res.data;
 }
 ```
 
-UI catches `ConflictError`, shows a `<ReloadAndMergeDialog>` that refreshes and re-applies the user's edit on top.
+UI catches `ConflictError`, shows a `<ReloadAndMergeDialog>` that refreshes and re-applies the user's edit on top. Server emits `412 Precondition Failed` when `updated_at` has advanced past the supplied timestamp; `409` is reserved for semantic conflicts (e.g., same-name library exists). Rationale: the client only has a timestamp, not an opaque ETag; `If-Unmodified-Since` is the HTTP-spec-correct precondition for that. If we later add server-emitted ETags on `GET`, we can switch to `If-Match: "<etag>"` without changing the conflict-handling UI.
 
 ### 4.2 Libraries section
 
 - Add: `<LibraryFormDialog>` (name + path + STT backend) → `POST /api/libraries`. After 201 the row appears with a "Scan now" affordance. "Scan now" → `POST /api/libraries/{id}/scan` (Idempotency-Key included).
-- Edit: same form pre-filled; `PATCH /api/libraries/{id}` with `If-Match`.
+- Edit: same form pre-filled; `PATCH /api/libraries/{id}` with `If-Unmodified-Since: <updated_at>`.
 - Delete: opens `<PurgeConfirmDialog>`. Two paths:
   - `purge=false`: confirms unlinking only.
   - `purge=true`: requires the user to type the library name; submit becomes `DELETE /api/libraries/{id}?confirm={typedName}` (REVIEW §5.6).
@@ -110,9 +112,9 @@ UI catches `ConflictError`, shows a `<ReloadAndMergeDialog>` that refreshes and 
   - Per-row "Revoke" → `DELETE /api/me/sessions/{id}`. Revoking current session triggers `useAuth().logout()`.
   - "Revoke all other sessions" → `POST /api/auth/logout-all`.
 - PATs: `<TokensManager>` (Story 11.13):
-  - List `/api/me/tokens`.
+  - List `/api/me/pats` (architecture §9.7.1 canonical).
   - "Create token" form (name, scopes multi-select, expires_at?). Response shows the plaintext **once**, with copy + "I've saved it" gate before close.
-  - Per-row "Revoke" → `DELETE /api/me/tokens/{id}`.
+  - Per-row "Revoke" → `DELETE /api/me/pats/{id}`.
 
 ### 4.5 Appearance section
 
@@ -142,7 +144,7 @@ Integrated into a separate `<AdminUserList>` view (linked from About → Admin);
 | `purge dialog gates delete on typed name` | Delete disabled until `typed === library.name`. |
 | `optimistic lock retry path` | 409 → `ReloadAndMergeDialog`; merge re-applies field diff. |
 | `password change rule surfaces` | Mock 422 → field error visible. |
-| `pat plaintext shown once` | Modal carries token; on close, subsequent `GET /api/me/tokens` lacks plaintext. |
+| `pat plaintext shown once` | Modal carries token; on close, subsequent `GET /api/me/pats` lacks plaintext. |
 | `revoking current session triggers logout` | `useAuth.logout` called once. |
 
 ### 6.2 e2e

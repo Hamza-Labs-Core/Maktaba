@@ -15,7 +15,7 @@
 | Purge | After a successful catalog tx, walk each root and unlink files matching `supported_video_exts` AND not in `ignore_globs`. Sidecar `.maktaba/` dirs at each root are also unlinked. Purge runs *outside* the catalog tx — files are best-effort. |
 | Atomicity | Catalog deletion is atomic; purge is not. On unlink error, the response is `207 Multi-Status` with the failed paths; the catalog stays deleted. |
 | Dry run | `?dry_run=true` returns the list of would-be-deleted files + the cascade row counts; *nothing* is deleted. |
-| Audit | `audit_log` row with `category='library', event='delete'` (always), plus `event='purge'` (when purge runs), and individual `event='purge-failed'` rows for unlinks that errored. |
+| Audit | `audit_log` row with `category='library', event='delete'` (always), plus `event='purge'` (when purge runs), and individual `event='purge-failed'` rows for unlinks that errored. All writes go through `audit.Writer.Write` — non-blocking, never propagates (Story 9.17 contract). |
 | Out of scope | The `/api/libraries/{id}` route auth (Epic 10 Story 10.x); the Streaming gRPC stub (Epic 8 owns); the soft-delete vs. hard-delete decision (this story does hard-delete per AC). |
 
 ## 1. Architecture diagram
@@ -73,7 +73,7 @@
 |---|---|
 | `api/internal/router.go` | Wire the route. |
 | `api/internal/handlers/libraries/scan.go` | Reject scan when library is mid-delete (race). |
-| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Add `LIBRARY_DELETED = "library.deleted"`. |
+| `pipeline/src/maktaba_pipeline/db/pubsub.py` | The canonical channel-name registry (09-01 §2.5) already declares `LIBRARY_DELETED`. This plan only consumes it. |
 | `pipeline/src/maktaba_pipeline/watcher/supervisor.py` | Subscribe to `LIBRARY_DELETED`; stop the per-library watcher. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.15. |
 
@@ -283,8 +283,11 @@ func DeleteHandler(d *handlers.Deps) http.HandlerFunc {
             Payload: map[string]any{"name": lib.Name, "cascade": cc},
         })
 
-        // Notify Pipeline so the watcher can stop.
-        d.Bus.Notify("library.deleted", map[string]any{"library_id": id})
+        // Notify Pipeline so the watcher can stop. Use the canonical
+        // channel constant from pipeline/db/pubsub.py (LIBRARY_DELETED =
+        // "library.deleted"); reference it via the Bus' typed helper
+        // rather than the raw string literal.
+        d.Bus.Notify(pubsub.LIBRARY_DELETED, map[string]any{"library_id": id})
 
         resp := DeleteResponse{Cascade: cc}
         if purge {

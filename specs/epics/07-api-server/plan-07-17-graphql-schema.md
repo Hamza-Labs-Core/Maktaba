@@ -88,12 +88,18 @@ type Video {
   library: Library!
   title: String!
   description: String
-  detectedLanguage: String
-  contentType: String
+  detectedLanguage: String        # resolved from active transcripts row
+  contentType: String             # videos.content_type (architecture §8)
   state: VideoState!
   path: String!
+  # `playable` is computed from videos.state IN ('ready','ready_no_audio')
+  # AND deleted_at IS NULL. The resolver does NOT call fs.Stat per video —
+  # disk presence is the job FSM's concern, and statting per video on
+  # large lists would burn NFS round trips.
   playable: Boolean!
-  mediaInfo: MediaInfo
+  durationSec: Float              # videos.duration_sec
+  sizeBytes: Int                  # videos.size_bytes
+  posterPath: String              # videos.poster_path
   audioTracks: [AudioTrack!]!
   chapters: [Chapter!]!
   tags: [Tag!]!
@@ -201,8 +207,11 @@ func (r *queryResolver) Video(ctx context.Context, id uuid.UUID) (*model.Video, 
     return toVideoModel(v), nil
 }
 
-func (r *videoResolver) MediaInfo(ctx context.Context, v *model.Video) (*model.MediaInfo, error) {
-    return r.Loaders(ctx).MediaInfoByVideo.Load(v.ID)
+// `playable` is a pure-CPU resolver: no DB, no fs.Stat, no DataLoader.
+// The truth is the FSM state, populated by the row already.
+func (r *videoResolver) Playable(ctx context.Context, v *model.Video) (bool, error) {
+    if v.DeletedAt != nil { return false, nil }
+    return v.State == model.VideoStateReady || v.State == model.VideoStateReadyNoAudio, nil
 }
 
 func (r *videoResolver) AudioTracks(ctx context.Context, v *model.Video) ([]*model.AudioTrack, error) {
@@ -217,20 +226,23 @@ func (r *videoResolver) AudioTracks(ctx context.Context, v *model.Video) ([]*mod
 package loaders
 
 type Loaders struct {
-    MediaInfoByVideo   *MediaInfoLoader
     AudioTracksByVideo *AudioTracksLoader
     TagsByVideo        *TagsLoader
     PlaybackByVideo    *PlaybackLoader
 }
 
 // New returns a per-request set. Lifetime = single GraphQL operation.
+//
+// duration_sec, size_bytes, poster_path, content_type all live on videos
+// directly (architecture §8) so we don't need a per-video DataLoader for
+// them — the videos.* SELECT pulls them in the same row.
 func New(ctx context.Context, db DB, user User) *Loaders {
     return &Loaders{
-        MediaInfoByVideo: NewMediaInfoLoader(MediaInfoLoaderConfig{
+        AudioTracksByVideo: NewAudioTracksLoader(AudioTracksLoaderConfig{
             Wait:     5 * time.Millisecond,
             MaxBatch: 100,
-            Fetch: func(ids []uuid.UUID) ([]*model.MediaInfo, []error) {
-                return db.MediaInfoByVideoIDs(ctx, ids)
+            Fetch: func(ids []uuid.UUID) ([][]*model.AudioTrack, []error) {
+                return db.AudioTracksByVideoIDs(ctx, ids)
             },
         }),
         // ... others.

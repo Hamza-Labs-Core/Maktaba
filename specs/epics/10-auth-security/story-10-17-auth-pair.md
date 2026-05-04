@@ -70,8 +70,9 @@ flagged this as a high-impact gap (no API story owned it).
 - A device that polls forever (user never scans) — code expires after
   the TTL; subsequent polls return 410 once.
 - Two users claim the same code in parallel — only one UPDATE wins
-  (the unique state transition); the second sees 404 `type:
-  pair-code-unknown`.
+  (the unique state transition); the second sees 409 `type:
+  pair-code-already-claimed`. (The plan distinguishes
+  "already-claimed" from "unknown" — see plan §5 / §9.)
 - A device claims, then the user logs out everywhere (Story 10.5
   AC-3) — the device's refresh token is revoked along with the rest;
   the device falls back to re-pairing.

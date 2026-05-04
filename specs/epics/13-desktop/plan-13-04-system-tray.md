@@ -2,7 +2,11 @@
 
 > Companion to [story-13-04-system-tray.md](story-13-04-system-tray.md).
 > Tray icon on macOS menu bar, Windows system tray, Linux system tray.
-> Uses Tauri 2's `tauri-plugin-system-tray` (built-in `tray` API).
+> Uses the built-in `tauri::tray::*` API in Tauri 2 core. There is no
+> separate `tauri-plugin-system-tray` plugin to install.
+>
+> ACL: see `plan-13-01-macos.md` §Capabilities. This story requires
+> `src-tauri/capabilities/tray.json` (granting `core:tray:default`).
 
 ## 0. Scope and placement
 
@@ -58,11 +62,21 @@ fn build_menu(app: &AppHandle, state: &TrayState) -> tauri::Result<Menu<Wry>> {
         .build(app)?;
     let queue = MenuItemBuilder::with_id("queue", format!("Queue ({})", state.queue_count))
         .build(app)?;
+
+    // Build the recents submenu via owned MenuItem<R> values.
+    // Note (lifetime fix): the older form
+    //   `&MenuItemBuilder::with_id(...).build(app).unwrap()` inside
+    //   `iter().map()` produced a reference to a temporary that was
+    //   dropped before the resulting `Vec<&MenuItem>` was used. We
+    //   bind owned items first, then borrow them.
+    let recent_items: Vec<MenuItem<Wry>> = state.recents.iter().enumerate()
+        .map(|(i, v)| MenuItemBuilder::with_id(format!("recent_{i}"), &v.title).build(app).unwrap())
+        .collect();
+    let recent_refs: Vec<&dyn IsMenuItem<Wry>> = recent_items.iter().map(|i| i as _).collect();
     let recents_submenu = SubmenuBuilder::new(app, "Recently Added")
-        .items(&state.recents.iter().enumerate().map(|(i, v)|
-            &MenuItemBuilder::with_id(format!("recent_{i}"), &v.title).build(app).unwrap()
-        ).collect::<Vec<_>>())
+        .items(&recent_refs)
         .build()?;
+
     let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("Cmd+,").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").accelerator("Cmd+Q").build(app)?;
 

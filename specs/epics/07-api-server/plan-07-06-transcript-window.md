@@ -8,8 +8,8 @@
 | Concern | Decision |
 |---|---|
 | Route | `GET /api/videos/{id}/segments`. |
-| Storage | `transcripts` and `segments` tables (Pipeline owns the schema). The query reads only; no writes. |
-| Word-level | Optional via `?words=true`. The `words` table is opt-in and large; do not join unless asked. |
+| Storage | `transcripts` and `transcript_segments` tables (Pipeline owns the schema; see architecture §8). The query reads only; no writes. |
+| Word-level | Optional via `?words=true`. The `transcript_words` table is opt-in and large; do not join unless asked. |
 | Bidi | Wrap each segment's `text` in U+2068/U+2069 isolates server-side; clients never have to think about it. |
 | Out of scope | Subtitles read (Story 7.7), search hits (Story 7.8), persisting the cursor through transcript-supersede swaps. |
 
@@ -30,14 +30,15 @@
    │                                                          │
    │ 3. SQL:                                                  │
    │    SELECT id, seq, start_sec, end_sec, text, confidence  │
-   │      FROM segments                                       │
+   │      FROM transcript_segments                            │
    │     WHERE transcript_id = $1                             │
    │       AND start_sec < $to AND end_sec > $from            │
    │     ORDER BY seq                                         │
    │     LIMIT $limit + 1;                                    │
    │                                                          │
    │ 4. Wrap text in FSI/PDI isolates                         │
-   │ 5. If ?words=true → batched loader for `words` per seg.  │
+   │ 5. If ?words=true → batched loader for transcript_words   │
+   │    per segment.                                          │
    │ 6. Detect coverage gap:                                  │
    │      partial = exists(?from > MAX(end_sec))              │
    └──────────────────────────────────────────────────────────┘
@@ -63,19 +64,19 @@
 ```sql
 -- +goose Up
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS segments_transcript_window_idx
-    ON segments (transcript_id, start_sec, end_sec);
+CREATE INDEX IF NOT EXISTS transcript_segments_window_idx
+    ON transcript_segments (transcript_id, start_sec, end_sec);
 -- The (start_sec, end_sec) composite handles both half-open and the
 -- overlap predicate; range scans are bounded by the LIMIT.
 
-CREATE INDEX IF NOT EXISTS words_segment_idx
-    ON words (segment_id, seq);
+CREATE INDEX IF NOT EXISTS transcript_words_segment_idx
+    ON transcript_words (segment_id, seq);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP INDEX IF EXISTS words_segment_idx;
-DROP INDEX IF EXISTS segments_transcript_window_idx;
+DROP INDEX IF EXISTS transcript_words_segment_idx;
+DROP INDEX IF EXISTS transcript_segments_window_idx;
 -- +goose StatementEnd
 ```
 
@@ -87,17 +88,20 @@ package transcripts
 
 import "github.com/google/uuid"
 
+// Segment.ID is int64 because transcript_segments.id is BIGSERIAL per
+// architecture §8. Same for Word.SegmentID (transcript_words.segment_id).
 type Segment struct {
-    ID         uuid.UUID `json:"id"`
-    Seq        int       `json:"seq"`
-    StartSec   float64   `json:"start_sec"`
-    EndSec     float64   `json:"end_sec"`
-    Text       string    `json:"text"`         // bidi-isolated
-    Confidence *float64  `json:"confidence"`
-    Words      []Word    `json:"words,omitempty"`
+    ID         int64    `json:"id"`
+    Seq        int      `json:"seq"`
+    StartSec   float64  `json:"start_sec"`
+    EndSec     float64  `json:"end_sec"`
+    Text       string   `json:"text"`         // bidi-isolated
+    Confidence *float64 `json:"confidence"`
+    Words      []Word   `json:"words,omitempty"`
 }
 
 type Word struct {
+    SegmentID  int64   `json:"segment_id"`
     Seq        int     `json:"seq"`
     StartSec   float64 `json:"start_sec"`
     EndSec     float64 `json:"end_sec"`
@@ -287,9 +291,9 @@ func (s *service) isWindowPartial(ctx context.Context, tid uuid.UUID, q Query) (
 ```sql
 -- name: LatestTranscript :one
 SELECT t.id,
-       mi.duration_sec
+       v.duration_sec
   FROM transcripts t
-  LEFT JOIN media_info mi ON mi.video_id = t.video_id
+  JOIN videos v ON v.id = t.video_id
  WHERE t.video_id = $1
    AND ($2::bool OR t.superseded_at IS NULL)
  ORDER BY t.created_at DESC
@@ -297,7 +301,7 @@ SELECT t.id,
 
 -- name: SelectSegmentWindow :many
 SELECT id, seq, start_sec, end_sec, text, confidence
-  FROM segments
+  FROM transcript_segments
  WHERE transcript_id = $1
    AND start_sec < $3
    AND end_sec   > $2
@@ -306,13 +310,14 @@ SELECT id, seq, start_sec, end_sec, text, confidence
 
 -- name: MaxSegmentEnd :one
 SELECT COALESCE(MAX(end_sec), 0)::float
-  FROM segments
+  FROM transcript_segments
  WHERE transcript_id = $1;
 
 -- name: SelectWordsForSegments :many
+-- transcript_words.segment_id references transcript_segments.id (BIGSERIAL).
 SELECT segment_id, seq, start_sec, end_sec, text, confidence
-  FROM words
- WHERE segment_id = ANY($1::uuid[])
+  FROM transcript_words
+ WHERE segment_id = ANY($1::bigint[])
  ORDER BY segment_id, seq;
 ```
 

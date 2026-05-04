@@ -11,10 +11,10 @@
 | Migration | `shared/db/migrations/0030_personal_access_tokens.sql` (Postgres) + `0030_personal_access_tokens.sqlite.sql`. |
 | Model & repo | `api/internal/auth/pat/` (Go) — `model.go`, `repo.go`, `service.go`. |
 | Verifier | `api/internal/auth/pat/verifier.go`; wired into the bearer middleware (Epic 10 Story 10.1) before the JWT verifier when token starts `mkt_pat_`. |
-| Endpoints | `api/internal/http/me_tokens.go`. Routes under `/api/me/tokens` and `/api/users/{id}/tokens`. |
+| Endpoints | `api/internal/http/me_pats.go`. Routes under `/api/me/pats` and `/api/users/{id}/pats` (architecture §9.7.1 canonical). |
 | Token format | `mkt_pat_<32 base32 random chars>` (Crockford, no padding). 8-char prefix stored separately. |
 | Hash | Argon2id (16 KiB memory, 1 iteration, 4 lanes — minimum to keep verify ≤ 50 ms). |
-| Rate limit | 10/hour per user on `POST /api/me/tokens` via Story 21 limiter. |
+| Rate limit | 10/hour per user on `POST /api/me/pats` via Story 21 limiter. |
 | Audit | `audit_log` writes for issuance, revoke, admin enumeration (`category = 'pat'`). |
 | Web UI | Embedded into Story 11.6 Account section (`<TokensManager>`). |
 | Out of scope | OAuth (separate story); machine-to-machine secret rotation. |
@@ -55,7 +55,7 @@ We store `prefix` for display. The full plaintext (after `mkt_pat_`) is hashed w
 
 ## 3. Endpoints
 
-### `POST /api/me/tokens`
+### `POST /api/me/pats`
 
 Request: `{ name, scopes?, expires_at? }`. Server defaults: `scopes = []`, `expires_at = now() + 1 year`.
 
@@ -66,7 +66,7 @@ Flow:
 4. Audit log: `category='pat', action='create'`.
 5. Return `201 { id, name, scopes, expires_at, prefix, token: <plaintext> }` once.
 
-### `GET /api/me/tokens`
+### `GET /api/me/pats`
 
 Returns active + revoked-within-30-days. No `hash`, no plaintext.
 
@@ -78,11 +78,11 @@ WHERE user_id = $1
 ORDER BY created_at DESC;
 ```
 
-### `DELETE /api/me/tokens/{id}`
+### `DELETE /api/me/pats/{id}`
 
 Sets `revoked_at = now()`; idempotent (returns `204` even if already revoked); audit log.
 
-### `GET /api/users/{id}/tokens` (admin)
+### `GET /api/users/{id}/pats` (admin)
 
 Lists any user's tokens; requires `admin` scope or `is_admin = true`. Audit log row written per call.
 
@@ -148,7 +148,7 @@ func RequireScope(s string) func(http.Handler) http.Handler {
 `<TokensManager>` (in Settings → Account → Tokens):
 
 ```tsx
-const tokens = useQuery(['me','tokens'], fetchTokens);
+const tokens = useQuery(['me','pats'], fetchTokens);   // GET /api/me/pats
 const create = useMutation(createToken, { onSuccess: (data) => setNewlyCreated(data) });
 
 return (<>
@@ -190,10 +190,10 @@ return (<>
 
 | Test | Asserts |
 |---|---|
-| `POST /api/me/tokens issues plaintext once` | First response has `token`; subsequent GETs lack it. |
+| `POST /api/me/pats issues plaintext once` | First response has `token`; subsequent GETs lack it. |
 | `Bearer mkt_pat_xxx on GET /api/videos` | 200 with `read` scope. |
 | `Bearer mkt_pat_xxx on POST /api/libraries lacking admin` | 403 `insufficient-scope`. |
-| `DELETE /api/me/tokens/{id}` | 204; reuse → 401 `token-revoked`. |
+| `DELETE /api/me/pats/{id}` | 204; reuse → 401 `token-revoked`. |
 
 ### 8.3 Audit
 

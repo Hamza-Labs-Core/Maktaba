@@ -394,16 +394,23 @@ class _ThreadEventHandler(watchdog.events.FileSystemEventHandler):
 
 class LibraryWatcher:
     def __init__(self, library, debouncer, move_detector,
-                 ignore_matcher, *, loop=None) -> None:
+                 ignore_matcher, *, db, loop=None) -> None:
         self._lib = library
         self._debouncer = debouncer
         self._move = move_detector
         self._ignore = ignore_matcher
+        self._db = db
         self._loop = loop or asyncio.get_event_loop()
         self._observer = watchdog.observers.Observer()
-        for root in library.roots:
+        # Architecture §8.1: library_roots is canonical; libraries.roots
+        # TEXT[] is deprecated. Read from library_roots here.
+        roots = self._loop.run_until_complete(self._db.fetch(
+            "SELECT path FROM library_roots WHERE library_id=$1",
+            library.id,
+        ))
+        for r in roots:
             self._observer.schedule(
-                _ThreadEventHandler(self), path=str(root), recursive=True)
+                _ThreadEventHandler(self), path=str(r["path"]), recursive=True)
 
     async def _on_event_async(self, e: watchdog.events.FileSystemEvent) -> None:
         # Filter ignored paths early — keeps the debouncer small.
@@ -473,9 +480,14 @@ async def emit(event: WatcherEvent) -> None:
                 "VALUES ($1,$2,$3,'watcher')",
                 row["id"], str(event.src_path), str(event.path))
     elif event.kind == EventKind.DELETE:
+        # FSM uses lowercase canonical state strings (architecture §8.1).
+        # Soft-delete via deleted_at for tombstones is the catalog's
+        # affordance; for "file is gone" we transition to the auxiliary
+        # terminal state `missing` (canonical Epic-9 FSM extension owned
+        # by plan-09-06).
         await db.execute(
-            "UPDATE videos SET state='MISSING', updated_at=now() "
-            "WHERE path=$1 AND state <> 'MISSING'", str(event.path))
+            "UPDATE videos SET state='missing', updated_at=now() "
+            "WHERE path=$1 AND state <> 'missing'", str(event.path))
 ```
 
 ## 5. Test plan

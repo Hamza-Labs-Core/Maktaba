@@ -250,7 +250,11 @@ func (s *service) openSession(ctx context.Context, user User, libID uuid.UUID, i
     grpcCtx, cancel := context.WithTimeout(ctx, s.cfg.OpenTimeout)
     defer cancel()
 
-    r, err := s.streaming.OpenSession(grpcCtx, &pb.OpenSessionRequest{
+    // Streaming.OpenSession is canonical (architecture §9.9). It returns
+    // *pb.OpenSessionResponse which contains a Session message and the
+    // server's current Capabilities snapshot. We only read Session here;
+    // the snapshot is forwarded to /capabilities readers via the cache.
+    resp, err := s.streaming.OpenSession(grpcCtx, &pb.OpenSessionRequest{
         VideoId: in.VideoID.String(), UserId: user.ID.String(),
         LibraryId: libID.String(), ClientProfile: in.ClientProfile,
         AudioTrack: in.AudioTrack, SubtitleTrack: in.SubtitleTrack,
@@ -260,10 +264,11 @@ func (s *service) openSession(ctx context.Context, user User, libID uuid.UUID, i
         AcceptQueue: in.AcceptQueue,
     })
     if err != nil { return nil, mapStreamingErr(err) }
+    sess := resp.Session
 
-    sid := uuid.MustParse(r.SessionId)
+    sid := uuid.MustParse(sess.SessionId)
     expires := s.clock().Add(s.cfg.SessionURLTTL)
-    mode := Mode(r.Mode)
+    mode := Mode(sess.Mode)
 
     var manifestURL, directURL string
     switch mode {
@@ -289,7 +294,7 @@ func (s *service) openSession(ctx context.Context, user User, libID uuid.UUID, i
         SessionID: sid, Mode: mode,
         ManifestURL: manifestURL, DirectURL: directURL,
         ExpiresAt: expires,
-        Ladder: toRungs(r.Ladder), CurrentRendition: r.CurrentRendition,
+        Ladder: toRungs(sess.Ladder), CurrentRendition: sess.CurrentRendition,
         Warnings: warnings,
     }, nil
 }

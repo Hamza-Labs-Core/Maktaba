@@ -2,7 +2,7 @@
 
 > Companion to [story-12-11-downloaded-flag-api.md](story-12-11-downloaded-flag-api.md).
 > Server-side metadata only — the file lives on the device.
-> Auth context **must** be a device session (refresh-token-bound or device PAT); web cookie sessions are rejected.
+> Auth context **must** be a device-bound refresh-token session (`Source == 'refresh'` with `DeviceID` populated). Web cookie sessions and PATs are rejected. PATs are user-owned (per Epic 11) and not used for device-bound endpoints.
 
 ## 0. Scope and placement
 
@@ -11,7 +11,7 @@
 | Migration | `shared/db/migrations/0041_device_downloads.sql` (Postgres) + `0041_device_downloads.sqlite.sql`. Sequential after Story 12.10's `devices`. |
 | Endpoints | `api/internal/http/device_downloads.go`. Routes under `/api/videos/{video_id}/downloaded`. |
 | GraphQL | Adds `downloads: [DeviceDownload!]!` to the `Video` type in `shared/graphql/schema.graphql`. |
-| Auth gate | Endpoint reads `IdentityFrom(r)`; if `Source != 'refresh' && Source != 'device-pat'`, 403 `not-a-device-session`. |
+| Auth gate | Endpoint reads `IdentityFrom(r)`; only `Source == 'refresh'` with non-empty `DeviceID` is accepted, else 403 `not-a-device-session`. PATs are user-owned and rejected. |
 | Out of scope | Local download mechanics (Story 12.6); device registry (Story 12.10). |
 
 ## 1. Schema
@@ -35,21 +35,16 @@ CREATE INDEX device_downloads_video_idx ON device_downloads (video_id);
 
 ```go
 func deviceIDFromIdentity(ident auth.Identity) (string, error) {
-    switch ident.Source {
-    case "refresh":
-        // refresh tokens are bound to devices via refresh_tokens.device_id
-        if ident.DeviceID == "" { return "", ErrNotDeviceSession }
-        return ident.DeviceID, nil
-    case "device-pat":
-        // a PAT created with category=device carries DeviceID directly
-        return ident.DeviceID, nil
-    default:
+    // Only refresh-token-bound sessions carry a DeviceID. Web cookie sessions,
+    // bearer-from-refresh that lost the binding, and PATs (user-owned) are rejected.
+    if ident.Source != "refresh" || ident.DeviceID == "" {
         return "", ErrNotDeviceSession
     }
+    return ident.DeviceID, nil
 }
 ```
 
-`refresh_tokens.device_id` is added by Epic 10 Story 10.3 — we depend on it being present (REVIEW §1.1.h). If absent in v1, this plan adds the column under the same migration prefixed with a backfill comment.
+`refresh_tokens.device_id` is added by `plan-10-03-native-login.md` per architecture §8.6 (`refresh_tokens.device_id UUID REFERENCES devices(id) ON DELETE CASCADE`). This plan confirms the column exists when 12-11 lands and depends on it being present.
 
 ## 3. Endpoints
 

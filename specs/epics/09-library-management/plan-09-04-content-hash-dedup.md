@@ -11,7 +11,7 @@
 |---|---|
 | Hash primitive | BLAKE3 over `[0..4 MiB) + [size-4 MiB..size) + size_le_8B`. The mixed tail blocks rules out same-prefix-but-truncated collisions; the size suffix locks identity to the file length. Single source: `pipeline/src/maktaba_pipeline/hash/blake3_4mib.py`. |
 | Path canonicalization | `pipeline/src/maktaba_pipeline/path_safety.py::canonicalize_within_roots(path, roots)`. Resolves `..`, symlinks, and trailing slashes; raises `PathOutOfRootError` if the canonical path is not a subpath of any registered root. Called *before* any read of bytes (AC-1 security). |
-| Uniqueness enforcement | DB-level `UNIQUE` on `videos.content_hash` (already in architecture §8.1). The unique index is the durable guard; application code uses `INSERT … ON CONFLICT (content_hash) DO UPDATE SET path=EXCLUDED.path RETURNING xmax = 0 AS inserted`. |
+| Uniqueness enforcement | DB-level `UNIQUE` on `videos.content_hash` (architecture §8.1: `content_hash TEXT NOT NULL UNIQUE`, hex-encoded BLAKE3 — 64 chars). The unique index is the durable guard; application code uses `INSERT … ON CONFLICT (content_hash) DO UPDATE SET path=EXCLUDED.path RETURNING (xmax = 0) AS inserted` from the same statement. |
 | Duplicate audit | Architecture §8.1 keeps the *first-seen* row and audits the second with `category='library', event='duplicate-detected'`. Implemented via the same `INSERT ON CONFLICT` clause + a side-effect call to the audit logger (Story 9.17). |
 | Network filesystem timeout | `hash_timeout_sec` (default 30 s) wraps `aiofiles.open(...).read()` in `asyncio.wait_for`. On timeout, the file is skipped with `error.code='hash-timeout'` and a metric. |
 | Out of scope | The `videos.content_hash UNIQUE` migration itself (already in architecture); the audit table (Story 9.17); the per-library uniqueness future-revision discussion (out of scope per AC-2). |
@@ -45,13 +45,14 @@
    │            f.seek(size - 4 MiB)                                 │
    │            h.update(f.read(4 MiB))                              │
    │            h.update(size.to_bytes(8, 'little'))                 │
-   │    return digest_bytes  # 32 bytes                              │
+   │    return h.hexdigest()   # 64 hex chars (TEXT in DB §8.1)      │
    └────────────────────┬───────────────────────────────────────────┘
                         │
                         ▼
    ┌────────────────────────────────────────────────────────────────┐
-   │  videos.upsert_with_hash(library_id, path, size, hash)         │
-   │    INSERT INTO videos (id, library_id, path, size, content_hash)│
+   │  videos.upsert_with_hash(library_id, path, size_bytes, hash)   │
+   │    INSERT INTO videos (id, library_id, path, size_bytes,        │
+   │                        content_hash)                            │
    │    VALUES ($1,$2,$3,$4,$5)                                      │
    │    ON CONFLICT (content_hash) DO UPDATE                         │
    │       SET path = EXCLUDED.path,                                 │
@@ -86,7 +87,7 @@
 | `pipeline/pyproject.toml` | Add `blake3>=0.4` (Rust-backed Python binding). |
 | `pipeline/src/maktaba_pipeline/sweep/sweep_runner.py` | Replace the placeholder `blake3_4mib` import with the real one. |
 | `pipeline/src/maktaba_pipeline/scan/scan_worker.py` | Use `videos.upsert_with_hash` instead of plain `INSERT`. |
-| `shared/db/migrations/0033_videos_content_hash.sql` | Idempotent — adds the `content_hash BYTEA` column and the `UNIQUE` index *if* not already present (architecture §8.1 added it; the migration is defensive). |
+| `shared/db/migrations/0033_videos_content_hash.sql` | Idempotent — adds the `content_hash TEXT NOT NULL UNIQUE` column *if* not already present (architecture §8.1 added it; the migration is defensive). |
 | `shared/db/queries/videos.sql` | Add `UpsertVideoByHash` (Go-side analogue used by API write paths). |
 
 ### 2.3 Type definitions
@@ -98,7 +99,8 @@ from pathlib import Path
 
 EIGHT_MIB = 8 * 1024 * 1024
 FOUR_MIB  = 4 * 1024 * 1024
-HASH_SIZE = 32  # BLAKE3 default
+HASH_SIZE_BYTES = 32       # BLAKE3 default
+HASH_HEX_LEN    = 64       # hex-encoded BLAKE3 stored as TEXT (architecture §8.1)
 
 
 class HashTimeoutError(Exception):
@@ -131,14 +133,15 @@ class UpsertResult:
 
 ```python
 # pipeline/src/maktaba_pipeline/hash/blake3_4mib.py
-def blake3_4mib(path: Path, size: int) -> bytes:
-    """Synchronous; intended for asyncio.to_thread(...)."""
+def blake3_4mib(path: Path, size: int) -> str:
+    """Synchronous; intended for asyncio.to_thread(...). Returns the
+    64-char lowercase hex digest (architecture §8.1 stores TEXT)."""
 
 async def blake3_4mib_async(
     path: Path, size: int, *, timeout_sec: float = 30.0
-) -> bytes:
+) -> str:
     """Wraps the sync version in to_thread + wait_for(timeout_sec).
-    Raises HashTimeoutError on timeout."""
+    Returns hex digest. Raises HashTimeoutError on timeout."""
 ```
 
 ```python
@@ -147,21 +150,24 @@ async def upsert_with_hash(
     db, *,
     library_id: UUID,
     path: str,
-    size: int,
-    content_hash: bytes,
+    size_bytes: int,
+    content_hash: str,                 # 64-char hex BLAKE3 (architecture §8.1)
     audit: AuditWriter | None = None,
 ) -> UpsertResult:
     """INSERT … ON CONFLICT (content_hash) DO UPDATE.
 
-    On conflict where the original path differs from `path`, writes a
+    Returns `inserted` from the `RETURNING (xmax = 0) AS inserted` clause
+    of the same statement (no separate probe). On conflict where the
+    original path differs from `path`, writes a
     `category='library', event='duplicate-detected'` audit row.
     """
 ```
 
 ## 3. Database
 
-The architecture-level `videos.content_hash` column already exists with
-a UNIQUE constraint. This story's defensive migration:
+The architecture-level `videos.content_hash` column already exists as
+`TEXT NOT NULL UNIQUE` (architecture §8.1, line 1307). This story's
+defensive migration:
 
 `shared/db/migrations/0033_videos_content_hash.sql`
 
@@ -171,14 +177,21 @@ a UNIQUE constraint. This story's defensive migration:
 
 -- Defensive: add the column + unique index if a deployment was set up
 -- before architecture §8.1 was finalized. New deployments are no-ops.
+-- content_hash is the 64-char lowercase hex of a BLAKE3 digest.
 ALTER TABLE videos
-    ADD COLUMN IF NOT EXISTS content_hash BYTEA;
+    ADD COLUMN IF NOT EXISTS content_hash TEXT;
 
--- 32 bytes of BLAKE3.
+-- 64 hex chars (32-byte BLAKE3 digest).
 ALTER TABLE videos
-    ADD CONSTRAINT videos_content_hash_len_chk
-    CHECK (content_hash IS NULL OR octet_length(content_hash) = 32);
+    ADD CONSTRAINT videos_content_hash_hex_chk
+    CHECK (content_hash IS NULL
+           OR (char_length(content_hash) = 64
+               AND content_hash ~ '^[0-9a-f]{64}$'));
 
+-- Architecture §8.1 has the column NOT NULL; this defensive migration
+-- leaves NULLs allowed so legacy rows can backfill before NOT NULL is
+-- promoted. The unique index does not need a partial WHERE clause once
+-- the NOT NULL invariant holds; until then we keep it partial.
 CREATE UNIQUE INDEX IF NOT EXISTS videos_content_hash_unique
     ON videos (content_hash)
     WHERE content_hash IS NOT NULL;
@@ -203,7 +216,7 @@ from pathlib import Path
 from blake3 import blake3 as _blake3
 
 
-def blake3_4mib(path: Path, size: int) -> bytes:
+def blake3_4mib(path: Path, size: int) -> str:
     h = _blake3()
     with open(path, "rb") as f:
         if size <= EIGHT_MIB:
@@ -214,12 +227,13 @@ def blake3_4mib(path: Path, size: int) -> bytes:
             tail = f.read(FOUR_MIB)
             h.update(tail)               # may be < FOUR_MIB on short read
             h.update(size.to_bytes(8, "little"))
-    return h.digest()
+    # architecture §8.1: content_hash TEXT — store hex.
+    return h.hexdigest()
 
 
 async def blake3_4mib_async(
     path: Path, size: int, *, timeout_sec: float = 30.0
-) -> bytes:
+) -> str:
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(blake3_4mib, path, size),
@@ -269,45 +283,46 @@ from uuid import uuid4
 
 log = logging.getLogger(__name__)
 
+# content_hash is TEXT NOT NULL UNIQUE (architecture §8.1) — no partial
+# WHERE clause needed on the ON CONFLICT target.
 _UPSERT_PG = """
-INSERT INTO videos (id, library_id, path, size, content_hash, state, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, 'DISCOVERED', now(), now())
-ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL
+INSERT INTO videos (id, library_id, path, size_bytes, content_hash, state,
+                    created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, 'discovered', now(), now())
+ON CONFLICT (content_hash)
 DO UPDATE SET path = EXCLUDED.path, updated_at = now()
    WHERE videos.path <> EXCLUDED.path
 RETURNING id, (xmax = 0) AS inserted, path AS final_path
 """
 
 
-async def upsert_with_hash(db, *, library_id, path, size,
+async def upsert_with_hash(db, *, library_id, path, size_bytes,
                            content_hash, audit=None) -> UpsertResult:
     new_id = uuid4()
     row = await db.fetchrow(
-        _UPSERT_PG, new_id, library_id, path, size, content_hash,
+        _UPSERT_PG, new_id, library_id, path, size_bytes, content_hash,
     )
+    # `inserted` comes back from RETURNING (xmax = 0) on the same
+    # statement — single round-trip, no separate probe.
     res = UpsertResult(id=row["id"],
                        inserted=row["inserted"],
                        final_path=row["final_path"])
-    if not res.inserted and audit is not None:
-        # The DO UPDATE only fires when the path differs; if it didn't
-        # fire (xmax != 0 AND path equal), no audit either.
-        original = await db.fetchrow(
-            "SELECT path FROM videos WHERE id=$1", res.id,
+    if not res.inserted and audit is not None and res.final_path != path:
+        # Path changed → DO UPDATE fired → audit. Non-blocking writer
+        # (Story 9.17 contract: Write never blocks, never propagates).
+        audit.Write(
+            category="library",
+            event="duplicate-detected",
+            library_id=library_id,
+            video_id=res.id,
+            payload={
+                "path": path,
+                "original_path": res.final_path,
+                "original_video_id": str(res.id),
+            },
         )
-        if original["path"] != path:
-            await audit.write(
-                category="library",
-                event="duplicate-detected",
-                library_id=library_id,
-                video_id=res.id,
-                payload={
-                    "path": path,
-                    "original_path": original["path"],
-                    "original_video_id": str(res.id),
-                },
-            )
-            log.warning("duplicate_detected video_id=%s path=%s original=%s",
-                        res.id, path, original["path"])
+        log.warning("duplicate_detected video_id=%s path=%s original=%s",
+                    res.id, path, res.final_path)
     return res
 ```
 
@@ -316,9 +331,9 @@ async def upsert_with_hash(db, *, library_id, path, size,
 ```go
 // shared/db/queries/videos.sql
 -- name: UpsertVideoByHash :one
-INSERT INTO videos (id, library_id, path, size, content_hash, state)
-VALUES ($1, $2, $3, $4, $5, 'DISCOVERED')
-ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL
+INSERT INTO videos (id, library_id, path, size_bytes, content_hash, state)
+VALUES ($1, $2, $3, $4, $5, 'discovered')
+ON CONFLICT (content_hash)
 DO UPDATE SET path = EXCLUDED.path, updated_at = now()
    WHERE videos.path <> EXCLUDED.path
 RETURNING id, (xmax = 0) AS inserted, path AS final_path;
@@ -337,7 +352,7 @@ can find dupes by hash without joining through path.
 
 | Test | What it pins |
 |---|---|
-| `test_identical_files_same_hash` | Two byte-identical 100 MiB files → same 32-byte digest. |
+| `test_identical_files_same_hash` | Two byte-identical 100 MiB files → same 64-char hex digest. |
 | `test_size_below_8mib_hashes_full_file` | 1 MiB file → result equals `blake3(file_bytes + size_le)`. |
 | `test_size_exactly_8mib_hashes_full_file` | 8 MiB file → also full-file path (the `<= EIGHT_MIB` branch). |
 | `test_size_above_8mib_uses_endpoints` | 100 MiB file → equals `blake3(first_4MiB + last_4MiB + size_le)`; verified with a hand-rolled reference implementation. |
@@ -389,9 +404,9 @@ indirection: every successful insert sets `last_insert_rowid`, conflict
 resolution does not. The SQLite query reads:
 
 ```sql
-INSERT INTO videos (id, library_id, path, size, content_hash, state)
-VALUES (?, ?, ?, ?, ?, 'DISCOVERED')
-ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL
+INSERT INTO videos (id, library_id, path, size_bytes, content_hash, state)
+VALUES (?, ?, ?, ?, ?, 'discovered')
+ON CONFLICT (content_hash)
 DO UPDATE SET path = EXCLUDED.path, updated_at = CURRENT_TIMESTAMP
    WHERE videos.path <> EXCLUDED.path
 RETURNING id, path AS final_path;
@@ -448,7 +463,7 @@ whether the returned `id` equals the freshly-generated UUID.
 
 **Migration**
 - [ ] `0033_videos_content_hash.sql` is a no-op on deployments that already have the column + unique index; on legacy ones it adds them.
-- [ ] CHECK on `octet_length(content_hash) = 32` rejects malformed values.
+- [ ] CHECK on `char_length(content_hash) = 64 AND content_hash ~ '^[0-9a-f]{64}$'` rejects malformed values.
 
 **Behaviour (story acceptance criteria)**
 - [ ] AC-1: a 100 MiB file hashes deterministically with the documented schema; off-root paths raise `PathOutOfRootError`.

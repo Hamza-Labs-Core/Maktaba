@@ -98,7 +98,7 @@ The deep-merge layering, per AC-2:
 | Path | Change |
 |---|---|
 | `api/internal/db/queries/libraries.sql` | Add `UpdateLibrarySettings` (the merge UPDATE) and `GetLibrarySettings` queries. |
-| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Add `LIBRARY_SETTINGS_CHANGED = "library.settings_changed"` constant. |
+| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Consolidate the canonical channel-name registry as module-level constants — see §2.5 below. Adds `LIBRARY_SETTINGS_CHANGED` and the rest of the Epic-9 channel set. All Epic-9 plans (09-03, 09-09, 09-11, 09-15, 09-18) reference these constants instead of inline string literals. |
 | `pipeline/pyproject.toml` | Add `jsonschema>=4.21` (Draft 2020-12 support). |
 | `api/go.mod` | Add `github.com/santhosh-tekuri/jsonschema/v6` (mature, no CGO, supports 2020-12). |
 | `specs/epics/09-library-management/README.md` | Tick story 9.1 once landed. |
@@ -257,6 +257,30 @@ def validate(raw: dict[str, Any]) -> tuple[dict[str, Any], list[Warning]]:
 def merge_with_defaults(per_library: dict[str, Any],
                         operator: dict[str, Any]) -> EffectiveLibrarySettings: ...
 ```
+
+### 2.5 Canonical channel-name registry
+
+`pipeline/src/maktaba_pipeline/db/pubsub.py` consolidates the full Epic-9
+channel list as module-level constants. Plans 09-03, 09-09, 09-11, 09-15,
+09-18 import these constants and pass them to `bus.publish` /
+`bus.subscribe` rather than embedding string literals.
+
+```python
+# pipeline/src/maktaba_pipeline/db/pubsub.py — canonical channel names
+VIDEOS_NEW                = "videos.new"
+LIBRARY_SETTINGS_CHANGED  = "library.settings_changed"
+LIBRARY_SWEEP_DONE        = "library.sweep_done"
+LIBRARY_DELETED           = "library.deleted"
+LIBRARY_TOPICS_UPDATED    = "library.topics_updated"
+LIBRARY_SPEAKERS_MERGED   = "library.speakers_merged"
+VIDEO_TOPICS_UPDATED      = "video.topics_updated"
+VIDEO_SPEAKERS_UPDATED    = "video.speakers_updated"
+VIDEO_CHAPTERS_UPDATED    = "video.chapters_updated"
+SPEAKER_RENAMED           = "speaker.renamed"
+```
+
+The Go side (`api/internal/pubsub/channels.go`) mirrors the same names
+with parity-tested constants.
 
 ## 3. Database migration
 

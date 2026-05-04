@@ -42,9 +42,12 @@
                 ▼
    ┌─────────────────────────────────────────────────────────────┐
    │ Route table (registered by sub-routers)                     │
-   │   /api/healthz   (Story 7.20)                               │
-   │   /api/...       (Stories 7.3+)                             │
-   │   /metrics       (Story 7.20)                               │
+   │   /api/healthz                                  (Story 7.20)│
+   │   /api/...                                      (Stories 7.3+)│
+   │   /metrics                                      (Story 7.20)│
+   │   /api/system/metrics                           (Story 7.20)│
+   │   /.well-known/apple-app-site-association       (Story 7.15)│
+   │   /.well-known/assetlinks.json                  (Story 7.15)│
    └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,7 +64,8 @@ logged once, not twice.
 | `api/internal/router/router.go` | Constructs the `chi.Mux`, mounts the canonical middleware stack, exposes a `New(deps Deps) http.Handler`. |
 | `api/internal/httperror/httperror.go` | `Error` type, `Write(w, err)`, well-known `Type` constants. |
 | `api/internal/httperror/types.go` | All problem-type URIs as `const` (`https://maktaba.dev/problems/...`). One source of truth. |
-| `api/internal/middleware/requestid.go` | RequestID middleware (UUID v7 mint/parse). |
+| `api/internal/reqid/reqid.go` | Request-ID context key + `RequestIDFromContext` helper. Lives in its own package so both `httperror` and `middleware` can import it without a cycle. |
+| `api/internal/middleware/requestid.go` | RequestID middleware (UUID v7 mint/parse), stores into `reqid` ctx key. |
 | `api/internal/middleware/recoverer.go` | Panic-to-500-problem+json. |
 | `api/internal/middleware/slog_logger.go` | `slog.Handler` that pulls request-id from context, writes one structured line per request. |
 | `api/internal/middleware/idempotency.go` | Idempotency-Key middleware + DB-backed store. |
@@ -87,6 +91,8 @@ import (
     "net/http"
 
     "github.com/google/uuid"
+
+    "maktaba/api/internal/reqid"
 )
 
 // Error is the canonical API error type. All handlers MUST return errors of
@@ -108,6 +114,16 @@ type FieldError struct {
 }
 
 func (e *Error) Error() string { return e.Title + ": " + e.Detail }
+
+// With attaches an arbitrary key/value to the error's flat-marshalled extras.
+// Returns the receiver so callers can chain: `httperror.NotFound(...).With("video_id", id)`.
+func (e *Error) With(key string, value any) *Error {
+    if e.Extras == nil {
+        e.Extras = map[string]any{}
+    }
+    e.Extras[key] = value
+    return e
+}
 
 // Constructors used by handlers.
 func NotFound(detail string) *Error    { return &Error{Type: TypeNotFound, Title: "not found", Status: 404, Detail: detail} }
@@ -141,7 +157,7 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
         "status":    e.Status,
         "detail":    e.Detail,
         "instance":  e.Instance,
-        "requestId": uuid.UUID(RequestIDFromContext(r.Context())).String(),
+        "requestId": uuid.UUID(reqid.FromContext(r.Context())).String(),
     }
     if len(e.Errors) > 0 {
         body["errors"] = e.Errors
@@ -161,42 +177,85 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 package httperror
 
 const (
-    TypeBadRequest         = "https://maktaba.dev/problems/bad-request"
-    TypeInvalidJSON        = "https://maktaba.dev/problems/invalid-json"
-    TypeInvalidQueryParam  = "https://maktaba.dev/problems/invalid-query-parameter"
-    TypeInvalidCursor      = "https://maktaba.dev/problems/invalid-cursor"
-    TypeCursorUnsupported  = "https://maktaba.dev/problems/cursor-unsupported-version"
-    TypeNotFound           = "https://maktaba.dev/problems/not-found"
-    TypeValidation         = "https://maktaba.dev/problems/validation"
-    TypeIdempotencyConflict= "https://maktaba.dev/problems/idempotency-key-conflict"
-    TypeConfirmationReq    = "https://maktaba.dev/problems/confirmation-required"
-    TypeInternal           = "https://maktaba.dev/problems/internal"
-    TypeUnavailable        = "https://maktaba.dev/problems/unavailable"
+    TypeBadRequest          = "https://maktaba.dev/problems/bad-request"
+    TypeInvalidJSON         = "https://maktaba.dev/problems/invalid-json"
+    TypeInvalidQueryParam   = "https://maktaba.dev/problems/invalid-query-parameter"
+    TypeInvalidCursor       = "https://maktaba.dev/problems/invalid-cursor"
+    TypeCursorUnsupported   = "https://maktaba.dev/problems/cursor-unsupported-version"
+    TypeNotFound            = "https://maktaba.dev/problems/not-found"
+    TypeValidation          = "https://maktaba.dev/problems/validation"
+    TypeIdempotencyConflict = "https://maktaba.dev/problems/idempotency-key-conflict"
+    TypeConfirmationReq     = "https://maktaba.dev/problems/confirmation-required"
+    TypeInternal            = "https://maktaba.dev/problems/internal"
+    TypeUnavailable         = "https://maktaba.dev/problems/unavailable"
+    TypeForbidden           = "https://maktaba.dev/problems/forbidden"
+    TypeConflict            = "https://maktaba.dev/problems/conflict"
+    TypeBodyTooLarge        = "https://maktaba.dev/problems/body-too-large"
+    TypeRateLimited         = "https://maktaba.dev/problems/rate-limited"
+    TypeUnsupportedMediaType= "https://maktaba.dev/problems/unsupported-media-type"
+    TypeStreamingUnavailable= "https://maktaba.dev/problems/streaming-unavailable"
+    TypeStageNotPerVideo    = "https://maktaba.dev/problems/stage-not-per-video"
+    TypeJobTerminalOrMissing= "https://maktaba.dev/problems/job-terminal-or-missing"
+    TypeNotRuntime          = "https://maktaba.dev/problems/not-runtime"
+    TypeAdminOnly           = "https://maktaba.dev/problems/admin-only"
+    TypeCircuitOpen         = "https://maktaba.dev/problems/circuit-open"
     // (each later story adds its own constants in this same file.)
 )
 ```
 
-### 3.2 Request-ID middleware
+### 3.2 Request-ID context (shared package)
+
+The request-ID context key and accessor live in their own tiny package so
+both `httperror` and `middleware` can import them without forming a cycle
+(`middleware` already imports `httperror` for error rendering).
+
+```go
+// api/internal/reqid/reqid.go
+package reqid
+
+import (
+    "context"
+
+    "github.com/google/uuid"
+)
+
+type ctxKey struct{}
+
+// Header is the canonical name of the request-ID HTTP header.
+const Header = "X-Request-Id"
+
+// WithID returns a new context carrying id.
+func WithID(parent context.Context, id uuid.UUID) context.Context {
+    return context.WithValue(parent, ctxKey{}, id)
+}
+
+// FromContext returns the request id from ctx, or uuid.Nil if absent.
+func FromContext(ctx context.Context) uuid.UUID {
+    if v, ok := ctx.Value(ctxKey{}).(uuid.UUID); ok {
+        return v
+    }
+    return uuid.Nil
+}
+```
+
+### 3.2.1 Request-ID middleware
 
 ```go
 // api/internal/middleware/requestid.go
 package middleware
 
 import (
-    "context"
     "net/http"
 
     "github.com/google/uuid"
+
+    "maktaba/api/internal/reqid"
 )
-
-type requestIDKey struct{}
-
-const Header = "X-Request-Id"
 
 func RequestID(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         var id uuid.UUID
-        if got := r.Header.Get(Header); got != "" {
+        if got := r.Header.Get(reqid.Header); got != "" {
             if parsed, err := uuid.Parse(got); err == nil && parsed.Version() == 7 {
                 id = parsed
             }
@@ -204,17 +263,10 @@ func RequestID(next http.Handler) http.Handler {
         if id == uuid.Nil {
             id = uuid.Must(uuid.NewV7())
         }
-        ctx := context.WithValue(r.Context(), requestIDKey{}, id)
-        w.Header().Set(Header, id.String())
+        ctx := reqid.WithID(r.Context(), id)
+        w.Header().Set(reqid.Header, id.String())
         next.ServeHTTP(w, r.WithContext(ctx))
     })
-}
-
-func RequestIDFromContext(ctx context.Context) uuid.UUID {
-    if v, ok := ctx.Value(requestIDKey{}).(uuid.UUID); ok {
-        return v
-    }
-    return uuid.Nil
 }
 ```
 

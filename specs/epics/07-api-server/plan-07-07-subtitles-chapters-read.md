@@ -8,7 +8,7 @@
 | Concern | Decision |
 |---|---|
 | Routes | `GET /api/videos/{id}/subtitles`, `GET /api/videos/{id}/chapters`. |
-| Storage | `subtitles`, `chapters` tables (Pipeline-owned schema). |
+| Storage | `subtitle_files`, `chapters` tables (Pipeline-owned schema; see architecture §8). Both have `BIGSERIAL` primary keys (`int64` in Go). |
 | Signed URLs | Minted via `auth.Sign(claims)` from Epic 10 Story 10.8. The audience is `streaming-static`. |
 | `Accept-Language` ordering | Stable sort: requested language first, then existing order. |
 | Out of scope | Producing the subtitle bytes (Pipeline Story 4.4), Streaming-side serving (Epic 8 Story 8.5), inferred-chapter generation (Epic 9 Story 9.18). |
@@ -21,12 +21,12 @@
         │
         ▼
    ┌────────────────────────────────────────────────────┐
-   │ 1. SELECT * FROM subtitles                         │
+   │ 1. SELECT * FROM subtitle_files                    │
    │      WHERE video_id = $1                           │
    │      ORDER BY is_default DESC, language, source     │
    │ 2. For each row, mint signed URL via auth.Sign({   │
    │       aud: "streaming-static",                     │
-   │       sub: subtitle_id,                            │
+   │       sub: subtitle_file_id,                       │
    │       usr: user_id,                                │
    │       exp: now + ttl                                │
    │    }) → Streaming /subtitles/{id}.vtt?sig=...      │
@@ -66,8 +66,10 @@ import (
     "github.com/google/uuid"
 )
 
+// Subtitle.ID is int64 because subtitle_files.id is BIGSERIAL per
+// architecture §8.
 type Subtitle struct {
-    ID        uuid.UUID `json:"id"`
+    ID        int64     `json:"id"`
     Language  string    `json:"language"`     // ISO 639-1
     Format    string    `json:"format"`       // "vtt" | "srt" | "ass" | "embedded"
     Source    string    `json:"source"`       // "auto" | "external" | "embedded"
@@ -113,19 +115,20 @@ func (h *handler) listSubtitles(w http.ResponseWriter, r *http.Request) {
     id, err := uuid.Parse(chi.URLParam(r, "id"))
     if err != nil { httperror.Write(w, r, httperror.BadRequest("invalid id")); return }
 
-    rows, err := h.db.SubtitlesByVideo(r.Context(), id)
+    rows, err := h.db.SubtitleFilesByVideo(r.Context(), id)
     if err != nil { httperror.Write(w, r, httperror.Internal("db error")); return }
 
     user := userFromCtx(r.Context()) // Epic 10 wires this in
     out := make([]Subtitle, 0, len(rows))
     for _, row := range rows {
         exp := h.clock().Add(h.ttl)
+        idStr := strconv.FormatInt(row.ID, 10)
         url, err := h.signer.Sign(auth.Claims{
             Aud:       "streaming-static",
-            Sub:       row.ID.String(),
+            Sub:       idStr,
             UserID:    user.ID,
             ExpiresAt: exp,
-        }, "/subtitles/"+row.ID.String()+"."+row.Format)
+        }, "/subtitles/"+idStr+"."+row.Format)
         if err != nil { httperror.Write(w, r, httperror.Internal("sign failed")); return }
         out = append(out, Subtitle{
             ID: row.ID, Language: row.Language, Format: row.Format,
@@ -221,9 +224,9 @@ func parseAcceptLanguage(h string) map[string]float64 {
 `shared/db/queries/subtitles.sql`:
 
 ```sql
--- name: SubtitlesByVideo :many
+-- name: SubtitleFilesByVideo :many
 SELECT id, video_id, language, format, source, is_default, path
-  FROM subtitles
+  FROM subtitle_files
  WHERE video_id = $1
  ORDER BY is_default DESC, language, source;
 

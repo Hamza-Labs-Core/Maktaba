@@ -8,7 +8,7 @@
 | Concern | Decision |
 |---|---|
 | Share | `@capacitor/share` plugin; payload includes deep link + poster fallback. |
-| AirPlay | Inherent to AVPlayer (Story 12.3); we surface the AirPlay button via `AVRoutePickerView`. |
+| AirPlay | Inherent to AVPlayer (Story 12.3). The route picker is shown only when the user enters fullscreen via `AVPlayerViewController`, which surfaces it natively. No inline (in-WebView) AirPlay button in v1. |
 | Chromecast | `google-cast-sdk` integrated into the native player Activity (Story 12.3 Android). |
 | Receiver fallback | If receiver can't decode source codec, server returns transcoded HLS (architecture §4.1 mode 3). |
 | Out of scope | Multi-room AirPlay 2 (post v1); receiver app (we use Cast Default Receiver). |
@@ -32,17 +32,22 @@ Falls back to `navigator.share` on web/desktop where Capacitor isn't present.
 
 ## 2. AirPlay (iOS)
 
-`AVPlayerViewController` exposes a "Routes" button by default; we additionally embed an `AVRoutePickerView` next to the inline web player so the affordance is visible without going fullscreen:
+`AVPlayerViewController` exposes a "Routes" button natively in fullscreen.
+We rely entirely on this built-in surface in v1: the user enters fullscreen
+(via the inline web player's fullscreen button, which hands off to the
+native player per Story 12.3), and the route picker becomes available.
 
-```swift
-// In NativePlayer.swift
-let routePicker = AVRoutePickerView()
-routePicker.activeTintColor = .systemBlue
-routePicker.tintColor = .label
-// presented as an overlay accessory; visible only when a receiver is detected
-```
+We do **not** embed an inline `AVRoutePickerView` in the WebView. Doing so
+would require a UIKit→WebView bridge plugin (e.g. a hypothetical
+`AirPlayRoutePicker.show(at: rect)` Capacitor plugin) to overlay a native
+view above the WKWebView at a JS-supplied rect, with all the hit-testing
+and rotation/orientation correctness that entails. v1 ships without that
+complexity.
 
-Web bridge exposes `airplay.isAvailable()` so the inline player can toggle the picker UI.
+If user research shows the affordance is missed too often, v2 can either
+add the bridge plugin or surface a custom "Cast / AirPlay" button in the
+inline player that triggers fullscreen handoff and opens routes
+immediately on entry.
 
 ## 3. Chromecast (Android)
 
@@ -92,7 +97,7 @@ When casting, `MediaSessionCompat` is updated to reflect remote playback so the 
 
 ### 6.2 Automated (best effort)
 
-- iOS: Mock `AVAudioSession` route change → AirPlay button surfaces.
+- iOS: Mock `AVAudioSession` route change → fullscreen handoff is reachable; the AVPlayerViewController routes button is present (no separate inline picker in v1).
 - Android: Cast SDK simulator (when present) → `RemoteMediaClient.load` called with correct media info.
 - Share plugin: Vitest stub asserts payload shape.
 

@@ -9,7 +9,7 @@
 
 | Concern | Decision |
 |---|---|
-| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `ts`. Append-only via BEFORE UPDATE/DELETE triggers. |
+| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `created_at`. Append-only via BEFORE UPDATE/DELETE triggers. Canonical `category IN ('library','security','device','admin')`. |
 | Partitioning | Monthly partitions named `audit_log_YYYY_MM`. A trigger function `audit_log_route_to_partition()` ensures the parent has the right child for each new INSERT (creating one on-demand). The partition-management cron (Epic 22) precreates the next 3 months. |
 | Writers | `api/internal/audit/writer.go` (Go) and `pipeline/src/maktaba_pipeline/audit/writer.py` (Python). Both insert into the parent `audit_log`; Postgres routes to the right partition. Best-effort: writes never block the calling tx and never raise on failure. |
 | HTTP route | `GET /api/libraries/{id}/audit?cursor=&limit=` — returns `category='library'` rows for the given library, newest-first, with cursor pagination. Owner/admin-only. |
@@ -33,14 +33,14 @@
    Reader:
      GET /api/libraries/{id}/audit?cursor=...
         ↓
-     SELECT id, ts, event, actor_user_id, video_id, payload_jsonb
+     SELECT id, created_at, event, actor_user_id, video_id, payload_jsonb
        FROM audit_log
       WHERE category = 'library'
         AND library_id = $1
-        AND (ts, id) < ($cursor_ts, $cursor_id)
-      ORDER BY ts DESC, id DESC
+        AND (created_at, id) < ($cursor_ts, $cursor_id)
+      ORDER BY created_at DESC, id DESC
       LIMIT $page_size
-     → cursor = encode(last_row.ts, last_row.id)
+     → cursor = encode(last_row.created_at, last_row.id)
 
    Append-only enforcement:
      BEFORE UPDATE / BEFORE DELETE → RAISE EXCEPTION
@@ -86,9 +86,12 @@ package audit
 
 type Category string
 
+// Canonical: category IN ('library','security','device','admin').
 const (
     CategoryLibrary  Category = "library"
     CategorySecurity Category = "security"
+    CategoryDevice   Category = "device"
+    CategoryAdmin    Category = "admin"
 )
 
 type Event struct {
@@ -121,7 +124,7 @@ type Writer interface {
 // api/internal/handlers/libraries/audit.go
 type AuditEntry struct {
     ID         uuid.UUID `json:"id"`
-    TS         time.Time `json:"ts"`
+    CreatedAt  time.Time `json:"created_at"`
     Event      string    `json:"event"`
     Actor      *uuid.UUID `json:"actor_user_id"`
     VideoID    *uuid.UUID `json:"video_id"`
@@ -144,18 +147,21 @@ type AuditPage struct {
 
 CREATE TABLE audit_log (
     id              UUID NOT NULL,
-    ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    category        TEXT NOT NULL CHECK (category IN ('library','security')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),  -- canonical name
+    category        TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
     event           TEXT NOT NULL CHECK (char_length(event) BETWEEN 1 AND 64),
     actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
     library_id      UUID REFERENCES libraries(id) ON DELETE SET NULL,
     video_id        UUID REFERENCES videos(id) ON DELETE SET NULL,
     ip              INET,
     user_agent      TEXT CHECK (char_length(user_agent) <= 1024),
+    -- For dedupe of category='security' rows; partition key (created_at)
+    -- must be in the unique index per partitioned-table rules.
+    dedupe_key      TEXT,
     payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb
         CHECK (octet_length(payload_jsonb::text) <= 8 * 1024),
-    PRIMARY KEY (ts, id)         -- composite for partitioning
-) PARTITION BY RANGE (ts);
+    PRIMARY KEY (created_at, id)         -- composite for partitioning
+) PARTITION BY RANGE (created_at);
 
 -- Append-only triggers — defined on the parent, inherited by children.
 CREATE OR REPLACE FUNCTION audit_log_no_mutation() RETURNS trigger AS $$
@@ -170,11 +176,19 @@ CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
 -- Indexes — created on each partition by a helper. The parent gets
 -- "logical" indexes that Postgres propagates.
 CREATE INDEX audit_log_lookup
-    ON audit_log (category, ts DESC);
+    ON audit_log (category, created_at DESC);
 CREATE INDEX audit_log_actor
-    ON audit_log (actor_user_id, ts DESC) WHERE actor_user_id IS NOT NULL;
+    ON audit_log (actor_user_id, created_at DESC) WHERE actor_user_id IS NOT NULL;
 CREATE INDEX audit_log_library
-    ON audit_log (library_id, ts DESC) WHERE library_id IS NOT NULL;
+    ON audit_log (library_id, created_at DESC) WHERE library_id IS NOT NULL;
+
+-- Security dedupe: partitioned-table unique indexes must include the
+-- partition key (created_at). The (created_at, dedupe_key) composite
+-- enforces "at most one security row per dedupe_key per
+-- per-month-partition" — the practical guarantee callers need.
+CREATE UNIQUE INDEX audit_log_security_dedupe
+    ON audit_log (created_at, dedupe_key)
+    WHERE category = 'security' AND dedupe_key IS NOT NULL;
 
 -- Bootstrap the current and next 2 monthly partitions.
 DO $$
@@ -230,24 +244,25 @@ DROP TABLE IF EXISTS audit_log CASCADE;
 
 SQLite does not partition. The variant uses a single `audit_log` table
 with the same columns, the same CHECKs, and the same INSERT-only
-triggers. The retention job DELETEs by `ts` instead of detaching.
+triggers. The retention job DELETEs by `created_at` instead of detaching.
 For a single-host SQLite deployment, this is acceptable.
 
 ### 3.3 sqlc queries
 
 ```sql
 -- name: InsertAudit :exec
-INSERT INTO audit_log (id, ts, category, event, actor_user_id,
-                       library_id, video_id, ip, user_agent, payload_jsonb)
-VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9::jsonb);
+INSERT INTO audit_log (id, created_at, category, event, actor_user_id,
+                       library_id, video_id, ip, user_agent,
+                       dedupe_key, payload_jsonb)
+VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb);
 
 -- name: ListLibraryAudit :many
-SELECT id, ts, event, actor_user_id, video_id, payload_jsonb
+SELECT id, created_at, event, actor_user_id, video_id, payload_jsonb
   FROM audit_log
  WHERE category = 'library'
    AND library_id = $1
-   AND (ts, id) < ($2::timestamptz, $3::uuid)
- ORDER BY ts DESC, id DESC
+   AND (created_at, id) < ($2::timestamptz, $3::uuid)
+ ORDER BY created_at DESC, id DESC
  LIMIT $4;
 ```
 
@@ -350,11 +365,11 @@ func AuditHandler(d *handlers.Deps) http.HandlerFunc {
         }
 
         size := parsePageSize(r, 50)
-        cursorTs, cursorID, err := decodeCursor(r.URL.Query().Get("cursor"))
+        cursorAt, cursorID, err := decodeCursor(r.URL.Query().Get("cursor"))
         if err != nil { handlers.WriteError(w, 400, "bad-cursor", ""); return }
 
         rows, err := d.Queries.ListLibraryAudit(ctx, dbq.ListLibraryAuditParams{
-            LibraryID: libID, CursorTs: cursorTs, CursorID: cursorID,
+            LibraryID: libID, CursorCreatedAt: cursorAt, CursorID: cursorID,
             Limit: int32(size + 1),
         })
         if err != nil { handlers.WriteError(w, 500, "list-failed", err.Error()); return }
@@ -362,7 +377,7 @@ func AuditHandler(d *handlers.Deps) http.HandlerFunc {
         var nextCursor *string
         if len(rows) > size {
             last := rows[size]
-            c := encodeCursor(last.Ts, last.ID)
+            c := encodeCursor(last.CreatedAt, last.ID)
             nextCursor = &c
             rows = rows[:size]
         }
@@ -370,7 +385,7 @@ func AuditHandler(d *handlers.Deps) http.HandlerFunc {
         items := make([]AuditEntry, 0, len(rows))
         for _, r := range rows {
             items = append(items, AuditEntry{
-                ID: r.ID, TS: r.Ts, Event: r.Event,
+                ID: r.ID, CreatedAt: r.CreatedAt, Event: r.Event,
                 Actor: r.ActorUserID, VideoID: r.VideoID,
                 Payload: r.PayloadJsonb,
             })
@@ -415,12 +430,12 @@ class AuditWriter:
             try:
                 await self._db.execute(
                     "INSERT INTO audit_log "
-                    "  (id, ts, category, event, actor_user_id, "
-                    "   library_id, video_id, payload_jsonb) "
-                    "VALUES ($1, now(), $2, $3, $4, $5, $6, $7::jsonb)",
+                    "  (id, created_at, category, event, actor_user_id, "
+                    "   library_id, video_id, dedupe_key, payload_jsonb) "
+                    "VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8::jsonb)",
                     e["id"], e["category"], e["event"],
                     e["actor_user_id"], e["library_id"], e["video_id"],
-                    e["payload_jsonb"],
+                    e.get("dedupe_key"), e["payload_jsonb"],
                 )
             except Exception:
                 audit_write_failed_total.inc()
@@ -483,14 +498,14 @@ var auditArchiveCmd = &cobra.Command{
 |---|---|
 | `TestWriter_DropsWhenQueueFull` | Synthesize back-pressure (slow DB); 2000 calls; counter `audit_write_failed_total` exceeds zero; the calls themselves do NOT block. |
 | `TestWriter_NoErrorPropagation` | Force the inner INSERT to fail (rename the table); writer logs but its `Write` returns nil. |
-| `TestWriter_UUIDv7Ordered` | 1000 inserts in tight sequence; ids sort the same as ts. |
+| `TestWriter_UUIDv7Ordered` | 1000 inserts in tight sequence; ids sort the same as `created_at`. |
 
 ### 5.4 Retention tests
 
 | Test | What it pins |
 |---|---|
-| `test_partition_detach_after_retention` | Set retention to 1 day; create a partition with `ts < now() - 1 day`; run `audit-archive`; partition is detached and dropped; live table no longer contains those rows. AC-3. |
-| `test_partition_creation_at_month_boundary` | Run `audit_log_ensure_next_month_partition()` once; INSERT with ts in next month succeeds (would otherwise fail with "no partition"). |
+| `test_partition_detach_after_retention` | Set retention to 1 day; create a partition with `created_at < now() - 1 day`; run `audit-archive`; partition is detached and dropped; live table no longer contains those rows. AC-3. |
+| `test_partition_creation_at_month_boundary` | Run `audit_log_ensure_next_month_partition()` once; INSERT with `created_at` in next month succeeds (would otherwise fail with "no partition"). |
 | `test_archive_copy_includes_all_columns` | The archived CSV contains every column; subsequent restore via COPY FROM yields equal rows. |
 
 ## 6. Edge cases — handling table

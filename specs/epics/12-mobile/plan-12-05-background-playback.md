@@ -94,8 +94,16 @@ User opts in via Settings → Playback → "Auto PiP on swipe-to-home".
 
 ## 4. Background WS / progress sync
 
-- iOS: `URLSession` background task category submits `POST /api/stream/sessions/{id}/progress` every 10 s; WS reconnect throttled to ≥ 60 s while backgrounded.
-- Android: Foreground service + WorkManager `OneTimeWorkRequest` queues every 10 s for progress; WS reconnect throttled.
+- iOS: While audio is playing, the app is awake (`MPNowPlayingInfoCenter`
+  keeps the process active), so periodic 10 s progress POSTs work as long
+  as audio is playing. When audio is paused/stopped, the app suspends —
+  there is no recurring background-execution. Recurring background work
+  would need `BGTaskScheduler`; we do not use it for progress sync. WS
+  reconnect throttled to ≥ 60 s while backgrounded.
+- Android: Foreground service of type `mediaPlayback` keeps the process
+  alive while audio plays, so the in-process 10 s progress poster runs
+  normally. WorkManager is not used for progress sync (oneshot only on
+  resume to flush any missed tail). WS reconnect throttled.
 
 ## 5. File layout
 
@@ -135,7 +143,7 @@ Web side reuses `useWatchProgress` (Story 11.3) plus a new `useAutoResumePref` h
 ## 8. Performance
 
 - Foreground service notification renders within 500 ms of backgrounding.
-- Background progress posts succeed under iOS `BGTaskScheduler` budget (one post / 10 s).
+- Background progress posts succeed at one post / 10 s while audio is playing (iOS audio-keep-alive; Android `mediaPlayback` foreground service). No recurring posts after audio stops.
 
 ## 9. Dependencies
 

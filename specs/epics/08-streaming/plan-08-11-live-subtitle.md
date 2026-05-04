@@ -213,10 +213,17 @@ func (a *AutoStreamer) StreamAutoVTT(ctx context.Context, w io.Writer, videoID u
 
 ```sql
 -- name: QueryTranscriptSegments :many
-SELECT id, start_sec, end_sec, text
-  FROM transcript_segments
- WHERE video_id = $1 AND end_sec > $2
- ORDER BY start_sec ASC
+-- Canonical schema: transcript_segments has no `video_id` column.
+-- The video link is held by `transcripts.video_id`. We JOIN through
+-- transcripts and additionally filter `superseded_at IS NULL` so only
+-- the current transcript revision contributes cues.
+SELECT s.id, s.start_sec, s.end_sec, s.text
+  FROM transcript_segments s
+  JOIN transcripts t ON t.id = s.transcript_id
+ WHERE t.video_id = $1
+   AND t.superseded_at IS NULL
+   AND s.end_sec > $2
+ ORDER BY s.start_sec ASC
  LIMIT $3;
 ```
 
@@ -479,12 +486,25 @@ func (h *Handler) ServeVTT(w http.ResponseWriter, r *http.Request) {
             h.serveCachedFile(w, r, cachePath)
             return
         }
-        srtPath, ok := sess.SidecarSRT[lang]
+        // Session.SidecarSubtitles is populated at OpenSession time by
+        // the Manager (Story 8.8). On Open, the Manager runs:
+        //
+        //   SELECT language, path, format
+        //     FROM subtitle_files
+        //    WHERE video_id = $1 AND is_external = true
+        //
+        // and stashes the result on the session row as
+        // `SidecarSubtitles map[language]SidecarFile{Path,Format}`.
+        // No `subtitle_tracks` table is involved (canonical schema is
+        // `subtitle_files`). We never re-query here so .vtt requests do
+        // not hit the DB on the hot path.
+        sidecar, ok := sess.SidecarSubtitles[lang]
         if !ok {
             httpx.Write(w, http.StatusNotFound, "subs-not-found",
                 "no subtitle for lang", lang)
             return
         }
+        srtPath := sidecar.Path
         if err := h.convertAndCache(r.Context(), srtPath, cachePath, lang); err != nil {
             httpx.Write(w, 500, "subs-conversion-failed", "SRT conversion failed", err.Error())
             return

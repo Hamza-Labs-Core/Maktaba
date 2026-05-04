@@ -2,6 +2,11 @@
 
 > Companion to [story-13-05-mdns-discovery.md](story-13-05-mdns-discovery.md).
 > Server-side advertisement owned by Epic 15 Story 15.1; this plan owns the client-side resolver and picker UI.
+>
+> ACL: see `plan-13-01-macos.md` §Capabilities. The `discover_servers`
+> Tauri command needs the default capability set granted in
+> `src-tauri/capabilities/desktop.json`; no additional capability file is
+> required for this story (the `mdns-sd` crate is pure Rust).
 
 ## 0. Scope and placement
 

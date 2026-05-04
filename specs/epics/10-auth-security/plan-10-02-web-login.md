@@ -16,6 +16,7 @@
 | Cookie codec | `api/internal/auth/cookies.go` — `Set`, `Clear`, attribute calculation from config. |
 | Session middleware | `api/internal/http/middleware/session.go` — loads `User` into `context.Context` from `mkt_sess`; expired/revoked sessions clear the cookie and pass through as anonymous. |
 | Out of scope | CSRF enforcement (Story 10.10); brute-force counters (Story 10.11); rate limit (Story 10.12); JWT branch (Story 10.3). |
+| `refresh_tokens.device_id` | The web-cookie surface does not issue refresh tokens, so the column added by Story 10.3 (architecture §8.6) is irrelevant here. When this story's `RevokeAllForUser` cascades into `refresh_tokens` (e.g., via logout-all in Story 10.5), rows with NULL `device_id` are revoked normally. |
 
 ## 1. Architecture diagram
 

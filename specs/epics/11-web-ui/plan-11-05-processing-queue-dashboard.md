@@ -132,7 +132,7 @@ if (job.processedSec < prevDisplayed) console.warn('job_progress_decreased', { j
 
 ### 4.5 Force-pause UI
 
-When `pauseRequested && now - pauseRequestedAt > pauseGraceSec`, the row reveals a "Force pause" button → `POST /api/jobs/{id}/force-pause`.
+When `pauseRequested && now - pauseRequestedAt > pauseGraceSec`, the row reveals a "Force pause" button → `POST /api/jobs/{id}/pause?force=true` (architecture §9.5 canonical; there is no separate `/force-pause` route).
 
 ### 4.6 Bulk actions
 

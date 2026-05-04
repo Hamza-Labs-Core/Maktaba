@@ -253,11 +253,14 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, row *probe.Row, 
     // 1. Cache hit: serve via direct.Handler (range-aware).
     if stat, err := os.Stat(finalPath); err == nil && stat.Size() > 0 {
         h.Metrics.CacheHit.Inc()
-        h.Direct.ServeFile(w, r, finalPath, &probe.Row{
+        // Remuxed-output MIME is fully determined by the target container.
+        // The probe row carries no MIME column (canonical schema), so we
+        // pass the value explicitly here.
+        h.Direct.ServeFileWithContentType(w, r, finalPath, mimeFor(key.Target), &probe.Row{
             VideoID:     row.VideoID,
             Path:        finalPath,
             ContentHash: row.ContentHash, // re-use source hash for ETag
-            MIME:        mimeFor(key.Target),
+            Container:   key.Target,
             MediaInfo:   row.MediaInfo,
         })
         return
@@ -292,11 +295,11 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, row *probe.Row, 
     }
 
     // 4. Now the file exists — serve it like direct play.
-    h.Direct.ServeFile(w, r, finalPath, &probe.Row{
+    h.Direct.ServeFileWithContentType(w, r, finalPath, mimeFor(key.Target), &probe.Row{
         VideoID:     row.VideoID,
         Path:        finalPath,
         ContentHash: row.ContentHash,
-        MIME:        mimeFor(key.Target),
+        Container:   key.Target,
         MediaInfo:   row.MediaInfo,
     })
 }
@@ -385,7 +388,12 @@ import (
 // video stream and a finite duration. A failed validation returns an
 // error so the caller deletes the temp file and the matrix verdict for
 // this video downgrades to transcode for the rest of the session.
-func validateRemuxOutput(ctx context.Context, path string) error {
+//
+// The ffprobe binary path comes from `cfg.FFmpeg.ProbeBinary` (Story 8.1
+// config block), NOT a hard-coded "ffprobe" — operators may pin a
+// vendored or sandboxed binary, and the package never resolves PATH at
+// call time.
+func validateRemuxOutput(ctx context.Context, probeBin, path string) error {
     stat, err := os.Stat(path)
     if err != nil {
         return err
@@ -393,7 +401,7 @@ func validateRemuxOutput(ctx context.Context, path string) error {
     if stat.Size() < 1024 {
         return fmt.Errorf("remux output too small: %d bytes", stat.Size())
     }
-    out, err := exec.CommandContext(ctx, "ffprobe",
+    out, err := exec.CommandContext(ctx, probeBin,
         "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", path).Output()
     if err != nil {
@@ -405,6 +413,17 @@ func validateRemuxOutput(ctx context.Context, path string) error {
         return fmt.Errorf("remux duration is zero")
     }
     return nil
+}
+```
+
+Callers (in `Handler.runRemux`) thread `cfg.FFmpeg.ProbeBinary` through
+the handler struct alongside the existing `FFmpeg` field. The handler
+type gains:
+
+```go
+type Handler struct {
+    // ... existing fields ...
+    FFprobe string  // path to ffprobe binary (cfg.FFmpeg.ProbeBinary)
 }
 ```
 
