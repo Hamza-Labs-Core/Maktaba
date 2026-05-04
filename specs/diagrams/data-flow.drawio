@@ -1,0 +1,213 @@
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="data-flow" name="End-to-End Data Flow">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="2000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Maktaba — End-to-End Data Flow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1620" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="From video file discovery to searchable, streamable transcripts. Each stage is a row in processing_jobs; pause/resume points marked with ⏸." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="55" width="1620" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane1" value="STAGES" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=11;fontStyle=1;verticalAlign=top;align=center;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="120" height="1700" as="geometry" />
+        </mxCell>
+        <mxCell id="lane2" value="ARTIFACTS / DB STATE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEFCE8;strokeColor=#854D0E;fontSize=11;fontStyle=1;verticalAlign=top;align=center;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="900" y="100" width="380" height="1700" as="geometry" />
+        </mxCell>
+        <mxCell id="lane3" value="JOB QUEUE (processing_jobs)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#854D0E;fontSize=11;fontStyle=1;verticalAlign=top;align=center;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="1290" y="100" width="370" height="1700" as="geometry" />
+        </mxCell>
+
+        <mxCell id="src" value="📁 New file dropped&#10;/mnt/media/lectures/video.mkv" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="120" width="640" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1Watch" value="watchdog event&#10;debounced 2 s" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="🔎 Stage 1 — Scanner&#10;Epic 1 · plan-01-*&#10;&#10;• Walk roots / honor ignore rules&#10;• content_hash = BLAKE3(first 4MiB + last 4MiB + size)&#10;• Insert videos row (state = DISCOVERED)&#10;• Detect rename / move / delete (path vs content_hash)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="220" width="640" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s1Out" value="videos&#10;(state = DISCOVERED)&#10;media_info pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="240" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s1Job" value="job(scan)&#10;PENDING → CLAIMED → RUNNING → DONE&#10;(short-lived; no segment commits)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="240" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s2" value="🎚 Stage 2 — Probe&#10;Epic 2 (audio-extraction) · plan-02-01..02&#10;&#10;• ffprobe → media_info, audio_tracks rows&#10;• track_selection_decisions row (which audio wins)&#10;• state → PROBED (or READY_NO_AUDIO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="380" width="640" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s2Out" value="media_info · audio_tracks&#10;track_selection_decisions&#10;(state = PROBED)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="400" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s2Job" value="job(probe)&#10;PENDING → RUNNING → DONE&#10;Concurrency: 4 (I/O bound)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="400" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3" value="🎙 Stage 3 — Audio Extractor&#10;Epic 2 · plan-02-03&#10;&#10;• ffmpeg → 16 kHz mono PCM (WAV)&#10;• audio_cache (content_hash, audio_index) ledger&#10;• state → AUDIO_EXTRACTED&#10;⏸ pause/cancel between segment-sized chunks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="540" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s3Out" value="audio_cache row + WAV file&#10;(state = AUDIO_EXTRACTED)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="565" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s3Job" value="job(extract)&#10;Concurrency: 2 (disk-bound)&#10;⏸ pause_requested honored at chunk boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="565" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s4" value="📝 Stage 4 — Transcriber (STT)&#10;Epic 3 · plan-03-01..08 (CRITICAL PATH)&#10;&#10;• Backend: mlx-whisper / faster-whisper / openai (paid)&#10;• Stream segments (5–30 s of audio each)&#10;• Per-segment DB tx: transcript_segments INSERT&#10;  + processing_jobs.last_segment_end_sec UPDATE + heartbeat&#10;• ⏸ Cooperative pause_requested check after every commit&#10;• Resume: claim 'paused', seek decoder to last_segment_end_sec&#10;• state → TRANSCRIBED on done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="220" y="710" width="640" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="s4Out" value="transcripts (is_active=true)&#10;transcript_segments [N rows]&#10;transcript_words (optional)&#10;(state = TRANSCRIBED)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="755" width="300" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s4Job" value="job(transcribe)&#10;Concurrency: 1 per GPU&#10;Heartbeat: 5 s · last_segment_end_sec advances&#10;⏸⏯ Pause/Resume — durable across crashes&#10;reaper flips stale claims → paused (reason='crash')" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#B45309;fontSize=11;arcSize=8;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1310" y="755" width="330" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pauseGate" value="⏸ User clicks Pause / SIGTERM / Crash&#10;→ pause_requested=true → worker commits current segment, sets state='paused' at paused_at_sec → released" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#991B1B;fontSize=11;align=center;arcSize=8;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="220" y="915" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pauseGateRight" value="reaper (every 30 s) flips heartbeat&lt;90s rows to paused.&#10;resume = claim against paused (cooperative)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#991B1B;fontSize=11;align=center;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="915" width="700" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s5" value="💬 Stage 5 — Subtitle Generator&#10;Epic 4 · plan-04-01..05&#10;&#10;• Render .srt + .vtt sidecars from transcript_segments&#10;• Atomic rename: tmp/{uuid} → .maktaba/{name}.{lang}.{srt|vtt}&#10;• subtitle_files row (is_external=false, is_embedded=false)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="1000" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s5Out" value="subtitle_files row(s)&#10;.srt / .vtt sidecars on disk&#10;(state advancing toward INDEXED)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="1025" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s5Job" value="job(subtitle_gen)&#10;Concurrency: 4 (CPU light)&#10;Idempotent — safe re-run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="1025" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s6" value="🔍 Stage 6 — Indexer&#10;Epic 5 · plan-05-01..07&#10;&#10;• Re-chunk transcript_segments → transcript_units (~200 char)&#10;• tsvector populated (Postgres) / FTS5 inserts (SQLite)&#10;• Embed each unit (multilingual-e5-large)&#10;• ChromaDB upsert into library-{id} collection&#10;• transcripts.last_indexed_segment_seq advances&#10;• state → INDEXED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="1170" width="640" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="s6Out" value="transcript_units (FTS-ready)&#10;ChromaDB vectors&#10;vector_index_dead_letter (DLQ)&#10;(state = INDEXED)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="1205" width="300" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s6Job" value="job(index)&#10;Concurrency: 4&#10;Incremental — picks up from last_indexed_segment_seq&#10;⏸ pause/resume safe; no re-embedding" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="1205" width="330" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s7" value="🖼 Stage 7 — Thumbnail Builder&#10;Epic 6 · plan-06-* (run by Pipeline)&#10;&#10;• Poster (auto-pick at 10% duration; skip black frames)&#10;• Sprite sheet @ 10 s intervals + sidecar VTT (scrub preview)&#10;• Optional chapter posters&#10;• state → THUMBNAILED → READY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="1370" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s7Out" value="poster.jpg · sprite.webp + .vtt&#10;(in streaming cache)&#10;(state = READY)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="1395" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s7Job" value="job(thumbnail)&#10;Concurrency: 2&#10;Atomic write + os.replace() to final" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="1310" y="1395" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s8" value="📡 Stage 8 — WebSocket Broadcast&#10;Epic 7 · plan-07-16 + Postgres LISTEN/NOTIFY&#10;&#10;• Pipeline INSERTs into events table → NOTIFY ch=videos.new&#10;• API listener fans out to per-client WS frames&#10;• UI grid shows new ready video; user can stream + search inside it" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="1540" width="640" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s8Out" value="events row · WS frame&#10;type=&quot;video.ready&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="1560" width="300" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s9" value="🔎 Stage 9 — Search (read-side)&#10;Epic 7 · plan-07-08 + Epic 5 · plan-05-08..09&#10;&#10;• POST /api/search {q, mode, filters}&#10;• mode = &quot;fts&quot; → tsvector / FTS5 lookup against transcript_units&#10;• mode = &quot;semantic&quot; → API.gRPC.Embed(q) → ChromaDB query&#10;• mode = &quot;hybrid&quot; → fan-in + RRF rerank&#10;• Returns hits with start_sec — clients deep-link directly" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="220" y="1690" width="640" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="s9Out" value="search hits with deep links&#10;{video_id, start_sec, text}&#10;saved_searches (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="940" y="1720" width="300" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_src_s1" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="src" target="s1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_watch_s1" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s1Watch" target="s1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s1_s2" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_s3" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_s4" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s4_pause" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s4" target="pauseGate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pause_s5" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="pauseGate" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_s6" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s6_s7" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s7_s8" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s7" target="s8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s8_s9" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="s8" target="s9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_s1_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s1" target="s1Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s2" target="s2Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s3" target="s3Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s4_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s4" target="s4Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s5" target="s5Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s6_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s6" target="s6Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s7_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s7" target="s7Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s8_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s8" target="s8Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s9_a" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s9" target="s9Out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_a_j1" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s1Out" target="s1Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j2" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s2Out" target="s2Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j3" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s3Out" target="s3Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j4" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s4Out" target="s4Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j5" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s5Out" target="s5Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j6" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s6Out" target="s6Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_a_j7" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5" edge="1" parent="1" source="s7Out" target="s7Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="Legend&#10;━━━ Pipeline (red): Epics 1–6  ·  ━━━ API (blue): Epics 7–10&#10;Yellow column = job rows; pause/resume points marked with ⏸. Crash recovery (reaper) flips stale claims back to PAUSED.&#10;The DB is the canonical checkpoint — last_segment_end_sec is the only resume key. No JSON sidecars." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top" vertex="1" parent="1">
+          <mxGeometry x="220" y="1860" width="1420" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
