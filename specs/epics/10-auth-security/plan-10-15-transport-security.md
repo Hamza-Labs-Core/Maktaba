@@ -5,24 +5,7 @@
 > this story enforces the *attributes* and the surrounding HTTP layer
 > (HSTS, CSP, CORS, security response headers).
 
-## 0. Canonical HSTS placement (cross-epic)
-
-**The HSTS header is set by the API backend middleware here (canonical).**
-The middleware emits
-`Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
-and is **unconditional in production builds** (only suppressed when
-`MAKTABA_DEV=1`).
-
-This works without Caddy in dev (e.g., when running the API directly
-behind a self-signed cert or on `localhost:8080`).
-[plan-23-03 — Transport Security (Epic 23)](../23-security/plan-23-03-transport-security.md)
-**dropped its Caddy HSTS snippet** in favor of this backend-middleware
-implementation per
-[PLAN_REVIEW_18_24 §2](../../PLAN_REVIEW_18_24.md).
-
-Cross-link: [plan-23-03 — Transport Security (Epic 23)](../23-security/plan-23-03-transport-security.md).
-
-## 0.1 Scope and placement
+## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
@@ -84,7 +67,7 @@ Cross-link: [plan-23-03 — Transport Security (Epic 23)](../23-security/plan-23
 
 | Path | Change |
 |---|---|
-| `api/internal/config/config.go` | Add `Server.HSTS.Enabled` (true), `Server.HSTS.MaxAge` (31536000), `Server.HSTS.IncludeSubDomains` (true), `Server.HSTS.Preload` (true), `Server.CORSAllowedOrigins` ([]string), `Server.CSPDirectives` (string). |
+| `api/internal/config/config.go` | Add `Server.HSTS.Enabled` (true), `Server.HSTS.MaxAge` (31536000), `Server.HSTS.IncludeSubDomains` (true), `Server.CORSAllowedOrigins` ([]string), `Server.CSPDirectives` (string). |
 | `api/internal/auth/cookies.go` | At startup, validate `cfg.Cookies.Secure || os.Getenv("MAKTABA_DEV") == "1"`. |
 | `api/cmd/api/main.go` | Mount the new middlewares first in the chain. |
 | `streaming/cmd/streaming/main.go` | Same on streaming side (no cookies, but HSTS + headers still apply). |
@@ -183,21 +166,9 @@ func SecurityHeaders(cfg SecurityHeadersConfig) func(http.Handler) http.Handler 
 func buildHSTS(cfg SecurityHeadersConfig) string {
     s := fmt.Sprintf("max-age=%d", cfg.HSTSMaxAge)
     if cfg.HSTSIncludeSubDomains { s += "; includeSubDomains" }
-    if cfg.HSTSPreload          { s += "; preload" }
     return s
 }
 ```
-
-The canonical production header (per §0):
-
-```
-Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-```
-
-Set by `cfg.HSTSEnabled=true`, `cfg.HSTSMaxAge=31536000`,
-`cfg.HSTSIncludeSubDomains=true`, `cfg.HSTSPreload=true` (defaults in
-`api/internal/config/config.go`). HSTS is **unconditional in
-production builds** — only `MAKTABA_DEV=1` suppresses it.
 
 The default CSP for the SPA shell:
 
@@ -388,7 +359,7 @@ No new heavy deps.
 - [ ] HTTP→HTTPS redirect on port 80.
 
 **HSTS**
-- [ ] AC-2: HSTS header present on TLS responses; canonical value `max-age=31536000; includeSubDomains; preload`; unconditional in production (only suppressed when `MAKTABA_DEV=1`).
+- [ ] AC-2: HSTS header present on TLS responses; max-age 31536000; includeSubDomains.
 
 **Cookies**
 - [ ] AC-3: `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` on auth cookies (already covered by Story 10.2; this story adds the boot validator).

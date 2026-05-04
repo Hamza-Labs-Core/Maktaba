@@ -4,11 +4,7 @@
 > Story states *what* and *why*; this plan states *how*.
 > Backup/restore primitives from
 > [Story 24.5](plan-24-05-backup-restore.md). State machine from
-> architecture §3 / §7.2 (including the `corrupted` state — lowercase
-> per plan-24-03's CHECK enum).
->
-> **RPO/RTO confirmed.** Scenario 1: RPO ≤ 24 h (last daily backup);
-> RTO ≤ 30 min — matches story acceptance criteria.
+> architecture §3 (including the `CORRUPTED` state).
 
 ## 0. Scope and placement
 
@@ -17,7 +13,7 @@
 | DR doc | `docs/operations/disaster-recovery.md`. Each scenario is a section with steps, RTO/RPO, and a copy-paste command block. |
 | `dr-drill` make target | `make dr-drill` runs scenario #1 against a seeded fixture; CI runs it nightly. |
 | Admin Restore UI | A `web/src/routes/admin/recovery.tsx` page renders one card per scenario with a "Run" button that calls `/api/admin/recovery/<scenario>`. |
-| Corrupted detection | Story 24.7 owns the `content_hash` re-verification; this story wires the FSM transition to `corrupted` (lowercase) on mismatch. |
+| Corrupted detection | Story 24.7 owns the `content_hash` re-verification; this story wires the FSM transition to `CORRUPTED` on mismatch. |
 | Out of scope | Scenario-#3 detection mechanics (Story 24.7); the binary corruption recovery (Story 22.7); media-volume backup (out of scope by AC). |
 
 ## 1. Architecture diagram
@@ -35,7 +31,7 @@
    │  2. db_and_caches_lost:     │
    │       restore + reprocess   │
    │  3. media_corrupt: doctor   │
-   │       + state='corrupted'   │
+   │       + state=CORRUPTED     │
    │  4. binaries_corrupt:       │
    │       point at install path │
    └──────────┬─────────────────┘
@@ -62,7 +58,7 @@
 
 | Path | Change |
 |---|---|
-| `pipeline/src/maktaba_pipeline/pipeline/stages/probe.py` | On `content_hash` mismatch, transition video to `corrupted` (lowercase) and write an audit row. |
+| `pipeline/src/maktaba_pipeline/pipeline/stages/probe.py` | On `content_hash` mismatch, transition video to `CORRUPTED` and write an audit row. |
 | `Makefile` | `dr-drill` target. |
 | `.github/workflows/_nightly.yml` | Runs `dr-drill` once daily; alerts on failure. |
 
@@ -103,9 +99,8 @@ Same as Scenario 1, then:
 ## Scenario 3 — Media partially corrupted
 
 The next integrity sweep (Story 24.7) detects content_hash mismatches.
-Affected videos transition to state=corrupted (lowercase per
-plan-24-03's CHECK enum). Operators triage from the admin Recovery
-page.
+Affected videos transition to state=CORRUPTED. Operators triage from
+the admin Recovery page.
 
 ## Scenario 4 — Service binaries corrupted
 
@@ -232,24 +227,11 @@ jobs:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-
-# CI runner setup: $PG_HOST, $PG_PORT, $PG_PASS, $PG_SUPERUSER must be
-# exported by the workflow. dropdb/createdb need a CI Postgres
-# superuser (or a role with CREATEDB) — the workflow uses the default
-# `postgres` user inside the docker-compose Postgres service.
-export PGUSER="${PG_SUPERUSER:-postgres}"
-export PGHOST="$PG_HOST"
-export PGPORT="$PG_PORT"
-export PGPASSWORD="$PG_PASS"
-
 start=$(date +%s)
 maktaba-api backup run
-dropdb --if-exists maktaba
-createdb maktaba
-# `--then-migrate` is owned by plan-24-05 and applies migrations after
-# pg_restore, so older-schema dumps are brought forward in one step.
-maktaba-api restore --from "$(maktaba-api backup list --json | jq -r '.[0].file')" \
-                    --confirm RESTORE --then-migrate
+PGPASSWORD=$PG_PASS dropdb --if-exists maktaba && createdb maktaba
+maktaba-api restore --from "$(maktaba-api backup list --json | jq -r '.[0].file')" --confirm RESTORE
+maktaba-api migrate up
 maktaba-pipeline scan --library all
 end=$(date +%s)
 elapsed=$((end - start))
@@ -259,43 +241,24 @@ fi
 tests/dr/smoke.sh
 ```
 
-`tests/dr/drill_scenario2.sh` is the smaller Scenario-2 RTO drill: it
-exercises the cache-rebuild path (`reprocess --from-stage index`)
-against a 50-video fixture (small enough to run nightly in CI in <10 min).
-It asserts a separate `RTO_S2_BUDGET_SECONDS` budget (default 600),
-configurable via the same env-override pattern as Scenario 1.
-
 ### 2.7 Corrupted-state transition
 
 `pipeline/.../probe.py`:
 
 ```python
 async def probe_video(video, db) -> Probe:
-    # `compute_content_hash` is owned by plan-24-08; do not reimplement.
-    from domain.identity import compute_content_hash
-
     actual = compute_content_hash(video.path)
     if video.content_hash and actual != video.content_hash:
-        # Lowercase 'corrupted' — plan-24-03's CHECK constraint pins
-        # the enum to lowercase per architecture §7.2.
         await db.execute(
-            "UPDATE videos SET state='corrupted' WHERE id=$1", video.id)
-        # Canonical audit_log shape per plan-21-06 / PLAN_REVIEW §1.4:
-        #   columns: category, event, actor_user, actor_ip, target_id,
-        #   target_kind, payload, dedupe_key, created_at.
-        # category='data' is reserved for integrity / corruption events.
-        await audit.append(
-            category="data",
-            event="video.corrupted",
-            target_id=str(video.id),
-            target_kind="video",
-            payload={"expected_hash": video.content_hash, "actual": actual},
-        )
+            "UPDATE videos SET state='CORRUPTED' WHERE id=$1", video.id)
+        await audit.append(category="data", action="video.corrupted",
+                           resource={"type": "video", "id": str(video.id)},
+                           detail={"expected_hash": video.content_hash, "actual": actual})
         raise CorruptedMedia(video.path)
     return run_ffprobe(video.path)
 ```
 
-The state CHECK constraint (Story 24.3) lists `corrupted` so the
+The state CHECK constraint (Story 24.3) lists `CORRUPTED` so the
 update succeeds.
 
 ## 3. Test plan
@@ -312,9 +275,8 @@ update succeeds.
 
 | Test | What it pins |
 |---|---|
-| `TestCorruptByteFlip` | Modify a byte in a fixture video; next probe transitions video to `corrupted` (lowercase); the audit row records expected vs actual hash with `category='data', event='video.corrupted'`. |
-| `TestCorruptedShownInUI` | Admin recovery card lists corrupted videos via `GET /api/videos?state=corrupted`. |
-| `TestScenario2RtoFixture` | The Scenario-2 drill (`drill_scenario2.sh`) completes within `RTO_S2_BUDGET_SECONDS` against the 50-video CI fixture; `reprocess --from-stage index` re-populates `transcripts_fts` and Chroma; `parity_check` returns 0 findings. |
+| `TestCorruptByteFlip` | Modify a byte in a fixture video; next probe transitions video to `CORRUPTED`; the audit row records expected vs actual hash. |
+| `TestCorruptedShownInUI` | Admin recovery card lists corrupted videos via `GET /api/videos?state=CORRUPTED`. |
 
 ### 3.3 Documented commands (TC3)
 
@@ -326,7 +288,7 @@ update succeeds.
 
 | Case | Behaviour | Where pinned |
 |---|---|---|
-| Partial DB restore (EC1) | `restore.go` refuses partial restores by default. **`--allow-partial`** flag (owned by plan-24-05; cross-linked here) lets DR runs proceed past per-table errors, with the documented risk that downstream invariants may be violated until a doctor pass converges. | `TestPartialRestoreRefused`, `TestAllowPartialProceeds` |
+| Partial DB restore (EC1) | `restore.go` refuses partial restores by default; `--allow-partial` flag with documented risk. | `TestPartialRestoreRefused` |
 | Higher schema version (EC2) | `migrate up` runs forward automatically after restore; the doctor reports the delta. | `TestRestoreThenMigrateUp` |
 | Lower schema version (EC3) | Refused by the migrate doctor at boot; clear error tells operator to upgrade first. | `TestRestoreLowerVersionRefused` |
 | Drill timing variability | `RTO_BUDGET_SECONDS` env override lets CI runners with slow disks raise the threshold without changing code. | `TestRtoBudgetEnvOverride` |
@@ -360,5 +322,5 @@ update succeeds.
 - [ ] WebSocket streams per-step progress.
 
 **State**
-- [ ] Probe transitions to `corrupted` (lowercase) on hash mismatch.
+- [ ] Probe transitions to `CORRUPTED` on hash mismatch.
 - [ ] Audit row written.

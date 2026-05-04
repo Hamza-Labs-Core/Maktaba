@@ -9,7 +9,7 @@
 | Concern | Decision |
 |---|---|
 | Session manager | `streaming/internal/session/` — gRPC `OpenSession` returns sessionID + manifest URL. |
-| Probe cache | `streaming/internal/probe/` — keyed by `content_hash` (architecture §1.5 canonical identity; survives moves/renames). In-process LRU. Persisted to `media_info.raw_ffprobe` JSONB on first probe (architecture line 1335). |
+| Probe cache | `streaming/internal/probe/` — keyed by `(path, size, mtime)`, in-process LRU. Persisted to `videos.probe_data` JSONB on first probe. |
 | Manifest builder | `streaming/internal/hls/manifest.go` — pure function over probe data. No FFmpeg call. |
 | Segment cache | `streaming/internal/segments/` — disk-backed LRU under `cache_dir/segments/{video_hash}/{rendition}/{seg}.ts`. |
 | Single-flight | `golang.org/x/sync/singleflight` keyed by `video_hash:rendition:seg`. |
@@ -47,16 +47,6 @@ streaming/internal/
 
 ```go
 // session/grpc.go
-//
-// OpenSession returns the canonical OpenSessionResponse defined in
-// architecture §9.9:
-//   message OpenSessionResponse {
-//     Session              session      = 1;
-//     CapabilitiesResponse capabilities = 2;
-//   }
-// The session-scoped manifest URL lives on Session (per architecture §4.8
-// cache layout: /streaming/sessions/{session_id}/master.m3u8) and the
-// ffprobe data is exposed via Capabilities, not as a top-level Probe field.
 func (s *Service) OpenSession(ctx context.Context, in *streamingv1.OpenSessionRequest) (*streamingv1.OpenSessionResponse, error) {
     t := metrics.Time(metrics.OpenSessionDuration)
     defer t.Done()
@@ -67,10 +57,11 @@ func (s *Service) OpenSession(ctx context.Context, in *streamingv1.OpenSessionRe
     probe, err := s.probeCache.GetOrLoad(ctx, v)       // hot path: in-mem hit
     if err != nil { return nil, err }
 
-    sess := s.sessions.Create(ctx, in.UserId, v, probe) // sets ManifestUrl on Session
+    sid := s.sessions.Create(ctx, in.UserId, v, probe)
     return &streamingv1.OpenSessionResponse{
-        Session:      sess.Wire(),                       // includes session_id, manifest_url, expires_at
-        Capabilities: s.caps.For(v, probe),              // codec/resolution/audio tracks from probe
+        SessionId:  sid.String(),
+        ManifestUrl: s.urls.Manifest(v.Hash, sid),
+        Probe:      probe.Wire(),
     }, nil
 }
 ```
@@ -87,34 +78,33 @@ type Probe struct {
     Hash    string   `json:"-"`
 }
 
-// Cache is keyed by content_hash (architecture §1.5) — survives moves and
-// renames. Persisted backing store is media_info.raw_ffprobe JSONB
-// (architecture line 1335), keyed by media_info.video_id.
+type cacheKey struct{ Path string; Size int64; ModTime int64 }
+
 type Cache struct {
     mu      sync.Mutex
-    inmem   *lru.Cache[string, *Probe]   // key = content_hash; 4096 entries
-    db      DBProbe                       // media_info.raw_ffprobe
+    inmem   *lru.Cache[cacheKey, *Probe]   // 4096 entries
+    db      DBProbe                          // videos.probe_data column
     metrics ProbeMetrics
 }
 
 func (c *Cache) GetOrLoad(ctx context.Context, v Video) (*Probe, error) {
-    key := v.ContentHash // canonical identity
+    key := cacheKey{v.Path, v.Size, v.ModTime.Unix()}
     if p, ok := c.inmem.Get(key); ok { c.metrics.Hits.Inc(); return p, nil }
     c.metrics.Misses.Inc()
 
-    if p, ok, _ := c.db.Load(ctx, v.ID); ok {       // SELECT raw_ffprobe FROM media_info WHERE video_id = $1
+    if p, ok, _ := c.db.Load(ctx, v.ID); ok {
         c.inmem.Add(key, p)
         return p, nil
     }
     p, err := c.runFFprobe(ctx, v.Path)
     if err != nil { return nil, err }
-    _ = c.db.Save(ctx, v.ID, p)        // INSERT INTO media_info(video_id, raw_ffprobe) … ON CONFLICT DO UPDATE
+    _ = c.db.Save(ctx, v.ID, p)        // best-effort; in-mem authoritative
     c.inmem.Add(key, p)
     return p, nil
 }
 ```
 
-EC3 mapping: file content change ⇒ new `content_hash` (recomputed by scanner) ⇒ cache miss ⇒ re-probe. Renames/moves keep the same hash and therefore the same cache entry. The `db.Save` uses `INSERT INTO media_info … ON CONFLICT (video_id) DO UPDATE SET raw_ffprobe = EXCLUDED.raw_ffprobe` so the row is overwritten atomically.
+EC3 mapping: `(size, mtime)` change → key change → cache miss → re-probe. The `db.Save` uses `INSERT … ON CONFLICT DO UPDATE` so the entry is overwritten atomically.
 
 ## 4. Manifest builder (no FFmpeg)
 
@@ -183,11 +173,7 @@ type spanReader struct {
 }
 ```
 
-Manifest URL pattern is **session-scoped** per architecture §4.8 cache layout:
-`/streaming/sessions/{session_id}/{rendition}/range?start=...&end=...`
-(the master playlist itself lives at `/streaming/sessions/{session_id}/master.m3u8`).
-Session manager resolves `session_id → content_hash + rendition` for the cache lookup.
-Handler parses range, computes covered segment indices via media-playlist offsets, ensures all are present in cache (single-flight transcode each missing one), composes a `spanReader`, serves single response with sum-Content-Length.
+Manifest URL pattern: `/stream/{hash}/{rend}/range?start=...&end=...`. Handler parses range, computes covered segment indices via media-playlist offsets, ensures all are present in cache (single-flight transcode each missing one), composes a `spanReader`, serves single response with sum-Content-Length.
 
 ## 7. Single-flight cold transcode
 
@@ -230,7 +216,7 @@ func (c *Cache) OpenOrTranscode(ctx context.Context, k Key) (*os.File, int64, er
 Pre-warm cache by transcoding 1 hour worth of segments (~720 segs at 5s). Request 500 with `curl --range`. Assert no FFmpeg subprocess via `pgrep -c ffmpeg | grep -E '^0$'` during loop. Assert p95 ≤ 100 ms.
 
 ### TC3 — Forced cold transcode
-Hit `POST /admin/cache/segments/evict?hash=…&rendition=720p&seg=000010` (per-key eviction endpoint **owned by this plan** — see §13). Then GET that segment. Assert first p95 ≤ 6 s; subsequent re-fetch p95 ≤ 100 ms.
+Hit `POST /admin/cache/segments/evict?hash=…&rendition=720p&seg=000010`. Then GET that segment. Assert first p95 ≤ 6 s; subsequent re-fetch p95 ≤ 100 ms.
 
 ### Single-flight TC (EC2)
 50 goroutines simultaneously request the same uncached segment. Assert: 1 FFmpeg subprocess (instrument via `transcode_in_flight_singleflights`); all 50 receive identical SHA-256 of payload bytes.
@@ -243,44 +229,32 @@ Set `cache.max_gib=2`. Start 4 cold transcodes serially writing 600 MiB each. As
 
 ## 10. Configuration
 
-Aligned to architecture §11.3 TOML sections (`[cache]`, `[streaming]`):
-
-```toml
-[cache]
-root    = "/var/cache/maktaba"   # canonical key per arch §11.3
-max_gib = 50
-
-[streaming]
-probe_lru_size = 4096
-
-[streaming.ffmpeg]
-bin     = "ffmpeg"
-nice    = 5
-threads = 0          # auto
-
-[[streaming.renditions]]
-name      = "1080p"
-width     = 1920
-height    = 1080
-bandwidth = 5_000_000
-codecs    = "avc1.640028,mp4a.40.2"
-
-[[streaming.renditions]]
-name      = "720p"
-width     = 1280
-height    = 720
-bandwidth = 2_500_000
-codecs    = "avc1.4d4020,mp4a.40.2"
-
-[[streaming.renditions]]
-name      = "480p"
-width     = 854
-height    = 480
-bandwidth = 1_000_000
-codecs    = "avc1.4d401f,mp4a.40.2"
+```yaml
+streaming:
+  cache_dir: /var/cache/maktaba/streaming
+  cache_max_gib: 50
+  probe_lru_size: 4096
+  ffmpeg:
+    bin: ffmpeg
+    nice: 5
+    threads: 0          # auto
+  renditions:
+    - name: 1080p
+      width: 1920
+      height: 1080
+      bandwidth: 5_000_000
+      codecs: "avc1.640028,mp4a.40.2"
+    - name: 720p
+      width: 1280
+      height: 720
+      bandwidth: 2_500_000
+      codecs: "avc1.4d4020,mp4a.40.2"
+    - name: 480p
+      width: 854
+      height: 480
+      bandwidth: 1_000_000
+      codecs: "avc1.4d401f,mp4a.40.2"
 ```
-
-On-disk segment path: `{cache.root}/streaming/segments/{content_hash}/{rendition}/{seg}.ts`.
 
 ## 11. Edge cases summary
 
@@ -290,15 +264,11 @@ On-disk segment path: `{cache.root}/streaming/segments/{content_hash}/{rendition
 | EC2 thundering-herd cold | story | `singleflight.Group`; 1 FFmpeg per key. |
 | EC3 LRU mid-write | story | tmp dir outside LRU, `os.Rename` at end. |
 | Client closes mid-segment | impl | `ctx.Done()` plumbed to `io.CopyN`; FFmpeg killed if no other waiters. |
-| Probe DB row stale (file replaced) | impl | `content_hash` changes when bytes change; cache key invalidates; re-probe. |
+| Probe DB row stale (file replaced) | impl | `(size, mtime)` cache key invalidates; re-probe. |
 
 ## 12. Dependencies
 
 - Epic 8 streaming epic (segment/manifest spec).
-- Story 18.8 (whole-cache flush admin endpoint `POST /admin/cache/{name}/flush`).
+- Story 18.8 (cache flush admin endpoint).
 - Story 18.1 (budget assertions).
 - Story 21.2 (metrics).
-
-## 13. Admin endpoints owned by this plan
-
-- `POST /admin/cache/segments/evict?hash=…&rendition=…&seg=…` — per-key eviction of a single segment. Returns 204 on hit, 404 if not present. Counterpart to plan-18-08's whole-cache flush.

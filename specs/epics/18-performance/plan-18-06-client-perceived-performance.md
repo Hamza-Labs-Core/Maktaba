@@ -8,7 +8,7 @@
 | Concern | Decision |
 |---|---|
 | Lighthouse | `lighthouse-ci` (LHCI) against the production build served by `vite preview`. |
-| Player measurement | Playwright fixture intercepts `play` event → first `loadeddata` event (the spec moment when frame data is decoded and renderable). `loadedmetadata` is too early (only headers parsed) and `timeupdate` is too late (fires after the first paint). |
+| Player measurement | Playwright fixture intercepts `play` event → first `timeupdate` callback. |
 | Search keystroke | Playwright; types char-by-char with 250 ms debounce mock. |
 | Native budgets | Capacitor + iOS-Safari mobile measurement spot-checked monthly via Maestro flow; not blocking CI. |
 | Out of scope | Bundle-size budgets (separate story 11.x); CDN edge perf (no CDN in v1). |
@@ -77,13 +77,9 @@ async function measureTTFF(page, videoUrl: string) {
         return new Promise<number>((resolve) => {
             const v = document.querySelector('video') as HTMLVideoElement;
             const t0 = performance.now();
-            // `loadeddata` fires the moment the first frame is decoded and
-            // renderable — the spec point that matches "first frame painted".
-            // Avoid `loadedmetadata` (only headers parsed) and `timeupdate`
-            // (fires AFTER the first paint, inflating the measurement).
-            const onLD = () => { v.removeEventListener('loadeddata', onLD);
+            const onTU = () => { v.removeEventListener('timeupdate', onTU);
                                  resolve(performance.now() - t0); };
-            v.addEventListener('loadeddata', onLD);
+            v.addEventListener('timeupdate', onTU);
             v.play();
         });
     });
@@ -100,10 +96,7 @@ test('TTFF warm path p95 <= 1.5s', async ({ page }) => {
 });
 
 test('TTFF cold transcode p95 <= 3.5s', async ({ page }) => {
-    // Whole-cache flush — canonical endpoint owned by plan-18-08.
-    // (Per-key eviction `POST /admin/cache/segments/evict?hash=&rendition=&seg=`
-    //  is owned by plan-18-03 and used in TC3 of that plan.)
-    await fetch('/admin/cache/segments/flush', { method: 'POST' });
+    await fetch('/admin/cache/segments/flush?id=fixture-2');
     const ttff = await measureTTFF(page, 'fixture-2');
     expect(ttff).toBeLessThanOrEqual(3500);
 });
@@ -121,12 +114,6 @@ test('search keystroke p95 <= 750ms (warm)', async ({ page }) => {
     const input = page.getByTestId('search-input');
     await input.focus();
     const t0 = Date.now();
-    // Note on debounce semantics: `pressSequentially({ delay: 50 })` types
-    // each character with 50 ms gaps, then settles. The app's 250 ms
-    // debounce sees a continuous stream of inputs followed by quiescence,
-    // so it fires EXACTLY ONCE after the last keystroke (single-fire
-    // behavior). If the typing delay were ≥ debounce window, each char
-    // would fire its own request — which we explicitly avoid here.
     await input.pressSequentially('بسم الله', { delay: 50 });
 
     await page.waitForResponse(r => r.url().includes('/api/search') && r.status() === 200);
@@ -194,14 +181,7 @@ Runs nightly on iOS/Android simulators; informational, not blocking.
 ## 8. Test cases
 
 ### TC1 — Lighthouse CI
-PR job runs the en and ar configs back-to-back, but each invocation must use `--collect.outputDir` so the second run does not overwrite the first run's artifacts:
-
-```bash
-lhci autorun --config=lighthouse/lighthouserc.cjs    --collect.outputDir=.lighthouseci/en
-lhci autorun --config=lighthouse/ar.lighthouserc.cjs --collect.outputDir=.lighthouseci/ar
-```
-
-Median LCP/TBT must hit budget for both.
+PR job runs `lhci autorun --config=lighthouse/lighthouserc.cjs && lhci autorun --config=lighthouse/ar.lighthouserc.cjs`. Median LCP/TBT must hit budget.
 
 ### TC2 — Playwright TTFF
 `web/tests/perf/time_to_first_frame.spec.ts` — warm and cold; runs in `chromium-vidstack` and `webkit-hls-native` projects.
@@ -214,7 +194,7 @@ Median LCP/TBT must hit budget for both.
 | Case | Source | Handling |
 |---|---|---|
 | EC1 RTL LCP | story | Lighthouse runs `lang=ar` and `lang=en`; both must pass. |
-| EC2 Safari HLS native | story | TTFF tracked per project; both paths measured via `loadeddata` (canonical first-frame-decoded event). `loadedmetadata` would fire too early on Safari's native HLS path. |
+| EC2 Safari HLS native | story | TTFF tracked per project; native HLS path measured via `loadedmetadata` since `timeupdate` fires later in Safari. |
 | EC3 Capacitor budget | story | Maestro flow on simulator; budget tracked separately, doesn't block PR merge. |
 | Lighthouse flake | impl | `numberOfRuns: 3`, take median. |
 | Service-worker dirty state | impl | Each Playwright spec calls `await context.unregisterAll()` before navigation. |
@@ -239,7 +219,6 @@ export async function p95(samples: number[]) {
 ## 12. Dependencies
 
 - Story 18.2 (warm-search budget; this story validates the round-trip including paint).
-- Story 18.8 (whole-cache flush admin endpoint `POST /admin/cache/{name}/flush` used by cold TTFF tests).
-- Story 18.3 (per-key segment eviction `POST /admin/cache/segments/evict` if a single segment needs to be removed).
+- Story 18.3 (segment cache flush admin endpoint for cold TTFF).
 - Story 11.x (web build pipeline; vite preview).
 - Epic 17 design system (LCP element is the page hero; tracked element class `lcp-target` makes assertions stable).

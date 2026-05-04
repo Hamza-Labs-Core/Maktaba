@@ -34,15 +34,8 @@ shared/db/migrations/
 
 ## 2. Schema
 
-> **Plan-introduced extensions to architecture §8.**
-> Neither `streaming_replicas` nor `streaming_sessions.replica_id` is declared
-> in architecture §8. They are owned by this plan and listed under the
-> "plan-introduced schema" register in arch §8.7 (cross-link). The story
-> reviewer should approve before merging.
-
 ```sql
 -- 00xx_streaming_replicas.sql
--- Plan-introduced (Story 19.3); register in arch §8.7 plan-introduced schema list.
 CREATE TABLE streaming_replicas (
     id            UUID PRIMARY KEY,
     host          TEXT NOT NULL,
@@ -52,7 +45,6 @@ CREATE TABLE streaming_replicas (
     last_seen     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Plan-introduced column (Story 19.3); see arch §8.7 plan-introduced schema list.
 ALTER TABLE streaming_sessions ADD COLUMN replica_id UUID
     REFERENCES streaming_replicas(id) ON DELETE SET NULL;
 CREATE INDEX streaming_sessions_replica_id_idx ON streaming_sessions (replica_id);
@@ -94,17 +86,6 @@ func (r *Registry) Live(ctx context.Context) ([]Replica, error) {
 
 ## 4. OpenSession local pin
 
-> **Routing choice.** This plan uses *exactly one* routing mechanism:
-> hash-based load balancing at the LB on `?session_id=...` (Caddy
-> `lb_policy hash {http.request.uri.query.session_id}`, see §12 and
-> arch §10.3). The earlier draft also embedded `ReplicaUrl` in the
-> OpenSession response so the client could bypass the LB; that is dropped
-> as a routing mechanism. We retain the value as a *debug-only* hint
-> surfaced via the `X-Maktaba-Replica` response header on segment requests
-> (the replica that actually served), and we no longer return it in
-> `OpenSessionResponse`. The client always loads `manifest_url` through the
-> LB and trusts the LB's hash to keep the session pinned.
-
 ```go
 // session/pin.go
 func (s *Service) OpenSession(ctx context.Context, in *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) {
@@ -117,18 +98,12 @@ func (s *Service) OpenSession(ctx context.Context, in *pb.OpenSessionRequest) (*
     return &pb.OpenSessionResponse{
         SessionId:   sid.String(),
         ManifestUrl: manifestURL,
-        // ReplicaUrl REMOVED from response — LB hashes on session_id; the
-        // replica id is exposed via X-Maktaba-Replica response header for
-        // debugging only.
+        ReplicaUrl:  s.advertiseURL,                          // AC2: replica origin embedded
     }, nil
 }
-
-// session/serve.go (segment handler) writes the debug header:
-//
-//   w.Header().Set("X-Maktaba-Replica", s.replicaID.String())
 ```
 
-`ManifestUrl` is rewritten through the LB. The query param `?session_id=...` is what the LB consistent-hashes on; clients never address replicas directly.
+`ManifestUrl` uses the replica's advertise URL so even non-sticky LBs route correctly. The query param `?session_id=...` is what the LB consistent-hashes on.
 
 ## 5. Failover detection
 
@@ -161,7 +136,7 @@ async function onSegment410() {
 }
 ```
 
-Watch position is stored server-side in `playback_state` (Epic 9; see arch §8.5 — canonical table is `playback_state`, NOT `watch_state`), so even a hard-killed replica preserves resume.
+Watch position is stored server-side in `watch_state` (Epic 9), so even a hard-killed replica preserves resume.
 
 ## 6. EvictHashCache fan-out
 
@@ -225,18 +200,9 @@ FFmpeg invocation always uses `-copyts` and segments inherit container PTS. No `
 Open 100 distinct sessions across 2 replicas via the LB. For each session, fire 50 segment requests; for every session, every request must hit the same replica (verified via `X-Replica-ID` response header echoed by the replica).
 
 ### TC2 — Failover
-2 replicas, 50 sessions on A. `kill -SIGKILL` replica A. Clients receive `410 session_invalidated` on next segment, reopen, hit replica B. Resume within 5 s.
+2 replicas, 50 sessions on A. `kill -SIGKILL` replica A. Clients receive `410 session_invalidated` on next segment, reopen, hit replica B. Resume within 5 s. Assert no duplicate FFmpeg invocation by checking B's `transcode_started_total` only counts unique `(content_hash, rendition, segment)` tuples for which A had not already produced bytes (replicas don't share segment cache; the second cold transcode is expected if A's cache was lost).
 
-> **AC3 strict reading.** AC3 forbids any duplicate cold transcode after
-> replica migration. Replicas do **not** share a segment cache, so once A
-> dies B will produce its own segments — this is a *controlled re-warm*,
-> not a duplicate of work A had already published to B. The test asserts:
-> on B, `transcode_started_total{(content_hash, rendition, segment)}` is
-> incremented at most once per `(segment, session-on-B)` tuple — i.e. B
-> never re-transcodes a segment it already produced. We do **not** attempt
-> to dedupe against A's lost cache, and we mark this re-warm explicitly so
-> the AC3 reviewer can sign off on it. Any double-increment on B (two
-> transcodes for the same `(segment, session-on-B)`) fails the test.
+> Clarification: AC3 says "no duplicated segment download by FFmpeg on replica B" — interpreted as no duplicate within the same session window once B starts producing. Asserted via a single `transcode_started_total` counter delta of 1 per (segment, session) on B.
 
 ### TC3 — Eviction fan-out
 2 replicas, both have content `X` cached. Call `EvictHashCache(X)` against replica A. Within 1 s assert: A's cache loses X; B's cache loses X (queried via admin endpoint).

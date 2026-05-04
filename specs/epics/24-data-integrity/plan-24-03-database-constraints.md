@@ -4,24 +4,16 @@
 > Story states *what* and *why*; this plan states *how*.
 > Schema scope and migrations defined per
 > [Story 22.4](../22-devops/plan-22-04-database-migrations.md).
->
-> **Owns schema canonicalization** (per `PLAN_REVIEW_18_24.md` §1.1, §1.2).
-> This plan ships migration `0050_schema_canonicalization.sql` that
-> reconciles the column-name and state-casing drift inherited from
-> Epics 07–13 against architecture §8.1 / §7.2. Every other plan in this
-> batch (24-02, 24-04, 24-06, 24-07, 24-08) consumes the canonical names
-> rendered here.
 
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
 | Constraint inventory | Catalogued in `shared/db/constraints.md`; one row per FK / unique / check; CI lint compares against actual schema. |
-| State enum | `videos.state` and `processing_jobs.state` use SQL CHECK constraints; the enum values come from `shared/db/states.yaml` (single source of truth, see §2.9). Values are **lowercase** matching architecture §7.2. |
-| Schema canonicalization | Migration `0050_schema_canonicalization.sql` renames drifted columns/tables to their canonical names (architecture §8.1) and pins lowercase state CHECKs. See §2.10. |
-| Soft delete | `deleted_at TIMESTAMPTZ NULL` with a partial unique index on `(library_id, path) WHERE deleted_at IS NULL`. |
+| State enum | `videos.state` and `processing_jobs.state` use SQL CHECK constraints; the enum values come from architecture §3. |
+| Soft delete | `deleted_at TIMESTAMPTZ NULL` with a partial unique index on `(<business_key>) WHERE deleted_at IS NULL`. |
 | SQLite parity | `PRAGMA foreign_keys = ON` set on every connection; absence detected by a startup probe that fails fast. |
-| Out of scope | Migration discipline (22.4); per-Epic schemas (Epics 1–10); state machine logic itself (architecture §3 / §7.2). |
+| Out of scope | Migration discipline (22.4); per-Epic schemas (Epics 1–10); state machine logic itself (architecture §3). |
 
 ## 1. Architecture diagram
 
@@ -50,9 +42,7 @@
 | `tools/constraint-lint.go` | Compares inventory to live schema; flags drift. |
 | `api/internal/db/errors.go` | Maps pgx error codes to typed Go errors (`ErrUnique`, `ErrFkViolation`, `ErrCheckViolation`). |
 | `pipeline/src/maktaba_pipeline/db/errors.py` | Same for asyncpg. |
-| `shared/db/states.yaml` | **Single source of truth** for `videos.state` and `processing_jobs.state` enums. Architecture §3 / §7.2 references this file; the migration in §2.10 reads it; the lint reads it; tests load it. |
-| `shared/db/migrations/0050_schema_canonicalization.sql` (+ sqlite) | **Canonicalizes column/table names and pins lowercase state CHECKs.** See §2.10. |
-| `shared/db/migrations/0051_constraints.sql` (+ sqlite) | Adds the system-wide FK / UNIQUE constraints catalogued in §2.3. |
+| `shared/db/migrations/0050_constraints.sql` (+ sqlite) | Adds the system-wide constraints not owned by a specific Epic; e.g., the `state` CHECK with the full enum from architecture §3. |
 | `api/internal/db/sqlite_pragma.go` | Connection setup that asserts `PRAGMA foreign_keys=ON`. |
 | Tests — `tests/integration/constraints_*.py`, `_test.go` per Go file. |
 
@@ -71,17 +61,13 @@
 | Table | Constraint | Type | Action | Rationale |
 |---|---|---|---|---|
 | videos | content_hash | UNIQUE | n/a | Identity (Story 24.8). Global per architecture §8.1. |
-| videos | (library_id, path) WHERE deleted_at IS NULL | partial UNIQUE | n/a | A live path appears once per library; soft-deleted rows excluded. See §2.8. |
-| videos | state IN ('discovered','probed','audio_extracted','transcribed','subtitle_gen','indexed','thumbnailed','ready','failed','ready_no_audio','missing','superseded','corrupted') | CHECK | reject | Enum hygiene; lowercase per architecture §7.2 + extension states from `shared/db/states.yaml`. |
+| videos | (library_id, video_id) | UNIQUE | n/a | A video appears once per library. |
+| videos | state IN ('DISCOVERED', ..., 'FAILED') | CHECK | reject | Enum hygiene; full list per architecture §3. |
 | videos | library_id → libraries(id) | FK | RESTRICT | Hard delete a library only via the gc path (Story 9.15). |
-| videos | superseded_by → videos(id) | FK | SET NULL | Modify-in-place chain (Story 24.8). New column added by `0050_schema_canonicalization.sql`; documented in arch §8.7 as plan-introduced extension. |
-| videos | deleted_at | column | n/a | Soft-delete marker (architecture §8.1; confirmed slot). |
-| transcript_segments | (transcript_id, seq) | UNIQUE | n/a | Canonical per architecture lines 1410–1411. Note: table name is `transcript_segments` (canonical) — older drafts called it `segments`. |
-| transcript_segments | transcript_id → transcripts(id) | FK | CASCADE | Segments owned by the transcript. |
-| processing_jobs_segments | (video_id, segment_idx) | UNIQUE | n/a | Resume idempotency for plan-24-02's per-segment commit (helper table, not `processing_jobs` itself). Distinct concern from `transcript_segments(transcript_id, seq)`: this enforces "one job-segment commit per (video, segment)", not "one transcript row per (transcript, seq)". |
+| segments | (video_id, segment_idx) | UNIQUE | n/a | Resume idempotency (Story 24.2). |
+| segments | video_id → videos(id) | FK | CASCADE | Segments are owned by the video. |
 | transcripts | (video_id, audio_track_id, backend, model) WHERE is_active | partial UNIQUE | n/a | History rows for re-runs; current per (track, backend, model). |
-| transcripts | superseded_at, detected_language, language_confidence | columns | n/a | Per architecture §8.1 (confirmed slots). |
-| processing_jobs | state IN ('pending','claimed','running','paused','resuming','done','failed','cancelled') | CHECK | reject | Lowercase per architecture §7.2 + Story 24.2's `paused`/`resuming` transitions. |
+| processing_jobs | state IN ('QUEUED', ..., 'DONE') | CHECK | reject | Enum hygiene. |
 | users | username (lower) | UNIQUE | n/a | Owned by Story 10.1. |
 | library_acl | (user_id, library_id) | UNIQUE | n/a | One role per pair. |
 | library_acl | user_id → users(id) | FK | CASCADE | ACL gone when user is gone. |
@@ -89,11 +75,6 @@
 ```
 
 The full markdown table runs ~80 rows; the lint reads it.
-
-**Canonical column names confirmed (architecture §8.1):**
-`videos.size_bytes` (not `size`), `videos.duration_sec` (not `duration_s`),
-`videos.mtime` is `TIMESTAMPTZ` (not integer-ns).
-**Canonical FTS table:** `transcripts_fts` (not `segments_fts`).
 
 ### 2.4 The lint
 
@@ -240,155 +221,14 @@ WHERE deleted_at IS NOT NULL
 Reads filter `WHERE deleted_at IS NULL` by default; the GC view
 excludes rows by definition.
 
-### 2.9 `shared/db/states.yaml` — single source of truth
-
-Architecture §3 (FSM) and §7.2 (job state machine) both reference this
-file. The migration in §2.10 reads it; the lint reads it; tests load it.
-There is no prose parsing of `architecture.md`.
-
-```yaml
-# shared/db/states.yaml
-videos:
-  states:
-    - discovered
-    - probed
-    - audio_extracted
-    - transcribed
-    - subtitle_gen
-    - indexed
-    - thumbnailed
-    - ready
-    - failed
-    # Extension states introduced by Epic 24 / earlier epics:
-    - ready_no_audio   # audio extraction skipped (silent video)
-    - missing          # file present in DB, gone on disk
-    - superseded       # modify-in-place chain (Story 24.8)
-    - corrupted        # content_hash mismatch (Story 24.6)
-
-processing_jobs:
-  states:
-    - pending
-    - claimed
-    - running
-    - paused
-    - resuming
-    - done
-    - failed
-    - cancelled
-```
-
-### 2.10 Schema-canonicalization migration
-
-`shared/db/migrations/0050_schema_canonicalization.sql`:
-
-```sql
--- +goose Up
--- +goose StatementBegin
-
--- 1. Column renames to architecture-canonical names. Each is wrapped in
---    a defensive check: if the canonical column already exists, the
---    rename is a no-op.
-
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name='videos' AND column_name='size'
-                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                 WHERE table_name='videos' AND column_name='size_bytes')) THEN
-        ALTER TABLE videos RENAME COLUMN size TO size_bytes;
-    END IF;
-
-    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name='videos' AND column_name='duration_s'
-                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                 WHERE table_name='videos' AND column_name='duration_sec')) THEN
-        ALTER TABLE videos RENAME COLUMN duration_s TO duration_sec;
-    END IF;
-END$$;
-
--- 2. Table rename: segments -> transcript_segments (canonical per
---    architecture lines 1410-1411). No-op if `transcript_segments`
---    already exists (earlier plans may have created the canonical name
---    directly).
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.tables
-               WHERE table_name='segments'
-                 AND NOT EXISTS (SELECT 1 FROM information_schema.tables
-                                 WHERE table_name='transcript_segments')) THEN
-        ALTER TABLE segments RENAME TO transcript_segments;
-    END IF;
-END$$;
-
--- 3. videos.deleted_at slot (architecture §8.1; idempotent).
-ALTER TABLE videos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
-
--- 4. videos.superseded_by — plan-introduced extension (cross-ref arch §8.7).
-ALTER TABLE videos ADD COLUMN IF NOT EXISTS superseded_by UUID NULL
-    REFERENCES videos(id) ON DELETE SET NULL;
-
--- 5. transcripts extension columns (architecture §8.1; idempotent).
-ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ NULL;
-ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS detected_language TEXT NULL;
-ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS language_confidence REAL NULL;
-
--- 6. Pin the videos.state CHECK to the lowercase canonical enum.
---    Drop any existing CHECK constraint on `state` first.
-DO $$
-DECLARE
-    cn TEXT;
-BEGIN
-    FOR cn IN
-        SELECT conname FROM pg_constraint
-         WHERE conrelid = 'videos'::regclass
-           AND contype  = 'c'
-           AND pg_get_constraintdef(oid) ILIKE '%state%'
-    LOOP
-        EXECUTE 'ALTER TABLE videos DROP CONSTRAINT ' || quote_ident(cn);
-    END LOOP;
-END$$;
-
-ALTER TABLE videos ADD CONSTRAINT videos_state_check
-    CHECK (state IN (
-        'discovered','probed','audio_extracted','transcribed',
-        'subtitle_gen','indexed','thumbnailed','ready','failed',
-        'ready_no_audio','missing','superseded','corrupted'));
-
--- 7. Pin processing_jobs.state CHECK.
-DO $$
-DECLARE cn TEXT;
-BEGIN
-    FOR cn IN
-        SELECT conname FROM pg_constraint
-         WHERE conrelid = 'processing_jobs'::regclass
-           AND contype  = 'c'
-           AND pg_get_constraintdef(oid) ILIKE '%state%'
-    LOOP
-        EXECUTE 'ALTER TABLE processing_jobs DROP CONSTRAINT ' || quote_ident(cn);
-    END LOOP;
-END$$;
-
-ALTER TABLE processing_jobs ADD CONSTRAINT processing_jobs_state_check
-    CHECK (state IN (
-        'pending','claimed','running','paused','resuming',
-        'done','failed','cancelled'));
-
--- +goose StatementEnd
-```
-
-**Note on slot.** This migration uses slot `0050` per arch §8.7's
-manifest; if an existing `0050_constraints.sql` predates this work, it
-is renumbered to `0051` (see §2.1). Plan-22-04's CI gate (boot the full
-migration set against an empty DB) catches drift.
-
 ## 3. Test plan
 
 ### 3.1 FK enforcement (TC1)
 
 | Test | What it pins |
 |---|---|
-| `TestDeleteLibraryCascadesToVideos` | Insert library + 5 videos + 50 transcript_segments; delete the library; videos and transcript_segments rows go to zero. |
-| `TestVideoFKRestrictDoesntLeak` | Attempt to delete a library while a `processing_job.state='running'` references one of its videos; the delete fails or cascades by design — test pins the documented behavior (CASCADE for transcript_segments, RESTRICT for in-flight jobs). |
+| `TestDeleteLibraryCascadesToVideos` | Insert library + 5 videos + 50 segments; delete the library; videos and segments rows go to zero. |
+| `TestVideoFKRestrictDoesntLeak` | Attempt to delete a library while a `processing_job.state='RUNNING'` references one of its videos; the delete fails or cascades by design — test pins the documented behavior (CASCADE for segments, RESTRICT for in-flight jobs). |
 | `TestSqliteForeignKeysOn` | Force-disable the pragma; the bootstrap probe fails; the service refuses to start. |
 
 ### 3.2 Unique violation (TC2)
@@ -397,16 +237,15 @@ migration set against an empty DB) catches drift.
 |---|---|
 | `TestContentHashUnique` | Two parallel INSERTs with same hash — one succeeds, one fails with `ErrUnique`; `ConstraintError.Column == "content_hash"`. |
 | `TestPartialUniqueOnIsActive` | Two `transcripts` rows with same `(video_id, audio_track_id, backend, model)` and `is_active=false` are allowed; flipping a second row to `is_active=true` fails. |
-| `TestProcessingJobsSegmentIdxUnique` | Re-insert into `processing_jobs_segments` with `(video_id, segment_idx=10)` after the first → `ErrUnique`. (Plan-24-02's idempotency unique constraint on the helper table.) |
-| `TestTranscriptSegmentsSeqUnique` | Re-insert `transcript_segments(transcript_id, seq=10)` → `ErrUnique`. (Architecture-canonical unique.) |
+| `TestSegmentIdxUnique` | Re-insert `(job_id, segment_idx=10)` after the first → `ErrUnique`. |
 
 ### 3.3 State enum (TC3)
 
 | Test | What it pins |
 |---|---|
 | `TestInvalidStateRejected` | `UPDATE videos SET state='unknown'` fails the CHECK; the error is mapped to `ErrCheckViolation`. |
-| `TestStateEnumMatchesStatesYaml` | A test loads `shared/db/states.yaml` and asserts each CHECK constraint (`videos.state`, `processing_jobs.state`) contains exactly the values listed there. The YAML file is the single source of truth referenced by architecture §3 / §7.2; no prose parsing. |
-| `TestStaleTransitionGuard` | Two writers attempt `running -> done`; one wins, the other returns `ErrStaleTransition`. |
+| `TestEnumStringsMatchArchitecture` | A test reads architecture.md §3 and asserts the CHECK constraint contains exactly those values (parses the architecture's enum block). |
+| `TestStaleTransitionGuard` | Two writers attempt `RUNNING -> DONE`; one wins, the other returns `ErrStaleTransition`. |
 
 ### 3.4 Lint
 
@@ -443,16 +282,11 @@ migration set against an empty DB) catches drift.
 **Inventory**
 - [ ] `shared/db/constraints.md` exists; covers all FK/unique/check.
 - [ ] `tools/constraint-lint` runs in CI lint and asserts both directions.
-- [ ] `shared/db/states.yaml` exists; arch §3 / §7.2 reference it; tests load it.
 
 **Constraints**
 - [ ] FKs declared with explicit `ON DELETE`.
 - [ ] Unique constraints enforce all listed business invariants.
-- [ ] CHECK constraints enforce `videos.state` and `processing_jobs.state` (lowercase).
-- [ ] Migration `0050_schema_canonicalization.sql` renames drifted columns/tables and pins lowercase state CHECKs.
-- [ ] `videos.superseded_by`, `videos.deleted_at`, `transcripts.superseded_at`, `transcripts.detected_language`, `transcripts.language_confidence` slots exist.
-- [ ] `processing_jobs_segments(video_id, segment_idx)` UNIQUE present (plan-24-02 idempotency helper table).
-- [ ] `transcript_segments(transcript_id, seq)` UNIQUE present (architecture canonical).
+- [ ] CHECK constraints enforce `videos.state` and `processing_jobs.state`.
 
 **Soft delete**
 - [ ] `deleted_at` columns where called for; partial unique index where applicable.

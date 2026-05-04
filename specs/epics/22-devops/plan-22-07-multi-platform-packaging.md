@@ -44,7 +44,7 @@ homebrew/      packaging/ mobile/  mobile/    desktop/    {tvos,androidtv}/
 | `deploy/packaging/nfpm.yaml` | Source of truth for deb/rpm metadata. |
 | `deploy/packaging/systemd/maktaba-api.service`, `-streaming.service`, `-pipeline.service` | Linux unit files. |
 | `deploy/packaging/postinst.sh`, `postrm.sh` | Create `maktaba` user, set perms, enable units. |
-| `apps/mobile/capacitor.config.ts` | Already named in architecture; this story adds the custom `mobileAppCompatibility` field (Capacitor has no built-in `compatibleApiVersion`; cross-cutting §1.10). |
+| `apps/mobile/capacitor.config.ts` | Already named in architecture; this story adds `compatibleApiVersion`. |
 | `apps/mobile/build-mobile.sh` | Wraps `pnpm build && pnpm cap sync && xcodebuild/gradle`. |
 | `apps/desktop/src-tauri/tauri.conf.json` | Already named; this story adds `updater.endpoints` and `pubkey`. |
 | `apps/desktop/build-desktop.sh` | Wraps `pnpm tauri build`. |
@@ -93,17 +93,8 @@ class Maktaba < Formula
   end
 
   def post_install
-    # `system` returns false when the program isn't found, so the
-    # original `if system("psql …")` branch silently SKIPPED bootstrap
-    # whenever psql was missing — exactly the wrong way around. The
-    # corrected logic: if psql isn't on PATH, install was incomplete,
-    # warn loudly and skip bootstrap (Homebrew runs post_install before
-    # `depends_on` updates the user's PATH in some edge cases). If psql
-    # is present and the DB exists, skip. Otherwise create the DB.
-    psql = which("psql")
-    if psql.nil?
-      opoo "psql not found on PATH; skipping DB bootstrap. Run `brew services start postgresql@16` and re-run `brew postinstall maktaba`."
-    elsif quiet_system(psql, "-lqt") && Utils.popen_read(psql, "-lqt").lines.any? { |l| l.split("|").first.strip == "maktaba" }
+    # If user already has Postgres, skip role+db creation; otherwise bootstrap.
+    if system("psql -lqt | cut -d\\| -f 1 | grep -qw maktaba")
       ohai "Existing 'maktaba' DB detected — skipping bootstrap"
     else
       system "createdb", "maktaba"
@@ -185,14 +176,8 @@ contents:
     dst: /usr/bin/maktaba-api
   - src: streaming/bin/maktaba-streaming
     dst: /usr/bin/maktaba-streaming
-  # Ship the built wheel itself, not a directory. The postinst step
-  # creates a venv at /opt/maktaba/pipeline-venv and installs the wheel
-  # via `uv pip install`. `pipeline/dist/maktaba_pipeline-*.whl` is
-  # produced by `cibuildwheel` (Story 22.2 §2.6) and resolves to the
-  # platform-specific wheel via the build script.
-  - src: pipeline/dist/maktaba_pipeline-${VERSION}-*.whl
-    dst: /usr/lib/maktaba/wheels/
-    expand: true
+  - src: pipeline/dist/wheel
+    dst: /usr/lib/maktaba/pipeline
   - src: deploy/packaging/systemd/maktaba-api.service
     dst: /lib/systemd/system/maktaba-api.service
   - src: deploy/packaging/systemd/maktaba-streaming.service
@@ -225,21 +210,6 @@ overrides:
 set -e
 getent passwd maktaba >/dev/null || useradd --system --home /var/lib/maktaba --shell /usr/sbin/nologin maktaba
 chown -R maktaba:maktaba /var/lib/maktaba
-
-# Build the pipeline venv from the wheel. Shipping a relocatable venv
-# from an FHS-incompatible build path is brittle; instead the package
-# ships the wheel and the postinst creates the venv on the target.
-if command -v uv >/dev/null 2>&1; then
-  PYBIN="$(command -v uv)"
-  $PYBIN venv /opt/maktaba/pipeline-venv --python "$(command -v python3)"
-  $PYBIN pip install --python /opt/maktaba/pipeline-venv/bin/python \
-    /usr/lib/maktaba/wheels/maktaba_pipeline-*.whl
-else
-  python3 -m venv /opt/maktaba/pipeline-venv
-  /opt/maktaba/pipeline-venv/bin/pip install /usr/lib/maktaba/wheels/maktaba_pipeline-*.whl
-fi
-chown -R maktaba:maktaba /opt/maktaba/pipeline-venv
-
 systemctl daemon-reload
 systemctl enable --now maktaba-api maktaba-streaming maktaba-pipeline
 ```
@@ -268,23 +238,8 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-`Type=notify` requires the binary to call `sd_notify(0, "READY=1")`
-once it is fully serving traffic; without that call, systemd waits the
-default 90 s timeout and then declares the start-up failed. This story
-wires the calls explicitly:
-
-- `api/cmd/api/serve.go` — calls `daemon.SdNotify(false, daemon.SdNotifyReady)`
-  (from `github.com/coreos/go-systemd/v22/daemon`) once the listener
-  is open AND `MAKTABA_AUTO_MIGRATE` (if set) has run to completion.
-- `streaming/cmd/streaming/main.go` — same.
-- The Go binaries also send `STATUS=` updates on drain and
-  `RELOADING=1` / `READY=1` around config-reload (cross-link Story
-  21.4's systemd watchdog wiring).
-- `Type=notify` falls back to `Type=simple` cleanly when the binary is
-  run outside systemd (the `daemon.SdNotify` call is a no-op when
-  `NOTIFY_SOCKET` is unset).
-
-`go.mod` adds `github.com/coreos/go-systemd/v22` (already vendored).
+The Go binaries gain a `Type=notify` integration via `sd_notify` so
+systemd knows when the service is ready.
 
 ### 2.6 Mobile build
 
@@ -292,14 +247,7 @@ wires the calls explicitly:
 
 ```ts
 import { CapacitorConfig } from '@capacitor/cli';
-// Capacitor has NO built-in `compatibleApiVersion` field. The custom
-// `mobileAppCompatibility` shape below is read by the mobile API
-// client at startup; it refuses to talk to API versions outside the
-// declared range. PLAN_REVIEW §1.10 — replaces the fictional
-// `compatibleApiVersion: '>=1.0.0 <2.0.0'` from earlier drafts.
-const config: CapacitorConfig & {
-  mobileAppCompatibility?: { minApiVersion: string; maxApiVersion: string };
-} = {
+const config: CapacitorConfig = {
   appId: 'io.maktaba.app',
   appName: 'Maktaba',
   webDir: '../web/dist',
@@ -307,14 +255,8 @@ const config: CapacitorConfig & {
   plugins: {
     SplashScreen: { launchShowDuration: 0 },
   },
-  // Custom field — read by `apps/mobile/src/api/version-guard.ts` on
-  // startup and on every API reconnection. Mirrored under
-  // `package.json#maktaba.api_compatibility` for build-time tools that
-  // can't import the TS config.
-  mobileAppCompatibility: {
-    minApiVersion: '1.0.0',
-    maxApiVersion: '<2.0.0',
-  },
+  // EC3 from Story 22.5; the API rejects out-of-range clients.
+  compatibleApiVersion: '>=1.0.0 <2.0.0',
 };
 export default config;
 ```
@@ -393,13 +335,6 @@ and platform-specific URLs:
 Auto-update is opt-in via a settings toggle in the app. The pubkey is
 the same minisign key from Story 22.2.
 
-The `endpoints` template variable `{{current_version}}` is current
-Tauri 2.x updater syntax (cross-checked against Tauri docs at release
-time — `tools/render-formula.sh`'s sibling `tools/check-tauri-updater.sh`
-asserts the expected placeholders are present). When Tauri renames or
-removes a placeholder in a future major, the check fails and forces a
-spec update before release.
-
 ### 2.8 TV apps
 
 Both projects build via `xcodebuild` and `gradle`; the artifacts are
@@ -452,7 +387,7 @@ curl -fsS http://localhost:8080/api/health > /dev/null
 
 | Test | What it pins |
 |---|---|
-| `TestDebInstallOnUbuntuLts` | Fresh Ubuntu 24.04; `dpkg -i` succeeds; systemd units start; smoke. (Bumped from 22.04 because the system ffmpeg there is 4.x, below the `Depends: ffmpeg (>= 6.0)` constraint.) |
+| `TestDebInstallOnUbuntuLts` | Fresh Ubuntu 22.04; `dpkg -i` succeeds; systemd units start; smoke. |
 | `TestRpmInstallOnFedora` | Fresh Fedora 40; `dnf install ./maktaba.rpm`; smoke. |
 | `TestDebMissingFfmpeg` (EC2) | Strip ffmpeg from the runner; install fails at the `Depends:` resolution with a clear message; the user sees "ffmpeg is required". |
 
@@ -462,7 +397,7 @@ curl -fsS http://localhost:8080/api/health > /dev/null
 |---|---|
 | `TestCapacitorBuildIosIpa` | `apps/mobile/build-mobile.sh ios` produces an `App.ipa`; an iOS simulator boot + login + library smoke runs in CI. |
 | `TestCapacitorBuildAndroidApk` | `build-mobile.sh android` produces an `app-release.apk`; an emulator smoke run completes login + library list. |
-| `TestCompatVersionMismatch` | A mobile build with `mobileAppCompatibility: { maxApiVersion: "<1.0.0" }` connects to a v1 API and sees the documented refuse-message. |
+| `TestCompatVersionMismatch` | A mobile build with `compatibleApiVersion: 0.x` connects to a v1 API and sees the documented refuse-message. |
 
 ### 3.4 Desktop
 
@@ -477,7 +412,7 @@ curl -fsS http://localhost:8080/api/health > /dev/null
 | Case | Behaviour | Where pinned |
 |---|---|---|
 | Existing Postgres on Mac (EC1) | Formula's `post_install` detects existing `maktaba` DB and skips create; documented. | `TestBrewExistingPostgres` |
-| Linux distro without ffmpeg ≥ 6.0 (EC2) | Package's `Depends:` line lists `ffmpeg (>= 6.0)`. Ubuntu 24.04 (noble) is the documented baseline because it ships ffmpeg 6.x out of the box; Ubuntu 22.04 (jammy) ships ffmpeg 4.4.2 and is therefore NOT supported by the system-ffmpeg deb path. Operators on older LTSes must either (a) add the maktaba apt repo's `ffmpeg-static` package which bundles a static build of ffmpeg 7.x, or (b) install via the official maktaba PPA's backport. The deb is therefore not for Debian 11 (ffmpeg 4.x); supported list documented in `RELEASING.md`. | `TestDebMissingFfmpeg` |
+| Linux distro without ffmpeg ≥ 6.0 (EC2) | Package's `Depends:` line lists `ffmpeg (>= 6.0)`; install fails fast on older distros. The deb is therefore not for Debian 11 (ffmpeg 4.x); supported list documented. | `TestDebMissingFfmpeg` |
 | AppImage updater (EC3) | Tauri's AppImage updater path uses the bundled updater; toggle in settings persists to `~/.config/maktaba/`. | `TestAppImageUpdaterDisabled` |
 | Mac Gatekeeper / notarization | The release-channel `.dmg` is notarized by the maintainer post-build; CI artifacts are dev-signed and Gatekeeper will warn. Documented in RELEASING.md. | n/a |
 | Windows SmartScreen | Initial `.msi` releases will SmartScreen-warn until reputation builds; documented; signing cert is held by maintainer. | n/a |
@@ -512,7 +447,7 @@ curl -fsS http://localhost:8080/api/health > /dev/null
 
 **Mobile**
 - [ ] CI produces `.ipa` and `.apk` artifacts.
-- [ ] `mobileAppCompatibility` custom field enforced by the mobile API client (Capacitor has no built-in `compatibleApiVersion`); also mirrored under `package.json#maktaba.api_compatibility`.
+- [ ] `compatibleApiVersion` enforced.
 
 **Desktop**
 - [ ] `.dmg`, `.msi`, `.AppImage` produced.

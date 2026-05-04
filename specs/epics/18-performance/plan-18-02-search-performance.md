@@ -103,8 +103,6 @@ func (o *Orchestrator) Search(ctx context.Context, in SearchIn) (SearchOut, erro
     )
     g, gctx := errgroup.WithContext(ctx)
     g.Go(func() error {
-        // FTS5 virtual table is `transcripts_fts`; tokenizer is
-        // `unicode61 remove_diacritics 2` (canonical per architecture line 1469).
         h, err := o.fts.Query(gctx, in.Query, in.TopK*3)
         ftsHits = h
         return err
@@ -128,14 +126,11 @@ func (o *Orchestrator) Search(ctx context.Context, in SearchIn) (SearchOut, erro
 
 ```go
 // fusion.go
-// SegmentID is int64 because transcript_segments.id is BIGSERIAL
-// (architecture line 1369). String-keyed maps would cost an
-// strconv.FormatInt per hit and lose type safety.
 func Fuse(fts []FTSHit, vec []VecHit, topK int) []Hit {
     const k = 60.0
     // segment_id → score
-    score := make(map[int64]float64, len(fts)+len(vec))
-    meta  := make(map[int64]Hit, len(fts)+len(vec))
+    score := make(map[string]float64, len(fts)+len(vec))
+    meta  := make(map[string]Hit, len(fts)+len(vec))
 
     for i, h := range fts {
         score[h.SegmentID] += 1.0 / (k + float64(i+1))
@@ -146,7 +141,7 @@ func Fuse(fts []FTSHit, vec []VecHit, topK int) []Hit {
         if _, ok := meta[h.SegmentID]; !ok { meta[h.SegmentID] = h.AsHit() }
     }
     out := make([]Hit, 0, topK)        // bounded
-    keys := make([]int64, 0, len(score))
+    keys := make([]string, 0, len(score))
     for k := range score { keys = append(keys, k) }
     sort.Slice(keys, func(i, j int) bool { return score[keys[i]] > score[keys[j]] })
     for i := 0; i < topK && i < len(keys); i++ {
@@ -161,13 +156,11 @@ Allocation test (TC AC3) asserts via `testing.AllocsPerRun` that Fuse runs in �
 
 ## 6. Response shape
 
-REST surface is camelCase per architecture §9 (cross-checked with plan-07-08).
-
 ```jsonc
 {
-  "hits": [{ "segmentId": 1234, "videoId": "01H…", "startSec": 12.34, "endSec": 14.10, "snippet": "...", "score": 0.123 }],
+  "hits": [{ "segment_id": "...", "video_id": "...", "ts_start": 12.34, "snippet": "...", "score": 0.123 }],
   "degraded": false,
-  "tookMs": 312
+  "took_ms": 312
 }
 ```
 
@@ -200,7 +193,7 @@ Wipe embed cache via admin `POST /admin/cache/embed/flush`. Run 100 unique queri
 | Case | Handling |
 |---|---|
 | EC1 — Empty query | Return 400 `EMPTY_QUERY` before any DB hit. Unit test asserts no DB call. |
-| EC2 — Single Arabic char | Pass-through to FTS5 `unicode61 remove_diacritics 2` tokenizer (architecture line 1469); assert hits possible (fixture seeded with relevant content). |
+| EC2 — Single Arabic char | Pass-through to FTS5 unicode61 tokenizer; assert hits possible (fixture seeded with relevant content). |
 | EC3 — RTL+LTR mixed | Highlighter operates on UTF-8 byte ranges; `bidi.Reorder` runs only at render. Test compares snippet bytes pre/post highlight. |
 | EC4 — Cache full (10 k unique) | LRU eviction is O(1); benchmark asserts no spike > 2× baseline at insertion 10 001. |
 | Pipeline up but slow (180 ms) | Within budget; not degraded. |
@@ -210,7 +203,7 @@ Wipe embed cache via admin `POST /admin/cache/embed/flush`. Run 100 unique queri
 
 | Metric | Type | Notes |
 |---|---|---|
-| `search_request_duration_seconds{cache="hot"\|"warm"\|"cold"}` | histogram | Label values declared explicitly: `hot` = embed-cache hit, `warm` = miss-but-FTS-cached, `cold` = full miss. |
+| `search_request_duration_seconds{cache}` | histogram | warm/cold buckets. |
 | `search_embed_cache_hits_total` | counter | |
 | `search_embed_cache_misses_total` | counter | |
 | `search_embed_cache_size` | gauge | |

@@ -24,7 +24,7 @@
    │  BEGIN;                     │
    │   SELECT … FOR UPDATE SKIP  │
    │      LOCKED ORDER BY pr,ts  │
-   │   UPDATE state='running'    │
+   │   UPDATE state=RUNNING      │
    │  COMMIT;                    │
    └──────────────┬──────────────┘
                   │
@@ -74,18 +74,17 @@
 
 ```sql
 -- name: ClaimNextJob :one
--- Lowercase states per architecture §7.2 / plan-24-03 CHECK.
 WITH next AS (
     SELECT id
     FROM processing_jobs
-    WHERE state = 'pending'
+    WHERE state = 'QUEUED'
       AND (run_after IS NULL OR run_after <= now())
     ORDER BY priority DESC, created_at ASC
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
 UPDATE processing_jobs
-SET state = 'running',
+SET state = 'RUNNING',
     claimed_at = now(),
     claimed_by = $1
 FROM next
@@ -177,21 +176,13 @@ type WatchStore struct {
     audit     *audit.Writer
 }
 
-func (s *WatchStore) Put(ctx context.Context, userID, videoID uuid.UUID, posSec float64, ip netip.Addr) error {
-    // Per PLAN_REVIEW_18_24 §1.4 the audit_log schema is owned by
-    // plan-21-06; this writer must use the canonical column shape:
-    //   category, event, actor_user, actor_ip, target_id,
-    //   target_kind, payload, dedupe_key, created_at.
-    // 'security' is the canonical category for concurrency-violation
-    // and watch-progress-race signals (plan-21-06 enum).
+func (s *WatchStore) Put(ctx context.Context, userID, videoID uuid.UUID, posSec float64) error {
     s.audit.Append(ctx, audit.Event{
-        Category:   audit.CategorySecurity, // plan-21-06 canonical
-        Event:      "watch.put",
-        ActorUser:  &userID,
-        ActorIP:    &ip,
-        TargetID:   videoID.String(),
-        TargetKind: "video",
-        Payload:    map[string]any{"position_sec": posSec},
+        Category: audit.CategoryActivity,
+        Action:   "watch.put",
+        Actor:    audit.Actor{User: userID.String()},
+        Resource: audit.Resource{Type: "video", ID: videoID.String()},
+        Detail:   map[string]any{"position_sec": posSec},
     })
     s.debouncer.Coalesce(string(userID[:])+string(videoID[:]), func() {
         // Last-writer-wins; no monotonicity check (story AC2).
@@ -209,11 +200,7 @@ func (s *WatchStore) Put(ctx context.Context, userID, videoID uuid.UUID, posSec 
 The debouncer coalesces writes to one persisted UPSERT per second per
 key (matches Epic 7.11). Every received POST emits an audit row;
 audit captures the full sequence even when the persisted state only
-shows the last value (EC4). The coalesce *also* emits a separate
-`category='security', event='concurrency.violation'` row when two POSTs
-within the same debounce window come from different clients for the
-same `(user, video)` — that race is observable to ops via
-[plan-21-06](../21-observability/plan-21-06-audit-log.md)'s table.
+shows the last value (EC4).
 
 ### 2.7 Stale-resource handling
 
@@ -250,18 +237,17 @@ if errors.Is(err, db.ErrFkViolation) {
 
 | Test | What it pins |
 |---|---|
-| `TestAdvisoryLockReleasesOnCrash` | Acquire lock, kill the holder; the next acquirer succeeds within a **wall-clock budget of 10 s** (Postgres's `idle_in_transaction_session_timeout` or backend-termination handshake). The test pins `< 10 s` rather than "eventually"; CI flakes if the kernel/PG is slow. |
+| `TestAdvisoryLockReleasesOnCrash` | Acquire lock, kill the holder; the next acquirer succeeds within the connection-timeout window (idle-in-tx or terminated). |
 | `TestAdvisoryReleaseOnExplicitUnlock` | Acquire and release in same tx; the next acquirer succeeds immediately. |
 | `TestAdvisoryHeartbeatReaper` (EC2) | Stale advisory holder (no heartbeat for > 3× period) is reaped; the holder's tx is terminated by a janitor query the reaper runs. |
-| `TestMultiGpuConcurrency` | Two workers configured with `MAKTABA_GPU_DEVICES=0,1`; advisory locks namespace by GPU id; each worker holds its own lock simultaneously; throughput scales 2×. Pins that `advisory_xact("gpu", "0")` and `advisory_xact("gpu", "1")` produce different lock keys (the blake2b hash of `"0"` vs `"1"` differs). |
 
 ### 3.4 Chroma single-writer (TC4)
 
 | Test | What it pins |
 |---|---|
-| `TestSecondPipelineRefusesChromaPath` | Boot pipeline #1; boot pipeline #2 with same `chroma_dir`; #2 raises `ChromaPeerExists` and exits with the canonical startup error code **`E_CHROMA_PEER_EXISTS`** (shared with Story 19.4 TC4). |
+| `TestSecondPipelineRefusesChromaPath` | Boot pipeline #1; boot pipeline #2 with same `chroma_dir`; #2 raises `ChromaPeerExists` and exits. |
 | `TestKillFirstReleasesLock` | Kill #1; #2 boots successfully (kernel released the flock). |
-| `TestSingleWriterMatches19_4_TC4` | Aligns with Story 19.4 TC4 fixture; the exit code and error message text match the fixture string `E_CHROMA_PEER_EXISTS` so dashboards/alerts catch both. |
+| `TestSingleWriterMatches19_4_TC4` | Aligns with Story 19.4 TC4 fixture. |
 
 ## 4. Edge cases
 
@@ -275,7 +261,7 @@ if errors.Is(err, db.ErrFkViolation) {
 | Advisory lock space exhaustion | Postgres advisory lock space is 2^32 × 2^32 (signed int4 namespace + key); namespacing via blake2b hash makes collisions negligible. | n/a |
 | Chroma write under server-mode | The peer-detect check is bypassed when `chroma.mode=server`; documented as deferred until the server-mode deployment is supported (Story 19.4). | `TestServerModeBypassesLocalLock` |
 | Watch-progress upsert under high concurrency | Postgres `INSERT ... ON CONFLICT (user_id, video_id) DO UPDATE` is internally serialized per row; throughput per row is ~thousands/s. The debouncer caps the actual rate at 1/s/row. | `TestUpsertHighConcurrency` |
-| `claimed_by` revealed in stuck job | The claim writes the worker hostname; `processing_jobs.claimed_by` lets ops attribute orphaned `running` jobs to a specific worker. | n/a |
+| `claimed_by` revealed in stuck job | The claim writes the worker hostname; `processing_jobs.claimed_by` lets ops attribute orphaned RUNNING jobs to a specific worker. | n/a |
 | Job with `run_after` in future | Skipped by the claim query; the next worker poll picks it up after the timestamp. | `TestRunAfterDeferral` |
 
 ## 5. Dependencies

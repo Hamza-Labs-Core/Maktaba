@@ -140,3 +140,4 @@ Thumbs.db
 
 # Claude Code runtime metadata
 .claude/scheduled_tasks.lock
+.claude/

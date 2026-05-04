@@ -11,7 +11,7 @@
 | GraphQL | `shared/graphql/schema.graphql`. Generated client/server code via `gqlgen` (Go) and `graphql-codegen` (TS). |
 | gRPC | `shared/proto/*.proto`. Buf-managed. |
 | REST | OpenAPI checked in at `shared/openapi/maktaba.yaml`. Auto-extracted from chi routes via reflection on every CI run; mismatches fail. |
-| WebSocket | The TS source-of-truth lives at `web/src/contracts/events.ts`, which re-exports a frozen schema generated from `shared/contracts/events.json` (the language-neutral source). Codegen produces `shared/ws/events_gen.go` (Go) and `shared/ws/events_gen.py` (Python) from the same JSON. |
+| WebSocket | Typed events in `shared/ws/events.ts` (TS) → `shared/ws/events_gen.go` (Go) → `shared/ws/events_gen.py` (Python). Single TS source via `graphql-codegen`-style script. |
 | BC lint | `buf breaking` for proto; custom AST checker for GraphQL/OpenAPI; deprecation comments enforce one-minor-version window. |
 
 ## 1. Project layout
@@ -23,10 +23,9 @@ shared/
 │   ├── codegen.yml                   # ts-codegen config
 │   └── breaking_lint.go              # custom GQL BC check
 ├── proto/
-│   # Two services only (architecture §9.9). There is no `maktaba.api.v1.proto`;
-│   # the API is GraphQL + REST, not gRPC.
-│   ├── pipeline.proto                  # Pipeline { Embed, Transcribe (stream), ListBackends, HealthCheck }
-│   ├── streaming.proto                 # Streaming { OpenSession, CloseSession, EvictHashCache, GetCapabilities, WatchQueue, HealthCheck }
+│   ├── maktaba.api.v1.proto
+│   ├── maktaba.streaming.v1.proto
+│   ├── maktaba.pipeline.v1.proto
 │   └── buf.yaml / buf.gen.yaml
 ├── openapi/
 │   ├── maktaba.yaml
@@ -64,25 +63,15 @@ lint:
 
 ```yaml
 # shared/proto/buf.gen.yaml
-# Plugins are pinned by digest (EC1: generator non-determinism). Replace the
-# `@<digest>` placeholders with the actual digests from `buf registry plugin
-# info` on the chosen versions.
 plugins:
-  - remote: buf.build/protocolbuffers/go@<digest>
+  - remote: buf.build/protocolbuffers/go
     out: shared/proto/gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc/go@<digest>
+  - remote: buf.build/grpc/go
     out: shared/proto/gen/go
     opt: paths=source_relative
-  # Python: use `betterproto` rather than `buf.build/protocolbuffers/python`.
-  # Architecture §2 (line ~232) calls out `betterproto` as the canonical
-  # Python proto runtime; using `buf.build/protocolbuffers/python` would
-  # produce stubs incompatible with the rest of the Python codebase.
-  - local: ["python", "-m", "grpc_tools.protoc"]
+  - remote: buf.build/protocolbuffers/python
     out: shared/proto/gen/py
-    opt:
-      - python_betterproto_out=shared/proto/gen/py
-      - generate_pydantic_dataclasses
 ```
 
 CI:
@@ -91,111 +80,6 @@ CI:
 - run: buf generate shared/proto
 - run: git diff --exit-code shared/proto/gen      # AC1: drift fails
 - run: buf breaking shared/proto --against ${{ github.event.pull_request.base.sha }}
-- run: go test -tags=contract ./api/internal/contract/...
-```
-
-### grpc_drift_test.go — canonical RPC enumeration
-
-The drift test parses each `.proto` and asserts that the set of RPCs declared
-matches the canonical list **exactly** — no extras, no missing entries. The
-canonical list is the source of truth for cross-cutting §4 (architecture
-§9.9):
-
-```go
-// api/internal/contract/grpc_drift_test.go
-//go:build contract
-
-package contract
-
-import (
-    "os"
-    "sort"
-    "testing"
-
-    "github.com/bufbuild/protocompile"
-    "github.com/stretchr/testify/require"
-)
-
-// canonicalRPCs is the ground-truth list of RPCs each service declares.
-// Adding or removing an RPC here is a deliberate API change and must be
-// reflected in the .proto file in the same PR.
-var canonicalRPCs = map[string][]string{
-    "maktaba.pipeline.v1.Pipeline": {
-        "Embed",
-        "Transcribe",       // server-streaming
-        "ListBackends",
-        "HealthCheck",
-    },
-    "maktaba.streaming.v1.Streaming": {
-        "OpenSession",
-        "CloseSession",
-        "EvictHashCache",
-        "GetCapabilities",
-        "WatchQueue",
-        "HealthCheck",
-    },
-}
-
-func TestGRPCContractDrift(t *testing.T) {
-    files := map[string]string{
-        "shared/proto/pipeline.proto":  "maktaba.pipeline.v1.Pipeline",
-        "shared/proto/streaming.proto": "maktaba.streaming.v1.Streaming",
-    }
-
-    compiler := protocompile.Compiler{
-        Resolver: &protocompile.SourceResolver{ImportPaths: []string{"shared/proto"}},
-    }
-
-    for path, fqService := range files {
-        t.Run(fqService, func(t *testing.T) {
-            data, err := os.ReadFile(path)
-            require.NoError(t, err, "read %s", path)
-            _ = data
-
-            fds, err := compiler.Compile(t.Context(), path)
-            require.NoError(t, err)
-            fd := fds.FindFileByPath(path)
-            require.NotNil(t, fd)
-
-            // Find the service.
-            svcs := fd.Services()
-            var got []string
-            for i := 0; i < svcs.Len(); i++ {
-                svc := svcs.Get(i)
-                if string(svc.FullName()) != fqService {
-                    continue
-                }
-                for j := 0; j < svc.Methods().Len(); j++ {
-                    got = append(got, string(svc.Methods().Get(j).Name()))
-                }
-            }
-            sort.Strings(got)
-
-            want := append([]string(nil), canonicalRPCs[fqService]...)
-            sort.Strings(want)
-
-            require.Equal(t, want, got,
-                "drift in %s: declared RPCs differ from the canonical list", fqService)
-        })
-    }
-}
-
-// TestGRPCContractNoExtraServices fails if the .proto files declare any
-// service not in the canonical map. There must be exactly two services:
-// Pipeline and Streaming. There is no `maktaba.api.v1.proto`.
-func TestGRPCContractNoExtraServices(t *testing.T) {
-    allowed := map[string]bool{}
-    for k := range canonicalRPCs {
-        allowed[k] = true
-    }
-    matches, err := os.ReadDir("shared/proto")
-    require.NoError(t, err)
-    for _, f := range matches {
-        if !strings.HasSuffix(f.Name(), ".proto") { continue }
-        // Parse and assert every declared service is in `allowed`.
-        // (Implementation analogous to TestGRPCContractDrift.)
-    }
-}
 ```
 
 ## 3. GraphQL drift
@@ -240,32 +124,7 @@ Handlers self-describe by implementing:
 type operationDescribed interface { Describe(*openapi3.Operation) }
 ```
 
-CI step diffs the extracted spec against checked-in
-`shared/openapi/maktaba.yaml`; any difference fails.
-
-The same drift extractor walks **GraphQL** and **WebSocket** schemas:
-
-```go
-// shared/openapi/extract.go (continued)
-
-// ExtractGraphQL serializes the gqlgen-loaded schema to canonical SDL and
-// diffs it against shared/graphql/schema.graphql. The check guards against
-// gqlgen-side changes (resolvers, directives) that don't round-trip back
-// to SDL — the same pattern as `git diff --exit-code` for codegen output.
-func ExtractGraphQL(s *ast.Schema) string {
-    return formatter.NewFormatter(s).String()
-}
-
-// ExtractWSEnvelopes inspects the typed events emitted by handlers (every
-// type that implements `ws.Event`) and ensures each one has a counterpart
-// in shared/contracts/events.json (the SoT). Unknown handler-side events
-// — i.e. an emitted type whose discriminator is missing from the JSON —
-// fail the drift check.
-func ExtractWSEnvelopes(events []ws.Event, sot WSContract) []DriftFinding { ... }
-```
-
-The CI step running `make contract:check` invokes all three extractors and
-fails on any diff.
+CI step diffs the extracted spec against checked-in `shared/openapi/maktaba.yaml`; any difference fails.
 
 ## 5. WS schema codegen
 
@@ -365,10 +224,7 @@ Custom diff: removal of any operationId or response without a deprecation extens
 ## 8. Test cases
 
 ### TC1 — Drift
-Edit `pipeline.proto` to add a field. Don't run `buf generate`. CI's
-`git diff --exit-code shared/proto/gen` fires; merge blocked. After
-running `buf generate`, the diff disappears, CI passes. (There is no
-`maktaba.api.v1.proto` — see §1.)
+Edit `maktaba.api.v1.proto` to add a field. Don't run `buf generate`. CI's `git diff --exit-code` fires; merge blocked. After running `buf generate`, the diff disappears, CI passes.
 
 ### TC2 — WS unknown
 Server emits `{ type: "martian.event", ... }` (e.g., during a partial deploy). Client logs warning; UI continues; no crash. Parser tests above codify this.

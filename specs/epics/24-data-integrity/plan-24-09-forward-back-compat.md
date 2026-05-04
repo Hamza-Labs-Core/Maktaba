@@ -4,29 +4,18 @@
 > Story states *what* and *why*; this plan states *how*.
 > Pairs with the upgrade/rollback flow from
 > [Story 22.6](../22-devops/plan-22-06-upgrade-rollback.md) and the
-> **migration discipline from
-> [plan-22-04 (Database Migrations)](../22-devops/plan-22-04-database-migrations.md)**
-> — schema discipline (add nullable → backfill → set NOT NULL) is owned
-> by plan-22-04's CI lint and is **not** re-implemented here. This plan
-> covers the artifact-format and cache-key dimensions of compat.
->
-> **Forward-compat fixtures are non-existent at v1.0 cut.** The
-> `tests/forward_compat/<v>/` directories are populated as each
-> subsequent minor ships; reviewers should not expect them on day one.
+> migration discipline from
+> [Story 22.4](../22-devops/plan-22-04-database-migrations.md).
 
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
-| Schema discipline | "Add nullable → backfill → set NOT NULL in a later release." Enforced by **plan-22-04**'s migration lint (cross-linked by name; not re-implemented here). |
-| Artifact format | Every generated **JSON manifest** artifact (`segments.json`, `vtt_extras.json`, `sprites_manifest.json`) carries a top-level `schema_version: <int>`. Readers tolerate higher minor versions by ignoring unknown fields; loud-fail on a major version they don't recognize. |
-| SRT/VTT excluded | Subtitle artifacts (`*.srt`, `*.vtt`) are **W3C/SubRip standard formats** with their own version semantics; we do not append a `schema_version` to them (it would not validate). Compatibility for these artifacts is governed by the spec versions; the `vtt_extras.json` sidecar (a JSON manifest) carries the schema version that matters for our own additions. |
-| gRPC field-number stability | Per §3 below: never reuse a proto field number; deprecate-don't-delete. The proto lint (plan-22-04 ecosystem) catches reuse on rebuild. |
+| Schema discipline | "Add nullable → backfill → set NOT NULL in a later release." Enforced by 22.4's lint. |
+| Artifact format | Every generated artifact (`segments.json`, `transcript.vtt` extras file, sprite manifest) carries a top-level `schema_version: <int>`. Readers tolerate higher minor versions by ignoring unknown fields; loud-fail on a major version they don't recognize. |
 | Cache key prefix | Includes `MAJOR` of the platform version (e.g., `v1:hls:<hash>`). A major bump invalidates caches; readers ignore the older prefix. |
-| WebSocket close-code | `4001` for incompatible-major; **constant pinned in client SDKs** (web, mobile) so all clients recognize the same value. |
-| Forward-compat fixture suite | `tests/forward_compat/` contains snapshots from previous versions; CI runs the current code against them. **Empty at v1.0 cut**; populated incrementally. |
-| Forensic archive dir | `var/maktaba/forensic/` — **owned by `maktaba:maktaba 0755`** so the API process can write archive files; readable by ops via group membership. The directory is created at first lossy-migration with `MkdirAll(... 0o755)` and `chown` to the `maktaba` system user. |
-| Out of scope | `pg_dump` cross-version restore mechanics (24.5); upgrade/rollback wall-clock (22.6); migration lint (plan-22-04). |
+| Forward-compat fixture suite | `tests/forward_compat/` contains snapshots from previous versions; CI runs the current code against them. |
+| Out of scope | `pg_dump` cross-version restore mechanics (24.5); upgrade/rollback wall-clock (22.6). |
 
 ## 1. Architecture diagram
 
@@ -165,17 +154,7 @@ import "maktaba/internal/version"
 
 func MajorPrefix() string {
     // version.Tag is "v1.2.0"; major is 1.
-    // Sanity: an empty or malformed tag is a build-time error — we
-    // panic loudly rather than silently emit "v" or "v0", which would
-    // collide cache keys across builds.
-    tag := strings.TrimSpace(strings.TrimPrefix(version.Tag, "v"))
-    if tag == "" {
-        panic("version.Tag is empty — build-time ldflag missing")
-    }
-    parts := strings.SplitN(tag, ".", 2)
-    if parts[0] == "" {
-        panic("version.Tag has no major component: " + version.Tag)
-    }
+    parts := strings.SplitN(strings.TrimPrefix(version.Tag, "v"), ".", 2)
     return "v" + parts[0]
 }
 
@@ -262,37 +241,6 @@ The web client's WS reconnect loop displays a "this version of the app
 is too old / too new — please refresh" message on close-code 4001.
 Mobile/desktop apps surface the equivalent dialog.
 
-`web/src/lib/ws/constants.ts` (and the equivalent file in each mobile
-SDK) pins the close-code constant:
-
-```typescript
-// All clients MUST use this constant — never a literal 4001 inline —
-// so future renames stay in sync.
-export const WS_CLOSE_INCOMPATIBLE_MAJOR = 4001 as const;
-```
-
-### 2.8 gRPC field-number stability
-
-The internal gRPC contract between `api` and `pipeline` (architecture
-§9.x) follows the standard proto3 evolution rules:
-
-- **Never reuse a field number.** When a field is removed, mark it
-  `reserved <n>;` in the proto definition. The proto lint
-  (`tools/proto-lint`, owned by plan-22-04's ecosystem) fails CI if a
-  reused number is detected by parsing the proto's reserved blocks.
-- **Deprecate, don't delete.** Adding `[deprecated = true]` on an
-  existing field signals removal in the next major; readers must keep
-  parsing it for one full minor cycle.
-- **No type changes.** Once `int32`, always `int32` for that field
-  number; a type change is a major bump.
-- **Wire-compat tests.** A `tests/proto_compat/` set holds serialized
-  payloads from previous minors; the current code must successfully
-  parse all of them (forward-compat) and the previous code must parse
-  current emits (backward-compat) as long as the major hasn't bumped.
-
-The proto lint is fast (parses the .proto AST) and runs on every CI
-build, not just release.
-
 ## 3. Test plan
 
 ### 3.1 Old dump load (TC1)
@@ -318,8 +266,6 @@ build, not just release.
 | `TestCacheKeysCarryMajorPrefix` | Built with `version.Tag=v1.2.0` → keys start `v1:`. Bumped to `v2.0.0` → keys start `v2:`. |
 | `TestV1CacheIgnoredOnV2Build` | Pre-populate v1 entries; build under v2; reads miss; writes go under v2:. |
 | `TestSweeperRemovesOldMajor` | `tools/major-version-cache-bump.sh v1` removes only `v1:*` entries. |
-| `TestMajorPrefixEmptyStringPanics` | `version.Tag=""` → `MajorPrefix()` panics with the documented message; CI's release build sets the ldflag so this only fires on broken local builds. |
-| `TestMajorPrefixNoMajorComponent` | `version.Tag="v"` → panic with "no major component". |
 
 ## 4. Edge cases
 

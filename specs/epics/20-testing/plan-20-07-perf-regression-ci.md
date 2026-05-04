@@ -10,11 +10,9 @@
 |---|---|
 | `make perf-ci` | Subset of Story 18.1's harness — 9 endpoints, 3 trials each, warm only. |
 | `make perf` | Full suite. |
-| Budget source | `shared/perf_budgets.yaml` (canonical; see plan-18-01). All gating reads from this single file. |
 | Storage | JSON-Lines per run pushed to `./.perf-history/{date}.jsonl` on a long-lived branch `perf-history` in the same repo (or Prometheus pushgateway if available). |
 | PR comment | GitHub action posts deltas vs. `main` baseline (last green nightly). |
-| Regression gate | Two-condition gate: `delta > 10% AND value > budget * 1.05`. The 10% bound is the soft warn-only delta vs. last-nightly baseline; the absolute `> budget * 1.05` clause is the hard breach against the budget itself. Both must hold to fail the build. |
-| Quarantine | A budget that fails on **3 distinct calendar dates within a rolling 5-day window** on `main` is moved to `quarantined:` section of `perf_budgets.yaml`; auto-issue filed. (Distinct-dates rather than total occurrences avoids quarantining a budget after three failures inside a single hot-fix scramble.) |
+| Quarantine | A budget that fails 3× in 5 days on `main` is moved to `quarantined:` section of `perf_budgets.yaml`; auto-issue filed. |
 | Out of scope | Cold-cache budgets (run weekly via separate target). |
 
 ## 1. Project layout
@@ -42,24 +40,17 @@ docs/runbooks/
 ## 2. perf-ci subset
 
 ```yaml
-# shared/perf_budgets.yaml (excerpt). The `ci_pr` field is added by plan-18-01
-# to the canonical `Budget` struct; see cross-cutting §1.5.
+# shared/perf_budgets.yaml (excerpt)
 endpoints:
   - name: api.libraries.list
     ci_pr: true
-    cache: warm
     ...
   - name: streaming.segment.first_byte.cold
     ci_pr: false                     # full suite only
-    cache: cold
 ```
 
 ```go
 // tests/perf/ci_subset.go
-//
-// Field name alignment (cross-cutting §1.5): the YAML key is `ci_pr` and
-// the Go struct field is `CIPR` (mapped via `yaml:"ci_pr"`). Both names
-// must stay in lockstep with the canonical `Budget` struct in plan-18-01.
 func PRSet(b *BudgetFile) []Budget {
     out := []Budget{}
     for _, e := range b.Endpoints {
@@ -112,8 +103,7 @@ name: perf-ci
 on: [pull_request]
 jobs:
   perf:
-    # Runner tag aligned with plan-18-01's `darwin-arm64-16gb-m2` profile.
-    runs-on: [self-hosted, perf-ci, darwin-arm64-16gb-m2]
+    runs-on: [self-hosted, perf-ci, mac-m2-8gb]    # AC1 EC1 tagged runner
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -125,15 +115,9 @@ jobs:
       - run: scripts/perf/post-pr-comment.sh delta.md
         env: { PR_NUMBER: ${{ github.event.pull_request.number }} }
       - run: |
-          # Two-condition regression gate (see §0):
-          #   delta > 10 %  AND  value > budget * 1.05
-          # The 10 % delta is computed against the last green nightly; the
-          # absolute `value > budget * 1.05` clause guards against drift
-          # where the baseline itself has crept above budget.
+          # AC3: > 10 % regression on any p95 fails
           go run ./tests/perf/cmd/gate \
-            -baseline baseline.json -current perf-ci.json \
-            -delta-warn-pct 10 \
-            -absolute-budget-tolerance-pct 5
+            -baseline baseline.json -current perf-ci.json -p95-tolerance 10
 ```
 
 ## 5. Workflow — nightly
@@ -142,14 +126,9 @@ jobs:
 # .github/workflows/perf-nightly.yml
 name: perf-nightly
 on: { schedule: [{ cron: '0 5 * * *' }] }
-permissions:
-  # Required to push to the long-lived `perf-history` branch from this
-  # workflow. Without `contents: write`, the `git push` below fails with a
-  # 403 on default-locked repos.
-  contents: write
 jobs:
   perf:
-    runs-on: [self-hosted, perf-ci, darwin-arm64-16gb-m2]
+    runs-on: [self-hosted, perf-ci, mac-m2-8gb]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -169,26 +148,16 @@ jobs:
 // tests/perf/quarantine.go
 type Window struct{ Days int; FailsThreshold int }
 
-// ScanFlaps quarantines a budget that has breached on at least
-// `w.FailsThreshold` **distinct calendar dates** within the rolling
-// `w.Days` window. Counting distinct dates (rather than total breaches)
-// avoids quarantining a budget after three failures inside a single
-// hot-fix scramble — those represent one incident, not three.
 func ScanFlaps(history []NightlyRun, w Window) []string {
-    // budget name → set of calendar dates (UTC, YYYY-MM-DD) it breached on
-    dates := map[string]map[string]struct{}{}
+    cnt := map[string]int{}
     cutoff := time.Now().AddDate(0, 0, -w.Days)
     for _, r := range history {
         if r.At.Before(cutoff) { continue }
-        day := r.At.UTC().Format("2006-01-02")
-        for _, b := range r.Breaches {
-            if dates[b.Name] == nil { dates[b.Name] = map[string]struct{}{} }
-            dates[b.Name][day] = struct{}{}
-        }
+        for _, b := range r.Breaches { cnt[b.Name]++ }
     }
     quar := []string{}
-    for name, days := range dates {
-        if len(days) >= w.FailsThreshold { quar = append(quar, name) }
+    for name, c := range cnt {
+        if c >= w.FailsThreshold { quar = append(quar, name) }
     }
     return quar
 }
@@ -243,48 +212,11 @@ perf_ci:
     - linux-x86-16gb
 ```
 
-## 10. Make targets
+## 10. Dashboard
 
-```makefile
-.PHONY: perf-ci perf perf-baseline-fetch
+`docs/dashboards/perf.html` — static page that fetches the last N files from `perf-history` via raw GitHub URL and plots p95 over time per endpoint with Chart.js. Linked from `docs/runbooks/perf-regression.md`.
 
-perf-ci:
-	go run ./tests/perf/cmd/runner -mode=ci
-
-perf:
-	go run ./tests/perf/cmd/runner -mode=full
-
-# Fetch the last green nightly's JSONL from the perf-history branch and emit
-# it to stdout. Used by perf-ci.yml to build `baseline.json`.
-#
-# Auth: on private repos, raw.githubusercontent.com requires a token. Pass
-# the workflow's GITHUB_TOKEN (or a fine-grained PAT with `Contents: read`
-# on the repo) via $GITHUB_TOKEN.
-perf-baseline-fetch:
-	@bash -c 'set -euo pipefail; \
-	  hdr=""; \
-	  if [ -n "$${GITHUB_TOKEN:-}" ]; then hdr="-H \"Authorization: Bearer $$GITHUB_TOKEN\""; fi; \
-	  latest=$$(eval curl -fsSL $$hdr "https://api.github.com/repos/$$GITHUB_REPOSITORY/contents/.perf-history?ref=perf-history" \
-	    | jq -r ".[].name" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.jsonl$$" | sort | tail -1); \
-	  eval curl -fsSL $$hdr "https://raw.githubusercontent.com/$$GITHUB_REPOSITORY/perf-history/.perf-history/$$latest"'
-```
-
-## 11. Dashboard
-
-`docs/dashboards/perf.html` — static page that fetches the last N files
-from `perf-history` via raw GitHub URL and plots p95 over time per endpoint
-with Chart.js. Linked from `docs/runbooks/perf-regression.md`.
-
-On **private** repos, `raw.githubusercontent.com` requires authentication.
-The dashboard either (a) is rendered server-side by a workflow that pushes
-the rendered HTML to the same `perf-history` branch (preferred — no
-client-side token), or (b) is loaded with a short-lived fine-grained PAT
-(`Contents: read` on this repo only) injected at fetch time. Document
-whichever path the team adopts in
-`docs/runbooks/perf-regression.md`. Never ship a long-lived PAT in the
-HTML.
-
-## 12. Dependencies
+## 11. Dependencies
 
 - Story 18.1 (budgets file, harness).
 - Story 20.1 (test tiers; perf is its own tier).

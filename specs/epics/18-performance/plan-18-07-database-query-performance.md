@@ -47,39 +47,21 @@ api/internal/middleware/
 
 ## 2. Named queries (excerpt)
 
-Schema reference (canonical column names, architecture §):
-- `videos` columns include `duration_sec` (NOT `duration_s`), `size_bytes` (NOT `size`), `poster_path` (NOT `poster_url`), `mtime TIMESTAMPTZ`.
-- Segment data lives in `transcript_segments(id BIGSERIAL, transcript_id UUID, seq INT, start_sec REAL, end_sec REAL, text, speaker, confidence)` and joins to videos via `transcripts.video_id`.
-- Job states are lowercase (`pending`, `claimed`, `running`, `paused`, `done`, `failed`, …) per architecture §7.2.
-
 ```sql
 -- name: ListVideosByLibrary :many
-SELECT id, library_id, title, duration_sec, created_at
+SELECT id, library_id, title, duration_s, created_at
 FROM videos
 WHERE library_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: ListSegmentsByVideo :many
--- transcript_segments has no direct video_id column; it joins via
--- transcripts.video_id. Param is uuid[] (videos.id is UUID).
-SELECT ts.id, t.video_id, ts.transcript_id, ts.seq,
-       ts.start_sec, ts.end_sec, ts.text
-FROM transcript_segments ts
-JOIN transcripts t ON t.id = ts.transcript_id
-WHERE t.video_id = ANY($1::uuid[])
-ORDER BY t.video_id, ts.start_sec;
+SELECT id, video_id, ts_start, ts_end, text
+FROM segments
+WHERE video_id = ANY($1::text[])
+ORDER BY video_id, ts_start;
 
 -- name: ClaimNextJob :one
--- Single-shot pending → running transition. We deliberately skip the
--- intermediate `claimed` state here because UPDATE … FOR UPDATE SKIP LOCKED
--- gives row-level exclusive ownership atomically — no other worker can pick
--- this row up while our transaction is open. If a future variant needs a
--- two-step (claim, then start) flow (e.g. for cross-process visibility),
--- it must explicitly:
---   1. UPDATE … SET state = 'claimed'  (returning id)
---   2. UPDATE …  SET state = 'running' WHERE id = $claimed_id
--- and document the additional round trip.
 UPDATE processing_jobs
    SET state = 'running', started_at = now()
  WHERE id = (
@@ -92,46 +74,22 @@ UPDATE processing_jobs
 RETURNING *;
 
 -- name: QueueStats24h :one
--- IMPORTANT: PG and SQLite diverge on time arithmetic. We keep a Postgres
--- variant here and emit the SQLite variant in `shared/db/queries/jobs_sqlite.sql`
--- (selected by sqlc engine config). Alternatively, oldest_pending_age_s can
--- be computed in app code by selecting MIN(created_at) and diffing against
--- time.Now() — that is dialect-portable and avoids divergent SQL.
---
--- Postgres dialect:
 SELECT
   (SELECT COUNT(*) FROM processing_jobs WHERE state='done'    AND finished_at >= now() - interval '24 hours') AS done_24h,
   (SELECT COUNT(*) FROM processing_jobs WHERE state='failed'  AND finished_at >= now() - interval '24 hours') AS failed_24h,
   (SELECT EXTRACT(EPOCH FROM (now() - MIN(created_at)))::bigint
      FROM processing_jobs WHERE state='pending') AS oldest_pending_age_s;
-
--- SQLite dialect (in jobs_sqlite.sql):
---   SELECT COUNT(*) ... WHERE finished_at >= datetime('now','-24 hours')
---   (CAST((julianday('now') - julianday(MIN(created_at))) * 86400 AS INTEGER))
---     AS oldest_pending_age_s
 ```
 
 ## 3. Covering indexes (migration excerpt)
 
-The canonical indexes already exist in the architecture-declared schema:
-- `videos(library_id, created_at DESC)` covering — architecture line 1322.
-- `transcript_segments(transcript_id, start_sec)` — architecture line 1412.
-
-This plan does NOT redeclare those indexes; it only adds the ones that
-do not already exist in architecture and uses canonical names elsewhere.
-
 ```sql
 -- migrations/00xx_indexes_perf.sql
--- The covering index on videos uses canonical columns. If the canonical
--- index in architecture line 1322 does not yet INCLUDE the covered columns,
--- this migration extends the INCLUDE list — it does NOT create a duplicate
--- index. (When migration tooling detects an existing index with same key
--- columns it issues an `INCLUDE` extension or a rename, never a duplicate.)
--- Canonical name: videos_library_id_created_at_idx
---   ON videos (library_id, created_at DESC) INCLUDE (id, title, duration_sec)
+CREATE INDEX IF NOT EXISTS videos_library_id_created_at_idx
+  ON videos (library_id, created_at DESC) INCLUDE (id, title, duration_s);
 
--- transcript_segments(transcript_id, start_sec) is canonical — see arch line 1412.
--- We do NOT redeclare it; the snapshot tests reference it by canonical name.
+CREATE INDEX IF NOT EXISTS segments_video_id_ts_start_idx
+  ON segments (video_id, ts_start) INCLUDE (id, ts_end, text);
 
 -- For ClaimNextJob (priority DESC, scheduled_at) covering by state predicate:
 CREATE INDEX IF NOT EXISTS processing_jobs_pending_priority_idx
@@ -199,7 +157,7 @@ func extractKind(plan string) string {
 }
 ```
 
-SQLite variant parses `EXPLAIN QUERY PLAN` lines like `SCAN transcript_segments USING INDEX transcript_segments_transcript_id_start_sec_idx`.
+SQLite variant parses `EXPLAIN QUERY PLAN` lines like `SCAN segments USING INDEX segments_video_id_ts_start_idx`.
 
 ## 6. Query-count middleware
 

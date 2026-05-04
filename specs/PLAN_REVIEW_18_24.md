@@ -1,22 +1,5 @@
 # Implementation Plan Review — Epics 18–24
 
-> **Status: RESOLVED.** All 24 blocking issues and 61 major issues
-> identified in this review have been addressed across the affected plan
-> files. The cross-cutting issues in §1 (schema canonicalization, state
-> casing, audit_log ownership, perf budgets, admin-port mux, top-level Go
-> module, Capacitor field, ghost binaries) are reconciled. The Epic 23 ↔
-> Epic 10 contradictions in §2 are reconciled with explicit canonical
-> ownership: Epic 23 wins for authz (three-role) and rate-limit numbers
-> (with plan-10-12's `golang.org/x/time/rate` library); Epic 10 wins for
-> HSTS placement (backend middleware) and JWT private-key storage
-> (env-only per architecture §11.5). Plans 09-17 and 10-12/13/15 carry
-> reconciliation §0 notes. plan-09-17 is superseded; plan-21-06 is the
-> sole `audit_log` creator. Architecture §3 (lowercase states), §9.9
-> (Streaming superset), and the new §11.6 (telemetry block) are
-> updated. Per-plan minor edits remain as-listed but no longer block
-> implementation. Resolution detail per cross-cutting bullet is annotated
-> inline below.
-
 **Scope.** All 57 implementation plans paired with their stories across seven
 non-functional epics on `main`:
 
@@ -37,19 +20,17 @@ project structure §12) and against the matching story acceptance criteria.
 Cross-checked against [`PLAN_REVIEW_07_13.md`](PLAN_REVIEW_07_13.md) for
 inherited drift.
 
-**Verdict at a glance (post-resolution).**
+**Verdict at a glance.**
 
 | Epic | Overall | Blocking | Major | Minor |
 |------|---------|----------|-------|-------|
-| 18 | RESOLVED | 0 / 0 | 11 / 11 | 16 / 16 |
-| 19 | RESOLVED | 4 / 4 | 7 / 7 | 13 / 13 |
-| 20 | RESOLVED | 2 / 2 | 13 / 13 | 13 / 13 |
-| 21 | RESOLVED | 1 / 1 | 4 / 4 | 21 / 21 |
-| 22 | RESOLVED | 3 / 3 | 11 / 11 | 12 / 12 |
-| 23 | RESOLVED | 3 / 3 | 11 / 11 | 13 / 13 |
-| 24 | RESOLVED | 3 / 3 | 4 / 4 | 25 / 25 |
-
-(Counts shown as `addressed / originally flagged`.)
+| 18 | mostly clean | 0 | 11 | 16 |
+| 19 | drift-heavy | 4 | 7 | 13 |
+| 20 | drift-heavy | 2 | 13 | 13 |
+| 21 | mixed | 1 | 4 | 21 |
+| 22 | drift-heavy | 3 | 11 | 12 |
+| 23 | major contradictions with Epic 10 | 3 | 11 | 13 |
+| 24 | drift-heavy | 3 | 4 | 25 |
 
 Twelve plans across the seven epics could ship as-is. The remainder need
 edits — but the dominant pattern is recurring schema/state-name drift
@@ -64,16 +45,7 @@ plans, and between Epic 24's `audit_log` schema claim and Epic 21.6's).
 Issues below appear in multiple epics in this batch. Fixing them in one
 place avoids fixing them N times in plan-by-plan edits.
 
-### 1.1 Schema drift inherited from Epics 07–13 — affects Epics 19, 20, 22, 24 [RESOLVED]
-
-> **Resolution.** plan-24-03 now owns migration `0050_schema_canonicalization.sql`
-> which renames drifted columns/tables to canonical names (`videos.size_bytes`,
-> `videos.duration_sec`, `transcript_segments`) and adds plan-introduced
-> extensions (`videos.deleted_at`, `videos.superseded_by`,
-> `transcripts.{superseded_at,detected_language,language_confidence}`).
-> plan-22-04 adds a CI gate (`migrate-up-fresh`) that boots the full
-> migration set against an empty DB. All cited plans rewritten to use
-> canonical names.
+### 1.1 Schema drift inherited from Epics 07–13 — affects Epics 19, 20, 22, 24
 
 Plans across this batch continue to use the drifted schema names that
 [`PLAN_REVIEW_07_13.md` §1.1–§1.4](PLAN_REVIEW_07_13.md) flagged. The drift
@@ -105,14 +77,7 @@ plan-22-04 must add a CI gate that boots the full migration set against an
 empty DB and asserts every plan-touched table reaches its declared shape.
 Currently neither happens; the drift will land at first integration.
 
-### 1.2 Job-state casing — affects Epics 18, 19, 24 [RESOLVED]
-
-> **Resolution.** Lowercase canonical per arch §7.2. plan-24-03's CHECK
-> migration pins lowercase enum (`pending|claimed|running|paused|resuming|done|failed|cancelled`)
-> for `processing_jobs.state` and the full lowercase enum for `videos.state`
-> including extension states (`corrupted`, `missing`, `superseded`,
-> `ready_no_audio`). Plans 24-02/03/04/06 rewritten in lowercase.
-> `shared/db/states.yaml` is the new single source of truth (replaces prose-parsing test).
+### 1.2 Job-state casing — affects Epics 18, 19, 24
 
 [`PLAN_REVIEW_07_13.md` §1.4](PLAN_REVIEW_07_13.md) flagged casing drift in
 Epic 09 plans. Architecture is itself ambiguous: `videos.state` defaults
@@ -137,13 +102,7 @@ extension states (`paused`, `resuming`, `cancelled`, `corrupted`,
 `missing`, `superseded`, `ready_no_audio`) that earlier epics introduce
 ad-hoc. This same migration should fix the §1.1 column drift.
 
-### 1.3 `processing_jobs` claim columns — affects Epic 19 [RESOLVED]
-
-> **Resolution.** plan-19-04 rewritten to use canonical columns
-> (`claimed_by`, `claimed_at`, `last_heartbeat_at`, `attempts`,
-> `not_before`, `priority`, `last_segment_end_sec`). Claim SQL uses
-> `not_before` and `ORDER BY priority ASC` (lower wins). Reaper preserves
-> `paused`/`pause_requested` semantics. Heartbeat cadence pinned to 5 s.
+### 1.3 `processing_jobs` claim columns — affects Epic 19
 
 Architecture §7.1 declares the canonical claim columns:
 `claimed_by`, `last_heartbeat_at`, `attempts`, `last_segment_end_sec`.
@@ -163,17 +122,7 @@ Heartbeat cadence drifts too: 30 s in plan vs `~5 s` implied by §7.1.
 `attempt`→`attempts`); rewrite the claim SQL to use `not_before` and
 `ORDER BY priority`; preserve `paused` semantics in the reaper.
 
-### 1.4 `audit_log` ownership and schema — affects Epics 19, 21, 23, 24 [RESOLVED]
-
-> **Resolution.** plan-21-06 is the sole creator of `audit_log` per
-> architecture §8.6.1: `(id, category, event, actor_user UUID, actor_ip
-> INET, target_id TEXT, target_kind, payload JSONB, dedupe_key,
-> created_at TIMESTAMPTZ)`, PK `(id, created_at)`. CHECK enum extended
-> to include `library, security, device, admin, auth, data, config, keys, job`.
-> plan-09-17 marked SUPERSEDED with a `DROP TABLE IF EXISTS audit_log`
-> migration. plan-12-10 confirmed to use canonical columns. `error_id`
-> rides inside `payload->>'error_id'`. Plans 19-08, 23-06, 24-04/05/06/07
-> all use canonical column names.
+### 1.4 `audit_log` ownership and schema — affects Epics 19, 21, 23, 24
 
 [`PLAN_REVIEW_07_13.md` §1.8](PLAN_REVIEW_07_13.md) already flagged the
 `audit_log` ownership conflict between Epic 09 (`category IN ('library','security')`)
@@ -207,14 +156,7 @@ write into the same table without saying which schema they target.
    `target_id::uuid`; that's only stable if `target_id` is declared `UUID`,
    not `TEXT`.
 
-### 1.5 Single-source-of-truth for performance budgets — affects Epics 18, 20 [RESOLVED]
-
-> **Resolution.** plan-18-01's `Budget` struct extended with `CIPR bool`
-> (Go) / `ci_pr` (YAML), plus `throughputs:` and `envelopes:` YAML
-> sections. plan-18-04 throughput targets and plan-18-05 envelope data
-> fold into `shared/perf_budgets.yaml`. plan-20-07 reads `e.CIPR`
-> against the now-canonical schema. `web.player.first_frame.cold` p95
-> = 3500 ms added.
+### 1.5 Single-source-of-truth for performance budgets — affects Epics 18, 20
 
 [plan-18-01](epics/18-performance/plan-18-01-latency-budgets.md) declares
 `shared/perf_budgets.yaml` canonical. Three follow-up problems:
@@ -235,12 +177,7 @@ write into the same table without saying which schema they target.
 entry (or carry a separate `ci_subset.yaml` that plan-20-07 can read).
 Document that plan-18-01 owns the schema; other 18.x plans add entries.
 
-### 1.6 Cache-flush admin endpoint — affects Epic 18 [RESOLVED]
-
-> **Resolution.** plan-18-08 owns whole-cache flush
-> (`POST /admin/cache/{name}/flush`). plan-18-03 owns per-key eviction
-> (`POST /admin/cache/segments/evict?hash=…&rendition=…&seg=…`).
-> plan-18-06 now uses plan-18-08's canonical whole-cache form.
+### 1.6 Cache-flush admin endpoint — affects Epic 18
 
 Three different URL shapes for "flush a cache" appear across Epic 18:
 
@@ -257,12 +194,7 @@ treats plan-18-08 as canonical. **Recommendation.** Adopt plan-18-08's
 `/admin/cache/segments/evict?…` for per-key eviction. Remove plan-18-06's
 form.
 
-### 1.7 Pipeline stage labels — affects Epic 18, 21 [RESOLVED]
-
-> **Resolution.** Architecture §7.1 line 923 updated to canonical
-> `scan|probe|extract|transcribe|subtitle_gen|index|thumbnail`. plan-18-04
-> stage labels aligned to the canonical list (drop `embed`, `diarize`;
-> use `thumbnail` not `thumb`).
+### 1.7 Pipeline stage labels — affects Epic 18, 21
 
 [plan-18-04:13](epics/18-performance/plan-18-04-pipeline-throughput.md)
 labels `pipeline_stage_duration_seconds` with stages
@@ -276,13 +208,7 @@ stages in architecture. Epic 21.7 dashboards will mis-render.
 `embed`/`diarize` or add them to architecture as canonical sub-stages
 under `transcribe`).
 
-### 1.8 Admin-port mux ownership — affects Epic 21 [RESOLVED]
-
-> **Resolution.** plan-21-04 owns `shared/admin/mux.go` (admin-port mux).
-> plan-21-02 registers `/metrics` against the shared mux; plan-21-04
-> registers `/healthz`/`/readyz`. Architecture §11.6 (telemetry block)
-> documents `admin_listen` port. Caddyfile/systemd notes cross-linked
-> from plan-22-03.
+### 1.8 Admin-port mux ownership — affects Epic 21
 
 [plan-21-02:12](epics/21-observability/plan-21-02-metrics-surface.md)
 declares ports 9100/9101/9102 own `/metrics`.
@@ -294,14 +220,7 @@ configures `bind_admin: 127.0.0.1:9100` — only one process can bind.
 `shared/admin/mux.go`; have plan-21-02 register `/metrics` against it.
 Add the corresponding Caddyfile or systemd notes in plan-22-03.
 
-### 1.9 Top-level Go module assumed but never declared — affects Epics 22, 24 [RESOLVED]
-
-> **Resolution.** plan-22-02 declares ownership of two new modules:
-> `shared/go/version/` and `shared/go/migrations/`. Each consumer
-> `go.mod` carries a `replace` directive. plan-22-04's `go:embed`
-> escapes are routed through `shared/go/migrations` which re-exports
-> the migrations directory via `embed.FS`. plan-22-05 import paths
-> updated to `github.com/maktaba/shared/go/version`.
+### 1.9 Top-level Go module assumed but never declared — affects Epics 22, 24
 
 [plan-22-02:88-91](epics/22-devops/plan-22-02-reproducible-builds.md),
 [plan-22-05:46](epics/22-devops/plan-22-05-release-management.md), and
@@ -322,12 +241,7 @@ materializes those files into each consumer's tree before `go build`.
 Either way, plan-22-02 and plan-22-04 must own the structural decision
 explicitly; right now both assume something that doesn't exist.
 
-### 1.10 Capacitor `compatibleApiVersion` is fictional — affects Epic 22 [RESOLVED]
-
-> **Resolution.** plan-22-05 and plan-22-07 replace `compatibleApiVersion`
-> with the custom `mobileAppCompatibility: { minApiVersion, maxApiVersion }`
-> field. The mobile app's API client reads this on startup to refuse
-> incompatible API versions.
+### 1.10 Capacitor `compatibleApiVersion` is fictional — affects Epic 22
 
 [plan-22-05:340](epics/22-devops/plan-22-05-release-management.md) and
 [plan-22-07:259](epics/22-devops/plan-22-07-multi-platform-packaging.md)
@@ -336,12 +250,7 @@ This is not a real Capacitor option. Replace with a custom field read by
 the app's API client at startup (or embed in `package.json` and document
 where the app reads it).
 
-### 1.11 Ghost binaries: `/usr/local/bin/healthcheck` and `/usr/local/bin/drain` — affects Epic 22 [RESOLVED]
-
-> **Resolution.** plan-22-03 and plan-22-06 replaced ghost-binary
-> invocations with HTTP calls: `wget -q --spider http://localhost:9100/healthz`
-> for liveness, `curl -fsS http://127.0.0.1:9100/admin/drain` for drain.
-> Both endpoints are hosted on the shared admin mux owned by plan-21-04.
+### 1.11 Ghost binaries: `/usr/local/bin/healthcheck` and `/usr/local/bin/drain` — affects Epic 22
 
 [plan-22-03:101,121](epics/22-devops/plan-22-03-container-images.md) and
 [plan-22-06:97-100](epics/22-devops/plan-22-06-upgrade-rollback.md) `exec`
@@ -354,30 +263,11 @@ under plan-21-04).
 
 ---
 
-## 2. Epic 23 ↔ Epic 10 — direct contradictions [RESOLVED]
+## 2. Epic 23 ↔ Epic 10 — direct contradictions
 
-> **Resolution summary.** Canonical ownership pinned per topic:
->
-> - **Authz**: Epic 23.2 wins. Three-role `library_acl(library_id, user_id, role)`
->   with `admin|editor|viewer` enum. plan-10-13 rewritten to ship the
->   schema (with default `'admin'`) and a minimal `Authz.Can(ctx, Action,
->   Resource) error` stub; full role matrix and middleware live in plan-23-02.
->   Single canonical signature `Authz.Can(ctx, Action, Resource) error`.
-> - **Rate limits**: Epic 10.12 numbers + library win. Login `10/min/IP`,
->   refresh `6/min/family + 30/min/IP`, library `golang.org/x/time/rate`.
->   plan-23-06 references rather than redefines and uses the same library.
-> - **HSTS**: Epic 10.15 backend middleware wins. plan-23-03 dropped the
->   Caddy snippet; both plans carry §0 reconciliation notes.
-> - **JWT private key**: env-only per arch §11.5. plan-23-01 dropped the
->   `signing_keys` table and `MAKTABA_KEY_ENCRYPTION_KEY`. plan-23-04
->   registry updated.
-> - **JWKS owner**: plan-10-06 wins. plan-23-01 no longer duplicates JWKS
->   document construction.
-> - **Plans 10-12, 10-13, 10-15** carry §0 reconciliation notes.
-
-This was the largest cross-epic alignment problem in the batch. Epic 23
+This is the largest cross-epic alignment problem in the batch. Epic 23
 (Security) is positioned as "hardening on top of" Epic 10 (Auth & Security)
-but originally introduced *contradictions*, not just extensions.
+but introduces *contradictions*, not just extensions.
 
 | Topic | Epic 10 plan | Epic 23 plan | Status |
 |-------|--------------|--------------|--------|
@@ -415,13 +305,7 @@ plan-10-15 to defer to it. Then:
 
 ---
 
-## 3. Test framework coverage — affects Epic 20 [RESOLVED]
-
-> **Resolution.** plan-20-01 pyramid extended with tvOS XCUITest+XCTest
-> (`xcodebuild test` on macOS runner) and Android TV JUnit5+Compose-test
-> (`gradle :app:connectedAndroidTest` on Linux runner with KVM). plan-22-01
-> CI matrix adds `_native-apps.yml` reusable workflow for both. Story
-> 22.1 AC-1.2 satisfied.
+## 3. Test framework coverage — affects Epic 20
 
 Architecture §2 prescribes one test runner per language:
 
@@ -445,17 +329,7 @@ testing to "their own per-platform suites" but no plan owns those suites.
 
 ---
 
-## 4. gRPC contract — affects Epics 20, 21 [RESOLVED]
-
-> **Resolution.** Architecture §9.9 already specifies the canonical
-> Streaming superset (`OpenSession, CloseSession, EvictHashCache,
-> GetCapabilities, WatchQueue, HealthCheck`) used by Epic 8.
-> plan-18-03 returns the canonical `OpenSessionResponse{Session,
-> CapabilitiesResponse}` shape. plan-20-06 dropped the invented
-> `maktaba.api.v1.proto`; added a contract test asserting each `.proto`
-> declares exactly the canonical RPC list (4 + 6 RPCs). plan-21-03
-> replaced `Psycopg2Instrumentor` with `AsyncPGInstrumentor` (pipeline
-> uses `asyncpg`).
+## 4. gRPC contract — affects Epics 20, 21
 
 Architecture §9.9 (architecture.md:1729–1743) defines exactly **two**
 services with **four RPCs each**:
@@ -487,13 +361,7 @@ Drop the invented `maktaba.api.v1.proto`.
 
 ---
 
-## 5. Postgres LISTEN/NOTIFY trace continuity — affects Epic 21 [RESOLVED]
-
-> **Resolution.** plan-21-03 added §8.1 LISTEN/NOTIFY trace continuity:
-> NOTIFY emitter encodes `traceparent` in the JSON payload; LISTEN side
-> reconstitutes span context via `propagation.TraceContext.Extract`.
-> TC5 smoke test confirms trace ID survives worker → NOTIFY → API
-> listener → WS client.
+## 5. Postgres LISTEN/NOTIFY trace continuity — affects Epic 21
 
 Architecture §1.4 + §7.10 drive WebSocket fan-out via Postgres
 `LISTEN/NOTIFY` from worker rows. Epic 21.3 distributed tracing
@@ -580,7 +448,7 @@ lists, per plan, a verdict and bullet findings tagged `[blocking]`,
 
 ### plan-18-07 — Database Query Performance
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[major]` [plan-18-07:51-56](epics/18-performance/plan-18-07-database-query-performance.md) selects `videos.duration_s`; canonical is `duration_sec`. Schema drift §1.1.
 - `[major]` [plan-18-07:58-62](epics/18-performance/plan-18-07-database-query-performance.md) reads from `segments` with columns `ts_start, ts_end, text`; canonical is `transcript_segments` with `start_sec, end_sec`. Schema drift §1.1.
@@ -638,7 +506,7 @@ Epic-internal:
 
 ### plan-19-03 — Streaming Scale-Out
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[major]` [plan-19-03:39-46,48](epics/19-scalability/plan-19-03-streaming-scale-out.md) introduces `streaming_replicas` table and `streaming_sessions.replica_id` column not declared in architecture §8. Either add to arch or own as explicit override.
 - `[major]` [plan-19-03:240](epics/19-scalability/plan-19-03-streaming-scale-out.md) Caddyfile uses `lb_policy hash {http.request.uri.query.session_id}` matching arch §10.3, but [:101](epics/19-scalability/plan-19-03-streaming-scale-out.md) also embeds `ReplicaUrl` in the response — two routing mechanisms coexist. Pick one.
@@ -647,7 +515,7 @@ Epic-internal:
 
 ### plan-19-04 — Pipeline Scale-Out
 
-**Verdict**: ~~blocking~~ **RESOLVED**
+**Verdict**: blocking
 
 - `[blocking]` [plan-19-04:39-44](epics/19-scalability/plan-19-04-pipeline-scale-out.md) creates parallel duplicate columns (`worker_id`, `heartbeat_at`, `attempt`) instead of using canonical `claimed_by`, `last_heartbeat_at`, `attempts` (architecture §7.1). See cross-cutting §1.3.
 - `[blocking]` [plan-19-04:55-72](epics/19-scalability/plan-19-04-pipeline-scale-out.md) claim SQL uses `scheduled_at` and `ORDER BY priority DESC`; canonical uses `not_before` and `ORDER BY priority` (lower wins, architecture §7.5).
@@ -687,7 +555,7 @@ Epic-internal:
 
 ### plan-19-08 — Multi-Tenant Readiness
 
-**Verdict**: ~~blocking~~ **RESOLVED**
+**Verdict**: blocking
 
 - `[blocking]` [plan-19-08:64-66,71](epics/19-scalability/plan-19-08-multi-tenant-readiness.md) writes `INSERT INTO users (id, email, role, created_at)`; arch §8.5:1504-1510 has `users(id, username, pw_hash, is_admin, created_at)`. Migration fails at first execution.
 - `[blocking]` [plan-19-08:74-79](epics/19-scalability/plan-19-08-multi-tenant-readiness.md) backfills `watch_state`; canonical is `playback_state` (arch line 1512).
@@ -726,7 +594,7 @@ Epic-internal:
 
 ### plan-20-02 — Fixtures & Seed Data
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` [plan-20-02:111-115](epics/20-testing/plan-20-02-fixtures-seed-data.md) SQL dump targets `segments(id, video_id, ts_start, ts_end, text)` — table is `transcript_segments` with `(transcript_id, seq, start_sec, end_sec, text)`. Also missing parent rows in `libraries`, `transcripts`, `audio_tracks`.
 - `[major]` [plan-20-02:48-61](epics/20-testing/plan-20-02-fixtures-seed-data.md) cites a fabricated xiph URL. Replace with a real link-checked URL.
@@ -748,7 +616,7 @@ Epic-internal:
 
 ### plan-20-04 — Integration Tests with Real Backends
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` [plan-20-04:171](epics/20-testing/plan-20-04-integration-tests.md) SQL `SELECT COUNT(*) FROM segments WHERE video_id=$1` — table is `transcript_segments` with `transcript_id`, not `video_id`. Schema drift §1.1.
 - `[major]` Postgres image pin disagreement: `postgres:16` (plan-20-01), `postgres:16.4-alpine3.20` (plan-20-04, plan-20-05). Story EC2 says "pin postgres:16 exactly". Pick one.
@@ -771,7 +639,7 @@ Epic-internal:
 
 ### plan-20-06 — Contract Tests for Service Boundaries
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[major]` [plan-20-06:25-28](epics/20-testing/plan-20-06-contract-tests.md) lists `maktaba.api.v1.proto` — there is no API gRPC service. See cross-cutting §4.
 - `[major]` [plan-20-06:42](epics/20-testing/plan-20-06-contract-tests.md) `grpc_drift_test.go` referenced but body not shown — no actual contract test enumerates the eight canonical RPCs.
@@ -782,7 +650,7 @@ Epic-internal:
 
 ### plan-20-07 — Performance Regression Tests in CI
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` [plan-20-07:56](epics/20-testing/plan-20-07-perf-regression-ci.md) reads `e.CIPR && e.Cache == "warm"` against plan-18-01's `Budget` struct — the field doesn't exist. See cross-cutting §1.5.
 - `[major]` 10 % regression vs absolute breach gate ambiguity.
@@ -850,7 +718,7 @@ Epic-internal:
 
 ### plan-21-04 — Health & Readiness Probes
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` Admin-port mux ownership conflict. See cross-cutting §1.8.
 - `[major]` Liveness "always 200" too weak per story EC1; `WatchdogSec=30` systemd line declared but Go code never calls `sd_notify("WATCHDOG=1")`.
@@ -872,7 +740,7 @@ Epic-internal:
 
 ### plan-21-06 — Audit Log
 
-**Verdict**: ~~blocking~~ **RESOLVED**
+**Verdict**: blocking
 
 - `[blocking]` Schema-ownership conflict with Epic 09 plan-09-17 + Epic 12 plan-12-10. See cross-cutting §1.4.
 - `[blocking]` `category='device'` rejected by both this and plan-09-17's enum.
@@ -944,7 +812,7 @@ Epic-internal:
 
 ### plan-22-04 — Database Migrations
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` See cross-cutting §1.1 — schema canonicalization unowned.
 - `[blocking]` [plan-22-04:252](epics/22-devops/plan-22-04-database-migrations.md) `//go:embed shared/db/migrations/*.sql` cannot escape package directory. See cross-cutting §1.9.
@@ -966,7 +834,7 @@ Epic-internal:
 
 ### plan-22-06 — Upgrade and Rollback
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[major]` Schema rollback gap — plan correctly never invokes `migrate down` but doesn't simulate "old binary against new schema". Add a rollback-simulator test.
 - `[major]` [plan-22-06:84](epics/22-devops/plan-22-06-upgrade-rollback.md) `bc -l` returns null on missing input; guard `${duration:-0}`.
@@ -1022,7 +890,7 @@ Epic-internal:
 
 ### plan-23-02 — Authorization and ACLs
 
-**Verdict**: ~~blocking~~ **RESOLVED**
+**Verdict**: blocking
 
 - `[blocking]` Three-role per-library model contradicts Epic 10 plan-10-13's binary admin/non-admin model. See §2 cross-epic table.
 - `[blocking]` story-23-02 AC2 and plan-10-13 cannot both ship.
@@ -1032,7 +900,7 @@ Epic-internal:
 
 ### plan-23-03 — Transport Security
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` HSTS placement contradiction with plan-10-15 (backend middleware). See §2 cross-epic table.
 - `[major]` `internal_mtls` config introduced; arch §1.4 doesn't mandate mTLS.
@@ -1062,7 +930,7 @@ Epic-internal:
 
 ### plan-23-06 — Rate Limiting
 
-**Verdict**: ~~blocking~~ **RESOLVED**
+**Verdict**: blocking
 
 - `[blocking]` Auth-endpoint rate limits redefined with different numbers and limiter than plan-10-12. See §2 cross-epic table.
 - `[blocking]` `golang.org/x/time/rate` (plan-10-12) vs "rolled our own" (plan-23-06) — two limiters at routing time.
@@ -1121,7 +989,7 @@ Epic-internal:
 
 ### plan-24-03 — Database Constraints
 
-**Verdict**: ~~major fixes~~ **RESOLVED**
+**Verdict**: major fixes
 
 - `[blocking]` Schema canonicalization unowned. See cross-cutting §1.1.
 - `[blocking]` `videos.state` CHECK enumerates uppercase that rejects architecture's `'discovered'` default. See cross-cutting §1.2.
@@ -1207,10 +1075,9 @@ Epic-internal:
 
 ---
 
-## 7. Recommended remediation order [APPLIED]
+## 7. Recommended remediation order
 
-The five-PR remediation plan below has been applied as a single
-multi-plan changeset (parallel agents per epic):
+Roughly five PRs, in order, would clean up the bulk of the issues:
 
 1. **Schema canonicalization** — single migration owned by plan-24-03 that
    (a) renames `videos.size`→`size_bytes`, `videos.poster_url`→`poster_path`,

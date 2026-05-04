@@ -49,9 +49,7 @@ package log
 import (
     "log/slog"
     "os"
-    "strings"
     "sync/atomic"
-    "time"
 )
 
 var (
@@ -89,16 +87,16 @@ func replaceAttrs(groups []string, a slog.Attr) slog.Attr {
 func SetLevel(l slog.Level) { levelVar.Set(l) }
 ```
 
-SIGUSR1 (Unix; cycles between `Info` and `Debug` only per story AC):
+SIGUSR1:
 
 ```go
-// shared/log/go/sigusr1_unix.go
+// shared/log/go/sigusr1.go
 //go:build !windows
 func installSIGUSR1() {
     ch := make(chan os.Signal, 1)
     signal.Notify(ch, syscall.SIGUSR1)
     go func() {
-        levels := []slog.Level{slog.LevelInfo, slog.LevelDebug}
+        levels := []slog.Level{slog.LevelInfo, slog.LevelDebug, slog.LevelWarn}
         i := 0
         for range ch {
             i = (i + 1) % len(levels)
@@ -106,19 +104,6 @@ func installSIGUSR1() {
             slog.Info("log level cycled", "new_level", levels[i].String())
         }
     }()
-}
-```
-
-Windows stub (no SIGUSR1; provide a no-op that may be replaced with a control-file watcher in a follow-up):
-
-```go
-// shared/log/go/sigusr1_windows.go
-//go:build windows
-func installSIGUSR1() {
-    // Windows lacks SIGUSR1; level toggling is exposed only via the
-    // POST /admin/log/level endpoint. A control-file watcher (e.g.,
-    // poll for a sentinel file under %ProgramData%/maktaba/loglevel)
-    // can be added if a SIGUSR1 equivalent is needed.
 }
 ```
 
@@ -146,15 +131,6 @@ func From(ctx context.Context) *slog.Logger {
     if v, _ := ctx.Value(keyJobID).(string);     v != "" { l = l.With("job_id",     v) }
     if v, _ := ctx.Value(keyVideoID).(string);   v != "" { l = l.With("video_id",   v) }
     if v, _ := ctx.Value(keyUserID).(string);    v != "" { l = l.With("user_id",    v) }
-    // Story 21.3 cross-correlation: pull trace_id/span_id from the
-    // active OTel span (if any) so every log line emitted inside a
-    // traced request carries the matching identifiers.
-    if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
-        l = l.With(
-            "trace_id", sc.TraceID().String(),
-            "span_id",  sc.SpanID().String(),
-        )
-    }
     return l
 }
 ```
@@ -274,14 +250,6 @@ func main() {
 ```
 
 `isLogCall` matches `slog.*`, `log.From(*)`, etc. `isStringConcat` looks for `*ast.BinaryExpr` of strings or `fmt.Sprintf` whose format includes `%s` and any non-constant arg.
-
-The same lint pass also flags **off-canonical logger construction** to enforce AC2 (every line carries `service`):
-
-- Any `slog.New(...)` call **outside** `shared/log/go/logger.go` (the canonical `Init`) fails.
-- Any direct import of `"log/slog"` paired with `slog.New(`/`slog.NewJSONHandler(`/`slog.NewTextHandler(` outside `shared/log/go/` fails.
-- Allowlist comment `// loglint:allow-bespoke-logger reason="…"` is required to bypass (only used in tests).
-
-This ensures every Go logger in the codebase derives from `log.Default` (which has `service` pre-bound) or is created via `log.From(ctx)`.
 
 Python equivalent: `concat_lint.py` walks AST for `log.info(...)`/`info("string" + var)` and flags.
 

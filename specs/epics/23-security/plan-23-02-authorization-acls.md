@@ -10,22 +10,15 @@
 
 ## 0. Scope and placement
 
-This plan is the **canonical implementation** of the three-role
-authorization model (architecture §8.6). [plan-10-13](../10-auth-security/plan-10-13-permission-model.md)
-creates the `library_acl(library_id, user_id, role)` table with the
-three-role check constraint and a minimal `Authz.Can` stub; full
-semantics (role matrix, middleware, lint, streaming-side checks) live
-here.
-
 | Concern | Decision |
 |---|---|
-| `Authz.Can(ctx, Action, Resource) error` interface | `api/internal/authz/authorize.go`. **Canonical signature**, matched by [plan-10-13](../10-auth-security/plan-10-13-permission-model.md). One function; every handler calls it. |
-| Roles | `admin | editor | viewer` per library; rows in `library_acl(library_id, user_id, role)` (canonical schema, arch §8.6 line 1690; created by plan-10-13). |
-| JWT shape | Uses `sub`, `lib`, `is_admin`, `aud` claims (defined in Story 23.1; user UUID is `sub`, no separate `usr` claim). This plan gates streaming on them. |
+| `authorize(action, resource)` interface | `api/internal/authz/authorize.go`. One function; every handler calls it. |
+| Roles | `admin | editor | viewer` per library; rows in `library_acl`. |
+| JWT shape | Adds `usr`, `lib`, `is_admin`, `aud` claims (defined in Story 23.1; this plan gates streaming on them). |
 | Streaming-side check | `streaming/internal/authz/library.go`; rejects manifest/segment/poster requests without a matching `lib` claim. |
-| Audience separation | `streaming` (segments + manifest), `streaming-direct` (direct play range), `streaming-static` (poster, sprite, subtitle). [plan-10-08](../10-auth-security/plan-10-08-signed-url-minter.md) **owns audience minting** (which token gets which `aud`); this plan **owns audience-action mapping** (which path requires which audience). |
-| Linter | `tools/authz-lint.go` walks chi routes and asserts every handler calls `authz.Can()`. |
-| Out of scope | JWKS / signing (10.6, 23.1); ACL admin UI (Epic 11/19); audit log mechanics (Epic 21.6); audience minting for signed URLs (plan-10-08). |
+| Audience separation | `streaming` (segments + manifest), `streaming-direct` (direct play range), `streaming-static` (poster, sprite, subtitle). |
+| Linter | `tools/authz-lint.go` walks chi routes and asserts every handler calls `authorize()`. |
+| Out of scope | JWKS / signing (23.1); ACL admin UI (Epic 11/19); audit log mechanics (Epic 21.6). |
 
 ## 1. Architecture diagram
 
@@ -36,7 +29,7 @@ here.
                                 │
                                 ▼
                 ┌───────────────────────────┐
-                │ authz.Can(ctx, act, res)  │ ← all handlers call this
+                │ authz.Authorize(act, res) │ ← all handlers call this
                 │  - admin bypass           │
                 │  - role lookup            │
                 │  - resource → library_id  │
@@ -76,17 +69,14 @@ here.
 
 | Path | Change |
 |---|---|
-| Every handler under `api/internal/http/*` | Call `authz.Can(ctx, action, resource)` near the top. The lint checks this. |
+| Every handler under `api/internal/http/*` | Call `authz.Authorize(ctx, action, resource)` near the top. The lint checks this. |
 | `api/internal/http/router.go` | Mount `authz.Middleware` between authn and the route handlers. |
 | `streaming/internal/http/router.go` | Mount audience + library check before serving any media. |
 | `api/internal/auth/jwt.go` (Story 23.1) | Already populates `lib`; this plan defines exactly which IDs go in (current entitlements at mint time). |
 
 ### 2.3 The single Authorize call
 
-`api/internal/authz/authorize.go`. The canonical signature is
-`Authz.Can(ctx context.Context, action Action, resource Resource) error`;
-[plan-10-13](../10-auth-security/plan-10-13-permission-model.md)
-matches this signature.
+`api/internal/authz/authorize.go`:
 
 ```go
 package authz
@@ -118,18 +108,7 @@ var (
     ErrResourceMissing = errors.New("authz: resource gone")
 )
 
-// Authz is the authorization interface. Can returns nil iff the caller
-// is permitted to perform act on res.
-type Authz interface {
-    Can(ctx context.Context, act Action, res Resource) error
-}
-
-// defaultAuthz is the production implementation. plan-10-13 ships a
-// minimal stub matching this signature; this plan provides the full
-// role-matrix semantics.
-type defaultAuthz struct{ /* fields populated by middleware */ }
-
-func (defaultAuthz) Can(ctx context.Context, act Action, res Resource) error {
+func Authorize(ctx context.Context, act Action, res Resource) error {
     u, ok := authcontext.From(ctx)
     if !ok { return ErrUnauthenticated }
 
@@ -149,11 +128,6 @@ func (defaultAuthz) Can(ctx context.Context, act Action, res Resource) error {
     if !ok { return ErrForbidden }
     if role.Can(act) { return nil }
     return ErrForbidden
-}
-
-// Can is the package-level entry point used by handlers and the lint.
-func Can(ctx context.Context, act Action, res Resource) error {
-    return defaultAuthz{}.Can(ctx, act, res)
 }
 ```
 
@@ -223,7 +197,7 @@ one request boundary (no in-process cache that could stale).
 ```go
 // Walks every package under api/internal/http and asserts that every
 // function with the signature `func(http.ResponseWriter, *http.Request)`
-// or returned by a `func(...) http.HandlerFunc` calls authz.Can.
+// or returned by a `func(...) http.HandlerFunc` calls authz.Authorize.
 //
 // Uses `go/ast` over the parsed AST. The lint allows opt-out via a
 // `//authz: public` comment immediately above the function (e.g., for
@@ -242,7 +216,7 @@ func main() {
                 if hasOptOutComment(fset, fn) { return true }
                 if !callsAuthorize(fn.Body) {
                     missing = append(missing,
-                        fmt.Sprintf("%s:%d %s missing authz.Can",
+                        fmt.Sprintf("%s:%d %s missing authz.Authorize",
                             fset.Position(fn.Pos()).Filename,
                             fset.Position(fn.Pos()).Line,
                             fn.Name.Name))
@@ -280,11 +254,10 @@ func (v *Verifier) Authorize(r *http.Request, libraryID, audience string) error 
     if err != nil || !tok.Valid {
         return wrapJWTError(err)  // expired -> 403, not 401 (per AC3)
     }
-    // Audience is enforced by RegisteredClaims.Audience (a ClaimStrings).
-    if !claimsHaveAudience(c.Audience, audience) {
+    if c.Aud != audience {
         return ErrAudience
     }
-    if c.Issuer != v.iss {
+    if c.Iss != v.iss {
         return ErrIssuer
     }
     if !slices.Contains(c.Lib, libraryID) {
@@ -373,7 +346,7 @@ new queries to its companion `.sql` file.
 
 | Test | What it pins |
 |---|---|
-| `TestMintIncludesLibSubIsAdmin` | `auth.Mint` for a user with libs `[a,b]` produces a JWT whose claims include `lib=[a,b]`, `sub=<user-uuid>`, `is_admin=false`. |
+| `TestMintIncludesLibUsrIsAdmin` | `auth.Mint` for a user with libs `[a,b]` produces a JWT whose claims include `lib=[a,b]`, `usr=<user-uuid>`, `is_admin=false`. |
 | `TestStreamingRejectsMissingLib` | A JWT minted without `lib` (manually) is rejected by the streaming verifier with 403 `lib-missing`. |
 | `TestExpiredJWTReturns403` | An expired JWT to streaming returns 403 `token-expired`, not 401. |
 
@@ -390,12 +363,12 @@ new queries to its companion `.sql` file.
 |---|---|---|
 | Lost ACL mid-stream (EC1) | Existing JWT (≤ 15 min) continues to authorize segments; manifest refresh after the change drops the lib from the new JWT. Documented as "≤ 15 min revocation lag." | `TestRevocationLagBoundedBy15Min` |
 | Removing the only admin (EC2) | The user store rejects the delete with `ErrLastAdmin` (Story 10.1); the authz layer never sees the request. | n/a (Story 10.1) |
-| Library deleted while session active (EC3) | `Can()` returns `ErrResourceMissing`; HTTP layer maps to 410 `library-gone`; web client navigates home. | `TestLibraryGoneDuringSession` |
+| Library deleted while session active (EC3) | `Authorize()` returns `ErrResourceMissing`; HTTP layer maps to 410 `library-gone`; web client navigates home. | `TestLibraryGoneDuringSession` |
 | Direct DB ACL edit | The middleware reads the table per request; an admin's `psql` UPDATE takes effect on the next request. | n/a |
 | Performance under high load | The DB hit per request is by `(user_id, library_id)` index; benchmark shows < 0.5 ms p99 in the integration suite. The plan does not introduce a process-local cache (would slow ACL revocations). | `BenchmarkAuthzMiddleware` |
 | `aud` field mismatch on signed-URL JWTs | Signed URLs (Epic 8.13) use `streaming-direct` or `streaming-static`; never `streaming`. The audience map enforces. | `TestSignedURLAudience` |
 | JWT with `lib=null` | `slices.Contains(nil, x) == false` — refused. | `TestNullLibClaim` |
-| Empty `aud` claim | An empty `Audience` ClaimStrings is rejected by the parser when `WithAudience` constraints are set. | `TestEmptyAudClaim` |
+| Empty `aud` claim | `c.Aud == ""` is rejected by the parser when `WithAudience` constraints are set. | `TestEmptyAudClaim` |
 | Multi-library streaming session | Admins streaming across libraries get a token whose `lib` includes all libraries they have a role on, capped at 256 entries. | `TestLibClaimSizeCap` |
 | Hot-changing roles via WebSocket | Web client receives a `acl_changed` event (Epic 11) and forces a manifest re-mint; the new manifest carries the updated `lib`. | `TestAclChangedTriggersRemint` |
 
@@ -404,19 +377,19 @@ new queries to its companion `.sql` file.
 | Dep | Version | Why |
 |---|---|---|
 | `github.com/golang-jwt/jwt/v5` | latest | Verify on streaming side. |
-| `slices` | stdlib (Go 1.21+) | `slices.Contains`. **Pin to stdlib `"slices"`**, not `golang.org/x/exp/slices`. |
+| `golang.org/x/exp/slices` | stdlib (1.21+) | `slices.Contains`. |
 | `go/ast`, `go/parser`, `go/token` | stdlib | Authz-lint. |
 | `chi/v5` | already | Routing. |
 
 ## 7. Acceptance checklist
 
 **API**
-- [ ] Every handler calls `authz.Can`. Lint enforces.
+- [ ] Every handler calls `authz.Authorize`. Lint enforces.
 - [ ] `library_acl` lookup happens once per request (middleware).
 - [ ] Admin and single-user-mode short-circuit correctly.
 
 **JWT**
-- [ ] Tokens carry `sub` (user UUID), `lib`, `is_admin`, `aud`, `kid`.
+- [ ] Tokens carry `usr`, `lib`, `is_admin`, `aud`, `kid`.
 - [ ] `aud` is one of `streaming | streaming-direct | streaming-static`.
 
 **Streaming**

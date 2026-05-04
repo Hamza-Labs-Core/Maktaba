@@ -53,11 +53,11 @@ type QueueStats struct {
 }
 
 type ErrorEntry struct {
-    ErrorID   uuid.UUID `json:"error_id"`
-    Category  string    `json:"category"`           // always "job" for this surface
-    CreatedAt time.Time `json:"created_at"`         // matches audit_log.created_at
-    Stage     string    `json:"stage"`
-    JobID     string    `json:"job_id"`
+    ErrorID    uuid.UUID `json:"error_id"`
+    Category   string    `json:"category"`
+    OccurredAt time.Time `json:"occurred_at"`
+    Stage      string    `json:"stage"`
+    JobID      string    `json:"job_id"`
 }
 ```
 
@@ -86,25 +86,12 @@ SELECT stage, AVG(EXTRACT(EPOCH FROM (finished_at - started_at)))::float AS avg_
  GROUP BY stage;
 
 -- name: QueueLast50Errors :many
--- Audit-log linkage uses category='job' and event='job.error'; this
--- pair is the canonical audit row emitted by the failure path in
--- plan-21-05. We do NOT cast target_id::uuid because audit_log.target_id
--- is TEXT (per architecture §8.6.1 / plan-21-06): it carries multiple
--- id shapes across categories. Matching by target_kind='job' first
--- ensures every selected row has a UUID-shaped target_id, and casting
--- to UUID is safe within the qualified subset. We compare by string
--- equality against j.id::text so the index on (target_kind,target_id)
--- in plan-21-06 is used directly without a per-row cast.
 SELECT j.id AS job_id, j.stage, j.last_error_id AS error_id,
-       a.category, a.created_at
+       a.category, a.occurred_at
   FROM processing_jobs j
-  JOIN audit_log a
-    ON a.target_kind = 'job'
-   AND a.target_id   = j.id::text
-   AND a.category    = 'job'
-   AND a.event       = 'job.error'
- WHERE j.state = 'failed'
- ORDER BY a.created_at DESC
+  JOIN audit_log a ON a.target_kind='job' AND a.target_id::uuid = j.id AND a.event='job_error'
+ WHERE j.state='failed'
+ ORDER BY a.occurred_at DESC
  LIMIT 50;
 ```
 
@@ -139,35 +126,6 @@ type SegmentMark struct {
 
 `SegmentProgress` reads from `processing_jobs.last_segment_end_sec` plus a `job_segment_progress(job_id, idx, end_sec, at)` table appended on every transcribe segment commit.
 
-### 4.1 `job.segment_progress` WS event envelope
-
-The WS event uses the canonical envelope defined in **architecture §7.10**
-(WebSocket job-progress events). The field names below align with that
-section so any client implementing §7.10 can decode the event without
-local additions:
-
-```json
-{
-  "type":       "job.segment_progress",
-  "schema":     "v1",
-  "ts":         "2026-05-04T12:34:56Z",
-  "job_id":     "01HXXX...",
-  "stage":      "transcribe",
-  "data": {
-    "idx":          7,
-    "start_sec":    140.0,
-    "end_sec":      160.0,
-    "duration_sec": 1832.0,
-    "progress":     0.087
-  }
-}
-```
-
-`type`, `schema`, `ts`, `job_id`, and `stage` are envelope fields owned
-by §7.10. `data` is the event-specific payload. The trace_id (when
-present) is carried in the `data` object as `trace_id` to align with
-the LISTEN/NOTIFY trace-continuity contract (plan-21-03 §8.1).
-
 ## 5. WS endpoint with filter
 
 ```go
@@ -199,15 +157,7 @@ func (h *Handler) WSJobs(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-EC2: per-second batching caps server-side fan-out cost when the same job
-has 100+ subscribers.
-
-> **Independence from UI throttle.** The 1 Hz server-side batching is
-> orthogonal to any UI-side throttle. The web admin panel may render at
-> a slower cadence (e.g., 2 s) by coalescing batches client-side; the
-> server makes no assumption about render rate. Conversely, a low-power
-> client may apply an additional throttle without affecting server cost.
-> Tests must therefore measure event delivery counts, not rendered frames.
+EC2: per-second batching caps fan-out cost when the same job has 100+ subscribers.
 
 ## 6. Stuck classifier
 
@@ -224,16 +174,7 @@ func ClassifyState(j ProcessingJob, hbInterval time.Duration) string {
 }
 ```
 
-Applied at JSON serialization; DB row remains `running`. **Both surfaces
-must call `ClassifyState`:**
-- REST `GET /api/jobs/{id}` — invoked in `job_detail.go` before encoding
-  the response struct.
-- WS `/ws/jobs?job_id=` — invoked in `ws_jobs.go`'s event-builder before
-  every `conn.WriteJSON(batch)` call so a stuck job surfaces in the WS
-  stream as well as in REST polls.
-
-A shared helper (`jobs.ApplyClassify(j, hbInterval)`) is used by both
-sites so the rule cannot drift.
+Applied at JSON serialization; DB row remains `running`.
 
 ## 7. Path masking
 
@@ -305,18 +246,8 @@ Drop a synthetic file with corrupt moov. Job fails. `GET /api/queue/stats`'s `la
 ### TC4 — No parallel surface
 `GET /api/processing/status` returns 404. `make lint:routes` passes. Add `r.Get("/api/processing/foo", h)` in a fixture; lint fails naming the route.
 
-### EC1 — Stuck (REST + WS parity)
-Force a worker to stop heartbeating without exiting. After
-`3 × hbInterval`:
-- `GET /api/jobs/{id}` returns `state=stuck`.
-- A connected `WS /ws/jobs?job_id=<id>` client receives a state-update
-  event (or the next batched event) with `state=stuck`.
-- DB row still `running`.
-- Reaper (Story 19.4) eventually requeues.
-
-The test asserts identical `state` strings from both surfaces in the
-same observation window so any future change that lands on only one
-side regresses the test.
+### EC1 — Stuck
+Force a worker to stop heartbeating without exiting. After `3 × hbInterval`, `GET /api/jobs/{id}` returns `state=stuck`. DB row still `running`. Reaper (Story 19.4) eventually requeues.
 
 ### EC2 — 100 subscribers
 100 WS clients on same job. Fire 1,000 progress events server-side over 60 s. Each client receives all events. Per-second batching keeps server CPU bounded; metric `ws_send_batches_per_second` ~60.

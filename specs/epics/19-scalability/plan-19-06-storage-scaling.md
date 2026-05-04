@@ -32,12 +32,6 @@ pipeline/maktaba_pipeline/scan/
 
 ## 2. content_hash
 
-The hash construction order — `head ‖ size_le8 ‖ tail` — is part of the
-**identity contract** (matches Story 19.6 AC2). Anything that depends on
-`videos.content_hash` (cache keys, segment paths, ChromaDB collection ids)
-relies on this exact byte order. Reordering or reformatting the size field
-is a breaking change and requires a migration.
-
 ```python
 # scan/hash.py
 import blake3, struct
@@ -45,19 +39,12 @@ import blake3, struct
 EDGE_BYTES = 4 * 1024 * 1024
 
 def content_hash(path: Path) -> str:
-    """blake3(head ‖ size_le8 ‖ tail) — see Story 19.6 AC2.
-
-    The order is fixed:
-      1. read up to 4 MiB from offset 0 → `head`
-      2. pack `size` as little-endian uint64 → `size_le8`
-      3. read up to 4 MiB ending at EOF → `tail`
-      4. update the hasher in the order: head, size_le8, tail
-    """
     h = blake3.blake3()
     size = path.stat().st_size
 
     with path.open("rb") as f:
         head = f.read(EDGE_BYTES)
+        h.update(head)
         if size > 2 * EDGE_BYTES:
             f.seek(size - EDGE_BYTES)
             tail = f.read(EDGE_BYTES)
@@ -66,8 +53,6 @@ def content_hash(path: Path) -> str:
             tail = f.read(size - EDGE_BYTES)
         else:
             tail = b""
-        # Contract order: head, size_le8, tail.
-        h.update(head)
         h.update(struct.pack("<Q", size))
         h.update(tail)
     return h.hexdigest()
@@ -150,63 +135,37 @@ async def scan(cfg: ScanConfig, db, on_video) -> ScanReport:
 `db.upsert_video`:
 
 ```sql
--- Canonical column names (arch §8.5):
---   library_id  UUID NOT NULL
---   filename    TEXT NOT NULL          (basename derived from path)
---   size_bytes  BIGINT NOT NULL        (NOT `size`)
---   mtime       TIMESTAMPTZ
-INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO videos (id, content_hash, path, size, mtime)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (content_hash) DO UPDATE
-   SET path = EXCLUDED.path,
-       filename = EXCLUDED.filename,
-       mtime = EXCLUDED.mtime
+   SET path = EXCLUDED.path, mtime = EXCLUDED.mtime
    WHERE videos.path IS DISTINCT FROM EXCLUDED.path
 ```
 
-`library_id` is required (NOT NULL) — the scanner must resolve which library
-a path belongs to before insert. Returns `(inserted | path_updated | unchanged)`.
-Only `inserted` enqueues processing jobs.
+Returns `(inserted | path_updated | unchanged)`. Only `inserted` enqueues processing jobs.
 
 ## 5. Watcher with debounce
 
 ```python
 # scan/watcher.py
-#
-# IMPORTANT: `watchdog` invokes `on_any_event` on its own observer thread —
-# NOT on the asyncio event loop. `asyncio.get_running_loop()` raises
-# `RuntimeError` when called from a non-loop thread, so the loop must be
-# captured on the loop thread (e.g. at `start()` time) and posted to via
-# `asyncio.run_coroutine_threadsafe(...)` from the watchdog thread.
 class DebouncedHandler(FileSystemEventHandler):
-    def __init__(self, scanner, loop: asyncio.AbstractEventLoop, debounce_s: float = 2.0):
-        # `loop` MUST be captured on the asyncio thread by the caller and
-        # passed in here; we never call get_running_loop() from the watchdog
-        # thread.
-        self._pending: dict[Path, asyncio.Handle] = {}
-        self._loop = loop
+    def __init__(self, scanner, debounce_s: float = 2.0):
+        self._pending: dict[Path, asyncio.TimerHandle] = {}
+        self._loop = asyncio.get_running_loop()
         self.scanner = scanner
         self.debounce = debounce_s
 
     def on_any_event(self, event):
-        # Runs on the watchdog observer thread.
         if event.is_directory: return
         path = Path(event.src_path)
+        if old := self._pending.pop(path, None): old.cancel()
+        # rename: cancel any pending event on src
         if event.event_type == "moved":
+            if old := self._pending.pop(Path(event.dest_path), None): old.cancel()
             path = Path(event.dest_path)
-
-        def schedule():
-            # Runs on the loop thread.
-            if old := self._pending.pop(path, None): old.cancel()
-            if event.event_type == "moved":
-                if old := self._pending.pop(Path(event.src_path), None): old.cancel()
-            self._pending[path] = self._loop.call_later(
-                self.debounce,
-                lambda p=path: asyncio.ensure_future(self._flush(p), loop=self._loop),
-            )
-
-        # Cross-thread: post `schedule` onto the captured loop.
-        self._loop.call_soon_threadsafe(schedule)
+        self._pending[path] = self._loop.call_later(
+            self.debounce, lambda p=path: asyncio.create_task(self._flush(p))
+        )
 
     async def _flush(self, path: Path):
         self._pending.pop(path, None)
@@ -214,40 +173,18 @@ class DebouncedHandler(FileSystemEventHandler):
             await self.scanner.handle_one(path)
 ```
 
-Caller wiring:
-
-```python
-async def main():
-    loop = asyncio.get_running_loop()                      # captured on loop thread
-    handler = DebouncedHandler(scanner, loop, debounce_s=2.0)
-    observer = Observer()
-    observer.schedule(handler, str(root), recursive=True)
-    observer.start()                                       # spins up watchdog thread
-```
-
 AC4: `.tmp.partial → .mp4` rename emits one job. The debouncer collapses the create+move because the timer for `.tmp.partial` is cancelled when the move event fires for `.mp4` and the `.partial` is no longer present at flush time.
 
 ## 6. Performance budget
-
-The AC1 30-min wall-clock budget covers the **full** scan: directory
-enumeration, hashing, and DB upsert — not just hashing.
 
 | Stage | Target | Implementation |
 |---|---|---|
 | `scandir` walk | 50 k entries in ≤ 30 s | iterative DFS, no recursion. |
 | `content_hash` | ≤ 30 ms/file on local SSD | 8 MiB total read. |
-| DB upsert (per file) | ≤ 5 ms/file (warm pool) | single statement, indexed `content_hash`; batched in groups of 100. |
-| End-to-end 30 TB / 50 k files | ≤ 30 min | concurrency=8 hashers + a dedicated DB writer task. |
+| End-to-end 30 TB / 50 k files | ≤ 30 min | concurrency=8, hashing dominates. |
 | Peak RSS | ≤ 800 MiB | bounded by `concurrency × (8 MiB read buffer + asyncio task overhead)`. |
 
-Throughput math:
-
-  - Walk: 50 k entries via `scandir` ≈ 30 s.
-  - Hash: 50 k files × 30 ms / 8 workers ≈ 187 s.
-  - Upsert: 50 k rows × 5 ms / 4 batched conns ≈ 62 s.
-  - Sequential floor: ~280 s; with overlap (walk feeds hashers, hashers feed
-    upsert) the wall-clock target is ≤ 30 min with comfortable headroom for
-    slow paths and SMB hiccups.
+Hash throughput math: 50 k files × 30 ms / 8 workers ≈ 187 s. Headroom for slow paths.
 
 ## 7. Test cases
 

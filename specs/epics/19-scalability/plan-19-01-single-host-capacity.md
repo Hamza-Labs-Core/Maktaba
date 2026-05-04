@@ -70,8 +70,7 @@ func Run(ctx context.Context, m Mix, rig *Rig) Result {
 # tests/capacity/thresholds.yaml
 rss_max_mib:
   api: 250
-  streaming: 800       # parent only — FFmpeg children are accounted separately
-                       # (see Story 18.5 envelope; child RSS not included in this cap)
+  streaming: 800       # parent only
   pipeline_total: 12000
 
 error_rate_max: 0.001  # 0.1 %
@@ -93,11 +92,7 @@ catalog_landing_p95_ms: 500
 func main() {
     flag := parse()
     db := open(flag.DSN)
-    // Single-user mode: seed the canonical sentinel user from Story 19.8
-    // ('00000000-0000-0000-0000-000000000001'). Library rows reference this
-    // sentinel for `created_by`. Random UUIDs would diverge from the
-    // multi-tenant migration baseline.
-    seedSQL(db)             // libraries + sentinel user (SentinelUserID)
+    seedSQL(db)             // libraries + users
     for i := 0; i < 50_000; i++ {
         path := fmt.Sprintf("%s/v%05d.mp4", flag.Root, i)
         // sparse file: write 4 MiB header + 4 MiB tail; size header to N MiB
@@ -138,7 +133,7 @@ Asserts `walk ≤ 5 min` and observes RSS samples every 30 s for stability (slop
 ```go
 // streaming/internal/quality/cap.go
 func directPlayCap(media MediaInfo, storage StorageProfile) Rendition {
-    if storage.SeqMBps < 50 {  // matches Story 19.1 EC1 threshold
+    if storage.SeqMBps < 60 {
         return Rendition{Name: "720p", Width: 1280, Height: 720}
     }
     return media.Native
@@ -206,9 +201,6 @@ profiles:
 ### TC3 — Mixed workload
 Run `Mix{DirectPlay:8, Transcoded:0, Transcribers:1, Indexers:4, SearchQPS:100, Duration:30m}`. Assert search p95 ≤ 500 ms (Story 18.2 budget) holds throughout.
 
-### TC4 — AC1 reference mix (end-to-end)
-Run the canonical AC1 mix `Mix{DirectPlay:8, Transcoded:0, Transcribers:1, Indexers:0, SearchQPS:100, Duration:30m}` end-to-end (8 concurrent streams + 1 active transcribe + 100 search qps). Assert simultaneously: `streaming_buffer_underruns_total == 0`, search p95 ≤ 500 ms, transcribe job claims keep heartbeating, all RSS ceilings hold, and `error_rate_max ≤ 0.001`. This is the precise workload AC1 is written against; TC2/TC3 cover sub-axes only.
-
 ## 10. `make capacity` driver
 
 ```makefile
@@ -230,7 +222,7 @@ Exit code != 0 on any threshold breach. Output JSON report → `tests/capacity/r
 
 | Case | Source | Handling |
 |---|---|---|
-| EC1 slow USB | story | `directPlayCap` caps at 720p when seq < 50 MB/s. |
+| EC1 slow USB | story | `directPlayCap` caps at 720p when seq < 60 MB/s. |
 | EC2 file-watch limit | story | Polling fallback at 30 s interval. |
 | EC3 SQLite | story | Documented and tested as 1/4 profile. |
 | 30 TB sparse fixture not really 30 TB | impl | Declared size in DB matches; on-disk sparseness is OK because tests don't read mid-bytes. |

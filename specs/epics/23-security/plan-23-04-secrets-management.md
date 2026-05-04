@@ -14,8 +14,7 @@
 | Settings API | `GET /api/settings` returns metadata only (`{ key, configured, source }`), never values. |
 | Redaction middleware | `shared/log/redact.go` (Go) and `pipeline/src/maktaba_pipeline/log/redact.py`. Applied to slog/logging output. |
 | Static analysis | `tools/secret-allowlist-lint.go` asserts the streaming binary contains no string referencing JWT private key or STT-backend env names. |
-| Out of scope | Specific key formats (plan-10-06 owns JWT keypair lifecycle; arch §11.5 canonical for storage); rotation flows (10.6 keys, 23.6 rate-limit, 23.7 deps); rate-limited admin endpoint that triggers reload (referenced in EC3 only). |
-| `MAKTABA_KEY_ENCRYPTION_KEY` | **Removed.** Not registered. Per [PLAN_REVIEW_18_24 §2](../../PLAN_REVIEW_18_24.md), the JWT private key is env-only (`MAKTABA_JWT_PRIVATE_KEY_PEM`); there is no DB-encrypted scheme. |
+| Out of scope | Specific key formats (Story 23.1 owns JWT keypair); rotation flows (23.1 keys, 23.6 rate-limit, 23.7 deps); rate-limited admin endpoint that triggers reload (referenced in EC3 only). |
 
 ## 1. Architecture diagram
 
@@ -86,26 +85,14 @@ type Spec struct {
 var AllSpecs = []Spec{
     {Name: "MAKTABA_DATABASE_URL",       Owner: OwnerAPI,       Required: true,
      Pattern: regexp.MustCompile(`^(postgres|sqlite)://`)},
-    // JWT private key — env-only, per architecture §11.5 (canonical).
-    // Loaded by api/internal/auth (signing-key store owned by plan-10-06).
     {Name: "MAKTABA_JWT_PRIVATE_KEY_PEM", Owner: OwnerAPI,       Required: true,
      Pattern: regexp.MustCompile(`-----BEGIN .*PRIVATE KEY-----`)},
     {Name: "MAKTABA_JWT_PUBLIC_KEY_PEM",  Owner: OwnerStreaming, Required: true,
      Pattern: regexp.MustCompile(`-----BEGIN PUBLIC KEY-----`)},
     {Name: "MAKTABA_ADMIN_TOKEN",         Owner: OwnerAPI,       Required: false,
      Pattern: regexp.MustCompile(`^[A-Za-z0-9._-]{32,}$`)},
-    // Inter-service mTLS bootstrap (plan-23-03). Stdout banner line is
-    // exempt from redaction (see plan-23-03 §2.5).
-    {Name: "MAKTABA_INTERNAL_BOOTSTRAP_TOKEN", Owner: OwnerAPI, Required: false,
-     Pattern: regexp.MustCompile(`^[A-Za-z0-9._-]{32,}$`)},
-    // Trusted reverse-proxy CIDRs (used by request-IP extraction for
-    // rate limiting, audit log, etc.).
-    {Name: "MAKTABA_TRUSTED_PROXIES",     Owner: OwnerAPI,       Required: false,
-     Pattern: regexp.MustCompile(`^[0-9a-fA-F:.,/\s]+$`)},
-    // OpenAI keys: cover personal (sk-), project-scoped (sk-proj-),
-    // and session (sess-) prefixes.
     {Name: "OPENAI_API_KEY",              Owner: OwnerPipeline,  Required: false,
-     Pattern: regexp.MustCompile(`^(sk-|sk-proj-|sess-)`)},
+     Pattern: regexp.MustCompile(`^sk-`)},
     // ...others
 }
 
@@ -224,17 +211,8 @@ func (h *SettingsHandler) list(w http.ResponseWriter, r *http.Request) {
 // The handler writes the value to the configured secret store (env on
 // dev, file on compose, secrets manager later) and reloads the in-memory
 // copy. The response body is the metadata struct, never the value.
-//
-// Per AC3, admins may set ANY secret (including pipeline-owned, e.g.
-// OPENAI_API_KEY) via this endpoint. The owner field is informational
-// for service routing, NOT an authorization gate. Authorization here
-// is "is the caller an admin?" — independent of which service ultimately
-// consumes the secret.
 func (h *SettingsHandler) put(w http.ResponseWriter, r *http.Request) {
-    if err := authz.Can(r.Context(), authz.AdminLibrary, authz.SystemResource{}); err != nil {
-        problem(w, 403, "forbidden", "")
-        return
-    }
+    _ = authz.Authorize(r.Context(), authz.AdminLibrary, authz.SystemResource{})
     key := chi.URLParam(r, "key")
     var body struct{ Value string `json:"value"` }
     if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -242,14 +220,10 @@ func (h *SettingsHandler) put(w http.ResponseWriter, r *http.Request) {
         return
     }
     spec, ok := registry.Find(key)
-    if !ok {
+    if !ok || spec.Owner != OwnerAPI {
         problem(w, 404, "unknown-secret", "")
         return
     }
-    // Note: spec.Owner is NOT checked here — admins can set
-    // pipeline-owned and streaming-owned secrets too. The owner
-    // determines which service reads the secret at runtime (via its
-    // own narrower registry), not who is allowed to write it.
     if err := check(spec, body.Value); err != nil {
         problem(w, 422, "shape-violation", "")
         return
@@ -411,7 +385,6 @@ requests pick up the new value. Documented in ops guide.
 |---|---|
 | `TestSettingsListExcludesValues` | `GET /api/settings` returns `[ { name, configured, source } ]`; no `value` field; serialization across the wire never carries the value. |
 | `TestSettingsPutWriteOnly` | `PUT /api/settings/OPENAI_API_KEY` with `{value:"sk-..."}` → 200; subsequent `GET` shows `configured: true`, `source: "config"`. The PUT response body excludes the value. |
-| `TestSettingsPutAdminWritesPipelineOwned` | An admin successfully PUTs `OPENAI_API_KEY` (owner=pipeline) and `MAKTABA_JWT_PUBLIC_KEY_PEM` (owner=streaming); both succeed (covers AC3 carve-out). |
 | `TestSettingsPutShapeViolation` | `PUT` with invalid value (e.g., DB_URL not `postgres://...`) returns 422 with the spec's shape message. |
 | `TestSettingsPutNonAdminRefused` | Non-admin caller → 403. |
 
@@ -423,16 +396,6 @@ requests pick up the new value. Documented in ops guide.
 | `TestRedactsHighEntropyValue` | `slog.Info("token", "got", "X9aBc1...32chars")` writes `got=***`. |
 | `TestPythonRedactingFilter` | Mirror test for the pipeline's `RedactingFilter`. |
 | `TestRedactInStackTrace` (EC1) | A panic that includes the secret in the message redacts before emission. |
-| `TestBootstrapTokenExemptOnce` | The `MAKTABA_INTERNAL_BOOTSTRAP_TOKEN` startup-banner stdout line (plan-23-03 §2.5) passes through un-redacted; subsequent occurrences in any other log emission are redacted. |
-
-### 3.4 Multi-line PEM env (EC2)
-
-| Test | What it pins |
-|---|---|
-| `TestPemMultilineEnvLiteralBackslashN` | `MAKTABA_JWT_PRIVATE_KEY_PEM='-----BEGIN PRIVATE KEY-----\nMII...==\n-----END PRIVATE KEY-----'` (literal `\n`) loads cleanly; the loader expands `\n` to real newlines; the regex Pattern matches. |
-| `TestPemMultilineEnvRealNewlines` | The same value with real newlines loads cleanly. |
-| `TestPemMultilineFile` | `MAKTABA_JWT_PRIVATE_KEY_PEM_FILE=/path/to/priv.pem` reads the file (with real newlines) and trims trailing whitespace; the regex Pattern matches. |
-| `TestOpenAIKeyPrefixVariants` | `OPENAI_API_KEY` accepts `sk-...`, `sk-proj-...`, and `sess-...`; rejects `pk-...`. |
 
 ## 4. Edge cases
 

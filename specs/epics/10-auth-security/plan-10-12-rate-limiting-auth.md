@@ -6,25 +6,7 @@
 > (Story 10.11) is a different mechanism — it counts *failed* attempts;
 > rate-limit counts *all* attempts.
 
-## 0. Canonical numbers and limiter (cross-epic)
-
-This plan defines the **canonical rate-limit numbers and limiter** for
-auth endpoints:
-
-- `POST /api/auth/login` → **10/min/IP**
-- `POST /api/auth/refresh` → **6/min/family + 30/min/IP**
-- other `/api/auth/*` → **30/min/IP**
-- Limiter: **`golang.org/x/time/rate`** (per-key map with janitor sweep)
-- Eviction: **janitor** (periodic sweep of stale entries), NOT
-  LRU-on-overflow
-
-[plan-23-06](../23-security/plan-23-06-rate-limiting.md) **references
-rather than redefines** these. Auth-route classes exposed by this
-package are imported into plan-23-06's registry directly.
-
-Cross-link: [plan-23-06 — Rate Limiting (Epic 23)](../23-security/plan-23-06-rate-limiting.md).
-
-## 0.1 Scope and placement
+## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|

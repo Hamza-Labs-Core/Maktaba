@@ -13,7 +13,7 @@
 |---|---|
 | Idempotency key | `(content_hash, stage, backend, model, config_hash)` stored on `processing_jobs`. Re-claim with the same key short-circuits the work. |
 | Resume protocol | Per-segment commit in own DB tx with `last_segment_end_sec`. STT engines accept a start offset. |
-| Sidecar projection | DB is the source of truth; sidecars regenerated from `transcript_segments` rows. A `--rebuild-sidecars` flag exists. |
+| Sidecar projection | DB is the source of truth; sidecars regenerated from segments rows. A `--rebuild-sidecars` flag exists. |
 | Bulk re-process | `maktaba-pipeline reprocess --from-stage <name>` walks the DAG. |
 | Out of scope | Atomic writes (Story 24.1); concurrency/locking (Story 24.4); job state machine itself (architecture §7). |
 
@@ -27,14 +27,13 @@
               │ yields per-segment events
               ▼
    tx{
-     INSERT transcript_segments(transcript_id, seq, start_sec, end_sec, text, ...)
-       (idempotency UPSERT on processing_jobs(video_id, segment_idx))
+     INSERT segments(job_id, segment_idx, start, end, text, ...)
      UPDATE processing_jobs SET last_segment_end_sec=end, heartbeat=now()
    }
               │
-              ▼ on completion (state transitions: paused → resuming → running → done)
-   regenerate sidecar from transcript_segments rows (atomic_write)
-   set processing_jobs.state='done'
+              ▼ on completion
+   regenerate sidecar from segments rows (atomic_write)
+   set processing_jobs.state=DONE
 ```
 
 ## 2. Implementation steps
@@ -54,9 +53,9 @@
 
 | Path | Change |
 |---|---|
-| `pipeline/src/maktaba_pipeline/pipeline/runner.py` | Loads idempotency key on claim; short-circuits if a `done` job for the same key exists. |
+| `pipeline/src/maktaba_pipeline/pipeline/runner.py` | Loads idempotency key on claim; short-circuits if a DONE job for the same key exists. |
 | `pipeline/src/maktaba_pipeline/stt/*.py` | Each backend accepts `start_at_sec` and a `yield_segment` callback. |
-| `pipeline/src/maktaba_pipeline/subtitles/*.py` | Read from `transcript_segments` table, not from in-memory STT output. |
+| `pipeline/src/maktaba_pipeline/subtitles/*.py` | Read from segments table, not from in-memory STT output. |
 
 ### 2.3 Idempotency key
 
@@ -79,29 +78,12 @@ def compute_key(stage: str, content_hash: str, backend: str,
     return ":".join(parts)
 
 def _relevant_keys(stage: str, config: dict[str, Any]) -> dict[str, Any]:
-    """Filter to only those that change the output bytes.
-
-    Explicit per-stage table; every pipeline stage MUST have an entry.
-    Falling through is a programming error — `_RELEVANT_BY_STAGE.keys()`
-    is asserted to equal the canonical stage set in tests.
-    """
-    keys = _RELEVANT_BY_STAGE.get(stage)
-    if keys is None:
-        raise ValueError(f"idempotency: no _relevant_keys entry for stage={stage!r}")
-    return {k: config.get(k) for k in keys}
-
-
-# Canonical stages (architecture §3 / §7): scan, probe, extract,
-# transcribe, subtitle_gen, index, thumbnail. One entry per stage.
-_RELEVANT_BY_STAGE: dict[str, tuple[str, ...]] = {
-    "scan":         ("root_path", "include_globs", "exclude_globs"),
-    "probe":        ("ffprobe_args",),  # output is `media_info` rows; deterministic per ffprobe version
-    "extract":      ("audio_codec", "sample_rate", "channels"),  # audio extraction params
-    "transcribe":   ("language", "vad", "beam_size", "temperature"),
-    "subtitle_gen": ("vtt_dialect", "max_chars_per_line", "max_lines"),
-    "index":        ("dim", "normalize", "model_revision"),  # embedding index
-    "thumbnail":    ("count", "width", "format", "quality"),
-}
+    """Filter to only those that change the output bytes."""
+    if stage == "transcribe":
+        return {k: config.get(k) for k in ("language", "vad", "beam_size", "temperature")}
+    if stage == "embed":
+        return {k: config.get(k) for k in ("dim", "normalize", "model_revision")}
+    return config
 ```
 
 The idempotency key is stored on `processing_jobs.idempotency_key` (a
@@ -125,31 +107,12 @@ async def per_segment_commit(job_id, db):
     """
     async def commit(seg):
         async with db.transaction():
-            # Per-segment commit lands two rows in two tables:
-            #
-            #   1. transcript_segments(transcript_id, seq, ...)
-            #      -- the canonical content row (architecture §8.1).
-            #      Unique on (transcript_id, seq).
-            #
-            #   2. processing_jobs(video_id, segment_idx) idempotency
-            #      tracker so a re-claim of the SAME job that already
-            #      committed segment N is a no-op. The UNIQUE on
-            #      (video_id, segment_idx) is plan-24-03's inventory
-            #      entry — it guards plan-24-02's resume protocol, not
-            #      the transcript content. Same `segment_idx` across
-            #      different jobs for the same video coalesces to one
-            #      logical commit.
             await db.execute(
-                """INSERT INTO transcript_segments(transcript_id, seq,
-                                                   start_sec, end_sec, text)
-                   VALUES ($1,$2,$3,$4,$5)
-                   ON CONFLICT (transcript_id, seq) DO NOTHING""",
-                seg.transcript_id, seg.idx, seg.start, seg.end, seg.text)
-            await db.execute(
-                """INSERT INTO processing_jobs_segments(video_id, segment_idx, job_id)
-                   VALUES ($1,$2,$3)
-                   ON CONFLICT (video_id, segment_idx) DO NOTHING""",
-                seg.video_id, seg.idx, job_id)
+                """INSERT INTO segments(job_id, video_id, segment_idx,
+                                        start_sec, end_sec, text)
+                   VALUES ($1,$2,$3,$4,$5,$6)
+                   ON CONFLICT (job_id, segment_idx) DO NOTHING""",
+                job_id, seg.video_id, seg.idx, seg.start, seg.end, seg.text)
             await db.execute(
                 """UPDATE processing_jobs
                    SET last_segment_end_sec = GREATEST(last_segment_end_sec, $2),
@@ -159,11 +122,8 @@ async def per_segment_commit(job_id, db):
     yield commit
 ```
 
-Both `ON CONFLICT DO NOTHING` clauses make recommit safe at the
-segment-commit crash boundary (EC3). The `processing_jobs_segments`
-helper table carries the `(video_id, segment_idx)` UNIQUE per
-plan-24-03's inventory — it is distinct from `transcript_segments`'s
-own `(transcript_id, seq)` UNIQUE.
+The `ON CONFLICT DO NOTHING` makes recommit safe at the segment-commit
+crash boundary (EC3).
 
 ### 2.5 STT backend resume hook
 
@@ -191,13 +151,13 @@ async def run_job(job, db, stage_impls):
                                   job.backend, job.model, job.config)
     if existing := await db.fetch_one(
         "SELECT id, state FROM processing_jobs "
-        "WHERE idempotency_key = $1 AND state = 'done' "
+        "WHERE idempotency_key = $1 AND state = 'DONE' "
         "AND id != $2 LIMIT 1", key, job.id):
         # Mirror the existing result onto this job so callers see the
-        # same outcome shape. Then mark the new one done without doing
+        # same outcome shape. Then mark the new one DONE without doing
         # work. (Bulk re-enqueues become cheap.)
         await db.execute(
-            "UPDATE processing_jobs SET state='done', "
+            "UPDATE processing_jobs SET state='DONE', "
             "last_segment_end_sec=src.last_segment_end_sec "
             "FROM (SELECT * FROM processing_jobs WHERE id=$1) AS src "
             "WHERE processing_jobs.id=$2", existing["id"], job.id)
@@ -206,27 +166,6 @@ async def run_job(job, db, stage_impls):
     impl = stage_impls[job.stage]
     await impl.run(job)
 ```
-
-**State transitions.** Per architecture §7.2 the canonical FSM is
-`pending → claimed → running → done` with `paused → resuming → running`
-on resume and `cancelled` / `failed` as terminal alternatives. This
-runner only transitions `claimed → running → done`; the explicit
-`paused → resuming → running` hop is handled by `pipeline/.../resume.py`
-when a paused job is reclaimed:
-
-```python
-# In resume.py, on reclaim of a paused job:
-await db.execute(
-    "UPDATE processing_jobs SET state='resuming' WHERE id=$1 AND state='paused'",
-    job_id)
-# … bring up the STT engine, seek to last_segment_end_sec …
-await db.execute(
-    "UPDATE processing_jobs SET state='running' WHERE id=$1 AND state='resuming'",
-    job_id)
-```
-
-The intermediate `resuming` state is observable for ops dashboards
-(plan-21-07) and pinned by plan-24-03's CHECK enum.
 
 ### 2.7 Sidecar regeneration
 
@@ -237,11 +176,8 @@ async def regenerate(video_id: str, stage: str, db) -> None:
     """Rebuild on-disk sidecars for `video_id` from DB rows."""
     if stage == "subtitle_gen":
         rows = await db.fetch_all(
-            "SELECT ts.seq, ts.start_sec, ts.end_sec, ts.text "
-            "FROM transcript_segments ts "
-            "JOIN transcripts t ON t.id=ts.transcript_id "
-            "WHERE t.video_id=$1 AND t.is_active "
-            "ORDER BY ts.seq", video_id)
+            "SELECT segment_idx, start_sec, end_sec, text FROM segments "
+            "WHERE video_id=$1 ORDER BY segment_idx", video_id)
         vtt_path = await _vtt_path(video_id, db)
         atomic_write_bytes(vtt_path, render_vtt(rows))
         srt_path = await _srt_path(video_id, db)
@@ -279,7 +215,7 @@ async def main(args):
             for video_id in await videos_for_library(db, args.library):
                 await db.execute(
                     "INSERT INTO processing_jobs(video_id, stage, state) "
-                    "VALUES ($1, $2, 'pending') ON CONFLICT DO NOTHING",
+                    "VALUES ($1, $2, 'QUEUED') ON CONFLICT DO NOTHING",
                     video_id, stage.value)
 ```
 
@@ -300,7 +236,7 @@ remain.
 
 | Test | What it pins |
 |---|---|
-| `TestSecondClaimNoOps` | Enqueue the same `(content_hash, transcribe, whisper_mlx, large-v3, cfg-hash-X)` twice; only the first runs the work; the second is short-circuited to `done` (lowercase) with the same artifact. |
+| `TestSecondClaimNoOps` | Enqueue the same `(content_hash, transcribe, whisper_mlx, large-v3, cfg-hash-X)` twice; only the first runs the work; the second is short-circuited to DONE with the same artifact. |
 | `TestKeyChangesOnConfigBump` | A config change to `language` produces a different `idempotency_key`; both jobs run independently. |
 
 ### 3.3 Sidecar rebuild (TC3)
@@ -316,11 +252,11 @@ remain.
 | Case | Behaviour | Where pinned |
 |---|---|---|
 | STT non-determinism (EC1) | Boundaries differ across runs; the resume test asserts text similarity ≥ 95 %, not byte-equality. | `TestResumeTextSimilarity95` |
-| Backend changed mid-job (EC2) | The new claim's `idempotency_key` differs (config_hash differs); the runner re-runs from start; `transcript_segments` rows from the previous backend are kept under the previous transcript (preserved as a non-active history row). | `TestBackendChangeStartsFresh` |
-| Crash at segment-commit boundary (EC3) | Both `ON CONFLICT` clauses (`(transcript_id, seq)` on `transcript_segments`; `(video_id, segment_idx)` on `processing_jobs_segments`) make the re-attempt a no-op. The next worker's tx commits successfully. | `TestSegmentCommitCrashIdempotent` |
-| Resumed STT yields fewer segments | If the engine ends earlier on a resume than expected, the sidecar regen still produces a file from the available rows; the DAG marks the job `done`; downstream stages handle a shorter transcript. | `TestShorterResumeStillCompletes` |
+| Backend changed mid-job (EC2) | The new claim's `idempotency_key` differs (config_hash differs); the runner re-runs from start; segments rows from the previous backend are kept under the previous job_id. | `TestBackendChangeStartsFresh` |
+| Crash at segment-commit boundary (EC3) | The `ON CONFLICT (job_id, segment_idx) DO NOTHING` makes the re-attempt a no-op. The next worker's tx commits successfully. | `TestSegmentCommitCrashIdempotent` |
+| Resumed STT yields fewer segments | If the engine ends earlier on a resume than expected, the sidecar regen still produces a file from the available rows; the DAG marks the job DONE; downstream stages handle a shorter transcript. | `TestShorterResumeStillCompletes` |
 | `last_segment_end_sec` is NULL (first run) | The runner passes `start_at_sec=0`. | `TestFirstRunStartFromZero` |
-| Resume but the audio file was deleted | The runner fails fast with `audio_missing`; the job is marked `failed` with a documented error category. | `TestAudioMissingMarksFailed` |
+| Resume but the audio file was deleted | The runner fails fast with `audio_missing`; the job is marked FAILED with a documented error category. | `TestAudioMissingMarksFailed` |
 | Two workers race on the same job | Job claim uses `SELECT ... FOR UPDATE SKIP LOCKED` (Story 24.4); only one runs. | n/a (24.4) |
 | Bulk reprocess overlaps with running job | Insert with `ON CONFLICT DO NOTHING` skips a duplicate enqueue; the running job continues; downstream re-enqueue waits for it. | `TestBulkReprocessConcurrentSkip` |
 | `config_hash` excludes non-output-affecting keys | `_relevant_keys` is the source of truth; a CI fixture enumerates every config key per stage and asserts each is either listed (relevant) or annotated (irrelevant). | `TestConfigHashCoverage` |
@@ -337,17 +273,15 @@ remain.
 
 **Idempotency**
 - [ ] `compute_key` defined; stored on `processing_jobs.idempotency_key`.
-- [ ] Runner short-circuits on a `done` peer for the same key (lowercase).
+- [ ] Runner short-circuits on a DONE peer for the same key.
 
 **Resume**
 - [ ] Per-segment commit in own tx with `last_segment_end_sec`.
 - [ ] STT backends accept `start_at_sec`.
-- [ ] `processing_jobs_segments(video_id, segment_idx)` unique constraint provides crash idempotency (per plan-24-03 inventory).
-- [ ] `transcript_segments(transcript_id, seq)` unique constraint provides content de-dup (architecture canonical).
-- [ ] State machine includes the explicit `paused → resuming → running` hop.
+- [ ] `(job_id, segment_idx)` unique constraint provides crash idempotency.
 
 **Projection**
-- [ ] Sidecar regeneration reads from `transcript_segments` rows (canonical name), not in-memory state.
+- [ ] Sidecar regeneration reads from `segments` rows, not in-memory state.
 - [ ] `reprocess --from-stage` walks the DAG forward.
 - [ ] Atomic-write helpers (24.1) used for all sidecar writes.
 

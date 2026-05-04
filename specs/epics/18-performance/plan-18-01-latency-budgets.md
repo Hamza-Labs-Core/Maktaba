@@ -10,7 +10,7 @@
 |---|---|
 | Source of truth | `shared/perf_budgets.yaml`. Loaded by Go and Python harnesses. |
 | Harness | `tests/perf/` (Go runner) drives REST + WS budgets. Python helper for pipeline-only stages. |
-| Hardware tags | `mac-m2-8gb`, `linux-amd64-16gb`. Detected at runtime via `runtime.GOOS+GOARCH+memtotal`. |
+| Hardware tags | `mac-m2-8gb`, `linux-x86-16gb`. Detected at runtime via `runtime.GOOS+GOARCH+memtotal`. |
 | CI target | `make perf` — runs against the seeded `dev` compose stack against fixture `tests/fixtures/perf-1k/`. |
 | Out of scope | Search-specific budgets (Story 18.2 owns search numbers); pipeline throughput (18.4); client TTI (18.6). |
 
@@ -45,7 +45,7 @@ profiles:
   - tag: mac-m2-8gb
     cpu: apple-m2
     mem_gb: 8
-  - tag: linux-amd64-16gb
+  - tag: linux-x86-16gb
     cpu: x86_64
     mem_gb: 16
 
@@ -118,28 +118,6 @@ endpoints:
     profile: mac-m2-8gb
     cache: warm
     p95_ms: 1500
-
-  - name: web.player.first_frame.cold
-    profile: mac-m2-8gb
-    cache: cold
-    p95_ms: 3500
-
-# Throughput budgets (events / records per second). Owned by stories 18.4/18.5
-# under their respective stages but the canonical numbers live here so CI
-# enforces a single source of truth.
-throughputs:
-  - name: pipeline.transcribe.realtime_factor
-    profile: mac-m2-8gb
-    min_value: 1.0     # 1× realtime CPU floor (faster-whisper fallback)
-    ci_pr: false       # nightly only — too slow for PR gate
-
-# Resource envelopes (peak RSS, sustained CPU%, FD ceilings). Owned by
-# story 18.5 — see §5 of plan-18-05 for population.
-envelopes:
-  - name: pipeline.per_model_rss_mib
-    profile: mac-m2-8gb
-    max_value: 4500
-    ci_pr: false
 ```
 
 ## 3. Loader and validator
@@ -156,38 +134,19 @@ import (
 
 type Budget struct {
     Name    string `yaml:"name"`
-    Method  string `yaml:"method,omitempty"` // omit for non-HTTP entries (WS, web vitals)
-    Path    string `yaml:"path,omitempty"`   // omit for non-HTTP entries
+    Method  string `yaml:"method"`
+    Path    string `yaml:"path"`
     Profile string `yaml:"profile"`
     Cache   string `yaml:"cache"`     // "warm" | "cold"
-    P50ms   int    `yaml:"p50_ms,omitempty"` // 0 = skipped (no p50 budget)
-    P95ms   int    `yaml:"p95_ms,omitempty"`
-    P99ms   int    `yaml:"p99_ms,omitempty"`
-    CIPR    bool   `yaml:"ci_pr"`     // true => enforced on every PR; false => nightly only
-}
-
-// Throughput is min-value oriented (records/s, frames/s, realtime factor).
-type Throughput struct {
-    Name     string  `yaml:"name"`
-    Profile  string  `yaml:"profile"`
-    MinValue float64 `yaml:"min_value"`
-    CIPR     bool    `yaml:"ci_pr"`
-}
-
-// Envelope is max-value oriented (peak RSS MiB, sustained CPU %, FD count).
-type Envelope struct {
-    Name     string  `yaml:"name"`
-    Profile  string  `yaml:"profile"`
-    MaxValue float64 `yaml:"max_value"`
-    CIPR     bool    `yaml:"ci_pr"`
+    P50ms   int    `yaml:"p50_ms"`
+    P95ms   int    `yaml:"p95_ms"`
+    P99ms   int    `yaml:"p99_ms"`
 }
 
 type BudgetFile struct {
-    Version     int          `yaml:"version"`
-    Profiles    []Profile    `yaml:"profiles"`
-    Endpoints   []Budget     `yaml:"endpoints"`
-    Throughputs []Throughput `yaml:"throughputs"`
-    Envelopes   []Envelope   `yaml:"envelopes"`
+    Version   int       `yaml:"version"`
+    Profiles  []Profile `yaml:"profiles"`
+    Endpoints []Budget  `yaml:"endpoints"`
 }
 
 func Load(path string) (*BudgetFile, error) {
@@ -213,12 +172,10 @@ func (f *BudgetFile) Validate() error {
         if b.P50ms < 0 || b.P95ms < 0 || b.P99ms < 0 {
             return fmt.Errorf("%s: negative ms", b.Name)
         }
-        // A zero/absent percentile is treated as "skipped". Ordering checks
-        // only fire when both adjacent percentiles are populated (>0).
-        if b.P50ms > 0 && b.P95ms > 0 && b.P95ms < b.P50ms {
+        if b.P95ms > 0 && b.P95ms < b.P50ms {
             return fmt.Errorf("%s: p95 < p50", b.Name)
         }
-        if b.P95ms > 0 && b.P99ms > 0 && b.P99ms < b.P95ms {
+        if b.P99ms > 0 && b.P99ms < b.P95ms {
             return fmt.Errorf("%s: p99 < p95", b.Name)
         }
         if b.Cache != "warm" && b.Cache != "cold" {
@@ -277,7 +234,7 @@ func DetectProfile() (string, error) {
     case os == "darwin" && arch == "arm64" && mem >= 7 && mem <= 9:
         return "mac-m2-8gb", nil
     case os == "linux" && arch == "amd64" && mem >= 14 && mem <= 17:
-        return "linux-amd64-16gb", nil
+        return "linux-x86-16gb", nil
     }
     return "", fmt.Errorf("no profile for %s/%s/%dGB; add a profile tag and re-run", os, arch, mem)
 }
@@ -318,7 +275,7 @@ FAIL: perf budgets (mac-m2-8gb, warm) — 2 breach(es)
 
 ## 8. Cache state handling
 
-`scripts/warm-caches.sh` issues a synthetic warm-up: walks the fixture videos, requests manifests, top-100 search queries, prefetch JWKS. `scripts/cold-caches.sh` flushes via the canonical whole-cache admin endpoint owned by Story 18.8 — `POST /admin/cache/{name}/flush` — before the run. (Per-key eviction `POST /admin/cache/segments/evict?hash=…&rendition=…&seg=…` lives in plan-18-03 and is not used here.)
+`scripts/warm-caches.sh` issues a synthetic warm-up: walks the fixture videos, requests manifests, top-100 search queries, prefetch JWKS. `scripts/cold-caches.sh` flushes via streaming admin endpoints (Story 18.8) before the run.
 
 If `--cache=warm` is passed but cache hit-rate < 50 %, the run aborts with **"Warm suite running on cold instance — refusing to record results."**
 
@@ -352,8 +309,7 @@ If `--cache=warm` is passed but cache hit-rate < 50 %, the run aborts with **"Wa
 ## 12. CI integration
 
 - `make perf` runs in nightly job on a self-hosted M2 mini runner tagged `mac-m2-8gb`.
-- A linux runner tagged `linux-amd64-16gb` runs the same suite for parity.
-- PR-gate subset: only entries with `ci_pr: true` run on every PR; the rest are nightly-only.
+- A linux runner tagged `linux-x86-16gb` runs the same suite for parity.
 - Reports artifact: `tests/perf/results.json` published per run.
 - A Grafana panel charts each budget's measured p95 over time (non-blocking, just for trend).
 

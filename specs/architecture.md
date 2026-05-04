@@ -1536,11 +1536,7 @@ permission-deny, signed-URL mint, …) and for library/admin actions
 ```sql
 CREATE TABLE audit_log (
     id          BIGSERIAL,
-    category    TEXT NOT NULL CHECK (category IN (
-                  'library','security','device','admin',
-                  'auth','data','config','keys','job',
-                  'pair','federation','flags','subscription'
-                )),
+    category    TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
     event       TEXT NOT NULL,           -- e.g. 'library.deleted', 'auth.login.success'
     actor_user  UUID REFERENCES users(id) ON DELETE SET NULL,
     actor_ip    INET,
@@ -1552,8 +1548,7 @@ CREATE TABLE audit_log (
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
--- Monthly partitions; the management script in plan-21-06 keeps a 13-month rolling window.
--- (plan-09-17 is superseded; plan-21-06 owns the table schema and partition lifecycle.)
+-- Monthly partitions; the management script in plan-09-17 keeps a 13-month rolling window.
 -- Unique indexes on partitioned tables must include the partition key:
 CREATE UNIQUE INDEX audit_log_security_dedupe
   ON audit_log (created_at, dedupe_key)
@@ -2285,30 +2280,6 @@ stt_profile       = "default"
 Secrets are never logged, never returned by `/api/settings`, and never
 shared between services that don't need them (the Streaming Service never
 sees the JWT private key or any STT backend keys).
-
-JWT signing keys are read **only from environment variables**
-(`MAKTABA_JWT_PRIVATE_KEY_PEM` / `MAKTABA_JWT_PUBLIC_KEY_PEM`); they are
-not stored DB-encrypted. Rotation is handled by overlap (publish new
-public key in JWKS, rotate signer, retire old key) rather than by an
-in-DB key store.
-
-### 11.6 Telemetry
-
-Optional telemetry block (Epic 21). Defaults disabled.
-
-```toml
-[telemetry]
-enabled              = false
-otel_endpoint        = ""           # OTLP/gRPC; empty = no exporter
-sample_ratio         = 0.05         # head-based; 1.0 = sample all
-redact_attrs         = ["transcript_text", "search_query", "path"]
-sentry_dsn_env       = "MAKTABA_SENTRY_DSN"      # Epic 21.5 error reporter
-admin_listen         = "127.0.0.1:9100"          # /metrics + /healthz mux (Epic 21.4)
-```
-
-The `admin_listen` port hosts the merged admin mux (metrics, health,
-readiness) — owned by `plan-21-04`; `plan-21-02` registers `/metrics`
-against it.
 
 ---
 

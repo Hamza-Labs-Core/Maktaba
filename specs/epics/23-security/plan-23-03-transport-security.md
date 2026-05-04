@@ -12,11 +12,11 @@
 |---|---|
 | TLS termination | Caddy (front of stack). Local-CA on Mac, Let's Encrypt on Linux. |
 | TLS config | TLS 1.2 minimum, modern cipher suite list, OCSP stapling, ALPN h2. |
-| HSTS | **Owned by [plan-10-15](../10-auth-security/plan-10-15-transport-security.md) (backend middleware; canonical).** Per [PLAN_REVIEW_18_24 §2](../../PLAN_REVIEW_18_24.md), the Caddy snippet was dropped here in favor of the backend middleware (which works without Caddy in dev). |
-| Inter-service mTLS | **Opt-in, default off** (architecture §1.4 doesn't mandate mTLS). Each service can be configured to obtain a SPIFFE-style cert from a small in-process CA owned by the API. |
+| HSTS | Default-on (`max-age=31536000; includeSubDomains`); env opt-out via `MAKTABA_DISABLE_HSTS=true`. |
+| Inter-service mTLS | Each service gets a SPIFFE-style cert from a small in-process CA owned by the API. |
 | Loopback exception | When all services bind to `127.0.0.1` the mTLS path is replaced by a documented loopback-only trust; a startup banner warns. |
 | Captive-portal defense | Native clients refuse to send credentials over a downgraded TLS connection (cert-pin to issuer fingerprint at first connect). |
-| Out of scope | Application-layer auth (Stories 23.1, 23.2); secrets storage (23.4); HSTS header (plan-10-15). |
+| Out of scope | Application-layer auth (Stories 23.1, 23.2); secrets storage (23.4). |
 
 ## 1. Architecture diagram
 
@@ -42,7 +42,7 @@
 | Path | Purpose |
 |---|---|
 | `deploy/docker/caddy/snippets/tls-modern.conf` | The vetted TLS block; included from the main Caddyfile. |
-| `api/internal/intca/ca.go` | In-process CA: mints internal mTLS certs for streaming + pipeline (only when `internal_mtls` is enabled). Leaf TTL (24 h) and rotation cadence are independent of the JWT signing-key rotation cadence (90 d, owned by plan-10-06). |
+| `api/internal/intca/ca.go` | In-process CA: mints internal mTLS certs for streaming + pipeline. Rotation tied to the JWT signing key (Story 23.1) for simplicity. |
 | `api/internal/intca/dispense.go` | gRPC `Diagnostics.IssueServiceCert` — only callable from a process with the bootstrap secret on disk. |
 | `streaming/internal/grpcclient/mtls.go` | gRPC dial options (ClientCert, RootCA). |
 | `pipeline/src/maktaba_pipeline/grpc/mtls.py` | gRPC server creds (TLS, client-auth required). |
@@ -61,47 +61,26 @@
 
 ### 2.3 Caddyfile snippets
 
-`deploy/docker/caddy/snippets/tls-modern.conf`. HSTS is **not** set here
-— the backend middleware in
-[plan-10-15](../10-auth-security/plan-10-15-transport-security.md) is
-the canonical owner (works without Caddy in dev).
-
-Caddy v2 syntax: cipher selection is configured under
-`tls.cipher_suites` (JSON config) or via Caddy's `ciphers` global
-directive at the server level. The snippet below pins the protocol
-floor and ALPN; the cipher allow-list is set in the parent Caddyfile's
-`servers` block via `tls.cipher_suites` (Caddy v2's `ciphers` adapter
-keyword takes Go cipher constant names like
-`TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`).
+`deploy/docker/caddy/snippets/tls-modern.conf`:
 
 ```
 (tls-modern) {
     tls {
         protocols tls1.2 tls1.3
+        # Modern profile per Mozilla: prefer AEAD ciphers.
+        ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 \
+                TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 \
+                TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 \
+                TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 \
+                TLS_AES_128_GCM_SHA256 \
+                TLS_AES_256_GCM_SHA384 \
+                TLS_CHACHA20_POLY1305_SHA256
         curves x25519 secp384r1 secp256r1
         alpn h2 http/1.1
     }
-}
-```
-
-Cipher suite pinning (Caddy v2 global `tls.cipher_suites` config):
-
-```jsonc
-// Caddy v2 JSON config — apps.tls.cipher_suites
-{
-  "apps": {
-    "tls": {
-      "cipher_suites": [
-        "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-        "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
-        "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-        "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-        "TLS_AES_128_GCM_SHA256",
-        "TLS_AES_256_GCM_SHA384",
-        "TLS_CHACHA20_POLY1305_SHA256"
-      ]
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
     }
-  }
 }
 ```
 
@@ -110,9 +89,11 @@ Cipher suite pinning (Caddy v2 global `tls.cipher_suites` config):
 ```
 {$MAKTABA_HOSTNAME:localhost} {
     import tls-modern
-    # HSTS header set by the API backend middleware (plan-10-15).
-    # Defense-in-depth duplication via Caddy was dropped per
-    # PLAN_REVIEW_18_24 §2.
+
+    @hsts_disabled expression {env.MAKTABA_DISABLE_HSTS} == "true"
+    handle @hsts_disabled {
+        header -Strict-Transport-Security
+    }
     # ...routes per Story 22.3
 }
 ```
@@ -191,13 +172,6 @@ func (s *DiagSvc) IssueServiceCert(ctx context.Context, in *pb.IssueRequest) (*p
 
 Bootstrap token is rotated on every API restart and printed once to
 stdout; operators set the env on the streaming/pipeline containers.
-The one-shot stdout print is **explicitly exempt** from the
-[plan-23-04](plan-23-04-secrets-management.md) log-redaction filter:
-the redactor's allowlist must permit a single
-`MAKTABA_INTERNAL_BOOTSTRAP_TOKEN=...` line emitted from
-`api/cmd/api/serve.go`'s startup banner; all subsequent occurrences in
-logs are redacted as normal.
-
 After first issue, services persist their cert/key under
 `/var/maktaba/run/<svc>.pem` and don't need the bootstrap token again
 (rotation uses cert-auth). On a fresh container rebuild, the bootstrap
@@ -235,11 +209,6 @@ func DialAPI(ctx context.Context, addr string, certPath string, loopback bool) (
 `off`, the insecure path is used and a startup warning logs. Setting
 `internal_mtls=on` always requires mTLS regardless of topology
 (production hardening).
-
-`internal_mtls` defaults to **`off`**. Architecture §1.4 does not
-mandate inter-service mTLS for the single-host topology; operators who
-want the production-hardened posture set `internal_mtls=on`
-explicitly.
 
 ### 2.7 Native client cert-pin
 
@@ -281,10 +250,13 @@ match — likely network attack" dialog (EC3).
 | `TestTLSv11Refused` | A `curl --tlsv1.1` request fails the handshake. |
 | `TestSSLv3Refused` | OpenSSL `s_client -ssl3` refuses to connect. |
 
-### 3.2 HSTS (TC2) — owned by [plan-10-15](../10-auth-security/plan-10-15-transport-security.md)
+### 3.2 HSTS (TC2)
 
-HSTS is set by the API backend middleware. Tests live in
-plan-10-15. This plan does not duplicate them.
+| Test | What it pins |
+|---|---|
+| `TestHSTSPresentByDefault` | Fresh load returns `Strict-Transport-Security: max-age=31536000; includeSubDomains`. |
+| `TestHSTSDisabled` | `MAKTABA_DISABLE_HSTS=true` removes the header. |
+| `TestHSTSOnlyOverHttps` | Plain-HTTP responses (Caddy 80 → 443 redirect) do not include the header (per RFC). |
 
 ### 3.3 mTLS (TC3)
 
@@ -316,7 +288,7 @@ plan-10-15. This plan does not duplicate them.
 | HTTP/2 downgrade attack | ALPN list is `h2 http/1.1`; HTTP/0.9 / HTTP/1.0 refused. | `TestAlpnRestricted` |
 | `internal_mtls=auto` with mixed topology (some loopback, some not) | The mode is conservative: any non-loopback peer forces mTLS for all peers. Documented. | `TestMixedTopologyForcesMtls` |
 | Bootstrap token leaked | Token is in-memory + printed once; it expires on next API restart. Compromise window is bounded; documented in ops. | n/a |
-| Internal CA private key leaked | Rotation: re-generate the internal CA via the `intca rotate` admin path (independent of the JWT signing-key rotation in plan-10-06). All leaves expire within 24 h naturally. | `TestCaRotationFlushesLeaves` |
+| Internal CA private key leaked | Rotation: bump the JWT signing key (Story 23.1) — the CA-rotation daemon ties to that. All leaves expire within 24 h naturally. | `TestCaRotationFlushesLeaves` |
 | Pinned fingerprint after a server-cert rotation | The native app prompts the user to re-pin; this is intentional friction to surface unexpected cert rotations. | UX flow |
 
 ## 5. Dependencies
@@ -336,14 +308,15 @@ plan-10-15. This plan does not duplicate them.
 - [ ] Modern cipher list; nmap reports zero weak/broken.
 - [ ] OCSP stapling on; ALPN `h2 http/1.1`.
 
-**HSTS** — owned by [plan-10-15](../10-auth-security/plan-10-15-transport-security.md). This plan does not own the HSTS header.
+**HSTS**
+- [ ] Default-on with `max-age=31536000; includeSubDomains`.
+- [ ] Opt-out via `MAKTABA_DISABLE_HSTS=true`.
 
-**mTLS** — opt-in (default `internal_mtls=off`).
-- [ ] When enabled: Internal CA persisted in DB; leaf TTL 24 h (independent of JWT key rotation).
+**mTLS**
+- [ ] Internal CA persisted in DB; leaf TTL 24 h.
 - [ ] Streaming and pipeline obtain certs via the bootstrap dispense flow.
 - [ ] Loopback bypass documented; logs banner on startup.
 - [ ] `internal_mtls=on` forces mTLS regardless of topology.
-- [ ] `MAKTABA_INTERNAL_BOOTSTRAP_TOKEN` startup-banner stdout line is exempt from the plan-23-04 redactor.
 
 **Native pin**
 - [ ] Trust-on-first-use stores issuer fingerprint.

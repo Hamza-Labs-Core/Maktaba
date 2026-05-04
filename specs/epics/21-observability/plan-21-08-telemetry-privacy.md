@@ -8,11 +8,10 @@
 
 | Concern | Decision |
 |---|---|
-| Master switch | `[telemetry].outbound_enabled = false` default. Toggles tracing exporters, error webhooks, Sentry. The full `[telemetry]` config block is documented in **architecture §11.6**; this plan implements that block. |
+| Master switch | `[telemetry].outbound_enabled = false` default. Toggles tracing exporters, error webhooks, Sentry. |
 | Redaction list | `shared/redact/list.yaml`. Single source for lint and runtime middleware. |
 | CI lint | AST scan of log/trace call sites for known field names from the list. |
 | Runtime middleware | Wrap slog handler / OTel span processor / webhook builder; rewrite known keys to `***`. |
-| Audit-emitter exemption | `forbidden_in_attrs` (e.g., `transcript_text`) blocks the field on **logs and spans only**. The audit-log emitter (`shared/audit/go/emit.go`, plan-21-06) is **fully blocked** from these fields too: even auditors must read `transcript_text` snippets via the original DB row, not via `audit_log.payload`. The exemption list is therefore **empty**: no emitter is allowed to write `transcript_text` (or other `forbidden_in_attrs`) into any observability surface. |
 | Leak detector test | 1,000 representative log lines scanned for synthetic test secrets. |
 
 ## 1. Project layout
@@ -67,22 +66,7 @@ substring_patterns:
     replace: "Bearer ***"
 path_masking:
   enabled: true
-  # Roots whose absolute paths must be masked in log/span/webhook output.
-  # All three roots are read at startup from the same config sections
-  # that other plans use ([cache], [log], and the media root env var)
-  # so masking stays in sync as deployments are reconfigured.
-  roots:
-    - name:    media
-      env:     MAKTABA_MEDIA_ROOT
-      replace: "<media>"                 # → <media>/<lib>/<rel>
-    - name:    cache
-      config:  cache.root                # from [cache] block in app config
-      env:     MAKTABA_CACHE_ROOT        # env override
-      replace: "<cache>"                 # → <cache>/<bucket>/<key>
-    - name:    log
-      config:  log.root                  # from [log] block in app config
-      env:     MAKTABA_LOG_ROOT          # env override
-      replace: "<log>"                   # → <log>/<file>
+  media_root_env: MAKTABA_MEDIA_ROOT     # full paths under this become <media>/<lib>/<rel>
 forbidden_in_attrs:
   - request_body
   - response_body
@@ -117,22 +101,12 @@ func (h *Redacted) redact(a slog.Attr) slog.Attr {
 }
 ```
 
-The application's logger is wrapped at init. `*slog.Logger` does **not**
-expose a `WithHandler` method — wrap by constructing a new `slog.Logger`
-around the redacting handler:
+The application's logger is wrapped at init:
 
 ```go
 log.Init("api", env)
-inner := log.Default.Handler()
-wrapped := slog.New(redact.New(inner, rules)).With("service", "api")
-log.Default = wrapped
-slog.SetDefault(wrapped)
+log.Default = log.Default.WithHandler(redact.New(log.Default.Handler(), rules))
 ```
-
-`redact.New(inner, rules)` returns the `*Redacted` handler shown above
-(it implements `slog.Handler`). `slog.New(...)` produces the new
-`*slog.Logger`. The pre-bound base attributes (e.g., `service`) are
-re-applied because the wrapping operation creates a fresh logger.
 
 ## 4. Lint over log call sites
 
@@ -220,43 +194,19 @@ All outbound modules read from `OutboundCfg`; flipping the master switch silentl
 
 ```go
 // shared/redact/go/path_masker.go
-type Root struct {
-    Name    string   // "media", "cache", "log"
-    Replace string   // "<media>", "<cache>", "<log>"
-    Path    string   // absolute path resolved at startup from env or config
-}
-
-// Roots is loaded once at process init from list.yaml + env + the
-// [cache] and [log] blocks in app config. Order matters only when one
-// root is a prefix of another; the longest match wins.
-var Roots []Root
-
 func Mask(p string) string {
-    if !filepath.IsAbs(p) { return p }
-    var match Root
-    for _, r := range Roots {
-        if r.Path != "" && strings.HasPrefix(p, r.Path) && len(r.Path) > len(match.Path) {
-            match = r
-        }
-    }
-    if match.Path == "" { return p }
-    rel, _ := filepath.Rel(match.Path, p)
+    root := os.Getenv("MAKTABA_MEDIA_ROOT")
+    if root == "" || !strings.HasPrefix(p, root) { return p }
+    rel, _ := filepath.Rel(root, p)
     parts := strings.SplitN(rel, string(filepath.Separator), 2)
-    if match.Name == "media" && len(parts) == 2 {
-        // media keeps <media>/<lib>/<rel> shape
-        return fmt.Sprintf("%s/%s/%s", match.Replace, parts[0], parts[1])
-    }
     if len(parts) == 2 {
-        return fmt.Sprintf("%s/%s/%s", match.Replace, parts[0], parts[1])
+        return fmt.Sprintf("<media>/%s/%s", parts[0], parts[1])
     }
-    return fmt.Sprintf("%s/%s", match.Replace, parts[0])
+    return fmt.Sprintf("<media>/%s", parts[0])
 }
 ```
 
-Stack trace post-processor invokes `Mask` over each frame's filename
-before sending to error webhook. `Mask` covers media, cache, and log
-roots so paths like `/var/maktaba/cache/segments/abcdef…` and
-`/var/log/maktaba/api.log` do not leak alongside `<media>/…`.
+Stack trace post-processor invokes `Mask` over each frame's filename before sending to error webhook.
 
 ## 8. Web vitals opt-in surface
 
@@ -305,14 +255,8 @@ At runtime, `slog.Info("debug", "password", "hunter2")` produces a JSON line whe
 ### EC1 — Settings echo
 `GET /api/settings` returns metadata only (e.g., `{ "openai_api_key_set": true }`). Never returns the value. Test asserts response body contains no value matching the configured secret.
 
-### EC2 — Stack with media/cache/log path
-Trigger errors in code that handle each root:
-- `/srv/media/maktaba/lib1/movie.mp4` → `<media>/lib1/movie.mp4`
-- `/var/maktaba/cache/segments/abcdef.ts` → `<cache>/segments/abcdef.ts`
-- `/var/log/maktaba/api.log` → `<log>/api.log`
-
-Webhook payload stack frames show only the masked forms; absolute roots
-are absent.
+### EC2 — Stack with media path
+Trigger an error in code that handles `/srv/media/maktaba/lib1/movie.mp4`. Webhook payload's stack frames show `<media>/lib1/movie.mp4`.
 
 ### EC3 — Browser console verbose
 Production build: console at `info` minimum. Dev build with `VITE_LOG_LEVEL=debug`: shows debug. Asserted by snapshot of network responses to `/index.html` checking for the `VITE_LOG_LEVEL` baked into bundle.
@@ -328,12 +272,6 @@ Production build: console at `info` minimum. Dev build with `VITE_LOG_LEVEL=debu
 | List drift | impl | Single `list.yaml`; lint and runtime read same. |
 
 ## 11. Configuration
-
-The full `[telemetry]` block lives in **architecture §11.6**; this plan
-populates the entries below. Plans 21-02 (`web_vitals_enabled`),
-21-03 (`otlp_endpoint`, `sampling`), and 21-05 (`sentry_dsn_env`,
-`webhook`) write into the same block; the master `outbound_enabled`
-gate here governs all of them.
 
 ```yaml
 telemetry:
