@@ -71,6 +71,7 @@ Decision is persisted to localStorage and synced to the user's profile via `PUT 
 ```ts
 // web/src/lib/telemetry/pseudonym.ts
 const KEY = 'maktaba.telemetry.pseudonym';
+
 export function getOrCreatePseudonym(): string {
     let p = localStorage.getItem(KEY);
     if (!p) {
@@ -81,9 +82,19 @@ export function getOrCreatePseudonym(): string {
     }
     return p;
 }
+
+// Called by the opt-out path in Settings → Privacy. The next opt-in
+// will generate a fresh pseudonym; the AC `TestPseudonymRotatesOnOptOutOptIn`
+// pins this behavior. Without this explicit clear, the same pseudonym
+// would be reused and re-link the device across opt cycles.
+export function clearPseudonym(): void {
+    localStorage.removeItem(KEY);
+}
 ```
 
-The pseudonym is generated **at opt-in time** (not at app install) so opting out and back in produces a fresh pseudonym; it's never linked to `user_id` (per Story 16.7 schema).
+The pseudonym is generated at opt-in time (not at app install) so
+opting out and back in produces a fresh pseudonym; it's never linked
+to `user_id` (per Story 16.7 schema).
 
 ## 4. Event allow-list
 

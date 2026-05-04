@@ -13,7 +13,7 @@
 | Module layout | `Sources/App` (entry, dependency wiring), `Sources/Features/{Home,Library,Search,Settings,Player,Pairing,TopShelf}`, `Sources/API` (Apollo codegen), `Sources/UI` (token bindings + 10-foot styles from [Story 14.3](story-14-03-10-foot-ui.md)). |
 | GraphQL client | Apollo iOS 1.x with `apollo-codegen-config.json` pointing at `shared/graphql/schema.graphql`. Generated sources live under `Sources/API/Generated/` and are checked in (no codegen at build time on developer machines). |
 | Top Shelf | A separate `MaktabaTopShelf` extension target reads the same shared `App Group` keychain entry to call the recommendations API and Continue Watching row ([Story 14.5](story-14-05-continue-watching.md)). |
-| QR pairing | Wired to the API surface owned by [Story 15.6](../15-discovery/story-15-06-pairing-api.md); the TV is the *issuer* (calls `POST /api/auth/pair`) and the phone claims. |
+| QR pairing | Wired to the API surface owned by [plan-10-17](../10-auth-security/plan-10-17-auth-pair.md) (canonical pair/claim/poll endpoints) plus the QR-flow extensions in [plan-15-06](../15-discovery/plan-15-06-pairing-api.md) (nonce + server identity in the QR URL). The TV is the *issuer* (calls `POST /api/auth/pair`); the phone is the *claimer* (calls `POST /api/auth/pair/claim` after authenticating). The TV polls `GET /api/auth/pair/{code}` for the token bundle. |
 | Out of scope | The actual recommendations algorithm ([Story 14.7](story-14-07-recommendations-api.md)), pairing API ([Story 15.6](../15-discovery/story-15-06-pairing-api.md)), Continue Watching SQL index ([Story 14.5](story-14-05-continue-watching.md)). |
 
 ## 1. Architecture diagram
@@ -186,7 +186,7 @@ struct PlayerView: View {
         VideoPlayer(player: model.player)
             .ignoresSafeArea()
             .onAppear { model.load(video) }
-            .onDisappear { model.persistProgress() }   // POST /api/playback/state
+            .onDisappear { model.persistProgress() }   // POST /api/me/playback-state (canonical per plan-11-02 / architecture §9.4)
     }
 }
 

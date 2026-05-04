@@ -74,6 +74,10 @@ Field-by-field rationale for the CHECK enum:
 | `config`   | Settings changes (Story 19/23 admin-config writes)      |
 | `keys`     | Epic 10 RS256 keys, Story 23 key rotation               |
 | `job`      | plan-21-07 job pipeline (`event='job.error'` etc.)      |
+| `pair`     | Epic 15 device-pairing (Story 15.6)                      |
+| `federation` | Epic 15 federation (Story 15.7)                        |
+| `flags`    | Epic 16 feature flags (Story 16.8)                       |
+| `subscription` | Epic 16 subscription state (Story 16.3)               |
 
 ```sql
 -- 00xx_audit_log.sql
@@ -85,7 +89,8 @@ CREATE TABLE audit_log (
     id           BIGSERIAL,
     category     TEXT NOT NULL CHECK (category IN (
                    'library','security','device','admin',
-                   'auth','data','config','keys','job'
+                   'auth','data','config','keys','job',
+                   'pair','federation','flags','subscription'
                  )),
     event        TEXT NOT NULL,
     actor_user   UUID NULL REFERENCES users(id) ON DELETE SET NULL,

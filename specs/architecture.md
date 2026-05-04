@@ -1536,7 +1536,11 @@ permission-deny, signed-URL mint, …) and for library/admin actions
 ```sql
 CREATE TABLE audit_log (
     id          BIGSERIAL,
-    category    TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
+    category    TEXT NOT NULL CHECK (category IN (
+                  'library','security','device','admin',
+                  'auth','data','config','keys','job',
+                  'pair','federation','flags','subscription'
+                )),
     event       TEXT NOT NULL,           -- e.g. 'library.deleted', 'auth.login.success'
     actor_user  UUID REFERENCES users(id) ON DELETE SET NULL,
     actor_ip    INET,
@@ -1548,7 +1552,8 @@ CREATE TABLE audit_log (
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
--- Monthly partitions; the management script in plan-09-17 keeps a 13-month rolling window.
+-- Monthly partitions; the management script in plan-21-06 keeps a 13-month rolling window.
+-- (plan-09-17 is superseded; plan-21-06 owns the table schema and partition lifecycle.)
 -- Unique indexes on partitioned tables must include the partition key:
 CREATE UNIQUE INDEX audit_log_security_dedupe
   ON audit_log (created_at, dedupe_key)

@@ -138,8 +138,22 @@ Subtitles: sidecar SRT exposed as `<upnp:subtitle>`; clients that don't support 
 
 The story EC: "DLNA-incompatible codec (HEVC on a 2014 TV): we don't advertise that file". Implementation:
 
-- `videos.dlna_compatible` is a derived view: `WHERE codec IN ('h264','aac','mp3','jpeg','mpeg4')`. Anything HEVC, AV1, or transcoded HLS is excluded.
-- Filter applied in every `Browse` query.
+- `videos.dlna_compatible` is a derived view; codec lives on
+  `media_info.video_codec` (architecture §8.1 line 1358), not `videos`,
+  so the predicate is `WHERE mi.video_codec IN ('h264','mpeg4')` JOINed
+  to `videos`. Audio-codec separation: `audio_tracks.codec` carries
+  `aac`/`mp3`. The view definition:
+  ```sql
+  CREATE OR REPLACE VIEW videos_dlna_compatible AS
+  SELECT v.*
+    FROM videos v
+    JOIN media_info mi ON mi.video_id = v.id
+   WHERE mi.video_codec IN ('h264','mpeg4')
+     AND v.deleted_at IS NULL;
+  ```
+  Anything HEVC, AV1, or transcoded HLS is excluded.
+- Filter applied in every `Browse` query (the view is the only access
+  path; raw `videos` is never queried by the DLNA service).
 
 If we ever want per-client codec negotiation, we'd parse the User-Agent / `getProtocolInfo` response, but that's out of v1.
 
@@ -204,7 +218,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, path string) {
 | Sidecar SRT missing | `<upnp:subtitle>` omitted; client shows no subs. | `TestNoSidecarOmitsField` |
 | Path traversal attempt | 404; no fs escape. | `TestPathTraversalRefused` |
 | Range request beyond EOF | 416 Range Not Satisfiable per HTTP spec. | `TestRangeBeyondEOF` |
-| Multiple library roots | Each video's `path` is absolute; the byte server checks the absolute path is rooted in one of `library.root_path` allowlist before opening. | `TestPathRootedInLibrary` |
+| Multiple library roots | Each video's `path` is absolute; the byte server checks the absolute path is rooted in one of the entries from `library_roots.path` (architecture §8.1 line 1320; the canonical store, not `library.root_path` which does not exist) before opening. | `TestPathRootedInLibrary` |
 | Video deleted while client browsing | DIDL listing snapshot at request time; byte server returns 404 for missing files — DLNA clients show "cannot play". | `TestDeletedFileMidBrowse` |
 | Disable when client mid-stream | In-flight HTTP byte streams are not killed; SSDP byebye sent so new browses don't appear. | `TestDisableMidStream` |
 | 2018 Bravia parses subset | Common DIDL fields used; verified in e2e. | `e2e_BraviaSpecific` (manual or device-lab) |

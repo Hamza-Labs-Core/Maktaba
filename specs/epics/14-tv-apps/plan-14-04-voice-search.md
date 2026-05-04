@@ -60,7 +60,12 @@ final class SpeechSession: NSObject, ObservableObject {
     init(locale: Locale) { recognizer = SFSpeechRecognizer(locale: locale) }
 
     func start() async throws {
-        let auth = await SFSpeechRecognizer.requestAuthorization()
+        // SFSpeechRecognizer.requestAuthorization is a class method whose
+        // only signature takes a completion handler — there is no
+        // bare-`async` overload. Bridge it via withCheckedContinuation.
+        let auth: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { c in
+            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
+        }
         guard auth == .authorized else { throw SpeechError.permission }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true

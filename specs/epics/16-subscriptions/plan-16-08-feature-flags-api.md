@@ -11,7 +11,7 @@
 | sqlc queries | `shared/db/queries/feature_flags.sql`. |
 | Resolver | `api/internal/flags/resolver.go` — orchestrates default → tier → cohort → user. |
 | Declarations | `api/internal/flags/declarations.go` — flag keys, defaults-by-tier, beta-eligibility. |
-| Signature | Reuses Epic 10 Story 10.6 long-term Ed25519 key set; signed bundle returned by `GET /api/me/flags`. |
+| Signature | Ed25519 over the canonicalized bundle JSON. The long-term Ed25519 key set is owned by **Epic 10 Story 10.18** ("Ed25519 long-term server identity keys") — NOT Story 10.6, which covers RS256 / JWKS for short-lived API JWTs only. Until Story 10.18 lands this plan blocks: there is no Ed25519 source to sign with. |
 | In-memory cache | Per `(user_id, license_state_version)` for 60 s; invalidation via Postgres `LISTEN flags_changed`. |
 | Audit | Every admin write writes `audit_log.category = 'flags'`. |
 | Out of scope | Client surface ([Story 16.6](story-16-06-feature-flags.md)). |
@@ -54,7 +54,20 @@ CREATE TABLE feature_flag_overrides (
     value           JSONB NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at      TIMESTAMPTZ,
-    created_by      UUID REFERENCES users(id) ON DELETE SET NULL
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    -- scope_value shape varies by scope; pin per-scope shape so admin
+    -- writes that put a UUID in a 'tier' row (or vice versa) error
+    -- loudly instead of silently mis-applying:
+    --   scope='global' → scope_value IS NULL
+    --   scope='tier'   → scope_value IN ('free','home','pro')
+    --   scope='user'   → scope_value matches a UUID
+    --   scope='cohort' → scope_value matches the cohort name pattern
+    CONSTRAINT feature_flag_overrides_scope_value_chk CHECK (
+        (scope = 'global' AND scope_value IS NULL) OR
+        (scope = 'tier'   AND scope_value IN ('free','home','pro')) OR
+        (scope = 'user'   AND scope_value ~* '^[0-9a-f-]{36}$') OR
+        (scope = 'cohort' AND scope_value ~* '^[a-z0-9_-]{1,64}$')
+    )
 );
 CREATE INDEX feature_flag_overrides_key_scope_idx
     ON feature_flag_overrides (flag_key, scope, scope_value)
@@ -68,10 +81,18 @@ CREATE TABLE beta_cohorts (
 );
 
 -- LISTEN/NOTIFY trigger so replicas invalidate cache on writes.
+-- For DELETE events `NEW` is undefined and the trigger function would
+-- raise; pick the right tuple per operation. INSERT/UPDATE → NEW.flag_key,
+-- DELETE → OLD.flag_key.
 CREATE OR REPLACE FUNCTION notify_flags_changed() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('flags_changed', NEW.flag_key);
-    RETURN NEW;
+    IF TG_OP = 'DELETE' THEN
+        PERFORM pg_notify('flags_changed', OLD.flag_key);
+        RETURN OLD;
+    ELSE
+        PERFORM pg_notify('flags_changed', NEW.flag_key);
+        RETURN NEW;
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -192,7 +213,7 @@ func meFlags(s *Service) http.HandlerFunc {
 }
 ```
 
-Key rotation (Epic 10 Story 10.6): the response includes the active `kid`. The story TC: "Token rotated: signatures with the old key are still accepted for one cycle (the response includes `kid`); after that they fail." Implementation: the client bundles **both** active and previous public keys for a 7-day overlap; after that the previous key is dropped from the bundle in the next client release.
+Key rotation (Epic 10 Story 10.18 — the long-term Ed25519 keyset; Story 10.6 is RS256 only): the response includes the active `kid`. The story TC: "Token rotated: signatures with the old key are still accepted for one cycle (the response includes `kid`); after that they fail." Implementation: the client bundles **both** active and previous public keys for at least a 30-day overlap (sized to App Store / Play Store review cycles, which 7 days does not cover); after that window the previous key is dropped from the bundle in the next client release. The active+previous list is itself published in a small static file per release; long-running clients that fall behind on releases beyond two rotations will refuse the bundle and force a refresh on the next foreground.
 
 ## 6. Admin endpoints
 

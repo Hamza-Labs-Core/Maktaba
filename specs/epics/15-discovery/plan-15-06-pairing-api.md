@@ -2,18 +2,33 @@
 
 > Companion to [story-15-06-pairing-api.md](story-15-06-pairing-api.md).
 > The story states *what* and *why*; this plan states *how*.
+>
+> **Endpoint ownership.**
+> [plan-10-17](../10-auth-security/plan-10-17-auth-pair.md) is the canonical
+> owner of `POST /api/auth/pair`, `POST /api/auth/pair/claim`, and
+> `GET /api/auth/pair/{code}`, including the `pairing_codes` table
+> (migration `0027_pairing_codes.sql`), the `code_hash` (sha256) at-rest
+> defense, the `state IN ('pending','claimed','expired')` enum, and the
+> unified Python reaper. plan-15-06 **extends** plan-10-17 with the
+> QR-flow security additions Story 15.5 needs (a 32-byte nonce bound to
+> the QR; the response composition that ships server identity / SPKI
+> hash; and the device-fan-out registration call after successful
+> claim). The duplicate `pairing_codes` schema, code-generator, and
+> sweeper that this plan once owned are **removed**; only the nonce
+> column ALTER, the QR-URL composition, and the device-registration
+> step survive.
 
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
-| Migration file | `shared/db/migrations/0053_pairing_codes.sql` (Postgres) and `0053_pairing_codes.sqlite.sql`. |
-| sqlc queries | `shared/db/queries/pairing_codes.sql`. |
-| HTTP handlers | `api/internal/http/auth/pairing.go` mounted under `/api/auth/pair`. |
-| Pairing service | `api/internal/auth/pairing/service.go` — code generation, claim, sweep. |
-| Sweeper | A goroutine in the API service running every 30 s. |
-| Audit | Reuses Epic 21 Story 21.6 `audit_log` (`category = 'pair'`). |
-| Out of scope | The QR rendering / scanning / pin store ([Story 15.5](story-15-05-qr-pairing.md)); device fan-out registration ([Story 12.10](../12-mobile/story-12-10-device-registration-api.md)) — we call into it. |
+| Core endpoints | Owned by [plan-10-17](../10-auth-security/plan-10-17-auth-pair.md). This plan does NOT redeclare `POST /api/auth/pair`, `POST /api/auth/pair/claim`, or `GET /api/auth/pair/{code}` — those routes, their handlers, the code generator, and the rate-limit composition all live there. |
+| Sibling endpoints | `GET /api/auth/pair` (list-mine) and `DELETE /api/auth/pair/{code}` (revoke) are added by *this* plan; they do not exist in plan-10-17. |
+| Migration | `shared/db/migrations/0053_pairing_codes_qr.sql` — an `ALTER TABLE pairing_codes` that adds `nonce BYTEA NOT NULL DEFAULT '\x00'::bytea` (Postgres) / `BLOB` (SQLite). Bare default exists only so the ALTER is non-blocking on existing rows; new rows must override with 32 random bytes (CHECK in §2). |
+| sqlc queries | `shared/db/queries/pairing_codes_qr.sql` — `ListMinePairingCodes`, `RevokePairingCode`, and a `GetPairingByHashWithNonce` helper that wraps plan-10-17's `GetPairingByHash`. |
+| HTTP handlers | `api/internal/http/auth/pairing_qr.go`. The `claim` handler in plan-10-17 is wrapped via a **claim-extension hook** that runs nonce verification and device registration *after* plan-10-17's conditional UPDATE succeeds. |
+| Audit | Reuses [plan-09-17](../09-library-management/plan-09-17-library-audit.md) `audit_log` with `category = 'pair'` (now permitted by the expanded CHECK enum — see [PLAN_REVIEW_14_17 §1.4](../../PLAN_REVIEW_14_17.md)). |
+| Out of scope | The core pair/claim/poll flow (plan-10-17); the QR rendering / scanning / pin store ([Story 15.5](story-15-05-qr-pairing.md)); device fan-out registration ([Story 12.10](../12-mobile/story-12-10-device-registration-api.md)) — we call into it. |
 
 ## 1. Architecture diagram
 
@@ -48,229 +63,237 @@
 
 ## 2. Database migration
 
-`shared/db/migrations/0053_pairing_codes.sql`:
+`shared/db/migrations/0053_pairing_codes_qr.sql`:
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE pairing_codes (
-    code                  TEXT PRIMARY KEY,
-    nonce                 BYTEA NOT NULL,
-    created_by_user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_label          TEXT,
-    device_kind           TEXT NOT NULL CHECK (device_kind IN ('mobile','desktop','tv')),
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at            TIMESTAMPTZ NOT NULL,
-    claimed_at            TIMESTAMPTZ,
-    claimed_by_device_id  UUID REFERENCES devices(id) ON DELETE SET NULL,
-    CHECK (octet_length(nonce) = 32),
-    CHECK (length(code) = 6),
-    CHECK (expires_at > created_at)
-);
+-- plan-10-17 created `pairing_codes` with the `code_hash`/`state`
+-- design. This migration extends it with the QR-flow nonce that
+-- Story 15.5 binds to the QR. The CHECK is added as NOT VALID first
+-- so existing pre-Story-15.6 rows (which carry the bare zero nonce
+-- default) don't trip the constraint; new rows MUST be 32 random
+-- bytes from the application layer.
+ALTER TABLE pairing_codes
+    ADD COLUMN nonce BYTEA NOT NULL DEFAULT '\x00'::bytea;
 
-CREATE INDEX pairing_codes_expires_at_idx
-    ON pairing_codes (expires_at)
-    WHERE claimed_at IS NULL;
+ALTER TABLE pairing_codes
+    ADD CONSTRAINT pairing_codes_nonce_len_chk
+    CHECK (octet_length(nonce) IN (1, 32))   -- 1 = legacy default, 32 = QR-flow row
+    NOT VALID;
+
+-- Optional: also store the user who created the code so this plan's
+-- list-mine and revoke endpoints can scope by user without a JOIN
+-- back to the issuing audit row.
+ALTER TABLE pairing_codes
+    ADD COLUMN created_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
 CREATE INDEX pairing_codes_user_idx
-    ON pairing_codes (created_by_user_id, claimed_at);
+    ON pairing_codes (created_by_user_id, state);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS pairing_codes;
+DROP INDEX IF EXISTS pairing_codes_user_idx;
+ALTER TABLE pairing_codes DROP COLUMN IF EXISTS created_by_user_id;
+ALTER TABLE pairing_codes DROP CONSTRAINT IF EXISTS pairing_codes_nonce_len_chk;
+ALTER TABLE pairing_codes DROP COLUMN IF EXISTS nonce;
 -- +goose StatementEnd
 ```
 
-SQLite variant uses `BLOB` for nonce and removes Postgres-specific `octet_length`. Go-side validation checks length already.
+SQLite variant uses `BLOB` for nonce and drops the `octet_length`
+predicate (Go-side validation enforces length). The `state` column,
+`code_hash` PK, and `expires_at` checks all come from plan-10-17.
 
 ## 3. Code generation
 
+The pairing-code generator (8-char Crockford base32, sha256 hashed,
+collision-retried) lives in plan-10-17's `auth.GeneratePairingCode` and
+`auth.HashPairingCode`. This plan only adds the nonce generator:
+
 ```go
-// api/internal/auth/pairing/codegen.go
-const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // 32 chars; no I, L, 0, 1
-
-func generateCode() (string, error) {
-    var b [6]byte
-    _, err := rand.Read(b[:])
-    if err != nil { return "", err }
-    out := make([]byte, 6)
-    for i, x := range b { out[i] = alphabet[int(x) % len(alphabet)] }
-    return string(out), nil
-}
-
-func generateNonce() ([]byte, error) {
+// api/internal/auth/pairing/nonce.go
+func GenerateNonce() ([]byte, error) {
     n := make([]byte, 32)
     _, err := rand.Read(n)
     return n, err
 }
 ```
 
-The `% len(alphabet)` introduces a small bias; with 32 dividing 256 evenly, the bias is exactly 0. The choice of 32 letters is therefore principled rather than convenient.
+The 32-byte nonce is uniform random from `crypto/rand`; it is the QR
+binding secret (see Story 15.5). It is stored in the new `nonce`
+column added by §2.
 
 ## 4. sqlc queries
 
-`shared/db/queries/pairing_codes.sql`:
+The Insert/Claim/Get/Sweep queries are owned by plan-10-17 (see
+`shared/db/queries/pairing_codes.sql`). This plan adds the
+sibling-endpoint queries plus a nonce-aware getter:
+
+`shared/db/queries/pairing_codes_qr.sql`:
 
 ```sql
--- name: InsertPairingCode :exec
-INSERT INTO pairing_codes (code, nonce, created_by_user_id, device_label, device_kind, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6);
-
--- name: GetPairingCode :one
-SELECT * FROM pairing_codes WHERE code = $1;
-
--- name: ClaimPairingCode :one
-UPDATE pairing_codes
-SET claimed_at = now(), claimed_by_device_id = $2
-WHERE code = $1
-  AND claimed_at IS NULL
-  AND expires_at > now()
-RETURNING *;
-
--- name: RevokePairingCode :exec
-UPDATE pairing_codes
-SET claimed_at = expires_at        -- mark as terminal
-WHERE code = $1
-  AND created_by_user_id = $2
-  AND claimed_at IS NULL;
-
--- name: ListPendingPairingCodes :many
-SELECT * FROM pairing_codes
+-- name: ListMinePairingCodes :many
+SELECT id, code_hash, device_kind, device_label, state,
+       created_at, expires_at, claimed_by_device_id
+FROM pairing_codes
 WHERE created_by_user_id = $1
   AND created_at > now() - interval '24 hours'
 ORDER BY created_at DESC;
 
--- name: SweepExpiredPairingCodes :exec
+-- name: RevokePairingCode :execrows
+-- Conditional UPDATE so the user can only revoke their own pending code.
 UPDATE pairing_codes
-SET claimed_at = expires_at
-WHERE claimed_at IS NULL AND expires_at <= now();
+   SET state = 'expired', expires_at = now()
+ WHERE code_hash = $1
+   AND created_by_user_id = $2
+   AND state = 'pending';
 
--- name: DeleteOldPairingCodes :exec
-DELETE FROM pairing_codes WHERE created_at < now() - interval '7 days';
+-- name: GetNonceByHash :one
+SELECT nonce FROM pairing_codes WHERE code_hash = $1;
 ```
 
-The `ClaimPairingCode` is the **race-resolver**: the `WHERE claimed_at IS NULL` predicate plus the row lock (default `READ COMMITTED`) means two concurrent claims with the right code can only succeed once. The losing claim sees zero rows and returns `400 code-already-claimed`.
+Race resolution for the core claim flow lives in plan-10-17's single
+conditional UPDATE on `(code_hash, state='pending', expires_at>$3)`; the
+loser sees `n=0` and is mapped to 409 `pair-code-already-claimed`. The
+nonce check (§6) runs *before* the conditional UPDATE, so a wrong-nonce
+claim attempt does not consume the code.
 
 ## 5. HTTP handlers
 
-`api/internal/http/auth/pairing.go`:
+The `POST /api/auth/pair`, `POST /api/auth/pair/claim`, and
+`GET /api/auth/pair/{code}` routes live in plan-10-17's
+`api/internal/http/auth_pair.go`. This plan adds two sibling routes
+plus an *issue-extension* hook that decorates plan-10-17's 201 response
+with the QR URL.
+
+`api/internal/http/auth/pairing_qr.go`:
 
 ```go
-func MountPairing(r chi.Router, s *pairing.Service) {
-    r.Route("/auth/pair", func(r chi.Router) {
-        r.With(requireAuth).Post("/", create(s))
-        r.With(requireAuth).Get("/", listMine(s))
-        r.With(requireAuth).Delete("/{code}", revoke(s))
-        r.Post("/claim", claim(s))                // unauthenticated; code is the credential
-    })
+func MountPairingQR(r chi.Router, q *pairing.QRService) {
+    r.With(requireAuth).Get("/auth/pair", listMine(q))
+    r.With(requireAuth).Delete("/auth/pair/{code}", revoke(q))
 }
+```
 
-func create(s *pairing.Service) http.HandlerFunc {
-    type req struct {
-        DeviceLabel string `json:"device_label,omitempty"`
-        DeviceKind  string `json:"device_kind"`
-    }
-    return func(w http.ResponseWriter, r *http.Request) {
-        var body req
-        if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-            problem(w, 400, "invalid-json", ""); return
-        }
-        if !validKind(body.DeviceKind) { problem(w, 422, "invalid-device-kind", ""); return }
-        u := auth.UserFromContext(r.Context())
-        if !s.RateLimiter.Take(u.ID) {
-            problem(w, 429, "too-many-requests", "5/min/user"); return
-        }
-        out, err := s.Create(r.Context(), pairing.CreateParams{
-            UserID: u.ID, DeviceKind: body.DeviceKind, DeviceLabel: body.DeviceLabel,
-        })
-        if err != nil { problem(w, 500, "internal", ""); return }
-        writeJSON(w, 201, out)
+The issue path: plan-10-17's `issuePair` handler is wrapped by an
+`AfterIssue` hook (registered at server start) that:
+
+1. Generates the 32-byte nonce.
+2. UPDATEs the freshly-issued row to set `nonce`, `created_by_user_id`,
+   `device_kind` (whose enum has been since plan-10-17).
+3. Mutates the response body to add the `qr_url`.
+
+```go
+type AfterIssue func(ctx context.Context, code string, hash string, userID uuid.UUID, body map[string]any) error
+
+func qrAfterIssue(q *pairing.QRService) AfterIssue {
+    return func(ctx context.Context, code, hash string, userID uuid.UUID, body map[string]any) error {
+        nonce, err := pairing.GenerateNonce()
+        if err != nil { return err }
+        if err := q.AttachNonce(ctx, hash, userID, nonce); err != nil { return err }
+        body["qr_url"] = q.RenderQRURL(code, nonce)
+        return nil
     }
 }
 ```
 
-`out` shape:
+`out` shape (after the hook):
 
 ```json
 {
   "code": "BX7K9M",
   "qr_url": "https://server.example.com/pair?code=BX7K9M&mid=...&spki=...&n=...",
-  "expires_at": "2026-05-04T15:00:00Z"
+  "expires_at": "2026-05-04T15:00:00Z",
+  "poll_url": "/api/auth/pair/BX7K9M"
 }
 ```
 
-The `qr_url`'s host is the server's canonical address (LAN host on private; relay edge for public). The `spki` is the **current** TLS cert SPKI hash; the `mid` is `mdns_id`; `n` is the base64-url nonce.
+The `qr_url`'s host is the server's canonical address (LAN host on
+private; relay edge for public). The `spki` is the **current** TLS cert
+SPKI hash; the `mid` is `mdns_id`; `n` is the base64-url nonce.
 
 ## 6. Claim flow
 
+The base claim flow (hash lookup, conditional UPDATE, token mint, row
+delete) is owned by plan-10-17's `pollPair` handler. This plan adds a
+**pre-claim hook** that runs the nonce check and a **post-claim hook**
+that registers the device with Story 12.10 and decorates the response
+with the server's `mdns_id` and current SPKI hash:
+
 ```go
-func (s *Service) Claim(ctx context.Context, in ClaimParams) (ClaimResult, error) {
-    row, err := s.db.GetPairingCode(ctx, in.Code)
-    if err != nil { return ClaimResult{}, ErrInvalidCode }
-    if !subtle.ConstantTimeCompare(row.Nonce, in.Nonce) == 1 {
-        s.audit(ctx, "claim-nonce-mismatch", row)
-        return ClaimResult{}, ErrNonceMismatch
+// api/internal/http/auth/pairing_qr.go
+type BeforeClaim func(ctx context.Context, code, hash string, in ClaimInput) error
+type AfterClaim  func(ctx context.Context, hash string, userID uuid.UUID, in ClaimInput, body map[string]any) error
+
+func qrBeforeClaim(q *pairing.QRService) BeforeClaim {
+    return func(ctx context.Context, code, hash string, in ClaimInput) error {
+        rowNonce, err := q.GetNonce(ctx, hash)
+        if err != nil { return ErrInvalidCode }
+        if subtle.ConstantTimeCompare(rowNonce, in.Nonce) != 1 {
+            q.audit(ctx, "claim-nonce-mismatch", hash)
+            return ErrNonceMismatch
+        }
+        return nil
     }
-    if row.ClaimedAt.Valid { return ClaimResult{}, ErrAlreadyClaimed }
-    if row.ExpiresAt.Before(time.Now()) { return ClaimResult{}, ErrCodeExpired }
+}
 
-    deviceID, err := s.devices.Register(ctx, devices.RegisterParams{
-        UserID: row.CreatedByUserID,
-        Kind:   row.DeviceKind,
-        Label:  row.DeviceLabel,
-        OS:     in.OS, AppVersion: in.AppVersion, Locale: in.Locale,
-        PushToken: in.DeviceToken,
-    })
-    if err != nil { return ClaimResult{}, err }
-
-    upd, err := s.db.ClaimPairingCode(ctx, db.ClaimPairingCodeParams{
-        Code: in.Code, ClaimedByDeviceID: deviceID,
-    })
-    if err != nil { return ClaimResult{}, ErrAlreadyClaimed } // race lost
-
-    access, refresh, err := s.tokens.Mint(ctx, upd.CreatedByUserID, deviceID)
-    if err != nil { return ClaimResult{}, err }
-
-    s.audit(ctx, "claim-success", upd)
-    return ClaimResult{
-        AccessToken: access, RefreshToken: refresh,
-        User: s.userView(upd.CreatedByUserID),
-        Server: ServerView{MDNSID: s.identity.MDNSID, SPKI: s.tls.CurrentSPKI()},
-    }, nil
+func qrAfterClaim(q *pairing.QRService, devices *devices.Service) AfterClaim {
+    return func(ctx context.Context, hash string, userID uuid.UUID, in ClaimInput, body map[string]any) error {
+        deviceID, err := devices.Register(ctx, registerParamsFromClaim(userID, in))
+        if err != nil { return err }
+        body["server"] = map[string]any{
+            "mdns_id": q.identity.MDNSID,
+            "spki":    q.tls.CurrentSPKI(),
+        }
+        body["device_id"] = deviceID
+        q.audit(ctx, "claim-success", hash)
+        return nil
+    }
 }
 ```
 
-Constant-time nonce compare uses `subtle.ConstantTimeCompare`. Re-issued tokens come from Story 10.3 and Story 10.6 (refresh + RS256 keys).
+The compile-bug fix: `subtle.ConstantTimeCompare` returns `1` on equality; the
+correct guard is `!= 1`, **not** `!compare(...) == 1` (which Go parses as
+`(!compare(...)) == 1` and always evaluates to `false`). The earlier
+draft of this plan inverted the check; the corrected form above is the
+canonical one.
+
+Re-issued tokens come from plan-10-17's `issueJWTPair` (Stories 10.3 +
+10.6: refresh + RS256 keys).
 
 ## 7. Rate limiting
 
-`s.RateLimiter` is a token bucket per `user_id`: 5 codes / minute. Implementation reuses the rate-limit middleware from [Story 10.12](../10-auth-security/plan-10-12-rate-limiting-auth.md) but scopes by user ID instead of IP.
-
-Why per-user, not per-IP: a single TV in a household can legitimately request multiple codes; only abuse from the same authenticated user is suspicious.
+The 6/min/IP cap on `POST /api/auth/pair` is owned by plan-10-17's
+`ratelimit_auth.go`. This plan does not add a separate per-user
+limiter; the per-IP cap is sufficient for the QR flow because the
+issuer (a TV / desktop) is the rate-limit subject, not the human.
 
 ## 8. Sweeper
 
-```go
-func (s *Service) RunSweeper(ctx context.Context) {
-    t := time.NewTicker(30 * time.Second); defer t.Stop()
-    for {
-        select {
-        case <-t.C:
-            _ = s.db.SweepExpiredPairingCodes(ctx)
-            _ = s.db.DeleteOldPairingCodes(ctx)         // > 7 days
-        case <-ctx.Done():
-            return
-        }
-    }
-}
-```
-
-The 30 s cadence is the AC; we deliberately avoid Postgres-side `pg_cron` so SQLite is supported.
+The pairing-code sweeper is owned by plan-10-17's unified Python
+reaper (`pipeline/src/maktaba_pipeline/tasks/auth_reaper.py`), which
+runs every 60 s and handles the `pending → expired` flip plus the
+24-hour hard delete. This plan does not ship a duplicate Go-side
+sweeper.
 
 ## 9. Audit
 
-Every `create`, `claim-success`, `claim-failure-{kind}`, and `revoke` writes one row to `audit_log` with `category = 'pair'` (per the AC). The `claim-failure` rows are useful for detecting brute force attempts; if a single `created_by_user_id`'s codes accumulate ≥ 10 failed attempts within 1 hour, the security audit ([Story 10.16](../10-auth-security/plan-10-16-security-audit.md)) raises a notification.
+Every `create`, `claim-success`, `claim-failure-{kind}`, and `revoke`
+writes one row to `audit_log` with `category = 'pair'` (per the AC).
+plan-10-17 emits the base `pair.code-issued` and `pair.code-claimed`
+rows; this plan adds `pair.claim-nonce-mismatch` (from the
+pre-claim hook) and `pair.code-revoked` (from the revoke endpoint).
+The `'pair'` category was added to the
+[plan-09-17](../09-library-management/plan-09-17-library-audit.md)
+CHECK enum as part of the same
+[PLAN_REVIEW_14_17 §1.4](../../PLAN_REVIEW_14_17.md) resolution.
+
+The `claim-failure` rows are useful for detecting brute-force attempts;
+if a single `created_by_user_id`'s codes accumulate ≥ 10 failed
+attempts within 1 hour, the security audit
+([Story 10.16](../10-auth-security/plan-10-16-security-audit.md))
+raises a notification.
 
 ## 10. Test plan
 
@@ -292,11 +315,11 @@ Every `create`, `claim-success`, `claim-failure-{kind}`, and `revoke` writes one
 | `TestCreateRateLimit` | 6th request in a minute → 429 with `Retry-After`. |
 | `TestClaimSuccess` | Right code + right nonce → 200 with tokens; row's `claimed_at` set. |
 | `TestClaimWrongNonce` | 400 `nonce-mismatch`; row remains unclaimed. |
-| `TestClaimAlreadyClaimed` | Two claims; second 400 `code-already-claimed`. |
-| `TestClaimExpired` | Wait past `expires_at`; 400 `code-expired`. |
-| `TestClaimUnknownCode` | 400 `invalid-code`. |
-| `TestClaimRevokedCode` | DELETE then claim → 400 `code-revoked`. |
-| `TestClaimAfterUserDeleted` | User deleted → CASCADE gone → 400 `invalid-code`. |
+| `TestClaimAlreadyClaimed` | Two claims; second 409 `pair-code-already-claimed` (matches plan-10-17 status). |
+| `TestClaimExpired` | Wait past `expires_at`; 410 `pair-code-expired` (matches plan-10-17 status). |
+| `TestClaimUnknownCode` | 404 `pair-code-unknown` (matches plan-10-17 status). |
+| `TestClaimRevokedCode` | DELETE then claim → 410 `pair-code-expired` (revoke flips state to `expired`). |
+| `TestClaimAfterUserDeleted` | User deleted → CASCADE gone → 404 `pair-code-unknown`. |
 | `TestClaimIsConstantTimeOnNonce` | Two-sample t-test on nonce-mismatch latency vs. invalid-code latency: difference statistically insignificant. |
 | `TestRevokeIdempotent` | DELETE twice → both 204. |
 | `TestRevokeOnlyOwnCodes` | User A revokes user B's code → 404. |
@@ -329,14 +352,14 @@ Every `create`, `claim-success`, `claim-failure-{kind}`, and `revoke` writes one
 - [ ] `pairing_codes` exists on Postgres + SQLite with full constraint set.
 
 **Endpoints**
-- [ ] `POST /api/auth/pair` → 201 with code+qr_url+expires_at.
-- [ ] `POST /api/auth/pair/claim` → 200 on success or 400 with the documented error kinds.
-- [ ] `DELETE /api/auth/pair/{code}` idempotent.
-- [ ] `GET /api/auth/pair` returns last 24 h.
+- [ ] `POST /api/auth/pair` (owned by plan-10-17) → 201 with code+qr_url+expires_at+poll_url after this plan's `AfterIssue` hook decorates the body.
+- [ ] `POST /api/auth/pair/claim` (owned by plan-10-17) → 204 on success after this plan's `BeforeClaim` nonce check passes; status codes (404 / 410 / 409) match plan-10-17.
+- [ ] `DELETE /api/auth/pair/{code}` idempotent (this plan).
+- [ ] `GET /api/auth/pair` returns last 24 h (this plan).
 
 **Behaviour**
-- [ ] 5/min/user rate limit; 30 s sweeper; 7-day hard delete.
-- [ ] Audit row on every action.
+- [ ] 6/min/IP rate limit (plan-10-17); 60 s sweeper + 24 h hard delete (plan-10-17).
+- [ ] Audit row on every action (`pair.code-issued`, `pair.code-claimed` from plan-10-17; `pair.claim-nonce-mismatch`, `pair.code-revoked` from this plan).
 
 **Tests**
 - [ ] All §10 tests pass.

@@ -14,7 +14,7 @@
 | Native (tvOS) | `apps/tvos/Sources/Flags/{Flags.swift,FlagSignatureVerifier.swift}`. |
 | Native (AndroidTV / mobile Android) | `apps/androidtv/.../flags/{Flags.kt,FlagSignatureVerifier.kt}`. |
 | Cache TTL | 60 s; refreshed on app foreground; persisted to disk so flags survive cold-launch and offline. |
-| Signature verification | Ed25519, public key bundled at build-time per [Epic 10 Story 10.6](../10-auth-security/plan-10-06-rs256-keys-jwks.md) (server's long-term key set). Client refuses unsigned or bad-signature responses. |
+| Signature verification | Ed25519. Server's long-term key set is owned by **Epic 10 Story 10.18** ("Ed25519 long-term server identity keys") — NOT Story 10.6, which covers RS256 / JWKS for short-lived API JWTs only. Public keys are bundled at client build-time. Client refuses unsigned or bad-signature responses. Until Story 10.18 lands this plan blocks: there is no Ed25519 source to verify against. |
 | Beta opt-in | Settings → Advanced → Experiments toggles call `POST /api/me/cohorts {cohort}` ([Story 16.8](story-16-08-feature-flags-api.md)). |
 | Out of scope | Server resolver + admin endpoints ([Story 16.8](story-16-08-feature-flags-api.md)). |
 
@@ -215,14 +215,29 @@ fun rememberFlag(key: String): Boolean {
 
 The story EC: "Tampering with the local cache: flags are signed by the server and re-checked on every privileged action."
 
-Implementation: every privileged action (e.g., creating a federation pair, starting a backup) calls `flags.assertOn('federation')` which runs the in-memory signature check before proceeding. If the cached bundle has been mutated on disk (storage hijacked), the signature fails and we refuse, regardless of what `bundle.flags` claims.
+Implementation: every privileged action (e.g., creating a federation
+pair, starting a backup) calls `flags.assertOn('federation')` which
+checks an in-memory "this bundle has been verified" flag before
+proceeding. If the cached bundle has been mutated on disk (storage
+hijacked), the next refresh tries to verify the loaded bytes; on
+failure the verified flag flips to `false` and we refuse, regardless
+of what `bundle.flags` claims.
 
 ```ts
+// The Ed25519 verify is run ONCE per bundle (on load and on each
+// successful refresh), and the result is cached on the in-memory
+// FlagsBundle object. Subsequent assertOn() calls hit the cached
+// boolean — not the verifier — so a privileged-action storm does not
+// pay an Ed25519 verify per call (~100 µs each on web).
 function assertOn(key: string) {
     if (!flagsClient.isOn(key)) throw new FlagDeniedError(key);
-    if (!flagsClient.bundleSignatureValid()) throw new TamperedCacheError();
+    if (!flagsClient.currentBundle.signatureVerified) throw new TamperedCacheError();
 }
 ```
+
+The cached `signatureVerified` boolean is invalidated on the same
+events that drop the bundle: refresh failure, kid rotation, sign-out,
+and any explicit cache-clear path.
 
 ## 7. Beta cohorts
 

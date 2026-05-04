@@ -12,9 +12,9 @@
 | Concern | Decision |
 |---|---|
 | Server outbound agent | New binary target `api/cmd/relay-agent` (Go) — long-lived QUIC connection from server to a relay edge. Reuses the API service's auth + DB; runs as a goroutine inside the API service when `[relay] enabled = true` (no separate service). |
-| Relay edge | `services/relay/` (new directory) — a Go service that accepts QUIC connections from servers and HTTPS connections from clients, routes by `mdns_id`. Owns `relay.proto` (gRPC over QUIC) and edge routing. |
+| Relay edge | `services/relay/` (new directory) — a Go service that accepts QUIC connections from servers and HTTPS connections from clients, routes by `mdns_id`. Owns `relay.proto` (gRPC over QUIC) and edge routing. **Architecture note:** §1.4 currently lists only API, Streaming, Pipeline as deployable services. The relay edge is a *fourth* service (or an outsourced tunnel — see Epic 16 README open question 2). This plan ships the first-party-service variant; if Epic 16 settles on a third-party tunnel (e.g., Cloudflare Tunnel) the `services/relay/` directory is replaced by a thin egress shim. Either way the architecture topology document needs to acknowledge a routing layer beyond the canonical three services. |
 | Cert rotation endpoint | `GET /api/system/cert-rotation` — signed by the **current** TLS cert (proves the server holds the private key); returns the upcoming SPKI hash and rotation window. |
-| TLS SPKI pinning | Client-side per-platform: iOS/tvOS via `URLSessionDelegate`'s pinned challenge handler; Android via `OkHttp.CertificatePinner`; web (browser-side) cannot pin — documented limitation, web traffic over relay is bound to browser CA trust. |
+| TLS SPKI pinning | Client-side per-platform: iOS/tvOS via `URLSessionDelegate`'s pinned challenge handler; Android via `OkHttp.CertificatePinner`. **Web has no end-to-end pinning** — browsers expose no API to pin the inner SPKI, so relay-routed web traffic is bound to whichever CA the relay edge presents (browser default trust store) and the inner end-to-end protection is intact only for native clients. This is a tier capability decision: the federation/relay security story protects native paths fully and web paths only at the CA-trust level. The `docs/operations/relay-web.md` runbook makes this explicit. |
 | Quota | Per-server monthly quota gated by tier; counted in `relay_usage` table. |
 | Out of scope | Federation (Story 15.3); QR pairing (Story 15.5); license key resolution (Epic 16 Story 16.4). |
 
@@ -187,13 +187,25 @@ func certRotation(s store.RelaySettings, certs *certmgr.Manager) http.HandlerFun
             "next_until":          cs.NextSpkiUntil,
             "issued_at":           time.Now().UTC(),
         }
-        sig, _ := jws.Sign(body, cur.PrivateKey)
+        // The body is a Go map; serializers across platforms (Go,
+        // Swift's JSONEncoder, Kotlin's kotlinx.serialization, the
+        // browser's JSON.stringify) emit different key orderings and
+        // whitespace. Sign over the JCS canonicalization (RFC 8785) so
+        // a verifier on any platform reproduces the same bytes. plan-16-04
+        // already adopts JCS for license signatures; we reuse the same
+        // helper.
+        canonical, err := jcs.Encode(body)
+        if err != nil { writeProblem(w, 500, "internal"); return }
+        sig, _ := jws.Sign(canonical, cur.PrivateKey)
         writeJSON(w, 200, map[string]any{"body": body, "sig": sig})
     }
 }
 ```
 
-The signature uses the existing TLS leaf as the signing key — proving the server still holds it. Clients verify with the SPKI they already pinned.
+The signature uses the existing TLS leaf as the signing key — proving
+the server still holds it. Clients verify with the SPKI they already
+pinned. Verification on the client likewise re-runs JCS over the
+received `body` before computing the digest.
 
 ## 6. Client-side SPKI pinning
 

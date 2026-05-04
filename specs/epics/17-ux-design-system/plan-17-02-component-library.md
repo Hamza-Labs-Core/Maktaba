@@ -88,22 +88,33 @@ The width is preserved across the loading toggle by reserving a min-width via th
 ## 3. Modal — focus trap & Esc
 
 ```tsx
-import { Dialog } from '@reach/dialog';   // accessible primitive
+import * as Dialog from '@radix-ui/react-dialog';
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+export function Modal({ isOpen, onClose, title, dismissable = true, children }: ModalProps) {
     return (
-        <Dialog isOpen={isOpen} onDismiss={onClose} aria-label={title}
-                className="mk-modal">
-            <div className="mk-modal__panel">
-                <header className="mk-modal__head"><h2>{title}</h2></header>
-                <div className="mk-modal__body">{children}</div>
-            </div>
-        </Dialog>
+        <Dialog.Root open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+            <Dialog.Portal>
+                <Dialog.Overlay className="mk-modal__overlay" />
+                <Dialog.Content className="mk-modal__panel"
+                    onInteractOutside={(e) => { if (!dismissable) e.preventDefault(); }}
+                    onEscapeKeyDown={(e) => { if (!dismissable) e.preventDefault(); }}
+                    aria-label={title}>
+                    <header className="mk-modal__head">
+                        <Dialog.Title asChild><h2>{title}</h2></Dialog.Title>
+                    </header>
+                    <div className="mk-modal__body">{children}</div>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 }
 ```
 
-`@reach/dialog` traps focus by default; Esc dismisses. The story TC: "A modal traps focus and closes on `Esc`."
+Reach UI was deprecated in 2022; Radix UI Dialog is the maintained successor.
+It traps focus by default and closes on `Esc`. The `dismissable={false}`
+prop blocks both the click-outside and Esc paths via Radix's
+`onInteractOutside` / `onEscapeKeyDown` callbacks. The story TC: "A modal
+traps focus and closes on `Esc`."
 
 ## 4. Form wrapper
 
@@ -138,11 +149,28 @@ return (<>
 ## 5. ThemeProvider
 
 ```tsx
+type ThemeContextValue = { theme: 'light' | 'dark' | 'system'; inProvider: true };
+const ThemeContext = React.createContext<ThemeContextValue | null>(null);
+
 export function ThemeProvider({ children, theme = 'system' }: { children: React.ReactNode; theme?: 'light' | 'dark' | 'system' }) {
     useEffect(() => { document.documentElement.dataset.theme = resolveTheme(theme); }, [theme]);
-    if (process.env.NODE_ENV !== 'production' && !inThemeProvider.current)
-        console.warn('Component rendered outside ThemeProvider; falling back to system tokens.');
-    return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+    return (
+        <ThemeContext.Provider value={{ theme, inProvider: true }}>
+            {children}
+        </ThemeContext.Provider>
+    );
+}
+
+// Components call this in dev to assert they were composed under a provider.
+export function useThemeOrWarn(componentName: string): ThemeContextValue {
+    const ctx = React.useContext(ThemeContext);
+    if (!ctx) {
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn(`<${componentName}> rendered outside <ThemeProvider>; falling back to system tokens.`);
+        }
+        return { theme: 'system', inProvider: false } as ThemeContextValue;
+    }
+    return ctx;
 }
 ```
 
@@ -229,8 +257,8 @@ Example: `Card` on tvOS takes focus and grows by 4% (story TC). Implementation r
 | `react-hook-form` | 7.x | Form state. |
 | `zod` | 3.x | Schema validation. |
 | `@hookform/resolvers` | 3.x | RHF + zod glue. |
-| `@reach/dialog` | 0.18.x | Accessible modal primitive. |
-| `@radix-ui/react-*` | latest | Tooltip, Tabs, ContextMenu primitives. |
+| `@radix-ui/react-dialog` | latest | Accessible modal primitive (replaces deprecated `@reach/dialog`). |
+| `@radix-ui/react-*` | latest | Tooltip, Tabs, ContextMenu, Dialog primitives. |
 | `clsx` | latest | className composition. |
 | `i18next` | latest | error message translation. |
 | Storybook | 8.x | docs + visual regression. |

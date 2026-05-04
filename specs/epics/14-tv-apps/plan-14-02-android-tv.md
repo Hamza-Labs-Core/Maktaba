@@ -13,7 +13,7 @@
 | Module layout | Single `:app` module split internally by package: `io.maktaba.tv.{app,api,ui,features.{home,library,search,settings,player,pairing,channel}}`. |
 | GraphQL client | Apollo Kotlin 4.x with `apollo` gradle plugin pointing at `shared/graphql/schema.graphql`. Codegen runs on Gradle build. |
 | Player | ExoPlayer (media3) for HLS/DASH; HDR10/Dolby Vision passthrough via `MediaCodec` HDR config. |
-| Recommendations channel | `androidx.tvprovider:tvprovider` — a `PreviewChannel` with `WatchNextPrograms` for Continue Watching (mirrors Top Shelf on tvOS). |
+| Recommendations channel | `androidx.tvprovider:tvprovider` — a `PreviewChannel` plus one `WatchNextProgram` per Continue Watching entry (mirrors Top Shelf on tvOS). The `WatchNextProgram` *class* is singular; `WatchNextPrograms` is only a content-URI helper. |
 | QR pairing | Calls [Story 15.6](../15-discovery/story-15-06-pairing-api.md); same flow as tvOS. |
 | Out of scope | Recommendations algorithm ([Story 14.7](story-14-07-recommendations-api.md)). |
 
@@ -88,7 +88,9 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.apollographql.apollo3") version "4.0.0"
+    // Apollo Kotlin 4.x renamed the plugin id from `apollo3` to `apollo`;
+    // see https://www.apollographql.com/docs/kotlin/migration/v4
+    id("com.apollographql.apollo") version "4.0.0"
     id("dagger.hilt.android.plugin")
     id("com.google.devtools.ksp")
 }
@@ -121,7 +123,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.4.0")
     implementation("androidx.tvprovider:tvprovider:1.0.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.apollographql.apollo3:apollo-runtime:4.0.0")
+    implementation("com.apollographql.apollo:apollo-runtime:4.0.0")
     implementation("com.google.dagger:hilt-android:2.51")
     ksp("com.google.dagger:hilt-android-compiler:2.51")
 }
@@ -189,7 +191,7 @@ class PlayerScreenViewModel(...) : ViewModel() {
 2. Immediately on app foreground if `lastSync` > 1 hour.
 3. After every `playback.changed` event (one-shot).
 
-It calls `GET /api/recommendations` and `GET /api/playback/state?in_progress=true`, then writes:
+It calls `GET /api/recommendations?surface=tv-home` and `GET /api/me/playback-state?in_progress=true` (canonical path per architecture §9.4 / Epic 11 plan-11-02), then writes:
 
 - A `PreviewChannel` with the brand artwork.
 - A `WatchNextProgram` per Continue Watching entry, with `WATCH_NEXT_TYPE_CONTINUE` and the resume position.
