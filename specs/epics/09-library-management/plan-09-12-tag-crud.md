@@ -1,726 +1,459 @@
-# Plan 9.12 — Tag CRUD and normalization — implementation
+# Implementation Plan — Story 9.12 Tag CRUD and Normalization
 
-> Implementation plan for [story-09-12-tag-crud.md](story-09-12-tag-crud.md).
-> Self-contained: a developer should be able to ship the story from this
-> document alone. Cross-links: the REST surface is owned by Epic 7
-> [Story 7.14](../07-api/story-07-14-collections-tags-speakers-crud.md);
-> this story owns the schema, the normalization rules, and the
-> uniqueness behavior. The auto-categorization tag writers (Epic 9
-> Stories 9.8/9.9/9.10) all funnel through the helper described in §2.4
-> so language/topic/content-type tags share a single insert path. The
-> Pipeline Service does not write tags directly.
+> Companion to [story-09-12-tag-crud.md](story-09-12-tag-crud.md).
+> The story states *what* and *why*; this plan states *how*.
+> Owns the schema migration (`tags.display_name` + `normalized_name`)
+> and the normalization rules. The HTTP routes live in Epic 7
+> Story 7.14.
 
----
+## 0. Scope and placement
 
-## 0. Decisions and departures from `architecture.md` and the story
+| Concern | Decision |
+|---|---|
+| Schema migration | `0040_tags_normalize.sql` — destructive `DROP COLUMN name` and `ADD COLUMN display_name, normalized_name`. Runs the data move (`UPDATE tags SET display_name = name, normalized_name = lower(name)`) inside the same migration; ordering is critical. |
+| Normalization | Trim whitespace, NFC-normalize, casefold. Implemented in both Go (`api/internal/tags/normalize.go`) and Python (`pipeline/src/maktaba_pipeline/tags/normalize.py`); fixture parity test ensures same output for every input. |
+| Uniqueness | `UNIQUE INDEX tags_normalized_name`. Any insert that would collide is replaced by a SELECT-by-normalized fallback in the upsert helper. |
+| Reuse vs. error semantics | Inserting a normalize-equal of an existing tag returns the existing row's id with `outcome='reused'`. Display name is *not* overwritten (preserves the first-seen casing). |
+| Rename collision | If a rename's new normalized form collides with another tag, return 409 `tag-name-exists` with the conflicting `tag_id`; the UI offers a "merge" CTA. |
+| Out of scope | The HTTP routes themselves (Epic 7 Story 7.14 owns); the merge endpoint (out of scope for this story; future); the audit-log entries on tag operations (Story 9.17). |
 
-| #  | Decision | Source | Rationale |
-|----|----------|--------|-----------|
-| D1 | **Two-column model**: `display_name` (what the user sees, after trim) and `normalized_name` (the uniqueness key, NFC + casefold). The architecture's bare `tags(id, name)` is migrated forward exactly as the story dictates. | Story AC-1: full ALTER sequence + `CREATE UNIQUE INDEX tags_normalized_name`. | A single column would force the API to either be case-insensitive on display (ugly) or duplicate visually distinct tags ("Tafsir" and "tafsir" both stored). Splitting display from key is a standard pattern (cf. GitHub usernames, Wikipedia article titles) and lets the user pick a casing without affecting the join key. |
-| D2 | **Normalization = NFC then casefold**, not NFKC and not lowercase. `golang.org/x/text/unicode/norm.NFC` is applied before `golang.org/x/text/cases.Fold()`. Whitespace is trimmed (Unicode-aware via `strings.TrimSpace`) *before* normalization. | Story AC-2: "NFC unicode normalize + casefold". | NFC keeps composed forms (`أ` stays `أ`, not decomposed `ا + ٔ`), which matches how almost every keyboard inputs Arabic. Casefold > lowercase because it handles Turkish dotless-i, German ß → ss, etc. — important for an Arabic-first product where mixed-script libraries are common. NFKC would equate compatibility forms (e.g., "ﻟﻪ" presentation form ≡ "له" base form), which the story does **not** require and which would surprise users who type both forms. |
-| D3 | **Insert path = `INSERT … ON CONFLICT (normalized_name) DO UPDATE … RETURNING id`**, with `DO UPDATE SET id = id` so the existing row is returned without overwriting the display_name. | Story AC-3: "the existing row is reused (same `id`); no new row, no error. The display name is *not* overwritten". | A naive `INSERT … ON CONFLICT DO NOTHING` returns no row when the row already exists, forcing a second SELECT. The `DO UPDATE SET id = id` trick is idiomatic Postgres for "return the existing row on conflict" without mutating it. The display_name is *deliberately* left alone so the first writer wins on capitalization. |
-| D4 | **PATCH rename returns 409 on collision with merge suggestion** instead of silently merging. The handler computes the new `normalized_name` and pre-checks for a different `id` with the same normalized form; if found, returns `409 type=tag-name-exists` with `{existing_tag_id}` in the body so the UI can offer a merge action. | Story AC-4: "if the new normalized form collides with another tag, return 409 `type: tag-name-exists` and suggest merge". | Silent merge on rename would lose data invisible to the user (the source tag's `video_tags` rows would join the target's). 409 + suggestion preserves user agency; the UI offers a "merge into existing" button that hits a separate merge endpoint (out of scope for this story). |
-| D5 | **Empty/whitespace-only tag → 422 type=tag-name-empty.** Validation runs *before* normalization so the error message reflects the user's literal input. Slashes are explicitly allowed (the story's "finance/2024" example). | Story edge case: "Empty / whitespace-only tag → 422" + "Tag containing a slash … allowed". | Validating after normalization would silently strip whitespace and then fail on "empty after trim", a confusing error. Allowing slashes in v1 punts hierarchy to v1.1 without painting us into a corner: a future hierarchical implementation can split on `/` and reuse the same `display_name` storage. |
-| D6 | **Library scoping: `tags` are per-library** via a `library_id` column added in the same migration; `(library_id, normalized_name)` is the unique key, not `normalized_name` alone. The story's literal SQL (`CREATE UNIQUE INDEX tags_normalized_name ON tags (normalized_name)`) is amended to include `library_id`. | Architecture §8.2 implies per-library tagging (each library has its own catalog); auto-categorization stories (9.8–9.10) write tags scoped to a library. | A globally-unique tag would force two libraries with separate "Tafsir" lectures to share a single row, which couples them undesirably. A library_id-scoped unique index is one extra column in the index and zero extra cost on insert. We document this as a refinement of the story's SQL. |
-
-If D2 is rejected (raw `strings.ToLower`): Turkish/Azeri text breaks ("İSTANBUL".ToLower → "i̇stanbul" with a combining dot, ≠ "istanbul"). Casefold is the standard Unicode answer. The story explicitly says "casefold," so we follow it.
-
-If D6 is rejected (global unique): cross-library tag suggestions become a global keyspace, which is harder to reason about for users and creates contention on the unique index. The marginal storage cost of `library_id` in the unique index is negligible.
-
----
-
-## 1. Architecture diagram — tag write paths and normalization
+## 1. Architecture diagram
 
 ```
-   ┌──────────────────────────────────────────────────────────────────────┐
-   │ Inputs                                                               │
-   │  - User: PATCH /api/videos/{id}/tags  ["  Tafsir  ", "Quran"]        │
-   │  - Auto-categorization: Story 9.8 lang tag, 9.9 topic, 9.10 content  │
-   └──────────────────────────────────┬───────────────────────────────────┘
-                                      │
-                                      ▼
-   ┌──────────────────────────────────────────────────────────────────────┐
-   │ tag.Normalize(input string)                                          │
-   │   1. strings.TrimSpace                                               │
-   │   2. if empty → ErrEmptyTagName (422)                                │
-   │   3. norm.NFC.String(s)                                              │
-   │   4. cases.Fold().String(s)        → normalized_name (key)           │
-   │   5. trimmed (no fold)             → display_name                    │
-   └──────────────────────────────────┬───────────────────────────────────┘
-                                      │
-                                      ▼
-   ┌──────────────────────────────────────────────────────────────────────┐
-   │ tag.UpsertReturningID(libraryID, display, normalized) tx-bound       │
-   │                                                                      │
-   │   INSERT INTO tags (id, library_id, display_name, normalized_name)   │
-   │   VALUES (gen_random_uuid(), $1, $2, $3)                             │
-   │   ON CONFLICT (library_id, normalized_name)                          │
-   │     DO UPDATE SET id = tags.id                -- no-op (D3)          │
-   │   RETURNING id;                                                      │
-   └──────────────────────────────────┬───────────────────────────────────┘
-                                      │
-                  ┌───────────────────┴────────────────────┐
-                  │                                        │
-                  ▼                                        ▼
-       ┌───────────────────────┐            ┌──────────────────────────┐
-       │ INSERT INTO           │            │ PATCH /api/tags/{id}     │
-       │   video_tags (...)    │            │  {display_name}          │
-       │ ON CONFLICT DO        │            │                          │
-       │   NOTHING             │            │  pre-check: SELECT id    │
-       └───────────────────────┘            │   FROM tags WHERE        │
-                                            │   library_id=$1 AND      │
-                                            │   normalized_name=$2     │
-                                            │   AND id != $tag_id      │
-                                            │  → 409 if found (D4)     │
-                                            │  else UPDATE display +   │
-                                            │  normalized              │
-                                            └──────────────────────────┘
+   API caller (POST /api/tags {display_name})
+        ↓
+   normalize(display_name)
+        = NFC( casefold( strip( s ) ) )
+        ↓
+   tags.upsert_tag(library_id?, display_name, normalized)
+      INSERT INTO tags (display_name, normalized_name)
+      VALUES ($1, $2)
+      ON CONFLICT (normalized_name) DO NOTHING
+      RETURNING id;
+        ↓ if no row returned (conflict)
+      SELECT id FROM tags WHERE normalized_name = $2;
+        ↓
+      → Tag{ id, display_name (existing), outcome }
+
+   Rename (PATCH /api/tags/{id} {display_name})
+        ↓
+   new_norm = normalize(display_name)
+   if new_norm == cur.normalized_name:
+       UPDATE tags SET display_name = $1, updated_at = now() WHERE id = $2
+       return 200 OK
+   else:
+       SELECT id FROM tags WHERE normalized_name = new_norm AND id != $tag_id
+       if found: return 409 tag-name-exists
+       UPDATE tags SET display_name = $1, normalized_name = $2,
+                       updated_at = now()
+        WHERE id = $tag_id
+       return 200 OK
 ```
 
-Every tag write path — user-driven, auto-categorization, bulk import —
-funnels through `tag.Normalize` and `tag.UpsertReturningID`. There is
-no second insert path.
+## 2. Implementation steps
 
----
+### 2.1 New files
 
-## 2. Detailed implementation
+| Path | Purpose |
+|---|---|
+| `api/internal/tags/normalize.go` | `Normalize(s string) string`, `NormalizeAndDisplay(s string) (display, norm string)`, error type. |
+| `api/internal/tags/store.go` | `UpsertTag`, `RenameTag`, `GetTagByNormalized`. |
+| `api/internal/tags/normalize_test.go` | Fixture parity. |
+| `pipeline/src/maktaba_pipeline/tags/normalize.py` | Python mirror. |
+| `pipeline/tests/tags/test_normalize_parity.py` | Cross-language parity check. |
+| `shared/db/migrations/0040_tags_normalize.sql` | The migration. |
+| `shared/db/migrations/0040_tags_normalize.sqlite.sql` | SQLite variant. |
+| `shared/db/queries/tags.sql` | sqlc input. |
+| `shared/db/test_fixtures/tags_normalize/` | Fixture file `cases.json` consumed by both languages. |
 
-### 2.1 Schema migration — the literal sequence from the story
+### 2.2 Modified files
 
-```sql
--- shared/db/migrations/0043_tags_normalize.sql
-BEGIN;
+| Path | Change |
+|---|---|
+| `api/internal/handlers/tags/*.go` | (Owned by Epic 7 Story 7.14.) This story adds the helpers; the handlers call them. |
+| `specs/epics/09-library-management/README.md` | Tick story 9.12. |
 
--- D6: scope to library_id. Add the column first so existing rows keep working.
-ALTER TABLE tags ADD COLUMN library_id UUID;
-UPDATE tags SET library_id = (
-    -- Best-effort backfill: tags created before this migration belong to
-    -- the library that has the most video_tags references for them. If
-    -- the tag has no references, drop it.
-    SELECT vt.library_id
-      FROM video_tags vt
-      JOIN videos v ON v.id = vt.video_id
-     WHERE vt.tag_id = tags.id
-     GROUP BY vt.library_id
-     ORDER BY count(*) DESC
-     LIMIT 1
-);
-DELETE FROM tags WHERE library_id IS NULL;
-ALTER TABLE tags ALTER COLUMN library_id SET NOT NULL;
-ALTER TABLE tags ADD CONSTRAINT tags_library_fk
-    FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE;
-
--- AC-1 literal sequence (with the library_id refinement from D6).
-ALTER TABLE tags ADD COLUMN display_name    TEXT;
-ALTER TABLE tags ADD COLUMN normalized_name TEXT;
-
--- Backfill from the existing `name` column. lower() is a reasonable
--- approximation of casefold for ASCII; non-ASCII tags will be re-normalized
--- in-app on the next write. We log a one-time warning at startup if the
--- count of mixed-case Arabic tags is non-zero.
-UPDATE tags
-   SET display_name    = name,
-       normalized_name = lower(name);
-
-ALTER TABLE tags ALTER COLUMN display_name    SET NOT NULL;
-ALTER TABLE tags ALTER COLUMN normalized_name SET NOT NULL;
-ALTER TABLE tags DROP COLUMN name;
-
--- D6: composite uniqueness; not just (normalized_name).
-CREATE UNIQUE INDEX tags_library_normalized_name
-    ON tags (library_id, normalized_name);
-
--- For "list tags in this library matching prefix" queries.
-CREATE INDEX tags_library_display ON tags (library_id, display_name);
-
-ALTER TABLE tags ADD CONSTRAINT tags_display_nonempty
-    CHECK (length(display_name) BETWEEN 1 AND 256);
-ALTER TABLE tags ADD CONSTRAINT tags_normalized_nonempty
-    CHECK (length(normalized_name) BETWEEN 1 AND 256);
-
-COMMIT;
-```
-
-The migration is **not** idempotent under partial failure — if the
-backfill SELECT finds no `video_tags` for a tag, that tag is dropped.
-This is an acceptable one-shot fix; the migration runner records its
-applied state and won't re-run.
-
-### 2.2 Go normalization helper
+### 2.3 Type definitions
 
 ```go
-// api/internal/tag/normalize.go
-package tag
+// api/internal/tags/normalize.go
+package tags
 
-import (
-    "errors"
-    "fmt"
-    "strings"
-    "unicode/utf8"
-
-    "golang.org/x/text/cases"
-    "golang.org/x/text/language"
-    "golang.org/x/text/unicode/norm"
+const (
+    MaxDisplayLen = 64
+    MaxNormLen    = 64
 )
 
-// Normalize splits an input string into (display_name, normalized_name).
-//
-//   1. Unicode-aware whitespace trim
-//   2. NFC compose
-//   3. casefold for the normalized form (display kept in original casing)
-//
-// Empty/whitespace-only input yields ErrEmptyTagName (422 at the handler).
-//
-// Length is bounded to 256 runes; longer input yields ErrTagNameTooLong (422).
-var (
-    ErrEmptyTagName    = errors.New("tag name is empty after trim")
-    ErrTagNameTooLong  = errors.New("tag name exceeds 256 characters")
-)
-
-const maxLen = 256
-
-func Normalize(input string) (display, normalized string, err error) {
-    trimmed := strings.TrimSpace(input)
-    if trimmed == "" {
-        return "", "", ErrEmptyTagName
-    }
-    if utf8.RuneCountInString(trimmed) > maxLen {
-        return "", "", ErrTagNameTooLong
-    }
-    display = norm.NFC.String(trimmed)
-    // The Fold caser is locale-independent (Unicode default casing).
-    normalized = cases.Fold().String(display)
-    if normalized == "" {
-        // Defensive: should never happen given the trim above, but a
-        // string of only invisible casefold-collapsing runes (e.g.
-        // U+200B zero-width space inside otherwise-empty input) could
-        // collapse here. Treat as empty.
-        return "", "", ErrEmptyTagName
-    }
-    _ = language.Und // silence unused import when we toggle locale-aware
-    _ = fmt.Sprintf  // for error wrapping in callers
-    return display, normalized, nil
+type ValidationError struct {
+    Code, Message string
 }
 ```
 
-### 2.3 sqlc query stubs
+```go
+// api/internal/tags/store.go
+type UpsertResult struct {
+    ID          uuid.UUID
+    DisplayName string
+    Outcome     string // "inserted" | "reused"
+}
+```
+
+## 3. Database migration
+
+### 3.1 Postgres — `0040_tags_normalize.sql`
 
 ```sql
--- internal/db/queries/tags.sql
+-- +goose Up
+-- +goose StatementBegin
 
--- name: UpsertTag :one
-INSERT INTO tags (id, library_id, display_name, normalized_name)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (library_id, normalized_name)
-    DO UPDATE SET id = tags.id    -- no-op; returns existing row (D3)
-RETURNING id, library_id, display_name, normalized_name;
+-- Architecture §8.2 set up tags(id UUID, name TEXT). The story
+-- mandates display_name + normalized_name + casefold uniqueness.
 
--- name: GetTag :one
-SELECT id, library_id, display_name, normalized_name
+ALTER TABLE tags
+    ADD COLUMN display_name    TEXT,
+    ADD COLUMN normalized_name TEXT;
+
+-- The Postgres lower() does ASCII casefold; for true Unicode casefold
+-- (Turkish dotless i, German ß) we'd need icu or a Python preprocess.
+-- AC-2 says NFC + casefold; for the migration we approximate with
+-- lower() on existing rows and run a one-shot Python normalize pass
+-- that callers (Pipeline) use henceforth. The column is defined for
+-- future correctness; the casefold in DB is best-effort.
+UPDATE tags SET
+    display_name    = TRIM(name),
+    normalized_name = lower(TRIM(name));
+
+ALTER TABLE tags ALTER COLUMN display_name SET NOT NULL;
+ALTER TABLE tags ALTER COLUMN normalized_name SET NOT NULL;
+
+ALTER TABLE tags
+    ADD CONSTRAINT tags_display_name_len_chk
+    CHECK (char_length(display_name) BETWEEN 1 AND 64);
+
+ALTER TABLE tags
+    ADD CONSTRAINT tags_normalized_name_len_chk
+    CHECK (char_length(normalized_name) BETWEEN 1 AND 64);
+
+ALTER TABLE tags DROP COLUMN name;
+
+CREATE UNIQUE INDEX tags_normalized_name
+    ON tags (normalized_name);
+
+CREATE INDEX tags_display_lookup
+    ON tags (display_name text_pattern_ops);
+
+-- A maintenance step that the Pipeline runs once after deploy:
+-- it walks every tag, recomputes normalized_name = NFC + casefold via
+-- Python, and updates rows where the result differs from lower(name).
+-- The CLI command `maktaba-pipeline tags-renormalize` is shipped here.
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP INDEX IF EXISTS tags_display_lookup;
+DROP INDEX IF EXISTS tags_normalized_name;
+ALTER TABLE tags DROP CONSTRAINT IF EXISTS tags_normalized_name_len_chk;
+ALTER TABLE tags DROP CONSTRAINT IF EXISTS tags_display_name_len_chk;
+-- Restore name column from display_name; lossy if names diverged.
+ALTER TABLE tags ADD COLUMN name TEXT;
+UPDATE tags SET name = display_name;
+ALTER TABLE tags ALTER COLUMN name SET NOT NULL;
+ALTER TABLE tags DROP COLUMN normalized_name;
+ALTER TABLE tags DROP COLUMN display_name;
+-- +goose StatementEnd
+```
+
+### 3.2 SQLite variant
+
+SQLite cannot DROP COLUMN before 3.35 (we pin newer). The variant is
+the same `ALTER TABLE` sequence, with `lower()` as the normalize
+approximation, plus the same unique index.
+
+### 3.3 sqlc queries (`shared/db/queries/tags.sql`)
+
+```sql
+-- name: InsertTagOnConflictNothing :one
+INSERT INTO tags (id, display_name, normalized_name)
+VALUES ($1, $2, $3)
+ON CONFLICT (normalized_name) DO NOTHING
+RETURNING id;
+
+-- name: GetTagByNormalized :one
+SELECT id, display_name, normalized_name
+  FROM tags WHERE normalized_name = $1;
+
+-- name: GetTagByID :one
+SELECT id, display_name, normalized_name
   FROM tags WHERE id = $1;
 
--- name: GetTagByNormalizedName :one
-SELECT id, library_id, display_name, normalized_name
-  FROM tags
- WHERE library_id = $1 AND normalized_name = $2;
-
--- name: RenameTag :one
+-- name: RenameTag :exec
 UPDATE tags
-   SET display_name = $2,
-       normalized_name = $3
- WHERE id = $1
-RETURNING id, library_id, display_name, normalized_name;
+   SET display_name    = $2,
+       normalized_name = $3,
+       updated_at      = now()
+ WHERE id = $1;
 
--- name: ListTagsForLibrary :many
+-- name: ListTags :many
 SELECT id, display_name, normalized_name
   FROM tags
- WHERE library_id = $1
  ORDER BY display_name;
 ```
 
-### 2.4 Go upsert helper (the single insert funnel)
+## 4. Code scaffolding
+
+### 4.1 Go — `Normalize`
 
 ```go
-// api/internal/tag/upsert.go
-package tag
-
-import (
-    "context"
-
-    "github.com/google/uuid"
-    "github.com/jackc/pgx/v5"
-
-    "maktaba/api/internal/db"
-)
-
-// UpsertReturningID is the only function in this codebase that calls
-// queries.UpsertTag. Auto-categorization writers (Stories 9.8/9.9/9.10),
-// the user-facing PATCH /videos/{id}/tags handler, and the bulk import
-// path all funnel through here.
-func UpsertReturningID(
-    ctx context.Context, q *db.Queries,
-    libraryID uuid.UUID, raw string,
-) (uuid.UUID, error) {
-    display, normalized, err := Normalize(raw)
-    if err != nil {
-        return uuid.Nil, err
-    }
-    tag, err := q.UpsertTag(ctx, db.UpsertTagParams{
-        ID:             uuid.New(),
-        LibraryID:      libraryID,
-        DisplayName:    display,
-        NormalizedName: normalized,
-    })
-    if err != nil {
-        return uuid.Nil, err
-    }
-    return tag.ID, nil
-}
-
-// UpsertManyReturningIDs is a small wrapper used by the user-facing handler
-// when the request carries a JSON array of strings. Each input runs through
-// the same Normalize + UpsertTag path; duplicates within the same request
-// collapse to one ID (so ["Tafsir", "tafsir"] → one ID, not two).
-func UpsertManyReturningIDs(
-    ctx context.Context, tx pgx.Tx, queries *db.Queries,
-    libraryID uuid.UUID, raws []string,
-) ([]uuid.UUID, error) {
-    seen := make(map[string]uuid.UUID, len(raws))
-    out := make([]uuid.UUID, 0, len(raws))
-    for _, raw := range raws {
-        _, normalized, err := Normalize(raw)
-        if err != nil {
-            return nil, err
-        }
-        if id, ok := seen[normalized]; ok {
-            out = append(out, id)
-            continue
-        }
-        id, err := UpsertReturningID(ctx, queries.WithTx(tx), libraryID, raw)
-        if err != nil {
-            return nil, err
-        }
-        seen[normalized] = id
-        out = append(out, id)
-    }
-    return out, nil
-}
-```
-
-### 2.5 Go handler — rename with collision check (D4)
-
-```go
-// api/internal/handlers/tags/rename.go
+// api/internal/tags/normalize.go
 package tags
 
 import (
-    "context"
-    "encoding/json"
     "errors"
-    "net/http"
+    "strings"
+    "unicode"
 
-    "github.com/go-chi/chi/v5"
-    "github.com/google/uuid"
-    "github.com/jackc/pgx/v5"
-    "github.com/jackc/pgx/v5/pgxpool"
-
-    "maktaba/api/internal/db"
-    "maktaba/api/internal/tag"
+    "golang.org/x/text/unicode/norm"
+    "golang.org/x/text/cases"
+    "golang.org/x/text/language"
 )
 
-type renameReq struct {
-    DisplayName string `json:"display_name"`
+var foldCaser = cases.Fold()
+
+func NormalizeAndDisplay(raw string) (display, normalized string, err error) {
+    display = strings.TrimSpace(raw)
+    if display == "" {
+        return "", "", &ValidationError{Code: "tag-empty",
+            Message: "tag must contain non-whitespace characters"}
+    }
+    if len(display) > MaxDisplayLen*4 {  // 4 byte upper bound on UTF-8 width
+        return "", "", &ValidationError{Code: "tag-too-long",
+            Message: "tag exceeds 64 characters"}
+    }
+    if charLen(display) > MaxDisplayLen {
+        return "", "", &ValidationError{Code: "tag-too-long", ...}
+    }
+    nfc := norm.NFC.String(display)
+    normalized = foldCaser.String(nfc)
+    return nfc, normalized, nil
 }
 
-func Rename(pool *pgxpool.Pool, q *db.Queries) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        tagID, err := uuid.Parse(chi.URLParam(r, "tagID"))
-        if err != nil {
-            jsonErr(w, http.StatusBadRequest, "bad-id", "invalid tag id")
-            return
-        }
-        var req renameReq
-        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-            jsonErr(w, http.StatusBadRequest, "bad-json", err.Error())
-            return
-        }
-        display, normalized, err := tag.Normalize(req.DisplayName)
-        if err != nil {
-            switch {
-            case errors.Is(err, tag.ErrEmptyTagName):
-                jsonErr(w, http.StatusUnprocessableEntity, "tag-name-empty",
-                    "tag name must be non-empty")
-            case errors.Is(err, tag.ErrTagNameTooLong):
-                jsonErr(w, http.StatusUnprocessableEntity, "tag-name-too-long",
-                    "tag name exceeds 256 characters")
-            default:
-                jsonErr(w, http.StatusBadRequest, "bad-name", err.Error())
-            }
-            return
-        }
-
-        if err := renameInTxn(r.Context(), pool, q, tagID, display, normalized, w); err != nil {
-            // Errors already written by renameInTxn for the user-visible cases.
-            return
-        }
-    }
+func charLen(s string) int {
+    n := 0
+    for range s { n++ }
+    return n
 }
+```
 
-func renameInTxn(ctx context.Context, pool *pgxpool.Pool, q *db.Queries,
-    tagID uuid.UUID, display, normalized string, w http.ResponseWriter) error {
+### 4.2 Python — `normalize`
 
-    tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
-    if err != nil {
-        jsonErr(w, http.StatusInternalServerError, "txn-begin", err.Error())
-        return err
+```python
+# pipeline/src/maktaba_pipeline/tags/normalize.py
+import unicodedata
+
+
+MAX_DISPLAY_LEN = 64
+
+
+class TagValidationError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+def normalize_and_display(raw: str) -> tuple[str, str]:
+    display = raw.strip()
+    if not display:
+        raise TagValidationError("tag-empty",
+            "tag must contain non-whitespace characters")
+    if len(display) > MAX_DISPLAY_LEN:
+        raise TagValidationError("tag-too-long",
+            "tag exceeds 64 characters")
+    nfc = unicodedata.normalize("NFC", display)
+    normalized = nfc.casefold()
+    return nfc, normalized
+```
+
+### 4.3 Go — `UpsertTag` helper
+
+```go
+func UpsertTag(ctx context.Context, q *db.Queries, raw string) (UpsertResult, error) {
+    display, norm, err := NormalizeAndDisplay(raw)
+    if err != nil { return UpsertResult{}, err }
+
+    id := uuid.New()
+    res, err := q.InsertTagOnConflictNothing(ctx, db.InsertTagOnConflictNothingParams{
+        ID: id, DisplayName: display, NormalizedName: norm,
+    })
+    if err == nil {
+        return UpsertResult{ID: res, DisplayName: display, Outcome: "inserted"}, nil
     }
-    defer tx.Rollback(ctx) //nolint:errcheck
-
-    qtx := q.WithTx(tx)
-
-    // Look up the tag (and its library) under FOR UPDATE so a parallel
-    // rename can't sneak between the collision check and the write.
-    cur, err := qtx.GetTag(ctx, tagID) // FOR UPDATE clause added in sqlc query annotation
-    if errors.Is(err, pgx.ErrNoRows) {
-        jsonErr(w, http.StatusNotFound, "tag-not-found", "")
-        return err
+    if !errors.Is(err, pgx.ErrNoRows) {
+        return UpsertResult{}, err
     }
-    if err != nil {
-        jsonErr(w, http.StatusInternalServerError, "lookup", err.Error())
-        return err
-    }
+    existing, err := q.GetTagByNormalized(ctx, norm)
+    if err != nil { return UpsertResult{}, err }
+    return UpsertResult{
+        ID: existing.ID, DisplayName: existing.DisplayName, Outcome: "reused",
+    }, nil
+}
+```
 
-    // No-op rename (same normalized name) — just update display_name.
-    if cur.NormalizedName == normalized {
-        out, err := qtx.RenameTag(ctx, db.RenameTagParams{
-            ID:             tagID,
-            DisplayName:    display,
-            NormalizedName: normalized,
+### 4.4 Go — `RenameTag` helper
+
+```go
+func RenameTag(ctx context.Context, q *db.Queries, id uuid.UUID, raw string) error {
+    display, newNorm, err := NormalizeAndDisplay(raw)
+    if err != nil { return err }
+
+    cur, err := q.GetTagByID(ctx, id)
+    if err != nil { return err }
+    if cur.NormalizedName == newNorm {
+        return q.RenameTag(ctx, db.RenameTagParams{
+            ID: id, DisplayName: display, NormalizedName: newNorm,
         })
-        if err != nil {
-            jsonErr(w, http.StatusInternalServerError, "rename", err.Error())
-            return err
-        }
-        if err := tx.Commit(ctx); err != nil {
-            jsonErr(w, http.StatusInternalServerError, "commit", err.Error())
-            return err
-        }
-        writeJSON(w, 200, out)
-        return nil
     }
-
-    // D4: collision check.
-    existing, err := qtx.GetTagByNormalizedName(ctx, db.GetTagByNormalizedNameParams{
-        LibraryID: cur.LibraryID, NormalizedName: normalized,
-    })
-    if err == nil && existing.ID != tagID {
-        body := map[string]any{
-            "type":            "tag-name-exists",
-            "title":           "Tag with that normalized name already exists",
-            "existing_tag_id": existing.ID,
-            "suggestion":      "merge",
-        }
-        w.Header().Set("content-type", "application/problem+json")
-        w.WriteHeader(http.StatusConflict)
-        _ = json.NewEncoder(w).Encode(body)
-        return errors.New("collision")
+    other, err := q.GetTagByNormalized(ctx, newNorm)
+    if err == nil && other.ID != id {
+        return &ConflictError{Code: "tag-name-exists", ConflictID: other.ID}
     }
-    if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-        jsonErr(w, http.StatusInternalServerError, "collision-check", err.Error())
+    if !errors.Is(err, pgx.ErrNoRows) {
         return err
     }
-
-    out, err := qtx.RenameTag(ctx, db.RenameTagParams{
-        ID:             tagID,
-        DisplayName:    display,
-        NormalizedName: normalized,
-    })
-    if err != nil {
-        jsonErr(w, http.StatusInternalServerError, "rename", err.Error())
-        return err
-    }
-    if err := tx.Commit(ctx); err != nil {
-        jsonErr(w, http.StatusInternalServerError, "commit", err.Error())
-        return err
-    }
-    writeJSON(w, 200, out)
-    return nil
-}
-
-func jsonErr(w http.ResponseWriter, code int, kind, msg string) {
-    w.Header().Set("content-type", "application/problem+json")
-    w.WriteHeader(code)
-    _ = json.NewEncoder(w).Encode(map[string]string{
-        "type": kind, "title": http.StatusText(code), "detail": msg,
+    return q.RenameTag(ctx, db.RenameTagParams{
+        ID: id, DisplayName: display, NormalizedName: newNorm,
     })
 }
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-    w.Header().Set("content-type", "application/json")
-    w.WriteHeader(code)
-    _ = json.NewEncoder(w).Encode(v)
-}
 ```
 
-### 2.6 Router wiring
+### 4.5 `tags-renormalize` CLI
 
-```go
-r.Route("/api", func(r chi.Router) {
-    r.Get("/libraries/{libraryID}/tags", tags.List(queries))
-    r.Post("/libraries/{libraryID}/tags", tags.Create(pool, queries))
-    r.Patch("/tags/{tagID}", tags.Rename(pool, queries))
-    r.Delete("/tags/{tagID}", tags.Delete(queries))
-})
+```python
+# pipeline/src/maktaba_pipeline/cli/tags.py — subcommand
+@click.command("tags-renormalize")
+def tags_renormalize():
+    """Walk every tag; recompute normalized_name with NFC+casefold; UPDATE
+    rows whose stored normalized_name differs. Idempotent."""
+    rows = db.fetch("SELECT id, display_name, normalized_name FROM tags")
+    for r in rows:
+        _, want = normalize_and_display(r["display_name"])
+        if want != r["normalized_name"]:
+            try:
+                db.execute(
+                    "UPDATE tags SET normalized_name=$1, updated_at=now() WHERE id=$2",
+                    want, r["id"],
+                )
+            except UniqueViolation:
+                # collision with another row — flag for manual merge
+                log.warning("renormalize_collision id=%s want=%s", r["id"], want)
 ```
 
----
+## 5. Test plan
 
-## 3. Code scaffolding — file-by-file checklist
+### 5.1 Cross-language parity (`shared/db/test_fixtures/tags_normalize/cases.json`)
 
-| Order | File | Symbols introduced | Tests gating |
-|-------|------|--------------------|--------------|
-| 1 | `shared/db/migrations/0043_tags_normalize.sql` | display_name + normalized_name + library_id, unique index | `TestMigrationAddsNormalizedColumns` |
-| 2 | `api/internal/tag/normalize.go` | `Normalize`, `ErrEmptyTagName`, `ErrTagNameTooLong` | `TestNormalizeArabicNFC`, `TestNormalizeCasefold`, `TestNormalizeRejectsEmpty` |
-| 3 | `api/internal/db/queries/tags.sql` | sqlc queries listed in §2.3 | sqlc generation smoke test |
-| 4 | `api/internal/tag/upsert.go` | `UpsertReturningID`, `UpsertManyReturningIDs` | `TestUpsertReturnsExistingIDOnConflict` |
-| 5 | `api/internal/handlers/tags/create.go` | `Create` handler | `TestCreateTagHappyPath`, `TestCreateTagDuplicateReturnsExisting` |
-| 6 | `api/internal/handlers/tags/rename.go` | `Rename` handler, `renameInTxn` | `TestRenameToCollidingName409`, `TestRenameSameNormalizedNoOp` |
-| 7 | `api/internal/handlers/tags/list.go` | `List`, `Delete` handlers | `TestListByLibrary` |
-| 8 | `api/internal/handlers/router.go` (extend) | route registrations | route table test |
-| 9 | `api/internal/tag/normalize_test.go` | unit tests | (n/a) |
-| 10 | `api/internal/handlers/tags/tags_test.go` | integration tests | (n/a) |
-
----
-
-## 4. Test cases (keyed to story ACs)
-
-### 4.1 `TestMigrationAddsNormalizedColumns` — AC-1
-
-```go
-func TestMigrationAddsNormalizedColumns(t *testing.T) {
-    db := freshDB(t)
-    seedLegacyTag(t, db, lib, "Tafsir")
-    applyMigration(t, db, "0043_tags_normalize.sql")
-
-    // Old `name` column gone.
-    var has bool
-    db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_name='tags' AND column_name='name')`).Scan(&has)
-    assert.False(t, has)
-
-    // New columns present, NOT NULL.
-    var displayNullable, normNullable string
-    db.QueryRow(ctx, `SELECT is_nullable FROM information_schema.columns
-        WHERE table_name='tags' AND column_name='display_name'`).Scan(&displayNullable)
-    db.QueryRow(ctx, `SELECT is_nullable FROM information_schema.columns
-        WHERE table_name='tags' AND column_name='normalized_name'`).Scan(&normNullable)
-    assert.Equal(t, "NO", displayNullable)
-    assert.Equal(t, "NO", normNullable)
-
-    // Backfill happened.
-    var display, normalized string
-    db.QueryRow(ctx, "SELECT display_name, normalized_name FROM tags WHERE library_id=$1",
-        lib).Scan(&display, &normalized)
-    assert.Equal(t, "Tafsir", display)
-    assert.Equal(t, "tafsir", normalized)
-
-    // Unique index exists.
-    var idxExists bool
-    db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_indexes
-        WHERE indexname='tags_library_normalized_name')`).Scan(&idxExists)
-    assert.True(t, idxExists)
-}
+```json
+[
+  {"in": "  Tafsir  ",   "display": "Tafsir",   "norm": "tafsir"},
+  {"in": "Tafsir",       "display": "Tafsir",   "norm": "tafsir"},
+  {"in": "tafsir",       "display": "tafsir",   "norm": "tafsir"},
+  {"in": "TAFSIR",       "display": "TAFSIR",   "norm": "tafsir"},
+  {"in": "حديث",        "display": "حديث",     "norm": "حديث"},
+  {"in": "حَدِيث",       "display": "حَدِيث",   "norm": "حَدِيث"},   // NFC of NFD diacritics
+  {"in": "Türk",         "display": "Türk",     "norm": "türk"},
+  {"in": "İSTANBUL",     "display": "İSTANBUL", "norm": "i̇stanbul"}, // Turkish-i
+  {"in": "ß",            "display": "ß",        "norm": "ss"},        // German sharp-s casefold
+  {"in": "finance/2024", "display": "finance/2024", "norm": "finance/2024"},
+  {"in": "  ",           "error": "tag-empty"},
+  {"in": "x"*65,         "error": "tag-too-long"}
+]
 ```
 
-### 4.2 `TestNormalize_*` — AC-2 (Arabic + casefold fixtures)
+The Go and Python tests both load this file and assert identical output.
+Where the two normalizers diverge (e.g., locale-specific Turkish-i),
+the test pins what the platform actually produces — discovered drift
+becomes a visible CI failure, not a silent inconsistency.
 
-```go
-func TestNormalize_Trim(t *testing.T) {
-    d, n, err := tag.Normalize("  Tafsir  ")
-    require.NoError(t, err)
-    assert.Equal(t, "Tafsir", d)
-    assert.Equal(t, "tafsir", n)
-}
+### 5.2 Go tests (`normalize_test.go`, `store_test.go`)
 
-func TestNormalize_ArabicNFC(t *testing.T) {
-    // Decomposed: Alef + Hamza-above (U+0627 U+0654)
-    decomposed := "أ" + "ل"
-    // NFC composed: Alef-with-Hamza-above (U+0623) + Lam
-    composed := "أل"
-    d, n, err := tag.Normalize(decomposed)
-    require.NoError(t, err)
-    assert.Equal(t, composed, d)
-    assert.Equal(t, composed, n) // Arabic has no case → fold is identity
-}
+| Test | What it pins |
+|---|---|
+| `TestNormalize_FixtureParity` | Loads `cases.json`; for each entry, asserts `display` and `norm` match; for entries with `"error"`, asserts the error code. |
+| `TestUpsertTag_FirstInsertReturnsInserted` | Empty table → returns `outcome="inserted"`. |
+| `TestUpsertTag_SecondInsertReturnsReused` | Two calls with `"Tafsir"` → second returns `outcome="reused"`, same id; one row in DB. AC-3. |
+| `TestUpsertTag_NormalizeEqualReusesIgnoringCasing` | First `"Tafsir"`, second `"tafsir"` → second reused; `display_name` unchanged ("Tafsir"). AC-2 + AC-3. |
+| `TestRename_NoCollisionUpdates` | Rename existing tag to a unique new name → 200; row updated. |
+| `TestRename_CollisionReturns409` | Rename to an existing tag's normalized form → ConflictError; no DB write. AC-4. |
+| `TestRename_SameNormalizedAllowsCaseChange` | Existing display "Tafsir"; PATCH "TAFSIR" → 200; display updated; `normalized_name` unchanged. |
+| `TestUpsertTag_EmptyRejected` | `""` or `"   "` → ValidationError `tag-empty`. |
+| `TestUpsertTag_TooLong` | 65-char string → ValidationError `tag-too-long`. |
+| `TestUpsertTag_SlashAllowed` | `"finance/2024"` accepted; the slash is treated as content (architecture flat tags only). |
 
-func TestNormalize_TurkishDottedI(t *testing.T) {
-    d, n, err := tag.Normalize("İSTANBUL")
-    require.NoError(t, err)
-    // Casefold: İ → i + combining dot above; istanbul lowercased keeps the dot.
-    // The point is: equal under casefold, distinct from naive ToLower.
-    assert.Equal(t, "İSTANBUL", d)
-    assert.Equal(t, "i̇stanbul", n) // U+0307 combining dot above
-}
+### 5.3 Migration tests
 
-func TestNormalize_RejectsEmpty(t *testing.T) {
-    _, _, err := tag.Normalize("")
-    assert.ErrorIs(t, err, tag.ErrEmptyTagName)
-    _, _, err = tag.Normalize("   \t\n")
-    assert.ErrorIs(t, err, tag.ErrEmptyTagName)
-}
+`pipeline/tests/db/test_tags_migration.py`:
 
-func TestNormalize_AllowsSlash(t *testing.T) {
-    d, n, err := tag.Normalize("finance/2024")
-    require.NoError(t, err)
-    assert.Equal(t, "finance/2024", d)
-    assert.Equal(t, "finance/2024", n)
-}
-```
+| Test | What it pins |
+|---|---|
+| `test_old_name_column_dropped` | After migration, `name` column is gone; `display_name`/`normalized_name` exist. |
+| `test_existing_rows_backfilled` | Pre-migration `name='Foo'` → post-migration `display_name='Foo'`, `normalized_name='foo'`. |
+| `test_unique_index_present` | `pg_indexes` shows `tags_normalized_name` unique. |
+| `test_check_constraints_reject_empty_and_too_long` | INSERT with `display_name=''` or 65-char → CHECK violation. |
 
-### 4.3 `TestUpsertReturnsExistingIDOnConflict` — AC-3
+### 5.4 `tags-renormalize` test
 
-```go
-func TestUpsertReturnsExistingIDOnConflict(t *testing.T) {
-    db := freshDB(t)
-    q := db.Queries(db)
+| Test | What it pins |
+|---|---|
+| `test_renormalize_idempotent` | Run twice; second run logs "0 updates" and no DB writes. |
+| `test_renormalize_handles_collision` | Synthesize two rows whose proper NFC+casefold collide (e.g., German ß and ss); the CLI logs `renormalize_collision`; both rows preserved (no destructive action). |
 
-    id1, err := tag.UpsertReturningID(ctx, q, lib, "Tafsir")
-    require.NoError(t, err)
+## 6. Edge cases — handling table
 
-    // Second insert with normalize-equal input returns the same id.
-    id2, err := tag.UpsertReturningID(ctx, q, lib, "  TAFSIR  ")
-    require.NoError(t, err)
-    assert.Equal(t, id1, id2)
+| Case | Behaviour | Where it's pinned |
+|---|---|---|
+| Whitespace-only input | 422 `tag-empty`. | `TestUpsertTag_EmptyRejected` |
+| Slash in name | Accepted; flat string in v1 (no hierarchy). | `TestUpsertTag_SlashAllowed` |
+| Arabic with diacritics in NFD | `unicodedata.normalize("NFC", ...)` recombines; `casefold()` is a no-op for Arabic; final norm matches the same word in NFC. | `cases.json` `"حَدِيث"` entry |
+| Turkish dotless-i | Casefold is locale-independent in both Go's `cases.Fold()` and Python's `casefold()`; the visible result includes the dot-above sequence (`İ` → `i̇`). The test pins this exactly. | `cases.json` Turkish entry |
+| German sharp-s | Casefold expands `ß` → `ss`. Pinned. | `cases.json` |
+| Rename collision | 409 `tag-name-exists` with `conflict_tag_id` payload; UI surfaces "Merge with existing?". | `TestRename_CollisionReturns409` |
+| Display-name change without normalize change | UPDATE only `display_name`; `normalized_name` unchanged → no unique-index check. | `TestRename_SameNormalizedAllowsCaseChange` |
+| Pre-migration `name` had whitespace edges | TRIMmed in the migration; round-trip lossless. | `test_existing_rows_backfilled` (extended) |
 
-    // display_name is NOT overwritten (D3): the first writer wins.
-    row, _ := q.GetTag(ctx, id1)
-    assert.Equal(t, "Tafsir", row.DisplayName)
-    assert.Equal(t, "tafsir", row.NormalizedName)
-}
-```
+## 7. Configuration
 
-### 4.4 `TestRenameToCollidingName409` — AC-4
+| Key | Default | Effect |
+|---|---|---|
+| `MaxDisplayLen` (constant) | 64 | Length cap; matches schema CHECK. |
 
-```go
-func TestRenameToCollidingNameReturns409WithSuggestion(t *testing.T) {
-    api, db := setup(t)
-    a := mkTag(t, db, lib, "Tafsir")
-    b := mkTag(t, db, lib, "Hadith")
+## 8. Dependencies
 
-    resp := api.PATCH(fmt.Sprintf("/api/tags/%s", b),
-        map[string]string{"display_name": "TAFSIR"}).
-        ExpectStatus(409).JSON()
+| Dep | Source | Why |
+|---|---|---|
+| `golang.org/x/text/unicode/norm` | stdlib-adjacent | NFC. |
+| `golang.org/x/text/cases` | stdlib-adjacent | Unicode casefold. |
+| Python `unicodedata` | stdlib | NFC + casefold. |
 
-    assert.Equal(t, "tag-name-exists", resp["type"])
-    assert.Equal(t, a.String(), resp["existing_tag_id"])
-    assert.Equal(t, "merge", resp["suggestion"])
+## 9. Acceptance checklist
 
-    // No mutation: b still has its old name.
-    var disp string
-    db.QueryRow(ctx, "SELECT display_name FROM tags WHERE id=$1", b).Scan(&disp)
-    assert.Equal(t, "Hadith", disp)
-}
+**Migration**
+- [ ] `0040_tags_normalize.sql` adds `display_name`, `normalized_name`, drops `name`, adds CHECKs, adds UNIQUE on `normalized_name`. Existing rows backfilled.
 
-func TestRenameSameNormalizedFormUpdatesDisplay(t *testing.T) {
-    api, db := setup(t)
-    a := mkTag(t, db, lib, "Tafsir")
-    api.PATCH(fmt.Sprintf("/api/tags/%s", a),
-        map[string]string{"display_name": "TAFSIR"}).
-        ExpectStatus(200)
+**Code**
+- [ ] `api/internal/tags/normalize.go` and `pipeline/src/maktaba_pipeline/tags/normalize.py` produce identical output for the fixture cases.
+- [ ] `tags-renormalize` CLI subcommand exists and is idempotent.
 
-    var disp, norm string
-    db.QueryRow(ctx, "SELECT display_name, normalized_name FROM tags WHERE id=$1",
-        a).Scan(&disp, &norm)
-    assert.Equal(t, "TAFSIR", disp)
-    assert.Equal(t, "tafsir", norm)
-}
+**Behaviour (story acceptance criteria)**
+- [ ] AC-1: schema migration applies cleanly.
+- [ ] AC-2: insert of `"  Tafsir  "` stores `"Tafsir"` and `"tafsir"`.
+- [ ] AC-3: re-insert `"tafsir"` reuses the row; display unchanged.
+- [ ] AC-4: rename collision returns 409 with the conflicting id.
 
-func TestRenamePreservesVideoLinks(t *testing.T) {
-    api, db := setup(t)
-    a := mkTag(t, db, lib, "Tafsir")
-    for _, v := range mkVideos(t, db, lib, 5) {
-        attachTag(t, db, v, a)
-    }
-    api.PATCH(fmt.Sprintf("/api/tags/%s", a),
-        map[string]string{"display_name": "Tafseer"}).
-        ExpectStatus(200)
+**Observability**
+- [ ] Counter `tags_upsert_total{outcome=inserted|reused}`.
+- [ ] Counter `tags_rename_total{outcome=ok|collision}`.
+- [ ] Counter `tags_renormalize_collision_total` (incremented by the CLI).
 
-    var n int
-    db.QueryRow(ctx, "SELECT COUNT(*) FROM video_tags WHERE tag_id=$1", a).Scan(&n)
-    assert.Equal(t, 5, n)
-}
-```
-
-### 4.5 `TestCreateTwoNormalizeEqualTagsYieldsOneRow` — story integration
-
-```go
-func TestTwoNormalizeEqualTagsYieldOneRow(t *testing.T) {
-    api, db := setup(t)
-    api.POST(fmt.Sprintf("/api/libraries/%s/tags", lib),
-        map[string]string{"display_name": "Tafsir"}).ExpectStatus(201)
-    api.POST(fmt.Sprintf("/api/libraries/%s/tags", lib),
-        map[string]string{"display_name": "tafsir"}).ExpectStatus(200) // existing returned
-
-    var n int
-    db.QueryRow(ctx, "SELECT COUNT(*) FROM tags WHERE library_id=$1", lib).Scan(&n)
-    assert.Equal(t, 1, n)
-}
-```
-
-### 4.6 `TestEmptyTagReturns422` — story edge
-
-```go
-func TestEmptyTagReturns422(t *testing.T) {
-    api, _ := setup(t)
-    for _, in := range []string{"", "   ", "\t\n"} {
-        resp := api.POST(fmt.Sprintf("/api/libraries/%s/tags", lib),
-            map[string]string{"display_name": in}).
-            ExpectStatus(422).JSON()
-        assert.Equal(t, "tag-name-empty", resp["type"])
-    }
-}
-
-func TestSlashAllowedInTagName(t *testing.T) {
-    api, db := setup(t)
-    api.POST(fmt.Sprintf("/api/libraries/%s/tags", lib),
-        map[string]string{"display_name": "finance/2024"}).ExpectStatus(201)
-    var disp string
-    db.QueryRow(ctx, "SELECT display_name FROM tags WHERE library_id=$1", lib).Scan(&disp)
-    assert.Equal(t, "finance/2024", disp)
-}
-```
-
----
-
-## 5. Edge cases and how the plan handles each
-
-| #   | Edge case | Handled by |
-|-----|-----------|------------|
-| E1  | **Empty / whitespace-only tag.** `Normalize` returns `ErrEmptyTagName`; handler returns `422 type=tag-name-empty` before any DB write. | D5 + `TestEmptyTagReturns422`. |
-| E2  | **Tag with slash** (`finance/2024`). Allowed in v1; treated as a flat string. Hierarchical splitting is a v1.1 concern. | D5 + `TestSlashAllowedInTagName`. |
-| E3  | **Decomposed Arabic** (NFD form). NFC compose runs first, so `أ` (decomposed `ا + ٔ`) becomes `أ` (precomposed) before casefold. Two clients submitting decomposed vs composed forms hit the same row. | D2 + `TestNormalize_ArabicNFC`. |
-| E4  | **Turkish dotless-i.** `cases.Fold` produces a casefold form that equates `İ` and `I + ̇` correctly; naive `ToLower` would fail. | D2 + `TestNormalize_TurkishDottedI`. |
-| E5  | **Two normalize-equal inserts in parallel** (race). The unique index `(library_id, normalized_name)` + `ON CONFLICT … DO UPDATE SET id = id` guarantees both calls return the same `id` without error. | D3 + `TestUpsertReturningIDConcurrent`. |
-| E6  | **Rename to a name that collides with another tag.** Pre-check inside the rename transaction returns `409 type=tag-name-exists` with `existing_tag_id` for the UI to offer merge. | D4 + `TestRenameToCollidingName409`. |
-| E7  | **Rename to the same normalized form** (just a casing change). Skips the collision check; updates display_name; normalized_name is rewritten to the new (identical) value. | §2.5 same-normalized branch + `TestRenameSameNormalizedFormUpdatesDisplay`. |
-| E8  | **Tag with > 256 runes.** `Normalize` returns `ErrTagNameTooLong`; handler returns `422 type=tag-name-too-long`. The DB CHECK is a backstop. | §2.2 + DB CHECK. |
-| E9  | **Library deletion cascades to tags.** `tags.library_id … ON DELETE CASCADE` and `video_tags` cascading via `tag_id` ensure no orphans. | Schema. |
-| E10 | **Auto-categorization writers and user inserts collide.** Both go through `UpsertReturningID`; the conflict resolution is `DO UPDATE SET id = id`, so the first writer's display_name wins regardless of which path arrives first. | D3 + integration test in 9.8/9.9/9.10. |
-| E11 | **Backfill drops orphan tags.** A pre-existing `tags` row with no `video_tags` references is deleted by the migration. This is intentional — orphan tags are unreachable in v0. The migration logs the count. | §2.1 backfill SQL. |
-
----
-
-## 6. Acceptance checklist
-
-- [ ] **A1** Migration `shared/db/migrations/0043_tags_normalize.sql` runs the literal sequence from the story (with `library_id` added per D6): `ADD COLUMN display_name`, `ADD COLUMN normalized_name`, `UPDATE tags SET ...`, `SET NOT NULL` on both, `DROP COLUMN name`, `CREATE UNIQUE INDEX tags_library_normalized_name`. (`TestMigrationAddsNormalizedColumns`)
-- [ ] **A2** `tag.Normalize` trims, requires non-empty after trim, NFC-composes, casefolds, and bounds at 256 runes. Errors are `ErrEmptyTagName` and `ErrTagNameTooLong`. (`TestNormalize_*`)
-- [ ] **A3** `tag.UpsertReturningID` is the single funnel for all tag inserts (user-facing handler, auto-categorization stories 9.8/9.9/9.10, bulk import). Implementation uses `INSERT … ON CONFLICT (library_id, normalized_name) DO UPDATE SET id = tags.id RETURNING id`. (`TestUpsertReturnsExistingIDOnConflict`)
-- [ ] **A4** Inserting `"  Tafsir  "` stores `display_name="Tafsir"` and `normalized_name="tafsir"`. (`TestNormalize_Trim` + `TestCreateTagHappyPath`)
-- [ ] **A5** Inserting `"tafsir"` after `"Tafsir"` returns the same id; no new row; `display_name` is **not** overwritten. (`TestUpsertReturnsExistingIDOnConflict`)
-- [ ] **A6** PATCH rename to a colliding normalized form returns `409 type=tag-name-exists` with `existing_tag_id` and `suggestion=merge`. The source tag is **not** mutated. (`TestRenameToCollidingNameReturns409WithSuggestion`)
-- [ ] **A7** PATCH rename that does NOT collide preserves the tag id and all `video_tags` rows; just updates `display_name` and `normalized_name`. (`TestRenamePreservesVideoLinks`)
-- [ ] **A8** PATCH rename to the same normalized form (casing-only change) updates `display_name` only; no collision check fires. (`TestRenameSameNormalizedFormUpdatesDisplay`)
-- [ ] **A9** Empty / whitespace-only tag input returns `422 type=tag-name-empty`. (`TestEmptyTagReturns422`)
-- [ ] **A10** Slash in tag name is allowed and stored as a flat string in v1. (`TestSlashAllowedInTagName`)
-- [ ] **A11** Per-library scoping: the same normalized name in two different libraries is two distinct rows; no cross-library collision. (`TestSameNameTwoLibrariesYieldsTwoRows`)
-- [ ] **A12** Concurrent normalize-equal inserts both return the same id without error (race-safe). (`TestUpsertReturningIDConcurrent`)
+**Docs**
+- [ ] `specs/epics/09-library-management/README.md` ticks story 9.12.
+- [ ] API reference documents the normalization rule and the `409 tag-name-exists` shape.

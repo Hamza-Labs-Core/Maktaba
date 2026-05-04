@@ -1,742 +1,470 @@
-# Plan 9.15 — Library deletion (catalog vs file purge) — implementation
+# Implementation Plan — Story 9.15 Library Deletion
 
-> Implementation plan for [story-09-15-library-deletion.md](story-09-15-library-deletion.md).
-> Self-contained: a developer should be able to ship the story from this
-> document alone. Cross-links: builds on the `DELETE /api/libraries/{id}`
-> route bound by Epic 7 Story 7.3 AC-4; calls the Streaming Service's
-> `CloseSession` gRPC; writes audit rows in the canonical `audit_log`
-> table whose schema is owned by [Plan 9.17](plan-09-17-library-audit.md).
+> Companion to [story-09-15-library-deletion.md](story-09-15-library-deletion.md).
+> The story states *what* and *why*; this plan states *how*.
+> Builds on Stories 9.1 (settings/cascades), 9.5 (ignore globs for purge),
+> 9.17 (audit), and the streaming-session contract from Epic 8.
 
----
+## 0. Scope and placement
 
-## 0. Decisions and departures from `architecture.md` and the story
+| Concern | Decision |
+|---|---|
+| HTTP route | `DELETE /api/libraries/{id}` (Epic 7 Story 7.3 binds the URL; this plan implements the body). Query parameters: `?purge` (bool), `?confirm=<library_name>` (required when purge), `?dry_run` (bool). |
+| Catalog deletion | One transaction; FK cascades from `libraries.id`. The cascade reach is enumerated in §3.2 below. |
+| Streaming-session close | Before tx, gRPC call to Streaming Service: `CloseSessionsForLibrary(library_id)` (Epic 8 Story 8.7's contract). The cascade only reaches `streaming_sessions` *through* `videos.library_id`; closing first prevents in-flight 5xx. |
+| Purge | After a successful catalog tx, walk each root and unlink files matching `supported_video_exts` AND not in `ignore_globs`. Sidecar `.maktaba/` dirs at each root are also unlinked. Purge runs *outside* the catalog tx — files are best-effort. |
+| Atomicity | Catalog deletion is atomic; purge is not. On unlink error, the response is `207 Multi-Status` with the failed paths; the catalog stays deleted. |
+| Dry run | `?dry_run=true` returns the list of would-be-deleted files + the cascade row counts; *nothing* is deleted. |
+| Audit | `audit_log` row with `category='library', event='delete'` (always), plus `event='purge'` (when purge runs), and individual `event='purge-failed'` rows for unlinks that errored. |
+| Out of scope | The `/api/libraries/{id}` route auth (Epic 10 Story 10.x); the Streaming gRPC stub (Epic 8 owns); the soft-delete vs. hard-delete decision (this story does hard-delete per AC). |
 
-| #  | Decision | Source | Rationale |
-|----|----------|--------|-----------|
-| D1 | **Two-phase delete: gRPC `CloseSession` for every active streaming session, THEN one Postgres transaction that drops the `libraries` row and cascades to all 13 dependent tables.** No SQL is run before sessions are closed. | AC-1 explicitly orders "closing each first via gRPC", then "FK cascades remove videos, ..., streaming_sessions". | Closing inside the same Postgres transaction would block the catalog xact on a network round-trip per session and leave a dangling streaming socket if the close fails after commit. Doing closes first means a failure aborts the whole operation cleanly without touching the DB. |
-| D2 | **Catalog deletion uses ON DELETE CASCADE, not application-level deletes.** The handler issues a single `DELETE FROM libraries WHERE id = $1` and trusts FK constraints to ripple through `videos → media_info, audio_tracks, transcripts, transcript_segments, chapters, subtitle_files, playback_state, collection_items, video_tags, library_topics, library_sweeps, media_features, streaming_sessions`. | AC-1 enumerates the cascade targets; the FKs are owned by their respective epics. | Issuing 13 explicit DELETEs would be 13× slower (one round-trip each) and would race against any new inserts (e.g., a sweep finishing mid-delete). One CASCADE inside one xact is atomic by definition; Postgres holds the right locks automatically. |
-| D3 | **File purge runs AFTER the catalog xact commits, not inside it.** A catalog success with partial unlink failures returns `207 Multi-Status` and lists the failed paths; the catalog is **never** rolled back to recover files. | AC-3: "the catalog is *not* rolled back. The user must manually clean the leftover files." | An unlink failure mid-purge leaves the filesystem in a half-state regardless. Rolling back the catalog would re-create rows for files that may already be gone — worse than the leftover state. The 207 response gives the operator the exact list to clean up by hand. |
-| D4 | **`?confirm=<library_name>` is required when `?purge=true`** and is matched **exactly** (case-sensitive, no trim) against `libraries.name`. Mismatch returns `422 confirm-mismatch`. `?confirm` without `?purge=true` is ignored. | Epic 7 Story 7.3 AC-4 binds the confirm token; this story owns the matching rule. | Library names are user-controlled but visible in the UI prompt that produced the token; case-sensitivity prevents a user who skimmed "MyLibrary" vs "mylibrary" from purging the wrong root. The trim policy matches Postgres comparison semantics so what the operator typed is what we delete. |
-| D5 | **`?dry_run=true` enumerates files without unlinking and skips the catalog delete entirely.** The handler returns 200 with `{file_count, freed_bytes, sample_paths[:50]}`. No audit row is written for dry-run. | AC test case: "dry-run mode (?dry_run=true) returns the list of files that would be deleted without touching anything." | A real-money operation needs a preview. Skipping the audit row keeps dry-runs lightweight and avoids polluting the trail; the audit row only describes outcomes that actually changed state. |
-| D6 | **Audit row is written best-effort AFTER the catalog xact** with `category='library', event='library.deleted'` (or `library.purged`). A failed audit write does **not** fail the deletion and does **not** roll anything back; an `audit_write_failed_total` counter increments. | Story 9.17 edge case: "audit is best-effort, never blocking". | A successful delete that can't write its audit row is still a successful delete. Surfacing the metric lets ops detect audit outages while keeping user-visible behaviour stable. |
-
-If D1 is rejected (close streams inside the DB xact): a 30s gRPC timeout per session would hold an `ACCESS EXCLUSIVE` table lock on `streaming_sessions` for the duration, blocking every running playback. Operationally toxic.
-
-If D3 is rejected (rollback catalog on unlink failure): the catalog and the filesystem still diverge whenever an unlink fails after the catalog xact commits but before purge completes (crash, OOM-kill, network partition). The 207 contract is the only honest answer.
-
----
-
-## 1. Architecture diagram — delete flow
+## 1. Architecture diagram
 
 ```
-   client                 API (Go)               Streaming (gRPC)        Postgres            Filesystem
-     │                       │                          │                    │                    │
-     │ DELETE /api/...       │                          │                    │                    │
-     │  ?purge=true&...      │                          │                    │                    │
-     ├──────────────────────▶│                          │                    │                    │
-     │                       │ 1. validate confirm      │                    │                    │
-     │                       │    name (D4)             │                    │                    │
-     │                       │ 2. SELECT roots,name     │                    │                    │
-     │                       ├─────────────────────────────────────────────▶ │                    │
-     │                       │                          │                    │                    │
-     │                       │ 3. SELECT active session │                    │                    │
-     │                       │    IDs for library       │                    │                    │
-     │                       ├─────────────────────────────────────────────▶ │                    │
-     │                       │                          │                    │                    │
-     │                       │ 4. for each session:     │                    │                    │
-     │                       │    CloseSession(id)      │                    │                    │
-     │                       ├─────────────────────────▶│                    │                    │
-     │                       │                          │                    │                    │
-     │                       │ 5. if dry_run (D5):      │                    │                    │
-     │                       │    walk roots, return    │                    │                    │
-     │                       │    file list (no DB)     │                    │                    │
-     │                       │                          │                    │                    │
-     │                       │ 6. BEGIN; DELETE FROM    │                    │                    │
-     │                       │    libraries WHERE id=$1 │                    │                    │
-     │                       │    -> cascades (D2)      │                    │                    │
-     │                       │    COMMIT                │                    │                    │
-     │                       ├─────────────────────────────────────────────▶ │                    │
-     │                       │                          │                    │                    │
-     │                       │ 7. if ?purge=true:       │                    │                    │
-     │                       │    walk roots; unlink    │                    │                    │
-     │                       │    every supported file  │                    │                    │
-     │                       │    + .maktaba sidecars   │                    │                    │
-     │                       ├──────────────────────────────────────────────────────────────────▶│
-     │                       │                          │                    │                    │
-     │                       │ 8. INSERT audit row      │                    │                    │
-     │                       │    (best-effort, D6)     │                    │                    │
-     │                       ├─────────────────────────────────────────────▶ │                    │
-     │                       │                          │                    │                    │
-     │ 200 / 207             │                          │                    │                    │
-     │◀──────────────────────│                          │                    │                    │
+   DELETE /api/libraries/{id}?purge=true&confirm=Movies
+        ↓
+   handlers/libraries/delete.go
+      1. parse + validate query params
+      2. row = SELECT name FROM libraries WHERE id=$1 FOR UPDATE
+      3. if purge AND confirm != row.name: 422 confirm-mismatch
+      4. if not dry_run:
+           ResolveStreamingSessions(id) → close via gRPC (best-effort retry)
+      5. roots = SELECT path FROM library_roots WHERE library_id=$1
+      6. dry-run path:
+           gather catalog row counts; gather to-be-purged files
+           return 200 DryRunResponse
+      7. real path:
+           BEGIN tx
+             collect counts (logged in audit)
+             DELETE FROM libraries WHERE id=$1
+           COMMIT  (cascade reaches every dependent row)
+           audit('library', 'delete', payload={by_user, name, counts})
+           if purge:
+               for root in roots:
+                   walk root with ignore matcher
+                   if path matches supported_video_exts AND not ignored:
+                       unlink path; on error → record + audit
+                   for sidecar in [root/.maktaba]:
+                       rmtree sidecar; record errors
+               audit('library', 'purge', payload={by_user, root,
+                                                   files_deleted, freed_bytes})
+           if any unlink errors:
+               return 207 PurgeStatusResponse
+           else:
+               return 200 DeleteResponse
 ```
 
-The handler is the only writer; gRPC is the only Streaming dependency; FK cascades are the only DB-side magic.
+## 2. Implementation steps
 
----
+### 2.1 New files
 
-## 2. Detailed implementation
+| Path | Purpose |
+|---|---|
+| `api/internal/handlers/libraries/delete.go` | The handler. |
+| `api/internal/handlers/libraries/delete_test.go` | Handler tests per §6. |
+| `api/internal/libraries/purge.go` | `Purge(roots, matcher) → (filesDeleted, freedBytes, []PurgeError)`. |
+| `api/internal/libraries/streaming_close.go` | Thin wrapper around the Streaming gRPC client. |
+| `shared/db/migrations/0043_libraries_cascade_fixups.sql` | Adds any missing `ON DELETE CASCADE` clauses. |
+| `shared/db/queries/libraries_delete.sql` | sqlc input — `GetLibraryForDelete`, `CountDependents`, `DeleteLibrary`. |
 
-### 2.1 Package layout — Go (API Service)
+### 2.2 Modified files
 
-```
-api/internal/
-├── library/
-│   ├── delete_handler.go        # ServeHTTP for DELETE /api/libraries/{id}
-│   ├── delete_service.go        # orchestration: validate, close, delete, purge, audit
-│   ├── purge_walker.go          # walk roots, collect supported files + .maktaba dirs
-│   ├── streaming_client.go      # thin wrapper over Streaming gRPC CloseSession
-│   ├── audit_writer.go          # best-effort audit_log INSERT (Story 9.17)
-│   └── delete_test.go           # handler + service tests
-└── db/queries/library_delete.sql  # sqlc: SelectLibraryForDelete, SelectActiveSessions, DeleteLibrary
-```
+| Path | Change |
+|---|---|
+| `api/internal/router.go` | Wire the route. |
+| `api/internal/handlers/libraries/scan.go` | Reject scan when library is mid-delete (race). |
+| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Add `LIBRARY_DELETED = "library.deleted"`. |
+| `pipeline/src/maktaba_pipeline/watcher/supervisor.py` | Subscribe to `LIBRARY_DELETED`; stop the per-library watcher. |
+| `specs/epics/09-library-management/README.md` | Tick story 9.15. |
 
-### 2.2 Schema — no migration needed
-
-Story 9.15 owns no new tables. The delete relies on FKs that already
-exist on the dependent tables (defined by their owning epics).
-For reference, the Story 9.17 `audit_log` schema (see
-[Plan 9.17](plan-09-17-library-audit.md)) is the only table written by
-this handler beyond `libraries`.
-
-### 2.3 sqlc queries — `db/queries/library_delete.sql`
-
-```sql
--- name: SelectLibraryForDelete :one
-SELECT id, name, roots, created_at
-FROM libraries
-WHERE id = $1
-FOR UPDATE;
-
--- name: SelectActiveStreamingSessionsForLibrary :many
-SELECT s.id
-FROM streaming_sessions s
-JOIN videos v ON v.id = s.video_id
-WHERE v.library_id = $1
-  AND s.closed_at IS NULL;
-
--- name: DeleteLibraryByID :execrows
-DELETE FROM libraries
-WHERE id = $1;
-```
-
-The `FOR UPDATE` lock on the library row (taken in step 2 of the flow)
-prevents two concurrent deletions and blocks any UPDATE on the library
-row until we commit.
-
-### 2.4 `delete_handler.go` — chi handler
+### 2.3 Type definitions
 
 ```go
-package library
-
-import (
-	"encoding/json"
-	"errors"
-	"log/slog"
-	"net/http"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-)
-
-// DeleteHandler binds DELETE /api/libraries/{id}.
-type DeleteHandler struct {
-	svc *DeleteService
-	log *slog.Logger
-}
-
-func NewDeleteHandler(svc *DeleteService, log *slog.Logger) *DeleteHandler {
-	return &DeleteHandler{svc: svc, log: log}
-}
-
-func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "library-id-invalid", err.Error())
-		return
-	}
-
-	q := r.URL.Query()
-	purge, _ := strconv.ParseBool(q.Get("purge"))
-	dryRun, _ := strconv.ParseBool(q.Get("dry_run"))
-	confirm := q.Get("confirm")
-
-	req := DeleteRequest{
-		LibraryID: id,
-		Purge:     purge,
-		DryRun:    dryRun,
-		Confirm:   confirm,
-		ActorID:   actorFromContext(r.Context()),
-		IP:        clientIP(r),
-		UserAgent: r.UserAgent(),
-	}
-
-	resp, err := h.svc.Run(r.Context(), req)
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrNotFound):
-			writeProblem(w, http.StatusNotFound, "library-not-found", err.Error())
-		case errors.Is(err, ErrConfirmMismatch):
-			writeProblem(w, http.StatusUnprocessableEntity, "confirm-mismatch", err.Error())
-		case errors.Is(err, ErrPurgeWithoutConfirm):
-			writeProblem(w, http.StatusUnprocessableEntity, "purge-requires-confirm", err.Error())
-		default:
-			h.log.Error("library delete failed", "library_id", id, "err", err)
-			writeProblem(w, http.StatusInternalServerError, "library-delete-failed", err.Error())
-		}
-		return
-	}
-
-	status := http.StatusOK
-	if len(resp.UnlinkFailures) > 0 {
-		status = http.StatusMultiStatus
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(resp)
-}
-```
-
-### 2.5 `delete_service.go` — orchestration (D1, D2, D3, D5, D6)
-
-```go
-package library
-
-import (
-	"context"
-	"errors"
-	"fmt"
-	"log/slog"
-	"time"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-var (
-	ErrNotFound            = errors.New("library not found")
-	ErrConfirmMismatch     = errors.New("confirm token does not match library name")
-	ErrPurgeWithoutConfirm = errors.New("purge requires ?confirm=<library_name>")
-)
+// api/internal/handlers/libraries/delete.go
+package libraries
 
 type DeleteRequest struct {
-	LibraryID uuid.UUID
-	Purge     bool
-	DryRun    bool
-	Confirm   string
-	ActorID   *uuid.UUID
-	IP        string
-	UserAgent string
+    LibraryID uuid.UUID
+    Purge     bool
+    Confirm   string
+    DryRun    bool
+    Actor     uuid.UUID
 }
 
-type UnlinkFailure struct {
-	Path string `json:"path"`
-	Err  string `json:"error"`
+type CascadeCounts struct {
+    Videos             int64 `json:"videos"`
+    MediaInfo          int64 `json:"media_info"`
+    AudioTracks        int64 `json:"audio_tracks"`
+    Transcripts        int64 `json:"transcripts"`
+    TranscriptSegments int64 `json:"transcript_segments"`
+    Chapters           int64 `json:"chapters"`
+    SubtitleFiles      int64 `json:"subtitle_files"`
+    PlaybackState      int64 `json:"playback_state"`
+    CollectionItems    int64 `json:"collection_items"`
+    VideoTags          int64 `json:"video_tags"`
+    LibraryTopics      int64 `json:"library_topics"`
+    LibrarySweeps      int64 `json:"library_sweeps"`
+    MediaFeatures      int64 `json:"media_features"`
+    StreamingSessions  int64 `json:"streaming_sessions"`
+    Speakers           int64 `json:"speakers"`
+}
+
+type DryRunResponse struct {
+    Cascade   CascadeCounts `json:"cascade"`
+    Files     []string      `json:"files,omitempty"`        // would purge
+    Sidecars  []string      `json:"sidecars,omitempty"`     // would purge
+    Bytes     int64         `json:"bytes"`                  // sum of file sizes
+}
+
+type PurgeError struct {
+    Path  string `json:"path"`
+    Error string `json:"error"`
 }
 
 type DeleteResponse struct {
-	LibraryID      uuid.UUID       `json:"library_id"`
-	DryRun         bool            `json:"dry_run"`
-	CatalogDeleted bool            `json:"catalog_deleted"`
-	Purged         bool            `json:"purged"`
-	FileCount      int             `json:"file_count"`
-	FreedBytes     int64           `json:"freed_bytes"`
-	UnlinkFailures []UnlinkFailure `json:"unlink_failures,omitempty"`
-	SamplePaths    []string        `json:"sample_paths,omitempty"` // dry-run only
-}
-
-type DeleteService struct {
-	pool      *pgxpool.Pool
-	streaming StreamingClient
-	walker    *PurgeWalker
-	audit     *AuditWriter
-	log       *slog.Logger
-}
-
-func (s *DeleteService) Run(ctx context.Context, req DeleteRequest) (*DeleteResponse, error) {
-	if req.Purge && req.Confirm == "" {
-		return nil, ErrPurgeWithoutConfirm
-	}
-
-	// Step 1+2: load + lock the library row.
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	var name string
-	var roots []string
-	row := tx.QueryRow(ctx,
-		"SELECT name, roots FROM libraries WHERE id = $1 FOR UPDATE",
-		req.LibraryID)
-	if err := row.Scan(&name, &roots); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-
-	if req.Purge && req.Confirm != name {
-		return nil, ErrConfirmMismatch
-	}
-
-	// Step 3: enumerate active streaming sessions.
-	rows, err := tx.Query(ctx, `
-		SELECT s.id FROM streaming_sessions s
-		JOIN videos v ON v.id = s.video_id
-		WHERE v.library_id = $1 AND s.closed_at IS NULL`,
-		req.LibraryID)
-	if err != nil {
-		return nil, err
-	}
-	var sessionIDs []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		sessionIDs = append(sessionIDs, id)
-	}
-	rows.Close()
-
-	// Step 5 (early return): dry-run.
-	if req.DryRun {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			s.log.Warn("dry-run rollback", "err", err)
-		}
-		files, bytes, sample, err := s.walker.Enumerate(ctx, roots, 50)
-		if err != nil {
-			return nil, fmt.Errorf("enumerate: %w", err)
-		}
-		return &DeleteResponse{
-			LibraryID:   req.LibraryID,
-			DryRun:      true,
-			FileCount:   files,
-			FreedBytes:  bytes,
-			SamplePaths: sample,
-		}, nil
-	}
-
-	// Step 4: close each streaming session via gRPC (D1). Best-effort:
-	// a CloseSession failure is logged and swallowed because the FK
-	// cascade will delete the row anyway and the stream will tear down
-	// when its socket closes server-side.
-	for _, sid := range sessionIDs {
-		if err := s.streaming.CloseSession(ctx, sid); err != nil {
-			s.log.Warn("CloseSession failed", "session_id", sid, "err", err)
-		}
-	}
-
-	// Step 6: catalog delete (D2). FK cascades do all the work.
-	if _, err := tx.Exec(ctx, "DELETE FROM libraries WHERE id = $1", req.LibraryID); err != nil {
-		return nil, fmt.Errorf("delete library: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit: %w", err)
-	}
-
-	resp := &DeleteResponse{
-		LibraryID:      req.LibraryID,
-		CatalogDeleted: true,
-	}
-
-	// Step 7: file purge (D3). Catalog stays committed even if this fails.
-	if req.Purge {
-		result := s.walker.Purge(ctx, roots)
-		resp.Purged = true
-		resp.FileCount = result.Count
-		resp.FreedBytes = result.Bytes
-		resp.UnlinkFailures = result.Failures
-	}
-
-	// Step 8: audit (D6, best-effort).
-	event := "library.deleted"
-	if req.Purge {
-		event = "library.purged"
-	}
-	s.audit.WriteBestEffort(ctx, AuditRecord{
-		Category:    "library",
-		Event:       event,
-		ActorUserID: req.ActorID,
-		LibraryID:   &req.LibraryID,
-		IP:          req.IP,
-		UserAgent:   req.UserAgent,
-		Payload: map[string]any{
-			"name":        name,
-			"roots":       roots,
-			"file_count":  resp.FileCount,
-			"freed_bytes": resp.FreedBytes,
-			"failures":    len(resp.UnlinkFailures),
-			"at":          time.Now().UTC(),
-		},
-	})
-
-	return resp, nil
+    Cascade        CascadeCounts `json:"cascade"`
+    PurgeRan       bool          `json:"purge_ran"`
+    FilesDeleted   int           `json:"files_deleted,omitempty"`
+    FreedBytes     int64         `json:"freed_bytes,omitempty"`
+    UnlinkErrors   []PurgeError  `json:"unlink_errors,omitempty"`
 }
 ```
 
-### 2.6 `purge_walker.go` — file enumeration + unlink
+## 3. Database migration
+
+### 3.1 `shared/db/migrations/0043_libraries_cascade_fixups.sql`
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+
+-- The architecture set ON DELETE CASCADE on the obvious tables; this
+-- migration sweeps the long tail to ensure DELETE FROM libraries is
+-- truly atomic.
+
+-- streaming_sessions reaches libraries via videos; ensure
+-- streaming_sessions.video_id has ON DELETE CASCADE (idempotent).
+DO $$
+BEGIN
+    PERFORM 1 FROM information_schema.referential_constraints
+     WHERE constraint_name = 'streaming_sessions_video_id_fkey'
+       AND delete_rule = 'CASCADE';
+    IF NOT FOUND THEN
+        ALTER TABLE streaming_sessions
+            DROP CONSTRAINT streaming_sessions_video_id_fkey;
+        ALTER TABLE streaming_sessions
+            ADD CONSTRAINT streaming_sessions_video_id_fkey
+                FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE;
+    END IF;
+END$$;
+
+-- Same defensive fixups for any other "indirect" tables.
+-- Each is wrapped in a DO block to keep the migration idempotent.
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+-- Cascade fixups are not destructive on Down; intentional no-op.
+-- +goose StatementEnd
+```
+
+### 3.2 Cascade reach
+
+The full cascade chain (all confirmed by `information_schema.referential_constraints`):
+
+```
+libraries
+  └─ videos (ON DELETE CASCADE)
+     ├─ media_info, audio_tracks, transcripts, transcript_segments,
+     │   chapters, subtitle_files, playback_state, video_tags,
+     │   collection_items, video_topics, video_path_history,
+     │   streaming_sessions, segment_speakers, media_features
+     └─ processing_jobs (ON DELETE CASCADE)
+  ├─ library_roots
+  ├─ library_topics ─ video_topics (FK to compound (library_id, topic_id))
+  ├─ library_sweeps
+  ├─ library_stats_cache
+  ├─ collections ─ collection_items
+  └─ speakers ─ segment_speakers
+```
+
+`tags` is *not* cascaded — tags are global per the architecture; but
+`video_tags` is removed via `videos`. After deletion, an orphaned tag
+with zero `video_tags` remains; a separate cron prunes (Epic 22).
+
+### 3.3 sqlc queries
+
+```sql
+-- name: GetLibraryForDelete :one
+SELECT id, name, deleted_at
+  FROM libraries WHERE id = $1
+  FOR UPDATE;
+
+-- name: CountDependents :one
+SELECT
+  (SELECT COUNT(*) FROM videos WHERE library_id = $1)              AS videos,
+  (SELECT COUNT(*) FROM library_roots WHERE library_id = $1)       AS roots,
+  (SELECT COUNT(*) FROM library_topics WHERE library_id = $1)      AS topics,
+  (SELECT COUNT(*) FROM library_sweeps WHERE library_id = $1)      AS sweeps,
+  (SELECT COUNT(*) FROM speakers WHERE library_id = $1)            AS speakers,
+  (SELECT COUNT(*) FROM collections WHERE library_id = $1)         AS collections,
+  (SELECT COUNT(*) FROM streaming_sessions s
+     JOIN videos v ON v.id = s.video_id
+    WHERE v.library_id = $1)                                       AS streaming_sessions,
+  (SELECT COUNT(*) FROM transcripts t
+     JOIN videos v ON v.id = t.video_id
+    WHERE v.library_id = $1)                                       AS transcripts,
+  -- ... and so on for every counted bucket in CascadeCounts
+;
+
+-- name: DeleteLibrary :exec
+DELETE FROM libraries WHERE id = $1;
+```
+
+## 4. Code scaffolding
+
+### 4.1 Handler
 
 ```go
-package library
+// api/internal/handlers/libraries/delete.go
+func DeleteHandler(d *handlers.Deps) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ctx := r.Context()
+        id, err := uuid.Parse(chi.URLParam(r, "id"))
+        if err != nil { handlers.WriteError(w, 400, "bad-id", ""); return }
 
-import (
-	"context"
-	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
-)
+        purge := r.URL.Query().Get("purge") == "true"
+        dryRun := r.URL.Query().Get("dry_run") == "true"
+        confirm := r.URL.Query().Get("confirm")
+        actor := handlers.RequireUser(ctx)
 
-// supportedExts is the static list shared with the Pipeline filesystem
-// watcher (Story 9.5). Kept in sync via shared/config/supported_exts.go.
-var supportedExts = map[string]bool{
-	".mp4": true, ".mkv": true, ".webm": true, ".mov": true,
-	".avi": true, ".m4v": true, ".ts": true, ".mpg": true,
-}
+        tx, _ := d.Pool.Begin(ctx)
+        defer tx.Rollback(ctx)
+        q := d.Queries.WithTx(tx)
+        lib, err := q.GetLibraryForDelete(ctx, id)
+        if errors.Is(err, pgx.ErrNoRows) {
+            handlers.WriteError(w, 404, "library-not-found", ""); return
+        }
+        if purge && confirm != lib.Name {
+            handlers.WriteError(w, 422, "confirm-mismatch",
+                "confirm must equal the library name"); return
+        }
 
-type PurgeWalker struct{}
+        counts, err := q.CountDependents(ctx, id)
+        if err != nil { handlers.WriteError(w, 500, "count-failed", err.Error()); return }
+        cc := buildCascadeCounts(counts)
 
-type PurgeResult struct {
-	Count    int
-	Bytes    int64
-	Failures []UnlinkFailure
-}
+        // Resolve roots before deleting them (we need them for purge).
+        roots, _ := q.ListLibraryRootsForLibrary(ctx, id)
 
-// Enumerate walks roots and returns counts + a sample of paths. No I/O writes.
-func (w *PurgeWalker) Enumerate(ctx context.Context, roots []string, sampleN int) (int, int64, []string, error) {
-	count := 0
-	var bytes int64
-	sample := make([]string, 0, sampleN)
-	for _, root := range roots {
-		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err != nil {
-				return nil // skip unreadable
-			}
-			if d.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if !supportedExts[ext] {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			count++
-			bytes += info.Size()
-			if len(sample) < sampleN {
-				sample = append(sample, path)
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return 0, 0, nil, err
-		}
-	}
-	return count, bytes, sample, nil
-}
+        if dryRun {
+            files, sidecars, bytes, _ := purgePlan(roots, libraryIgnoreMatcher(d, lib))
+            handlers.WriteJSON(w, 200, DryRunResponse{
+                Cascade: cc, Files: files, Sidecars: sidecars, Bytes: bytes,
+            })
+            return
+        }
 
-// Purge unlinks every supported file under each root, plus each root's
-// .maktaba sidecar dir. Returns failures rather than aborting.
-func (w *PurgeWalker) Purge(ctx context.Context, roots []string) PurgeResult {
-	res := PurgeResult{}
-	for _, root := range roots {
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if !supportedExts[ext] {
-				return nil
-			}
-			info, ierr := d.Info()
-			if ierr == nil {
-				res.Bytes += info.Size()
-			}
-			if rmErr := os.Remove(path); rmErr != nil {
-				res.Failures = append(res.Failures,
-					UnlinkFailure{Path: path, Err: rmErr.Error()})
-			} else {
-				res.Count++
-			}
-			return nil
-		})
-		// Sidecar .maktaba/ dir at each root.
-		sidecar := filepath.Join(root, ".maktaba")
-		if err := os.RemoveAll(sidecar); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			res.Failures = append(res.Failures,
-				UnlinkFailure{Path: sidecar, Err: err.Error()})
-		}
-	}
-	return res
+        // Close streaming sessions before tx commit. Best-effort.
+        if err := closeStreamingSessions(ctx, d, id); err != nil {
+            log.WithError(err).Warn("streaming_close_failed library_id=", id)
+        }
+
+        if err := q.DeleteLibrary(ctx, id); err != nil {
+            handlers.WriteError(w, 500, "delete-failed", err.Error()); return
+        }
+        if err := tx.Commit(ctx); err != nil {
+            handlers.WriteError(w, 500, "commit-failed", err.Error()); return
+        }
+
+        d.Audit.Write(ctx, audit.LibraryEvent{
+            Event: "delete", LibraryID: id, ActorUserID: actor.ID,
+            Payload: map[string]any{"name": lib.Name, "cascade": cc},
+        })
+
+        // Notify Pipeline so the watcher can stop.
+        d.Bus.Notify("library.deleted", map[string]any{"library_id": id})
+
+        resp := DeleteResponse{Cascade: cc}
+        if purge {
+            n, bytes, errs := libraries.Purge(ctx, roots, libraryIgnoreMatcher(d, lib))
+            resp.PurgeRan = true
+            resp.FilesDeleted = n
+            resp.FreedBytes = bytes
+            resp.UnlinkErrors = errs
+
+            d.Audit.Write(ctx, audit.LibraryEvent{
+                Event: "purge", LibraryID: id, ActorUserID: actor.ID,
+                Payload: map[string]any{
+                    "files_deleted": n, "freed_bytes": bytes,
+                    "errors": len(errs),
+                },
+            })
+            for _, e := range errs {
+                d.Audit.Write(ctx, audit.LibraryEvent{
+                    Event: "purge-failed", LibraryID: id, ActorUserID: actor.ID,
+                    Payload: map[string]any{"path": e.Path, "error": e.Error},
+                })
+            }
+            if len(errs) > 0 {
+                handlers.WriteJSON(w, 207, resp); return
+            }
+        }
+        handlers.WriteJSON(w, 200, resp)
+    }
 }
 ```
 
-### 2.7 `streaming_client.go` — gRPC wrapper
+### 4.2 `Purge`
 
 ```go
-package library
-
-import (
-	"context"
-
-	"github.com/google/uuid"
-	streamingv1 "github.com/maktaba/api/gen/streaming/v1"
-)
-
-type StreamingClient interface {
-	CloseSession(ctx context.Context, sessionID uuid.UUID) error
+// api/internal/libraries/purge.go
+func Purge(ctx context.Context, roots []db.LibraryRoot,
+           matcher *ignore.Matcher) (int, int64, []PurgeError) {
+    var (
+        n      int
+        bytes  int64
+        errs   []PurgeError
+    )
+    for _, root := range roots {
+        _ = filepath.WalkDir(root.Path, func(p string, d fs.DirEntry, err error) error {
+            if err != nil {
+                errs = append(errs, PurgeError{Path: p, Error: err.Error()})
+                return nil
+            }
+            if d.IsDir() {
+                if filepath.Base(p) == ".maktaba" {
+                    if err := os.RemoveAll(p); err != nil {
+                        errs = append(errs, PurgeError{Path: p, Error: err.Error()})
+                    }
+                    return filepath.SkipDir
+                }
+                return nil
+            }
+            if matcher.Matches(p) || !matcher.IsSupportedExtension(p) {
+                return nil
+            }
+            info, _ := d.Info()
+            if err := os.Remove(p); err != nil {
+                errs = append(errs, PurgeError{Path: p, Error: err.Error()})
+                return nil
+            }
+            n++
+            if info != nil { bytes += info.Size() }
+            return nil
+        })
+    }
+    return n, bytes, errs
 }
 
-type grpcStreamingClient struct {
-	c streamingv1.StreamingServiceClient
-}
-
-func (g *grpcStreamingClient) CloseSession(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := g.c.CloseSession(ctx, &streamingv1.CloseSessionRequest{
-		SessionId: sessionID.String(),
-		Reason:    "library_deleted",
-	})
-	return err
+// purgePlan: same walk but no unlinks. Returns the list and total bytes.
+func purgePlan(roots []db.LibraryRoot, matcher *ignore.Matcher) (
+    files, sidecars []string, bytes int64, err error) {
+    // ... same iteration, accumulating into slices.
 }
 ```
 
-### 2.8 `audit_writer.go` — best-effort INSERT
+### 4.3 Streaming session close
 
 ```go
-package library
-
-import (
-	"context"
-	"encoding/json"
-	"log/slog"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-type AuditRecord struct {
-	Category    string
-	Event       string
-	ActorUserID *uuid.UUID
-	LibraryID   *uuid.UUID
-	IP          string
-	UserAgent   string
-	Payload     map[string]any
-}
-
-type AuditWriter struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
-}
-
-// WriteBestEffort never returns an error; it logs + increments a counter.
-// Bound by 8 KiB payload cap (Story 9.17 edge case).
-func (a *AuditWriter) WriteBestEffort(ctx context.Context, rec AuditRecord) {
-	payload, err := json.Marshal(rec.Payload)
-	if err != nil {
-		a.log.Warn("audit marshal", "err", err)
-		return
-	}
-	if len(payload) > 8192 {
-		payload = payload[:8192]
-	}
-	_, err = a.pool.Exec(ctx, `
-		INSERT INTO audit_log (id, ts, category, event, actor_user_id, library_id, ip, user_agent, payload_jsonb)
-		VALUES (uuidv7(), now(), $1, $2, $3, $4, NULLIF($5,'')::inet, $6, $7::jsonb)`,
-		rec.Category, rec.Event, rec.ActorUserID, rec.LibraryID,
-		rec.IP, rec.UserAgent, string(payload))
-	if err != nil {
-		a.log.Warn("audit_write_failed", "category", rec.Category, "event", rec.Event, "err", err)
-		// audit_write_failed_total counter increment in real impl
-	}
+// api/internal/libraries/streaming_close.go
+func closeStreamingSessions(ctx context.Context, d *handlers.Deps,
+                             libraryID uuid.UUID) error {
+    return d.StreamingClient.CloseSessionsForLibrary(ctx,
+        &streamingv1.CloseSessionsForLibraryRequest{LibraryId: libraryID.String()})
 }
 ```
 
----
+The Streaming-side handler is owned by Epic 8 Story 8.7; this story
+just calls it.
 
-## 3. File scaffolding checklist
+## 5. Test plan
 
-| Order | File | Symbols | Tests gating |
-|-------|------|---------|--------------|
-| 1 | `api/internal/db/queries/library_delete.sql` | `SelectLibraryForDelete`, `SelectActiveStreamingSessionsForLibrary`, `DeleteLibraryByID` | `TestSqlcLibraryDeleteCompiles` |
-| 2 | `api/internal/library/streaming_client.go` | `StreamingClient`, `grpcStreamingClient.CloseSession` | mock-based unit tests |
-| 3 | `api/internal/library/audit_writer.go` | `AuditRecord`, `AuditWriter.WriteBestEffort` | `TestAuditWriterBestEffort` |
-| 4 | `api/internal/library/purge_walker.go` | `PurgeWalker.Enumerate`, `.Purge`, `PurgeResult` | `TestEnumerateRoots`, `TestPurgeReadOnlyFile` |
-| 5 | `api/internal/library/delete_service.go` | `DeleteService.Run`, `DeleteRequest`, `DeleteResponse`, sentinel errors | `TestDeleteService*` |
-| 6 | `api/internal/library/delete_handler.go` | `DeleteHandler.ServeHTTP`, `NewDeleteHandler` | `TestDeleteHandler*` |
-| 7 | route wiring in `api/internal/router/router.go` | `r.Delete("/api/libraries/{id}", ...)` | `TestRouteRegistered` |
+### 5.1 Handler tests (`delete_test.go`)
 
----
+| Test | What it pins |
+|---|---|
+| `TestDelete_PurgeFalse_RemovesCatalogOnly` | Library with 100 videos, on-disk files left intact → all `videos`, `transcripts`, etc. cascade-deleted; files still on disk; response 200 with `purge_ran=false`. AC-1. |
+| `TestDelete_PurgeTrue_RemovesFilesAndCatalog` | Purge with confirm matching → catalog gone, files gone for `.mp4`/`.mkv` etc., sidecar dirs gone; response 200 with `files_deleted=N`, `freed_bytes=B`. AC-2. |
+| `TestDelete_PurgeRequiresConfirm` | `?purge=true` without `?confirm=name` → 422 `confirm-mismatch`. |
+| `TestDelete_PurgeRespectsIgnoreGlobs` | Library has `ignore_globs: ["**/keep/**"]`; purge skips files under `keep/`. The catalog still cascades. |
+| `TestDelete_StreamingSessionsClosed` | Three active streaming sessions for videos in the library → gRPC `CloseSessionsForLibrary` invoked once before catalog tx; sessions are gone after. |
+| `TestDelete_207OnUnlinkFailures` | Mock filesystem with one read-only file (`os.Remove` fails) → response 207, `unlink_errors` includes the path; the catalog is *not* rolled back. AC-3. |
+| `TestDelete_DryRunReturnsPlan` | `?dry_run=true` → 200 with cascade counts and the to-be-deleted file list; **no** DB or filesystem changes. |
+| `TestDelete_NotFoundReturns404` | Unknown UUID → 404. |
+| `TestDelete_AuditRowsWritten` | Verify `audit_log` rows: one `event='delete'`; one `event='purge'` (when purge); per-failure `event='purge-failed'`. |
+| `TestDelete_NotifiesPipelineWatcher` | After commit, `library.deleted` NOTIFY fires; the test subscribes to the channel and asserts the payload. |
+| `TestDelete_BlocksConcurrentScan` | While the delete tx holds `FOR UPDATE`, a concurrent `POST /scan` for the same library returns 409 `library-deleted`. |
 
-## 4. Test cases keyed to ACs
+### 5.2 `Purge` unit tests
 
-### T1 — AC-1: catalog-only delete cascades
+| Test | What it pins |
+|---|---|
+| `TestPurge_SkipsIgnoredFiles` | Files matching `**/.maktaba/**` are not unlinked individually (the dir is rmtree'd as a sidecar). Files matching user globs are skipped. |
+| `TestPurge_SkipsUnsupportedExtensions` | `.txt` files preserved. |
+| `TestPurge_FollowsRootsOrder` | Multi-root: walks each in sequence; failures in root A do not stop root B. |
+| `TestPurge_AccumulatesBytes` | Three files of 1 MiB each → `freed_bytes == 3 * 1024 * 1024`. |
+| `TestPurge_RemoveAllSidecar` | `.maktaba/` dir with nested files → fully removed via `RemoveAll`. |
+| `TestPurge_ReadOnlyFileRecordsError` | Chmod 0444 a file → unlink fails on POSIX (chmod the parent to 0555); error captured; walk continues. |
 
-```go
-func TestDelete_CatalogOnly_CascadesToAllChildren(t *testing.T) {
-	ctx, db := newTestDB(t)
-	libID := seedLibraryWithVideos(t, db, 3) // 3 videos, each with transcripts, segments
-	streaming := &fakeStreaming{}
-	svc := newDeleteService(db, streaming)
+### 5.3 Cascade integration
 
-	resp, err := svc.Run(ctx, DeleteRequest{LibraryID: libID})
-	require.NoError(t, err)
-	assert.True(t, resp.CatalogDeleted)
-	assert.False(t, resp.Purged)
+`pipeline/tests/db/test_library_delete_cascade.py`:
 
-	for _, table := range []string{"videos", "transcripts", "transcript_segments",
-		"chapters", "subtitle_files", "playback_state", "library_topics",
-		"library_sweeps", "media_features", "streaming_sessions"} {
-		count := scanCount(t, db, "SELECT COUNT(*) FROM "+table+" WHERE library_id_or_via_video=$1", libID)
-		assert.Zero(t, count, "table %s not cascaded", table)
-	}
-}
-```
+| Test | What it pins |
+|---|---|
+| `test_cascade_reaches_every_dependent_table` | Stand up a library with one row in every dependent table; DELETE the library; assert every table has zero rows for that library. (Builds the matrix from `information_schema.referential_constraints`.) |
+| `test_cascade_does_not_orphan_tags` | `tags` is global and not cascaded; verify orphan tags remain post-delete; the cleanup cron (Epic 22) handles them later. |
+| `test_audit_log_rows_preserved` | `audit_log` rows for the deleted library are *not* removed by cascade (the FK is `ON DELETE SET NULL`). The library's history survives. |
 
-### T2 — AC-1: active sessions are closed first via gRPC
+## 6. Edge cases — handling table
 
-```go
-func TestDelete_ActiveSessions_AreClosedFirst(t *testing.T) {
-	ctx, db := newTestDB(t)
-	libID := seedLibraryWithActiveSessions(t, db, 5)
-	streaming := &fakeStreaming{}
-	svc := newDeleteService(db, streaming)
+| Case | Behaviour | Where it's pinned |
+|---|---|---|
+| 1M-video library | Catalog cascade runs in one tx; long lock; ops doc warns. | Documented |
+| Purge while a Pipeline worker writes a sidecar | Worker uses atomic-rename; unlink may succeed before write completes; the worker's open file descriptor still works (POSIX); the rename ultimately fails harmlessly because the destination dir is gone. No corruption. | Documented |
+| User cancels DELETE mid-tx | Client disconnect; the request context cancels; the tx rolls back; the audit row is never written; the library is intact. | Implicit (ctx cancellation) |
+| Streaming gRPC down at delete time | We log a WARN and proceed; videos go away; in-flight sessions get 5xx. The choice is to favor catalog correctness over UX. | `TestDelete_StreamingSessionsClosed` (variant: `_StreamingDownStillSucceeds`) |
+| Cross-library video reference (none in v1) | Not applicable; videos are owned by exactly one library via FK. | Architecture invariant |
+| Tag pruning | Out of scope; cron runs later. | Documented |
+| `audit_log` retention vs. delete | Audit rows survive; FK is `SET NULL`. The retention partitioning (Story 9.17) handles long-term storage. | `test_audit_log_rows_preserved` |
 
-	_, err := svc.Run(ctx, DeleteRequest{LibraryID: libID})
-	require.NoError(t, err)
+## 7. Configuration
 
-	assert.Len(t, streaming.closed, 5, "all 5 sessions closed")
-	// Order: every CloseSession call must precede the catalog DELETE timestamp.
-	for _, ts := range streaming.closeTimestamps {
-		assert.True(t, ts.Before(streaming.deleteTime))
-	}
-}
-```
+| Key | Default | Effect |
+|---|---|---|
+| `delete_purge_confirm` | required when `purge=true` | Body must include `confirm` matching the library name. |
+| `delete_dry_run` | optional | `?dry_run=true` returns plan only. |
 
-### T3 — AC-2: purge with confirm matching name unlinks files
+## 8. Dependencies
 
-```go
-func TestDelete_PurgeWithConfirm_UnlinksFiles(t *testing.T) {
-	root := tempDirWithFiles(t, "a.mp4", "b.mkv", "ignored.txt")
-	libID := seedLibrary(t, db, "MyLib", []string{root})
+| Dep | Source | Why |
+|---|---|---|
+| `streaming.CloseSessionsForLibrary` (gRPC) | Epic 8 Story 8.7 | Best-effort session close. |
+| `audit_log` | Story 9.17 | Audit rows. |
+| `ignore.Matcher` (Go side) | Story 9.5 | Need a Go-side mirror — implementation note: a tiny Go port of the same patterns and built-ins (or, simpler, call out to the same library via a shared service); for v1 we ship a Go re-implementation reading the same `BUILTIN_IGNORE_PATTERNS` from a JSON file. |
 
-	resp, err := svc.Run(ctx, DeleteRequest{
-		LibraryID: libID, Purge: true, Confirm: "MyLib",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 2, resp.FileCount) // .txt skipped
-	assert.NoFileExists(t, filepath.Join(root, "a.mp4"))
-	assert.FileExists(t, filepath.Join(root, "ignored.txt"))
-}
-```
+## 9. Acceptance checklist
 
-### T4 — AC-2: confirm mismatch returns 422
+**Code**
+- [ ] `api/internal/handlers/libraries/delete.go` ships and is wired in `router.go`.
+- [ ] `api/internal/libraries/purge.go` walks roots and unlinks per the matcher; collects errors.
+- [ ] Streaming gRPC `CloseSessionsForLibrary` is invoked before catalog tx.
 
-```go
-func TestDelete_ConfirmMismatch_Returns422(t *testing.T) {
-	libID := seedLibrary(t, db, "MyLib", nil)
-	_, err := svc.Run(ctx, DeleteRequest{LibraryID: libID, Purge: true, Confirm: "wrong"})
-	assert.ErrorIs(t, err, ErrConfirmMismatch)
-}
-```
+**Migration**
+- [ ] `0043_libraries_cascade_fixups.sql` ensures `ON DELETE CASCADE` on every dependent FK.
 
-### T5 — AC-3: read-only file failure returns 207
+**Behaviour (story acceptance criteria)**
+- [ ] AC-1: `?purge=false` removes the catalog and leaves files.
+- [ ] AC-2: `?purge=true` with valid confirm removes catalog and files; sidecars too; `audit_log` rows written.
+- [ ] AC-3: unlink errors → 207 with the failed paths; catalog *not* rolled back.
 
-```go
-func TestDelete_PurgeReadOnlyFile_Returns207(t *testing.T) {
-	root := tempDirWithReadOnlyFile(t, "locked.mp4")
-	libID := seedLibrary(t, db, "RO", []string{root})
+**Observability**
+- [ ] Counter `library_delete_total{purge=true|false, outcome=ok|partial}`.
+- [ ] Histogram `library_delete_duration_seconds`.
+- [ ] Counter `library_purge_unlink_failures_total`.
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("DELETE", "/api/libraries/"+libID.String()+"?purge=true&confirm=RO", nil)
-	handler.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusMultiStatus, rec.Code)
-	var body DeleteResponse
-	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
-	assert.True(t, body.CatalogDeleted, "catalog NOT rolled back")
-	assert.Len(t, body.UnlinkFailures, 1)
-	assert.Contains(t, body.UnlinkFailures[0].Path, "locked.mp4")
-}
-```
-
-### T6 — Test case: dry-run lists files without touching
-
-```go
-func TestDelete_DryRun_NoStateChange(t *testing.T) {
-	root := tempDirWithFiles(t, "x.mp4", "y.mp4")
-	libID := seedLibrary(t, db, "DR", []string{root})
-
-	resp, err := svc.Run(ctx, DeleteRequest{LibraryID: libID, DryRun: true})
-	require.NoError(t, err)
-	assert.True(t, resp.DryRun)
-	assert.False(t, resp.CatalogDeleted)
-	assert.Equal(t, 2, resp.FileCount)
-	assert.FileExists(t, filepath.Join(root, "x.mp4"))
-	assert.NotZero(t, scanCount(t, db, "SELECT COUNT(*) FROM libraries WHERE id=$1", libID))
-}
-```
-
-### T7 — D6: audit row is written with correct event + payload
-
-```go
-func TestDelete_WritesAuditRow(t *testing.T) {
-	libID := seedLibrary(t, db, "AL", []string{})
-	_, _ = svc.Run(ctx, DeleteRequest{LibraryID: libID, ActorID: &actorID})
-
-	row := db.QueryRow(ctx,
-		"SELECT category, event, actor_user_id, library_id, payload_jsonb "+
-			"FROM audit_log WHERE library_id = $1 ORDER BY ts DESC LIMIT 1", libID)
-	var category, event string
-	var actor, lib uuid.UUID
-	var payload []byte
-	require.NoError(t, row.Scan(&category, &event, &actor, &lib, &payload))
-	assert.Equal(t, "library", category)
-	assert.Equal(t, "library.deleted", event)
-}
-```
-
----
-
-## 5. Edge cases
-
-| #   | Edge case | Handled by |
-|-----|-----------|------------|
-| E1  | **Library has 1M videos.** The single FK-cascade transaction holds an `ACCESS EXCLUSIVE` lock for several minutes. The handler keeps a long-running connection; we set `statement_timeout = 0` for the transaction (operations doc) and warn ops to use `pg_terminate_backend` only as a last resort. | Documented in the runbook; no code change. |
-| E2  | **Worker writing a sidecar mid-purge.** Pipeline writes use atomic-rename; if our `os.Remove` runs first, the rename target dir vanishes and the rename fails harmlessly. We unlink files only — directories under the root are not removed (the root itself stays). | `purge_walker.go` only unlinks files; sidecar `.maktaba/` is a single `RemoveAll`. |
-| E3  | **Symlinked root pointing outside the library tree.** `filepath.WalkDir` follows symlinks; if the target is outside the declared root we still unlink files there. To prevent surprise, the walker rejects when a child path is not a descendant of the resolved root (defense-in-depth). | `PurgeWalker.Purge` adds a `containedIn(root, path)` check before each unlink. |
-| E4  | **gRPC CloseSession times out for one session.** The ctx-bound call returns `DeadlineExceeded`; we log + continue. The streaming row is deleted by the FK cascade; the stream itself tears down when its server-side ctx canceled. | Best-effort behaviour in `delete_service.go` step 4. |
-| E5  | **Concurrent DELETE for the same library.** The `FOR UPDATE` lock on `libraries` serializes them; the second arrival re-reads after the first commits, finds nothing, returns 404. | DB-level enforcement. |
-| E6  | **`?purge=false` and `?confirm=...` (confirm without purge).** Confirm is silently ignored; only the catalog delete runs. | `delete_service.go`: confirm check guarded by `req.Purge`. |
-| E7  | **Audit table partition is missing for `now()`.** Story 9.17's monthly partition rotation should have created it; if not, the INSERT raises and `WriteBestEffort` swallows + logs. The deletion still succeeds. | D6 best-effort path. |
-| E8  | **8 KiB payload truncation.** A library with thousands of roots could blow the cap; payload is truncated mid-JSON which is technically invalid. We pre-cap the roots list in the audit payload to 100 entries so the JSON stays well-formed. | `audit_writer.go` truncation path; explicit cap on `roots` in `delete_service.go`. |
-| E9  | **Streaming Service unreachable entirely.** Every CloseSession returns `Unavailable`; we log all of them and proceed. Operators must reconcile dangling streams via Streaming's own GC (Epic 8 Story 8.x). | Best-effort behaviour. |
-| E10 | **`?dry_run=true&purge=true`.** Dry-run wins (we never unlink). Confirm token still required; mismatch returns 422 even in dry-run so operators can rehearse the failure. | `delete_service.go`: confirm check runs before the dry-run early-return only when `Purge=true`. |
-
----
-
-## 6. Acceptance checklist
-
-- [ ] **A1** (AC-1) `DELETE /api/libraries/{id}` with `purge=false` (or absent) closes every active streaming session via gRPC, then deletes the `libraries` row in one transaction, cascading to all 13 child tables. Returns 200 with `{catalog_deleted: true, purged: false}`. (T1, T2)
-- [ ] **A2** (AC-2) `purge=true` with `confirm=<name>` matching `libraries.name` exactly, after a successful catalog delete, walks each root and unlinks every file matching `supported_video_exts` plus the `.maktaba` sidecar dir; the audit row payload includes `{by_user, root, file_count, freed_bytes}`. (T3, T7)
-- [ ] **A3** (AC-2) `purge=true` without matching `confirm` returns 422 `confirm-mismatch`; `purge=true` without any `confirm` returns 422 `purge-requires-confirm`. (T4)
-- [ ] **A4** (AC-3) When the catalog xact succeeds but one or more unlinks fail, the response is 207 Multi-Status with the failure list; the catalog stays deleted. (T5)
-- [ ] **A5** (test case) `dry_run=true` returns 200 with `{file_count, freed_bytes, sample_paths}` and makes no DB or filesystem changes. (T6)
-- [ ] **A6** (D6) An audit row is written with `category='library', event ∈ {library.deleted, library.purged}`, the actor user, library id, and a payload capped at 8 KiB. Audit failure does not roll back the deletion. (T7)
-- [ ] **A7** (E1) Operations doc includes the `pg_terminate_backend` runbook entry for libraries with >1M videos. (Doc check; no code.)
-- [ ] **A8** (E3) Symlink targets outside the declared root are not unlinked. (`TestPurgeWalkerSymlinkOutsideRoot`)
+**Docs**
+- [ ] `specs/epics/09-library-management/README.md` ticks story 9.15.
+- [ ] Operations doc explains the long-cascade lock warning, the streaming-close best-effort behaviour, and the dry-run usage.

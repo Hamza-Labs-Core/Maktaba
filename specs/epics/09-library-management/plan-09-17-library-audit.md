@@ -1,121 +1,165 @@
-# Plan 9.17 — Library audit log — implementation
+# Implementation Plan — Story 9.17 Library Audit Log
 
-> Implementation plan for [story-09-17-library-audit.md](story-09-17-library-audit.md).
-> Self-contained: a developer should be able to ship the story from this
-> document alone. Cross-links: owns the canonical `audit_log` schema
-> (sketched in [README.md](README.md) §"audit_log"); shared with Epic 10
-> Story 10.16 (`category='security'`); reuses the cursor primitive from
-> [Story 7.2](../07-api-rest/story-07-02-list-pagination.md).
+> Companion to [story-09-17-library-audit.md](story-09-17-library-audit.md).
+> The story states *what* and *why*; this plan states *how*.
+> Owns the canonical `audit_log` table (jointly with Epic 10
+> Story 10.16) and the `category='library'` API surface.
 
----
+## 0. Scope and placement
 
-## 0. Decisions and departures from `architecture.md` and the story
+| Concern | Decision |
+|---|---|
+| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `ts`. Append-only via BEFORE UPDATE/DELETE triggers. |
+| Partitioning | Monthly partitions named `audit_log_YYYY_MM`. A trigger function `audit_log_route_to_partition()` ensures the parent has the right child for each new INSERT (creating one on-demand). The partition-management cron (Epic 22) precreates the next 3 months. |
+| Writers | `api/internal/audit/writer.go` (Go) and `pipeline/src/maktaba_pipeline/audit/writer.py` (Python). Both insert into the parent `audit_log`; Postgres routes to the right partition. Best-effort: writes never block the calling tx and never raise on failure. |
+| HTTP route | `GET /api/libraries/{id}/audit?cursor=&limit=` — returns `category='library'` rows for the given library, newest-first, with cursor pagination. Owner/admin-only. |
+| Retention | Nightly trim job detaches partitions older than `audit_retention_days` (default 365), copies them to `s3://…/audit_archive/` (or local archive dir in single-host mode), and DROPs them from the live DB. Implementation lives with Epic 22; this story specifies the contract. |
+| Out of scope | The security-category writes (Epic 10 Story 10.16); the archive-storage backend choice (operator config). |
 
-| #  | Decision | Source | Rationale |
-|----|----------|--------|-----------|
-| D1 | **Single canonical `audit_log` table partitioned monthly by `RANGE (ts)`.** Not per-category (`library_audit`, `security_audit`) — one table with a `category` column. | Story 9.17: "this has been unified into the single `audit_log` table per REVIEW.md §1.1.f." | One table simplifies retention (one rotation job), one trigger (one `audit_log_no_mutation`), one set of partitions to manage. The `category` column gives the per-category index its discriminator and lets the security and library handlers share the writer. |
-| D2 | **Append-only enforced by `BEFORE UPDATE/DELETE` triggers**, not by table-level GRANTs. The triggers raise `RAISE EXCEPTION 'audit_log is append-only'`. | Story 9.17 AC-1: "BEFORE UPDATE/DELETE triggers raise exceptions." | Trigger-based enforcement applies uniformly to all roles, including the application service role. GRANT-based enforcement would still allow superuser DELETEs and would not catch programming bugs on the application path. |
-| D3 | **Monthly partitions managed by a Go maintenance CLI run nightly via cron / systemd timer.** The CLI creates the next two months' partitions ahead of `now()` and detaches partitions older than `audit_retention_days` (default 365), copying them to a configurable archive directory. | Story 9.17 AC-3: "partitions older than `audit_retention_days` are detached and copied to long-term storage." | A nightly CLI is simpler than a Postgres-side scheduler (pg_cron) and leaves the archive transport (S3, NFS, tar) up to ops. Two-months-ahead creation buys headroom against a missed run. |
-| D4 | **Cursor pagination reuses Story 7.2's `(ts, id)` opaque cursor primitive.** `GET /api/libraries/{id}/audit?cursor=<base64url>&limit=N` decodes `(ts, id)` and runs `WHERE library_id=$1 AND category='library' AND (ts, id) < ($2, $3) ORDER BY ts DESC, id DESC LIMIT N+1` (the +1 detects whether a next-page cursor should be returned). | Story 9.17 AC-2: "reuses Epic 7 Story 7.2's cursor primitive." | A `(ts, id)` tuple cursor is stable under inserts at the head, monotonically decreasing because we use `uuidv7()` as id (lexically time-ordered), and supports a single composite-index seek. Offset pagination is rejected because audit volume scales with traffic and old offsets get expensive. |
-| D5 | **Best-effort write path: the `AuditWriter` never propagates errors.** A write failure increments `audit_write_failed_total` (Prometheus counter) and logs at WARN. The caller's request still succeeds. | Story 9.17 edge case: "audit is best-effort, never blocking." | The audit log is observability, not a state machine input. An audit-write failure should not fail a user-facing operation; the metric makes the gap visible to ops. |
-| D6 | **Payload size capped at 8 KiB.** Larger payloads are truncated and the original size is recorded in `payload_jsonb -> '_truncated_orig_bytes'`. JSONB validation runs on the truncated bytes; if truncation produces invalid JSON, the writer falls back to `{"_truncation_error": "...", "_orig_bytes": N}` so the row still inserts. | Story 9.17 edge case: "Length capped at 8 KiB." | An audit row with a huge payload (e.g., a copy-pasted error stacktrace) costs index space and is rarely useful in full. 8 KiB is generous for structured event data and small enough to keep monthly partition sizes predictable. |
-
-If D3 is rejected (live-table-only retention via `DELETE`): `DELETE` against a 100 M-row partition holds locks for hours and bloats the table. Partition `DETACH` + drop is `O(1)` regardless of partition size and is the only viable retention strategy at our scale.
-
-If D4 is rejected (offset pagination): page 1000 of an audit log over a year is pathological — Postgres would scan and discard 1000 × LIMIT rows on every request. Cursor pagination keeps the cost flat.
-
----
-
-## 1. Architecture diagram — audit write + read paths
+## 1. Architecture diagram
 
 ```
-   ┌────── any service writing audit events ──────┐
-   │                                              │
-   │  service-handler:                            │
-   │    on lifecycle event (delete / scan /       │
-   │    speaker-merge / runtime-overlap / ...):   │
-   │      audit.WriteBestEffort({                 │
-   │        category: 'library',                  │
-   │        event: 'library.deleted',             │
-   │        actor_user_id: ...,                   │
-   │        library_id: ...,                      │
-   │        ip, user_agent,                       │
-   │        payload: {...}                        │
-   │      })                                      │
-   │                                              │
-   │  AuditWriter:                                │
-   │    - cap payload @ 8 KiB (D6)                │
-   │    - INSERT INTO audit_log                   │
-   │      (id=uuidv7(), ts=now(), ...)            │
-   │    - on error: counter++ + WARN log (D5)     │
-   └─────────────────┬────────────────────────────┘
-                     │
-                     ▼
-   ┌──────── audit_log (PARTITION BY RANGE (ts)) ────────┐
-   │                                                     │
-   │   audit_log_2026_05  audit_log_2026_06  ...         │
-   │   ▲                                                 │
-   │   │ BEFORE UPDATE / BEFORE DELETE triggers (D2)     │
-   │   │   audit_log_no_mutation()  RAISE EXCEPTION      │
-   │   │                                                 │
-   │   indexes per partition (inherited):                │
-   │     audit_log_lookup    (category, ts DESC)         │
-   │     audit_log_actor     (actor_user_id, ts DESC)    │
-   │     audit_log_library   (library_id, ts DESC)       │
-   └───────────────────┬─────────────────────────────────┘
-                       │
-                       ▼
-   ┌──── GET /api/libraries/{id}/audit ────┐    ┌──── audit-maint CLI ────┐
-   │                                       │    │                         │
-   │  decode ?cursor=base64url((ts,id))    │    │  daily run via cron:    │
-   │  WHERE library_id=$1                  │    │   - create next 2 mo    │
-   │    AND category='library'             │    │     partitions          │
-   │    AND (ts, id) < ($2, $3)            │    │   - detach + archive    │
-   │  ORDER BY ts DESC, id DESC            │    │     partitions older    │
-   │  LIMIT N+1                            │    │     than 365 d (D3)     │
-   │  → return rows + next_cursor          │    │                         │
-   └───────────────────────────────────────┘    └─────────────────────────┘
+   Writers (every category):
+     Go (handlers)               Python (workers)
+        ↓                              ↓
+     audit.Writer.Write(...)       AuditWriter.write(...)
+        ↓                              ↓
+     INSERT INTO audit_log (...) VALUES ($1,$2,...,$N::jsonb)
+        ↓
+     Postgres routing (PARTITION BY RANGE):
+        → audit_log_YYYY_MM (created on first insert in that month
+                              by the trigger function)
+
+   Reader:
+     GET /api/libraries/{id}/audit?cursor=...
+        ↓
+     SELECT id, ts, event, actor_user_id, video_id, payload_jsonb
+       FROM audit_log
+      WHERE category = 'library'
+        AND library_id = $1
+        AND (ts, id) < ($cursor_ts, $cursor_id)
+      ORDER BY ts DESC, id DESC
+      LIMIT $page_size
+     → cursor = encode(last_row.ts, last_row.id)
+
+   Append-only enforcement:
+     BEFORE UPDATE / BEFORE DELETE → RAISE EXCEPTION
+       (defined once on the parent; inherited by partitions)
+
+   Retention (Epic 22 cron, nightly):
+     for part in pg_inherits where parent='audit_log':
+        if part.range_end < now() - audit_retention_days:
+            COPY part TO 's3://…/audit_archive/{part_name}.csv'
+            DETACH PARTITION
+            DROP TABLE part
 ```
 
----
+## 2. Implementation steps
 
-## 2. Detailed implementation
+### 2.1 New files
 
-### 2.1 Schema migration — `0022_audit_log.sql`
+| Path | Purpose |
+|---|---|
+| `api/internal/audit/writer.go` | `Writer.Write(ctx, Event)`. Library-events struct: `LibraryEvent` per the Story-9.15/9.11 callers. |
+| `api/internal/audit/library_events.go` | Typed event constructors (e.g., `Delete`, `Purge`, `RootsRuntimeOverlap`). |
+| `api/internal/handlers/libraries/audit.go` | The GET endpoint. |
+| `pipeline/src/maktaba_pipeline/audit/writer.py` | `AuditWriter.write(...)`. |
+| `pipeline/tests/audit/test_writer.py` | Test the no-block-on-failure semantic. |
+| `shared/db/migrations/0045_audit_log.sql` | Parent + first 3 partitions + triggers + indexes. |
+| `shared/db/migrations/0045_audit_log.sqlite.sql` | SQLite variant — non-partitioned but otherwise identical schema. |
+| `shared/db/queries/audit.sql` | sqlc input. |
+| `api/cmd/maktaba-api/audit_archive.go` | The archive/trim CLI subcommand. |
+
+### 2.2 Modified files
+
+| Path | Change |
+|---|---|
+| `api/internal/router.go` | Wire `GET /api/libraries/{id}/audit`. |
+| All callers (Stories 9.4, 9.6, 9.11, 9.13, 9.14, 9.15, 9.16) | Use the audit writer instead of inlining INSERTs. |
+| `specs/epics/09-library-management/README.md` | Tick story 9.17. |
+
+### 2.3 Type definitions
+
+```go
+// api/internal/audit/writer.go
+package audit
+
+type Category string
+
+const (
+    CategoryLibrary  Category = "library"
+    CategorySecurity Category = "security"
+)
+
+type Event struct {
+    ID          uuid.UUID  // v7 (time-ordered)
+    Category    Category
+    Event       string
+    ActorUserID *uuid.UUID
+    LibraryID   *uuid.UUID
+    VideoID     *uuid.UUID
+    IP          *netip.Addr
+    UserAgent   *string
+    Payload     map[string]any
+}
+
+type LibraryEvent struct {
+    Event       string
+    LibraryID   uuid.UUID
+    ActorUserID uuid.UUID
+    VideoID     *uuid.UUID
+    Payload     map[string]any
+}
+
+type Writer interface {
+    Write(ctx context.Context, e Event) error  // never blocks; never propagates
+    WriteLibrary(ctx context.Context, e LibraryEvent) error
+}
+```
+
+```go
+// api/internal/handlers/libraries/audit.go
+type AuditEntry struct {
+    ID         uuid.UUID `json:"id"`
+    TS         time.Time `json:"ts"`
+    Event      string    `json:"event"`
+    Actor      *uuid.UUID `json:"actor_user_id"`
+    VideoID    *uuid.UUID `json:"video_id"`
+    Payload    json.RawMessage `json:"payload"`
+}
+
+type AuditPage struct {
+    Items      []AuditEntry `json:"items"`
+    NextCursor *string      `json:"next_cursor,omitempty"`
+}
+```
+
+## 3. Database migration
+
+### 3.1 Postgres — `0045_audit_log.sql`
 
 ```sql
-BEGIN;
+-- +goose Up
+-- +goose StatementBegin
 
--- Parent table: declarative monthly partitioning.
 CREATE TABLE audit_log (
-    id              UUID NOT NULL,                          -- uuidv7 (ordered)
+    id              UUID NOT NULL,
     ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    category        TEXT NOT NULL,                          -- 'library' | 'security' | ...
-    event           TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK (category IN ('library','security')),
+    event           TEXT NOT NULL CHECK (char_length(event) BETWEEN 1 AND 64),
     actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
     library_id      UUID REFERENCES libraries(id) ON DELETE SET NULL,
     video_id        UUID REFERENCES videos(id) ON DELETE SET NULL,
     ip              INET,
-    user_agent      TEXT,
-    payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb,
-    PRIMARY KEY (id, ts)
+    user_agent      TEXT CHECK (char_length(user_agent) <= 1024),
+    payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb
+        CHECK (octet_length(payload_jsonb::text) <= 8 * 1024),
+    PRIMARY KEY (ts, id)         -- composite for partitioning
 ) PARTITION BY RANGE (ts);
 
--- Partitioned indexes (inherited by every partition).
-CREATE INDEX audit_log_lookup
-    ON audit_log (category, ts DESC, id DESC);
-CREATE INDEX audit_log_actor
-    ON audit_log (actor_user_id, ts DESC)
-    WHERE actor_user_id IS NOT NULL;
-CREATE INDEX audit_log_library
-    ON audit_log (library_id, category, ts DESC, id DESC)
-    WHERE library_id IS NOT NULL;
-
--- Append-only enforcement (D2).
+-- Append-only triggers — defined on the parent, inherited by children.
 CREATE OR REPLACE FUNCTION audit_log_no_mutation() RETURNS trigger AS $$
-BEGIN
-    RAISE EXCEPTION 'audit_log is append-only';
-END;
+BEGIN RAISE EXCEPTION 'audit_log is append-only'; END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
@@ -123,573 +167,380 @@ CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION audit_log_no_mutation();
 
--- Bootstrap: current and next month partitions. The maintenance CLI
--- takes over from here on.
-CREATE TABLE audit_log_2026_05 PARTITION OF audit_log
-    FOR VALUES FROM ('2026-05-01 00:00:00+00') TO ('2026-06-01 00:00:00+00');
-CREATE TABLE audit_log_2026_06 PARTITION OF audit_log
-    FOR VALUES FROM ('2026-06-01 00:00:00+00') TO ('2026-07-01 00:00:00+00');
+-- Indexes — created on each partition by a helper. The parent gets
+-- "logical" indexes that Postgres propagates.
+CREATE INDEX audit_log_lookup
+    ON audit_log (category, ts DESC);
+CREATE INDEX audit_log_actor
+    ON audit_log (actor_user_id, ts DESC) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX audit_log_library
+    ON audit_log (library_id, ts DESC) WHERE library_id IS NOT NULL;
 
-COMMIT;
-```
-
-### 2.2 Sample event INSERT (referenced by Story 9.15)
-
-```sql
--- Library deletion (Story 9.15 D6) writes a row like this:
-INSERT INTO audit_log
-    (id, ts, category, event, actor_user_id, library_id, ip, user_agent, payload_jsonb)
-VALUES
-    (uuidv7(),
-     now(),
-     'library',
-     'library.deleted',
-     '7c3b2a1d-...-actor',
-     'a1b2c3d4-...-library',
-     '10.0.5.42'::inet,
-     'maktaba-cli/1.0',
-     jsonb_build_object(
-         'name', 'Lectures 2025',
-         'roots', ARRAY['/mnt/lectures'],
-         'file_count', 0,
-         'freed_bytes', 0,
-         'failures', 0,
-         'at', now()
-     ));
-```
-
-### 2.3 Go writer — `api/internal/audit/writer.go`
-
-```go
-package audit
-
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"log/slog"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus"
-)
-
-const maxPayloadBytes = 8 * 1024
-
-var auditWriteFailedTotal = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "audit_write_failed_total",
-		Help: "Audit log INSERT failures by category.",
-	}, []string{"category"})
-
-func init() { prometheus.MustRegister(auditWriteFailedTotal) }
-
-type Record struct {
-	Category    string
-	Event       string
-	ActorUserID *uuid.UUID
-	LibraryID   *uuid.UUID
-	VideoID     *uuid.UUID
-	IP          string
-	UserAgent   string
-	Payload     map[string]any
-}
-
-type Writer struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
-}
-
-func NewWriter(pool *pgxpool.Pool, log *slog.Logger) *Writer {
-	return &Writer{pool: pool, log: log}
-}
-
-// WriteBestEffort never returns; failures are logged + countered (D5).
-func (w *Writer) WriteBestEffort(ctx context.Context, rec Record) {
-	payload, truncated := capPayload(rec.Payload)
-	_, err := w.pool.Exec(ctx, `
-		INSERT INTO audit_log (
-			id, ts, category, event,
-			actor_user_id, library_id, video_id,
-			ip, user_agent, payload_jsonb)
-		VALUES (
-			uuidv7(), now(), $1, $2,
-			$3, $4, $5,
-			NULLIF($6,'')::inet, $7, $8::jsonb)
-	`,
-		rec.Category, rec.Event,
-		rec.ActorUserID, rec.LibraryID, rec.VideoID,
-		rec.IP, rec.UserAgent, payload,
-	)
-	if err != nil {
-		auditWriteFailedTotal.WithLabelValues(rec.Category).Inc()
-		w.log.Warn("audit_write_failed",
-			"category", rec.Category, "event", rec.Event,
-			"truncated", truncated, "err", err)
-	}
-}
-
-// capPayload enforces the 8 KiB ceiling (D6).
-func capPayload(p map[string]any) (string, bool) {
-	if p == nil {
-		return "{}", false
-	}
-	raw, err := json.Marshal(p)
-	if err != nil {
-		return `{"_marshal_error":true}`, true
-	}
-	if len(raw) <= maxPayloadBytes {
-		return string(raw), false
-	}
-	wrap := map[string]any{
-		"_truncated_orig_bytes": len(raw),
-		"_truncated":            true,
-	}
-	wrapped, _ := json.Marshal(wrap)
-	return string(wrapped), true
-}
-
-var ErrAppendOnly = errors.New("audit_log is append-only")
-```
-
-### 2.4 Go read handler — `api/internal/audit/handler.go`
-
-```go
-package audit
-
-import (
-	"context"
-	"encoding/base64"
-	"encoding/json"
-	"net/http"
-	"strconv"
-	"time"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-type Entry struct {
-	ID        uuid.UUID       `json:"id"`
-	TS        time.Time       `json:"ts"`
-	Category  string          `json:"category"`
-	Event     string          `json:"event"`
-	ActorID   *uuid.UUID      `json:"actor_user_id,omitempty"`
-	LibraryID *uuid.UUID      `json:"library_id,omitempty"`
-	VideoID   *uuid.UUID      `json:"video_id,omitempty"`
-	IP        string          `json:"ip,omitempty"`
-	UserAgent string          `json:"user_agent,omitempty"`
-	Payload   json.RawMessage `json:"payload"`
-}
-
-type Page struct {
-	Items      []Entry `json:"items"`
-	NextCursor string  `json:"next_cursor,omitempty"`
-}
-
-// cursor encodes (ts, id) as base64url("ts.UnixNano|id"). Reuses the
-// shared primitive from Epic 7 Story 7.2; inlined here for clarity.
-type cursor struct {
-	TS time.Time
-	ID uuid.UUID
-}
-
-func encodeCursor(c cursor) string {
-	raw, _ := json.Marshal([]any{c.TS.UnixNano(), c.ID.String()})
-	return base64.RawURLEncoding.EncodeToString(raw)
-}
-
-func decodeCursor(s string) (cursor, error) {
-	if s == "" {
-		return cursor{TS: time.Now().Add(time.Hour), ID: uuid.Max}, nil
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		return cursor{}, err
-	}
-	var arr [2]any
-	if err := json.Unmarshal(raw, &arr); err != nil {
-		return cursor{}, err
-	}
-	nanos := int64(arr[0].(float64))
-	id, err := uuid.Parse(arr[1].(string))
-	if err != nil {
-		return cursor{}, err
-	}
-	return cursor{TS: time.Unix(0, nanos), ID: id}, nil
-}
-
-type Handler struct {
-	pool *pgxpool.Pool
-}
-
-func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{pool: pool} }
-
-func (h *Handler) ServeLibraryAudit(w http.ResponseWriter, r *http.Request) {
-	libID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "library-id-invalid", err.Error())
-		return
-	}
-	c, err := decodeCursor(r.URL.Query().Get("cursor"))
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "cursor-invalid", err.Error())
-		return
-	}
-	limit := 50
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
-			limit = n
-		}
-	}
-
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT id, ts, category, event, actor_user_id, library_id, video_id,
-		       host(ip), user_agent, payload_jsonb
-		  FROM audit_log
-		 WHERE library_id = $1
-		   AND category = 'library'
-		   AND (ts, id) < ($2, $3)
-		 ORDER BY ts DESC, id DESC
-		 LIMIT $4
-	`, libID, c.TS, c.ID, limit+1)
-	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "audit-query-failed", err.Error())
-		return
-	}
-	defer rows.Close()
-
-	items := make([]Entry, 0, limit)
-	for rows.Next() {
-		var e Entry
-		if err := rows.Scan(&e.ID, &e.TS, &e.Category, &e.Event,
-			&e.ActorID, &e.LibraryID, &e.VideoID,
-			&e.IP, &e.UserAgent, &e.Payload); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "audit-scan-failed", err.Error())
-			return
-		}
-		items = append(items, e)
-	}
-
-	page := Page{Items: items}
-	if len(items) > limit {
-		last := items[limit-1]
-		page.Items = items[:limit]
-		page.NextCursor = encodeCursor(cursor{TS: last.TS, ID: last.ID})
-	}
-	writeJSON(w, http.StatusOK, page)
-}
-```
-
-### 2.5 Maintenance CLI — `cmd/audit-maint/main.go`
-
-```go
-// Package main runs nightly: ensures next-2-month partitions exist and
-// detaches partitions older than retention_days.
-package main
-
-import (
-	"context"
-	"flag"
-	"fmt"
-	"log/slog"
-	"os"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-func main() {
-	dsn := flag.String("dsn", os.Getenv("PG_DSN"), "Postgres DSN")
-	retentionDays := flag.Int("retention-days", 365, "audit_retention_days")
-	archiveDir := flag.String("archive-dir", "/var/lib/maktaba/audit-archive", "destination for detached partitions")
-	flag.Parse()
-
-	ctx := context.Background()
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	pool, err := pgxpool.New(ctx, *dsn)
-	must(err)
-	defer pool.Close()
-
-	if err := ensureFuturePartitions(ctx, pool, log); err != nil {
-		log.Error("ensure future partitions", "err", err)
-		os.Exit(1)
-	}
-	if err := detachOldPartitions(ctx, pool, log, *retentionDays, *archiveDir); err != nil {
-		log.Error("detach old partitions", "err", err)
-		os.Exit(2)
-	}
-}
-
-func ensureFuturePartitions(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
-	now := time.Now().UTC()
-	for _, m := range []time.Time{
-		firstOfMonth(now),
-		firstOfMonth(now.AddDate(0, 1, 0)),
-		firstOfMonth(now.AddDate(0, 2, 0)),
-	} {
-		name := fmt.Sprintf("audit_log_%04d_%02d", m.Year(), int(m.Month()))
-		end := firstOfMonth(m.AddDate(0, 1, 0))
-		_, err := pool.Exec(ctx, fmt.Sprintf(
-			`CREATE TABLE IF NOT EXISTS %s PARTITION OF audit_log
-			 FOR VALUES FROM ('%s') TO ('%s')`,
-			name, m.Format("2006-01-02 15:04:05+00"), end.Format("2006-01-02 15:04:05+00"),
-		))
-		if err != nil {
-			return err
-		}
-		log.Info("ensure_partition", "name", name)
-	}
-	return nil
-}
-
-func detachOldPartitions(
-	ctx context.Context, pool *pgxpool.Pool, log *slog.Logger,
-	retentionDays int, archiveDir string,
-) error {
-	cutoff := firstOfMonth(time.Now().UTC().AddDate(0, 0, -retentionDays))
-	rows, err := pool.Query(ctx, `
-		SELECT child.relname, pg_get_expr(child.relpartbound, child.oid)
-		  FROM pg_inherits
-		  JOIN pg_class parent ON parent.oid = pg_inherits.inhparent
-		  JOIN pg_class child  ON child.oid  = pg_inherits.inhrelid
-		 WHERE parent.relname = 'audit_log'`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	var stale []string
-	for rows.Next() {
-		var name, bound string
-		if err := rows.Scan(&name, &bound); err != nil {
-			return err
-		}
-		if isOlder(bound, cutoff) {
-			stale = append(stale, name)
-		}
-	}
-	for _, name := range stale {
-		if _, err := pool.Exec(ctx,
-			fmt.Sprintf("ALTER TABLE audit_log DETACH PARTITION %s", name)); err != nil {
-			return fmt.Errorf("detach %s: %w", name, err)
-		}
-		// Hand-off to archiver (pg_dump --table=name > $archiveDir/...). Out of scope for v1; logged.
-		log.Info("detached_partition", "name", name, "archive_dir", archiveDir)
-	}
-	return nil
-}
-
-func firstOfMonth(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
-}
-
-func isOlder(boundExpr string, cutoff time.Time) bool {
-	// pg_get_expr returns "FOR VALUES FROM ('2025-01-01 00:00:00+00') TO (...)";
-	// we parse the FROM ts and compare.
-	// Implementation detail elided for brevity.
-	return false
-}
-
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-```
-
----
-
-## 3. File scaffolding checklist
-
-| Order | File | Symbols | Tests gating |
-|-------|------|---------|--------------|
-| 1 | `shared/db/migrations/0022_audit_log.sql` | `audit_log`, partitioned indexes, `audit_log_no_mutation()` triggers, bootstrap partitions | `TestMigration_AuditLog` |
-| 2 | `api/internal/audit/writer.go` | `Writer`, `Record`, `WriteBestEffort`, `capPayload`, `auditWriteFailedTotal` | `TestWriter_WriteBestEffort_*` |
-| 3 | `api/internal/audit/handler.go` | `Handler.ServeLibraryAudit`, `Entry`, `Page`, `encodeCursor`/`decodeCursor` | `TestAuditHandler_*` |
-| 4 | `cmd/audit-maint/main.go` | `ensureFuturePartitions`, `detachOldPartitions`, `isOlder` | `TestEnsureFuturePartitions`, `TestDetachOldPartitions` |
-| 5 | route wiring in `api/internal/router/router.go` | `r.Get("/api/libraries/{id}/audit", h.ServeLibraryAudit)` | `TestRouteRegistered` |
-| 6 | systemd timer / cron entry doc | `audit-maint.timer` / cron line | runbook smoke check |
-
----
-
-## 4. Test cases keyed to ACs
-
-### T1 — AC-1: UPDATE on audit_log raises
-
-```sql
--- test_audit_log_update_blocked.sql
+-- Bootstrap the current and next 2 monthly partitions.
 DO $$
+DECLARE
+    cur_start DATE := date_trunc('month', now())::date;
+    nxt       DATE;
+    i         INT;
 BEGIN
-  INSERT INTO audit_log (id, category, event)
-  VALUES (uuidv7(), 'library', 'test');
-  BEGIN
-    UPDATE audit_log SET event = 'tampered' WHERE event = 'test';
-    RAISE EXCEPTION 'UPDATE should have failed';
-  EXCEPTION WHEN raise_exception THEN
-    -- expected: "audit_log is append-only"
-    NULL;
-  END;
-END $$;
+    FOR i IN 0..2 LOOP
+        nxt := (cur_start + (i || ' month')::interval)::date;
+        EXECUTE format(
+          'CREATE TABLE IF NOT EXISTS audit_log_%s '
+          'PARTITION OF audit_log '
+          'FOR VALUES FROM (%L) TO (%L)',
+          to_char(nxt, 'YYYY_MM'),
+          nxt,
+          (nxt + interval '1 month')::date
+        );
+    END LOOP;
+END$$;
+
+-- A small helper that the cron (Epic 22) calls to keep the next-month
+-- partition pre-created so writes never blow up on month boundary.
+CREATE OR REPLACE FUNCTION audit_log_ensure_next_month_partition() RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    nxt DATE := (date_trunc('month', now()) + interval '1 month')::date;
+BEGIN
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS audit_log_%s '
+      'PARTITION OF audit_log '
+      'FOR VALUES FROM (%L) TO (%L)',
+      to_char(nxt, 'YYYY_MM'),
+      nxt,
+      (nxt + interval '1 month')::date
+    );
+END;
+$$;
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP FUNCTION IF EXISTS audit_log_ensure_next_month_partition();
+DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log;
+DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
+DROP FUNCTION IF EXISTS audit_log_no_mutation();
+DROP TABLE IF EXISTS audit_log CASCADE;
+-- +goose StatementEnd
 ```
 
-### T2 — AC-1: DELETE on audit_log raises
+### 3.2 SQLite variant
+
+SQLite does not partition. The variant uses a single `audit_log` table
+with the same columns, the same CHECKs, and the same INSERT-only
+triggers. The retention job DELETEs by `ts` instead of detaching.
+For a single-host SQLite deployment, this is acceptable.
+
+### 3.3 sqlc queries
 
 ```sql
-DO $$
-BEGIN
-  INSERT INTO audit_log (id, category, event)
-  VALUES (uuidv7(), 'library', 'test');
-  BEGIN
-    DELETE FROM audit_log WHERE event = 'test';
-    RAISE EXCEPTION 'DELETE should have failed';
-  EXCEPTION WHEN raise_exception THEN NULL;
-  END;
-END $$;
+-- name: InsertAudit :exec
+INSERT INTO audit_log (id, ts, category, event, actor_user_id,
+                       library_id, video_id, ip, user_agent, payload_jsonb)
+VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9::jsonb);
+
+-- name: ListLibraryAudit :many
+SELECT id, ts, event, actor_user_id, video_id, payload_jsonb
+  FROM audit_log
+ WHERE category = 'library'
+   AND library_id = $1
+   AND (ts, id) < ($2::timestamptz, $3::uuid)
+ ORDER BY ts DESC, id DESC
+ LIMIT $4;
 ```
 
-### T3 — AC-2: cursor pagination newest-first, library-scoped
+## 4. Code scaffolding
+
+### 4.1 Go writer — non-blocking by design
 
 ```go
-func TestAuditHandler_LibraryScopedCursor(t *testing.T) {
-	libA := uuid.Must(uuid.NewV7())
-	libB := uuid.Must(uuid.NewV7())
-	for i := 0; i < 5; i++ {
-		insertAuditRow(t, db, "library", "library.scan_started", &libA, time.Now().Add(-time.Duration(i)*time.Minute))
-		insertAuditRow(t, db, "library", "library.scan_started", &libB, time.Now().Add(-time.Duration(i)*time.Minute))
-		insertAuditRow(t, db, "security", "login.failed", nil, time.Now().Add(-time.Duration(i)*time.Minute))
-	}
+// api/internal/audit/writer.go
+type writer struct {
+    pool   *pgxpool.Pool
+    queue  chan Event              // buffered; back-pressure metric on drop
+    logger *slog.Logger
+    failed prometheus.Counter
+}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/libraries/"+libA.String()+"/audit?limit=3", nil)
-	router.ServeHTTP(rec, req)
+func NewWriter(pool *pgxpool.Pool, log *slog.Logger) Writer {
+    w := &writer{
+        pool:   pool,
+        queue:  make(chan Event, 1024),
+        logger: log,
+        failed: auditWriteFailedTotal,
+    }
+    go w.runLoop(context.Background())
+    return w
+}
 
-	var page audit.Page
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page))
-	assert.Len(t, page.Items, 3)
-	for _, e := range page.Items {
-		assert.Equal(t, "library", e.Category)
-		assert.Equal(t, libA.String(), e.LibraryID.String())
-	}
-	for i := 1; i < len(page.Items); i++ {
-		assert.True(t, page.Items[i].TS.Before(page.Items[i-1].TS), "newest first")
-	}
-	require.NotEmpty(t, page.NextCursor)
+func (w *writer) Write(ctx context.Context, e Event) error {
+    if e.ID == uuid.Nil {
+        e.ID, _ = uuid.NewV7()
+    }
+    select {
+    case w.queue <- e:
+        return nil
+    default:
+        // Non-blocking: queue full → counter and dropped log.
+        w.failed.Inc()
+        w.logger.Warn("audit_drop_queue_full", "category", e.Category,
+            "event", e.Event)
+        return nil
+    }
+}
 
-	// follow cursor
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest("GET",
-		"/api/libraries/"+libA.String()+"/audit?cursor="+page.NextCursor+"&limit=3", nil)
-	router.ServeHTTP(rec, req)
-	var page2 audit.Page
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page2))
-	assert.Len(t, page2.Items, 2)
-	assert.Empty(t, page2.NextCursor)
+func (w *writer) runLoop(ctx context.Context) {
+    q := dbq.New(w.pool)
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case e := <-w.queue:
+            payload, _ := json.Marshal(e.Payload)
+            err := q.InsertAudit(ctx, dbq.InsertAuditParams{
+                ID: e.ID, Category: string(e.Category), Event: e.Event,
+                ActorUserID: e.ActorUserID, LibraryID: e.LibraryID,
+                VideoID: e.VideoID, Ip: e.IP, UserAgent: e.UserAgent,
+                PayloadJsonb: payload,
+            })
+            if err != nil {
+                w.failed.Inc()
+                w.logger.Warn("audit_insert_failed", "err", err,
+                    "category", e.Category, "event", e.Event)
+            }
+        }
+    }
 }
 ```
 
-### T4 — AC-3: nightly trim detaches partitions older than retention
+The "best-effort" property is enforced at two levels: queue full is a
+non-blocking drop; insert error is logged but not returned. The
+calling code never has to wrap the call in error handling.
+
+### 4.2 Library-event constructors
 
 ```go
-func TestDetachOldPartitions_DropsByCutoff(t *testing.T) {
-	ctx, pool := newTestDB(t)
-	createPartition(t, pool, "audit_log_2024_01", "2024-01-01", "2024-02-01")
-	createPartition(t, pool, "audit_log_2025_05", "2025-05-01", "2025-06-01")
-	createPartition(t, pool, "audit_log_2026_05", "2026-05-01", "2026-06-01")
-
-	require.NoError(t, detachOldPartitions(ctx, pool, slogTest, 365, t.TempDir()))
-
-	parts := listAuditPartitions(t, pool)
-	assert.NotContains(t, parts, "audit_log_2024_01") // detached
-	assert.Contains(t, parts, "audit_log_2025_05")    // within retention
-	assert.Contains(t, parts, "audit_log_2026_05")
+// api/internal/audit/library_events.go
+func (w *writer) WriteLibrary(ctx context.Context, e LibraryEvent) error {
+    return w.Write(ctx, Event{
+        Category:    CategoryLibrary,
+        Event:       e.Event,
+        ActorUserID: &e.ActorUserID,
+        LibraryID:   &e.LibraryID,
+        VideoID:     e.VideoID,
+        Payload:     e.Payload,
+    })
 }
 ```
 
-### T5 — D5: writer never propagates errors
+### 4.3 Reader — `GET /api/libraries/{id}/audit`
 
 ```go
-func TestWriter_NeverPropagates(t *testing.T) {
-	w := audit.NewWriter(brokenPool, slogTest)
-	w.WriteBestEffort(ctx, audit.Record{Category: "library", Event: "x"})
-	// Pass: did not panic, did not block, did not return error.
-	assert.Equal(t, float64(1), getCounter("audit_write_failed_total", "library"))
+func AuditHandler(d *handlers.Deps) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ctx := r.Context()
+        libID, _ := uuid.Parse(chi.URLParam(r, "id"))
+
+        actor := handlers.RequireUser(ctx)
+        if !d.AuthZ.IsLibraryAdmin(ctx, actor.ID, libID) {
+            handlers.WriteError(w, 403, "forbidden", "")
+            return
+        }
+
+        size := parsePageSize(r, 50)
+        cursorTs, cursorID, err := decodeCursor(r.URL.Query().Get("cursor"))
+        if err != nil { handlers.WriteError(w, 400, "bad-cursor", ""); return }
+
+        rows, err := d.Queries.ListLibraryAudit(ctx, dbq.ListLibraryAuditParams{
+            LibraryID: libID, CursorTs: cursorTs, CursorID: cursorID,
+            Limit: int32(size + 1),
+        })
+        if err != nil { handlers.WriteError(w, 500, "list-failed", err.Error()); return }
+
+        var nextCursor *string
+        if len(rows) > size {
+            last := rows[size]
+            c := encodeCursor(last.Ts, last.ID)
+            nextCursor = &c
+            rows = rows[:size]
+        }
+
+        items := make([]AuditEntry, 0, len(rows))
+        for _, r := range rows {
+            items = append(items, AuditEntry{
+                ID: r.ID, TS: r.Ts, Event: r.Event,
+                Actor: r.ActorUserID, VideoID: r.VideoID,
+                Payload: r.PayloadJsonb,
+            })
+        }
+        handlers.WriteJSON(w, 200, AuditPage{Items: items, NextCursor: nextCursor})
+    }
 }
 ```
 
-### T6 — D6: payload truncation
+### 4.4 Python writer — symmetric semantics
+
+```python
+# pipeline/src/maktaba_pipeline/audit/writer.py
+import asyncio, json, logging
+from uuid import uuid4
+from uuid_extensions import uuid7  # for time-ordered ids
+
+
+class AuditWriter:
+    def __init__(self, db, *, queue_size: int = 1024) -> None:
+        self._db = db
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
+        self._task = asyncio.create_task(self._run())
+
+    async def write(self, *, category, event, payload=None,
+                    library_id=None, video_id=None, actor_user_id=None) -> None:
+        try:
+            self._queue.put_nowait({
+                "id": uuid7(),
+                "category": category, "event": event,
+                "library_id": library_id, "video_id": video_id,
+                "actor_user_id": actor_user_id,
+                "payload_jsonb": json.dumps(payload or {}),
+            })
+        except asyncio.QueueFull:
+            audit_write_failed_total.inc()
+            logging.warning("audit_drop_queue_full event=%s", event)
+
+    async def _run(self) -> None:
+        while True:
+            e = await self._queue.get()
+            try:
+                await self._db.execute(
+                    "INSERT INTO audit_log "
+                    "  (id, ts, category, event, actor_user_id, "
+                    "   library_id, video_id, payload_jsonb) "
+                    "VALUES ($1, now(), $2, $3, $4, $5, $6, $7::jsonb)",
+                    e["id"], e["category"], e["event"],
+                    e["actor_user_id"], e["library_id"], e["video_id"],
+                    e["payload_jsonb"],
+                )
+            except Exception:
+                audit_write_failed_total.inc()
+                logging.exception("audit_insert_failed event=%s", e["event"])
+```
+
+### 4.5 Retention CLI
 
 ```go
-func TestCapPayload_Truncates8KiB(t *testing.T) {
-	big := make(map[string]any)
-	big["blob"] = strings.Repeat("x", 12*1024)
-	out, truncated := audit.CapPayloadForTest(big)
-	assert.True(t, truncated)
-	assert.LessOrEqual(t, len(out), 8*1024)
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal([]byte(out), &parsed))
-	assert.True(t, parsed["_truncated"].(bool))
+// api/cmd/maktaba-api/audit_archive.go
+var auditArchiveCmd = &cobra.Command{
+    Use: "audit-archive",
+    Short: "Detach and archive audit_log partitions older than retention_days.",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        days, _ := cmd.Flags().GetInt("days")
+        // 1. List partitions older than the cutoff.
+        cutoff := time.Now().AddDate(0, 0, -days)
+        parts, err := dbq.New(pool).ListAuditPartitionsOlderThan(ctx, cutoff)
+        if err != nil { return err }
+        for _, p := range parts {
+            // 2. COPY to archive (S3 or local)
+            if err := archive.CopyTable(ctx, pool, p.Name); err != nil { return err }
+            // 3. DETACH; DROP
+            _, err := pool.Exec(ctx,
+                fmt.Sprintf("ALTER TABLE audit_log DETACH PARTITION %s", p.Name))
+            if err != nil { return err }
+            _, err = pool.Exec(ctx, fmt.Sprintf("DROP TABLE %s", p.Name))
+            if err != nil { return err }
+        }
+        return nil
+    },
 }
 ```
 
-### T7 — Story 9.15 integration: deletion writes a library row
+## 5. Test plan
 
-```go
-func TestLibraryDelete_WritesAuditRow(t *testing.T) {
-	libID := seedLibrary(t, db, "AuditLib", nil)
-	deleteLibrary(t, libID)
-	row := db.QueryRow(ctx,
-		"SELECT category, event, library_id FROM audit_log WHERE library_id=$1", libID)
-	var category, event string
-	var lib uuid.UUID
-	require.NoError(t, row.Scan(&category, &event, &lib))
-	assert.Equal(t, "library", category)
-	assert.Equal(t, "library.deleted", event)
-}
-```
+### 5.1 Append-only enforcement (`test_audit_appendonly.py`)
 
-### T8 — `ensureFuturePartitions` is idempotent
+| Test | What it pins |
+|---|---|
+| `test_update_raises` | Insert one row; UPDATE → exception, message contains `append-only`. AC-1. |
+| `test_delete_raises` | Insert; DELETE → exception. AC-1. |
+| `test_truncate_raises` | TRUNCATE → exception (BEFORE TRUNCATE trigger added in §3.1 — addendum). |
+| `test_insert_succeeds` | INSERT → row visible. |
 
-```go
-func TestEnsureFuturePartitions_Idempotent(t *testing.T) {
-	require.NoError(t, ensureFuturePartitions(ctx, pool, slogTest))
-	require.NoError(t, ensureFuturePartitions(ctx, pool, slogTest))
-	// Still exactly one of each.
-	assert.Len(t, listAuditPartitionsWithPrefix(t, pool, "audit_log_"), 3) // current + 2 ahead
-}
-```
+### 5.2 Reader tests (`audit_test.go`)
 
----
+| Test | What it pins |
+|---|---|
+| `TestList_NewestFirst` | 3 events at t1<t2<t3 → response order: t3, t2, t1. AC-2. |
+| `TestList_RespectsLibraryScope` | Two libraries; A and B audit rows; GET A returns only A rows. AC-2. |
+| `TestList_RespectsCategoryFilter` | A `category='security'` row is in the table; GET library audit returns 0 such rows. |
+| `TestList_CursorPagination` | 25 rows, page_size=10 → 3 pages with stable cursor; last `next_cursor=null`. AC-2 + Epic 7 cursor primitive. |
+| `TestList_ForbiddenForNonAdmin` | Non-admin user → 403. |
+| `TestList_PayloadShape` | Stored payload `{"x":1}` round-trips; numeric types preserved (int vs float). |
 
-## 5. Edge cases
+### 5.3 Writer tests
 
-| #   | Edge case | Handled by |
-|-----|-----------|------------|
-| E1  | **Audit unavailable (DB partial outage).** `WriteBestEffort` swallows + counters; the originating handler still returns 200. | D5 path. |
-| E2  | **Payload contains user-supplied content (e.g., new collection name).** All inserts bind `payload_jsonb` as a parameter; no SQL string concatenation; injection-safe. | `Writer.WriteBestEffort` parameterized INSERT. |
-| E3  | **Payload exceeds 8 KiB.** Replaced by `{_truncated: true, _truncated_orig_bytes: N}` so the row still inserts. | D6 path. |
-| E4  | **Invalid UTF-8 in `user_agent`.** `pgx` validates against `text` semantics; invalid bytes are rejected by Postgres. We pre-sanitize at the writer using `strings.ToValidUTF8`. | `WriteBestEffort` adds the sanitization step. |
-| E5  | **Future-dated `ts`.** Caller may supply `now()` from a clock-skewed host. Insert routes by partition; if no partition exists for that future date, the insert fails. The writer counters this and the maintenance CLI's "create 2 months ahead" buys headroom. | D3 + D5. |
-| E6  | **Detach of currently-queried partition.** `DETACH PARTITION` takes an `ACCESS EXCLUSIVE` lock. We schedule the maintenance run during the documented low-traffic window. | Runbook. |
-| E7  | **Cursor for a row whose partition has been detached.** `WHERE (ts, id) < ($cursor)` simply returns no rows from the missing partition. The next page picks up at the next still-attached partition, giving a clean empty-tail. | Inherent in `RANGE` partitioning. |
-| E8  | **Two events in the same nanosecond.** The `(ts, id) < ($ts, $id)` cursor uses the secondary `id` (uuidv7, ordered) to break ties deterministically. | D4 + uuidv7 ordering. |
-| E9  | **`actor_user_id` references a deleted user.** FK is `ON DELETE SET NULL`; the audit row keeps the timestamp, event, and payload. | Schema FK. |
-| E10 | **Library deleted between event write and audit query.** FK on `library_id` is `ON DELETE SET NULL`; the row stays but `library_id` becomes NULL. The library-scoped query on `library_id = $1` no longer returns it; for the global audit view it remains visible. | Schema FK. |
-| E11 | **Partition for `now()` missing because cron didn't run.** INSERT fails with `partition not found`; D5 swallows. The next maintenance run heals. Operators get the metric spike as the early warning. | D3 + D5. |
-| E12 | **Archive transport offline.** The `archive-dir` write fails; `DETACH` already succeeded. The detached table sits in the schema (renamed `audit_log_archived_YYYY_MM` per the runbook) until ops moves it. | Documented runbook handover. |
+| Test | What it pins |
+|---|---|
+| `TestWriter_DropsWhenQueueFull` | Synthesize back-pressure (slow DB); 2000 calls; counter `audit_write_failed_total` exceeds zero; the calls themselves do NOT block. |
+| `TestWriter_NoErrorPropagation` | Force the inner INSERT to fail (rename the table); writer logs but its `Write` returns nil. |
+| `TestWriter_UUIDv7Ordered` | 1000 inserts in tight sequence; ids sort the same as ts. |
 
----
+### 5.4 Retention tests
 
-## 6. Acceptance checklist
+| Test | What it pins |
+|---|---|
+| `test_partition_detach_after_retention` | Set retention to 1 day; create a partition with `ts < now() - 1 day`; run `audit-archive`; partition is detached and dropped; live table no longer contains those rows. AC-3. |
+| `test_partition_creation_at_month_boundary` | Run `audit_log_ensure_next_month_partition()` once; INSERT with ts in next month succeeds (would otherwise fail with "no partition"). |
+| `test_archive_copy_includes_all_columns` | The archived CSV contains every column; subsequent restore via COPY FROM yields equal rows. |
 
-- [ ] **A1** (AC-1) `BEFORE UPDATE` and `BEFORE DELETE` triggers on `audit_log` raise `audit_log is append-only`. (T1, T2)
-- [ ] **A2** (AC-2) `GET /api/libraries/{id}/audit?cursor=...&limit=N` returns library-scoped events newest-first; rows have `category='library'` and `library_id=$id`; `next_cursor` is present iff a next page exists; max `limit=200`. (T3)
-- [ ] **A3** (AC-3) `audit-maint` CLI run nightly creates the next 2 months' partitions and detaches partitions older than `audit_retention_days` (default 365). (T4, T8)
-- [ ] **A4** (D5) `Writer.WriteBestEffort` never propagates DB errors; failures bump `audit_write_failed_total{category}` and log at WARN. (T5)
-- [ ] **A5** (D6) Payloads larger than 8 KiB are replaced with `{_truncated: true, _truncated_orig_bytes: N}`; the row still inserts and parses as JSON. (T6)
-- [ ] **A6** (D1) The same `audit_log` table serves library and security categories; Story 10.16 reads with `category='security'` filter, Story 9.17 with `category='library'`. (`TestSecurityAndLibraryShareTable`)
-- [ ] **A7** (Story 9.15 integration) Library deletion writes one `library.deleted` (or `library.purged`) row with the correct payload. (T7)
-- [ ] **A8** (D2) Indexes `audit_log_lookup`, `audit_log_actor`, `audit_log_library` are inherited by every partition. (`TestPartitionedIndexesInheritedByChildren`)
-- [ ] **A9** Cursor primitive matches Story 7.2's encoding (base64url JSON `[ts_nanos, id]`). (`TestCursorRoundtrip`)
-- [ ] **A10** Cron / systemd timer entry committed for nightly audit-maint run. (Doc check.)
+## 6. Edge cases — handling table
+
+| Case | Behaviour | Where it's pinned |
+|---|---|---|
+| DB temporarily unavailable | Writer logs and increments `audit_write_failed_total`; calls don't block. | `TestWriter_NoErrorPropagation` |
+| User-supplied content in payload | The payload is parameterized JSONB; no injection. CHECK on `octet_length <= 8 KiB`. | Documented |
+| Month-boundary INSERT before partition exists | The cron precreates next-month partitions; if the cron lags, the next-month partition is *also* created at deploy time so first writes never miss. | `test_partition_creation_at_month_boundary` |
+| Restore archived data temporarily | `audit-restore --partition audit_log_2025_03` re-attaches a previously archived partition. Read-only; the no-mutation triggers still apply. | Out of scope for this story; ops doc covers. |
+| API filter for cross-library admin view | Out of scope here; Epic 10 Story 10.16 surfaces the global view. | Documented |
+
+## 7. Configuration
+
+| Key | Default | Effect |
+|---|---|---|
+| `audit_retention_days` | 365 | Used by `audit-archive` cron. |
+| `audit_writer_queue_size` | 1024 | Buffer between callers and the inserter. |
+| `audit_payload_max_bytes` | 8 KiB | DB CHECK. |
+
+## 8. Dependencies
+
+| Dep | Source | Why |
+|---|---|---|
+| Postgres ≥ 13 | architecture | Range partitioning. |
+| `uuid_extensions` (Python) or stdlib v7 helper (Go) | required | Time-ordered UUIDs. |
+| Story 9.15, 9.16, 9.13, 9.14, 9.11, 9.6, 9.4 | required | Callers of `WriteLibrary`. |
+
+## 9. Acceptance checklist
+
+**Schema**
+- [ ] `audit_log` exists with the columns documented in the README.
+- [ ] BEFORE UPDATE / BEFORE DELETE triggers raise `append-only`.
+- [ ] Three partitions exist on migration apply (current + 2 future).
+
+**Code**
+- [ ] Go and Python audit writers exist; never block; never raise.
+- [ ] `GET /api/libraries/{id}/audit` is wired and admin-only.
+- [ ] All callers use the writers (no inline `INSERT INTO audit_log`).
+
+**Behaviour (story acceptance criteria)**
+- [ ] AC-1: UPDATE/DELETE on the table raises.
+- [ ] AC-2: GET endpoint returns library-scoped, newest-first, paginated.
+- [ ] AC-3: nightly cron detaches and archives partitions older than `audit_retention_days`.
+
+**Observability**
+- [ ] Counter `audit_write_failed_total{reason=queue_full|db_error}`.
+- [ ] Counter `audit_inserts_total{category, event}`.
+- [ ] Histogram `audit_writer_queue_depth` (sampled gauge).
+
+**Docs**
+- [ ] `specs/epics/09-library-management/README.md` ticks story 9.17.
+- [ ] Operations doc covers retention, partitions, archive restore.
