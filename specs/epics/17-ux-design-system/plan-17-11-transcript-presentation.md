@@ -39,7 +39,7 @@ export function TranscriptSidebar({ videoId }: { videoId: string }) {
             <VariableSizeList
                 ref={listRef}
                 height={containerHeight} itemCount={segments.length}
-                itemSize={(i) => estimateHeight(segments[i])}>
+                itemSize={(i) => estimateSegmentHeight(segments[i])}>
                 {({ index, style }) => (
                     <Segment
                         style={style}
@@ -53,6 +53,32 @@ export function TranscriptSidebar({ videoId }: { videoId: string }) {
     );
 }
 ```
+
+### 1.1 `estimateSegmentHeight`
+
+The `VariableSizeList` needs a deterministic per-row height. We don't
+do real text measurement at scroll-time (too expensive at 50k rows);
+instead we estimate from text length, line-height, and chrome height.
+
+```ts
+// Average chars per line at the transcript's typography scale.
+const CHARS_PER_LINE = 64;          // 18px Inter at the transcript width
+const LINE_HEIGHT_PX = 28;          // 1.55 × 18 (matches CSS)
+const CHROME_PX      = 32;          // timestamp + speaker badge + paddings
+
+export function estimateSegmentHeight(seg: Segment): number {
+    const text = seg.text ?? '';
+    const lines = Math.max(1, Math.ceil(text.length / CHARS_PER_LINE));
+    return CHROME_PX + lines * LINE_HEIGHT_PX;
+}
+```
+
+The estimate is intentionally over-conservative (CHARS_PER_LINE is the
+*upper* bound for typical content); the auto-scroll precision target
+(±1 segment) is met because `scrollToItem('center')` from
+`react-window` snaps to the row regardless of estimate accuracy.
+Dynamic measurement via `react-window`'s `resetAfterIndex` is reserved
+for v2 if real-world content drifts the estimate by > 20%.
 
 ## 2. Segment component
 
@@ -97,9 +123,23 @@ function binarySearchSegment(segs: Segment[], t: number): number {
         else if (t > segs[mid].endSec)     lo = mid + 1;
         else                                return mid;
     }
+    // No exact-containing segment. If the player is past the last
+    // segment's end (typical for the credits/silence at the end of a
+    // video), return -1 so the UI shows "no current segment" rather
+    // than highlighting the last segment forever. Earlier draft
+    // returned `Math.max(0, lo - 1)` which made the last segment
+    // sticky for the rest of playback.
+    if (lo > segs.length - 1) return -1;
+    // Player is in a gap between segments — caller may want the
+    // *previous* segment as "the most recent context".
     return Math.max(0, lo - 1);
 }
 ```
+
+`useCurrentSegment` honors the `-1` return: a `< 0` index renders no
+highlight in the sidebar and `scrollToItem` is skipped (the early
+return at the top of the auto-scroll effect already gates on
+`current.index < 0`).
 
 The 200 ms TC ("sidebar's current segment highlight tracks the player within 200 ms") is satisfied because `usePlayerTime` ticks at the player's `timeupdate` event, which fires ~4× per second on Vidstack.
 

@@ -27,6 +27,29 @@ Rationale:
 
 Anti-trade-off: increased memory while idle. Mitigated by an idle timeout (5 min after pause) that destroys the instance and restarts at the saved position on next play.
 
+### 1.1 Switching to a different video
+
+Persisting one instance across navigation also means navigating from
+`/watch/A` to `/watch/B` must reuse the same instance with a *new
+source*, not destroy and recreate. The Vidstack API for this is
+`player.src = newSrc` (or `setProvider(newProvider)` for HLS-flavor
+swaps), which is the web equivalent of AVPlayer's
+`replaceCurrentItem`. The reload triggers a new HLS manifest fetch
+and HDR re-negotiation, so the latency cost of recreate is paid here
+anyway — but the instance survives so its event subscribers, the
+mini-player window, and the auth interceptor stay attached.
+
+```ts
+// PlayerInstance.tsx
+useEffect(() => {
+    if (!playerRef.current) return;
+    if (playerRef.current.src?.url !== src.url) {
+        playerRef.current.src = src;        // replaceCurrentItem-equivalent
+        playerRef.current.currentTime = resumeAt;
+    }
+}, [src, resumeAt]);
+```
+
 ## 2. Architecture
 
 ```

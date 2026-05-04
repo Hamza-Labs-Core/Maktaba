@@ -13,7 +13,7 @@
 | Migration | `shared/db/migrations/0054_federation.sql` (Postgres + SQLite variant). |
 | Crypto package | `api/internal/auth/federation/{kex.go,sas.go,sig.go,store.go,token.go}`. |
 | HTTP handlers | `api/internal/http/federation/{pair.go,confirm.go,manage.go,token.go}`. |
-| Long-term keypair | Reuses Epic 10 Story 10.6 Ed25519 key infrastructure (kid-based key set). |
+| Long-term keypair | Ed25519 (`EdDSA` JWS alg). **Note:** Epic 10 Story 10.6 owns RS256 / JWKS for short-lived API JWTs and is **not** the source of these keys (its title is literally "RS256 keys, rotation, JWKS"). This plan depends on a new Epic 10 Story 10.18 ("Ed25519 long-term server identity keys") that owns the generation, rotation, and `kid`-indexed publication of the long-term keypair. Until 10.18 lands this plan blocks; the federation handshake / token mint cannot ship against RS256 because the JOSE alg and signature size budgets here assume `EdDSA`. |
 | At-rest encryption of ephemeral keys | Reuses the data-encryption key from Epic 10 Story 10.14 (secret loading) — `crypto.SealedBox(esk_self, dataKey)`. |
 | SAS word list | PGP word-list (CSPP/PGP biometric word list, 256 unique 4–7 letter pronounceable words for each byte). Bundled at `shared/i18n/sas/pgp-words.txt`. |
 | Out of scope | Federation consumption surfaces (Story 15.3); admin UI ([Story 15.3](story-15-03-federation.md) §8). |
@@ -78,11 +78,20 @@ CREATE TABLE federation_partners (
     display_name          TEXT NOT NULL,
     peer_origin_url       TEXT NOT NULL,
     peer_long_term_pubkey BYTEA NOT NULL,
+    -- The acl shape is fixed (see Go FederationACL struct below);
+    -- pin the JSONB top-level keys with a CHECK so a malformed admin
+    -- write fails at insert rather than silently misbehaving at query
+    -- time.
     acl                   JSONB NOT NULL,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     confirmed_at          TIMESTAMPTZ NOT NULL,
     revoked_at            TIMESTAMPTZ,
-    CHECK (octet_length(peer_long_term_pubkey) = 32)
+    CHECK (octet_length(peer_long_term_pubkey) = 32),
+    CHECK (jsonb_typeof(acl) = 'object'
+       AND acl ? 'libraries'
+       AND jsonb_typeof(acl->'libraries') = 'array'
+       AND acl ? 'read_only'
+       AND jsonb_typeof(acl->'read_only') = 'boolean')
 );
 -- +goose StatementEnd
 
@@ -92,6 +101,23 @@ DROP TABLE IF EXISTS federation_partners;
 DROP TABLE IF EXISTS federation_pending;
 -- +goose StatementEnd
 ```
+
+### 2.1 ACL Go shape
+
+`api/internal/auth/federation/acl.go`:
+
+```go
+type FederationACL struct {
+    Libraries []uuid.UUID `json:"libraries"`            // library IDs the peer can read
+    ReadOnly  bool        `json:"read_only"`            // currently always true; reserved for v2
+}
+```
+
+sqlc emits `[]byte` for the `acl JSONB` column; the service layer
+unmarshals into `FederationACL`. The CHECK in §2 enforces shape at
+write time; the unmarshal call enforces it at read time. Adding a new
+field is non-breaking (unknown keys are ignored on read; new writes
+include them); removing a field is breaking and gets a migration.
 
 ## 3. Crypto: X25519, Ed25519, SAS
 
@@ -153,35 +179,39 @@ The PGP word list is chosen so adjacent words are phonetically distinct, which m
 
 ### 3.4 Pair token (initiator → responder)
 
+The story originally proposed an HMAC over the pair token verified
+against "its own `k`". That design is internally inconsistent: the
+responder cannot verify an HMAC computed with a key it does not share.
+We adopt **CRC32** as the integrity check — pure typo detection, no
+shared secret required. Confidentiality of the pairing handshake is
+not the token's job (the X25519 ephemeral provides it after pair);
+the token only needs to detect copy-paste corruption. **Story 15.7's
+acceptance criteria need a corresponding update from "HMAC against
+its own k" to "CRC32 typo guard"**; that is recorded in
+`docs/operations/federation.md` and noted as a deliberate
+story↔plan deviation in the §11 acceptance checklist.
+
 ```go
 // api/internal/auth/federation/token.go
-func encodePairToken(epk []byte, key []byte) string {
-    mac := hmac.New(sha256.New, key)
-    mac.Write(epk)
-    blob := append(epk, mac.Sum(nil)...)
+import "hash/crc32"
+
+func encodePairToken(epk []byte) string {
+    crc := crc32.ChecksumIEEE(epk)
+    blob := make([]byte, 0, 32+4)
+    blob = append(blob, epk...)
+    blob = binary.BigEndian.AppendUint32(blob, crc)
     return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(blob)
 }
 
-func decodePairToken(token string, key []byte) ([]byte, error) {
+func decodePairToken(token string) ([]byte, error) {
     blob, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(token)
-    if err != nil || len(blob) != 32+32 { return nil, errBadToken }
-    epk, mac := blob[:32], blob[32:]
-    expected := hmac.New(sha256.New, key)
-    expected.Write(epk)
-    if !hmac.Equal(mac, expected.Sum(nil)) { return nil, errMacFail }
+    if err != nil || len(blob) != 32+4 { return nil, errBadToken }
+    epk := blob[:32]
+    want := binary.BigEndian.Uint32(blob[32:])
+    if crc32.ChecksumIEEE(epk) != want { return nil, errCRCFail }
     return epk, nil
 }
 ```
-
-The `key` is a per-server admin secret (rotated per Epic 10 Story 10.6) — its purpose is to detect typos in the pasted token, not to provide secrecy (the X25519 ephemeral does that).
-
-Wait — the threat model says the responder verifies the HMAC against **its own k**. That can't work cross-server (different keys). Re-reading the story:
-
-> 2. **B receives.** Admin on B pastes the token into Settings → Federation → Pair. B verifies the HMAC against its own `k` (mismatch → reject; this also prevents copy-paste typos), generates its own X25519 ephemeral …
-
-This is internally inconsistent with cross-server pairing. Resolution: **interpret `k` as B's local typo-detection key, applied only to round-trip integrity within B's own UI** (e.g., admin pastes, B re-encodes locally to confirm structure). The MAC check is a typo guard, not a cross-server authenticator. We document this in `docs/operations/federation.md`.
-
-A cleaner interpretation: the token format is `base32(epk_A || crc32(epk_A))` — pure typo detection without HMAC. We adopt the CRC variant in implementation since the HMAC variant is misleading; the spec's "HMAC against its own k" is satisfied by any local integrity check. This is a deliberate deviation documented in the operations doc.
 
 ## 4. HTTP handlers
 
@@ -273,7 +303,12 @@ func (s *Service) MintFederationJWT(ctx context.Context, partnerID uuid.UUID, sc
     claims.Set("aud", p.PartnerID)
     claims.Set("scope", scope)
     claims.Set("exp", time.Now().Add(15*time.Minute).Unix())
-    return jwt.SignWithKey(claims, s.tls.LongTermPriv())
+    // Pin the JOSE alg explicitly: federation tokens are EdDSA (Ed25519),
+    // NOT RS256. Story 10.18's long-term key is Ed25519; Story 10.6's
+    // RS256 keys are reserved for short-lived API JWTs and would be the
+    // wrong key here. The verifier (peer) refuses any token whose
+    // header `alg` is not exactly "EdDSA".
+    return jwt.SignWithKey(claims, s.tls.LongTermPriv(), jwt.WithAlg("EdDSA"))
 }
 ```
 
@@ -296,7 +331,13 @@ go func() {
 
 ## 6. Long-term key handling
 
-The long-term key pair is the server's existing Ed25519 keypair from Epic 10 Story 10.6. We do **not** generate a federation-specific key — it would multiply the key-rotation surface unnecessarily. The trade-off: rotating the long-term key requires re-pairing federations (documented as a known limitation in the story EC).
+The long-term key pair is the server's Ed25519 keypair owned by Epic 10
+Story 10.18 (the new story that this plan blocks on; see §0). Story 10.6
+owns RS256 for short-lived API JWTs and is not the right source. We do
+**not** generate a federation-specific key — it would multiply the
+key-rotation surface unnecessarily. The trade-off: rotating the
+long-term key requires re-pairing federations (documented as a known
+limitation in the story EC).
 
 ## 7. Test plan
 

@@ -1,5 +1,10 @@
 # Implementation Plan Review — Epics 14-17
 
+> **Status: RESOLVED.** All blockers and major issues identified in
+> this review have been addressed in commit history; see §A
+> "Resolution log" at the end of this file for the per-section
+> mapping. Minor issues marked there may remain by design.
+
 **Scope.** All 33 implementation plans paired with their stories across four
 epics on `claude/affectionate-bardeen-7fa3fd`:
 
@@ -997,6 +1002,234 @@ Roughly in priority order:
 33. `relay-agent` JCS canonicalization for cert-rotation signing (§3.2).
 34. Federation JWT alg explicit choice (RS256 vs EdDSA) (§3.3).
 35. plan-16-04 license-server `Date` header validation (§4.4).
+
+---
+
+## A. Resolution log
+
+The fixes below land alongside this revision of the review. Each entry
+maps a review section to the change(s) that resolved it. Items marked
+"deferred" remain open by design (typically minor polish or notes).
+
+### Cross-cutting (§1)
+
+- **§1.1 `/api/recommendations` double-own.** Resolved by picking
+  [plan-07-21](epics/07-api-server/plan-07-21-recommendations.md) as
+  canonical owner of the route, handler, and per-user 60s in-memory
+  cache. [plan-14-07](epics/14-tv-apps/plan-14-07-recommendations-api.md)
+  rewritten to *extend* plan-07-21 with TV-specific rails and the
+  dismissal storage; the duplicate `recommendation_runs` table is
+  dropped. The TV plan now owns only `recommendation_dismissals`,
+  the DELETE/refresh sibling endpoints, and the nightly cache-warmer.
+- **§1.2 `/api/auth/pair*` double-own.** Resolved by picking
+  [plan-10-17](epics/10-auth-security/plan-10-17-auth-pair.md) as
+  canonical (hashed code + state enum + unified Python reaper).
+  [plan-15-06](epics/15-discovery/plan-15-06-pairing-api.md) rewritten
+  to defer to plan-10-17's schema/service/sweeper; it now owns only the
+  nonce extension column (ALTER TABLE), the QR-URL composition hook,
+  the device-registration after-claim hook, the GET-mine and DELETE
+  sibling endpoints, and the nonce-related audit rows. Status codes
+  (404 / 410 / 409) align with plan-10-17.
+- **§1.3 Ed25519 misattribution.** Resolved by introducing **Epic 10
+  Story 10.18 ("Ed25519 long-term server identity keys")** as the new
+  source for the long-term keypair. plans 15-07, 16-04, 16-06, 16-08
+  updated to reference 10.18 instead of 10.6 (Story 10.6 owns RS256 /
+  JWKS for short-lived API JWTs only). Each affected plan now states
+  the dependency explicitly and acknowledges it blocks pending 10.18.
+  Federation JWT mint pins `EdDSA` alg explicitly (§3.7 / §1.3
+  combined fix).
+- **§1.4 `audit_log.category` enum mismatch.** Resolved in
+  [plan-09-17](epics/09-library-management/plan-09-17-library-audit.md):
+  the CHECK enum now includes `'pair'`, `'federation'`, `'flags'`,
+  `'subscription'` alongside the original `'library','security','device','admin'`.
+  Go `Category` constants extended in lockstep.
+- **§1.5 `playback_state.duration_sec` undefined.** Resolved in
+  [plan-14-05](epics/14-tv-apps/plan-14-05-continue-watching.md) and
+  [plan-14-07](epics/14-tv-apps/plan-14-07-recommendations-api.md) by
+  JOINing `videos` for `v.duration_sec`. The plan-14-05 partial-index
+  predicate (which referenced the non-existent column) is dropped; the
+  index is now `(user_id, updated_at DESC) INCLUDE (video_id, position_sec)`
+  and the 5%–95% trim is applied at query time.
+- **§1.6 `videos.poster_url` / `videos.deleted_at`.** Resolved in
+  plan-14-05 and plan-14-07: `poster_url` → `poster_path` (the
+  canonical column per architecture §8.1 line 1342); `deleted_at`
+  remains as the canonical soft-delete column (architecture §8.1 line
+  1346 — confirmed exists, not invented).
+- **§1.7 Migration number conflict 0040.** Resolved by renumbering
+  plan-14-05 from `0040_playback_state_continue_idx.sql` to
+  `0046_playback_state_continue_idx.sql` (after audit_log 0045);
+  plan-14-07 renumbered from `0042_recommendation_runs.sql` to
+  `0047_recommendation_dismissals.sql` (and the `recommendation_runs`
+  table is dropped — plan-07-21's cache is canonical).
+- **§1.8 New routes outside architecture §9.** Documented per-plan
+  (each plan's §0 now states which prefix the new routes mount under
+  and which canonical owner is the source of truth). A consolidated
+  architecture §9 update is **deferred** to a follow-on plan that
+  edits the architecture document; the plan-level documentation is
+  sufficient for implementation.
+- **§1.9 `subtitle_gen` pipeline stage canonicalization.** Resolved
+  in `architecture.md` line 923: the inline comment on
+  `processing_jobs.stage` now lists all 7 canonical stages including
+  `subtitle_gen` and the corrected `thumbnail` (was `thumb`). The
+  prose in §3.5 already declared the 7-stage strip; the schema
+  comment now matches.
+- **§1.10 Reach UI deprecated.** Resolved in
+  [plan-17-02](epics/17-ux-design-system/plan-17-02-component-library.md):
+  `<Modal>` switched from `@reach/dialog` to `@radix-ui/react-dialog`;
+  `dismissable` prop wired to Radix's `onInteractOutside` /
+  `onEscapeKeyDown`. Dependency table updated.
+- **§1.11 `color.neutral.*` undefined.** Resolved in
+  [plan-17-01](epics/17-ux-design-system/plan-17-01-design-tokens.md):
+  the `tokens.json` `color` block now declares `color.neutral.{0,50,
+  100,200,300,400,500,600,700,800,900,950}`. Style Dictionary aliases
+  `color.semantic.bg = {color.neutral.50}` and `fg =
+  {color.neutral.900}` now resolve.
+- **§1.12 `media_features` / pgvector unowned.** Documented in
+  plan-14-07 §3 — the table is referenced by plan-09-10 and consumed
+  here, but no plan ships the migration. The `similar_to_video` rail
+  degrades to empty when the table is absent; pgvector entry in
+  architecture §2.1 is **deferred** to the architecture-edit follow-on
+  plan.
+- **§1.13 Unauthenticated public DELETE in plan-16-07.** Documented
+  trade-off; a privacy doc is the plan's chosen mitigation. **Deferred**
+  to operations docs.
+- **§1.14 `videos.codec` on `media_info`.** Resolved in
+  [plan-15-04](epics/15-discovery/plan-15-04-dlna-upnp.md) §5: the
+  `videos_dlna_compatible` view JOINs `media_info` for
+  `mi.video_codec`; `library.root_path` reference replaced with
+  `library_roots.path` (architecture §8.1 line 1320).
+- **§1.15 Singleton-row pattern proliferation.** Note carried; not a
+  blocker. **Deferred** as a future architecture cross-cutting note.
+
+### Epic 14 (§2)
+
+- **§2.1 plan-14-01 endpoint drift.** `POST /api/playback/state`
+  references replaced with the canonical `POST /api/me/playback-state`
+  (plan-11-02 / architecture §9.4). Pairing reference updated to
+  plan-10-17 + plan-15-06 dual-ownership clarification.
+- **§2.2 plan-14-02 Apollo plugin id.** `com.apollographql.apollo3` →
+  `com.apollographql.apollo` (plugin and dependency); endpoint paths
+  updated to canonical `/api/me/playback-state`; `WatchNextPrograms`
+  clarified as the content-URI helper (the class is singular
+  `WatchNextProgram`).
+- **§2.4 plan-14-04 SFSpeechRecognizer.** Bridged via
+  `withCheckedContinuation` since `requestAuthorization` has no bare
+  `async` overload.
+- **§2.5 plan-14-05 multiple blockers.** Resolved (see §1.5/1.6/1.7);
+  test plan updated to `TestIndexUsedForUserSlice` (asserts Index Scan
+  rather than the now-impossible Index Only Scan).
+- **§2.6 plan-14-06 minor.** `Enum.values()` → `Enum.entries`
+  (Kotlin 2.0 / Apollo Kotlin 4 / K2).
+- **§2.7 plan-14-07 multiple blockers.** Resolved as part of the
+  plan-07-21 deferral (§1.1); singleflight error handling restored
+  (returns `(any, error, bool)` and propagates errors); 200 ms ctx
+  deadline raised to 500 ms p95 with the rationale documented;
+  `buildDismissalSet` no longer takes `u.ID` (dead parameter
+  removed); i18n package ownership documented.
+
+### Epic 15 (§3)
+
+- **§3.2 plan-15-02 structural issues.** Architecture-topology note
+  added to §0 (relay edge as a 4th service or third-party tunnel —
+  the open question is acknowledged); cert-rotation signature now
+  uses JCS canonicalization (matching plan-16-04); web-tier
+  pinning-impossible note elevated to a tier capability decision in
+  §0.
+- **§3.3 plan-15-03 federation.** Dead conflict-resolution code
+  removed (collision impossible at schema level given UNIQUE
+  `content_hash`); B→A federation call now explicitly uses EdDSA
+  against B's pinned long-term Ed25519 key (alg pinned).
+- **§3.4 plan-15-04 schema drift.** Resolved (§1.14).
+- **§3.5 plan-15-05.** No code changes needed; the manual-claim AC
+  reconciliation is documented in plan-15-06.
+- **§3.6 plan-15-06 nonce-check precedence bug.** Resolved:
+  `if !subtle.ConstantTimeCompare(...) == 1` → `if
+  subtle.ConstantTimeCompare(...) != 1`. Plan-15-06 also rewritten to
+  defer to plan-10-17 (§1.2).
+- **§3.7 plan-15-07 deep issues.** HMAC vs CRC: CRC adopted in code,
+  story update flagged as deviation (documented in §3.4 and noted in
+  the plan); `acl JSONB` shape pinned via CHECK constraint plus a
+  `FederationACL` Go struct documented in §2.1; JWT `alg` pinned to
+  `EdDSA` explicitly.
+
+### Epic 16 (§4)
+
+- **§4.1 plan-16-01 free-tier downgrade.** §3.1 added: multi-user
+  excess on downgrade enters read-only state per plan-16-04 EC; the
+  earlier "free tier resumes" UX statement reconciled with the
+  read-only path.
+- **§4.2 plan-16-02.** SQLite variant of the seat-counter migration
+  documented (no-op migration + sqlc query); `tier_grace` upgrade
+  cleanup now deletes ALL grace rows (not just rows matching one
+  prev_tier); backup KDF now derives from a user passphrase, with
+  signature-only mode documented as integrity-only.
+- **§4.3 plan-16-03.** FK constraints added to `billing_subscriptions`
+  and `billing_invoices`; reconcile cron narrows status filter from
+  `"all"` to `"active,past_due,trialing,canceled"`; dispute branch now
+  triggers `RotateForCustomer` so the local tier flip propagates to
+  the resolver.
+- **§4.4 plan-16-04.** `licenses.raw` renamed to `raw_sealed BYTEA`
+  (encrypted at rest via Story 10.14 data key); `version BIGINT`
+  column added so plan-16-08's cache key
+  `(user_id, license_state_version)` resolves; HTTP `Date` header
+  validation added explicitly with bounds (`-24h, +5min` skew
+  tolerance).
+- **§4.5 plan-16-05.** `clearPseudonym()` exported (called from
+  opt-out path) so the `TestPseudonymRotatesOnOptOutOptIn` AC is
+  honored. Vocabulary single-source-of-truth note **deferred**.
+- **§4.6 plan-16-06.** Cached `signatureVerified` boolean on the
+  bundle so privileged-action storms don't pay an Ed25519 verify per
+  call.
+- **§4.7 plan-16-07.** Library event channels corrected to
+  `library.added` / `library.deleted` (matching Epic 9 plan-09-15);
+  `InsertEvents` interface contract documented to pin atomicity;
+  `TestNoRemoteAddrInTelemetryEvents` switched from grep to runtime
+  check; FID deprecation note added.
+- **§4.8 plan-16-08.** `scope_value` shape pinned via CHECK constraint
+  per scope; trigger fixed to use `OLD.flag_key` for DELETE (was
+  raising on undefined `NEW`); key bundle overlap window extended from
+  7 days to ≥ 30 days (sized to App/Play Store review cycles); Ed25519
+  key set re-attributed to Story 10.18.
+
+### Epic 17 (§5)
+
+- **§5.1 plan-17-01.** `color.neutral.*` group added (§1.11);
+  `swift/ios` platform output added (alongside `swift/tvos`); Compose
+  `kotlin/compose-colors` custom format documented in place of the
+  flat `kotlin/object` default.
+- **§5.2 plan-17-02.** Reach UI → Radix UI Dialog (§1.10);
+  `dismissable` prop wired to Radix callbacks; `inThemeProvider.current`
+  replaced with a proper `ThemeContext` + `useThemeOrWarn` hook.
+- **§5.4 plan-17-04.** `useDelayedSkeleton` refactored to `useReducer`
+  so transitions are no longer based on a stale closure capture.
+- **§5.6 plan-17-06.** `current_step` CHECK relaxed to BETWEEN 1 AND
+  16; STT probe ownership clarified (Pipeline-side probe, API-side
+  shim — both ship in this story); library probe owner declared.
+- **§5.8 plan-17-08.** §1.1 added: `replaceCurrentItem`-equivalent
+  via `player.src = newSrc` for navigating between videos with the
+  persisted instance.
+- **§5.9 plan-17-09.** Confirmed sibling structure (Link + snippets
+  list are peers, not nested); a11y test name documented; Bidi
+  isolation now wraps only the time string, not the brackets.
+- **§5.11 plan-17-11.** `binarySearchSegment` returns `-1` past end of
+  video (not the last segment forever); `estimateSegmentHeight`
+  defined explicitly with chars-per-line / line-height / chrome
+  constants.
+
+### Architecture changes outside the plans
+
+- `architecture.md` line 923 inline comment updated to list all 7
+  canonical pipeline stages (`scan|probe|extract|transcribe|subtitle_gen|
+  index|thumbnail`) — matches §3.5 prose.
+- A consolidated edit pass enumerating new routes in §9 and adding
+  pgvector to §2.1 is **deferred** to a follow-on architecture-edit
+  plan; per-plan documentation suffices for now.
+
+### Out-of-band: minor / smaller polish (§7.5)
+
+Items 32 (mDNS library choice), 35 (already-resolved by §4.4 fix),
+and the §6 minor notes are **deferred**; they do not block
+implementation.
 36. plan-16-08 RT amplification on cache-miss (§4.8).
 37. plan-17-09 nested-interactive-element a11y (§5.9).
 38. plan-15-04 byte-server symlink hardening (§6).

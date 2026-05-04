@@ -115,7 +115,9 @@ export function PageWrapper({ children }: { children: React.ReactNode }) {
 
 ### 3.2 Modal (scale + fade)
 
-`@reach/dialog` overlay handles fade; we add a scale on the panel via `framer-motion`:
+`@radix-ui/react-dialog`'s overlay handles fade (Reach UI was
+deprecated in 2022 and replaced project-wide in plan-17-02); we add a
+scale on the panel via `framer-motion`:
 
 ```tsx
 <motion.div

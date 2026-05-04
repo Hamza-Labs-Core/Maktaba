@@ -9,7 +9,7 @@
 
 | Concern | Decision |
 |---|---|
-| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `created_at`. Append-only via BEFORE UPDATE/DELETE triggers. Canonical `category IN ('library','security','device','admin')`. |
+| Schema | One `audit_log` table per the Epic 9 README, partitioned by RANGE on `created_at`. Append-only via BEFORE UPDATE/DELETE triggers. Canonical `category IN ('library','security','device','admin','pair','federation','flags','subscription')`. The `pair` / `federation` categories are written by Epic 15 (Stories 15.6 / 15.7); `flags` and `subscription` by Epic 16 (Stories 16.8 / 16.3). |
 | Partitioning | Monthly partitions named `audit_log_YYYY_MM`. A trigger function `audit_log_route_to_partition()` ensures the parent has the right child for each new INSERT (creating one on-demand). The partition-management cron (Epic 22) precreates the next 3 months. |
 | Writers | `api/internal/audit/writer.go` (Go) and `pipeline/src/maktaba_pipeline/audit/writer.py` (Python). Both insert into the parent `audit_log`; Postgres routes to the right partition. Best-effort: writes never block the calling tx and never raise on failure. |
 | HTTP route | `GET /api/libraries/{id}/audit?cursor=&limit=` — returns `category='library'` rows for the given library, newest-first, with cursor pagination. Owner/admin-only. |
@@ -86,12 +86,17 @@ package audit
 
 type Category string
 
-// Canonical: category IN ('library','security','device','admin').
+// Canonical: category IN ('library','security','device','admin',
+//                          'pair','federation','flags','subscription').
 const (
-    CategoryLibrary  Category = "library"
-    CategorySecurity Category = "security"
-    CategoryDevice   Category = "device"
-    CategoryAdmin    Category = "admin"
+    CategoryLibrary      Category = "library"
+    CategorySecurity     Category = "security"
+    CategoryDevice       Category = "device"
+    CategoryAdmin        Category = "admin"
+    CategoryPair         Category = "pair"          // Story 15.6
+    CategoryFederation   Category = "federation"    // Story 15.7
+    CategoryFlags        Category = "flags"         // Story 16.8
+    CategorySubscription Category = "subscription"  // Story 16.3
 )
 
 type Event struct {
@@ -148,7 +153,10 @@ type AuditPage struct {
 CREATE TABLE audit_log (
     id              UUID NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),  -- canonical name
-    category        TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
+    category        TEXT NOT NULL CHECK (category IN (
+                        'library','security','device','admin',
+                        'pair','federation','flags','subscription'
+                    )),
     event           TEXT NOT NULL CHECK (char_length(event) BETWEEN 1 AND 64),
     actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
     library_id      UUID REFERENCES libraries(id) ON DELETE SET NULL,

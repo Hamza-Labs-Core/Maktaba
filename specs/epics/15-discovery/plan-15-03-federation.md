@@ -134,6 +134,11 @@ The client never sees B in the data path. B's GraphQL resolver materializes A's 
 func (r *Resolver) FederatedVideoStreamingURL(ctx context.Context, v *model.Video) (string, error) {
     if v.FederationOrigin == nil { return v.StreamingURL, nil }      // not federated, normal path
     fo := v.FederationOrigin
+    // The B→A call is authenticated with B's federation JWT (signed
+    // EdDSA against B's long-term Ed25519 key — see plan-15-07 §4.4).
+    // A verifies by looking up B's pinned long-term pubkey set at pair
+    // time. The streaming token A returns is A's *own* short-lived
+    // token; it is opaque to B and to the client.
     tok, err := r.federation.MintStreamingTokenOn(ctx, fo.PartnerID, v.ID)
     if err != nil { return "", err }
     return fo.HLSURL + "?token=" + tok, nil
@@ -146,14 +151,31 @@ The story AC says federation can be one-way: "A → B can read A's `Lectures`, B
 
 ## 6. Conflict resolution
 
-The story EC: "same `content_hash` on both A and B → B prefers its local copy unless the user explicitly browses A's library."
+The story EC: "same `content_hash` on both A and B → B prefers its
+local copy unless the user explicitly browses A's library."
+
+Architecture §8.1 line 1333 declares `videos.content_hash TEXT NOT
+NULL UNIQUE` — singleton uniqueness, not scoped per library. So at
+the schema level the collision is impossible: B cannot ingest a row
+with a `content_hash` that already exists on its own server, and a
+federated mount surfaces A's row from A's database (not by inserting
+into B's). The branching the earlier draft sketched ("B prefers local
+copy") is therefore informational only; no merge code runs.
 
 Implementation:
 
-- The home page does not surface federated content automatically. A user must navigate into the federated library row (per AC: "browseable read-only by default" — they're separate rows).
-- Search: limited to local content by default; an explicit toggle "include federated" extends to partners. When it does, results from the local server outrank results from partners with the same `content_hash`. Implemented as a join + `ORDER BY (federation_origin IS NULL) DESC` in the search aggregator.
+- The home page does not surface federated content automatically. A
+  user must navigate into the federated library row (per AC:
+  "browseable read-only by default" — they're separate rows).
+- Search: limited to local content by default; an explicit toggle
+  "include federated" extends to partners. When it does, results from
+  the local server outrank federated results from partners exposing
+  the same `content_hash`. Implemented as a join + `ORDER BY
+  (federation_origin IS NULL) DESC` in the search aggregator. Note
+  this is a result-ordering rule, not a row-merge rule.
 
-If the global content-hash uniqueness scope (per [REVIEW §1.1.a](../../REVIEW.md)) ends up settled as global, then the collision is impossible at the schema level and B simply mounts A's library row read-only with no merge.
+The earlier "if uniqueness becomes scoped per library" branch is
+removed as dead reasoning — the architecture has settled.
 
 ## 7. Revocation
 

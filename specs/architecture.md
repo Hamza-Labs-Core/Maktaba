@@ -920,7 +920,7 @@ state machine and progress accounting for all stages.
 CREATE TABLE processing_jobs (
     id                       BIGSERIAL PRIMARY KEY,
     video_id                 UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    stage                    TEXT NOT NULL,           -- scan|probe|extract|transcribe|index|thumb
+    stage                    TEXT NOT NULL,           -- scan|probe|extract|transcribe|subtitle_gen|index|thumbnail
     state                    TEXT NOT NULL,           -- see 7.2 state machine
     priority                 INT  NOT NULL DEFAULT 100,
     attempts                 INT  NOT NULL DEFAULT 0,

@@ -55,7 +55,8 @@ CREATE TABLE billing_customers (
 
 CREATE TABLE billing_subscriptions (
     stripe_subscription TEXT PRIMARY KEY,
-    stripe_customer     TEXT NOT NULL,
+    stripe_customer     TEXT NOT NULL
+        REFERENCES billing_customers(stripe_customer) ON DELETE CASCADE,
     tier                TEXT NOT NULL CHECK (tier IN ('free','home','pro')),
     status              TEXT NOT NULL,           -- active, canceled, past_due, etc.
     current_period_end  TIMESTAMPTZ NOT NULL,
@@ -65,7 +66,8 @@ CREATE TABLE billing_subscriptions (
 
 CREATE TABLE billing_invoices (
     stripe_invoice    TEXT PRIMARY KEY,
-    stripe_customer   TEXT NOT NULL,
+    stripe_customer   TEXT NOT NULL
+        REFERENCES billing_customers(stripe_customer) ON DELETE CASCADE,
     amount_due_cents  BIGINT NOT NULL,
     currency          TEXT NOT NULL,
     status            TEXT NOT NULL,
@@ -156,7 +158,13 @@ The handler updates `billing_subscriptions` and then **issues a fresh license** 
 ```go
 // Runs daily at 04:00 server local time.
 func (b *Service) Reconcile(ctx context.Context) error {
-    iter := b.stripe.Subscriptions.List(&stripe.SubscriptionListParams{Status: stripe.String("all")})
+    // Status filter: "all" pulls indefinite history (canceled rows
+    // from years ago); we only need active states for tier-rotation
+    // reconciliation. Stripe's enum lets us OR with comma-separated
+    // statuses.
+    iter := b.stripe.Subscriptions.List(&stripe.SubscriptionListParams{
+        Status: stripe.String("active,past_due,trialing,canceled"),
+    })
     for iter.Next() {
         sub := iter.Subscription()
         b.upsertSubscription(ctx, sub)
@@ -197,11 +205,25 @@ func (b *Service) handleDispute(ctx context.Context, event stripe.Event) {
     // Flip tier to free; preserve data per Story 16.1.
     sub, _ := b.db.GetActiveSubscriptionForCustomer(ctx, cust)
     b.db.UpdateSubscriptionTier(ctx, sub.StripeSubscription, "free")
+    // Trigger a fresh license issue so the resolver downstream picks
+    // up the new tier. Without this the local `tier='free'` row
+    // contradicts the cached license file (still says `home`/`pro`),
+    // and the resolver will keep returning the cached premium tier
+    // until the next 24h refresh.
+    if err := b.license.RotateForCustomer(ctx, cust, "free"); err != nil {
+        b.log.Warn("dispute_license_rotate_failed", "cust", cust, "err", err.Error())
+        // The reconcile cron's daily pass + the existing webhook retry
+        // policy will recover; the audit row tells operators what
+        // happened.
+    }
     b.audit(ctx, "subscription-disputed", sub.StripeSubscription)
 }
 ```
 
-The AC says "License tier flips to `free` until resolved; no data is destroyed." Resolution comes via the next Stripe webhook (`charge.dispute.closed`).
+The AC says "License tier flips to `free` until resolved; no data is
+destroyed." Resolution comes via the next Stripe webhook
+(`charge.dispute.closed`), which calls `RotateForCustomer` again with
+the restored tier.
 
 ## 9. Test plan
 

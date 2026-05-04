@@ -10,7 +10,7 @@
 
 | Concern | Decision |
 |---|---|
-| Migration file | `shared/db/migrations/0040_playback_state_continue_idx.sql` (Postgres) and `0040_playback_state_continue_idx.sqlite.sql` (SQLite). Numbering picked to follow the existing pipeline range and Epic 7's `playback_state` table from `0030_playback_state.sql`. |
+| Migration file | `shared/db/migrations/0046_playback_state_continue_idx.sql` (Postgres) and `0046_playback_state_continue_idx.sqlite.sql` (SQLite). Slot 0040 is taken by Epic 12's `0040_devices.sql`; slot 0045 is `0045_audit_log.sql`. We slot in at 0046 to follow the audit-log migration. |
 | Server query | New sqlc query `GetContinueWatching(user_id, limit)` in `shared/db/queries/playback_state.sql`. |
 | GraphQL field | `continueWatching(limit: Int = 20): [VideoProgress!]!` on `Query`, in `shared/graphql/schema.graphql`. |
 | TV row composition | tvOS in `apps/tvos/Sources/Features/Home/ContinueRow.swift`; AndroidTV in `apps/androidtv/.../home/ContinueRow.kt`. Reuses card primitives from [Story 14.3](story-14-03-10-foot-ui.md). |
@@ -19,21 +19,23 @@
 
 ## 1. Database migration
 
-`shared/db/migrations/0040_playback_state_continue_idx.sql`:
+`shared/db/migrations/0046_playback_state_continue_idx.sql`:
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
--- Story 14.5: a partial covering index over playback_state for the
--- "Continue Watching" row. Partial because we only ever query the
--- in-progress slice (5%–95% of duration); covering because the row
--- card needs (video_id, position_sec, duration_sec, updated_at) and
--- a covering index keeps the query an index-only scan.
+-- Story 14.5: an index over playback_state for the "Continue Watching"
+-- row. Architecture §8.5 puts duration on `videos.duration_sec`, NOT on
+-- `playback_state` — so a partial-index predicate referencing
+-- `duration_sec * 0.05/0.95` would fail (the planner cannot resolve a
+-- column that does not exist on the indexed table, and partial-index
+-- predicates cannot reference other tables). The 5%/95% trim is applied
+-- at *query* time after the JOIN to `videos`. The index simply orders by
+-- (user_id, updated_at DESC), which is what the row's primary scan needs;
+-- the post-JOIN duration filter prunes the small head of the result set.
 CREATE INDEX playback_state_user_updated_idx
     ON playback_state (user_id, updated_at DESC)
-    INCLUDE (video_id, position_sec, duration_sec)
-    WHERE position_sec >= duration_sec * 0.05
-      AND position_sec <  duration_sec * 0.95;
+    INCLUDE (video_id, position_sec);
 -- +goose StatementEnd
 
 -- +goose Down
@@ -42,15 +44,14 @@ DROP INDEX IF EXISTS playback_state_user_updated_idx;
 -- +goose StatementEnd
 ```
 
-SQLite variant (no `INCLUDE`, no partial-index-with-expression on older versions; we use a partial index without INCLUDE — SQLite stores the rowid, so a small extra fetch is acceptable for the development/test path that uses SQLite):
+SQLite variant (no `INCLUDE`; SQLite stores the rowid, so a small extra
+fetch is acceptable for the development/test path that uses SQLite):
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 CREATE INDEX playback_state_user_updated_idx
-    ON playback_state (user_id, updated_at DESC)
-    WHERE position_sec >= duration_sec * 0.05
-      AND position_sec <  duration_sec * 0.95;
+    ON playback_state (user_id, updated_at DESC);
 -- +goose StatementEnd
 
 -- +goose Down
@@ -59,7 +60,14 @@ DROP INDEX IF EXISTS playback_state_user_updated_idx;
 -- +goose StatementEnd
 ```
 
-Both forms ensure `EXPLAIN` on the row's query never reports a `Seq Scan` once 100k rows exist (TC). The migration test asserts this.
+The query plan: an Index Scan on `playback_state_user_updated_idx`
+limited to the user's slice, then a nested-loop JOIN to `videos` (PK
+lookup) for the duration / poster / soft-delete filters. With the LIMIT
+20 cap from the API the post-filter rows are bounded, so the JOIN is
+constant-time after the index reads. The §7 test pins `Index Scan` (not
+`Seq Scan`) on `playback_state` at 100k rows; "Index Only Scan" cannot
+be guaranteed once `videos` participates, so the test asserts the
+weaker invariant.
 
 ## 2. sqlc query
 
@@ -67,29 +75,34 @@ Both forms ensure `EXPLAIN` on the row's query never reports a `Seq Scan` once 1
 
 ```sql
 -- name: GetContinueWatching :many
+-- Architecture §8.5: `playback_state` has (user_id, video_id,
+-- position_sec, completed, updated_at) — duration lives on `videos`.
+-- Architecture §8.1: `videos.poster_path` (NOT poster_url) and
+-- `videos.deleted_at` are the canonical column names.
 SELECT
     ps.video_id,
     ps.position_sec,
-    ps.duration_sec,
+    v.duration_sec,
     ps.updated_at,
     v.title,
-    v.poster_url,
-    v.deleted_at
+    v.poster_path
 FROM playback_state ps
 INNER JOIN videos v ON v.id = ps.video_id
 WHERE ps.user_id = $1
-  AND ps.position_sec >= ps.duration_sec * 0.05
-  AND ps.position_sec <  ps.duration_sec * 0.95
-  AND ps.duration_sec > 0
+  AND v.duration_sec > 0
   AND v.deleted_at IS NULL
+  AND ps.position_sec >= v.duration_sec * 0.05
+  AND ps.position_sec <  v.duration_sec * 0.95
 ORDER BY ps.updated_at DESC
 LIMIT $2;
 ```
 
 Notes:
-- Filters out `duration_sec = 0` rows (probe pending — EC).
-- Joins `videos` to filter deleted entries (EC).
+- Filters out `duration_sec IS NULL` / `= 0` rows (probe pending — EC).
+- Joins `videos` for duration, poster, and the soft-delete filter.
 - The cap of 20 (story AC) is the default `$2` from the GraphQL resolver.
+- The 5%/95% trim is enforced at query time, not in the index predicate
+  (see §1).
 
 ## 3. Deduplication of "same video in two collections"
 
@@ -191,9 +204,9 @@ fun ContinueRow(state: ContinueRowState) {
 
 | Test | What it pins |
 |---|---|
-| `TestIndexPartialPredicate` | After migration, a row with `position_sec = 0` is not in the index; a row at 50% is. |
-| `TestIndexCovering` | `EXPLAIN (ANALYZE, FORMAT JSON)` over the canonical query at 100k rows reports `Index Only Scan` on `playback_state_user_updated_idx`; no `Heap Fetches > 0`. |
+| `TestIndexUsedForUserSlice` | At 100k rows, `EXPLAIN (ANALYZE, FORMAT JSON)` over the canonical query reports `Index Scan` on `playback_state_user_updated_idx` for the `playback_state` access path (not `Seq Scan`); the `videos` JOIN uses the PK. |
 | `TestIndexSQLiteVariant` | SQLite migration applies; `EXPLAIN QUERY PLAN` uses the index. |
+| `TestQueryFiltersInProgressSlice` | At query time the WHERE clause excludes rows with `position_sec / v.duration_sec` outside `[0.05, 0.95]`. |
 
 ### 7.2 sqlc query
 
@@ -234,13 +247,13 @@ fun ContinueRow(state: ContinueRowState) {
 | User with no history | Row hidden (not "Nothing in progress" — empty-state copy from the story applies in the dedicated detail/picker, not Home). | `testEmptyContinueRowHidden` |
 | Cross-device propagation | WS event from Epic 7 Story 7.16 patches the row within 5 s. | `testWSPatchUpdatesProgress` |
 | User marks watched on another device | WS event with progress > 95% removes the card. | `wsRemovalEjectsCard` |
-| Index doesn't get used (regression) | CI test fails; deploy halted. | `TestIndexCovering` |
+| Index doesn't get used (regression) | CI test fails; deploy halted. | `TestIndexUsedForUserSlice` |
 
 ## 9. Acceptance checklist
 
 **Schema**
 - [ ] `playback_state_user_updated_idx` exists on Postgres and SQLite.
-- [ ] `EXPLAIN` over the canonical query shows index-only scan on Postgres.
+- [ ] `EXPLAIN` over the canonical query shows `Index Scan` on `playback_state` (not `Seq Scan`) on Postgres; the `videos` join uses the PK.
 
 **Server**
 - [ ] `Query.continueWatching` resolver shipped behind `@auth(scope: "watch:read")`.

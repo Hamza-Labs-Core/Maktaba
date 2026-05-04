@@ -62,6 +62,12 @@ CREATE TABLE telemetry_web_vitals (
     id              BIGSERIAL PRIMARY KEY,
     received_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     device_pseudonym TEXT NOT NULL,
+    -- FID was deprecated in Web Vitals v3 in 2024 (replaced by INP).
+    -- We accept it from legacy clients (≤ web-vitals 2.x bundle) but
+    -- new client builds emit INP only; the analytics dashboard charts
+    -- INP and folds historical FID rows into the same series for
+    -- continuity. Drop FID from the CHECK once telemetry from
+    -- pre-INP clients ages out (≥ 90 days after the rollout).
     metric          TEXT NOT NULL CHECK (metric IN ('LCP','FID','CLS','INP','TTFB')),
     value           DOUBLE PRECISION NOT NULL,
     route           TEXT
@@ -149,7 +155,7 @@ func (r *Redactor) Apply(s string) string {
 }
 ```
 
-The library roots are loaded from `libraries.toml` at startup; on `library_added`/`library_removed` events ([Epic 9](../09-library-management)), the redactor is rebuilt.
+The library roots are loaded from `libraries.toml` at startup; on `library.added` / `library.deleted` events (Epic 9 plan-09-15 — these are the canonical channel names; earlier drafts of this plan used `library_added`/`library_removed` which do not match the publisher), the redactor is rebuilt.
 
 The story EC pins: "A library root path containing regex metacharacters: the redaction filter `regexp_quote`s before substituting." `regexp.QuoteMeta` is the Go equivalent.
 
@@ -206,6 +212,17 @@ func postEvents(s *telemetry.Service, cfg Config) http.HandlerFunc {
                 Payload: payload,
             })
         }
+        // The all-or-nothing guarantee promised by the AC ("either
+        // all 100 or zero") requires a transaction; `InsertEvents`
+        // wraps a single `BEGIN; INSERT...; COMMIT` so a midway error
+        // rolls back the whole batch. The interface is:
+        //
+        //   func (s *Service) InsertEvents(ctx context.Context, rows []Event) error
+        //   // Implementation: BEGIN, prepared INSERT loop, COMMIT;
+        //   // any non-nil error from the loop triggers ROLLBACK.
+        //
+        // The TestPostEventsAtomic case injects a deliberate row
+        // failure on row N>0 and asserts zero rows persist.
         if err := s.InsertEvents(r.Context(), rows); err != nil {
             problem(w, 500, "internal", ""); return
         }
@@ -297,7 +314,7 @@ func (r *Retention) tick(ctx context.Context) {
 
 | Test | What it pins |
 |---|---|
-| `TestNoRemoteAddrInTelemetryEvents` | CI grep test fails if `RemoteAddr` referenced in telemetry insert path. |
+| `TestNoRemoteAddrInTelemetryEvents` | Runtime test: post 5 events from a known IP via the test server; query `telemetry_events.payload` for any field containing the test IP — assert zero matches. (Earlier draft used a source-grep which produced false positives whenever `req.RemoteAddr` appeared in unrelated middleware.) |
 | `TestRateLimitStateInMemoryOnly` | After server restart, no rate-limit residue. |
 
 ## 9. Edge cases — handling table

@@ -36,6 +36,13 @@ Results are grouped by `video_id` server-side; the client renders the first 3 sn
 
 ```tsx
 function ResultGroup({ group, onSeek }: ResultGroupProps) {
+    // The clickable header (Link to the watch page) is a SIBLING of the
+    // snippet list — never an ancestor. Nesting `<button>` inside
+    // `<a>` is invalid HTML and confuses screen readers; keep the two
+    // interactive surfaces (head→watch and timestamp→seek) at peer
+    // depth so each gets its own focusable affordance. The
+    // a11y test in §6 (`testNoNestedInteractive`) asserts no
+    // descendant of `mk-result-group__head` is a `button`/`a`.
     return (
         <article className="mk-result-group">
             <Link to={`/watch/${group.videoId}`} className="mk-result-group__head">
@@ -82,9 +89,14 @@ The snippet is pre-marked by FTS5; we only re-sanitize and constrain.
 
 ```tsx
 function TimestampChip({ children, onClick }: TimestampChipProps) {
+    // Wrap only the time string with Bidi-isolation, not the brackets:
+    // bracket runs neighbouring Arabic text are isolated separately by
+    // the parent's natural bidi rules, but if we isolate the brackets
+    // inside our own LTR isolate they invert when surrounded by RTL.
+    // The shape is `[<Bidi dir="ltr">{children}</Bidi>]`.
     return (
         <button className="mk-timestamp-chip" onClick={onClick}>
-            <Bidi dir="ltr">[{children}]</Bidi>
+            [<Bidi dir="ltr">{children}</Bidi>]
         </button>
     );
 }

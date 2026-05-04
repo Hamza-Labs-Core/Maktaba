@@ -104,15 +104,37 @@ export function SubscriptionSettings() {
 
 ## 3. Migrating premium-back-to-free
 
-The story EC: "Migrating from premium back to free: any premium-only data (analytics history beyond 30 d) is preserved server-side but read-only."
+The story EC: "Migrating from premium back to free: any premium-only
+data (analytics history beyond 30 d) is preserved server-side but
+read-only."
 
 The implementation:
 
-- Premium-tier-only tables (e.g., `analytics_events_history`) are not deleted on tier downgrade; they're frozen.
-- The `analytics` flag flips to `false`; the UI hides the panel; the table data remains.
+- Premium-tier-only tables (e.g., `analytics_events_history`) are not
+  deleted on tier downgrade; they're frozen.
+- The `analytics` flag flips to `false`; the UI hides the panel; the
+  table data remains.
 - Re-applying a premium license restores access without backfill.
 
 This requires no migration; it's a UX rule the flag system enforces.
+
+### 3.1 Multi-user excess on downgrade
+
+A `home`-tier server with 4 active users that downgrades to `free`
+(seat cap 1) does **not** delete the extra users. The seat-cap
+enforcement in plan-16-02's `seats.go` runs only on **creation** of a
+new user, not retroactively. The pre-existing extra users remain
+authenticatable but enter a *read-only* state per plan-16-04's
+"Seats=4 but 5 users exist" EC: writes (create-collection,
+delete-video, etc.) return `403 seats-exceeded-readonly`. Any user
+*can* delete themselves; doing so reduces the count and unblocks
+writes for the remaining users (in user-id order — the lowest-id
+remaining user becomes the writable one).
+
+This reconciles the "free tier resumes" UX statement above with the
+multi-user grace path: free tier resumes for the system, but excess
+users keep their data and can read it; only writes are blocked until
+the seat count returns to within the cap.
 
 ## 4. Test plan
 
