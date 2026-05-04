@@ -226,10 +226,11 @@ CREATE INDEX IF NOT EXISTS search_suggestion_terms_freq_idx
 COMMIT;
 ```
 
-The migration is registered in `shared/db/migrations/manifest.toml` as
-order `0027`. The previous order `0026` is owned by Plan 5.5
-(incremental indexing). The migration is a no-op on re-run thanks to
-`IF NOT EXISTS` everywhere.
+The migration is registered in
+[`shared/db/migrations/MANIFEST.md`](../../../shared/db/migrations/MANIFEST.md)
+at slot `0027`. The preceding slot `0026` is owned by
+[plan-05-07](plan-05-07-chapter-inference.md) (`chapters` table). The
+migration is a no-op on re-run thanks to `IF NOT EXISTS` everywhere.
 
 The `search_log` table itself is owned by `02-api-streaming.md`
 (Story 2.x); this plan reads from it but does not migrate it. If

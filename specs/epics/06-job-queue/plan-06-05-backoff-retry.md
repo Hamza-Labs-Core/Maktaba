@@ -172,19 +172,19 @@ WITH cur AS (
 )
 UPDATE processing_jobs pj
    SET state         = CASE
-                         WHEN $4::bool AND cur.attempts < cur.max_attempts
+                         WHEN $3::bool AND cur.attempts < cur.max_attempts
                            THEN 'pending'
                          ELSE 'failed'
                        END,
        not_before    = CASE
-                         WHEN $4::bool AND cur.attempts < cur.max_attempts
-                           THEN now() + ($5::float || ' seconds')::interval
+                         WHEN $3::bool AND cur.attempts < cur.max_attempts
+                           THEN now() + ($4::float || ' seconds')::interval
                          ELSE NULL
                        END,
        claimed_by    = NULL,
        error         = $2::text,
        finished_at   = CASE
-                         WHEN $4::bool AND cur.attempts < cur.max_attempts
+                         WHEN $3::bool AND cur.attempts < cur.max_attempts
                            THEN NULL
                          ELSE now()
                        END
@@ -218,7 +218,6 @@ async def mark_failed_or_retry(db, *, job_id, error, rng=None):
 
     out = await db.fetchrow(
         _FAIL_OR_RETRY_SQL_PG, job_id, err_json,
-        None,                        # placeholder ($3) reserved for future
         error.retryable, backoff_sec,
     )
     if out is None:

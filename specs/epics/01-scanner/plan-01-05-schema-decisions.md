@@ -103,8 +103,10 @@ The two fast paths below are the heart of the incremental property:
 ## 2. Complete database schema for the Scanner epic
 
 These are the tables Stories 1.1–1.6 either write to (Pipeline scanner) or
-read from (API server, Streaming server). Migration 0001 lays them down
-as a single transaction; 0005 (this story) relaxes the uniqueness rule.
+read from (API server, Streaming server). Migration 0001 (owned by this
+plan) lays the `libraries` and `videos` tables down as a single
+transaction; slot 0003 (owned by [plan-01-02](plan-01-02-content-identity.md))
+relaxes the uniqueness rule from global to per-library.
 
 The dialect is PostgreSQL; the SQLite variants substitute `JSONB`→`JSON`,
 `TIMESTAMPTZ`→`DATETIME`, `UUID`→`TEXT`, `BIGSERIAL`→`INTEGER PRIMARY KEY
@@ -168,7 +170,7 @@ CREATE TABLE videos (
     )),
 
     -- THE story-1.5 constraint: per-library uniqueness, NOT global.
-    CONSTRAINT videos_content_hash_per_library UNIQUE (library_id, content_hash)
+    CONSTRAINT videos_library_content_hash_key UNIQUE (library_id, content_hash)
 );
 
 CREATE INDEX videos_library_state_idx     ON videos (library_id, state);
@@ -703,90 +705,146 @@ per library per sweep. The DB enforces the rest. Concretely:
   itself — boot order is `migrate (API binary)` → `api` →
   `pipeline`. This keeps the schema in one place.
 
-### 6.2 Migration manifest (Scanner epic)
+### 6.2 Migration manifest (Scanner epic — slots claimed in canonical manifest)
 
-| File | Purpose | Owner story |
-|------|---------|-------------|
-| `0001_init_libraries_and_videos.sql` | `libraries`, `videos` (with **global** `UNIQUE(content_hash)`), basic indexes. | 1.1 |
-| `0002_processing_jobs.sql` | Job table from architecture §7.1. | Epic 06 |
-| `0003_video_state_constraint.sql` | `CHECK` on `videos.state`; full state set. | 1.6 |
-| `0004_library_scan_state.sql` | The per-library scan watermark/counters table. | 1.5 |
-| **`0005_videos_unique_per_library.sql`** | **The story-1.5 schema flip.** Drops `UNIQUE (content_hash)`, adds `UNIQUE (library_id, content_hash)`. | **1.5** |
-| `0006_videos_last_seen_at.sql` | Adds `last_seen_at` + `videos_missing_idx`. | 1.5 |
+The canonical numbering and ownership for every migration in the
+project lives in
+[`shared/db/migrations/MANIFEST.md`](../../../shared/db/migrations/MANIFEST.md).
+Story 1.5 owns the slots below; the others are listed for context (this
+plan declares dependencies on them but does not own the SQL).
 
-### 6.3 The flagship migration — `0005_videos_unique_per_library.sql`
+| Slot | File | Purpose | Owner |
+|------|------|---------|-------|
+| `0001` | `0001_init_libraries_and_videos.sql` | `libraries`, `videos` (with `UNIQUE(content_hash)` initially; relaxed at slot 0003), `videos.metadata JSONB`, basic indexes. | **plan-01-05** (this plan) |
+| `0002` | `0002_processing_jobs.sql` | Job table from architecture §7.1. | plan-06-01 |
+| `0003` | `0003_videos_content_hash.sql` | Drops global `UNIQUE(content_hash)`, adds `UNIQUE(library_id, content_hash)`, adds the hash-format CHECK. | plan-01-02 |
+| `0004` | `0004_video_states_and_stages.sql` | `CHECK` on `videos.state` (12-state enum) and `processing_jobs.stage`. | plan-01-06 |
+| `0005` | `0005_videos_new_notify.sql` | `videos.new` NOTIFY trigger. | plan-01-01 |
+| `0006` | `0006_library_scan_state.sql` | Per-library scan watermark/counters table. | **plan-01-05** (this plan) |
+| `0007` | `0007_videos_last_seen_at.sql` | Adds `last_seen_at` + `videos_missing_idx`. | **plan-01-05** (this plan) |
+| `0008` | `0008_scan_control.sql` | Adds `cancel_requested`, `progress_pct` to `library_scan_state`. | plan-01-04 |
+
+The flip from global to per-library uniqueness — historically the
+"flagship migration" of story 1.5 — now ships under
+plan-01-02 at slot 0003 because that plan already owns the
+`content_hash` work. This plan keeps the *decision* (D2 in §1) but no
+longer ships the SQL.
+
+### 6.3 Slot 0001 — `0001_init_libraries_and_videos.sql`
 
 ```sql
 -- +goose Up
 -- ============================================================================
--- 0005 — Videos: drop global UNIQUE(content_hash), add UNIQUE(library_id,
---               content_hash). Resolves REVIEW §1.1.a; canonical owner is
---               specs/epics/01-scanner/story-01-05-schema-decisions.md.
+-- 0001 — Initial schema: libraries + videos.
 --
--- Precondition: cross-library duplicates cannot exist before this migration
--- because the prior schema's global UNIQUE prevented them. This migration
--- is a constraint relaxation, not a data rewrite. (Documented in story
--- 1.5 edge cases.)
---
--- Lock note: ALTER TABLE … DROP CONSTRAINT and ADD CONSTRAINT each take
--- ACCESS EXCLUSIVE on `videos` for the duration of validation. On a
--- household-scale 30 TB / ~50k row library, expect <500 ms total. Run
--- during the documented quiet window (Epic 22 deploy story).
+-- Establishes the architecture-§8.1 base shape. The initial UNIQUE on
+-- content_hash is GLOBAL; slot 0003 (plan-01-02) relaxes it to per-library
+-- once the content-hash format CHECK is in place.
 -- ============================================================================
 
 BEGIN;
 
--- 1. Drop the old global constraint. Postgres auto-named it
---    "videos_content_hash_key" when CREATE TABLE ... UNIQUE was used.
-ALTER TABLE videos
-    DROP CONSTRAINT IF EXISTS videos_content_hash_key;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 2. Add the per-library uniqueness. We name it explicitly so future
---    migrations can refer to it without guessing the auto-name.
-ALTER TABLE videos
-    ADD CONSTRAINT videos_content_hash_per_library
-    UNIQUE (library_id, content_hash);
+CREATE TABLE libraries (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT         NOT NULL UNIQUE,
+    roots       TEXT[]       NOT NULL,
+    settings    JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE videos (
+    id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    library_id         UUID         NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    content_hash       TEXT         NOT NULL UNIQUE,
+    path               TEXT         NOT NULL,
+    filename           TEXT         NOT NULL,
+    size_bytes         BIGINT       NOT NULL,
+    mtime              TIMESTAMPTZ  NOT NULL,
+    state              TEXT         NOT NULL DEFAULT 'discovered',
+    detected_language  TEXT,
+    title              TEXT,
+    description        TEXT,
+    poster_path        TEXT,
+    sprite_path        TEXT,
+    duration_sec       REAL,
+    -- metadata is the JSONB extension column shared by plans
+    -- 01-02 (additional_paths), 01-03 (missing_since/rediscovered_at),
+    -- 01-04 (deleted_at), and 02-02 (track_override). Documented in
+    -- shared/db/migrations/MANIFEST.md §"Plan-introduced schema
+    -- extensions".
+    metadata           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX videos_library_state_idx ON videos (library_id, state);
+CREATE INDEX videos_state_idx         ON videos (state);
+CREATE INDEX videos_detected_language_idx ON videos (detected_language);
 
 COMMIT;
 
 -- +goose Down
 BEGIN;
-
--- The down direction restores the global constraint. This will FAIL if
--- any cross-library duplicates have been ingested since the up migration
--- ran — that's intentional. Operators must manually reconcile.
-ALTER TABLE videos
-    DROP CONSTRAINT IF EXISTS videos_content_hash_per_library;
-
-ALTER TABLE videos
-    ADD CONSTRAINT videos_content_hash_key UNIQUE (content_hash);
-
+DROP TABLE videos;
+DROP TABLE libraries;
 COMMIT;
 ```
 
-The SQLite variant (in `0005_videos_unique_per_library.sqlite.sql`,
-selected by `goose -dialect sqlite3` at boot) has to do a table
-rebuild because SQLite cannot drop a UNIQUE constraint in place:
+### 6.4 Slot 0006 — `0006_library_scan_state.sql`
 
 ```sql
 -- +goose Up
-PRAGMA foreign_keys = OFF;
+BEGIN;
 
-CREATE TABLE videos__new (
-    id           TEXT PRIMARY KEY,
-    library_id   TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-    content_hash TEXT NOT NULL,
-    -- ... full column list ...
-    UNIQUE (library_id, content_hash)
+CREATE TABLE library_scan_state (
+    library_id        UUID         PRIMARY KEY REFERENCES libraries(id) ON DELETE CASCADE,
+    last_scan_at      TIMESTAMPTZ,
+    last_scan_id      UUID,
+    in_progress       BOOLEAN      NOT NULL DEFAULT false,
+    files_seen        INT          NOT NULL DEFAULT 0,
+    files_inserted    INT          NOT NULL DEFAULT 0,
+    files_updated     INT          NOT NULL DEFAULT 0,
+    files_missing     INT          NOT NULL DEFAULT 0,
+    -- offline_since lives inside metadata when a mount disappears (see
+    -- plan-01-03 §10).
+    metadata          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
-INSERT INTO videos__new SELECT * FROM videos;
-DROP TABLE videos;
-ALTER TABLE videos__new RENAME TO videos;
--- Re-create indexes against the new table.
-CREATE INDEX videos_library_state_idx ON videos (library_id, state);
-CREATE INDEX videos_library_path_idx  ON videos (library_id, path);
 
-PRAGMA foreign_keys = ON;
+COMMIT;
+
+-- +goose Down
+BEGIN;
+DROP TABLE library_scan_state;
+COMMIT;
+```
+
+### 6.5 Slot 0007 — `0007_videos_last_seen_at.sql`
+
+```sql
+-- +goose Up
+BEGIN;
+
+ALTER TABLE videos
+    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS deleted_at   TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS videos_missing_idx
+    ON videos (library_id, last_seen_at)
+    WHERE state = 'missing';
+
+COMMIT;
+
+-- +goose Down
+BEGIN;
+DROP INDEX IF EXISTS videos_missing_idx;
+ALTER TABLE videos
+    DROP COLUMN IF EXISTS deleted_at,
+    DROP COLUMN IF EXISTS last_seen_at;
+COMMIT;
 ```
 
 ### 6.4 Idempotency
@@ -834,10 +892,10 @@ Behavior:
 | ID | Type | Story | Coverage |
 |----|------|-------|----------|
 | **Schema** | | | |
-| `test_migration_drops_global_unique` | DB-fixture | 1.5 | After 0005, `videos_content_hash_key` is absent and `videos_content_hash_per_library` is present. |
+| `test_migration_drops_global_unique` | DB-fixture | 1.5 | After slot 0003, `videos_content_hash_key` is absent and `videos_library_content_hash_key` is present. |
 | `test_migration_idempotent` | DB-fixture | 1.5 | Running `goose up` twice leaves the schema consistent. |
-| `test_migration_down_then_up` | DB-fixture | 1.5 | `goose down 0005 && goose up` restores per-library uniqueness. |
-| `test_migration_down_blocks_on_dup` | DB-fixture | 1.5 | After ingesting cross-library duplicates, `goose down 0005` errors with a constraint violation. |
+| `test_migration_down_then_up` | DB-fixture | 1.5 | `goose down 0003 && goose up` restores per-library uniqueness. |
+| `test_migration_down_blocks_on_dup` | DB-fixture | 1.5 | After ingesting cross-library duplicates, `goose down 0003` errors with a constraint violation. |
 | `test_videos_state_check_constraint` | DB-fixture | 1.6 | `INSERT … state='nonsense'` fails. |
 | `test_cascade_deletes` | DB-fixture | 1.5 | Deleting a library cascades into its videos and their processing_jobs. |
 | **Incremental scan** | | | |
@@ -1009,43 +1067,43 @@ func TestScan_ConcurrentSweepsBlocked(t *testing.T) {
 ### 8.2 Migration tests — `api/internal/db/migrations_test.go`
 
 ```go
-func TestMigration0005_DropsGlobalUnique(t *testing.T) {
-    pool := testdb.OpenAtVersion(t, "0004")
+func TestMigration0003_DropsGlobalUnique(t *testing.T) {
+    pool := testdb.OpenAtVersion(t, "0002")
     require.True(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_key"))
 
-    require.NoError(t, testdb.MigrateUpTo(pool, "0005"))
+    require.NoError(t, testdb.MigrateUpTo(pool, "0003"))
 
     require.False(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_key"))
-    require.True(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_per_library"))
+    require.True(t, testdb.HasConstraint(t, pool, "videos", "videos_library_content_hash_key"))
 }
 
-func TestMigration0005_Idempotent(t *testing.T) {
-    pool := testdb.OpenAtVersion(t, "0005")
+func TestMigration0003_Idempotent(t *testing.T) {
+    pool := testdb.OpenAtVersion(t, "0003")
     // Apply again — goose should report no-op, not error.
-    require.NoError(t, testdb.MigrateUpTo(pool, "0005"))
-    require.True(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_per_library"))
+    require.NoError(t, testdb.MigrateUpTo(pool, "0003"))
+    require.True(t, testdb.HasConstraint(t, pool, "videos", "videos_library_content_hash_key"))
 }
 
-func TestMigration0005_DownThenUp(t *testing.T) {
-    pool := testdb.OpenAtVersion(t, "0005")
-    require.NoError(t, testdb.MigrateDownTo(pool, "0004"))
+func TestMigration0003_DownThenUp(t *testing.T) {
+    pool := testdb.OpenAtVersion(t, "0003")
+    require.NoError(t, testdb.MigrateDownTo(pool, "0002"))
     require.True(t,  testdb.HasConstraint(t, pool, "videos", "videos_content_hash_key"))
-    require.False(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_per_library"))
+    require.False(t, testdb.HasConstraint(t, pool, "videos", "videos_library_content_hash_key"))
 
-    require.NoError(t, testdb.MigrateUpTo(pool, "0005"))
+    require.NoError(t, testdb.MigrateUpTo(pool, "0003"))
     require.False(t, testdb.HasConstraint(t, pool, "videos", "videos_content_hash_key"))
-    require.True(t,  testdb.HasConstraint(t, pool, "videos", "videos_content_hash_per_library"))
+    require.True(t,  testdb.HasConstraint(t, pool, "videos", "videos_library_content_hash_key"))
 }
 
-func TestMigration0005_DownBlocksOnCrossLibraryDup(t *testing.T) {
-    pool := testdb.OpenAtVersion(t, "0005")
+func TestMigration0003_DownBlocksOnCrossLibraryDup(t *testing.T) {
+    pool := testdb.OpenAtVersion(t, "0003")
     libA := testdb.MustCreateLibrary(t, pool, "A", nil)
     libB := testdb.MustCreateLibrary(t, pool, "B", nil)
     h := "0123456789abcdef"
     testdb.MustInsertVideo(t, pool, libA.ID, h, "/a/x.mkv")
     testdb.MustInsertVideo(t, pool, libB.ID, h, "/b/x.mkv")
 
-    err := testdb.MigrateDownTo(pool, "0004")
+    err := testdb.MigrateDownTo(pool, "0002")
     require.Error(t, err, "down must fail when cross-library dups exist")
 }
 ```
@@ -1156,17 +1214,17 @@ Story 1.5 ships when **all** of the following are true. Each item maps
 to a test in §7.
 
 ### Schema
-- [ ] `0005_videos_unique_per_library.sql` exists in
+- [ ] Slot 0001 (`0001_init_libraries_and_videos.sql`) exists in
   `shared/db/migrations/` (Postgres + SQLite variants).
-- [ ] `videos_content_hash_key` is gone after migration.
-- [ ] `videos_content_hash_per_library` (`UNIQUE (library_id,
-  content_hash)`) is present and enforced.
-- [ ] `library_scan_state` table exists (migration 0004).
+- [ ] After slot 0003 lands, `videos_content_hash_key` is gone.
+- [ ] After slot 0003 lands, `videos_library_content_hash_key`
+  (`UNIQUE (library_id, content_hash)`) is present and enforced.
+- [ ] `library_scan_state` table exists (slot 0006).
 - [ ] `videos.last_seen_at` exists with `videos_missing_idx` partial
-  index.
+  index (slot 0007).
 - [ ] `purge_log` table exists.
 - [ ] State `CHECK` constraint on `videos.state` covers all 12 states
-  in [story-1.6](story-01-06-video-state-machine.md).
+  in [story-1.6](story-01-06-video-state-machine.md) (slot 0004).
 
 ### Migration system
 - [ ] `goose up` / `goose down` work on both Postgres and SQLite.
@@ -1212,8 +1270,9 @@ to a test in §7.
 
 ### Documentation
 - [ ] [story-01-05-schema-decisions.md](story-01-05-schema-decisions.md) cross-links to this plan.
-- [ ] Migration `0005` docstring records the precondition (no prior
-  cross-library dups can exist) and the lock window note.
+- [ ] Migration at slot 0003 (plan-01-02) docstring records the
+  precondition (no prior cross-library dups can exist) and the lock
+  window note.
 - [ ] [architecture.md §8.1](../../architecture.md) is updated to show the per-library
   unique constraint as the canonical version (not "TBD by Story 1.5").
 

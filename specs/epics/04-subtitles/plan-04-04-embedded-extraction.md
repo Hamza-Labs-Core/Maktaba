@@ -134,49 +134,29 @@ shared/
 │   └── pipeline.proto               # ADD: ExtractEmbeddedSubtitle RPC + messages
 └── db/
     └── migrations/
-        └── 0017_subtitle_files_is_embedded.sql   # OWNED BY THIS STORY
+        # No migration owned by this plan. The is_embedded column,
+        # track_index column, the two CHECK constraints, and the
+        # partial unique index all ship in slot 0015 (owned by
+        # plan-04-03 — see MANIFEST.md).
 ```
 
-(Migration filename uses `0017_` as a placeholder — the actual prefix is
-`max(existing) + 1` at merge time. The migration runner uses the leading
-integer for ordering and rejects gaps; see `shared/db/migrate.py`.)
+### 2.2 SQL — schema reference (owned by plan-04-03 at slot 0015)
 
-### 2.2 SQL migration — `0017_subtitle_files_is_embedded.sql`
+The columns and constraints below already exist in the canonical
+`subtitle_files` migration owned by
+[plan-04-03](plan-04-03-external-discovery.md). This plan documents the
+SQL for reference only; it does **not** ship its own migration.
 
 ```sql
--- 0017_subtitle_files_is_embedded.sql
--- Owner: Story 4.4 (resolves REVIEW §1.1.c).
--- Adds is_embedded + track_index to distinguish embedded extractions from
--- both external sidecars (Story 4.3) and pipeline-generated artifacts
--- (Story 4.1). Backfills all existing rows to is_embedded = false because
--- no embedded extraction code path existed before this migration.
-
-BEGIN;
-
-ALTER TABLE subtitle_files
-    ADD COLUMN is_embedded BOOLEAN NOT NULL DEFAULT FALSE;
-
--- track_index is the FFprobe-reported absolute stream index for embedded
--- rows; NULL for external (Story 4.3) and pipeline-generated (Story 4.1)
--- rows. We use INTEGER (not SMALLINT) because future containers may have
--- many more streams than the 32k SMALLINT ceiling — cheap insurance.
-ALTER TABLE subtitle_files
-    ADD COLUMN track_index INTEGER NULL;
-
--- Disposition / forced / SDH metadata as JSONB (D3). NULL for non-
--- embedded rows.
-ALTER TABLE subtitle_files
-    ADD COLUMN metadata JSONB NULL;
-
--- Composite index supports the read pattern "show me all rows for
--- this video, grouped by source kind", which is what the UI's
--- subtitle-track picker emits on every page load.
-CREATE INDEX subtitle_files_video_kind
-    ON subtitle_files (video_id, is_external, is_embedded);
-
--- Hard invariant: an embedded row must carry a track_index. (External
--- rows carry NULL.) Enforced as a CHECK rather than NOT NULL on the
--- column itself because external rows legitimately have NULL.
+-- Columns added by slot 0015 that this plan reads/writes:
+--   is_embedded   BOOLEAN NOT NULL DEFAULT FALSE
+--   track_index   INTEGER NULL
+--
+-- Constraints enforced at slot 0015:
+--   subtitle_files_origin_xor:
+--       CHECK (NOT (is_external AND is_embedded))
+--
+-- Additional invariant this plan needs (folded into slot 0015):
 ALTER TABLE subtitle_files
     ADD CONSTRAINT subtitle_files_embedded_has_track_index
     CHECK (
@@ -184,27 +164,16 @@ ALTER TABLE subtitle_files
         OR (is_embedded = TRUE AND track_index IS NOT NULL)
     );
 
--- Hard invariant: an embedded row must NOT also be external. (One row,
--- one provenance.)
-ALTER TABLE subtitle_files
-    ADD CONSTRAINT subtitle_files_embedded_xor_external
-    CHECK (NOT (is_embedded = TRUE AND is_external = TRUE));
-
 -- Idempotency: at most one embedded row per (video, track_index). The
--- partial unique index uses the predicate to avoid blocking legitimate
--- duplicate (video_id, track_index=NULL) external rows from Story 4.3
--- when two external sidecars happen to share the same name slot.
+-- partial unique index uses the predicate to avoid blocking external
+-- rows that legitimately carry track_index = NULL.
 CREATE UNIQUE INDEX subtitle_files_embedded_unique_per_track
     ON subtitle_files (video_id, track_index)
     WHERE is_embedded = TRUE;
-
-COMMIT;
 ```
 
-A down-migration `0017_subtitle_files_is_embedded.down.sql` drops the
-two indexes, the two constraints, and the three columns in reverse
-order. We ship it for completeness even though our migration runner is
-forward-only by default.
+Both the constraint and the partial unique index land at slot 0015
+alongside the column itself.
 
 ### 2.3 gRPC contract — `shared/proto/pipeline.proto`
 
@@ -649,8 +618,7 @@ only to confirm the contract is satisfied.
 
 | Order | File | Symbols introduced / changed | Tests gating |
 |-------|------|------------------------------|--------------|
-| 1 | `shared/db/migrations/0017_subtitle_files_is_embedded.sql` | `is_embedded`, `track_index`, `metadata` columns; two CHECK constraints; two indexes | `test_migration_adds_is_embedded` |
-| 2 | `shared/db/migrations/0017_subtitle_files_is_embedded.down.sql` | down-migration | `test_migration_round_trip` |
+| 1 | (no new migration — `is_embedded`, `track_index`, the CHECK constraints, and the partial unique index ship in slot 0015 owned by [plan-04-03](plan-04-03-external-discovery.md)) | n/a | `test_migration_adds_is_embedded` lives alongside slot 0015's tests |
 | 3 | `shared/proto/pipeline.proto` | `ExtractEmbeddedSubtitle`, `ExtractEmbeddedSubtitleRequest`, `ExtractEmbeddedSubtitleResponse`, `SubtitleDispositionMetadata` | proto-compile passes; `architecture.md §9.9` PR companion |
 | 4 | `pipeline/src/maktaba_pipeline/media/errors.py` | `UnknownSubtitleStream`, `UnsupportedSubtitleCodec`, `SubtitleTooLarge`, `ExtractedFileMissing` | (n/a — used elsewhere) |
 | 5 | `pipeline/src/maktaba_pipeline/media/ffprobe.py` | `ProbeStream.from_ffprobe_dict` (if missing) | `test_ffprobe_stream_from_dict` |
@@ -686,7 +654,7 @@ Outputs:
 
 ```python
 async def test_migration_adds_is_embedded(db, migrate_to_head):
-    """0017 applies cleanly; column + indexes present."""
+    """Slot 0015 (canonical subtitle_files) carries is_embedded + indexes."""
     cols = await db.fetch("""
         SELECT column_name, data_type, is_nullable, column_default
           FROM information_schema.columns
@@ -965,7 +933,7 @@ in full.
 
 ## 6. Acceptance checklist
 
-- [ ] **A1** Migration `0017_subtitle_files_is_embedded.sql` applies cleanly on a fresh DB and on a DB pre-populated with Story 4.3 external rows. The migration adds:
+- [ ] **A1** The canonical `subtitle_files` migration (slot 0015, owned by [plan-04-03](plan-04-03-external-discovery.md)) carries the columns this story needs. Verified by `test_migration_adds_is_embedded` against a fresh DB:
     - Column `is_embedded BOOLEAN NOT NULL DEFAULT FALSE`
     - Column `track_index INTEGER NULL`
     - Column `metadata JSONB NULL`
@@ -991,4 +959,4 @@ in full.
 - [ ] **A17** A `(file present, row missing)` cache state self-heals — the next call re-runs ffmpeg, the rename is a no-op overwrite, the INSERT runs (or no-ops on conflict), and a single canonical row is left behind. (`test_embedded_db_row_orphan_triggers_re_extract`)
 - [ ] **A18** No code path in this story enqueues a `processing_jobs` row, advances `videos.state`, or otherwise mutates the pipeline state machine. The extraction RPC is purely side-channel. (Static check: grep for `INSERT INTO processing_jobs` and `UPDATE videos SET state` in the new module — must be zero matches.)
 - [ ] **A19** The `architecture.md §9.9` Pipeline RPC table is updated to list `ExtractEmbeddedSubtitle` and the same updated section explicitly references this story as the owner. (Doc PR companion to the code PR.)
-- [ ] **A20** The down-migration `0017_subtitle_files_is_embedded.down.sql` exists and successfully reverts the schema to its pre-migration state on an empty DB. (`test_migration_round_trip`)
+- [ ] **A20** The slot-0015 down-migration cleanly reverts the schema to its pre-migration state on an empty DB. (`test_migration_round_trip` is owned by plan-04-03's test harness.)

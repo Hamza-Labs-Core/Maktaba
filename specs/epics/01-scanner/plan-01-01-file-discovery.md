@@ -103,19 +103,22 @@ Create the Go module and skeleton.
 
 ### Step 2 — Migrations
 
-In `[shared/db/migrations/]` add (numbering picks up after whatever the
-job-queue epic landed; placeholders here):
+Slot ownership follows the canonical
+[migration manifest](../../../shared/db/migrations/MANIFEST.md). This plan
+**depends on** earlier slots and **owns** exactly one new slot:
 
-- `[shared/db/migrations/0001_init.sql]` — `libraries` (already in §8.1
-  of architecture; this plan provides the canonical DDL — see §4 below).
-- `[shared/db/migrations/0002_videos.sql]` — `videos` with the per-library
-  unique constraint from D2.
-- `[shared/db/migrations/0003_processing_jobs.sql]` — `processing_jobs`
-  per [architecture.md §7.1](../../architecture.md). This migration is
-  shared with the job-queue epic; if it has already landed, omit and
-  consume the existing schema.
-- `[shared/db/migrations/0004_videos_new_notify.sql]` — trigger that
-  emits `pg_notify('videos.new', payload)` after insert on `videos`.
+- **Depends on** `0001_init_libraries_and_videos.sql` (owned by
+  [plan-01-05](plan-01-05-schema-decisions.md)) — `libraries` and the
+  base `videos` table per architecture §8.1.
+- **Depends on** `0002_processing_jobs.sql` (owned by
+  [plan-06-01](../06-job-queue/plan-06-01-schema-indexes.md)) —
+  canonical `processing_jobs` schema per architecture §7.1, including
+  the partial heartbeat index `(state, last_heartbeat_at) WHERE state IN
+  ('claimed','running','resuming')` and the `pause_requested` partial
+  index.
+- **Owns** `0005_videos_new_notify.sql` — trigger that emits
+  `pg_notify('videos.new', payload)` after insert on `videos`. See §4.1
+  below.
 
 Run order is enforced by goose's numeric prefix.
 
@@ -260,7 +263,6 @@ type Config struct {
 // Walk returns when the traversal completes or ctx is cancelled. The
 // caller is responsible for closing out after all roots finish.
 func Walk(ctx context.Context, root string, cfg Config, out chan<- Candidate, log *slog.Logger) error {
-	type devIno struct{ Dev, Ino uint64 }
 	visited := map[devIno]struct{}{}
 	permLogged := false
 
@@ -363,7 +365,8 @@ func devInoOf(path string) (devIno, bool) {
 	return devIno{Dev: uint64(sys.Dev), Ino: uint64(sys.Ino)}, true
 }
 
-type devIno struct{ Dev, Ino uint64 } // mirrored locally so the helper compiles
+// File-level type used by both Walk's visited map and devInoOf's return type.
+type devIno struct{ Dev, Ino uint64 }
 ```
 
 ### 3.2 `scanner/internal/hash/blake3.go`
@@ -379,7 +382,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/zeebo/blake3"
+	"lukechampine.com/blake3"
 )
 
 // HeadTailSize is the number of bytes read from the head and from the
@@ -393,11 +396,18 @@ var ErrZeroSize = errors.New("hash: zero-byte file")
 // `size` must equal the file's stat size; the caller has already
 // stat'd it and passing the value avoids a second syscall.
 //
+// The canonical formula is BLAKE3( head || tail || size_le_u64 ), with
+// head = first ht bytes, tail = last ht bytes, ht = min(HeadTailSize, size).
+// For files smaller than HeadTailSize the two regions are the same byte
+// range; we still emit them to the hasher twice so the formula is uniform
+// across sizes (see plan-01-02 §2.4 for the rationale).
+//
 // IO budget is bounded:
-//   size <= 8 MiB: one sequential read of the entire file.
-//   size  > 8 MiB: one read of HeadTailSize, one Seek, one read of
-//                  HeadTailSize. Total bytes off disk = 8 MiB regardless
-//                  of file size.
+//   size <= HeadTailSize: one sequential read of the entire file (which is
+//                         then written to the hasher twice).
+//   size  > HeadTailSize: one read of HeadTailSize, one Seek, one read of
+//                         HeadTailSize. Total bytes off disk = 8 MiB
+//                         regardless of file size.
 func HashFile(ctx context.Context, path string, size int64) (string, error) {
 	if size == 0 {
 		return "", ErrZeroSize
@@ -409,26 +419,31 @@ func HashFile(ctx context.Context, path string, size int64) (string, error) {
 	}
 	defer f.Close()
 
-	h := blake3.New()
+	h := blake3.New(32, nil)
+	ht := int64(HeadTailSize)
+	if size < ht {
+		ht = size
+	}
 
-	if size <= 2*HeadTailSize {
-		// Whole-file path: head and tail overlap, so just stream once.
-		if _, err := io.Copy(h, ctxReader(ctx, f)); err != nil {
-			return "", err
-		}
-	} else {
-		head := make([]byte, HeadTailSize)
-		if _, err := io.ReadFull(ctxReader(ctx, f), head); err != nil {
-			return "", err
-		}
+	head := make([]byte, ht)
+	if _, err := io.ReadFull(ctxReader(ctx, f), head); err != nil {
+		return "", err
+	}
+	if _, err := h.Write(head); err != nil {
+		return "", err
+	}
+
+	if size <= ht {
+		// Head and tail are the same byte range; honor head||tail||size by
+		// writing the buffer to the hasher a second time.
 		if _, err := h.Write(head); err != nil {
 			return "", err
 		}
-
-		if _, err := f.Seek(size-HeadTailSize, io.SeekStart); err != nil {
+	} else {
+		if _, err := f.Seek(size-ht, io.SeekStart); err != nil {
 			return "", err
 		}
-		tail := make([]byte, HeadTailSize)
+		tail := make([]byte, ht)
 		if _, err := io.ReadFull(ctxReader(ctx, f), tail); err != nil {
 			return "", err
 		}
@@ -799,12 +814,13 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		// request finishes. Bound by an internal timeout instead.
 		_, _ = h.Scanner.Run(detachedCtx(), libID)
 	}()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"scan_id":    scanID,
 		"library_id": libID,
 		"started_at": time.Now().UTC(),
 	})
-	w.WriteHeader(http.StatusAccepted)
 }
 ```
 
@@ -815,115 +831,14 @@ cancels on SIGTERM via a process-wide group; trivial helper not shown.)
 
 ## 4. Database migrations
 
-### 4.1 `shared/db/migrations/0001_init.sql`
+This plan owns **one** new migration. The `libraries`, `videos`, and
+`processing_jobs` tables are owned by other plans per the
+[migration manifest](../../../shared/db/migrations/MANIFEST.md):
 
-```sql
--- +goose Up
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+- Slot 0001 (`init_libraries_and_videos`) → [plan-01-05](plan-01-05-schema-decisions.md)
+- Slot 0002 (`processing_jobs`) → [plan-06-01](../06-job-queue/plan-06-01-schema-indexes.md)
 
-CREATE TABLE libraries (
-    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        TEXT         NOT NULL UNIQUE,
-    roots       TEXT[]       NOT NULL,
-    settings    JSONB        NOT NULL DEFAULT '{}'::jsonb,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
--- +goose Down
-DROP TABLE libraries;
-```
-
-### 4.2 `shared/db/migrations/0002_videos.sql`
-
-```sql
--- +goose Up
-CREATE TABLE videos (
-    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    library_id          UUID         NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-    content_hash        TEXT         NOT NULL,
-    path                TEXT         NOT NULL,
-    filename            TEXT         NOT NULL,
-    size_bytes          BIGINT       NOT NULL,
-    mtime               TIMESTAMPTZ  NOT NULL,
-    state               TEXT         NOT NULL DEFAULT 'discovered',
-    detected_language   TEXT,
-    title               TEXT,
-    description         TEXT,
-    poster_path         TEXT,
-    sprite_path         TEXT,
-    duration_sec        REAL,
-    metadata            JSONB        NOT NULL DEFAULT '{}'::jsonb,
-    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
-
-    -- D2: per-library uniqueness; see story-01-05-schema-decisions.md.
-    CONSTRAINT videos_library_hash_unique UNIQUE (library_id, content_hash)
-);
-
-CREATE INDEX videos_library_state_idx ON videos (library_id, state);
-CREATE INDEX videos_state_idx         ON videos (state);
-
--- +goose Down
-DROP TABLE videos;
-```
-
-### 4.3 `shared/db/migrations/0003_processing_jobs.sql`
-
-This is the schema from [architecture.md §7.1](../../architecture.md).
-Story 1.1 only writes `(video_id, stage='probe', state='pending')` rows;
-the rest of the columns are non-null defaults so the row remains valid.
-
-```sql
--- +goose Up
-CREATE TABLE processing_jobs (
-    id                       BIGSERIAL    PRIMARY KEY,
-    video_id                 UUID         NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    stage                    TEXT         NOT NULL,
-    state                    TEXT         NOT NULL,
-    priority                 INT          NOT NULL DEFAULT 100,
-    attempts                 INT          NOT NULL DEFAULT 0,
-    max_attempts             INT          NOT NULL DEFAULT 3,
-    claimed_by               TEXT,
-    claimed_at               TIMESTAMPTZ,
-    last_heartbeat_at        TIMESTAMPTZ,
-    not_before               TIMESTAMPTZ,
-    error                    TEXT,
-
-    total_duration_seconds   REAL,
-    processed_seconds        REAL         NOT NULL DEFAULT 0,
-    segments_completed       INT          NOT NULL DEFAULT 0,
-    last_segment_end_sec     REAL         NOT NULL DEFAULT 0,
-    estimated_remaining_sec  REAL,
-    realtime_factor          REAL,
-    progress_updated_at      TIMESTAMPTZ,
-
-    pause_requested          BOOLEAN      NOT NULL DEFAULT false,
-    cancel_requested         BOOLEAN      NOT NULL DEFAULT false,
-    paused_at                TIMESTAMPTZ,
-    paused_at_sec            REAL,
-    paused_reason            TEXT,
-    resumed_at               TIMESTAMPTZ,
-    resume_count             INT          NOT NULL DEFAULT 0,
-
-    metrics                  JSONB,
-    created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    finished_at              TIMESTAMPTZ
-);
-
-CREATE INDEX processing_jobs_state_pri_idx ON processing_jobs (state, priority, not_before);
-CREATE INDEX processing_jobs_video_idx     ON processing_jobs (video_id, stage);
-
--- One pending probe job per video (idempotent re-scan).
-CREATE UNIQUE INDEX processing_jobs_one_pending_per_stage
-    ON processing_jobs (video_id, stage)
-    WHERE state IN ('pending', 'claimed', 'running', 'paused', 'resuming');
-
--- +goose Down
-DROP TABLE processing_jobs;
-```
-
-### 4.4 `shared/db/migrations/0004_videos_new_notify.sql`
+### 4.1 `shared/db/migrations/0005_videos_new_notify.sql`
 
 ```sql
 -- +goose Up

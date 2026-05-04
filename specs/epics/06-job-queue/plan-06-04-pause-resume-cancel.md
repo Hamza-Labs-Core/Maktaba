@@ -522,8 +522,20 @@ async def run_transcribe(ctx, job, video):
                                          at_sec=segment.end)
                     return CancelResult(at_sec=segment.end)
                 if flags.pause:
+                    # Architecture §7.8: a pause that arrives because
+                    # the worker is shutting down must record reason
+                    # 'shutdown' so observers can tell why the run
+                    # stopped. The shutdown orchestrator (plan-06-08)
+                    # sets ctx.shutdown_event when SIGTERM/SIGINT
+                    # arrives.
+                    reason = (
+                        "shutdown"
+                        if (ctx.shutdown_event is not None
+                            and ctx.shutdown_event.is_set())
+                        else "user"
+                    )
                     await mark_paused(ctx.db, job.id,
-                                      at_sec=segment.end, reason="user")
+                                      at_sec=segment.end, reason=reason)
                     return PauseResult(at_sec=segment.end)
 
                 # Force-pause arrived? Abort subprocess; commit happens via

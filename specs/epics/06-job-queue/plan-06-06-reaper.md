@@ -232,18 +232,27 @@ class Reaper:
         self._task: asyncio.Task | None = None
 
     async def _try_lock(self) -> bool:
-        """Postgres: pg_try_advisory_lock; SQLite: process-local mutex."""
+        """Postgres: pg_try_advisory_lock; SQLite: process-local mutex.
+
+        Returns True iff we acquired the lock. The SQLite path is
+        deliberately non-blocking: if a previous tick is still holding
+        the local mutex, we report busy and let the caller skip rather
+        than queue up. (asyncio.Lock.acquire() never returns False —
+        it suspends — so we have to check .locked() up front.)
+        """
         if self.db.dialect == "postgres":
             row = await self.db.fetchrow(
                 "SELECT pg_try_advisory_lock($1) AS got",
                 REAPER_ADVISORY_LOCK_KEY,
             )
             return bool(row["got"])
-        # SQLite: there's only one process holding the connection in our
-        # deployment shape; the asyncio.Lock below serializes ticks.
+        # SQLite: serialize ticks with a process-local mutex.
         if not hasattr(self, "_local_lock"):
             self._local_lock = asyncio.Lock()
-        return await self._local_lock.acquire() is None or True
+        if self._local_lock.locked():
+            return False
+        await self._local_lock.acquire()
+        return True
 
     async def _release_lock(self) -> None:
         if self.db.dialect == "postgres":

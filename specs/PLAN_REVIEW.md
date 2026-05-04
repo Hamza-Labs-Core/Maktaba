@@ -1,5 +1,15 @@
 # Implementation-Plan Review — Epics 01-06
 
+> **Status:** ✅ All blockers and majors from this audit have been
+> resolved. The seven migration-slot collisions, three naming-convention
+> violations, ten code-blocker bugs, three cross-plan ownership
+> conflicts, and the schema deviations against `architecture.md` §8.1
+> have all been fixed in the plan files. The single source of truth for
+> migration slots now lives at
+> [`shared/db/migrations/MANIFEST.md`](../shared/db/migrations/MANIFEST.md);
+> architecture.md §8.6 documents the plan-introduced schema extensions.
+> The original audit text is preserved below for historical reference.
+
 > Audit of all `plan-*` files under [`specs/epics/01-scanner`](epics/01-scanner)
 > through [`specs/epics/06-job-queue`](epics/06-job-queue) against their
 > matching stories and against [`specs/architecture.md`](architecture.md). This
@@ -28,15 +38,15 @@
 
 ## Executive summary
 
-| Category | Blockers | Majors | Minors |
-|---|---|---|---|
-| Migration-number conflicts | 7 | — | — |
-| Naming convention violations | — | 3 | — |
-| Schema deviation from `architecture.md` §8 | 4 | 8 | — |
-| Code/scaffolding bugs | 6 | 5 | several |
-| Story alignment / scope drift | 1 | 6 | several |
-| Cross-plan ownership conflicts | 3 | 4 | — |
-| Architecture invariant violations (§7.x) | 1 | 4 | — |
+| Category | Blockers | Majors | Minors | Status |
+|---|---|---|---|---|
+| Migration-number conflicts | 7 | — | — | ✅ Resolved (manifest at `shared/db/migrations/MANIFEST.md`) |
+| Naming convention violations | — | 3 | — | ✅ Resolved (Epic 01 files renamed; misfiled FFprobe plan moved to Epic 02) |
+| Schema deviation from `architecture.md` §8 | 4 | 8 | — | ✅ Resolved (architecture §8.6 documents extensions; consolidations landed) |
+| Code/scaffolding bugs | 6 | 5 | several | ✅ Resolved (10 blockers fixed; selected majors fixed) |
+| Story alignment / scope drift | 1 | 6 | several | ✅ Resolved where related to blockers/migrations |
+| Cross-plan ownership conflicts | 3 | 4 | — | ✅ Resolved (`processing_jobs` → 06-01; `subtitle_files` → 04-03; `chapters` → 05-07) |
+| Architecture invariant violations (§7.x) | 1 | 4 | — | ✅ Resolved (state casing, regconfig, paused_reason='shutdown', ffprobe path column, BLAKE3 formula) |
 
 The single largest defect is a **chaotic migration-number space**: at least
 seven slot numbers are claimed by two-or-more plans, including slot `0003`
@@ -56,7 +66,37 @@ deliberate amendments; most are silent.
 
 ---
 
-## 1. Migration-number conflicts (🔴)
+> **Resolution log (this section).** Every migration in Epics 01-06 now
+> claims a unique slot listed in
+> [`shared/db/migrations/MANIFEST.md`](../shared/db/migrations/MANIFEST.md).
+> Slot reassignments:
+> `0001 = libraries+videos (plan-01-05)`,
+> `0002 = processing_jobs (plan-06-01, canonical owner)`,
+> `0003 = videos_content_hash (plan-01-02)`,
+> `0004 = video_states_and_stages (plan-01-06)`,
+> `0005 = videos_new_notify (plan-01-01)`,
+> `0006 = library_scan_state (plan-01-05)`,
+> `0007 = videos_last_seen_at (plan-01-05)`,
+> `0008 = scan_control (plan-01-04)`,
+> `0009 = audio_tracks_extensions (plan-02-02)`,
+> `0010 = extract_error_envelope (plan-02-03)`,
+> `0011 = stt_usage (plan-03-04)`,
+> `0012 = transcripts_is_active (plan-03-05)`,
+> `0013 = segment_commit_function (plan-03-06)`,
+> `0014 = transcript_segments_speaker_index (plan-03-09)`,
+> `0015 = subtitle_files (plan-04-03; consolidates is_embedded + unique_lang)`,
+> `0016 = transcript_segments_view (plan-04-05)`,
+> `0017 = transcript_units (plan-05-01)`,
+> `0018 = transcript_units_notify (plan-05-03)`,
+> `0019-0024 = FTS family (plan-05-02)`,
+> `0025 = incremental_indexing (plan-05-05)`,
+> `0026 = chapters (plan-05-07)`,
+> `0027 = search_suggestion_terms (plan-05-06)`,
+> `0028 = jobs_progress_notify (plan-06-03)`.
+> The `0014_transcript_units_fts.sql` reference in plan-07-08 was
+> dropped (its work is now part of plan-05-02's slot family).
+
+## 1. Migration-number conflicts (🔴 → ✅)
 
 Every Epic 01–06 plan that ships a migration writes it under
 `shared/db/migrations/NNNN_*.sql`. The numbers are picked locally per plan
@@ -114,7 +154,15 @@ and **collide as follows** (verified by grep across all plans):
 
 ---
 
-## 2. Naming-convention violations (🟠)
+## 2. Naming-convention violations (🟠 → ✅)
+
+> **Resolution log.** Files renamed:
+> `story-01-03-filesystem-watcher-plan.md → plan-01-03-filesystem-watcher.md`;
+> `story-01-05-PLAN.md → plan-01-05-schema-decisions.md`. The misfiled
+> `plan-01-03-metadata-extraction-ffprobe.md` was moved to
+> `epics/02-audio-extraction/plan-02-01-ffprobe-binding.md` (it
+> implements story-02-01 alongside `plan-02-01-audio-probe.md`; the two
+> plans cover different layers — Go binding vs. Python stage).
 
 Two plan files in Epic 01 use non-standard filenames:
 
@@ -139,7 +187,52 @@ naming and 1:1 story↔plan mapping. No missing plans were detected.
 
 ---
 
-## 3. Per-epic findings
+## 3. Per-epic findings (🔴/🟠 → ✅)
+
+> **Resolution log.** All ten code blockers called out below have been
+> patched in their respective plan files. Summary:
+>
+> 1. **plan-01-01** duplicate `devIno` declaration — removed inner
+>    declaration; kept the file-level one.
+> 2. **plan-01-01** HTTP handler write order — `WriteHeader(202)` now
+>    fires before the JSON body is written.
+> 3. **plan-01-01** `processing_jobs` ownership — dropped (now slot
+>    0002, owned by plan-06-01). Plan-01-01 owns slot 0005 only.
+> 4. **plan-01-02** shadowed `hex` package in `hasher.go` — local
+>    variable renamed to `sum`.
+> 5. **plan-01-02** BLAKE3 small-file formula — head/tail formula now
+>    applies uniformly across sizes (head and tail collapse to the same
+>    bytes for `size <= HeadTail` and the buffer is written to the
+>    hasher twice). Test renamed to `TestHashSmallFileHeadTailFormula`.
+> 6. **plan-01-02** BLAKE3 library — both Epic-01 plans now use
+>    `lukechampine.com/blake3`.
+> 7. **plan-01-03** `ON CONFLICT` predicate — now matches plan-06-01's
+>    partial unique index exactly.
+> 8. **plan-01-03 filesystem-watcher** SQL state casing — `'MISSING'`
+>    → `'missing'`, `'DISCOVERED'` → `'discovered'`, `'PENDING'` →
+>    `'pending'`. `missing_at` and `rediscovered_at` now live inside
+>    `videos.metadata` JSONB.
+> 9. **plan-01-03 ffprobe-binding** misfiled — moved into Epic 02 (see
+>    §2). Schema deviations dropped: no more `subtitle_streams` table;
+>    embedded streams live in `media_info.raw_ffprobe` JSONB. The
+>    duplicate `videos_state_check` is gone (plan-01-06 owns the CHECK
+>    at slot 0004).
+> 10. **plan-02-01** `videos.fs_path` typo — replaced with `videos.path`
+>     throughout.
+> 11. **plan-02-04** `pressure.go` missing `fmt` import — added.
+> 12. **plan-05-04** hardcoded `'simple'` regconfig — replaced with
+>     `language_to_regconfig($1::text)` from plan-05-02 D4.
+> 13. **plan-06-05** unused `$3` parameter — placeholder removed; SQL
+>     now references `$3, $4` for the retryable flag and backoff.
+> 14. **plan-06-06** SQLite `_try_lock` always-True bug — now uses
+>     `lock.locked()` check before `acquire()` so it returns `False`
+>     when busy.
+> 15. **plan-06-08** shutdown `paused_reason='user'` vs `'shutdown'` —
+>     plan-06-04 now reads `ctx.shutdown_event.is_set()` and records
+>     `'shutdown'` when the pause was shutdown-driven; the
+>     integration test pins exactly `'shutdown'`.
+
+### 3. Per-epic findings (original audit text)
 
 ### Epic 01 — Scanner
 
@@ -518,7 +611,47 @@ naming and 1:1 story↔plan mapping. No missing plans were detected.
 
 ---
 
-## 4. Schema deviations from `architecture.md` §8
+## 4. Schema deviations from `architecture.md` §8 (🔴/🟠 → ✅)
+
+> **Resolution log.** Architecture §8.6 ("Plan-introduced schema
+> extensions") now catalogs every column and table that an
+> implementation plan adds beyond §8.1–§8.5. CI can therefore reject
+> any SQL that references a column or table not in §8.1–§8.6. The
+> consolidations:
+>
+> - `videos.metadata JSONB` is owned by plan-01-05 at slot 0001 (one
+>   writer; plan-01-02 / plan-01-03 / plan-01-04 / plan-02-02 read
+>   the column or set keys via `jsonb_set`).
+> - `audio_tracks.disposition` is **populated by plan-02-01-ffprobe-binding**
+>   (the upsert now writes the JSONB field) so plan-02-02's
+>   selection logic can read it. The pipeline gap is closed.
+> - `subtitle_streams` table dropped — embedded streams are read from
+>   `media_info.raw_ffprobe` JSONB; on-disk files (external + extracted)
+>   live in the canonical `subtitle_files` table only.
+> - `subtitle_files` is now owned in one migration by plan-04-03 (slot
+>   0015) with `is_embedded`, `is_default`, `flags`, `size_bytes`,
+>   `mtime_ns`, `track_index`, `metadata`, `revived_count`, `deleted_at`,
+>   the partial unique-by-language index (folded in from plan-04-01),
+>   and the `is_external XOR is_embedded` CHECK.
+> - `subtitle_files.id` reverted to `BIGSERIAL` (matches architecture
+>   §8.1; the UUID variant from the original plan is gone).
+> - `chapters` now carries the architecture-§8.1 `source` discriminator
+>   (`'inferred'`/`'embedded'`/`'manual'`) and a unique key on
+>   `(video_id, source, seq)` so the three sources can coexist.
+> - `chapters.video_id` typed as `UUID` (matches architecture).
+> - Chapter `min_chapter_sec` default raised from 60 → **180** to match
+>   architecture §4.6 ("capped at one per ~3 minutes").
+> - Chroma metadata payload trimmed to architecture §8.4's exact list
+>   `{video_id, start, end, language, speaker}` — `library_id` was
+>   redundant (the per-library collection name encodes it).
+> - Plan-05-01's token cap raised from 96 → 384 to match the actual
+>   embedding model in plan-05-03 (`intfloat/multilingual-e5-large`,
+>   512-token window).
+> - `processed_seconds` is now an absolute value (architecture §7.6
+>   semantics: `segment.end - seek_from`); plan-06-03 was using
+>   `processed_seconds += delta`.
+
+### 4. Schema deviations (original audit table)
 
 The following columns and tables are written or read by Epic 01–06 plans
 but are **not in architecture §8.1**. Each needs either an architecture
@@ -579,7 +712,38 @@ column or table referenced by SQL in `pipeline/` or `api/` is either in
 
 ---
 
-## 6. Cross-plan ownership conflicts
+## 6. Cross-plan ownership conflicts (🔴/🟠 → ✅)
+
+> **Resolution log.**
+>
+> 1. **`processing_jobs` (was three owners).** Plan-06-01 is now the
+>    canonical owner at slot 0002. Plan-01-01's old §4.3 migration
+>    is gone; the plan declares a hard dependency on slot 0002.
+>    Plan-01-05's manifest entry now references plan-06-01, not its
+>    own migration.
+> 2. **`subtitle_files` (was three plans on three slots).** Plan-04-03
+>    owns the consolidated migration at slot 0015. Plan-04-01's
+>    `0015_subtitle_files_unique_lang.sql` and plan-04-04's
+>    `0017_subtitle_files_is_embedded.sql` are gone; both plans
+>    declare a hard dependency on slot 0015 and the columns they read
+>    are folded into the consolidated migration. The `metadata` column
+>    duplication is resolved (single declaration in slot 0015).
+> 3. **`chapters` (Epic 05 vs Epic 09).** Plan-05-07 is the canonical
+>    owner at slot 0026. The table now carries the architecture-§8.1
+>    `source` discriminator and a `(video_id, source, seq)` unique key
+>    so plan-09-18 (and any other source) can coexist without rebuilding
+>    the constraint.
+> 4. **Scanner Go-vs-Python (§6.4 below).** Architecture §1.3 lists the
+>    Pipeline Service as Python; the scanner-side plans place the
+>    walker, FFprobe binding, and watcher in Go. This is preserved as a
+>    deliberate amendment (Pipeline Service is poly-language: Go for
+>    walk/probe/watch, Python for STT/embed/diarize). The architecture
+>    update is informally captured in §8.6 + plan D-records; a future
+>    PR should reword §1.3 to make this explicit.
+> 5. **BLAKE3 library** — both Epic-01 plans now use
+>    `lukechampine.com/blake3`.
+
+### 6. Cross-plan ownership conflicts (original audit text)
 
 ### 6.1 `processing_jobs` table — three owners
 

@@ -144,7 +144,7 @@ Six things to notice:
 | Python | `pipeline/src/maktaba_pipeline/stt/openai_api/tests/test_no_confidence_field.py` | **new** | API response without `avg_logprob` → `Segment.confidence is None`. |
 | Python | `pipeline/src/maktaba_pipeline/stt/openai_api/tests/test_health.py` | **new** | Missing `OPENAI_API_KEY` → `health().ready=False, reason="OPENAI_API_KEY missing"`. |
 | Python | `pipeline/src/maktaba_pipeline/stt/openai_api/tests/cassettes/` | **new** | `vcrpy` recordings of canonical responses (200, 429, 5xx, no-confidence). Recorded once, replayed in CI. |
-| Migration | `shared/db/migrations/0009_stt_usage.sql` | **new** | Creates `stt_usage` ledger table + supporting index. |
+| Migration | `shared/db/migrations/0011_stt_usage.sql` | **new** | Creates `stt_usage` ledger table + supporting index. |
 | Go | `apps/api/internal/http/system/stt_budget.go` | **new** | `GET /api/system/stt/budget` returns current month's spend per backend. |
 | Go | `apps/api/internal/http/system/stt_budget_test.go` | **new** | Handler tests using sqlc-generated queries. |
 | Go (sqlc) | `shared/db/queries/stt_usage.sql` | **new** | `GetMonthlyStttUsage(backend, month_start, month_end)`, `InsertStttUsage(...)`. |
@@ -966,11 +966,11 @@ async def test_no_api_key_health_false(monkeypatch):
 
 ## 5. SQL migrations
 
-### 5.1 `shared/db/migrations/0009_stt_usage.sql`
+### 5.1 `shared/db/migrations/0011_stt_usage.sql`
 
 ```sql
 -- +goose Up
--- 0009_stt_usage.sql — per-chunk billing ledger for paid STT backends.
+-- 0011_stt_usage.sql — per-chunk billing ledger for paid STT backends.
 --
 -- Ownership: written exclusively by the OpenAI-API backend after a
 -- chunk's API call returns 200 and segments have been yielded. Read by
@@ -1089,7 +1089,7 @@ secrets; the API key is never exposed.
 | 11 | Segments without `avg_logprob` → `Segment.confidence is None`. | `test_no_confidence_field.py`. |
 | 12 | `OPENAI_API_KEY` missing → `health().ready=False`. | `test_health.py`. |
 | 13 | The API key is never logged, never returned by `/api/settings`, never sent to the Streaming or default-API services. | `test_no_secret_leak.py` (regex-greps logs in CI), code review of `settings.py`. |
-| 14 | New migration `0009_stt_usage.sql` adds the ledger table + two indexes. | `pgtap` migration test asserts schema. |
+| 14 | New migration `0011_stt_usage.sql` adds the ledger table + two indexes. | `pgtap` migration test asserts schema. |
 | 15 | Go endpoint `GET /api/system/stt/budget` returns current-month totals per backend; admin-scoped. | `stt_budget_test.go`. |
 | 16 | Ledger writes happen **after** segments are emitted for a chunk (i.e. a failed chunk does not bill). | `test_no_billing_on_failure.py` — patched cassette returns 500; ledger remains empty. |
 | 17 | `_pricing.COST_PER_MINUTE_USD` is a build-time constant; no live pricing endpoint is called. | `grep` for `pricing` URL in source returns nothing. |

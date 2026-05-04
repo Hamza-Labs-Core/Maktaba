@@ -9,7 +9,7 @@
 The story's three acceptance criteria — start (idempotent), stop (clean
 cancellation), and dry-run — sit on top of the scanner shipped by
 [Plan 1.1](plan-01-01-file-discovery.md) and the per-library state
-table introduced by [Plan 1.5](story-01-05-PLAN.md). This plan only
+table introduced by [Plan 1.5](plan-01-05-schema-decisions.md). This plan only
 adds the **control plane** (mutex, cancellation signal, progress
 read-back, dry-run mode). It changes no scanning logic.
 
@@ -19,7 +19,7 @@ read-back, dry-run mode). It changes no scanning logic.
 | D2 | The `maktaba-pipeline scan --dry-run` command in the story is shipped as **`maktaba-scan --dry-run`** (the Go binary established in [Plan 1.1 D1](plan-01-01-file-discovery.md)), not as a Python `maktaba-pipeline` subcommand. | Departs from the literal command name in [Story 1.4 AC #3](story-01-04-manual-control.md). Aligns with [Plan 1.1 D1](plan-01-01-file-discovery.md): the scanner is a Go binary, the Python pipeline owns ML stages only. | Dry-run is a property of the walker+hasher path; that path lives in Go. Re-implementing it in Python (or shelling out from Python to Go) just to keep the command name is gratuitous duplication. The flag, not the binary name, is what AC #3 actually tests. |
 | D3 | Cancellation is **cooperative at file boundaries**. The scanner checks two signals after each per-file transaction commits: (a) `ctx.Done()` for in-process cancel, (b) `library_scan_state.cancel_requested = true` for cross-process cancel (CLI scan + API DELETE). | [Story 1.4 AC #2](story-01-04-manual-control.md): "stops within 5 s after the next file boundary". | Per-file is the natural cut point — Plan 1.1 already commits one transaction per file. We do not need finer granularity, and coarser granularity would miss the 5 s SLA on slow hashes. |
 | D4 | The DELETE response is `202 Accepted`, not a synchronous "already cancelled". Cancellation is observed asynchronously over `/ws/library/{id}` (`scan.cancelled` frame) or via `GET /api/libraries/{id}/scan` polling. | New decision; story is silent. | The scanner can be in another process. We cannot wait synchronously without holding HTTP threads for up to 5 s. The story's 5 s SLA is on the worker, not on the API response. |
-| D5 | The `library_scan_state` table from [Plan 1.5 §2.3](story-01-05-PLAN.md) is the authoritative read source for scan progress and the cancel signal. This plan adds two columns: `cancel_requested BOOLEAN` and `progress_pct REAL`. | Extends [Plan 1.5](story-01-05-PLAN.md) by one migration. | Plan 1.5 owns the watermark/counters table; this story needs two more fields. Adding them in a separate migration keeps the `library_scan_state` migration single-purpose and lets this story land independently of 1.5 if 1.5 slips. |
+| D5 | The `library_scan_state` table from [Plan 1.5 §2.3](plan-01-05-schema-decisions.md) is the authoritative read source for scan progress and the cancel signal. This plan adds two columns: `cancel_requested BOOLEAN` and `progress_pct REAL`. | Extends [Plan 1.5](plan-01-05-schema-decisions.md) by one migration. | Plan 1.5 owns the watermark/counters table; this story needs two more fields. Adding them in a separate migration keeps the `library_scan_state` migration single-purpose and lets this story land independently of 1.5 if 1.5 slips. |
 
 If D2 is rejected and the dry-run must live in `maktaba-pipeline`:
 the CLI section, dry-run scaffolding, and one test in §8 are the only
@@ -107,12 +107,11 @@ landed (this is the prerequisite epic-1 story).
 
 ### Step 1 — Migration `0008_scan_control.sql`
 
-Two columns on `library_scan_state` (introduced by [Plan 1.5
-§2.3](story-01-05-PLAN.md)). Numbering picks up after the four
-migrations from Plan 1.1 (`0001_init`, `0002_videos`,
-`0003_processing_jobs`, `0004_videos_new_notify`) plus the three
-introduced by Plan 1.5 (`0005_videos_per_library_unique`,
-`0006_videos_last_seen_at`, `0007_library_scan_state`).
+This plan owns slot `0008` per the canonical
+[migration manifest](../../../shared/db/migrations/MANIFEST.md). It adds
+two columns to `library_scan_state` (introduced by
+[plan-01-05](plan-01-05-schema-decisions.md) at slot 0006). Hard
+dependencies: slots 0001, 0002, 0006.
 
 See §4.1 below for the SQL.
 
@@ -949,7 +948,7 @@ ALTER TABLE library_scan_state  DROP COLUMN progress_pct;
 ```
 
 The `cancel_requested` flag is **always reset** by `claimSweep` from
-[Plan 1.5 §3](story-01-05-PLAN.md) at the start of a new sweep. We
+[Plan 1.5 §3](plan-01-05-schema-decisions.md) at the start of a new sweep. We
 amend that query (single line) so that a stale `cancel_requested =
 true` from a previous cancelled run does not abort the next attempt
 on its first poll:

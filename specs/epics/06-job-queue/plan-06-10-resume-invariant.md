@@ -12,7 +12,7 @@
 | Concern | Decision |
 |---|---|
 | Language | Migration SQL + a Python lint test + a Python property test. No new runtime code paths — this story formalizes invariants that other stories must respect. |
-| Files | The CHECK constraint already lands in Story 6.1's migration `0010_processing_jobs.sql`. This story adds: `pipeline/tests/lint/test_no_sidecar_checkpoint_files.py`, `pipeline/tests/lint/test_no_resume_offset_columns.py`, `pipeline/tests/property/test_resume_invariant.py`. |
+| Files | The CHECK constraint already lands in Story 6.1's migration `0002_processing_jobs.sql`. This story adds: `pipeline/tests/lint/test_no_sidecar_checkpoint_files.py`, `pipeline/tests/lint/test_no_resume_offset_columns.py`, `pipeline/tests/property/test_resume_invariant.py`. |
 | Schema dependency | `processing_jobs.last_segment_end_sec` (Story 6.1), `transcript_segments.end_sec` (Epic 3 Story 3.6). |
 | Out of scope | The actual segment-commit transaction (Epic 3 Story 3.6). The crash/resume orchestration (Epic 3 Story 3.8). This story owns the invariant guards (CHECK + lints + property test), not the writers. |
 
@@ -68,7 +68,7 @@
 
 ### 2.2 The DB CHECK (already in Story 6.1)
 
-Replicated here for visibility. Story 6.1's `0010_processing_jobs.sql`
+Replicated here for visibility. Story 6.1's `0002_processing_jobs.sql`
 includes:
 
 ```sql

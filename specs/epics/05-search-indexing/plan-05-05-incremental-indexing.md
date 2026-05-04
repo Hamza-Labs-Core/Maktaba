@@ -27,7 +27,7 @@
 | D7 | The live indexer **does not** write to Chroma. Vector embeddings are batched and written in the post-transcribe `index` stage (which runs after `transcribe.state == done`), where it can amortize embedding cost over all units of the transcript at once. | Story acceptance: "writes them to FTS only (Chroma is deferred to the post-transcribe stage to amortize embedding cost)". | E5-large embedding throughput is GPU-limited at ~200 units/sec batched; per-unit live embedding would burn GPU time on a unit that gets *replaced* on the next segment commit (because the chunker re-emits the open tail unit as new segments extend it). Batch-at-end means each unit gets embedded exactly once, and no live GPU contention with the STT model. |
 | D8 | The pause/cancel observation in the live indexer is a **DB read of `processing_jobs.state` and `pause_requested`** done at the start of each debounce-fire — not a NOTIFY/in-memory signal. If the parent transcribe job state ∈ {`paused`, `paused-pending`, `cancelled`}, the indexer **drops the buffered events** for that transcript and skips this fire. It re-arms on the next NOTIFY. | Story acceptance: "stops chunking as soon as it observes `processing_jobs.state ∈ {paused, paused-pending, cancelled}`". | Reading the job state from the DB is the source of truth shared with the API and the transcribe worker (which set it). A separate in-memory pause signal would have a window where the indexer keeps chunking after the API set `paused-pending`. The DB read is one indexed lookup per fire (~0.5 ms) and the debounce already coalesces fires, so the cost is negligible. |
 | D9 | Re-processing a video (model upgrade, new active transcript per Story 3.5) deletes the **old transcript's units** in the same transaction that flips `is_active = false`, via a deferred trigger — and the indexer's **old-transcript NOTIFY subscriptions** are torn down by a `transcripts.is_active = false` second NOTIFY channel (`transcripts.active_changed`) that the indexer also listens on. | Story acceptance: "Re-processing … the old transcript's units are deleted from FTS and Chroma in the same transaction that flips `is_active = false`". | The CASCADE on `transcripts → transcript_units → transcripts_fts` (via the FTS trigger) handles FTS automatically. Chroma needs an explicit `collection.delete(where={"transcript_id": OLD.id})` issued from a Python hook subscribed to `transcripts.active_changed`. Doing this purely from a SQL trigger is impossible (Chroma is external). |
-| D10 | The NOTIFY payload schema is fixed at `{"transcript_id": str(uuid), "video_id": str(uuid), "library_id": str(uuid), "last_segment_end_sec": float, "seq": int}` — adding `library_id` and `video_id` to the Plan 3.6 baseline so the indexer can debounce-key without an extra DB lookup per event. | Refines Plan 3.6 D5 (whose payload is `{transcript_id, last_segment_end_sec, seq}`). | The indexer must dispatch debounce buckets by `(transcript_id)` and look up the library/video for the chunker call; carrying both IDs in the payload saves one round-trip per NOTIFY. The Plan 3.6 trigger function is updated to populate them via a `JOIN` on `transcripts → videos` (one statement, one lookup at trigger time, paid by the writer not the reader). |
+| D10 | The NOTIFY payload schema is fixed at `{"transcript_id": str(uuid), "video_id": str(uuid), "library_id": str(uuid), "last_segment_end_sec": float, "seq": int}` — the indexer can debounce-key without an extra DB lookup per event. | Coordinated upstream with [plan-03-06 D5](../03-transcription/plan-03-06-segment-commit.md), which already populates `video_id` and `library_id` via a `JOIN` on `transcripts → videos` at trigger time. | The indexer must dispatch debounce buckets by `(transcript_id)` and look up the library/video for the chunker call; carrying both IDs in the payload saves one round-trip per NOTIFY. The trigger pays the JOIN cost once at write time (the writer side), not on every listener read. |
 
 If D5 is rejected (vector failure rolls back FTS), §2 changes (the
 indexer wraps both writes in one transaction and the DLQ table is
@@ -158,10 +158,10 @@ pipeline/src/maktaba_pipeline/
 └── runner.py                   # boot hook: spawn IndexerSupervisor.start()
 ```
 
-### 2.2 Schema migration — `0021_incremental_indexing.sql`
+### 2.2 Schema migration — `0025_incremental_indexing.sql`
 
 ```sql
--- 0021_incremental_indexing.sql
+-- 0025_incremental_indexing.sql
 -- Owns:
 --   - transcripts.last_indexed_segment_seq
 --   - transcript_units.indexed_at_in_chroma
@@ -232,39 +232,14 @@ CREATE TRIGGER trg_transcripts_active_changed
     FOR EACH ROW
     EXECUTE FUNCTION transcripts_active_changed_notify();
 
--- D10: upgrade segments_committed payload to include video_id + library_id.
--- The Plan 3.6 function is replaced (CREATE OR REPLACE — name unchanged).
-CREATE OR REPLACE FUNCTION segments_notify_committed()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE
-    v_video_id   UUID;
-    v_library_id UUID;
-BEGIN
-    SELECT t.video_id, v.library_id
-      INTO v_video_id, v_library_id
-      FROM transcripts t
-      JOIN videos v ON v.id = t.video_id
-     WHERE t.id = NEW.transcript_id;
-
-    PERFORM pg_notify(
-        'segments.committed',
-        json_build_object(
-            'transcript_id',         NEW.transcript_id,
-            'video_id',              v_video_id,
-            'library_id',            v_library_id,
-            'last_segment_end_sec',  NEW.end_sec,
-            'seq',                   NEW.seq
-        )::text
-    );
-    RETURN NEW;
-END $$;
--- The trigger trg_segments_committed itself was created in 0011; CREATE OR
--- REPLACE FUNCTION above swaps the body in place without re-creating it.
+-- D10 payload schema is owned upstream: as of plan-03-06 update,
+-- segments_notify_committed already emits {transcript_id, video_id,
+-- library_id, last_segment_end_sec, seq}. No replacement needed here.
 
 COMMIT;
 ```
 
-SQLite shim (lives in `shared/db/migrations/sqlite/0021_*.sql`):
+SQLite shim (lives in `shared/db/migrations/sqlite/0025_*.sql`):
 - `last_indexed_segment_seq` and `indexed_at_in_chroma` columns are
   added by `ALTER TABLE`.
 - `vector_index_dead_letter` table mirrors the schema (no UUID type;
@@ -1013,8 +988,8 @@ latency budget (5 s poll + 0.5 s debounce + chunker time).
 | 1 | `pipeline/src/maktaba_pipeline/search/live/__init__.py` | re-exports | (n/a) |
 | 2 | `pipeline/src/maktaba_pipeline/search/live/errors.py` | `IndexerError`, `IndexerPaused`, `IndexerStopped` | (n/a) |
 | 3 | `pipeline/src/maktaba_pipeline/search/live/notify.py` | `NotifyEvent`, `NotifyKind`, `NotifyEvent.parse` | `test_notify_parse_valid`, `test_notify_parse_truncated`, `test_notify_parse_unknown_channel` |
-| 4 | `shared/db/migrations/0021_incremental_indexing.sql` | watermark column, DLQ table, NOTIFY trigger upgrade | migration applies cleanly on fresh + populated DB; idempotent on re-run |
-| 5 | `shared/db/migrations/sqlite/0021_*.sql` | parallel ALTER TABLEs + log tables for SQLite | sqlite test fixture loads |
+| 4 | `shared/db/migrations/0025_incremental_indexing.sql` | watermark column, DLQ table, NOTIFY trigger upgrade | migration applies cleanly on fresh + populated DB; idempotent on re-run |
+| 5 | `shared/db/migrations/sqlite/0025_*.sql` | parallel ALTER TABLEs + log tables for SQLite | sqlite test fixture loads |
 | 6 | `pipeline/src/maktaba_pipeline/search/live/recompute.py` | `SegmentRow`, `UnitDelta`, `recompute_units`, `TAIL_OVERLAP_SEC` | `test_recompute_handles_tail_unit`, `test_recompute_empty_segments` |
 | 7 | `pipeline/src/maktaba_pipeline/search/live/deadletter.py` | `dlq_record_failure`, `dlq_drain_due` | `test_vector_dlq_writes`, `test_vector_dlq_backoff` |
 | 8 | `pipeline/src/maktaba_pipeline/search/live/job.py` | `IncrementalIndexJob`, `PAUSED_STATES` | `test_job_idempotent_upsert`, `test_job_advisory_lock`, `test_job_watermark_advances`, `test_job_pause_check_skips` |
@@ -1510,7 +1485,7 @@ Implementer marks each item with the test (or assertion) that proves it.
 - [ ] **A13** SQLite engines use a polling listener at 5 s intervals against `segment_notify_log` and `transcript_active_change_log`; the same dispatcher debouncing applies. (Cross-backend test runs the indexer suite against `--db=sqlite`.)
 - [ ] **A14** During live transcription, Chroma collection size does **not** grow (D7); after the post-transcribe `index` stage, Chroma contains all units (minus DLQ rows). (`test_chroma_added_only_at_index_stage` from the story.)
 - [ ] **A15** The DLQ reaper drains pending entries with exponential backoff capped at 1 hour. (`test_dlq_record_failure_increments_attempts`, `test_dlq_backoff_caps_at_one_hour`)
-- [ ] **A16** Migration `0021_incremental_indexing.sql` applies cleanly on fresh + populated DBs and is idempotent on re-run.
+- [ ] **A16** Migration `0025_incremental_indexing.sql` applies cleanly on fresh + populated DBs and is idempotent on re-run.
 - [ ] **A17** No code path in this story performs Chroma writes from the live (debounced) tick — Chroma writes occur **only** in `run_index_stage` and the DLQ reaper. (Static check: grep `chroma_writer.upsert` outside `stages/index.py` and `deadletter.py` returns nothing.)
 - [ ] **A18** A unit edited (chunker boundary moved) by a re-fire is replaced in place; FTS reflects the new text within one fire. (`test_recompute_handles_tail_unit` plus a follow-up FTS query assertion.)
 - [ ] **A19** Per-transcript debounce buckets are independent: paused transcript A does not block live transcript B. (Add `test_pause_on_one_transcript_does_not_block_other`.)

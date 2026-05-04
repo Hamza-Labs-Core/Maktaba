@@ -280,7 +280,7 @@ and verify the end-to-end behaviour with real signals.
 
 | Test | What it pins |
 |---|---|
-| `test_shutdown_pauses_all_claims_real_sigterm` | Start worker with two enqueued synthetic-transcribe jobs; wait for both to reach `running`; `os.kill(pid, SIGTERM)`; assert both rows reach `paused` with `paused_reason in ('user', 'shutdown')` within grace + 5 s tolerance. (`'user'` if the cooperative path won; `'shutdown'` if the orchestrator's force-pause UPDATE wrote the row instead.) |
+| `test_shutdown_pauses_all_claims_real_sigterm` | Start worker with two enqueued synthetic-transcribe jobs; wait for both to reach `running`; `os.kill(pid, SIGTERM)`; assert both rows reach `paused` with `paused_reason='shutdown'` within grace + 5 s tolerance. The cooperative path (plan-06-04) reads `ctx.shutdown_event.is_set()` and records `'shutdown'` rather than `'user'` when the pause is shutdown-driven; the force-pause UPDATE writes the same value. Architecture §7.8. |
 | `test_shutdown_force_pauses_after_grace_real` | Use a synthetic stage that ignores `pause_requested` (sleeps 60 s); set `shutdown_grace_sec=2`; SIGTERM; after ≥ 2 s the row is `paused` with `paused_reason='shutdown'`; subprocess exits within 5 s. |
 | `test_no_orphan_after_kill_minus_nine` | `os.kill(pid, SIGKILL)`; row stays in `running` (or `claimed`); start a reaper instance with `stale_claim_sec=2`; wait 3 s; assert row reaped to `paused` with `paused_reason='crash'`. |
 | `test_two_sigterms_force_immediate_exit` | SIGTERM, then SIGTERM 50 ms later; subprocess exits with code 130 within 0.5 s; row may be in `running` (orchestrator didn't get to force-pause); reaper sweeps it later. |

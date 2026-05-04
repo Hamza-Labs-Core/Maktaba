@@ -19,7 +19,7 @@
 | D2 | The reorder buffer (out-of-order segments from the backend) lives **inside the worker**, *before* `commit_segment` is called. The DB never sees an out-of-order segment. | Story edge case: "Segment shorter than the prior `last_segment_end_sec`". | The DB invariant `last(segments.end_sec) == jobs.last_segment_end_sec` is only meaningful if every commit advances monotonically. Putting reorder logic in SQL would require holding a transaction open across the reorder window (default 30 s) — a non-starter. Keeping it in-memory in the worker is O(1) and pause-correct (a flush on pause commits the buffer in-order or drops the tail with a WARN). |
 | D3 | `realtime_factor` is **EWMA with α = 0.2** computed in SQL: `realtime_factor := COALESCE(realtime_factor, 0) * 0.8 + new_factor * 0.2`. The first segment seeds with the raw factor (no smoothing) so the UI shows a real number from segment 1. | `architecture.md` §7.6 names α = 0.2 but does not say where the calculation lives. | Doing it in SQL inside `commit_segment` keeps the math next to the data and atomic with the row update. A worker-side calculation would require reading `realtime_factor` first, which adds a round-trip and a TOCTOU window where two workers (impossible per §7.4 but cheap to defend against) could race. |
 | D4 | `processed_seconds` is incremented by `(segment.end - prev_end)`, **not** by `(segment.end - segment.start)`. `prev_end` is the value of `last_segment_end_sec` *before* this commit. This is what the story specifies, and it is **not** equal to segment duration when the backend produces overlapping or gappy segments. | Story acceptance §1.b. | Whisper occasionally emits a segment whose `start` < the previous `end` (overlap on speech boundaries). Counting segment-duration would over-count audio. Using `end - prev_end` measures *progress along the audio timeline*, which is what the UI's "X of Y seconds" display means. Gaps (silence skipped by VAD) advance correctly too. |
-| D5 | The `LISTEN segments.committed` notify is fired by a **trigger** `AFTER INSERT ON transcript_segments`, not from the worker. The payload is `json_build_object('transcript_id', NEW.transcript_id, 'last_segment_end_sec', NEW.end_sec, 'seq', NEW.seq)`. | Story acceptance: "the worker emits a `LISTEN segments.committed` notify". | Firing the notify in a trigger guarantees it runs in the same transaction — no notify is ever sent for a rolled-back commit (Postgres `pg_notify` is transactional). A worker-side `pg_notify(...)` *outside* the transaction would race with the trigger; one *inside* would be a redundant statement. SQLite (which has no LISTEN/NOTIFY) uses a polling listener as Story 6.1 already mandates. |
+| D5 | The `LISTEN segments.committed` notify is fired by a **trigger** `AFTER INSERT ON transcript_segments`, not from the worker. The payload is `json_build_object('transcript_id', …, 'video_id', …, 'library_id', …, 'last_segment_end_sec', …, 'seq', …)` — the trigger looks up `video_id` and `library_id` via a `JOIN` on `transcripts → videos` so downstream listeners (Epic 5 indexer, Epic 7 search WebSocket) can debounce per (transcript, video, library) without an extra round-trip. | Story acceptance: "the worker emits a `LISTEN segments.committed` notify". Cross-plan agreement with [plan-05-05](../05-search-indexing/plan-05-05-incremental-indexing.md) D10. | Firing the notify in a trigger guarantees it runs in the same transaction — no notify is ever sent for a rolled-back commit (Postgres `pg_notify` is transactional). A worker-side `pg_notify(...)` *outside* the transaction would race with the trigger; one *inside* would be a redundant statement. SQLite (which has no LISTEN/NOTIFY) uses a polling listener as Story 6.1 already mandates. |
 | D6 | Word-level rows (`transcript_words`) are inserted in the **same transaction** as the segment, when the backend supplies them. We do **not** batch words across segments. | Story acceptance: "(Optional) inserts `transcript_words` rows when word timestamps are enabled." | The transaction is already open and small (one segment ≈ 5–30 s of audio ≈ 30–200 words). Batching across segments would mean a partial-words state on crash. |
 | D7 | The `audio_duration` clamp (story edge case "Backend emits a 'final' segment past the audio's true end") happens **in the worker** — `commit_segment` clamps `end_sec` to `min(end_sec, jobs.total_duration_seconds)` only when `total_duration_seconds IS NOT NULL`. The worker logs `WARN segment_end_clamped` when this fires. | Story edge case. | `total_duration_seconds` is a hint (set by `probe`, sometimes 0 for live streams). Clamping in SQL keeps the invariant `processed_seconds <= total_duration_seconds` true even when the backend hallucinates a final tail past EOF. |
 
@@ -120,13 +120,13 @@ pipeline/src/maktaba_pipeline/
                             # (pre-existing skeleton from plan 02-03)
 ```
 
-### 2.2 Schema migration — `0011_segment_commit_function.sql`
+### 2.2 Schema migration — `0013_segment_commit_function.sql`
 
 ```sql
--- 0011_segment_commit_function.sql
+-- 0013_segment_commit_function.sql
 -- Owns: commit_segment() PL/pgSQL fn, segments_committed AFTER INSERT trigger.
--- Dependencies: 0007 transcripts/transcript_segments (Story 3.5),
---               0006 processing_jobs progress columns (Epic 6 Story 6.1).
+-- Dependencies: slot 0012 transcripts.is_active + metadata (plan-03-05),
+--               slot 0002 processing_jobs progress columns (plan-06-01).
 -- Idempotent on re-run: CREATE OR REPLACE FUNCTION / DROP TRIGGER IF EXISTS.
 
 BEGIN;
@@ -259,11 +259,25 @@ END $$;
 
 CREATE OR REPLACE FUNCTION segments_notify_committed()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_video_id   UUID;
+    v_library_id UUID;
 BEGIN
+    -- Resolve video and library at trigger time so that downstream
+    -- listeners (Epic 5 indexer, Epic 7 search WebSocket) can debounce
+    -- per (transcript, video, library) without an extra round-trip.
+    SELECT v.id, v.library_id
+      INTO v_video_id, v_library_id
+      FROM transcripts t
+      JOIN videos v ON v.id = t.video_id
+     WHERE t.id = NEW.transcript_id;
+
     PERFORM pg_notify(
         'segments.committed',
         json_build_object(
             'transcript_id',         NEW.transcript_id,
+            'video_id',              v_video_id,
+            'library_id',            v_library_id,
             'last_segment_end_sec',  NEW.end_sec,
             'seq',                   NEW.seq
         )::text
@@ -280,7 +294,7 @@ CREATE TRIGGER trg_segments_committed
 COMMIT;
 ```
 
-SQLite shim (lives in `shared/db/migrations/sqlite/0011_*.sql`):
+SQLite shim (lives in `shared/db/migrations/sqlite/0013_*.sql`):
 - `commit_segment` is implemented in Python (`committer.py::commit_segment_sqlite`) using `BEGIN IMMEDIATE` / `COMMIT`. The function signature mirrors PL/pgSQL.
 - The `pg_notify` is replaced with an `INSERT INTO segment_notify_log (transcript_id, end_sec, seq, created_at)` row that the polling listener tails (Epic 6 Story 6.1 already establishes this pattern).
 
@@ -585,8 +599,8 @@ Implementer should create these files in order. Each ships green tests.
 | 2 | `pipeline/src/maktaba_pipeline/transcribe/progress.py` | `ewma`, `realtime_factor`, `estimate_remaining`, `EWMA_ALPHA` | `test_progress_arithmetic` |
 | 3 | `pipeline/src/maktaba_pipeline/transcribe/errors.py` | `SegmentCommitError`, `OutOfOrderSegmentDropped` | (n/a) |
 | 4 | `pipeline/src/maktaba_pipeline/transcribe/reorder.py` | `ReorderBuffer` | `test_reorder_buffer` |
-| 5 | `shared/db/migrations/0011_segment_commit_function.sql` | `commit_segment` fn, `trg_segments_committed` | migration applies cleanly on a fresh DB and on one with existing transcripts |
-| 6 | `shared/db/migrations/sqlite/0011_*.sql` | (no-op + Python shim) | sqlite test fixture loads |
+| 5 | `shared/db/migrations/0013_segment_commit_function.sql` | `commit_segment` fn, `trg_segments_committed` | migration applies cleanly on a fresh DB and on one with existing transcripts |
+| 6 | `shared/db/migrations/sqlite/0013_*.sql` | (no-op + Python shim) | sqlite test fixture loads |
 | 7 | `pipeline/src/maktaba_pipeline/transcribe/committer.py` | `SegmentCommitter`, `CommitResult`, `StopWorker` | `test_committer_atomic`, `test_committer_retry`, `test_notify_payload` |
 | 8 | `pipeline/src/maktaba_pipeline/pipeline/stages/transcribe.py` | wire `SegmentCommitter` + `ReorderBuffer` into the existing stage skeleton | `test_progress_advances_with_audio_time_not_wall_time`, `test_realtime_factor_ewma`, `test_eta_uses_smoothed_factor`, `test_pause_request_observed_after_commit` |
 
@@ -849,9 +863,9 @@ Implementer marks each item with the test (or assertion) that proves it.
 - [ ] **A3** When word timestamps are enabled, the same transaction inserts the corresponding `transcript_words` rows. (Add `test_words_committed_with_segment` once a word-emitting fake backend exists.)
 - [ ] **A4** Either both writes commit together or neither does; on rollback, retry produces exactly one row. (`test_committer_atomic`)
 - [ ] **A5** After every committed segment, the worker checks `pause_requested` and `cancel_requested` (returned by `commit_segment`) and exits cleanly via `StopWorker` if either is set. (`test_pause_request_observed_after_commit`)
-- [ ] **A6** After every committed segment, a `LISTEN segments.committed` notify fires with `{transcript_id, last_segment_end_sec, seq}`. (`test_notify_payload`)
+- [ ] **A6** After every committed segment, a `LISTEN segments.committed` notify fires with `{transcript_id, video_id, library_id, last_segment_end_sec, seq}` (D5; coordinated with plan-05-05 D10). (`test_notify_payload`)
 - [ ] **A7** Post-commit invariant `MAX(transcript_segments.end_sec WHERE transcript_id=T) == processing_jobs.last_segment_end_sec` holds. (DB-level invariant test on commit log fixture: replay 1000 commits, assert after each.)
 - [ ] **A8** Out-of-order segments arriving within `reorder_window_sec` are buffered and emitted in order; segments arriving after the window are dropped with WARN. (`test_reorder_buffer`)
 - [ ] **A9** Backend output past `total_duration_seconds` is clamped, not propagated. (`test_clamp_to_total_duration`)
-- [ ] **A10** Migration `0011_segment_commit_function.sql` applies cleanly on both fresh and populated DBs and is idempotent on re-run. (Add `test_migration_idempotent` to the migrations test suite.)
+- [ ] **A10** Migration `0013_segment_commit_function.sql` applies cleanly on both fresh and populated DBs and is idempotent on re-run. (Add `test_migration_idempotent` to the migrations test suite.)
 - [ ] **A11** SQLite shim implements the same `commit_segment` semantics in Python (`commit_segment_sqlite`); cross-backend test runs every commit test against both. (Run pytest with `--db=sqlite` and `--db=postgres`.)

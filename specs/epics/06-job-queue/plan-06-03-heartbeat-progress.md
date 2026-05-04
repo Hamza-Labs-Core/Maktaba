@@ -75,7 +75,7 @@ because progress already implies liveness.
 |---|---|
 | `pipeline/src/maktaba_pipeline/db/jobs_progress.py` | `tick_progress`, `tick_heartbeat`, the two SQL statements, payload shape. |
 | `pipeline/src/maktaba_pipeline/pipeline/heartbeat.py` | `HeartbeatTask` — async coroutine that fires `tick_heartbeat` every `heartbeat_sec`. |
-| `shared/db/migrations/0011_jobs_progress_notify.sql` | The progress + heartbeat triggers. |
+| `shared/db/migrations/0028_jobs_progress_notify.sql` | The progress + heartbeat triggers. |
 | `pipeline/tests/db/test_jobs_progress.py` | Progress UPDATE + notify tests. |
 | `pipeline/tests/pipeline/test_heartbeat.py` | Heartbeat task lifecycle tests. |
 | `pipeline/tests/lint/test_no_singular_channel_names.py` | Greps `pipeline/` and `api/` for retired singular names. |
@@ -98,7 +98,9 @@ from dataclasses import dataclass
 class ProgressTick:
     """Inputs to a progress UPDATE. Defaults are 'no change'."""
     job_id: int
-    processed_seconds_delta: float = 0.0
+    # processed_seconds is the absolute value (segment.end - seek_from)
+    # per architecture §7.6, NOT a delta. The caller computes it.
+    processed_seconds: float = 0.0
     segments_completed_delta: int = 0
     last_segment_end_sec: float | None = None    # absolute, not delta
     realtime_factor: float | None = None         # EWMA-smoothed, not raw
@@ -192,8 +194,13 @@ the same value.
 
 ```python
 _PROGRESS_SQL_PG = """
+-- Architecture §7.6 semantics: processed_seconds is the absolute count
+-- (segment.end - seek_from). The caller computes the value, not a delta,
+-- so a resume after pause restarts the counter from zero relative to the
+-- new seek_from. segments_completed remains additive because it counts
+-- across the full lifetime of the job.
 UPDATE processing_jobs
-   SET processed_seconds        = processed_seconds + $2,
+   SET processed_seconds        = $2,
        segments_completed       = segments_completed + $3,
        last_segment_end_sec     = COALESCE($4, last_segment_end_sec),
        realtime_factor          = COALESCE($5, realtime_factor),
@@ -209,7 +216,7 @@ RETURNING id
 async def tick_progress(db, t: ProgressTick) -> None:
     row = await db.fetchrow(
         _PROGRESS_SQL_PG, t.job_id,
-        t.processed_seconds_delta, t.segments_completed_delta,
+        t.processed_seconds, t.segments_completed_delta,
         t.last_segment_end_sec, t.realtime_factor,
         t.estimated_remaining_sec,
     )
@@ -241,7 +248,7 @@ no error.
 
 ### 3.1 Notify trigger — Postgres
 
-`shared/db/migrations/0011_jobs_progress_notify.sql`:
+`shared/db/migrations/0028_jobs_progress_notify.sql`:
 
 ```sql
 -- +goose Up
@@ -367,7 +374,8 @@ async def run_transcribe(ctx, job, video):
                 await tx.execute(insert_segment_stmt, ...)
                 await tick_progress(tx, ProgressTick(
                     job_id=job.id,
-                    processed_seconds_delta=segment.end - prev_end,
+                    # Architecture §7.6: processed_seconds = segment.end - seek_from.
+                    processed_seconds=segment.end - seek_from,
                     segments_completed_delta=1,
                     last_segment_end_sec=segment.end,
                     realtime_factor=ewma(...),
@@ -460,7 +468,7 @@ tests run in CI on every PR.
 | LISTEN consumer (the API) drops mid-stream | Postgres queues notifies for delivery on reconnect (within a bounded buffer); on overflow, the consumer reconciles via `SELECT * FROM processing_jobs WHERE state IN (running, resuming) AND progress_updated_at > $last_seen`. The reconciliation lives in the API (Epic 2 Story 2.5), not here. | API-side; this story owns the notify fire only. |
 | Worker pauses mid-segment | The progress tick wraps the pause check (architecture §7.6); after the segment commits, `mark_paused` runs in a separate transaction that flips state to `paused`, sets `paused_at_sec = last_segment_end_sec`. The next heartbeat tick is a no-op (state filter). | `test_heartbeat_skipped_during_paused_state` |
 | `processed_seconds` overflow | REAL field; saturates at FP-precision around 16M seconds (≈ 6 months of audio in one job). Not a real risk; a single video maxes at hours. | Not separately tested. |
-| Negative `processed_seconds_delta` (clock skew or backend bug) | Allowed by the SQL; the column type accepts it. The CHECK only constrains `last_segment_end_sec`. We do not defend against negative deltas; flag in code review. | Documented in `ProgressTick` docstring. |
+| Negative `processed_seconds` (clock skew or backend bug) | Allowed by the SQL; the column type accepts it. The CHECK only constrains `last_segment_end_sec`. We do not defend against negative deltas; flag in code review. | Documented in `ProgressTick` docstring. |
 | `realtime_factor` smoothing across a paused/resumed seam | The EWMA value carries forward in the row; resume continues with the prior smoothing. | Not a test; emergent property of the schema. |
 
 ## 7. Performance analysis
@@ -500,7 +508,7 @@ buffer (8 KB per backend, default) trivially absorbs 100 small notifies.
 ## 9. Acceptance checklist
 
 **Migration**
-- [ ] `0011_jobs_progress_notify.sql` applies cleanly; trigger exists; `goose down` reverts.
+- [ ] `0028_jobs_progress_notify.sql` applies cleanly; trigger exists; `goose down` reverts.
 - [ ] `progress_updated_at IS DISTINCT FROM OLD.progress_updated_at` branch fires `jobs.progress`; the heartbeat-only branch fires `jobs.heartbeat`.
 
 **Code**

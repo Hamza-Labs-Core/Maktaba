@@ -68,8 +68,9 @@ recall stays the same but we burn ~2× the latency on large libraries.
   │              ids=[f"{tx_id}:{seq}" …],                       │
   │              embeddings=…,                                   │
   │              documents=texts,                                │
-  │              metadatas=[ {video_id, library_id, start_sec,   │
-  │                           end_sec, language, speaker} … ],   │
+  │              # Architecture §8.4 metadata shape exactly:     │
+  │              metadatas=[ {video_id, start, end,              │
+  │                           language, speaker} … ],            │
   │           )                                                  │
   │                                                              │
   │       ──► UPDATE transcript_units SET indexed_at = now()     │
@@ -139,7 +140,7 @@ shared/proto/
 └── pipeline.proto                   # adds Embed RPC (this story)
 
 shared/db/migrations/
-└── 0017_transcript_units_notify.sql # NOTIFY trigger on INSERT
+└── 0018_transcript_units_notify.sql # NOTIFY trigger on INSERT
 ```
 
 ### 2.2 `chroma_client.py` — PersistentClient wrapper (D2)
@@ -432,9 +433,11 @@ class UnitRow:
 
     @property
     def metadata(self) -> dict[str, Any]:
+        # Architecture §8.4 lists exactly {video_id, start, end, language,
+        # speaker}. The per-library collection name already encodes the
+        # library_id, so it is intentionally NOT duplicated here.
         return {
             "video_id": self.video_id,
-            "library_id": self.library_id,
             "start": float(self.start_sec),
             "end": float(self.end_sec),
             "language": self.language,
@@ -762,7 +765,7 @@ class EmbedServicer(pb_grpc.PipelineServicer):
         )
 ```
 
-### 2.8 `0017_transcript_units_notify.sql` — NOTIFY trigger
+### 2.8 `0018_transcript_units_notify.sql` — NOTIFY trigger
 
 ```sql
 BEGIN;
@@ -835,7 +838,7 @@ so missing keys don't require a TOML lookup.
 | 7 | `shared/proto/pipeline.proto` | `Embed` RPC, `EmbedRequest`, `EmbedResponse` | proto compile in CI |
 | 8 | Generated `shared/python/maktaba_proto/pipeline_pb2*.py` | (generated) | import test |
 | 9 | `pipeline/src/maktaba_pipeline/search/grpc_server.py` | `EmbedServicer.Embed` | `test_embed_grpc_returns_same_vector` |
-| 10 | `shared/db/migrations/0017_transcript_units_notify.sql` | `notify_transcript_units_appended` trigger | migration applies cleanly |
+| 10 | `shared/db/migrations/0018_transcript_units_notify.sql` | `notify_transcript_units_appended` trigger | migration applies cleanly |
 | 11 | `pipeline/src/maktaba_pipeline/search/indexer.py` | `IndexerWorker.run`, `_drain_once`, `_claim_batch`, `_mark_indexed` | `test_indexer_throughput`, `test_chroma_add_and_query` (integration) |
 | 12 | Wiring: `pipeline/src/maktaba_pipeline/main.py` | start `IndexerWorker` task, mount `EmbedServicer` on the gRPC server | smoke test of pipeline boot |
 | 13 | Wiring: API: `api/src/maktaba_api/search/embed_client.py` | `PipelineEmbedClient(stub).embed(text) -> np.ndarray` | unit test with grpc fake server |
@@ -1130,13 +1133,13 @@ def test_e5_prefix_difference_is_small_but_real():
 - [ ] **A4** For each search unit, the indexer adds a Chroma row with `id = "{transcript_id}:{seq}"`, `documents = unit.text`, `metadatas = {video_id, library_id, start, end, language, speaker}`. The id format is stable across re-runs so re-indexing upserts in place. (`test_chroma_idempotent_upsert`)
 - [ ] **A5** The `Embed(text)` gRPC RPC is defined in `shared/proto/pipeline.proto` and returns the configured-model vector for the input text (with the e5 `query:` prefix applied server-side). Two calls with the same text produce identical vectors (< 1e-6 max abs diff). (`test_embed_grpc_returns_same_vector`)
 - [ ] **A6** Indexing throughput on the Apple Silicon reference machine (M2 Pro / 32 GB) reaches **≥ 200 units/second** on `e5-large`, sufficient to keep up with live transcription. (`test_indexer_throughput`, gated by `MAKTABA_RUN_PERF_TESTS`)
-- [ ] **A7** `IndexerWorker` is driven by `LISTEN transcript_units_appended` (added in `0017_transcript_units_notify.sql`) plus a 60-second safety poll. Claimed rows use `FOR UPDATE … SKIP LOCKED` against `transcript_units WHERE indexed_at IS NULL`. (`test_chroma_add_and_query` with the worker wired in)
+- [ ] **A7** `IndexerWorker` is driven by `LISTEN transcript_units_appended` (added in `0018_transcript_units_notify.sql`) plus a 60-second safety poll. Claimed rows use `FOR UPDATE … SKIP LOCKED` against `transcript_units WHERE indexed_at IS NULL`. (`test_chroma_add_and_query` with the worker wired in)
 - [ ] **A8** Cross-language retrieval works: an Arabic query matches a semantically equivalent English passage (and vice versa), via the shared multilingual e5 embedding space. (`test_arabic_query_finds_english_passage`, `test_english_query_finds_arabic_passage`)
 - [ ] **A9** Library deletion drops the Chroma collection via `chroma.drop_library(library_id)`; failures are logged but do not block the DB cascade; a nightly orphan GC reconciles. (`test_library_deletion_cleanup`)
 - [ ] **A10** Embedding inputs longer than the model context (512 tokens) are truncated tokenizer-aware, with one warning per (transcript_id, model). (`test_long_text_truncation`)
 - [ ] **A11** Empty / whitespace-only unit texts do not crash the embedder or the upsert. (`test_empty_unit`)
 - [ ] **A12** `ChromaClient.__init__` raises `ChromaUnavailable` on persistence-dir failure; the IndexerWorker catches and retries on the next tick; the Embed gRPC RPC remains functional even when Chroma is unavailable. (`test_chroma_unavailable`)
-- [ ] **A13** Migration `0017_transcript_units_notify.sql` applies cleanly and is idempotent on re-run.
+- [ ] **A13** Migration `0018_transcript_units_notify.sql` applies cleanly and is idempotent on re-run.
 - [ ] **A14** `Pipeline server` mounts `EmbedServicer` alongside the existing RPCs; the API service has a `PipelineEmbedClient` wrapper and uses it from the search handler.
 - [ ] **A15** No code path in this story attempts to keep two embedding models loaded simultaneously; switching the model requires a full reindex (E6). (Static check: only one `SentenceTransformer(...)` call site in the package.)
 - [ ] **A16** The e5 `passage: ` / `query: ` prefix is applied at encode time (not at chunk time, so the stored `transcript_units.text` stays prefix-free). A regression test asserts the two encode paths produce different vectors for the same input. (`test_e5_prefix_difference_is_small_but_real`)

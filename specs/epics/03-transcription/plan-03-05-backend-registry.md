@@ -128,8 +128,8 @@ Six things to notice:
 
 | Layer | Path | Status | Purpose |
 |---|---|---|---|
-| Migration | `shared/db/migrations/0010_transcripts_is_active.sql` | **new** | Adds `is_active` + `metadata`; drops full UNIQUE; adds partial UNIQUE index; backfills history. |
-| Migration test | `shared/db/migrations/tests/test_0010_transcripts_is_active.sql` | **new** | pgtap test that asserts the post-migration schema and backfill correctness. |
+| Migration | `shared/db/migrations/0012_transcripts_is_active.sql` | **new** | Adds `is_active` + `metadata`; drops full UNIQUE; adds partial UNIQUE index; backfills history. |
+| Migration test | `shared/db/migrations/tests/test_0012_transcripts_is_active.sql` | **new** | pgtap test that asserts the post-migration schema and backfill correctness. |
 | Python | `pipeline/src/maktaba_pipeline/stt/registry.py` | **new** | `STTRegistry` and `BackendFactory` types. |
 | Python | `pipeline/src/maktaba_pipeline/stt/_factories.py` | **new** | Factories for `whisper-mlx`, `whisper-cuda`, `whisper-cpu`, `openai-api` — wraps the constructors with cheap `health_probe()` closures. |
 | Python | `pipeline/src/maktaba_pipeline/stt/_flip.py` | **new** | `flip_active(...)` SQL helper (asyncpg). |
@@ -153,11 +153,11 @@ Six things to notice:
 
 ## 3. The migration — single most important file in this plan
 
-### 3.1 `shared/db/migrations/0010_transcripts_is_active.sql`
+### 3.1 `shared/db/migrations/0012_transcripts_is_active.sql`
 
 ```sql
 -- +goose Up
--- 0010_transcripts_is_active.sql
+-- 0012_transcripts_is_active.sql
 --
 -- Resolves REVIEW §1.1.b and §1.1.i (single owner: story 3.5).
 --
@@ -234,7 +234,7 @@ ALTER TABLE transcripts
 COMMIT;
 ```
 
-### 3.2 `shared/db/migrations/tests/test_0010_transcripts_is_active.sql` (pgtap)
+### 3.2 `shared/db/migrations/tests/test_0012_transcripts_is_active.sql` (pgtap)
 
 ```sql
 BEGIN;
@@ -932,7 +932,7 @@ async def test_notify_emitted(pool, sample_video, sample_track):
 | 4 | `transcripts` row persists `(backend, model, backend_version)`. | sqlc-generated insert query covers all three. |
 | 5 | Re-running with a different `(backend, model)` creates a new row; the old row flips to `is_active=false` atomically. | `test_reprocess_creates_new_row.py`. |
 | 6 | Re-running with the **same** `(backend, model)` succeeds. | `test_reprocess_same_backend_model.py`. |
-| 7 | Migration `0010_transcripts_is_active.sql` exists; adds `is_active BOOLEAN NOT NULL DEFAULT TRUE`; adds `metadata JSONB NOT NULL DEFAULT '{}'`. | pgtap `test_0010_transcripts_is_active.sql`. |
+| 7 | Migration `0012_transcripts_is_active.sql` exists; adds `is_active BOOLEAN NOT NULL DEFAULT TRUE`; adds `metadata JSONB NOT NULL DEFAULT '{}'`. | pgtap `test_0012_transcripts_is_active.sql`. |
 | 8 | Migration drops the full UNIQUE `(video_id, audio_track_id, backend, model)`. | pgtap test (5th assertion). |
 | 9 | Migration adds partial unique index `transcripts_active_unique` on `(video_id, audio_track_id) WHERE is_active = true`. | pgtap test (7th assertion) + `test_partial_unique_blocks_double_active`. |
 | 10 | Migration backfills `is_active = true` for the latest `created_at` per `(video_id, audio_track_id)` and `false` for the rest, in one transaction. | pgtap `test_backfill_correctness.sql`. |

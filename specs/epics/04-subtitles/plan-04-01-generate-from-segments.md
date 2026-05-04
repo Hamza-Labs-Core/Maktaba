@@ -171,7 +171,9 @@ pipeline/src/maktaba_pipeline/
         └── subtitle_gen.py        # run_subtitle_gen_stage(ctx, claimed_job)
 
 shared/db/migrations/
-└── 0015_subtitle_files_unique_lang.sql   # see §2.8
+└── (no migration owned by this plan — the (video_id, format, language)
+   unique-by-language index is folded into slot 0015 owned by
+   plan-04-03; see MANIFEST.md and §2.11 below).
 ```
 
 The `media/subtitles/` package is the new module owned by this story.
@@ -708,38 +710,24 @@ async def run_subtitle_gen_stage(ctx, claimed_job) -> None:
         raise
 ```
 
-### 2.11 Migration `0015_subtitle_files_unique_lang.sql`
+### 2.11 Schema dependencies (no migration owned by this plan)
+
+The `(video_id, format, language)` partial-unique index that backs the
+UPSERT, and the `path` lookup index used by `alias_copy` (D7), both
+ship as part of slot 0015 (`0015_subtitle_files.sql`) owned by
+[plan-04-03](plan-04-03-external-discovery.md). This plan declares a
+hard dependency on slot 0015 landing first; it does **not** ship its
+own migration.
+
+Reference (already present in slot 0015):
 
 ```sql
--- Plan 4.1: ON CONFLICT support for (video_id, format, language) UPSERT
--- and the path-collision lookup that backs alias_copy (D7).
---
--- Idempotent. Safe to re-run.
-
-BEGIN;
-
--- One subtitle file per (video, format, language). The architecture
--- schema in §8.1 does not declare this constraint; we add it here
--- because the subtitle_gen stage's UPSERT depends on it (Plan 4.1 D1).
--- A duplicate row would mean we lost the previous artifact's row
--- on a re-run, which would leak files and confuse the streaming
--- service's "list subtitles" endpoint.
+-- One *active* subtitle file per (video, format, language) — used by
+-- this plan's UPSERT (D1).
 CREATE UNIQUE INDEX IF NOT EXISTS subtitle_files_video_fmt_lang_idx
-    ON subtitle_files (video_id, format, language);
-
--- Backs the D7 collision lookup `WHERE path = $1`.
--- NOT unique because the same path may legally appear once per video
--- (it shouldn't, but the constraint above already prevents that).
-CREATE INDEX IF NOT EXISTS subtitle_files_path_idx
-    ON subtitle_files (path);
-
-COMMIT;
+    ON subtitle_files (video_id, format, language)
+    WHERE deleted_at IS NULL AND is_embedded IS FALSE AND is_external IS FALSE;
 ```
-
-The numbering aligns with Story 4.4's `000X_subtitle_files_is_embedded.sql`
-(numbered around 0014 by epic order); 4.1's migration follows it. If
-the project chooses a different numbering scheme at merge time, only the
-filename prefix changes; the SQL is independent.
 
 ### 2.12 Library settings — config surface
 
@@ -779,7 +767,7 @@ The §2.10 excerpt uses `roots[1]` for brevity; the shipped code calls
 | 7 | `pipeline/src/maktaba_pipeline/media/subtitles/atomic.py` | `write_atomic_pair` | `test_atomic_replace_on_retry` |
 | 8 | `pipeline/src/maktaba_pipeline/media/subtitles/alias.py` | `alias_copy`, `ALIAS_SKIPPED`, `ALIAS_COLLISION` | `test_alias_copy_uses_source_basename`, `test_readonly_source_dir_does_not_fail_job`, `test_alias_collision_skips` |
 | 9 | `pipeline/src/maktaba_pipeline/media/subtitles/shaper.py` | `CueShaper`, `PassThroughShaper`, `get_default_shaper` | (covered transitively in stage e2e) |
-| 10 | `shared/db/migrations/0015_subtitle_files_unique_lang.sql` | unique index on `(video_id, format, language)`, plain index on `path` | `test_migration_applies_cleanly` (runs in CI migration suite) |
+| 10 | (no new migration; this plan depends on slot 0015 owned by [plan-04-03](plan-04-03-external-discovery.md), which folds in the unique-by-language partial index) | n/a | `test_migration_applies_cleanly` lives alongside slot 0015's tests |
 | 11 | `pipeline/src/maktaba_pipeline/pipeline/stages/subtitle_gen.py` | `run_subtitle_gen_stage`, `SubtitleGenError` | `test_stage_end_to_end`, `test_stage_creates_sidecar_dir`, `test_stage_fails_with_no_active_transcript` |
 
 Order matters: writers depend on cue + escape; the stage depends on
@@ -1234,7 +1222,7 @@ async def test_migration_0015_applies_cleanly(empty_db_pool):
 - [ ] **A9** SRT round-trips through the `srt` library: same cue count, same text, timestamps within 1 ms. (`test_srt_round_trips`)
 - [ ] **A10** VTT round-trips through `webvtt-py`: same cue count, same text, timestamps match to `HH:MM:SS.mmm`. (`test_vtt_round_trips`)
 - [ ] **A11** The alias filename uses the source's basename plus the `.<lang>.srt` infix exactly (e.g., `Lecture 1.ar.srt`); ISO 639-1 language code is taken from `transcripts.language`, not `videos.detected_language`. (`test_alias_copy_uses_source_basename`, `test_paths`)
-- [ ] **A12** Migration `0015_subtitle_files_unique_lang.sql` adds the unique index `subtitle_files_video_fmt_lang_idx` and the plain index `subtitle_files_path_idx`; re-applying is idempotent. (`test_migration_0015_applies_cleanly`)
+- [ ] **A12** Slot 0015 (canonical `subtitle_files` migration owned by [plan-04-03](plan-04-03-external-discovery.md)) carries the partial unique index `subtitle_files_video_fmt_lang_idx` and the supporting indexes this plan depends on; re-applying is idempotent. (`test_migration_0015_applies_cleanly`, owned by plan-04-03's test harness.)
 - [ ] **A13** The stage reads through `transcript_segments_v` (the Story 4.5 view) so only segments belonging to the active transcript are consumed; no direct join to `transcripts` for filtering. (Static check on the SQL in `subtitle_gen.py`; integration test confirms a superseded transcript's text never appears in the output by setting up two transcripts and flipping `is_active`.)
 - [ ] **A14** No code path in this story writes a subtitle file with `is_external = true` or `is_embedded = true`. (Static lint: `INSERT INTO subtitle_files` outside this stage is owned by Stories 4.3 and 4.4.)
 - [ ] **A15** The `subtitle_gen` job is idempotent: running it twice in a row produces byte-identical files and exactly two `subtitle_files` rows for the video. (`test_stage_idempotent_on_rerun`)

@@ -21,12 +21,12 @@
 
 | # | Decision | Source | Rationale |
 |---|----------|--------|-----------|
-| D1 | The chunker targets **~200 chars / ~30–60 s of audio per unit** with a hard cap of **400 chars** and a soft cap of **96 tokens** (Whisper-style BPE estimate via `len(text)//4`). The story names the character target; we cross-pin a token cap to keep multilingual units inside the embedding model's window in [Plan 5.3](plan-05-03-chroma-vector.md) (`paraphrase-multilingual-MiniLM-L12-v2` has a 128-token effective window). | Story acceptance "target ~200 characters and hard cap 400" + Plan 5.3 model choice. | A char-only cap leaks into "this short Arabic line is fine but the Mandarin equivalent is 3× the tokens" failures. The token cap is a cheap second guard; we estimate tokens at `ceil(len(text) / 4)` rather than calling the tokenizer (which would force a Python ↔ tokenizer boundary on every unit and triple the chunker's runtime). The estimate is a safe overshoot — real BPE tokens are 3.5–4 chars on average for Latin scripts and ~2.5–3 for Arabic, so the *real* token count is always **below** our estimate, which means the cap fires conservatively (we never overshoot the embedding window). |
+| D1 | The chunker targets **~200 chars / ~30–60 s of audio per unit** with a hard cap of **400 chars** and a soft cap of **384 tokens** (Whisper-style BPE estimate via `len(text)//4`). The story names the character target; we cross-pin a token cap to keep multilingual units inside the embedding model's window in [Plan 5.3](plan-05-03-chroma-vector.md) (`intfloat/multilingual-e5-large` has a 512-token window; 384 leaves a 25% headroom for tokenization variance). | Story acceptance "target ~200 characters and hard cap 400" + Plan 5.3 model choice. | A char-only cap leaks into "this short Arabic line is fine but the Mandarin equivalent is 3× the tokens" failures. The token cap is a cheap second guard; we estimate tokens at `ceil(len(text) / 4)` rather than calling the tokenizer (which would force a Python ↔ tokenizer boundary on every unit and triple the chunker's runtime). The estimate is a safe overshoot — real BPE tokens are 3.5–4 chars on average for Latin scripts and ~2.5–3 for Arabic, so the *real* token count is always **below** our estimate, which means the cap fires conservatively (we never overshoot the embedding window). |
 | D2 | **Overlap strategy: zero token overlap; rely on sentence boundaries instead.** When sentences are too long for the cap (E1) we split at the nearest word boundary ≤ cap and record `metadata.split_method = "word"`. We do **not** sliding-window across units. | Story §"Edge cases" + REVIEW §1.1.h. | Sliding-window overlap is a habit borrowed from RAG papers that index whole books with no native chunk boundary. We have segment timestamps and sentence boundaries that are *better* anchors. Overlap would (a) double-count text in FTS hits, (b) inflate vector storage by 1.3–1.5× with no recall lift on this corpus, (c) make the unit→segment mapping ambiguous. If a future evaluation shows recall problems, we can add overlap as `metadata.overlap_with_unit_seq` without a schema change. |
 | D3 | **Sentence segmentation is regex-based**, NOT `pyarabic.araby` or any heavyweight tokenizer. The boundary set is `[.!?؟।]` plus newline, with a small Arabic-aware suffix rule (a sentence-final mark followed by ASCII or Arabic whitespace). Combining marks (Tashkeel U+064B–065F, U+0670, etc.) are preserved verbatim. | Story acceptance "boundaries are detected on `[.!?؟।]` plus newline" — explicitly specified. | `pyarabic` is a 3 MB dep with a Tashkeel stripper we don't want, and `nltk.sent_tokenize` requires a punkt model download per language. The story already specifies the punctuation set; honoring it with `re` is 30 lines, has no install footprint, and — critically — works identically on the API service if we ever need to re-chunk client-side. The `।` (Devanagari danda) is included because the embedding model is multilingual and Hindi/Bengali transcripts are an in-scope future case. |
 | D4 | **Units never span paused/resumed transcripts.** A "paused" boundary is detected by reading `transcripts.paused_at_sec` (set by [Plan 3.5](../03-transcription/plan-03-05-backend-registry.md)); the chunker forces a unit boundary at any segment whose `start_sec >= transcripts.paused_at_sec` AND that's the first segment committed in the resume. In practice this is a no-op because a resume starts a new segment row anyway, but we encode it explicitly so a future "splice in a corrected segment range" code path can't silently merge across a pause. | Story implication ("unit `start_sec` is the first segment's `start`") + Plan 3.6 NOTIFY semantics. | Spanning a pause means the embedding mixes two recordings made minutes/hours/days apart; the semantic vector becomes garbage. Worse, the `start_sec → end_sec` window of the unit straddles a wall-clock gap, so the deep-link from a search hit would point to silence. We protect against this in code, not in convention. |
 | D5 | **Primary key is `BIGSERIAL id`** (matching the story acceptance verbatim), not `uuid`. The natural key `(transcript_id, seq)` is enforced as a `UNIQUE` constraint and is what consumers actually join on. Chroma stores the unit id as `str(id)` in its own metadata. SQLite (single-binary fallback per architecture §11) uses `INTEGER PRIMARY KEY AUTOINCREMENT` with the same `(transcript_id, seq)` UNIQUE. | Story acceptance — uses `BIGSERIAL`. | uuids would force Chroma to carry 16-byte ids in every vector record (vs 8-byte int) for no upside; we never expose unit ids on a public URL (the URL is `/v/{video_id}?t={start_sec}`), so the "guessable id" argument doesn't apply. |
-| D6 | **`tsvector` lives in [Plan 5.2](plan-05-02-fts-tsvector.md), NOT in this table.** This plan creates `transcript_units` with no `tsv` column; Plan 5.2 adds a generated column `tsv tsvector GENERATED ALWAYS AS (...) STORED` in its own migration `0NNN_transcript_units_fts.sql`. The chunker is therefore single-write (only this table); the FTS layer is a downstream materialized view of it. | Resolves REVIEW §1.1.d cleanly: one table, two indexes (FTS + Chroma) attached separately. | Bundling `tsv` into the chunker migration would couple this story to the language-config decision (`'simple'` vs `'arabic'` dictionary, see Plan 5.2). It would also double the chunker's per-row write cost during initial backfill. Splitting keeps each story independently revertible — if Plan 5.2's FTS scheme changes, this migration doesn't move. |
+| D6 | **`tsvector` lives in [Plan 5.2](plan-05-02-fts-tsvector.md), NOT in this table.** This plan creates `transcript_units` (slot 0017) with no `tsv` column; Plan 5.2 adds a generated `tsv` column in slot 0021 (`0021_transcript_units_tsv_column.sql`). The chunker is therefore single-write (only this table); the FTS layer is a downstream materialized view of it. | Resolves REVIEW §1.1.d cleanly: one table, two indexes (FTS + Chroma) attached separately. | Bundling `tsv` into the chunker migration would couple this story to the language-config decision (`'simple'` vs `'arabic'` dictionary, see Plan 5.2). It would also double the chunker's per-row write cost during initial backfill. Splitting keeps each story independently revertible — if Plan 5.2's FTS scheme changes, this migration doesn't move. |
 | D7 | **Indexes:** `(transcript_id, seq)` UNIQUE (story); `(language)` btree (story, REVIEW §6.3); partial `(transcript_id) WHERE indexed_at IS NULL` (story, supports Plan 5.5's claim query); plus a NEW `(transcript_id, start_sec)` btree we add for [Plan 5.4](plan-05-04-hybrid-rrf.md)'s timestamp-window queries ("show me hits between 30:00 and 35:00"). All four are created in the same migration. | Story explicit + Plan 5.4 implicit. | Plan 5.4 will need to range-scan units by start time for the "search within a chapter" surface; without this index it would seq-scan a transcript's worth of units. The cost is one extra index write per row (negligible at our write rate of ~1 row per ~30 s of audio). |
 | D8 | **Re-chunking on transcript edit.** When `processing_jobs.state` flips back to `running` for an existing transcript (a re-run, e.g. "redo this with a better model"), [Plan 5.5](plan-05-05-incremental-indexing.md) is responsible for `DELETE FROM transcript_units WHERE transcript_id = $1` before the new chunker pass. This story's chunker is **idempotent on (transcript_id, seq)** but does NOT itself delete prior units; it relies on the upstream sweep. The motivation is locality of failure — if we deleted in this code path we'd need a transaction that spans the chunker and Plan 5.5's claim, which doubles its complexity. | Splits responsibility along an existing seam. | The chunker's contract is "given segments S₁..Sₙ produce units U₁..Uₘ"; whether prior Us existed is not its problem. Plan 5.5 already owns the "what changed and what should be re-indexed" logic — the deletion sits naturally there. Defensive programming: if Plan 5.5 forgets to delete and the chunker reruns, the `INSERT ... ON CONFLICT (transcript_id, seq) DO UPDATE SET text = EXCLUDED.text, ...` UPSERT in §2.4 keeps the rows correct (no duplicates, no stale rows lingering with old `seq` collisions). Stale rows beyond the new max seq remain until Plan 5.5's sweep — that's the seam. |
 | D9 | **Empty/whitespace-only units are dropped silently** before insert. After NFC normalization and stripping, a unit with `len(text.strip()) == 0` is skipped. Sentence boundaries can occasionally yield empty splits (e.g., `"hello.. world"` → `["hello", "", "world"]`); we don't want them in the index. We do NOT log per-empty-unit; we do log the count once at end-of-chunk (`units_dropped_empty=N`). | Defensive. | Empty units in FTS produce zero-tsvector rows that match anything; in Chroma they produce zero-vectors that cluster with all silence segments. Both bad. |
@@ -78,7 +78,7 @@ is already JSONB.
         │        their source segment (text + (start, end, segment_id)) │
         │     2. NFC-normalize the concatenation                        │
         │     3. SentenceSegmenter.split() → [Sentence] with offsets    │
-        │     4. Packer.pack(sentences, target=200, cap=400, tok_cap=96)│
+        │     4. Packer.pack(sentences, target=200, cap=400, tok_cap=384)│
         │        produces [UnitDraft] each with .text, .span, .seg_ids  │
         │     5. enforce paused-at boundary (D4)                        │
         │     6. drop empty units (D9)                                  │
@@ -382,7 +382,7 @@ class Packer:
         *,
         target_chars: int = 200,
         cap_chars: int = 400,
-        token_cap: int = 96,
+        token_cap: int = 384,
     ):
         self.target_chars = target_chars
         self.cap_chars = cap_chars
@@ -686,14 +686,14 @@ async def upsert_units(
     return len(args)
 ```
 
-### 2.7 Migration — `0NNN_transcript_units.sql`
+### 2.7 Migration — `0017_transcript_units.sql`
 
 This is the **single migration owner** of the table. Numbered to follow
 the last existing transcription-epic migration; pick the next free
 sequence at apply time.
 
 ```sql
--- shared/db/migrations/0NNN_transcript_units.sql
+-- shared/db/migrations/0017_transcript_units.sql
 -- Owner: Story 5.1 (Plan 5.1). Resolves REVIEW §1.1.h, §1.1.d, §6.3.
 
 BEGIN;
@@ -742,7 +742,7 @@ COMMIT;
 ```
 
 **SQLite mirror.** The architecture's single-binary fallback uses
-SQLite. The mirror migration `0NNN_transcript_units.sqlite.sql`:
+SQLite. The mirror migration `0017_transcript_units.sqlite.sql`:
 
 ```sql
 CREATE TABLE transcript_units (
@@ -777,8 +777,8 @@ env var, set during boot (architecture §11).
 
 | Order | File | Symbols introduced | Tests gating |
 |-------|------|--------------------|--------------|
-| 1 | `shared/db/migrations/0NNN_transcript_units.sql` | table + 3 indexes + 4 CHECKs | `test_migration_creates_table_and_indexes` |
-| 2 | `shared/db/migrations/0NNN_transcript_units.sqlite.sql` | mirror for SQLite single-binary | `test_migration_sqlite_mirror_applies` |
+| 1 | `shared/db/migrations/0017_transcript_units.sql` | table + 3 indexes + 4 CHECKs | `test_migration_creates_table_and_indexes` |
+| 2 | `shared/db/migrations/0017_transcript_units.sqlite.sql` | mirror for SQLite single-binary | `test_migration_sqlite_mirror_applies` |
 | 3 | `pipeline/src/maktaba_pipeline/search/__init__.py` | re-export `chunk_for_transcript` | (n/a) |
 | 4 | `pipeline/src/maktaba_pipeline/search/models.py` | `SegmentRow`, `Sentence`, `UnitDraft` | (n/a) |
 | 5 | `pipeline/src/maktaba_pipeline/search/normalize.py` | `nfc`, `collapse_whitespace` | `test_normalize` |
@@ -1156,7 +1156,7 @@ def test_packer_oversize_sentence_word_split():
 
 ## 6. Acceptance checklist
 
-- [ ] **A1** Migration `0NNN_transcript_units.sql` creates the table with all columns from the story acceptance, plus `created_at`. (`test_migration_creates_table_and_indexes`)
+- [ ] **A1** Migration `0017_transcript_units.sql` creates the table with all columns from the story acceptance, plus `created_at`. (`test_migration_creates_table_and_indexes`)
 - [ ] **A2** Migration creates indexes `transcript_units_lang`, `transcript_units_indexed_at_null` (partial WHERE indexed_at IS NULL), and the additional `transcript_units_transcript_start_sec` (D7). (`test_migration_creates_table_and_indexes`)
 - [ ] **A3** `UNIQUE (transcript_id, seq)` is enforced. (`test_migration_creates_table_and_indexes`)
 - [ ] **A4** SQLite mirror migration applies cleanly when `MAKTABA_DB_DIALECT=sqlite`. (`test_migration_sqlite_mirror_applies`)

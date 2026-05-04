@@ -51,7 +51,7 @@
                        ▼                   ▼                    ▼
              ┌──────────────────┐ ┌──────────────────┐ ┌─────────────────┐
              │   Scan Pipeline  │ │  Move Detector   │ │  Soft-delete    │
-             │ insert videos    │ │ UPDATE videos    │ │ state→MISSING   │
+             │ insert videos    │ │ UPDATE videos    │ │ state→missing   │
              │ enqueue probe    │ │ SET path WHERE   │ │ (Story 1.6)     │
              │ NOTIFY videos.new│ │ content_hash=?   │ │ keep derived    │
              └──────────────────┘ └──────────────────┘ └─────────────────┘
@@ -167,7 +167,7 @@ Linux `inotify` emits `IN_MOVED_FROM` and `IN_MOVED_TO` paired by a
 
 Cross-library moves are deliberately **not** detected as moves; the
 `library_id` changes, so derived rows would point at the wrong library.
-We let the source row go to `MISSING` and the destination row come up
+We let the source row go to `missing` and the destination row come up
 fresh.
 
 ---
@@ -522,7 +522,7 @@ func (w *Watcher) dispatch(ctx context.Context, ev SettledEvent) error {
     return errors.New("unknown op")
 }
 
-// upsertVideo inserts a DISCOVERED row if no row exists for this content_hash;
+// upsertVideo inserts a 'discovered' row if no row exists for this content_hash;
 // otherwise updates the path (treats it as a rediscovery / out-of-tree move).
 func (w *Watcher) upsertVideo(ctx context.Context, ev SettledEvent) error {
     hash, err := identity.ComputeSketch(ev.Path) // Story 1.2 BLAKE3 sketch
@@ -541,25 +541,32 @@ func (w *Watcher) upsertVideo(ctx context.Context, ev SettledEvent) error {
     switch {
     case errors.Is(err, pgx.ErrNoRows):
         if _, err := tx.Exec(ctx, `
-            INSERT INTO videos (library_id, path, content_hash, size, state, discovered_at)
-            VALUES ($1, $2, $3, $4, 'DISCOVERED', NOW())`,
+            INSERT INTO videos (library_id, path, content_hash, size_bytes, state, mtime)
+            VALUES ($1, $2, $3, $4, 'discovered', NOW())`,
             ev.LibraryID, ev.Path, hash, ev.Size,
         ); err != nil { return err }
         if _, err := tx.Exec(ctx, `
             INSERT INTO processing_jobs (video_id, stage, state, created_at)
-            SELECT id, 'probe', 'PENDING', NOW() FROM videos WHERE content_hash = $1`,
+            SELECT id, 'probe', 'pending', NOW() FROM videos WHERE content_hash = $1`,
             hash,
         ); err != nil { return err }
-        if _, err := tx.Exec(ctx, `NOTIFY "videos.new"`); err != nil { return err }
+        // The 'videos.new' NOTIFY is emitted by the trigger from plan-01-01
+        // slot 0005; no manual NOTIFY needed here.
     case err != nil:
         return err
     default:
-        // Existing row — treat as a rediscovery / out-of-tree move.
+        // Existing row — treat as a rediscovery / out-of-tree move. The
+        // architecture-§8.1 videos table has no rediscovered_at column;
+        // we store the timestamp inside videos.metadata JSONB instead.
         if _, err := tx.Exec(ctx, `
             UPDATE videos
                SET path = $2, library_id = $3,
-                   state = CASE WHEN state = 'MISSING' THEN 'DISCOVERED' ELSE state END,
-                   rediscovered_at = NOW()
+                   state = CASE WHEN state = 'missing' THEN 'discovered' ELSE state END,
+                   metadata = jsonb_set(
+                       COALESCE(metadata, '{}'::jsonb),
+                       '{rediscovered_at}',
+                       to_jsonb(NOW()::text)
+                   )
              WHERE id = $1`,
             existingID, ev.Path, ev.LibraryID,
         ); err != nil { return err }
@@ -574,10 +581,18 @@ func (w *Watcher) handleRename(ctx context.Context, ev SettledEvent) error {
 }
 
 func (w *Watcher) softDelete(ctx context.Context, ev SettledEvent) error {
+    // The architecture-§8.1 videos table has no missing_at column; store
+    // the timestamp inside videos.metadata JSONB (key 'missing_since',
+    // matching plan-01-05's metadata schema).
     _, err := w.db.Exec(ctx, `
         UPDATE videos
-           SET state = 'MISSING', missing_at = NOW()
-         WHERE library_id = $1 AND path = $2 AND state <> 'MISSING'`,
+           SET state = 'missing',
+               metadata = jsonb_set(
+                   COALESCE(metadata, '{}'::jsonb),
+                   '{missing_since}',
+                   to_jsonb(NOW()::text)
+               )
+         WHERE library_id = $1 AND path = $2 AND state <> 'missing'`,
         ev.LibraryID, ev.Path,
     )
     return err
@@ -642,11 +657,11 @@ func (lw *libraryWatcher) symlinkLoop(dir string) bool {
 
 | fsnotify op       | Trigger                      | Action                                                                                                  |
 |-------------------|------------------------------|---------------------------------------------------------------------------------------------------------|
-| `Create` (file)   | new file appeared            | Arm settle timer; on settle → `upsertVideo` (insert `DISCOVERED` + enqueue `probe`)                     |
+| `Create` (file)   | new file appeared            | Arm settle timer; on settle → `upsertVideo` (insert `discovered` + enqueue `probe`)                     |
 | `Create` (dir)    | new subdir appeared          | `addRecursive` synchronously; **no DB write** for the directory itself                                  |
 | `Write`           | size/contents changed        | Re-arm the same settle timer; on settle, only emit if the size truly differs from the last known row   |
 | `Rename`          | `IN_MOVED_FROM` / Darwin mv  | Stash `(inode, oldPath)` in `pendingRenames`; if a `Create` with the same inode lands within `RenameWindow`, `UPDATE videos.path`; otherwise treat as `Remove` |
-| `Remove`          | unlink / rmdir               | Cancel any pending settle timer; emit `OpRemove`; dispatcher transitions row to `MISSING` (Story 1.6)   |
+| `Remove`          | unlink / rmdir               | Cancel any pending settle timer; emit `OpRemove`; dispatcher transitions row to `missing` (Story 1.6)   |
 | `Chmod`           | permission change            | Ignored — does not affect identity or content                                                            |
 
 ### Cross-platform quirks
@@ -768,12 +783,12 @@ inotify-watch table, not Go heap.
 
 | Op            | Statement                                                                                                                                              |
 |---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **CREATE**    | `INSERT INTO videos (library_id, path, content_hash, size, state, discovered_at) VALUES (..., 'DISCOVERED', NOW())` — guarded by `UNIQUE (content_hash)`. On conflict: fall through to RENAME. |
-| **CREATE-2**  | `INSERT INTO processing_jobs (video_id, stage, state) VALUES (?, 'probe', 'PENDING')` — kicks the pipeline.                                            |
+| **CREATE**    | `INSERT INTO videos (library_id, path, content_hash, size_bytes, state, mtime) VALUES (..., 'discovered', NOW())` — guarded by `UNIQUE (library_id, content_hash)`. On conflict: fall through to RENAME. |
+| **CREATE-2**  | `INSERT INTO processing_jobs (video_id, stage, state) VALUES (?, 'probe', 'pending')` — kicks the pipeline.                                            |
 | **CREATE-3**  | `NOTIFY "videos.new"` — API translates to WebSocket fanout (architecture §5.1).                                                                        |
-| **WRITE**     | If `videos.size != new_size` → recompute hash and possibly *re-probe* (state → `DISCOVERED`); if hash unchanged → no-op. WRITE on an already-settled file is rare; mtime change without size change is ignored. |
+| **WRITE**     | If `videos.size_bytes != new_size` → recompute hash and possibly *re-probe* (state → `discovered`); if hash unchanged → no-op. WRITE on an already-settled file is rare; mtime change without size change is ignored. |
 | **RENAME**    | `UPDATE videos SET path = $1 WHERE content_hash = $2 AND id = $3` — single-row update, no derived data touched.                                       |
-| **REMOVE**    | `UPDATE videos SET state = 'MISSING', missing_at = NOW() WHERE library_id = $1 AND path = $2 AND state <> 'MISSING'` — soft delete; transcripts/index entries persist (Story 1.6 governs the eventual hard-delete after `missing_grace_days`). |
+| **REMOVE**    | `UPDATE videos SET state = 'missing', metadata = jsonb_set(COALESCE(metadata,'{}'::jsonb), '{missing_since}', to_jsonb(NOW()::text)) WHERE library_id = $1 AND path = $2 AND state <> 'missing'` — soft delete; transcripts/index entries persist (Story 1.6 governs the eventual hard-delete after `missing_grace_days`). The architecture-§8.1 videos table has no dedicated `missing_at` column, so the timestamp lives in the `metadata` JSONB. |
 | **REMOVE-2**  | `NOTIFY "videos.missing"` — clients refresh the library grid.                                                                                          |
 
 All five statements run in a **single transaction per event**. The
@@ -814,7 +829,7 @@ Real `fsnotify`, real temp dir, real Postgres (testcontainers).
 - `TestWatcherHandlesRename` — `os.Rename(a, b)` within the watched
   root; assert same `videos.id`, only `path` updated, no new probe job.
 - `TestWatcherHandlesDelete` — `os.Remove`; assert
-  `state = 'MISSING'`, related transcript rows still exist.
+  `state = 'missing'`, related transcript rows still exist.
 - `TestWatcherRecoversFromEventStorm` — copy 10 000 files in a tight
   loop; assert all are eventually ingested, watcher memory bounded
   under 100 MB, no panics.
@@ -957,9 +972,9 @@ func TestRenameTimeoutBecomesRemove(t *testing.T) {
 | Symlink cycle (`a → b → a`)             | `addRecursive` consults the per-watcher `inodes` set; second visit returns `fs.SkipDir`. Loop is broken in O(1).                                          |
 | Permission denied on a subdir           | `addRecursive` logs and continues. The directory is *not* watched; periodic sweep is the backstop. We never crash on a single bad dir.                    |
 | Mount appears mid-run (e.g., USB)       | `Create` fires for the mount point. `addRecursive` walks it. The new mount may have a *different* inotify cap; treat as a new root.                       |
-| Mount disappears (USB unplug)           | `Remove` fires for every file in the mount. We **suppress** mass remove if `> N events / s` for paths under the same root for `cfg.UnmountSuppressSec`; instead we mark the whole library root as `OFFLINE` and re-scan when it comes back. Without this guard, an unplugged drive transitions every video to `MISSING`. |
+| Mount disappears (USB unplug)           | `Remove` fires for every file in the mount. We **suppress** mass remove if `> N events / s` for paths under the same root for `cfg.UnmountSuppressSec`; instead we record `library_scan_state.metadata.offline_since` for that root and re-scan when it comes back. The canonical `videos.state` enum has no library-level "offline" value, so the offline marker lives in the per-library scan-state row, not in `videos.state`. Without this guard, an unplugged drive transitions every video to `missing`. |
 | `*.part`, `*.crdownload`, `*.tmp`       | Filtered by extension up front; the rename to a final extension fires a fresh `Create` and goes through the normal path.                                   |
-| Atomic mv from outside watched root     | Single `Create` event. `upsertVideo` hashes; if the hash matches a `MISSING` row, transitions `MISSING → DISCOVERED`. Story 1.6 governs the rediscovery.   |
+| Atomic mv from outside watched root     | Single `Create` event. `upsertVideo` hashes; if the hash matches a `missing` row, transitions `missing → discovered`. Story 1.6 governs the rediscovery.   |
 | File modified during hashing            | Hashing reads first 4 MiB + last 4 MiB + size; if the first stat differs from the second, we abort and re-arm the settle timer.                            |
 | Inotify `IN_Q_OVERFLOW`                 | `fsnotify` surfaces this in `Errors`. We log loudly, schedule an immediate full sweep for the affected library, and continue.                              |
 | Clock skew (mtime in the future)        | `time.Since(fi.ModTime())` returns a negative duration; treat as "settled enough" iff size also stable. We never wait forever.                             |
@@ -974,18 +989,18 @@ func TestRenameTimeoutBecomesRemove(t *testing.T) {
 - [ ] **AC-1.1** Dropping `lecture.mkv` into a watched root creates exactly one `videos` row and one `processing_jobs(probe)` row within `2×debounce_sec + 1` s.
 - [ ] **AC-1.2** A copy in progress (mtime advancing) is **not** ingested until size is stable for `SettleTicks` consecutive debounce intervals.
 - [ ] **AC-1.3** A rename within the library updates `videos.path`; no new `videos` row, no new `processing_jobs` row.
-- [ ] **AC-1.4** A delete transitions the row to `state = 'MISSING'`; transcript / search-index rows are preserved.
+- [ ] **AC-1.4** A delete transitions the row to `state = 'missing'`; transcript / search-index rows are preserved.
 - [ ] **Test** `test_watcher_picks_up_new_file` passes with the watcher running.
 - [ ] **Test** `test_watcher_debounces_partial_writes` produces exactly one ingestion event.
 - [ ] **Test** `test_watcher_handles_rename` retains `videos.id`.
 - [ ] **Test** `test_watcher_handles_delete` leaves transcripts intact.
 - [ ] **Test** `test_watcher_recovers_from_event_storm` ingests 10 000 files with bounded memory.
 - [ ] **Edge** Network FS (`statfs` reports non-local) skips fsnotify and uses periodic sweep at `NetworkSweepSec`.
-- [ ] **Edge** Atomic mv into the root with a hash matching a `MISSING` row triggers `MISSING → DISCOVERED`, not a fresh insert.
+- [ ] **Edge** Atomic mv into the root with a hash matching a `missing` row triggers `missing → discovered`, not a fresh insert.
 - [ ] **Edge** `.maktaba/` directories are ignored by the recursive walk and the event filter.
 - [ ] **Edge** `*.part`, `*.crdownload`, `*.tmp` extensions are filtered before debouncing.
 - [ ] **Edge** Symlink cycles do not hang `addRecursive`.
-- [ ] **Edge** Mount unplug does not mass-transition videos to `MISSING`; root goes `OFFLINE`.
+- [ ] **Edge** Mount unplug does not mass-transition videos to `missing`; the library scan-state row records `offline_since` until the mount returns.
 - [ ] **Ops** Boot fails fast with a clear message when `fs.inotify.max_user_watches` is below `1.5×` the directory count for any watched root.
 - [ ] **Ops** `deploy/sysctl.d/maktaba.conf` ships in the Linux installer.
 - [ ] **Ops** Watcher metrics exposed: `watcher_events_total{op}`, `watcher_settled_dropped_total`, `watcher_pending_files`, `watcher_inotify_watches`.

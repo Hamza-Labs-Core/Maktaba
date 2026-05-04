@@ -26,7 +26,7 @@
 | D3 | `movie.forced.srt` (no language tag) → `language = 'und'`, `flags = {"forced": true}`. `movie.ar.forced.srt` → `language = 'ar'`, `flags = {"forced": true}`. The `flags` field maps onto HLS `FORCED=YES` in the manifest (Story 4.5). | Reasoned departure — story doesn't address `.forced.` at all. | The forced-narrative pattern is ubiquitous in the wild (anime fansubs, dual-audio movies). Recording it now means Story 4.5 doesn't have to guess from filenames at serve time and the data already exists for the future SDH/CC accessibility work. |
 | D4 | **Same-language duplicates** (e.g., two `Lecture.ar.srt`-shaped files in different sub-paths, or `Lecture.ar.srt` + `Lecture.ar.vtt`) are **all kept**: one row per `(video_id, language, format, is_external, path)` (the story's uniqueness key). The lexicographically-first `path` for each `(video_id, language)` is marked `is_default = true`; later duplicates are `is_default = false`. The user can override default selection in the UI (deferred to Epic 11). | Story edge case: "Multiple external subtitles for the same language. All are kept; the user chooses in the UI. The first-discovered one is marked `is_default = true`." | "First-discovered" is not deterministic across re-scans without a tie-breaker; lexicographic order on absolute path is. We use `is_default` (a new column owned by this story — see D6) rather than a UI-only preference because the manifest needs a stable answer at HLS-render time and the Streaming Service shouldn't have to invent one. |
 | D5 | **Change detection** uses the file's `(size_bytes, mtime_ns)` pair, not a content hash. The first `discover_subtitles` pass that sees a path computes its size and mtime; subsequent passes compare. A change in either field triggers a re-read of metadata (BOM, CRLF normalization, `Language:` header for VTTs) but does **not** re-insert the row — we `UPDATE … SET size_bytes = $2, mtime_ns = $3, metadata = $4 WHERE id = $1`. | Reasoned departure — story is silent. The video file uses `content_hash` (Story 1.1). | Subtitle files are typically <500 KB; hashing them on every scan pass is cheap (~5 ms per file) but unnecessary — the (size, mtime) heuristic is what every video scanner since 1999 has used and is what `mediainfo`/`ffprobe`/`Plex`/`Jellyfin` use for sidecars. We keep `content_hash` available as an opt-in column (NULL by default) for the future Story 4.x change-event story; we do not populate it in v1. |
-| D6 | This plan **owns** the base `subtitle_files` table migration (`shared/db/migrations/0019_subtitle_files.sql`). Story 4.4 owns the *additive* `is_embedded` column and its `(video_id, is_external, is_embedded)` index in a **later** migration (`000X_subtitle_files_is_embedded.sql`). The base table created here defines `is_external NOT NULL DEFAULT false` and **does not include `is_embedded`** so that 4.4 can land its column independently as agreed in [README §Dependency notes](README.md). The column `is_default BOOLEAN NOT NULL DEFAULT false` (D4) and `flags JSONB NOT NULL DEFAULT '{}'::jsonb` (D3) **are** in this migration. | Resolves the "04-03 owns base table or shares ownership" question raised in the plan brief. | Splitting migrations along epic-story lines keeps the chain understandable in `git log` and lets reviewers map a column to a story without grep. The migration numbers are sequenced so 4.4's add-column lands after 4.3's create-table, regardless of which story merges first (we'll bump 4.4's number on rebase if needed). |
+| D6 | This plan **owns** the canonical `subtitle_files` migration at slot 0015 (`shared/db/migrations/0015_subtitle_files.sql`). The migration consolidates everything Epic 04 needs: base columns from architecture §8.1, `is_external NOT NULL DEFAULT false` (this story), `is_embedded NOT NULL DEFAULT false` (folded in from story 4.4 — see [plan-04-04](plan-04-04-embedded-extraction.md) for the column's behavior), `is_default BOOLEAN NOT NULL DEFAULT false` (D4), `flags JSONB NOT NULL DEFAULT '{}'::jsonb` (D3), the `(video_id, format, language)` partial unique index (folded in from plan-04-01), and the NOTIFY trigger. Plans 4.1 and 4.4 declare a hard dependency on this slot landing first; they no longer own SQL of their own. | Resolves the "three plans claim ownership of subtitle_files" finding in [PLAN_REVIEW.md §6.2](../../PLAN_REVIEW.md). | One migration is unambiguous; three migrations sequenced 0015 → 0017 → 0019 invited the precise mistake reviewers caught (referencing `is_embedded` from a number that landed before the column existed). Per the canonical [migration manifest](../../../shared/db/migrations/MANIFEST.md). |
 | D7 | Discovery runs **on every scan pass** (full or incremental, Story 1.1 + 1.3). It is **not** a separate stage in `processing_jobs`; it executes inline inside the scanner walk, in the same DB transaction batch as the `videos` insert/update. Subtitle rows for a video that no longer exists on disk are **soft-deleted** by setting `deleted_at = NOW()` on the row; subsequent re-appearance clears `deleted_at` (true UPDATE, not INSERT) and increments a `revived_count` integer for diagnostics. Hard-delete is deferred to Story 8.x retention. | Story acceptance: "Re-scanning does not duplicate `subtitle_files` rows" + edge case: "On its disappearance entirely, the row is soft-deleted (`subtitle_files.deleted_at` populated)." | Inline discovery means a one-pass walk — no separate `subtitle_discovery` job to schedule, no separate worker to deploy, and the operator's mental model stays "scan = filesystem snapshot." The cost (a few extra `os.scandir` lookups per directory we already walked) is negligible compared to ffprobe. Soft-delete preserves the row's `id`, which is the FK target for any user-side notes (Epic 11) and any HLS manifest cache hits in Story 4.5. |
 | D8 | Sidecars in a sibling subdirectory named **`Subs/`**, **`Subtitles/`**, or **`subs/`** (case-insensitive) are also matched. Inside such a directory the regex anchors on `^(?P<stem>{video_stem})…` exactly as for siblings; matches in deeper nesting (`Subs/EN/Lecture.ar.srt`) are **not** picked up in v1. | Edge case in story brief; addressed explicitly in §5 (E3). | Many BluRay rips and Anime collections ship with a `Subs/` folder next to the video. Supporting one level captures ~95% of real-world layouts (sampled against my own media tree); deeper nesting is rare and the cost (a single extra `scandir` per video) is bounded. |
 | D9 | The discovery module's public entry point is **synchronous** (`discover_subtitles_for_video(video, conn) -> list[SubtitleFileRow]`). It is invoked inside the existing scanner async loop via `asyncio.to_thread` to keep filesystem I/O off the event loop. There is **no** module-level state; the function is a pure read of the filesystem + write to one DB connection. | Reasoned — keeps testability high. | Async file I/O via `aiofiles` for `os.scandir` doesn't materially help on the local-disk case (no syscall the OS would block on), and a sync function is trivially testable with a `tmp_path` fixture. The thread-pool bridge keeps the scanner's overall async contract intact. |
@@ -678,17 +678,20 @@ def _recompute_default(conn, *, video_id) -> None:
         cur.execute(sql, {"video_id": str(video_id)})
 ```
 
-### 2.6 SQL migration — `0019_subtitle_files.sql` (this story owns the base table, D6)
+### 2.6 SQL migration — `0015_subtitle_files.sql` (canonical owner, D6)
 
 ```sql
--- shared/db/migrations/0019_subtitle_files.sql
--- Story 4.3 — base subtitle_files table.
--- Story 4.4 will ADD COLUMN is_embedded in a later migration.
+-- shared/db/migrations/0015_subtitle_files.sql
+-- Owner: plan-04-03 (this plan). Consolidates the base subtitle_files
+-- table from architecture §8.1 with the additions originally split
+-- across plan-04-01 (unique-by-language partial index) and plan-04-04
+-- (is_embedded column).
+-- Slot assigned by shared/db/migrations/MANIFEST.md.
 
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS subtitle_files (
-    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    id              BIGSERIAL    PRIMARY KEY,
     video_id        UUID         NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
     transcript_id   UUID         NULL REFERENCES transcripts(id) ON DELETE SET NULL,
     format          TEXT         NOT NULL CHECK (format IN ('srt','vtt','ass','ssa')),
@@ -696,10 +699,17 @@ CREATE TABLE IF NOT EXISTS subtitle_files (
                                  CHECK (language ~ '^[a-z]{2,3}$'),
     path            TEXT         NOT NULL,
     is_external     BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- is_embedded: TRUE when the file was extracted from the container
+    -- (story 4.4); mutually exclusive with is_external. Plan-04-04
+    -- declares the behavior; the column lives here for ordering safety.
+    is_embedded     BOOLEAN      NOT NULL DEFAULT FALSE,
     is_default      BOOLEAN      NOT NULL DEFAULT FALSE,
     flags           JSONB        NOT NULL DEFAULT '{}'::jsonb,
     size_bytes      BIGINT       NULL,
     mtime_ns        BIGINT       NULL,
+    -- track_index: ffmpeg subtitle stream index when is_embedded; NULL
+    -- otherwise (matches the constraint Epic 04 wants to enforce).
+    track_index     INT          NULL,
     metadata        JSONB        NOT NULL DEFAULT '{}'::jsonb,
     revived_count   INTEGER      NOT NULL DEFAULT 0,
     deleted_at      TIMESTAMPTZ  NULL,
@@ -707,7 +717,11 @@ CREATE TABLE IF NOT EXISTS subtitle_files (
 
     -- Story acceptance: uniqueness key prevents duplicate rows on re-scan.
     CONSTRAINT subtitle_files_unique
-        UNIQUE (video_id, language, format, is_external, path)
+        UNIQUE (video_id, language, format, is_external, path),
+    -- A given subtitle row cannot be both external and extracted from the
+    -- container; one or the other.
+    CONSTRAINT subtitle_files_origin_xor
+        CHECK (NOT (is_external AND is_embedded))
 );
 
 -- Default-selection lookup (Streaming Service, Story 4.5).
@@ -719,6 +733,12 @@ CREATE INDEX IF NOT EXISTS subtitle_files_video_default_idx
 CREATE INDEX IF NOT EXISTS subtitle_files_video_lang_idx
     ON subtitle_files (video_id, language)
     WHERE deleted_at IS NULL;
+
+-- Folded in from plan-04-01: at most one *active* subtitle per
+-- (video, format, language) — used by the generator's UPSERT.
+CREATE UNIQUE INDEX IF NOT EXISTS subtitle_files_video_fmt_lang_idx
+    ON subtitle_files (video_id, format, language)
+    WHERE deleted_at IS NULL AND is_embedded IS FALSE AND is_external IS FALSE;
 
 -- LISTEN/NOTIFY hook so the API can fan out subtitle changes
 -- to any open library WebSocket (mirrors videos.new in Story 1.1).
@@ -809,7 +829,7 @@ These map onto a per-library settings JSON path `library.settings.subtitles.disc
 | 4 | `pipeline/src/maktaba_pipeline/media/subtitles/filename.py` | `ParsedSubtitleFilename`, `SUPPORTED_EXTENSIONS`, `KNOWN_FLAGS`, `compile_subtitle_regex`, `parse_filename`, `normalize_lang`, `parse_flag` | `test_filename` |
 | 5 | `pipeline/src/maktaba_pipeline/media/subtitles/metadata.py` | `SubtitleMetadata`, `peek_metadata`, `_sniff_encoding`, `_peek_vtt_language_header` | `test_metadata` |
 | 6 | `pipeline/src/maktaba_pipeline/media/subtitles/discovery.py` | `discover_subtitles_for_video`, `_iter_candidate_paths`, `_match_candidates`, `_dedupe_collisions`, `_build_metadata_blob`, `_upsert`, `_soft_delete_missing`, `_recompute_default`, `SUBDIR_NAMES` | `test_discovery_basic`, `test_discovery_languages`, `test_discovery_idempotent`, `test_discovery_subdir`, `test_discovery_soft_delete`, `test_discovery_default_selection` |
-| 7 | `shared/db/migrations/0019_subtitle_files.sql` | base table, indexes, NOTIFY trigger | migration applies cleanly + `test_migration_creates_subtitle_files` |
+| 7 | `shared/db/migrations/0015_subtitle_files.sql` | base table, indexes, NOTIFY trigger | migration applies cleanly + `test_migration_creates_subtitle_files` |
 | 8 | `pipeline/src/maktaba_pipeline/pipeline/stages/scan.py` (modify) | wire `discover_subtitles_for_video` into `_process_video_entry` | `test_scan_invokes_subtitle_discovery` (added in scanner tests) |
 | 9 | `pipeline/src/maktaba_pipeline/config/defaults.py` (modify) | `SUBTITLE_DISCOVERY_DEFAULTS` | `test_defaults_loaded` |
 | 10 | `pyproject.toml` (modify) | add `langcodes>=3.3,<4` to runtime deps | `pip install -e .` succeeds; `import langcodes` works |
@@ -1329,7 +1349,7 @@ def test_filename_tag_beats_vtt_header(
 
 def test_migration_creates_table_and_indexes(db_conn):
     db_conn.execute("DROP TABLE IF EXISTS subtitle_files CASCADE")
-    apply_migration(db_conn, "0019_subtitle_files.sql")
+    apply_migration(db_conn, "0015_subtitle_files.sql")
 
     cols = {r[0]: r[1] for r in db_conn.execute("""
         SELECT column_name, data_type
@@ -1356,7 +1376,7 @@ def test_migration_creates_table_and_indexes(db_conn):
     assert "is_embedded" not in cols
 
     # Re-applying is a no-op (idempotency).
-    apply_migration(db_conn, "0019_subtitle_files.sql")
+    apply_migration(db_conn, "0015_subtitle_files.sql")
 ```
 
 ---
@@ -1401,7 +1421,7 @@ def test_migration_creates_table_and_indexes(db_conn):
 - [ ] **A12** Sibling subdirectories named `Subs`, `subs`, `Subtitles`, `subtitles` (case-insensitive on FS) are walked one level deep; deeper nesting is intentionally ignored. (D8; `test_external_subdir_discovered`, `test_external_deeper_nesting_not_discovered`.)
 - [ ] **A13** Discovery survives unreadable files and unreadable directories without aborting the scan: the offending entry is logged at WARN once and the rest of the walk completes. (`test_external_broken_file`, `test_scandir_permission_denied`.)
 - [ ] **A14** Change detection uses `(size_bytes, mtime_ns)` (D5); content_hash is reserved as a NULL column for a future opt-in path. The UPDATE on conflict refreshes both fields plus `metadata`. (Verified by inserting, modifying mtime, re-discovering, asserting the row's `mtime_ns` updated and `id` unchanged.)
-- [ ] **A15** Migration `0019_subtitle_files.sql` is idempotent (CREATE IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP TRIGGER IF EXISTS) and creates the indexes `subtitle_files_video_default_idx` and `subtitle_files_video_lang_idx` plus the `subtitle_files_change_trg` NOTIFY trigger. (`test_migration_creates_table_and_indexes`, plus a re-apply step inside the same test.)
+- [ ] **A15** Migration `0015_subtitle_files.sql` is idempotent (CREATE IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP TRIGGER IF EXISTS) and creates the indexes `subtitle_files_video_default_idx` and `subtitle_files_video_lang_idx` plus the `subtitle_files_change_trg` NOTIFY trigger. (`test_migration_creates_table_and_indexes`, plus a re-apply step inside the same test.)
 - [ ] **A16** The NOTIFY trigger fires on `INSERT` and on `UPDATE OF deleted_at, mtime_ns, is_default`; the API can fan out `subtitle_files.changed` events to the library WebSocket without polling. (Test: `test_notify_fires_on_insert_and_softdelete` in the integration suite.)
 - [ ] **A17** Discovery does not write to the `videos` row, the `processing_jobs` table, or any path under `.maktaba/`. It is read-from-FS, write-to-`subtitle_files`-only. (Static check: search for `INSERT INTO videos`, `INSERT INTO processing_jobs`, `Path(".maktaba")` in the discovery module → expect zero hits.)
 - [ ] **A18** Public API surface is `discover_subtitles_for_video(video, conn) -> list[SubtitleFileRow]`; nothing else is re-exported from `media.subtitles.__init__`. (Static check + a test that imports the public surface and verifies the symbol set.)

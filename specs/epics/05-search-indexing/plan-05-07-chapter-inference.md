@@ -24,7 +24,7 @@
 | D3 | **Run trigger: tail of the `index` stage** as `chapter_infer` sub-stage, gated by `library.settings.chapter.infer = true`. Default `true` for libraries with `content_type ∈ {lecture, sermon, podcast}`, `false` otherwise. **Not** a new top-level stage in `processing_jobs.stage`. | Story §"Stage placement": "`chapter_infer` is a sub-stage that runs at the tail of `index` … does **not** introduce a new top-level stage". | Adding a stage to the canonical seven-stage enum from Epic 1 Story 1.6 ripples into UI, queue, retry policy, and resume code. Chapter inference is fast (≤ 2 s for a 4-hour video — see §7) and the work is naturally paired with index completion: the embeddings the inference needs are exactly what `index` just wrote. Co-locating keeps queue arithmetic stable. |
 | D4 | **Storage: a new `chapters` table** (not `videos.chapters` JSONB and not `transcripts.chapters` JSONB). Rows are keyed by `(transcript_id, seq)` and cascade-delete when the transcript is replaced. | Story §Schema: "A migration `shared/db/migrations/000X_chapters.sql` creates" + acceptance "reprocessing a transcript replaces the chapters in the same transaction that flips `is_active`". | A table makes the join from `videos` → `chapters` cheap for the Streaming Service `chapters.json` resource (which filters by active transcript only) and lets the partial index `(video_id, start_sec)` answer "what chapter am I in at second T?" in O(log N). JSONB on `videos` would force the API to fetch and parse the whole array on every chapter lookup; JSONB on `transcripts` would require the API to know which transcript is active before reading. The table approach is also what Plan 8.12 expects to read from. |
 | D5 | **Title generation: leave NULL in v1**, not extractive, not LLM. The serving path falls back to "Chapter N" (Plan 8.12). A v1.1 deferred story may add a summarization pass. | Story acceptance: "`title` is left `NULL` in v1; an offline batch job (deferred) may later fill it from a summarization pass". | Extractive titling on Arabic text is harder than English (no reliable noun-phrase chunker in the multilingual stack we ship); a wrong title is worse than no title. LLM titling adds a per-video model call (small Llama or a hosted call) plus a budget — neither is in scope for v1. We document the contract so v1.1 can fill `title` without changing the schema. |
-| D6 | **Boundary post-processing: `min_chapter_sec` enforced by greedy higher-confidence-wins merge.** When two boundaries are within `min_chapter_sec` of each other (default 60 s), keep the one with the higher `confidence` and drop the other. The merge runs in a single left-to-right pass, no global optimization. | Story acceptance: "if two boundaries are closer than this, only the higher-confidence one is kept". | Greedy with confidence-priority is O(N) and gives stable results. Global dynamic programming (e.g., minimize total within-chapter dispersion subject to `min_chapter_sec`) is more "correct" but adds 200 lines of code for sub-percent quality gain on the videos in our fixture set. Greedy is the standard approach in the TextTiling family. |
+| D6 | **Boundary post-processing: `min_chapter_sec` enforced by greedy higher-confidence-wins merge.** When two boundaries are within `min_chapter_sec` of each other (default **180 s** per architecture §4.6 "capped at one per ~3 minutes"), keep the one with the higher `confidence` and drop the other. The merge runs in a single left-to-right pass, no global optimization. | Architecture §4.6 + story acceptance: "if two boundaries are closer than this, only the higher-confidence one is kept". | Greedy with confidence-priority is O(N) and gives stable results. The 180 s cap matches the architecture's "one per ~3 minutes" rule; earlier drafts of this plan used 60 s, which produced ~3× too many chapters on long-form lectures. |
 | D7 | **Re-run on transcript edit: replace atomically**, not patch. When the active transcript changes (a new transcript is committed and `is_active` flips), the `chapter_infer` for the new transcript runs after `index` completes; on insert it deletes the old transcript's chapters in the same DB transaction that flips `is_active = false` on the old transcript and inserts the new chapter rows. | Story §Schema: "reprocessing a transcript replaces the chapters in the same transaction that flips `is_active`". | Diff-and-patch needs a stable identity for chapters across re-runs; with embedding noise the boundaries shift by 5–10 seconds each time and patch becomes a delete-and-insert anyway. Atomic replace is simpler, leaves no half-state if the inference crashes mid-write, and matches the existing `transcripts.is_active` flip pattern from Epic 3 Story 3.5. |
 | D8 | **Failure isolation: chapter inference failure does NOT fail the parent `index` job.** The failure is logged with `kind=chapter_infer_failed`, recorded in `transcripts.metrics.chapter_infer_failed = {error, at}`, and the video transitions to `INDEXED` regardless. | Story acceptance: "Failure of chapter inference is logged but does **not** fail the parent `index` job; the video proceeds to `INDEXED` regardless." | Index has already committed the search-relevant data (units, vectors, FTS). Chapters are a navigation aid — losing them on one video should not block the user from searching that video. The metric makes the failure visible and operators can backfill via a maintenance task. |
 | D9 | **Threshold + window are per-library settings** stored in `library.settings.chapter.{threshold, smoothing_window, min_chapter_sec, infer}`, with defaults baked into `pipeline/src/maktaba_pipeline/config/defaults.py` so a missing key resolves without a DB lookup. | Story acceptance: "default `0.35`, configurable per library" + "configurable minimum chapter length `min_chapter_sec` (default `60`)". | A lecture series wants a tighter threshold (0.30) than a podcast with frequent topic switches (0.40). Per-library is the right granularity because the content type sets the prior; per-video is too noisy and per-deployment is too coarse. |
@@ -152,27 +152,34 @@ pipeline/src/maktaba_pipeline/
 ### 2.2 Schema migration — `chapters` table
 
 ```sql
--- shared/db/migrations/0019_chapters.sql
+-- shared/db/migrations/0026_chapters.sql
 BEGIN;
 
 CREATE TABLE chapters (
     id            BIGSERIAL PRIMARY KEY,
-    video_id      BIGINT NOT NULL REFERENCES videos(id)
-                                  ON DELETE CASCADE,
-    transcript_id BIGINT NOT NULL REFERENCES transcripts(id)
-                                  ON DELETE CASCADE,
+    video_id      UUID NOT NULL REFERENCES videos(id)
+                                ON DELETE CASCADE,
+    transcript_id UUID REFERENCES transcripts(id)
+                                ON DELETE CASCADE,    -- NULL for embedded/manual sources
     seq           INTEGER NOT NULL,
     start_sec     REAL NOT NULL,
     end_sec       REAL NOT NULL,
     title         TEXT,                              -- NULL allowed (D5)
+    -- 'source' is the architecture-§8.1 discriminator. Only 'inferred'
+    -- is written by this plan; embedded TOC chapters and manual user
+    -- chapters share the table with their own source values.
+    source        TEXT NOT NULL DEFAULT 'inferred'
+                  CHECK (source IN ('inferred', 'embedded', 'manual')),
     lang          TEXT,                              -- 'ar', 'en', 'mixed', or NULL
-    confidence    REAL NOT NULL,                    -- 0..1, cosine-distance at boundary
+    confidence    REAL,                              -- 0..1; NULL for non-inferred sources
     metadata      JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (transcript_id, seq),
+    -- One ordered list per (video, source). Different sources can
+    -- coexist on the same video (e.g. embedded + manual).
+    UNIQUE (video_id, source, seq),
     CHECK (start_sec >= 0),
     CHECK (end_sec >= start_sec),
-    CHECK (confidence >= 0 AND confidence <= 1)
+    CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1))
 );
 
 -- Range lookup: "what chapter at second T for video V?"
@@ -368,7 +375,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_THRESHOLD = 0.35
 DEFAULT_SMOOTHING_WINDOW = 3
-DEFAULT_MIN_CHAPTER_SEC = 60.0
+DEFAULT_MIN_CHAPTER_SEC = 180.0  # architecture §4.6: one per ~3 minutes
 
 
 @dataclass(frozen=True)
@@ -621,7 +628,7 @@ async def _record_chapter_infer_metrics(ctx, transcript_id, metric):
     "infer": true,
     "threshold": 0.35,
     "smoothing_window": 3,
-    "min_chapter_sec": 60
+    "min_chapter_sec": 180
   }
 }
 ```
@@ -637,7 +644,7 @@ DEFAULT_LIBRARY_SETTINGS = {
         # the dict here holds non-content-type defaults only.
         "threshold": 0.35,
         "smoothing_window": 3,
-        "min_chapter_sec": 60,
+        "min_chapter_sec": 180,
     },
 }
 ```
@@ -659,7 +666,7 @@ class ChapterInferDisabled(Exception):
 
 | Order | File | Symbols introduced | Tests gating |
 |-------|------|--------------------|--------------|
-| 1 | `shared/db/migrations/0019_chapters.sql` | `chapters` table, `chapters_video_start` index | `test_migration_creates_chapters_table` |
+| 1 | `shared/db/migrations/0026_chapters.sql` | `chapters` table, `chapters_video_start` index | `test_migration_creates_chapters_table` |
 | 2 | `pipeline/src/maktaba_pipeline/chapter/__init__.py` | re-exports | (n/a) |
 | 3 | `pipeline/src/maktaba_pipeline/chapter/errors.py` | `ChapterInferError`, `ChapterInferDisabled` | (n/a) |
 | 4 | `pipeline/src/maktaba_pipeline/chapter/boundary.py` | `CandidateBoundary`, `smooth_centroids`, `detect_boundaries`, `_cos_distance` | `test_boundary` |
@@ -679,7 +686,7 @@ class ChapterInferDisabled(Exception):
 ```python
 async def test_migration_creates_chapters_table(empty_db):
     """Apply migration; assert table, indexes, FKs, checks present."""
-    await apply_migration(empty_db, "0019_chapters.sql")
+    await apply_migration(empty_db, "0026_chapters.sql")
 
     cols = await empty_db.fetch("""
         SELECT column_name, data_type, is_nullable
@@ -1000,7 +1007,7 @@ def test_default_enabled_for_lecture_sermon_podcast():
 
 ## 6. Acceptance checklist
 
-- [ ] **A1** Migration `shared/db/migrations/0019_chapters.sql` creates the `chapters` table with `(id, video_id, transcript_id, seq, start_sec, end_sec, title NULLABLE, lang NULLABLE, confidence, metadata, created_at)`, the `(video_id, start_sec)` index, the `(transcript_id, seq)` UNIQUE constraint, and the `start_sec >= 0`, `end_sec >= start_sec`, `confidence ∈ [0,1]` CHECKs. (`test_migration_creates_chapters_table`)
+- [ ] **A1** Migration `shared/db/migrations/0026_chapters.sql` creates the `chapters` table with `(id, video_id, transcript_id, seq, start_sec, end_sec, title NULLABLE, lang NULLABLE, confidence, metadata, created_at)`, the `(video_id, start_sec)` index, the `(transcript_id, seq)` UNIQUE constraint, and the `start_sec >= 0`, `end_sec >= start_sec`, `confidence ∈ [0,1]` CHECKs. (`test_migration_creates_chapters_table`)
 - [ ] **A2** After `index` finishes for a transcript, `ChapterInferer.infer` runs (when enabled) and computes smoothed cosine distance between adjacent unit centroids using `chapter.smoothing_window` (default 3). It emits a boundary wherever the distance exceeds `chapter.threshold` (default 0.35), reading embeddings from Chroma via a single bulk `get` (no re-embedding). (`test_inference_multi_topic_three_segments`, `test_boundary`)
 - [ ] **A3** Each detected chapter is recorded with `seq` (0-based, contiguous), `start_sec` (= the start of the boundary unit, or 0 for chapter 0), `end_sec` (= the start of the next chapter, or `video_duration` for the last chapter), `confidence` (the cosine distance at the boundary, clamped to [0,1]; chapter 0 gets confidence 1.0), and `metadata.first_unit_seq`. (`test_inference_multi_topic_three_segments`)
 - [ ] **A4** `title` is left NULL in v1; the column allows NULL; the API renders "Chapter N" as a fallback. (Schema + Plan 8.12; `test_migration_creates_chapters_table` covers nullability.)
