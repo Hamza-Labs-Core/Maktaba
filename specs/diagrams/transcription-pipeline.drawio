@@ -1,0 +1,343 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="Maktaba" version="24.7.0">
+  <diagram id="transcription-pipeline" name="Transcription Pipeline">
+    <mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Transcription Pipeline · Audio Extraction → STT → Subtitles → Index" style="text;html=1;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="2320" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ TRIGGER / ENQUEUE ============ -->
+        <mxCell id="trigger_swim" value="TRIGGER · API enqueues" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="500" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger_state" value="videos.state = PROBED&#10;(enters extract stage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="trigger_swim">
+          <mxGeometry x="20" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger_enqueue" value="INSERT INTO processing_jobs&#10;(video_id, stage='transcribe',&#10; state='pending', priority=100)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="trigger_swim">
+          <mxGeometry x="260" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger_notify" value="Postgres NOTIFY 'jobs.new'&#10;workers wake from LISTEN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="trigger_swim">
+          <mxGeometry x="20" y="120" width="460" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ WORKER CLAIM ============ -->
+        <mxCell id="worker_claim" value="Worker claim (SELECT … FOR UPDATE SKIP LOCKED)&#10;state ∈ {pending, paused} · pause_requested=false&#10;not_before ≤ now() · cancel_requested=false&#10;→ CLAIMED · attempts++ · claimed_by · claimed_at" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="420" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ============ RESUME CHECK ============ -->
+        <mxCell id="resume_check" value="last_segment_end_sec &gt; 0 ?&#10;(paused row picked up)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="120" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="resume_setup" value="state=RESUMING&#10;resume_count++&#10;rebuild context (prompt from last K segments)&#10;FFmpeg -ss {last_segment_end_sec}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="100" width="320" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ============ AUDIO EXTRACTION ============ -->
+        <mxCell id="audio_swim" value="AUDIO EXTRACTION · FFmpeg subprocess" style="swimlane;startSize=24;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="900" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_select" value="Track selection&#10;1. user-pinned language&#10;2. tag = 'ara'&#10;3. first track" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="audio_swim">
+          <mxGeometry x="20" y="40" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_cmd" value="ffmpeg -ss {seek_from}&#10;-i {file}&#10;-map 0:a:{idx}&#10;-ac 1 -ar 16000&#10;-f wav -" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontFamily=Courier New;fontSize=11;" vertex="1" parent="audio_swim">
+          <mxGeometry x="240" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_pipe" value="PCM stream&#10;(stdout pipe)&#10;mono · 16 kHz · int16&#10;no temp file unless backend requires" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="audio_swim">
+          <mxGeometry x="480" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_cache" value="audio_cache (PG ledger)&#10;keyed by (content_hash, audio_index)&#10;reuses extracted WAV across stages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="audio_swim">
+          <mxGeometry x="720" y="40" width="160" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_decode_loop" value="Async iterator: yields PCM chunks until EOF or shutdown.flag&#10;Backpressure: STT consumer rate sets pipe read rate (no backlog)" style="text;html=1;align=center;fontSize=11;" vertex="1" parent="audio_swim">
+          <mxGeometry x="20" y="160" width="860" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="audio_writes" value="Writes audio_tracks rows · disposition · detected_language · last_extracted_at" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="audio_swim">
+          <mxGeometry x="20" y="210" width="860" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ STT BACKEND SELECTION ============ -->
+        <mxCell id="stt_select_swim" value="STT BACKEND SELECTION · pluggable" style="swimlane;startSize=24;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="320" width="700" height="280" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_protocol" value="STTBackend protocol&#10;name · supports_streaming · cost_per_minute&#10;transcribe(audio, language, hints) → TranscriptionResult" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontStyle=1;" vertex="stt_select_swim" parent="stt_select_swim">
+          <mxGeometry x="20" y="40" width="660" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_decision" value="Library config:&#10;stt_profile.backend" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="20" y="120" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_mlx" value="whisper-mlx&#10;mlx-whisper&#10;~0.3× RT&#10;Apple Silicon" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="240" y="110" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_cuda" value="whisper-cuda&#10;faster-whisper&#10;~0.1× RT&#10;NVIDIA GPU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="370" y="110" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_cpu" value="whisper-cpu&#10;openai-whisper&#10;~3× RT&#10;CPU fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="500" y="110" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_api" value="openai-api&#10;openai SDK&#10;network-bound&#10;stt_usage ledger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="240" y="200" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_gemma" value="gemma-audio&#10;(future)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#82b366;dashed=1;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="370" y="200" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_budget" value="Budget gate&#10;max_usd_per_month&#10;refuse claim if cap hit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="stt_select_swim">
+          <mxGeometry x="500" y="200" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ STREAMING STT LOOP ============ -->
+        <mxCell id="stt_loop_swim" value="STREAMING TRANSCRIPTION LOOP · per-segment commit (audio-time progress)" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="2280" height="380" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_session" value="STT session open&#10;model load&#10;language hint&#10;initial_prompt_ar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="20" y="50" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_yield" value="async for segment&#10;in stt.transcribe_stream(audio):&#10;  start, end, text, speaker, confidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="200" y="50" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_tx" value="BEGIN TRANSACTION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="500" y="50" width="200" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_insert_seg" value="INSERT transcript_segments&#10;(transcript_id, seq,&#10; start_sec, end_sec, text,&#10; speaker, confidence)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="500" y="100" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_advance_job" value="UPDATE processing_jobs&#10;SET segments_completed += 1,&#10;    processed_seconds += Δ,&#10;    last_segment_end_sec = end,&#10;    realtime_factor = ewma(...),&#10;    estimated_remaining_sec = est,&#10;    progress_updated_at = now(),&#10;    last_heartbeat_at = now()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontFamily=Courier New;fontSize=10;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="720" y="100" width="280" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_commit" value="COMMIT&#10;(atomic: segment + progress)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="500" y="220" width="200" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Pause/cancel checkpoint -->
+        <mxCell id="stt_check_pause" value="should_pause(job)?&#10;should_cancel(job)?&#10;shutdown_requested?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1020" y="120" width="200" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_paused" value="mark PAUSED&#10;paused_at_sec = end&#10;paused_reason = 'user'|'shutdown'&#10;release GPU lock · exit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1240" y="50" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_cancelled" value="mark CANCELLED&#10;at_sec = end" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1240" y="150" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_continue" value="continue loop&#10;(next segment)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1240" y="230" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stt_done" value="audio EOF →&#10;mark DONE · finished_at = now()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1240" y="290" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Notes -->
+        <mxCell id="stt_notes" value="Segment grain: 1 Whisper segment ≈ 5–30 s of audio.&#10;Audio-offset (sec), not segment index, is the canonical resume key — backend/model upgrades may emit different boundaries.&#10;EWMA α = 0.2 smooths realtime_factor against a slow segment.&#10;Heartbeat coupled with progress UPDATE — no separate heartbeat write under load." style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="stt_loop_swim">
+          <mxGeometry x="1520" y="50" width="740" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ============ SUBTITLE GEN ============ -->
+        <mxCell id="subgen_swim" value="SUBTITLE GENERATION · stage = subtitle_gen" style="swimlane;startSize=24;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1060" width="900" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_input" value="Read transcript_segments&#10;(by transcript_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="20" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_split" value="Cue formatting&#10;max 42 chars/line · max 2 lines&#10;sentence-aware split&#10;Arabic punctuation preferred" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="260" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_speaker" value="If diarized:&#10;&lt;v Speaker N&gt; tags&#10;in VTT cues" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="500" y="40" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_write" value="Atomic write&#10;.maktaba/subs/{name}.{srt,vtt}&#10;+ {name}.{lang}.srt next to source&#10;tmp + os.replace()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="700" y="40" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_row" value="INSERT subtitle_files&#10;(video_id, transcript_id, format, language, path, is_external=false)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="20" y="160" width="660" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="subgen_note" value="Sidecar files are STRICTLY outputs — never inputs to a resume. The DB is the live truth." style="text;html=1;align=left;fontSize=11;fontStyle=2;" vertex="1" parent="subgen_swim">
+          <mxGeometry x="20" y="220" width="860" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ============ INDEX STAGE ============ -->
+        <mxCell id="index_swim" value="INDEX STAGE · search-time chunks" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="1060" width="1340" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="index_chunk" value="Chunker → transcript_units&#10;1–3 sentences (~200 chars)&#10;preserves segment offsets&#10;UNIQUE (transcript_id, seq)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="index_swim">
+          <mxGeometry x="20" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="index_fts" value="FTS5 / tsvector populate&#10;tokenize unicode61 remove_diacritics 2&#10;triggers keep transcripts_fts in sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="index_swim">
+          <mxGeometry x="260" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="index_embed" value="Embedding model&#10;multilingual-e5-large&#10;(MLX / CUDA / CPU)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="index_swim">
+          <mxGeometry x="520" y="40" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="index_chroma" value="ChromaDB collection&#10;name: library-{id}&#10;hnsw:space cosine&#10;col.add(ids, documents, metadatas)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="index_swim">
+          <mxGeometry x="740" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="index_advance" value="UPDATE transcripts&#10;SET last_indexed_segment_seq = seq&#10;UPDATE transcript_units&#10;SET indexed_at_in_chroma = now()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="index_swim">
+          <mxGeometry x="1000" y="40" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="index_dlq" value="vector_index_dead_letter&#10;chroma write failures → DLQ&#10;periodic re-drive" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="index_swim">
+          <mxGeometry x="20" y="160" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="index_publish" value="NOTIFY 'transcripts.indexed' · feeds search · live VTT renderer can serve subs immediately&#10;Auto-categorization runs lazily after INDEXED (topic clusters · content type)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="index_swim">
+          <mxGeometry x="320" y="160" width="1000" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ POSTGRES (single, sticky on right) ============ -->
+        <mxCell id="pg" value="PostgreSQL 16&#10;processing_jobs (state, progress, pause)&#10;transcripts · transcript_segments · transcript_units · transcripts_fts&#10;subtitle_files · audio_tracks · audio_cache · stt_usage&#10;LISTEN/NOTIFY: jobs.new · jobs.progress · transcripts.indexed" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="80" width="540" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="te1" style="endArrow=classic;html=1;" edge="1" parent="1" source="trigger_state" target="trigger_enqueue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te2" style="endArrow=classic;html=1;" edge="1" parent="1" source="trigger_enqueue" target="trigger_notify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te3" style="endArrow=classic;html=1;" edge="1" parent="1" source="trigger_notify" target="worker_claim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te4" value="writes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="trigger_enqueue" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te5" style="endArrow=classic;html=1;" edge="1" parent="1" source="worker_claim" target="resume_check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te6" value="yes" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="resume_check" target="resume_setup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te7" value="no — fresh" style="endArrow=classic;html=1;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="resume_check" target="audio_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te8" value="seek_from = last_segment_end_sec" style="endArrow=classic;html=1;fontSize=10;exitX=0;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="resume_setup" target="audio_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Audio → STT -->
+        <mxCell id="te9" value="PCM stream" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="audio_swim" target="stt_select_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te10" style="endArrow=classic;html=1;" edge="1" parent="1" source="stt_select_swim" target="stt_loop_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- STT loop internal -->
+        <mxCell id="te11" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_session" target="stt_yield">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te12" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_yield" target="stt_tx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te13" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_tx" target="stt_insert_seg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te14" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_insert_seg" target="stt_advance_job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te15" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_advance_job" target="stt_commit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te16" style="endArrow=classic;html=1;" edge="1" parent="stt_loop_swim" source="stt_commit" target="stt_check_pause">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te17" value="pause" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stt_loop_swim" source="stt_check_pause" target="stt_paused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te18" value="cancel" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stt_loop_swim" source="stt_check_pause" target="stt_cancelled">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te19" value="continue" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stt_loop_swim" source="stt_check_pause" target="stt_continue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te20" value="loop back" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="stt_loop_swim" source="stt_continue" target="stt_yield">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te21" value="EOF" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stt_loop_swim" source="stt_yield" target="stt_done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DB writes from STT loop -->
+        <mxCell id="te22" value="atomic commit per segment" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="stt_commit" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DONE → subtitle_gen + index -->
+        <mxCell id="te23" value="enqueue subtitle_gen + index" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="stt_done" target="subgen_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te24" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="stt_done" target="index_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Subgen internal -->
+        <mxCell id="te25" style="endArrow=classic;html=1;" edge="1" parent="subgen_swim" source="subgen_input" target="subgen_split">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te26" style="endArrow=classic;html=1;" edge="1" parent="subgen_swim" source="subgen_split" target="subgen_speaker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te27" style="endArrow=classic;html=1;" edge="1" parent="subgen_swim" source="subgen_speaker" target="subgen_write">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te28" style="endArrow=classic;html=1;" edge="1" parent="subgen_swim" source="subgen_write" target="subgen_row">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Index internal -->
+        <mxCell id="te29" style="endArrow=classic;html=1;" edge="1" parent="index_swim" source="index_chunk" target="index_fts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te30" style="endArrow=classic;html=1;" edge="1" parent="index_swim" source="index_chunk" target="index_embed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te31" style="endArrow=classic;html=1;" edge="1" parent="index_swim" source="index_embed" target="index_chroma">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te32" style="endArrow=classic;html=1;" edge="1" parent="index_swim" source="index_chroma" target="index_advance">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te33" value="on failure" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="index_swim" source="index_chroma" target="index_dlq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te34" style="endArrow=classic;html=1;" edge="1" parent="index_swim" source="index_advance" target="index_publish">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Subgen DB writes -->
+        <mxCell id="te35" value="writes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="subgen_row" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="te36" value="writes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="index_advance" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Reaper / heartbeat -->
+        <mxCell id="reaper" value="Reaper (30 s tick)&#10;state ∈ {claimed,running,resuming}&#10;AND last_heartbeat_at &lt; now() − 90 s&#10;→ flip to PAUSED · paused_reason='crash'&#10;paused_at_sec = last_segment_end_sec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="320" width="500" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="te37" value="reads · writes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="reaper" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend_text" value="Why this works on crash: every audio second written to transcript_segments has its end_sec mirrored in processing_jobs.last_segment_end_sec (one transaction). Recovery = resume = a normal claim from PAUSED. No JSON sidecar checkpoint. Worst case lost work on crash = the in-flight ≤30 s segment that wasn't yet committed." style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1340" width="2280" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

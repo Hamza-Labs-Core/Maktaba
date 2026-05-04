@@ -1,0 +1,381 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="Maktaba" version="24.7.0">
+  <diagram id="auth-flow" name="Auth Flow">
+    <mxGraphModel dx="2400" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="2200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Auth Flows · Web · Native · Token Refresh · Signed-URL Mint · Streaming JWT Verify · QR Pairing" style="text;html=1;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="2320" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- KEY MATERIAL (top reference panel) -->
+        <!-- =========================================================== -->
+        <mxCell id="keys_panel" value="Key material · jwt_keys (PG)" style="swimlane;startSize=24;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="2320" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="key_priv" value="RS256 private key&#10;MAKTABA_JWT_PRIVATE_KEY_PEM&#10;loaded by API only · used to sign JWTs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="keys_panel">
+          <mxGeometry x="20" y="40" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key_pub" value="RS256 public key&#10;MAKTABA_JWT_PUBLIC_KEY_PEM&#10;loaded by API and Streaming · used to verify" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="keys_panel">
+          <mxGeometry x="360" y="40" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key_jwks" value="JWKS · GET /api/.well-known/jwks.json&#10;Streaming caches keys offline · no API call per request&#10;rotate keys with grace overlap (kid in header)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="keys_panel">
+          <mxGeometry x="700" y="40" width="380" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key_audiences" value="JWT audiences (aud claim)&#10;api · streaming · streaming-direct · streaming-static&#10;lib=[id] only — never user's full library set on signed URLs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="keys_panel">
+          <mxGeometry x="1100" y="40" width="500" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key_pwhash" value="Password hash&#10;argon2id (memory=64 MiB)&#10;pepper from env (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="keys_panel">
+          <mxGeometry x="1620" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="key_refresh" value="Refresh token&#10;opaque · 32 bytes random&#10;hashed sha256 in DB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="keys_panel">
+          <mxGeometry x="1920" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- WEB LOGIN -->
+        <!-- =========================================================== -->
+        <mxCell id="web_swim" value="WEB LOGIN · cookie session + CSRF" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="1140" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="w_browser" value="Browser&#10;React PWA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="web_swim">
+          <mxGeometry x="20" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_login" value="POST /api/auth/login&#10;{username, password}&#10;Origin · Sec-Fetch-Site checked" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="200" y="40" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="w_brute" value="Brute-force gate&#10;per-IP + per-username window&#10;exponential backoff · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="web_swim">
+          <mxGeometry x="460" y="40" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="w_verify" value="Verify argon2id(pw) vs users.pw_hash&#10;timing-safe compare" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="720" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="w_session" value="INSERT web_sessions&#10;(user_id, session_id, csrf_token,&#10; user_agent, ip, expires_at)&#10;TTL 30 d sliding" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="200" y="160" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="w_setcookie" value="Set-Cookie: maktaba_sid=…&#10;HttpOnly · Secure · SameSite=Lax&#10;Path=/api · Domain=host&#10;+ X-CSRF-Token in JSON body" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="500" y="160" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="w_subsequent" value="Subsequent requests:&#10;cookie auto-attached&#10;state-changing methods send X-CSRF-Token&#10;double-submit checked" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="800" y="160" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="w_logout" value="POST /api/auth/logout&#10;DELETE web_sessions row · clear cookie · audit_log security.logout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="web_swim">
+          <mxGeometry x="200" y="280" width="700" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="we1" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_browser" target="w_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="we2" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_login" target="w_brute">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="we3" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_brute" target="w_verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="we4" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_verify" target="w_session">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="we5" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_session" target="w_setcookie">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="we6" style="endArrow=classic;html=1;" edge="1" parent="web_swim" source="w_setcookie" target="w_subsequent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- NATIVE LOGIN -->
+        <!-- =========================================================== -->
+        <mxCell id="nat_swim" value="NATIVE LOGIN · iOS · Android · Desktop · TV — JWT bearer + opaque refresh" style="swimlane;startSize=24;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="240" width="1160" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="n_app" value="Native app&#10;(Capacitor / Tauri / Swift / Kotlin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="nat_swim">
+          <mxGeometry x="20" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n_login" value="POST /api/auth/login&#10;{username, password,&#10; device: {platform, bundle_id,&#10;          model, os_version}}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="260" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_devreg" value="Upsert devices row&#10;(user_id, platform, bundle_id,&#10; token_hash) ← register" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="520" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_issue" value="Issue tokens&#10;access JWT (RS256)&#10;  aud=api · sub=user_id&#10;  scope=[lib ids] · exp=15 min&#10;refresh (opaque, 32 B)&#10;  hashed → refresh_tokens" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="780" y="40" width="280" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n_response" value="Response&#10;{access_token, refresh_token,&#10; access_expires_at,&#10; refresh_expires_at,&#10; user, device_id}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="260" y="170" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_keystore" value="Client stores tokens&#10;iOS Keychain · Android Keystore&#10;Tauri secure-storage&#10;TV app → secure store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="520" y="170" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_subsequent" value="Subsequent requests:&#10;Authorization: Bearer {access}&#10;no cookie · no CSRF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="780" y="170" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_revoke" value="Logout · DELETE /api/auth/logout&#10;flag refresh_tokens.revoked_at · audit_log security.logout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="nat_swim">
+          <mxGeometry x="260" y="290" width="800" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ne1" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_app" target="n_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ne2" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_login" target="n_devreg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ne3" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_devreg" target="n_issue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ne4" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_issue" target="n_response">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ne5" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_response" target="n_keystore">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ne6" style="endArrow=classic;html=1;" edge="1" parent="nat_swim" source="n_keystore" target="n_subsequent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- TOKEN REFRESH WITH ROTATION -->
+        <!-- =========================================================== -->
+        <mxCell id="ref_swim" value="TOKEN REFRESH · rotation + re-use detection" style="swimlane;startSize=24;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="2320" height="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_post" value="POST /api/auth/refresh&#10;Cookie or Bearer + body { refresh_token }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="ref_swim">
+          <mxGeometry x="20" y="40" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="r_lookup" value="SELECT refresh_tokens&#10;WHERE token_hash = sha256($t)&#10;  AND revoked_at IS NULL&#10;  AND expires_at &gt; now()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontFamily=Courier New;fontSize=10;" vertex="1" parent="ref_swim">
+          <mxGeometry x="280" y="40" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_check" value="row exists?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="ref_swim">
+          <mxGeometry x="580" y="55" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_reuse" value="REUSE DETECTED · token already rotated&#10;revoke_all(user_id, device_id)&#10;audit_log security.refresh_reuse&#10;return 401 — force re-login" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="ref_swim">
+          <mxGeometry x="780" y="40" width="320" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_rotate" value="Rotation transaction (BEGIN)&#10;1. UPDATE refresh_tokens SET revoked_at=now() WHERE id=$old&#10;2. INSERT new refresh_tokens row (parent_id=$old)&#10;3. Mint new access JWT (RS256, exp=15 min)&#10;COMMIT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="ref_swim">
+          <mxGeometry x="280" y="170" width="500" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_response" value="Response&#10;{access_token, refresh_token (new),&#10; access_expires_at, refresh_expires_at}&#10;client overwrites Keychain entries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="ref_swim">
+          <mxGeometry x="800" y="180" width="320" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_chain_view" value="refresh_tokens chain&#10;parent_id forms a single linked list per device&#10;reusing any ancestor revokes the whole chain" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ref_swim">
+          <mxGeometry x="1140" y="180" width="320" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re1" style="endArrow=classic;html=1;" edge="1" parent="ref_swim" source="r_post" target="r_lookup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" style="endArrow=classic;html=1;" edge="1" parent="ref_swim" source="r_lookup" target="r_check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" value="no" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="ref_swim" source="r_check" target="r_reuse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4" value="yes" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="ref_swim" source="r_check" target="r_rotate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re5" style="endArrow=classic;html=1;" edge="1" parent="ref_swim" source="r_rotate" target="r_response">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- SIGNED URL MINT + STREAMING JWT VERIFY -->
+        <!-- =========================================================== -->
+        <mxCell id="signed_swim" value="SIGNED-URL MINT (API) + STREAMING JWT VERIFY (offline)" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="980" width="2320" height="500" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_client" value="Client&#10;authenticated via cookie or Bearer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="signed_swim">
+          <mxGeometry x="20" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_open" value="POST /api/stream/sessions&#10;{video_id, client_profile, …}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="260" y="40" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_acl" value="Permission check&#10;LibrariesForUser(user_id)&#10;∋ video.library_id&#10;else 403" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="520" y="40" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_mint" value="Signed-URL minter (RS256)&#10;Header: alg=RS256, kid=current&#10;Claims:&#10;  iss · aud=streaming · sub=user_id&#10;  vid=video_id · sid=session_id&#10;  lib=[library_id]   ← SINGLETON, not full set&#10;  iat · exp (= ttl)&#10;Signed with API private key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="760" y="40" width="320" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_grpc" value="gRPC OpenSession()&#10;to Streaming Service&#10;creates streaming_sessions row" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="1100" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_response" value="API response&#10;{session_id,&#10; manifest_url=&#10;   /stream/{sid}/manifest.m3u8&#10;       ?token={signed JWT},&#10; expires_at}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="260" y="170" width="280" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_player" value="Client → Streaming Service&#10;GET manifest.m3u8?token=…&#10;GET seg-N.ts?token=…&#10;GET subs/ar.vtt?token=…" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="signed_swim">
+          <mxGeometry x="580" y="170" width="280" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Streaming verify lane -->
+        <mxCell id="v_swim" value="Streaming JWT verify · OFFLINE (no API call per request)" style="swimlane;startSize=22;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="signed_swim">
+          <mxGeometry x="20" y="310" width="2280" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="v1" value="1. Parse JWT&#10;extract kid · alg" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="20" y="40" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v2" value="2. JWKS cache lookup&#10;by kid&#10;refresh on miss (TTL 1 h)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="220" y="40" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v3" value="3. Verify RS256 signature&#10;reject if alg ≠ RS256&#10;reject if signature invalid" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="440" y="40" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v4" value="4. Validate claims&#10;exp &gt; now() (skew ±60 s)&#10;iss matches&#10;aud ∈ {streaming, streaming-direct,&#10;        streaming-static}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="680" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v5" value="5. Resource binding&#10;sid in URL path == JWT.sid&#10;vid in URL path == JWT.vid&#10;video.library_id ∈ JWT.lib" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="960" y="40" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v6" value="6. Session liveness&#10;streaming_sessions row exists&#10;and not closed/reaped" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="v_swim">
+          <mxGeometry x="1220" y="40" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v7" value="OK → serve bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="v_swim">
+          <mxGeometry x="1460" y="40" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v8" value="any failure → 401&#10;count failures · log audit_log security.signed_url_invalid" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="v_swim">
+          <mxGeometry x="1660" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ve1" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v1" target="v2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ve2" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v2" target="v3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ve3" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v3" target="v4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ve4" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v4" target="v5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ve5" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v5" target="v6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ve6" style="endArrow=classic;html=1;" edge="1" parent="v_swim" source="v6" target="v7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="se1" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_client" target="s_open">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se2" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_open" target="s_acl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se3" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_acl" target="s_mint">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se4" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_acl" target="s_grpc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se5" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_mint" target="s_response">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se6" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_response" target="s_player">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se7" style="endArrow=classic;html=1;" edge="1" parent="signed_swim" source="s_player" target="v_swim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- QR PAIRING -->
+        <!-- =========================================================== -->
+        <mxCell id="qr_swim" value="QR PAIRING · authenticated host pairs a TV / new device · POST /api/auth/pair" style="swimlane;startSize=24;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1500" width="2320" height="540" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_tv" value="TV / new device&#10;(unauthenticated)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="qr_swim">
+          <mxGeometry x="20" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q_phone" value="Authenticated phone / web&#10;(holder of a valid session)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="qr_swim">
+          <mxGeometry x="1740" y="40" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_init" value="POST /api/auth/pair/init&#10;(no auth)&#10;{platform, bundle_id, device_name}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="260" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_create" value="API · pairing_codes&#10;generate code (8 chars · base32, no ambiguous)&#10;hash via argon2id → code_hash&#10;TTL 5 min · single-use · device_metadata&#10;return { pairing_id, code (plaintext, ONLY at init),&#10;         poll_token, expires_at }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="560" y="40" width="380" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_qr" value="TV displays&#10;maktaba://pair?id={pairing_id}&amp;code={code}&#10;encoded as QR + 8-char fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="20" y="140" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_scan" value="Phone scans QR / types code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="1740" y="140" width="280" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_approve" value="POST /api/auth/pair/approve&#10;Authorization: Bearer {phone access token}&#10;{pairing_id, code}&#10;API: argon2id verify(code, code_hash)&#10;     check expires_at &gt; now()&#10;     mark pairing_codes.approved_at + approver_user_id&#10;rate-limit: 5 wrong codes per pairing → kill" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="980" y="40" width="380" height="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_poll" value="TV polls /api/auth/pair/poll&#10;Bearer poll_token (issued at init)&#10;every 2 s, max 5 min&#10;until approved_at IS NOT NULL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="280" y="240" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_issue" value="On approve · API issues device tokens TO TV&#10;BEGIN&#10;  INSERT devices (user=approver, platform=tv, bundle_id, ...)&#10;  INSERT refresh_tokens (device_id, parent_id=NULL)&#10;  Mint access JWT (aud=api, sub=approver, scope=approver's libraries)&#10;  audit_log device.paired&#10;COMMIT&#10;  → return {access_token, refresh_token, device_id, user}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="600" y="240" width="540" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_tv_finish" value="TV stores tokens&#10;in app's secure store&#10;tears down pairing UI&#10;welcome screen&#10;(state thereafter identical to native login)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="qr_swim">
+          <mxGeometry x="20" y="240" width="240" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q_security" value="Security properties:&#10;• plaintext code is given to TV ONLY at init (request the TV initiates) — phone never sees plaintext, only scans QR / re-types it&#10;• pairing_codes.code_hash is argon2id, so DB compromise does not reveal codes&#10;• approver authenticated via Bearer — only an existing logged-in user can grant access&#10;• device gets the approver's library scope at mint time — narrowing requires re-pairing or admin action&#10;• 5 min TTL · 5 wrong-code attempts kills the pairing · audit_log on every step&#10;• poll_token is bound to pairing_id and is the only credential the TV ever sends; cannot be replayed elsewhere" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="qr_swim">
+          <mxGeometry x="20" y="380" width="2280" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qe1" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_tv" target="q_init">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe2" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_init" target="q_create">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe3" value="response" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="qr_swim" source="q_create" target="q_qr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe4" value="visual handoff" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="qr_swim" source="q_qr" target="q_scan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe5" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_phone" target="q_scan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe6" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_scan" target="q_approve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe7" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_qr" target="q_poll">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe8" value="approved" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="qr_swim" source="q_poll" target="q_issue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe9" value="approve" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="qr_swim" source="q_approve" target="q_issue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="qe10" style="endArrow=classic;html=1;" edge="1" parent="qr_swim" source="q_issue" target="q_tv_finish">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Footer cross-cutting concerns -->
+        <mxCell id="footer_panel" value="Cross-cutting&#10;• Single-user mode: env-configured admin token bypasses users table; UI stores it after first boot.&#10;• Logout: web → DELETE web_sessions; native → flag refresh_tokens.revoked_at; access JWTs remain valid until exp (≤15 min) — keep TTL short for this reason.&#10;• Brute-force: per-IP and per-username sliding windows; on consecutive fails, exponential backoff up to 15 min; audit_log security.login_failed.&#10;• Streaming JWT TTL ≪ access JWT TTL because URLs leak more easily; default 1–5 min depending on resource (manifest 5 min, segment 1 min, direct 5 min).&#10;• Streaming verifies offline against JWKS — API can be DOWN without breaking in-flight playback. Once a JWT expires the player requests a new session via /api/stream/sessions." style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="2060" width="2320" height="120" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
