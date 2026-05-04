@@ -1,0 +1,306 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="Maktaba" version="24.7.0">
+  <diagram id="job-lifecycle" name="Job Lifecycle">
+    <mxGraphModel dx="2400" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Job Lifecycle · processing_jobs state machine · heartbeat · reaper · resume · graceful shutdown" style="text;html=1;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="2320" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- STATE MACHINE -->
+        <!-- =========================================================== -->
+        <mxCell id="sm_swim" value="STATE MACHINE · processing_jobs.state" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1480" height="780" as="geometry" />
+        </mxCell>
+
+        <!-- States -->
+        <mxCell id="sm_pending" value="PENDING&#10;in queue · eligible for claim" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="640" y="60" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_claimed" value="CLAIMED&#10;worker reserved&#10;claimed_by · claimed_at" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="640" y="200" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_running" value="RUNNING&#10;heartbeat every 5 s&#10;progress fields tick" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="640" y="340" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_paused" value="PAUSED&#10;at paused_at_sec&#10;no worker · re-claimable" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="200" y="500" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_resuming" value="RESUMING&#10;rebuild context&#10;FFmpeg seek to&#10;last_segment_end_sec" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="200" y="340" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_done" value="DONE&#10;finished_at = now()&#10;TERMINAL" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="1080" y="200" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_cancelled" value="CANCELLED&#10;user-initiated abort&#10;TERMINAL" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="1080" y="340" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_failed" value="FAILED&#10;attempts &gt;= max_attempts&#10;TERMINAL · error populated" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" vertex="1" parent="sm_swim">
+          <mxGeometry x="1080" y="480" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sm_retry_pool" value="Transient failure&#10;attempts &lt; max_attempts&#10;not_before = now() + backoff&#10;back to PENDING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="sm_swim">
+          <mxGeometry x="1080" y="60" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Transitions -->
+        <mxCell id="t1" value="claim()&#10;SELECT … FOR UPDATE SKIP LOCKED&#10;attempts++" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_pending" target="sm_claimed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t2" value="start()" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_claimed" target="sm_running">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t3" value="done() · audio EOF" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_running" target="sm_done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t4" value="cancel() · cancel_requested observed&#10;at next segment boundary" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_running" target="sm_cancelled">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t5" value="pause() · pause_requested observed&#10;commit segment · paused_at_sec = end&#10;reason = 'user'|'shutdown'|'crash'|'budget'&#10;claimed_by = NULL" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_running" target="sm_paused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t6" value="claim against PAUSED&#10;(state=paused AND pause_requested=false)&#10;resume_count++ · resumed_at = now()" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_paused" target="sm_resuming">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t7" value="context rebuilt&#10;decoder seeked&#10;model loaded" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_resuming" target="sm_running">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t8" value="fail()&#10;transient" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="sm_swim" source="sm_running" target="sm_retry_pool">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t9" value="" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="sm_swim" source="sm_retry_pool" target="sm_pending">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t10" value="fail() · attempts &gt;= max_attempts" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="sm_swim" source="sm_running" target="sm_failed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t11" value="user retry()&#10;attempts = 0 · error = NULL" style="endArrow=classic;html=1;fontSize=10;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="sm_swim" source="sm_failed" target="sm_pending">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Reaper transition -->
+        <mxCell id="reaper_box" value="REAPER (every 30 s)&#10;state ∈ {claimed, running, resuming}&#10;AND last_heartbeat_at &lt; now() − 90 s&#10;→ flip to PAUSED&#10;     paused_reason = 'crash'&#10;     paused_at_sec = last_segment_end_sec&#10;     claimed_by = NULL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="sm_swim">
+          <mxGeometry x="60" y="60" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="t_reap1" value="stale" style="endArrow=classic;html=1;fontSize=10;dashed=1;strokeColor=#b85450;" edge="1" parent="sm_swim" source="reaper_box" target="sm_paused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Notes -->
+        <mxCell id="sm_notes" value="Notes:&#10;• Pause and cancel are COOPERATIVE — the API only sets *_requested flags; the worker checks at every committed segment.&#10;• &quot;Force pause&quot; (force=true) flips the state immediately and discards the in-flight uncommitted segment.&#10;• Resume key is audio-offset (seconds), not segment index — survives backend / model upgrades that change boundaries.&#10;• failed → pending only via user retry(); the system never auto-retries past max_attempts.&#10;• processing_jobs.payload (JSONB) carries stage-specific args (track index, model override, etc.) — schema enforced via CHECK constraints." style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="sm_swim">
+          <mxGeometry x="60" y="620" width="1380" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- TABLE COLUMNS -->
+        <!-- =========================================================== -->
+        <mxCell id="tbl_swim" value="processing_jobs · column reference" style="swimlane;startSize=24;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="80" width="820" height="780" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_id" value="Identity&#10;id BIGSERIAL PK&#10;video_id UUID FK videos(id)&#10;stage TEXT (scan|probe|extract|transcribe|subtitle_gen|index|thumbnail)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="40" width="780" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_state" value="State machine&#10;state TEXT  (pending|claimed|running|paused|resuming|done|failed|cancelled)&#10;priority INT DEFAULT 100   — lower wins (50=user, 100=new, 200=reproc, 500=backfill)&#10;attempts INT DEFAULT 0     · max_attempts INT DEFAULT 3&#10;not_before TIMESTAMPTZ      — backoff target for retry&#10;error TEXT (or JSONB per plan-02-03)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="130" width="780" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_claim" value="Claim &amp; heartbeat&#10;claimed_by TEXT             — worker id (host:pid:uuid)&#10;claimed_at TIMESTAMPTZ&#10;last_heartbeat_at TIMESTAMPTZ — updated every 5 s while running&#10;                              — coupled with progress UPDATE inside §7.6 transaction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="260" width="780" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_progress" value="Progress accounting (audio-time, not wall-clock)&#10;total_duration_seconds REAL    — audio length to process&#10;processed_seconds      REAL DEFAULT 0   — committed to DB so far&#10;segments_completed     INT  DEFAULT 0&#10;last_segment_end_sec   REAL DEFAULT 0   — CANONICAL RESUME OFFSET&#10;estimated_remaining_sec REAL            — EWMA-based ETA&#10;realtime_factor        REAL             — audio_sec / wall_sec, EWMA α=0.2&#10;progress_updated_at    TIMESTAMPTZ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="370" width="780" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_pause" value="Pause / control flags&#10;pause_requested  BOOLEAN DEFAULT false  — API sets; worker honors at next boundary&#10;cancel_requested BOOLEAN DEFAULT false&#10;paused_at        TIMESTAMPTZ&#10;paused_at_sec    REAL                    — audio offset where pause took effect&#10;paused_reason    TEXT                    — 'user' | 'shutdown' | 'budget' | 'policy' | 'crash'&#10;resumed_at       TIMESTAMPTZ&#10;resume_count     INT DEFAULT 0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="540" width="780" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tbl_meta" value="Metadata&#10;metrics JSONB        — backend, model, runtime stats&#10;payload JSONB        — stage-specific args (plan-06-01)&#10;created_at · finished_at TIMESTAMPTZ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="tbl_swim">
+          <mxGeometry x="20" y="710" width="780" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- HEARTBEAT TIMELINE -->
+        <!-- =========================================================== -->
+        <mxCell id="hb_swim" value="HEARTBEAT &amp; PROGRESS · per-segment commit (atomic)" style="swimlane;startSize=24;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="880" width="1480" height="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hb_loop" value="STT yields segment {start, end, text, …}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="hb_swim">
+          <mxGeometry x="20" y="50" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hb_tx_begin" value="BEGIN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="hb_swim">
+          <mxGeometry x="380" y="50" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hb_insert" value="INSERT transcript_segments(...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontFamily=Courier New;fontSize=10;" vertex="1" parent="hb_swim">
+          <mxGeometry x="500" y="50" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hb_advance" value="UPDATE processing_jobs SET&#10;  segments_completed += 1,&#10;  processed_seconds += Δ,&#10;  last_segment_end_sec = end,&#10;  realtime_factor = ewma(...),&#10;  estimated_remaining_sec = est,&#10;  progress_updated_at = now(),&#10;  last_heartbeat_at = now()&#10;WHERE id = $job" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontFamily=Courier New;fontSize=10;" vertex="1" parent="hb_swim">
+          <mxGeometry x="800" y="40" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="hb_commit" value="COMMIT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="hb_swim">
+          <mxGeometry x="1140" y="60" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hb_notify" value="NOTIFY 'jobs.progress'&#10;LISTEN→ WS /ws/jobs fan-out&#10;UI throttles to 1 Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="hb_swim">
+          <mxGeometry x="1260" y="40" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hb_check" value="if shutdown_requested OR pause_requested OR cancel_requested:&#10;  break loop · mark PAUSED/CANCELLED at end_sec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="hb_swim">
+          <mxGeometry x="380" y="120" width="700" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hb_loopback" value="loop back to next yield" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="hb_swim" source="hb_check" target="hb_loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hb_props" value="Atomic commit invariant: after COMMIT, max(transcript_segments.end_sec for this transcript) == processing_jobs.last_segment_end_sec.&#10;On crash mid-transaction → no partial row → resume from previous last_segment_end_sec → ≤30 s of work re-done.&#10;Heartbeat is FREE — coupled with progress write. Pure heartbeat tick (every 5 s) only fires when a single segment is unusually slow." style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="hb_swim">
+          <mxGeometry x="20" y="200" width="1440" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hbe1" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_loop" target="hb_tx_begin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hbe2" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_tx_begin" target="hb_insert">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hbe3" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_insert" target="hb_advance">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hbe4" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_advance" target="hb_commit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hbe5" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_commit" target="hb_notify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hbe6" style="endArrow=classic;html=1;" edge="1" parent="hb_swim" source="hb_commit" target="hb_check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- GRACEFUL SHUTDOWN -->
+        <!-- =========================================================== -->
+        <mxCell id="sd_swim" value="GRACEFUL SHUTDOWN · SIGTERM / SIGINT" style="swimlane;startSize=24;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1220" width="1480" height="380" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_signal" value="SIGTERM / SIGINT received&#10;ctx.shutdown_requested.set()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="sd_swim">
+          <mxGeometry x="20" y="50" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_seg_check" value="At next per-segment commit:&#10;commit current segment&#10;mark all this worker's running&#10;jobs as PAUSED · reason='shutdown'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="sd_swim">
+          <mxGeometry x="300" y="40" width="320" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_release" value="Release GPU lock&#10;close decoder pipes&#10;close FFmpeg subprocess" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="sd_swim">
+          <mxGeometry x="660" y="40" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_exit" value="Worker process exits 0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="sd_swim">
+          <mxGeometry x="940" y="60" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_deadline" value="Deadline: shutdown_grace_sec (120 s)&#10;If exceeded: exit with in-flight segment uncommitted&#10;(correctness preserved — partial segment never persisted&#10; cost: ≤30 s of re-transcription on resume)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="sd_swim">
+          <mxGeometry x="20" y="160" width="500" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_double" value="Second SIGTERM / SIGINT (Ctrl-C twice)&#10;immediate exit · same correctness guarantee" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="sd_swim">
+          <mxGeometry x="560" y="160" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sd_restart" value="On next start:&#10;reaper finds NO stale claimed/running rows (clean shutdown converted them).&#10;Workers re-claim the PAUSED rows as resumes. User sees &quot;paused for shutdown&quot; in job history.&#10;After unclean exit, reaper picks up after 90 s heartbeat staleness." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="sd_swim">
+          <mxGeometry x="20" y="280" width="1440" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sde1" style="endArrow=classic;html=1;" edge="1" parent="sd_swim" source="sd_signal" target="sd_seg_check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sde2" style="endArrow=classic;html=1;" edge="1" parent="sd_swim" source="sd_seg_check" target="sd_release">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sde3" style="endArrow=classic;html=1;" edge="1" parent="sd_swim" source="sd_release" target="sd_exit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- RESUME PATH -->
+        <!-- =========================================================== -->
+        <mxCell id="rs_swim" value="RESUME PATH · paused → resuming → running" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="880" width="820" height="720" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_claim" value="Claim loop accepts PAUSED&#10;state IN ('pending','paused')&#10;AND (state='pending'&#10;     OR (state='paused' AND pause_requested=false))&#10;AND not_before ≤ now() · cancel_requested=false&#10;LIMIT 1 · FOR UPDATE SKIP LOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontFamily=Courier New;fontSize=10;" vertex="1" parent="rs_swim">
+          <mxGeometry x="20" y="50" width="780" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_setup" value="Set state = RESUMING&#10;resume_count++&#10;resumed_at = now()&#10;claimed_by = $worker_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="rs_swim">
+          <mxGeometry x="20" y="200" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_context" value="Reload STT backend&#10;Rebuild prompt from last K segments&#10;(continuity across resume seam)&#10;Decoder seeked to last_segment_end_sec&#10;ffmpeg -ss {last_segment_end_sec}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="rs_swim">
+          <mxGeometry x="280" y="200" width="280" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_run" value="Set state = RUNNING&#10;continue STT loop with&#10;seek_from = last_segment_end_sec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="rs_swim">
+          <mxGeometry x="580" y="200" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_invariant" value="Invariant on resume:&#10;&#10;max(transcript_segments.end_sec WHERE transcript_id = T)&#10;== processing_jobs.last_segment_end_sec WHERE id = J&#10;&#10;Maintained by per-segment atomic transaction (§7.6).&#10;Holds across crash, graceful shutdown, host migration, model swap." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="rs_swim">
+          <mxGeometry x="20" y="340" width="780" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_force_pause" value="Force-pause edge case:&#10;If worker is stuck in a single segment for &gt; pause_grace_sec (60 s),&#10;UI offers &quot;Force pause&quot; → flips to PAUSED, leaves last_segment_end_sec untouched.&#10;The in-flight segment was never persisted; will be re-transcribed on resume.&#10;No DB rollback needed." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="rs_swim">
+          <mxGeometry x="20" y="520" width="780" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rs_no_sidecar" value="Why no JSON checkpoint sidecar:&#10;An earlier draft used .maktaba/transcripts/{hash}.partial.json. REJECTED — created two sources of truth for resume position (file vs. DB) and a bug in either could re-transcribe hours of audio. The DB IS the checkpoint." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;" vertex="1" parent="rs_swim">
+          <mxGeometry x="20" y="640" width="780" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rse1" style="endArrow=classic;html=1;" edge="1" parent="rs_swim" source="rs_claim" target="rs_setup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rse2" style="endArrow=classic;html=1;" edge="1" parent="rs_swim" source="rs_setup" target="rs_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rse3" style="endArrow=classic;html=1;" edge="1" parent="rs_swim" source="rs_context" target="rs_run">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- INDEXES -->
+        <!-- =========================================================== -->
+        <mxCell id="idx_panel" value="Indexes on processing_jobs · for claim, reaper, resume, pause, status pages" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1620" width="2320" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Footer index list as text box outside swimlane -->
+        <mxCell id="idx_text" value="(state, priority, not_before)  ·  (video_id, stage)  ·  (state, last_heartbeat_at) WHERE state IN ('claimed','running','resuming')  ·  (pause_requested) WHERE pause_requested=true" style="text;html=1;align=center;fontSize=11;fontFamily=Courier New;" vertex="1" parent="idx_panel">
+          <mxGeometry x="20" y="30" width="2280" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
