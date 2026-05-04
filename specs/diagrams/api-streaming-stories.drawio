@@ -1,584 +1,114 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" type="device">
-  <diagram id="d1" name="API/Streaming/Library/Auth (Epics 07-10)">
-    <mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="2200" math="0" shadow="0">
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="api-streaming-stories" name="Maktaba — API/Streaming/Library/Auth (Epics 07-10)">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1550" math="0" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="title" value="Maktaba — API / Streaming / Library / Auth Stories (Epics 07–10)
-Node badges: [REST]=owns endpoint, [gRPC→]=outbound call, [JWT mint]=issues, [JWT verify]=validates. Cross-epic JWT flow: 10-06 publishes JWKS → 8-01 verifies offline." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="30" y="30" width="1500" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="lane_07" value="Epic 07 — API Server" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#222222;opacity=100;" vertex="1" parent="1">
-          <mxGeometry x="30" y="110" width="3530" height="110" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_01" value="07-01
-HTTP Skeleton" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="200" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_02" value="07-02
-Cursor Pagination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="350" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_03" value="07-03
-Library CRUD
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="500" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_04" value="07-04
-Video CRUD
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="650" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_05" value="07-05
-Video Proc Control
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="800" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_06" value="07-06
-Transcript Window
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="950" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_07" value="07-07
-Subs/Chapters Read
-[REST] [JWT mint]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_08" value="07-08
-Search API
-[REST] [gRPC→]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_09" value="07-09
-Saved Searches
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1400" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_10" value="07-10
-Streaming Sessions
-[REST] [gRPC→] [JWT mint]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1550" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_11" value="07-11
-Watch Progress
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1700" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_12" value="07-12
-Job Control
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1850" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_13" value="07-13
-Queue Stats
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2000" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_14" value="07-14
-Collections/Tags
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2150" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_15" value="07-15
-Settings/System
-[REST] [gRPC→]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2300" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_16" value="07-16
-WebSocket Fanout
-[WS]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2450" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_17" value="07-17
-GraphQL Schema
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2600" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_18" value="07-18
-gRPC Clients
-[gRPC→ Pipeline+Streaming]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2750" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_19" value="07-19
-Validation/RateLimit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2900" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_20" value="07-20
-Health/Version
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="3050" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_21" value="07-21
-Recommendations
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="3200" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_07_22" value="07-22
-Devices Register
-[REST] [JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="3350" y="148" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="lane_08" value="Epic 08 — Streaming" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#222222;opacity=100;" vertex="1" parent="1">
-          <mxGeometry x="30" y="236" width="3530" height="110" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_01" value="08-01
-Server Skeleton
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="200" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_02" value="08-02
-Capability Matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="350" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_03" value="08-03
-Direct Play
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="500" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_04" value="08-04
-Direct Stream Remux
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="650" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_05" value="08-05
-HLS Transcode
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="800" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_06" value="08-06
-DASH Manifest
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="950" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_07" value="08-07
-HW Accel Detect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_08" value="08-08
-gRPC Server
-[gRPC server]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_09" value="08-09
-Session Store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1400" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_10" value="08-10
-Concurrency Caps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1550" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_11" value="08-11
-Live Subtitle
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1700" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_12" value="08-12
-Chapter Delivery
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1850" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_13" value="08-13
-Posters/Sprites
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2000" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_14" value="08-14
-Cache GC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2150" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_08_15" value="08-15
-Probe Cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2300" y="274" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="lane_09" value="Epic 09 — Library Mgmt" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#222222;opacity=100;" vertex="1" parent="1">
-          <mxGeometry x="30" y="362" width="3530" height="110" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_01" value="09-01
-Library Config
-[DB]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="200" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_02" value="09-02
-FS Watcher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="350" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_03" value="09-03
-Periodic Sweep" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="500" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_04" value="09-04
-Hash Dedup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="650" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_05" value="09-05
-Ignore Rules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="800" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_06" value="09-06
-Manual Scan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="950" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_07" value="09-07
-Library Stats" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_08" value="09-08
-Language Tag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_09" value="09-09
-Topic Tag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1400" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_10" value="09-10
-Content Type" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1550" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_11" value="09-11
-Speakers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1700" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_12" value="09-12
-Tag CRUD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1850" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_13" value="09-13
-Collections" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2000" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_14" value="09-14
-Smart Collections" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2150" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_15" value="09-15
-Library Deletion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2300" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_16" value="09-16
-Multi-root Overlap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2450" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_17" value="09-17
-Library Audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2600" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_09_18" value="09-18
-Chapter Inference" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2750" y="400" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="lane_10" value="Epic 10 — Auth &amp; Security" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontStyle=1;align=center;verticalAlign=top;spacingTop=8;fontColor=#222222;opacity=100;" vertex="1" parent="1">
-          <mxGeometry x="30" y="488" width="3530" height="110" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_01" value="10-01
-User Store
-[DB]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="200" y="526" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_02" value="10-02
-Web Login
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="350" y="526" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_03" value="10-03
-Native Login
-[REST] [JWT issue]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="500" y="526" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_04" value="10-04
-Token Refresh
-[REST] [JWT issue]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="650" y="526" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_05" value="10-05
-Logout/Revoke
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="800" y="526" width="130" height="56" as="geometry"/>
-        </mxCell>
-        <mxCell id="s_10_06" value="10-06
-RS256 + JWKS
-[REST] [pub keys]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="950" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Maktaba — API/Streaming/Library/Auth (Epics 07-10)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_07" value="10-07
-Streaming Verify
-[JWT verify]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1100" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="subtitle" value="Story backlog · vertical layout per epic" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_08" value="10-08
-Signed URL Mint
-[JWT mint]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1250" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="g_0" value="Epic 07 — API Server" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="1120" height="530" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_09" value="10-09
-Single-User Mode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1400" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_0" value="07.1 chi router scaffold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_10" value="10-10
-CSRF Protect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1550" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_1" value="07.2 gqlgen GraphQL schema" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_11" value="10-11
-Brute-Force Lock" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1700" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_2" value="07.3 sqlc generated queries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_12" value="10-12
-Auth RateLimit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1850" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_3" value="07.4 typed config &amp;amp; env loading" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_13" value="10-13
-Permission Model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2000" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_4" value="07.5 graceful shutdown" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="280" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_14" value="10-14
-Secret Loading" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2150" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_5" value="07.6 OpenAPI / GraphQL playground in dev" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="280" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_15" value="10-15
-Transport TLS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2300" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_6" value="07.7 request id &amp;amp; structured logging" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="340" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_16" value="10-16
-Security Audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2450" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="s_0_7" value="07.8 readiness/liveness probes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="340" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_10_17" value="10-17
-Auth Pair
-[REST]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="2600" y="526" width="130" height="56" as="geometry"/>
+        <mxCell id="g_1" value="Epic 08 — Streaming Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="1120" height="650" as="geometry" />
         </mxCell>
-        <mxCell id="e0" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_02">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_0" value="08.1 HLS origin (transcode + remux pool)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_03">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_1" value="08.2 DASH origin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_04">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_2" value="08.3 direct play with HTTP 206 ranges" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="540" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_02" target="s_07_04">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_3" value="08.4 signed JWT segment auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="540" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_02" target="s_07_06">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_4" value="08.5 LRU streaming cache (50 GiB default)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="600" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_08">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_5" value="08.6 per-host transcode cap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="600" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_10">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_6" value="08.7 sprite + poster generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="660" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_12">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_7" value="08.8 subtitle mux pass-through" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="660" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e8" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_08" target="s_07_09">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_8" value="08.9 OpenSession / CloseSession gRPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="720" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e9" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_10" target="s_07_11">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_1_9" value="08.10 EvictHashCache hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="720" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e10" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_08" target="s_07_21">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="g_2" value="Epic 09 — Libraries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="820" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="e11" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_16">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_2_0" value="09.1 CRUD libraries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="860" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e12" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_17">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_2_1" value="09.2 RBAC scoping per library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="860" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e13" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_18">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_2_2" value="09.3 default language &amp;amp; settings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="920" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e14" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_19">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_2_3" value="09.4 last_scan_at metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="920" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e15" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#6c8ebf;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_01" target="s_07_20">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_2_4" value="09.5 admin trigger rescan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="980" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e16" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_02">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="g_3" value="Epic 10 — Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="1080" width="1120" height="410" as="geometry" />
         </mxCell>
-        <mxCell id="e17" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_03">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_0" value="10.1 Argon2id password hashing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="1120" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e18" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_04">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_1" value="10.2 JWT access (15m) issue + verify" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="1120" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e19" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_05">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_2" value="10.3 rotating refresh in httpOnly Secure cookie" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="1180" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e20" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_11">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_3" value="10.4 logout / revoke" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="1180" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e21" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_01" target="s_08_13">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_4" value="10.5 account lockout on auth failures" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="70" y="1240" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e22" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_02" target="s_08_03">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s_3_5" value="10.6 password reset flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+          <mxGeometry x="620" y="1240" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="e23" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_02" target="s_08_04">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e24" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_02" target="s_08_05">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e25" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_05" target="s_08_06">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e26" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_05" target="s_08_07">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e27" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_08" target="s_08_09">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e28" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_09" target="s_08_10">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e29" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_05" target="s_08_12">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e30" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_01" target="s_09_02">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e31" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_02" target="s_09_03">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e32" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_02" target="s_09_04">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e33" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_02" target="s_09_05">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e34" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_08" target="s_09_09">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e35" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_09" target="s_09_18">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e36" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#d6b656;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_13" target="s_09_14">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e37" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_01" target="s_10_02">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e38" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_01" target="s_10_03">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e39" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_03" target="s_10_04">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e40" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_02" target="s_10_05">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e41" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_03" target="s_10_05">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e42" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_06" target="s_10_07">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e43" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_06" target="s_10_08">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e44" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_02" target="s_10_10">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e45" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_02" target="s_10_11">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e46" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_03" target="s_10_11">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e47" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#b85450;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_03" target="s_10_17">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e48" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_08_08" target="s_07_10">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e49" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_18" target="s_08_08">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e50" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_06" target="s_08_01">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e51" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_08" target="s_08_01">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e52" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_08" target="s_07_10">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e53" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_08" target="s_07_07">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e54" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_03" target="s_07_22">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e55" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_13" target="s_07_10">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e56" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_01" target="s_07_03">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e57" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_06" target="s_07_03">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e58" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_07" target="s_07_03">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e59" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_13" target="s_07_14">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e60" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_14" target="s_07_09">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e61" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_10_14" target="s_07_15">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e62" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_07_19" target="s_10_12">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e63" value="" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#777777;fontSize=9;jettySize=auto;orthogonalLoop=1;" edge="1" parent="1" source="s_09_17" target="s_10_16">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_t" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="30" y="624" width="200" height="26" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_0" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="652" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_0" value="Within-epic dependency (solid, epic color)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="652" width="280" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#777777;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="678" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_1" value="Cross-epic dependency (dashed grey)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="678" width="280" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="704" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_2" value="Epic 07 API Server" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="704" width="280" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="730" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_3" value="Epic 08 Streaming Service" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="730" width="280" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="756" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_4" value="Epic 09 Library Management" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="756" width="280" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_sw_5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="782" width="30" height="22" as="geometry"/>
-        </mxCell>
-        <mxCell id="lg_lb_5" value="Epic 10 Auth &amp; Security" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="66" y="782" width="280" height="22" as="geometry"/>
-        </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>
