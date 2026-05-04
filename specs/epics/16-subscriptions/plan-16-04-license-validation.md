@@ -8,7 +8,7 @@
 | Concern | Decision |
 |---|---|
 | License JSON & signature | Ed25519 over a canonicalized JSON body (RFC 8785 JCS for stability). |
-| License-server public key | Bundled at build time in `api/internal/license/embedded_pubkey.go` from `keys/license-server.pub.pem` (committed). Rotation requires a release. |
+| License-server public key | Ed25519 (Maktaba's central license-issuing service is the trust root, **not** a per-server key). Bundled at build time in `api/internal/license/embedded_pubkey.go` from `keys/license-server.pub.pem` (committed). Rotation requires a release. **Note:** earlier drafts cited Epic 10 Story 10.6 as the Ed25519 source; that is incorrect — Story 10.6 is RS256/JWKS for short-lived API JWTs. The license-server key has nothing to do with the server's identity keys; it lives in Maktaba's central infrastructure (out of scope for any open-source story) and is published as a static `keys/license-server.pub.pem` in this repo. |
 | Storage | `licenses` table (singleton) holding the active license + cached refresh + revocation list. |
 | Validator | `api/internal/license/validator.go` — pure Go; no network. |
 | Refresher | `api/internal/license/refresher.go` — daily fetch from license server; 30-day offline grace. |
@@ -86,13 +86,22 @@ func (v *Validator) Validate(raw []byte) (ValidationResult, error) {
 -- +goose StatementBegin
 CREATE TABLE licenses (
     id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    raw               TEXT NOT NULL,             -- the full JSON, signature included
+    -- The full license JSON is stored encrypted-at-rest with the
+    -- data key from Epic 10 Story 10.14 so a Postgres dump does not
+    -- leak the customer's license file in plaintext. Application
+    -- layer wraps reads/writes via `secrets.SealedBox`.
+    raw_sealed        BYTEA NOT NULL,
     license_id        TEXT NOT NULL,
     tier              TEXT NOT NULL,
     seats             INTEGER NOT NULL,
     expires_at        TIMESTAMPTZ NOT NULL,
     last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_status       TEXT NOT NULL DEFAULT 'active'
+    last_status       TEXT NOT NULL DEFAULT 'active',
+    -- Monotonic version: bumps on every UPSERT so dependent caches
+    -- (plan-16-08 keys flag-resolution by `(user_id,
+    -- license_state_version)`) can detect license changes without
+    -- re-deriving from `last_refreshed_at`.
+    version           BIGINT NOT NULL DEFAULT 1
 );
 
 CREATE TABLE license_revocations (
@@ -220,10 +229,31 @@ If a revocation arrives while the server is offline (EC: "Revocation reaches the
 The story EC: "Clock manipulation (user sets system clock back): we trust the license server's `expires_at` over local time when reachable."
 
 Implementation:
-- The refresher records `last_refreshed_at` server-side based on the response timestamp from the license server (a `Date` HTTP header validated against a low/high bound).
-- The resolver compares `licenses.expires_at` to the **larger** of `local now()` and `last_refreshed_at`, so a clock rewind cannot extend a license.
+- The refresher reads the response's `Date` HTTP header on every
+  successful fetch. We bound it: if the header is more than 24 h in
+  the past or 5 min in the future relative to local clock, we ignore
+  it and fall back to local `now()` (so a buggy reverse-proxy that
+  strips Date doesn't break refresh entirely). A within-bounds Date
+  becomes `last_refreshed_at`.
+- The resolver compares `licenses.expires_at` to the **larger** of
+  `local now()` and `last_refreshed_at`, so a clock rewind cannot
+  extend a license.
 
 ```go
+func (r *Refresher) parseDateHeader(resp *http.Response, local time.Time) time.Time {
+    raw := resp.Header.Get("Date")
+    if raw == "" { return local }
+    t, err := http.ParseTime(raw)
+    if err != nil { return local }
+    skew := t.Sub(local)
+    if skew < -24*time.Hour || skew > 5*time.Minute {
+        // Reject suspicious headers; record metric so operators see drift.
+        r.metrics.SuspiciousLicenseDateHeader.Inc()
+        return local
+    }
+    return t
+}
+
 func (s *Service) effectiveNow() time.Time {
     n := s.clock.Now()
     st, _ := s.statusCached()
@@ -231,6 +261,13 @@ func (s *Service) effectiveNow() time.Time {
     return n
 }
 ```
+
+Caveat: when the license server is unreachable for days, `effectiveNow`
+floors at the *previous* `last_refreshed_at`. That defends against
+clock rewind but does **not** prove the license has not expired in
+real time — it just prevents a clock rewind from re-validating an
+already-expired license. The 30-day offline grace is the operational
+backstop.
 
 ## 8. Test plan
 

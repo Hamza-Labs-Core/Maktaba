@@ -25,6 +25,20 @@
       "500": { "value": "#1E5AD8" },
       "900": { "value": "#0A1F4D" }
     },
+    "neutral": {
+      "0":   { "value": "#FFFFFF" },
+      "50":  { "value": "#FAFAFA" },
+      "100": { "value": "#F4F4F5" },
+      "200": { "value": "#E4E4E7" },
+      "300": { "value": "#D4D4D8" },
+      "400": { "value": "#A1A1AA" },
+      "500": { "value": "#71717A" },
+      "600": { "value": "#52525B" },
+      "700": { "value": "#3F3F46" },
+      "800": { "value": "#27272A" },
+      "900": { "value": "#18181B" },
+      "950": { "value": "#09090B" }
+    },
     "semantic": {
       "bg":      { "value": "{color.neutral.50}" },
       "fg":      { "value": "{color.neutral.900}" },
@@ -95,6 +109,12 @@ module.exports = {
       buildPath: "web/src/styles/",
       files: [{ destination: "tokens.dark.css", format: "css/variables", options: { selector: "[data-theme='dark']" } }],
     },
+    "swift/ios": {
+      // Capacitor-bundled iPhone/iPad target (Epic 12).
+      transformGroup: "ios-swift",
+      buildPath: "apps/mobile/ios/App/Generated/",
+      files: [{ destination: "Tokens.swift", format: "ios-swift/class.swift", className: "DesignTokens" }],
+    },
     "swift/tvos": {
       transformGroup: "ios-swift",
       buildPath: "apps/tvos/Sources/UI/Generated/",
@@ -103,7 +123,12 @@ module.exports = {
     "kotlin/androidtv": {
       transformGroup: "android",
       buildPath: "apps/androidtv/src/main/java/io/maktaba/tv/ui/Generated/",
-      files: [{ destination: "Tokens.kt", format: "kotlin/object", className: "DesignTokens", packageName: "io.maktaba.tv.ui.Generated" }],
+      // The default `kotlin/object` format emits a flat Kotlin object — NOT a
+      // Compose `Colors` instance. Use the project-local custom format
+      // `kotlin/compose-colors` (registered in `design/tokens/formats/`) to
+      // emit `lightColors()` / `darkColors()` factories that Compose can
+      // consume directly.
+      files: [{ destination: "Tokens.kt", format: "kotlin/compose-colors", className: "DesignTokens", packageName: "io.maktaba.tv.ui.Generated" }],
     },
   },
 };

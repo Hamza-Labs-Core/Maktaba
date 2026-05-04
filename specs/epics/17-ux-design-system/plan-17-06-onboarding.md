@@ -10,7 +10,8 @@
 | Web wizard | `web/src/features/onboarding/{Wizard.tsx,steps/{Step1Account.tsx,Step2Library.tsx,Step3STT.tsx,Step4LangTheme.tsx},useWizardState.ts,api.ts}`. |
 | Server-side state | New table `onboarding_state` storing the resume position so an interrupted wizard restarts where it left off (story EC). |
 | Resume detection | The router checks `onboarding_state.completed_at IS NULL` on every page load and redirects to `/onboarding/{step}` if non-completed. |
-| STT auto-detect | `api/internal/transcribe/probe.go` returns the recommended backend (`mlx`, `cuda`, `whisper-cpu`) based on host capabilities. Surfaced via `GET /api/setup/stt-probe`. |
+| STT auto-detect | The actual capability probe runs in **Pipeline (Python)** at `pipeline/src/maktaba_pipeline/transcribe/probe.py` (the `transcribe` package lives in Pipeline per architecture §1.2/3.4, not API). `GET /api/setup/stt-probe` is a thin Go shim in `api/internal/setup/probe.go` that calls Pipeline's RPC and caches the result for the wizard's lifetime. Both halves ship with this story. |
+| Library probe | Reuses Epic 9 Story 9.6's manual-scan endpoint internally. The new `POST /api/libraries/probe` (size, file count, codec mix preview) is owned here because it's wizard-specific; future Library Settings can import it. |
 | Tour carousel | `web/src/features/onboarding/TourCarousel.tsx` shown after step 4; dismissible. |
 | Out of scope | Per-step business logic that already lives elsewhere (account creation in Epic 10, library config in Epic 9, STT in Epic 3). |
 
@@ -23,7 +24,11 @@
 -- +goose StatementBegin
 CREATE TABLE onboarding_state (
     id           SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    current_step INTEGER NOT NULL DEFAULT 1 CHECK (current_step BETWEEN 1 AND 4),
+    -- Generous range so a future story 17.6.x can extend the wizard
+    -- without a CHECK migration; the canonical step set today is 1–4
+    -- but adding an "import settings" or "join household" step in v2
+    -- shouldn't require a schema change.
+    current_step INTEGER NOT NULL DEFAULT 1 CHECK (current_step BETWEEN 1 AND 16),
     completed_at TIMESTAMPTZ,
     tour_dismissed_at TIMESTAMPTZ,
     started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -33,6 +33,8 @@ The matrix is encoded in `flags/declarations.go` as defaults; per-user overrides
 
 `shared/db/migrations/0060_seat_counter.sql`:
 
+Postgres variant (`shared/db/migrations/0060_seat_counter.sql`):
+
 ```sql
 -- +goose Up
 -- +goose StatementBegin
@@ -44,7 +46,23 @@ $$ LANGUAGE sql STABLE;
 -- +goose StatementEnd
 ```
 
-The sentinel admin doesn't count toward seats (it's the bootstrap row, not a "user").
+SQLite has no `CREATE FUNCTION` and only limited support for stored
+procedures; the SQLite variant
+(`shared/db/migrations/0060_seat_counter.sqlite.sql`) is a no-op
+migration (just records the version) and the seat-count is computed in
+Go via a parameterized query against the same predicate. The
+SQLite-side enforcement is otherwise identical because all calls go
+through `g.db.CurrentSeatCount(ctx)`, which sqlc routes to the
+function on Postgres or to the inline query on SQLite.
+
+```sql
+-- shared/db/queries/seat_counter.sql (sqlc fallback for SQLite)
+-- name: CurrentSeatCount :one
+SELECT count(*) FROM users WHERE id != '00000000-0000-0000-0000-000000000001';
+```
+
+The sentinel admin doesn't count toward seats (it's the bootstrap
+row, not a "user").
 
 ### 2.2 Enforcement
 
@@ -118,10 +136,22 @@ func (e *Engine) Snapshot(ctx context.Context) (Manifest, error) {
 
 ### 4.1 Encryption
 
-Backups are encrypted with AES-256-GCM; the data key is derived from the **license file's key-derivation field**: `kdfKey = HKDF(license.signature || "backup")`. This means:
+Backups are encrypted with AES-256-GCM. The data key is derived from a
+**user-supplied passphrase** (entered at backup-create time and again
+at restore time) via `HKDF(passphrase || license_id || "backup")`.
+This is an integrity-and-confidentiality scheme:
 
-- A backup is decryptable only with the same license file.
-- Loss of the license file = loss of the backup (operator must keep both safe).
+- The license file is *not* the only secret. Earlier drafts derived
+  the key from `license.signature`, but the signature is *public*
+  (anyone with the license file has it), so deriving from the
+  signature alone offered integrity but no confidentiality against an
+  attacker who exfiltrates the customer's license file. Adding the
+  passphrase restores confidentiality.
+- Loss of either the passphrase or the license = loss of the backup
+  (operator must keep both safe).
+- A passphrase-less mode exists for headless setups but is documented
+  as **integrity-only** (the data key is then `HKDF(license.signature
+  || "backup")` and any holder of the license file can decrypt).
 - Documented in `docs/operations/backup.md`.
 
 ### 4.2 Cadence by tier
@@ -154,7 +184,11 @@ func (g *GraceTracker) OnTierChange(ctx context.Context, prev, next Tier) error 
                           VALUES (now(), $1)`, prev.Name)
     }
     if upgrade(prev, next) {
-        return g.db.Exec(`DELETE FROM tier_grace WHERE prev_tier = $1`, prev.Name)
+        // Clear ALL grace rows on upgrade, not just rows with the
+        // immediately-previous tier — a chain of downgrades could have
+        // left rows for several distinct prev_tier values, and an
+        // upgrade should resolve all of them.
+        return g.db.Exec(`DELETE FROM tier_grace`)
     }
     return nil
 }

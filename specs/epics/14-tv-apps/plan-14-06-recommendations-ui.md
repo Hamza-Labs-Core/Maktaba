@@ -76,7 +76,9 @@ enum class ReasonKind(val raw: String) {
     LIBRARY_RECAP("library_recap"),
     SPEAKERS_YOU_FOLLOW("speakers_you_follow");
 
-    companion object { fun fromRaw(s: String) = values().firstOrNull { it.raw == s } }
+    // `Enum.values()` is deprecated in Kotlin 2.0; use `entries` (the
+    // Apollo Kotlin 4 / K2 toolchain emits the deprecation warning).
+    companion object { fun fromRaw(s: String) = entries.firstOrNull { it.raw == s } }
 }
 ```
 

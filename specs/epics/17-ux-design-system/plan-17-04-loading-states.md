@@ -20,29 +20,62 @@ The story AC: "Skeleton: shape-matches the final content; never shows for < 200 
 
 ```ts
 // design/components/src/Feedback/useDelayedSkeleton.ts
+//
+// Earlier draft used `useState`+`useEffect` with `[state.kind]` in the
+// dep array; the effect's `phase` reference closed over a stale value
+// because `phase` was not in deps. The 200 ms minimum-hold branch
+// could then misfire (the closure saw `phase === 'pending'` even
+// though we'd already flipped to `'skeleton'`). Refactor as
+// `useReducer` so transitions are based on the current state, not a
+// closure capture.
+type Phase = 'pending' | 'skeleton' | 'spinner' | 'done' | 'error';
+type S = { phase: Phase; startedAt: number | null };
+type A =
+    | { type: 'load' }
+    | { type: 'show-skeleton' }
+    | { type: 'show-spinner' }
+    | { type: 'success'; now: number }
+    | { type: 'error' };
+
+function reducer(s: S, a: A): S {
+    switch (a.type) {
+        case 'load':           return { phase: 'pending', startedAt: Date.now() };
+        case 'show-skeleton':  return { ...s, phase: 'skeleton' };
+        case 'show-spinner':   return { ...s, phase: 'spinner' };
+        case 'success': {
+            const since = a.now - (s.startedAt ?? a.now);
+            if (s.phase === 'skeleton' && since < 200) {
+                // Caller schedules the deferred 'done' transition; we
+                // stay in skeleton until then.
+                return s;
+            }
+            return { ...s, phase: 'done' };
+        }
+        case 'error':          return { ...s, phase: 'error' };
+    }
+}
+
 export function useDelayedSkeleton<T>(state: AsyncState<T>): DelayedState<T> {
-    const [phase, setPhase] = useState<'pending' | 'skeleton' | 'spinner' | 'done' | 'error'>('pending');
-    const startedAt = useRef<number>();
+    const [s, dispatch] = useReducer(reducer, { phase: 'pending', startedAt: null });
     useEffect(() => {
-        if (state.kind === 'loading' && !startedAt.current) {
-            startedAt.current = Date.now();
-            const t1 = setTimeout(() => setPhase('skeleton'), 100);  // delay before showing skeleton
-            const t2 = setTimeout(() => setPhase('spinner'), 5_000); // upgrade after 5s
-            const t3 = setTimeout(() => setPhase('error'),  60_000); // retry CTA after 60s
-            return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+        if (state.kind === 'loading' && s.startedAt == null) {
+            dispatch({ type: 'load' });
+            const t1 = setTimeout(() => dispatch({ type: 'show-skeleton' }), 100);
+            const t2 = setTimeout(() => dispatch({ type: 'show-spinner' }), 5_000);
+            return () => { clearTimeout(t1); clearTimeout(t2); };
         }
         if (state.kind === 'success') {
-            const since = Date.now() - (startedAt.current ?? 0);
-            if (since < 200 && phase === 'skeleton') {
-                // Keep skeleton until the 200 ms minimum.
-                setTimeout(() => setPhase('done'), 200 - since);
-            } else {
-                setPhase('done');
+            const now = Date.now();
+            const since = now - (s.startedAt ?? now);
+            if (s.phase === 'skeleton' && since < 200) {
+                const t = setTimeout(() => dispatch({ type: 'success', now: Date.now() }), 200 - since);
+                return () => clearTimeout(t);
             }
+            dispatch({ type: 'success', now });
         }
-        if (state.kind === 'error') setPhase('error');
-    }, [state.kind]);
-    return { phase, data: state.data, error: state.error };
+        if (state.kind === 'error') dispatch({ type: 'error' });
+    }, [state.kind, s.phase, s.startedAt]);
+    return { phase: s.phase, data: state.data, error: state.error };
 }
 ```
 
