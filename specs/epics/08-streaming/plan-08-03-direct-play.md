@@ -134,7 +134,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    h.serveFile(w, r, f, stat, row)
+    h.serveFile(w, r, f, stat, row, mimeFromPath(row.Path, row.Container))
 }
 ```
 
@@ -238,11 +238,42 @@ func contentRange(rng Range, total int64) string {
 
 ### 2.4 Function signatures
 
+The `direct.Handler` exposes two public range-serving entry points used
+by sibling packages (remux, hls, posters, sprites). Both ultimately call
+the private `serveFile`:
+
 ```go
-// streaming/internal/handlers/direct/handler.go (continued)
+// ServeFile is the default range-serving entry point. The Content-Type
+// is derived from the file path's extension via mimeFromPath, with a
+// fallback to row.Container (sourced from media_info.container).
+func (h *Handler) ServeFile(w http.ResponseWriter, r *http.Request, path string, row *probe.Row) {
+    h.ServeFileWithContentType(w, r, path, "", row)
+}
+
+// ServeFileWithContentType lets callers pin the Content-Type explicitly
+// (poster JPEG, sprite WebP, HLS segment video/MP2T, remuxed-output
+// MIME-by-target). When contentType is empty we fall through to
+// mimeFromPath. Either way, the value is fixed by code — never sniffed
+// and never read from a DB MIME column.
+func (h *Handler) ServeFileWithContentType(w http.ResponseWriter, r *http.Request,
+    path, contentType string, row *probe.Row) {
+    f, err := os.Open(path)
+    if err != nil {
+        // ... NotFound / InternalServerError as below ...
+        return
+    }
+    defer f.Close()
+    stat, err := f.Stat()
+    if err != nil { /* ... */; return }
+
+    if contentType == "" {
+        contentType = mimeFromPath(path, row.Container)
+    }
+    h.serveFile(w, r, f, stat, row, contentType)
+}
 
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request,
-    f *os.File, stat os.FileInfo, row *probe.Row) {
+    f *os.File, stat os.FileInfo, row *probe.Row, contentType string) {
 
     total := stat.Size()
     etag := strongETag(row.ContentHash)
@@ -260,7 +291,11 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request,
     w.Header().Set("Accept-Ranges", "bytes")
     w.Header().Set("ETag", etag)
     w.Header().Set("Last-Modified", lastMod.Format(http.TimeFormat))
-    w.Header().Set("Content-Type", row.MIME) // from probe row, never sniffed
+    // Canonical schema: there is no `videos.mime` column. Content-Type
+    // is fixed by the caller (via ServeFileWithContentType) or derived
+    // from mimeFromPath. We never sniff the body and never read MIME
+    // from the DB.
+    w.Header().Set("Content-Type", contentType)
     w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 
     // 3. Parse Range, applying If-Range to decide whether to honor it.
@@ -558,7 +593,7 @@ func TestServeFile_Multipart416(t *testing.T) {
 | Range end exceeds file size | Clamped to `total-1`; status is 206. | `TestServeFile_OverlongClampedToFile` |
 | MKV on a Chrome client | 409 with `manifest_url` in detail; clients should always have called the API first per Epic 7 §7.10 AC-5. | `TestServeFile_FallThrough409` |
 | Safari HEAD before GET | HEAD returns full Content-Length, body empty; subsequent ranged GET works. | `TestServeFile_Safari_HeadThenRange0to1` |
-| `Content-Type` from a malicious server-side path | Never inferred from filename — we read the MIME type from `probe.Row.MIME` (filled by Pipeline at probe time from ffprobe), which the player trusts. We add `X-Content-Type-Options: nosniff` so the browser doesn't override. | `TestServeFile_HeadOK` (asserts header) |
+| `Content-Type` from a malicious server-side path | Derived deterministically by `mimeFromPath(row.Path, row.Container)` — a small whitelist keyed off the file extension with a fallback to `media_info.container`. The value is fixed by code, not sniffed from the body or read from a DB-stored MIME column (which doesn't exist). We also send `X-Content-Type-Options: nosniff` so the browser doesn't override. | `TestServeFile_HeadOK` (asserts header) |
 | Multiple `If-None-Match` values | Comma-split in `matchETag`; any match → 304. | `TestIfNoneMatch_Hit304` |
 | Strong vs weak ETag | We always emit strong (no `W/` prefix); `matchETag` only compares strong tags — clients that send `W/"..."` get a clean miss and a fresh body. | `matchETag` test row. |
 | Suffix range of 0 (`bytes=-0`) | RFC 7233 says invalid; we reject as `ErrMalformed`, which becomes 200 full body (lenient parse). Test asserts behavior. | `TestParseRange[bytes=-0]` |
@@ -586,7 +621,7 @@ The `BLAKE3` hash itself is **not** computed here — we read
 
 **Headers**
 - [ ] `Accept-Ranges: bytes` set on every 200/206 response.
-- [ ] `Content-Type` always sourced from `probe.Row.MIME`, never sniffed.
+- [ ] `Content-Type` always sourced from `mimeFromPath(row.Path, row.Container)` (extension-driven helper with `media_info.container` fallback), never sniffed and never from a DB MIME column.
 - [ ] `ETag` and `Last-Modified` always present and consistent.
 - [ ] `X-Content-Type-Options: nosniff` set.
 

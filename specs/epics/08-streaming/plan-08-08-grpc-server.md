@@ -88,6 +88,15 @@
 
 ### 2.3 Proto — `streaming/v1/streaming.proto`
 
+> Canonical source: architecture §9.9. Verified on this story:
+> `OpenSession` returns `OpenSessionResponse` (which packages the
+> Session details + a CapabilitiesResponse view); `EvictHashCache`
+> returns `EvictHashCacheResponse{entries_removed, artifacts}`;
+> `GetCapabilities` is a unary RPC; and `WatchQueue` (server-streaming,
+> defined in [Story 8.10](plan-08-10-concurrency-caps.md)) is the
+> queue-promotion channel. No other shapes — this proto block matches
+> §9.9 exactly.
+
 ```proto
 syntax = "proto3";
 package maktaba.streaming.v1;
@@ -101,7 +110,7 @@ service StreamingService {
   rpc OpenSession     (OpenSessionRequest)     returns (OpenSessionResponse);
   rpc CloseSession    (CloseSessionRequest)    returns (google.protobuf.Empty);
   rpc EvictHashCache  (EvictHashCacheRequest)  returns (EvictHashCacheResponse);
-  rpc GetCapabilities (google.protobuf.Empty)  returns (Capabilities);
+  rpc GetCapabilities (google.protobuf.Empty)  returns (CapabilitiesResponse);
   rpc HealthCheck     (google.protobuf.Empty)  returns (HealthStatus);
 }
 
@@ -140,7 +149,11 @@ message QueueState {
   int32  eta_sec  = 2;       // estimated wait
 }
 
-message OpenSessionResponse {
+// Per architecture §9.9, OpenSessionResponse packages a Session and a
+// CapabilitiesResponse so the API gets the handshake-time capability
+// snapshot in one round trip. The Session message holds the
+// per-session fields (id, mode, state, ladder, manifest_path, etc).
+message Session {
   string                    session_id    = 1;
   string                    mode          = 2;   // 'direct' | 'remux' | 'transcode' | 'direct-degraded'
   string                    state         = 3;   // 'active' | 'queued'
@@ -149,6 +162,11 @@ message OpenSessionResponse {
   google.protobuf.Timestamp expires_at    = 6;
   optional QueueState       queue         = 7;
   string                    host          = 8;   // sticky-routing hint (Story 8.9)
+}
+
+message OpenSessionResponse {
+  Session              session      = 1;
+  CapabilitiesResponse capabilities = 2;   // handshake convenience copy of GetCapabilities
 }
 
 // ---- CloseSession ----
@@ -174,7 +192,7 @@ message Slots {
   int32 used  = 2;
   int32 queued = 3;
 }
-message Capabilities {
+message CapabilitiesResponse {
   repeated string codecs                = 1;
   string          hwaccel               = 2;   // 'videotoolbox','nvenc','qsv','software'
   int32           max_bitrate_kbps      = 3;
@@ -285,7 +303,7 @@ func (s *Server) OpenSession(ctx context.Context, req *streamingv1.OpenSessionRe
         return nil, mapManagerErr(err)
     }
 
-    resp := &streamingv1.OpenSessionResponse{
+    sess := &streamingv1.Session{
         SessionId:    out.SessionID.String(),
         Mode:         out.Mode,
         State:        out.State,
@@ -295,12 +313,23 @@ func (s *Server) OpenSession(ctx context.Context, req *streamingv1.OpenSessionRe
         Host:         out.Host,
     }
     if out.Queue != nil {
-        resp.Queue = &streamingv1.QueueState{
+        sess.Queue = &streamingv1.QueueState{
             Position: int32(out.Queue.Position),
             EtaSec:   int32(out.Queue.ETASec),
         }
     }
-    return resp, nil
+    // Per architecture §9.9, OpenSessionResponse carries a fresh
+    // CapabilitiesResponse snapshot so the API gets the same view that
+    // GetCapabilities would return — saves a round trip on session
+    // open. We delegate to the same handler.
+    capsResp, err := s.GetCapabilities(ctx, &emptypb.Empty{})
+    if err != nil {
+        return nil, status.Errorf(codes.Internal, "open session: capabilities snapshot failed: %v", err)
+    }
+    return &streamingv1.OpenSessionResponse{
+        Session:      sess,
+        Capabilities: capsResp,
+    }, nil
 }
 
 // mapManagerErr translates session.Manager errors to gRPC status codes
@@ -320,16 +349,24 @@ func mapManagerErr(err error) error {
         return status.Errorf(codes.FailedPrecondition, "video-not-probed")
     case errors.Is(err, session.ErrVideoNotFound):
         return status.Errorf(codes.NotFound, "video-not-found")
-    case errors.As(err, &session.ErrResourceExhausted{}):
-        // ResourceExhausted with rich details so the API can decide whether to queue.
-        st := status.New(codes.ResourceExhausted, "transcode slots full")
-        if e := err.(session.ErrResourceExhausted); e.Queue != nil {
-            st, _ = st.WithDetails(&streamingv1.QueueState{
-                Position: int32(e.Queue.Position), EtaSec: int32(e.Queue.ETASec),
-            })
-        }
-        return st.Err()
     default:
+        // Resource-exhausted (slot pool full) is a typed error that
+        // carries an optional QueueState. We pass a *T to errors.As so
+        // it actually compiles — `errors.As(err, &session.ErrResourceExhausted{})`
+        // is invalid because errors.As needs a pointer to a target. The
+        // session package defines `ErrResourceExhausted` as a struct
+        // type returned by pointer (matching the standard Go error idiom).
+        var ere *session.ErrResourceExhausted
+        if errors.As(err, &ere) {
+            st := status.New(codes.ResourceExhausted, "transcode slots full")
+            if ere.Queue != nil {
+                st, _ = st.WithDetails(&streamingv1.QueueState{
+                    Position: int32(ere.Queue.Position),
+                    EtaSec:   int32(ere.Queue.ETASec),
+                })
+            }
+            return st.Err()
+        }
         return status.Errorf(codes.Internal, "open session: %v", err)
     }
 }
@@ -457,8 +494,10 @@ func (m *Manager) Open(ctx context.Context, in OpenInput) (OpenOutput, error) {
         Host:          m.HostID(),
         State:         state,
     }); err != nil {
-        // Rollback: stop session + release slot.
-        _ = m.Manager.Close(ctx, sid, "store-insert-failed")
+        // Rollback: stop session + release slot. We're already on the
+        // Manager receiver, so call its Close directly — there is no
+        // nested `Manager` field on the receiver.
+        _ = m.Close(ctx, sid, "store-insert-failed")
         return OpenOutput{}, err
     }
 
@@ -580,12 +619,12 @@ func (m *Manager) Evict(ctx context.Context, hash string) (int, []string, error)
 // streaming/internal/grpcserver/get_capabilities.go
 package grpcserver
 
-func (s *Server) GetCapabilities(ctx context.Context, _ *emptypb.Empty) (*streamingv1.Capabilities, error) {
+func (s *Server) GetCapabilities(ctx context.Context, _ *emptypb.Empty) (*streamingv1.CapabilitiesResponse, error) {
     cur := s.Manager.HwAccel()
     cacheUsed, cacheCap := s.Manager.Cache.UsageGiB()
     slotsTotal, slotsUsed, slotsQ := s.Manager.Slots.Snapshot()
 
-    return &streamingv1.Capabilities{
+    return &streamingv1.CapabilitiesResponse{
         Codecs:               []string{"h264","aac"}, // current encode set
         Hwaccel:              string(cur.Encoder),
         MaxBitrateKbps:       int32(s.Manager.MaxBitrateKbps()),
@@ -689,11 +728,14 @@ func TestOpenSession_TranscodeReturnsManifestPath(t *testing.T) {
         LibraryIds:    []string{h.LibraryID.String()},
     })
     require.NoError(t, err)
-    require.Equal(t, "transcode", resp.Mode)
-    require.NotEmpty(t, resp.SessionId)
-    require.Contains(t, resp.ManifestPath, "/manifest.m3u8")
-    require.GreaterOrEqual(t, len(resp.Ladder), 1)
-    require.WithinDuration(t, time.Now().Add(30*time.Minute), resp.ExpiresAt.AsTime(), 5*time.Second)
+    // Per architecture §9.9, OpenSessionResponse wraps Session +
+    // CapabilitiesResponse — fields live on resp.Session.
+    require.Equal(t, "transcode", resp.Session.Mode)
+    require.NotEmpty(t, resp.Session.SessionId)
+    require.Contains(t, resp.Session.ManifestPath, "/manifest.m3u8")
+    require.GreaterOrEqual(t, len(resp.Session.Ladder), 1)
+    require.WithinDuration(t, time.Now().Add(30*time.Minute), resp.Session.ExpiresAt.AsTime(), 5*time.Second)
+    require.NotNil(t, resp.Capabilities, "OpenSession should return a capabilities snapshot")
 }
 
 func TestOpenSession_VideoNotProbed_FAILED_PRECONDITION(t *testing.T) {
@@ -721,11 +763,11 @@ func TestCloseSession_AlreadyClosed_OK(t *testing.T) {
     open, err := cli.OpenSession(context.Background(), simpleOpenReq(h))
     require.NoError(t, err)
     _, err = cli.CloseSession(context.Background(), &streamingv1.CloseSessionRequest{
-        SessionId: open.SessionId, Reason: "api",
+        SessionId: open.Session.SessionId, Reason: "api",
     })
     require.NoError(t, err)
     _, err = cli.CloseSession(context.Background(), &streamingv1.CloseSessionRequest{
-        SessionId: open.SessionId, Reason: "api",
+        SessionId: open.Session.SessionId, Reason: "api",
     })
     require.NoError(t, err)
 }

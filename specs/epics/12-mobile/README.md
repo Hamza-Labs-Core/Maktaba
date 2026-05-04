@@ -48,8 +48,8 @@ exists where browser APIs are insufficient.
   contextually, never on first launch except where required by the OS.
 - **Tokens at rest** live in iOS Keychain / Android Keystore; never in
   `localStorage` inside the WebView.
-- **Bundle size:** JS bundle ≤ 500 KB gzipped (250 KB headroom over web
-  for the Capacitor shim).
+- **Bundle size:** JS bundle ≤ 750 KB gzipped (Capacitor shim + web
+  bundle, with headroom over the web target).
 - **Offline:** Story 12.6 owns long-lived downloads; the PWA service
   worker (Story 11.10) still runs and remains the source of metadata
   caching.

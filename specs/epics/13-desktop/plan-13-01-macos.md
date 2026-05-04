@@ -3,6 +3,10 @@
 > Companion to [story-13-01-macos.md](story-13-01-macos.md).
 > Tauri 2 wrapper of the same web bundle as Epics 11–12.
 > Universal binary; macOS 13+; notarized + hardened runtime.
+>
+> **Base scaffolding plan.** The other 7 Epic 13 plans (13-02 through
+> 13-08) assume the Cargo workspace, `src-tauri/capabilities/` directory,
+> and `tauri.conf.json` baseline established here.
 
 ## 0. Scope and placement
 
@@ -226,3 +230,86 @@ CI runs on macOS GitHub Actions with secrets injected.
 
 - Web bundle from Epic 11.
 - Stories 13.4 (tray), 13.5 (mDNS), 13.6 (drag-drop), 13.7 (shortcuts), 13.8 (auto-update) extend this base.
+
+## 12. Single-instance lock
+
+A single-instance lock prevents two app processes from racing on the same
+machine (window-state file, updater, tray icon ownership). Implemented via
+`tauri-plugin-single-instance`; cross-platform (used here for macOS and
+referenced from plans 13-02 / 13-03).
+
+```toml
+# Cargo.toml
+[dependencies]
+tauri-plugin-single-instance = "2"
+```
+
+```rust
+// main.rs
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        // ... other plugins
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+A second-launch invocation is intercepted; the running instance is
+focused. `args` carries the second-launch argv (used by Story 13.2 for
+`.maktaba` deep-link handoff).
+
+## 13. Capabilities (Tauri 2 ACL)
+
+Tauri 2 enforces an Access Control List per command/plugin via JSON files
+under `src-tauri/capabilities/`. Without these files, every `invoke()`,
+plugin call, fs operation, global-shortcut registration, and updater call
+fails at runtime with a permission-denied error.
+
+```
+src-tauri/capabilities/
+  desktop.json          # main window: core:default, core:webview:default, core:event:default
+  fs.json               # plan-13-06: fs:allow-read-file, fs:allow-write-file scoped to library roots
+  tray.json             # plan-13-04: core:tray:default
+  updater.json          # plan-13-08: updater:default
+  shortcut.json         # plan-13-07: global-shortcut:allow-register, allow-unregister
+  notification.json     # notification:default (for download-complete toasts)
+  single-instance.json  # §12 above: single-instance:default
+```
+
+Sample `src-tauri/capabilities/desktop.json` skeleton:
+
+```json
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Capabilities required by the main Maktaba window.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:webview:default",
+    "core:event:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus"
+  ]
+}
+```
+
+`tauri.conf.json` references these by identifier:
+
+```json
+"app": {
+  "security": {
+    "capabilities": ["desktop", "fs", "tray", "updater", "shortcut", "notification", "single-instance"]
+  }
+}
+```
+
+Each downstream plan that adds a new capability lists it in its own
+"ACL" section and refers back here.

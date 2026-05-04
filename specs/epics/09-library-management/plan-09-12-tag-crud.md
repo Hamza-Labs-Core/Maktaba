@@ -10,7 +10,8 @@
 
 | Concern | Decision |
 |---|---|
-| Schema migration | `0040_tags_normalize.sql` — destructive `DROP COLUMN name` and `ADD COLUMN display_name, normalized_name`. Runs the data move (`UPDATE tags SET display_name = name, normalized_name = lower(name)`) inside the same migration; ordering is critical. |
+| ID type | `tags.id BIGSERIAL` (canonical from architecture). The DB auto-assigns; callers never pass an `id` to INSERT. |
+| Schema migration | `0040_tags_normalize.sql` — destructive `DROP COLUMN name` and `ADD COLUMN display_name, normalized_name`. Runs the data move (`UPDATE tags SET display_name = name, normalized_name = lower(name)`) inside the same migration; ordering is critical. Tags also gain canonical `name_fold` (= `normalized_name`) and `created_at` per architecture. |
 | Normalization | Trim whitespace, NFC-normalize, casefold. Implemented in both Go (`api/internal/tags/normalize.go`) and Python (`pipeline/src/maktaba_pipeline/tags/normalize.py`); fixture parity test ensures same output for every input. |
 | Uniqueness | `UNIQUE INDEX tags_normalized_name`. Any insert that would collide is replaced by a SELECT-by-normalized fallback in the upsert helper. |
 | Reuse vs. error semantics | Inserting a normalize-equal of an existing tag returns the existing row's id with `outcome='reused'`. Display name is *not* overwritten (preserves the first-seen casing). |
@@ -26,8 +27,9 @@
         = NFC( casefold( strip( s ) ) )
         ↓
    tags.upsert_tag(library_id?, display_name, normalized)
-      INSERT INTO tags (display_name, normalized_name)
-      VALUES ($1, $2)
+      -- tags.id is BIGSERIAL — DB auto-assigns; we never pass id.
+      INSERT INTO tags (display_name, normalized_name, name_fold, created_at)
+      VALUES ($1, $2, $2, now())
       ON CONFLICT (normalized_name) DO NOTHING
       RETURNING id;
         ↓ if no row returned (conflict)
@@ -92,7 +94,7 @@ type ValidationError struct {
 ```go
 // api/internal/tags/store.go
 type UpsertResult struct {
-    ID          uuid.UUID
+    ID          int64  // tags.id is BIGSERIAL
     DisplayName string
     Outcome     string // "inserted" | "reused"
 }
@@ -106,12 +108,18 @@ type UpsertResult struct {
 -- +goose Up
 -- +goose StatementBegin
 
--- Architecture §8.2 set up tags(id UUID, name TEXT). The story
--- mandates display_name + normalized_name + casefold uniqueness.
+-- Architecture canonicalizes tags as
+--   (id BIGSERIAL PK, name, name_fold, created_at).
+-- This story renames the storage to display_name (= name) and
+-- normalized_name (= name_fold) and enforces casefold uniqueness via
+-- normalized_name. We keep name_fold as a synonymous canonical column
+-- that mirrors normalized_name (kept in sync by triggers/queries).
 
 ALTER TABLE tags
     ADD COLUMN display_name    TEXT,
-    ADD COLUMN normalized_name TEXT;
+    ADD COLUMN normalized_name TEXT,
+    ADD COLUMN name_fold       TEXT,
+    ADD COLUMN created_at      TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- The Postgres lower() does ASCII casefold; for true Unicode casefold
 -- (Turkish dotless i, German ß) we'd need icu or a Python preprocess.
@@ -121,10 +129,12 @@ ALTER TABLE tags
 -- future correctness; the casefold in DB is best-effort.
 UPDATE tags SET
     display_name    = TRIM(name),
-    normalized_name = lower(TRIM(name));
+    normalized_name = lower(TRIM(name)),
+    name_fold       = lower(TRIM(name));
 
-ALTER TABLE tags ALTER COLUMN display_name SET NOT NULL;
+ALTER TABLE tags ALTER COLUMN display_name    SET NOT NULL;
 ALTER TABLE tags ALTER COLUMN normalized_name SET NOT NULL;
+ALTER TABLE tags ALTER COLUMN name_fold       SET NOT NULL;
 
 ALTER TABLE tags
     ADD CONSTRAINT tags_display_name_len_chk
@@ -159,6 +169,8 @@ ALTER TABLE tags DROP CONSTRAINT IF EXISTS tags_display_name_len_chk;
 ALTER TABLE tags ADD COLUMN name TEXT;
 UPDATE tags SET name = display_name;
 ALTER TABLE tags ALTER COLUMN name SET NOT NULL;
+ALTER TABLE tags DROP COLUMN name_fold;
+ALTER TABLE tags DROP COLUMN created_at;
 ALTER TABLE tags DROP COLUMN normalized_name;
 ALTER TABLE tags DROP COLUMN display_name;
 -- +goose StatementEnd
@@ -173,9 +185,10 @@ approximation, plus the same unique index.
 ### 3.3 sqlc queries (`shared/db/queries/tags.sql`)
 
 ```sql
+-- tags.id is BIGSERIAL — INSERTs never pass id; the DB auto-assigns.
 -- name: InsertTagOnConflictNothing :one
-INSERT INTO tags (id, display_name, normalized_name)
-VALUES ($1, $2, $3)
+INSERT INTO tags (display_name, normalized_name, name_fold)
+VALUES ($1, $2, $2)
 ON CONFLICT (normalized_name) DO NOTHING
 RETURNING id;
 
@@ -191,6 +204,7 @@ SELECT id, display_name, normalized_name
 UPDATE tags
    SET display_name    = $2,
        normalized_name = $3,
+       name_fold       = $3,
        updated_at      = now()
  WHERE id = $1;
 
@@ -281,9 +295,9 @@ func UpsertTag(ctx context.Context, q *db.Queries, raw string) (UpsertResult, er
     display, norm, err := NormalizeAndDisplay(raw)
     if err != nil { return UpsertResult{}, err }
 
-    id := uuid.New()
+    // tags.id is BIGSERIAL — DB assigns; we read the assigned id from RETURNING.
     res, err := q.InsertTagOnConflictNothing(ctx, db.InsertTagOnConflictNothingParams{
-        ID: id, DisplayName: display, NormalizedName: norm,
+        DisplayName: display, NormalizedName: norm,
     })
     if err == nil {
         return UpsertResult{ID: res, DisplayName: display, Outcome: "inserted"}, nil
@@ -302,7 +316,7 @@ func UpsertTag(ctx context.Context, q *db.Queries, raw string) (UpsertResult, er
 ### 4.4 Go — `RenameTag` helper
 
 ```go
-func RenameTag(ctx context.Context, q *db.Queries, id uuid.UUID, raw string) error {
+func RenameTag(ctx context.Context, q *db.Queries, id int64, raw string) error {
     display, newNorm, err := NormalizeAndDisplay(raw)
     if err != nil { return err }
 

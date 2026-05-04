@@ -11,10 +11,10 @@
 | Concern | Decision |
 |---|---|
 | HTTP route | `POST /api/libraries/{id}/scan` — Go-side handler in `api/internal/handlers/libraries/scan.go`. The handler validates the library, parses `?rehash`/`?dry_run`, and calls `internal/jobs.Enqueue` with `stage='scan', priority=50, payload={library_id, reason="manual", rehash}`. |
-| Worker | Reuses `pipeline/src/maktaba_pipeline/sweep/sweep_runner.py::run_sweep_job`. No new worker; the runner already accepts the `rehash` payload flag. This story extends the runner with the SUPERSEDED branch. |
+| Worker | Reuses `pipeline/src/maktaba_pipeline/sweep/sweep_runner.py::run_sweep_job`. No new worker; the runner already accepts the `rehash` payload flag. This story extends the runner with the `superseded` branch. |
 | Progress shape | Reuses `processing_jobs.processed_seconds` (= files scanned) and `total_duration_seconds` (= files to scan). The `metrics` JSONB carries the structured counters (`new_videos`, `moved_videos`, `removed_videos`, `superseded_videos`). The §7.10 WS event already serializes from these columns; no new fields. |
 | Estimated total | A `find -type f \\( -name '*.mp4' -o ... \\)` count at the start of the sweep populates `total_duration_seconds`. The walker emits `processed_seconds` updates at 1 Hz (already in Story 9.3 `_push_progress_loop`). |
-| SUPERSEDED branch | Only when `rehash=true` AND the recomputed hash differs from the stored hash. Splits the row: old row keeps `id`, gets `state='SUPERSEDED'`; a new row is inserted with the new hash. Both point to the same `path` until the next sweep — but only the new row's `state` is alive. |
+| `superseded` branch | Only when `rehash=true` AND the recomputed hash differs from the stored hash. Splits the row: old row keeps `id`, gets `state='superseded'`; a new row is inserted with the new hash. Both point to the same `path` until the next sweep — but only the new row's `state` is alive. Lowercase FSM strings; `superseded` is one of the four canonical auxiliary terminal states (`missing, superseded, ready_no_audio, corrupted`). This story owns the FSM-extension migration that adds them to the `videos.state` CHECK constraint. |
 | Cancel | The sweep runner already polls `processing_jobs.cancel_requested` between batches (Story 6.4). Manual-scan cancel is the same mechanism. |
 | Out of scope | The HTTP route's auth check (Epic 7 Story 7.3); the WS event format (Epic 7 Story 7.10); the route's rate-limiting (Epic 10 Story 10.5). |
 
@@ -54,7 +54,7 @@
    │       if new_hash != existing_row.content_hash:              │
    │           BEGIN TX                                           │
    │             UPDATE videos                                    │
-   │                SET state='SUPERSEDED', updated_at=now()      │
+   │                SET state='superseded', updated_at=now()      │
    │              WHERE id = existing_row.id                      │
    │             INSERT new videos row(...) with new_hash         │
    │             enqueue(stage=probe, ...)                        │
@@ -86,8 +86,8 @@
 | `pipeline/src/maktaba_pipeline/sweep/sweep_runner.py` | Add the `rehash` SUPERSEDED branch; add the pre-walk total count; honor `dry_run`. |
 | `pipeline/src/maktaba_pipeline/sweep/sweep_runner.py` | Read `payload.dry_run` — when set, skip every DB write (just count the would-be operations into `progress`); the response WS message gets `dry_run=true`. |
 | `api/internal/router.go` | Wire `POST /api/libraries/{id}/scan` to the new handler. |
-| `shared/db/queries/videos.sql` | Add `MarkVideoSuperseded` (sets `state='SUPERSEDED'`). |
-| `shared/db/migrations/0034_videos_superseded_state.sql` | Adds `'SUPERSEDED'` to the `videos.state` CHECK constraint (if it isn't already). |
+| `shared/db/queries/videos.sql` | Add `MarkVideoSuperseded` (sets `state='superseded'`). |
+| `shared/db/migrations/0034_videos_state_aux.sql` | Owns the **FSM-extension migration** that adds the four canonical auxiliary terminal states (`missing, superseded, ready_no_audio, corrupted`) to the `videos.state` CHECK constraint, alongside the seven primary lowercase states. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.6. |
 
 ### 2.3 Type definitions
@@ -147,24 +147,35 @@ async def _maybe_supersede(db, existing, path, st, *,
 
 ## 3. Database
 
-### 3.1 `shared/db/migrations/0034_videos_superseded_state.sql`
+### 3.1 `shared/db/migrations/0034_videos_state_aux.sql`
+
+This is the **FSM-extension migration** for Epic 9. It rewrites the
+`videos.state` CHECK constraint to the canonical lowercase enum from
+architecture §8.1 plus the four auxiliary terminal states canonical to
+Epic 9: `missing`, `superseded`, `ready_no_audio`, `corrupted`.
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 
--- Pipeline Story 1.5 introduced 'MISSING'; this story introduces
--- 'SUPERSEDED' (alongside 'READY_NO_AUDIO' and 'CORRUPTED' from
--- REVIEW §1.3.a — those are added here to keep the CHECK comprehensive).
+-- Architecture §8.1 canonicalizes seven lowercase primary states:
+--   discovered, probed, audio_extracted, transcribed, subtitle_gen,
+--   indexed, thumbnailed, ready, failed
+-- (`subtitle_gen` is a stage name; the corresponding state is captured
+--  along the existing chain — keep it explicit here.)
+-- Epic 9 adds four auxiliary terminal states (canonical now):
+--   missing, superseded, ready_no_audio, corrupted
 ALTER TABLE videos
     DROP CONSTRAINT IF EXISTS videos_state_chk;
 
 ALTER TABLE videos
     ADD CONSTRAINT videos_state_chk CHECK (
         state IN (
-            'DISCOVERED', 'PROBED', 'AUDIO_EXTRACTED', 'TRANSCRIBED',
-            'INDEXED', 'THUMBNAILED', 'READY', 'READY_NO_AUDIO',
-            'FAILED', 'MISSING', 'SUPERSEDED', 'CORRUPTED'
+            -- primary canonical states (architecture §8.1)
+            'discovered', 'probed', 'audio_extracted', 'transcribed',
+            'subtitle_gen', 'indexed', 'thumbnailed', 'ready', 'failed',
+            -- auxiliary terminal states (Epic 9 canonical)
+            'missing', 'superseded', 'ready_no_audio', 'corrupted'
         )
     );
 
@@ -177,12 +188,12 @@ CREATE INDEX IF NOT EXISTS videos_state_lookup
 -- +goose Down
 -- +goose StatementBegin
 ALTER TABLE videos DROP CONSTRAINT IF EXISTS videos_state_chk;
--- Restore the original CHECK from migration 0001:
+-- Restore the pre-extension CHECK (primary states only):
 ALTER TABLE videos
     ADD CONSTRAINT videos_state_chk CHECK (
         state IN (
-            'DISCOVERED', 'PROBED', 'AUDIO_EXTRACTED',
-            'TRANSCRIBED', 'INDEXED', 'THUMBNAILED', 'READY', 'FAILED'
+            'discovered', 'probed', 'audio_extracted', 'transcribed',
+            'subtitle_gen', 'indexed', 'thumbnailed', 'ready', 'failed'
         )
     );
 DROP INDEX IF EXISTS videos_state_lookup;
@@ -194,17 +205,17 @@ DROP INDEX IF EXISTS videos_state_lookup;
 ```sql
 -- name: MarkVideoSuperseded :exec
 UPDATE videos
-   SET state = 'SUPERSEDED', updated_at = now()
+   SET state = 'superseded', updated_at = now()
  WHERE id = $1;
 
 -- name: SplitVideoForSupersede :one
 WITH old AS (
-    UPDATE videos SET state = 'SUPERSEDED', updated_at = now()
+    UPDATE videos SET state = 'superseded', updated_at = now()
      WHERE id = $1
-    RETURNING library_id, path, size
+    RETURNING library_id, path, size_bytes
 )
-INSERT INTO videos (id, library_id, path, size, content_hash, state)
-SELECT $2, library_id, path, $3, $4, 'DISCOVERED' FROM old
+INSERT INTO videos (id, library_id, path, size_bytes, content_hash, state)
+SELECT $2, library_id, path, $3, $4, 'discovered' FROM old
 RETURNING id;
 ```
 
@@ -348,12 +359,13 @@ async def _process_one(db, library_id, path, st,
     cat = catalog_by_path.get(str(path))
 
     if cat is not None and not payload.rehash \
-            and cat.size == st.st_size \
+            and cat.size_bytes == st.st_size \
             and abs(cat.mtime - st.st_mtime) < 1.0:
         return  # fast path
 
     # rehash mode against an existing row that has a stored hash:
     if payload.rehash and cat is not None and cat.content_hash is not None:
+        # blake3_4mib_async returns hex (TEXT in DB).
         new_hash = await blake3_4mib_async(path, st.st_size)
         if new_hash == cat.content_hash:
             # File unchanged in content; size+mtime were probably "drifted"
@@ -366,22 +378,24 @@ async def _process_one(db, library_id, path, st,
         async with db.transaction():
             new_id = uuid4()
             await db.execute(
-                "UPDATE videos SET state='SUPERSEDED', updated_at=now() "
+                "UPDATE videos SET state='superseded', updated_at=now() "
                 "WHERE id=$1", cat.id,
             )
             await db.execute(
                 "INSERT INTO videos "
-                "  (id, library_id, path, size, content_hash, state) "
-                "VALUES ($1,$2,$3,$4,$5,'DISCOVERED')",
+                "  (id, library_id, path, size_bytes, content_hash, state) "
+                "VALUES ($1,$2,$3,$4,$5,'discovered')",
                 new_id, library_id, str(path), st.st_size, new_hash,
             )
-            await audit.write(
+            # Story 9.17 contract: Writer.Write never blocks, never
+            # propagates — fire-and-forget; no await.
+            audit.Write(
                 category="library", event="video-superseded",
                 library_id=library_id, video_id=new_id,
                 payload={
                     "old_video_id": str(cat.id),
-                    "old_hash": cat.content_hash.hex(),
-                    "new_hash": new_hash.hex(),
+                    "old_hash": cat.content_hash,
+                    "new_hash": new_hash,
                     "path": str(path),
                     "by_user": str(payload.by_user) if payload.by_user else None,
                 },
@@ -442,7 +456,7 @@ When `payload.dry_run = True`:
 | Test | What it pins |
 |---|---|
 | `test_rehash_no_change_takes_fast_path` | Existing row with hash H; on-disk file with hash H → no DB writes; `progress.scanned += 1`; counter `maktaba_supersede_skipped_total`. |
-| `test_rehash_changed_supersedes_old_row` | Existing row with hash H1; on-disk hash H2 → old row has `state='SUPERSEDED'`; new row inserted with hash H2 and `state='DISCOVERED'`; one probe job enqueued for the new row. AC-2. |
+| `test_rehash_changed_supersedes_old_row` | Existing row with hash H1; on-disk hash H2 → old row has `state='superseded'`; new row inserted with hash H2 and `state='discovered'`; one probe job enqueued for the new row. AC-2. |
 | `test_rehash_dry_run_no_writes` | `dry_run=true` → no UPDATE/INSERT; `progress.superseded_videos == 1`. |
 | `test_rehash_audit_row_written` | Audit log contains a `library/video-superseded` row with both hashes. |
 | `test_rehash_against_missing_file_is_noop` | Catalog row whose path is gone → MISSING transition (Story 9.3 path); rehash never runs. |
@@ -498,12 +512,12 @@ keys for this story.
 - [ ] WS broadcast `scan:queued` fires from the handler.
 
 **Migration**
-- [ ] `0034_videos_superseded_state.sql` extends `videos_state_chk` to include `SUPERSEDED`, `READY_NO_AUDIO`, `MISSING`, `CORRUPTED`.
+- [ ] `0034_videos_state_aux.sql` rewrites `videos_state_chk` to the canonical lowercase enum (primary states from architecture §8.1) plus the four canonical Epic-9 auxiliary states `missing`, `superseded`, `ready_no_audio`, `corrupted`.
 - [ ] `videos_state_lookup` index exists.
 
 **Behaviour (story acceptance criteria)**
 - [ ] AC-1: default mode applies the size+mtime fast path; new/changed files enqueue.
-- [ ] AC-2: `?rehash=true` recomputes hashes; mismatched files are split via SUPERSEDED.
+- [ ] AC-2: `?rehash=true` recomputes hashes; mismatched files are split via the `superseded` state.
 - [ ] AC-3: progress reports use `processed_seconds`/`total_duration_seconds`; the WS event shape is unchanged.
 
 **Observability**

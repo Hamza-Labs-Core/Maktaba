@@ -11,7 +11,7 @@
 |---|---|
 | Voiceprint vector | 192-dim x-vector (pyannote `wespeaker-voxceleb-resnet34`) — the existing diarization model already produces this. Stored as `BYTEA` (192 × 4 = 768 bytes). |
 | Threshold | Cosine distance > 0.35 → new speaker; else match. Configurable per library (`speaker_match_threshold`); validated in Story 9.1 schema. |
-| Tables | `speakers (id, library_id, name, voiceprint, created_at, updated_at)`; `segment_speakers (segment_id, speaker_id, confidence, primary key (segment_id, speaker_id))` per architecture §5.2. This plan adds the columns and indexes; the architecture-level schema is the authority. |
+| Tables | `speakers (id BIGSERIAL PK, library_id UUID FK, name, voiceprint BYTEA, updated_at)`; `segment_speakers (segment_id BIGINT FK transcript_segments(id), speaker_id BIGINT FK speakers(id), confidence REAL, PRIMARY KEY (segment_id, speaker_id))` — canonical from architecture (`speakers.id BIGSERIAL`, `transcript_segments.id BIGINT`). Speaker IDs are `int64` end-to-end (Go and Python), not UUID. |
 | Naming convention | `name = NULL` is the storage canonical; the API renders unknowns as `"unknown-{n}"` where `n` is the index of unknowns ordered by `created_at`. |
 | Merge | `POST /api/speakers/merge {keep, drop}` (Epic 7 Story 7.14) → one tx that re-points `segment_speakers.speaker_id` from `drop` to `keep`, then DELETEs the dropped row. ON CONFLICT (segment_id, speaker_id) DO NOTHING handles the case where the segment was already linked to both. |
 | Cross-library | No global merge in v1; speakers scope is per library. The `library_id` column is the boundary. |
@@ -34,7 +34,7 @@
         ├─ INSERT INTO segment_speakers (segment_id, speaker_id, confidence)
         │   VALUES ($1, $2, $3)
         │   ON CONFLICT DO NOTHING
-        └─ NOTIFY 'video.speakers_updated', {video_id}
+        └─ publish(VIDEO_SPEAKERS_UPDATED, {video_id})  # constant per 09-01 §2.5
 
    Merge endpoint:
      POST /api/speakers/merge {keep_id, drop_id}
@@ -47,12 +47,12 @@
           DELETE FROM segment_speakers WHERE speaker_id=drop_id
           DELETE FROM speakers WHERE id=drop_id
         COMMIT
-        NOTIFY 'library.speakers_merged', {keep_id, drop_id, library_id}
+        publish(LIBRARY_SPEAKERS_MERGED, {keep_id, drop_id, library_id})  # 09-01 §2.5
 
    Rename endpoint (Epic 7 Story 7.14):
      PATCH /api/speakers/{id}  body: {name}
         UPDATE speakers SET name=$2, updated_at=now() WHERE id=$1
-        NOTIFY 'speaker.renamed', {speaker_id, name}
+        publish(SPEAKER_RENAMED, {speaker_id, name})  # constant per 09-01 §2.5
 ```
 
 ## 2. Implementation steps
@@ -79,7 +79,7 @@
 | Path | Change |
 |---|---|
 | `pipeline/src/maktaba_pipeline/diarize/commit.py` | Per turn, call `commit_segment_with_speaker(...)`. |
-| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Add `SPEAKER_RENAMED`, `SPEAKERS_MERGED`, `VIDEO_SPEAKERS_UPDATED`. |
+| `pipeline/src/maktaba_pipeline/db/pubsub.py` | The canonical channel-name registry (09-01 §2.5) already declares `SPEAKER_RENAMED`, `LIBRARY_SPEAKERS_MERGED`, `VIDEO_SPEAKERS_UPDATED`. This plan only consumes them. |
 | `api/internal/router.go` | Wire `/api/speakers/merge`, `/api/speakers/{id}` PATCH, `/api/libraries/{id}/speakers` GET. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.11. |
 
@@ -103,12 +103,11 @@ def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
 ```python
 # pipeline/src/maktaba_pipeline/speakers/matcher.py
 from dataclasses import dataclass
-from uuid import UUID
 import numpy as np
 
 @dataclass(slots=True, frozen=True)
 class MatchResult:
-    speaker_id: UUID
+    speaker_id: int            # speakers.id is BIGSERIAL (int64)
     distance: float            # 0.0 if newly created (synthetic)
     is_new: bool
 ```
@@ -121,8 +120,10 @@ class MatchResult:
 -- +goose Up
 -- +goose StatementBegin
 
+-- Canonical from architecture: speakers.id BIGSERIAL,
+-- transcript_segments.id BIGINT. Foreign keys must match by type.
 CREATE TABLE speakers (
-    id              UUID PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     library_id      UUID NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
     name            TEXT,
     voiceprint      BYTEA NOT NULL,
@@ -137,8 +138,8 @@ CREATE INDEX speakers_library_lookup
     ON speakers (library_id, created_at);
 
 CREATE TABLE segment_speakers (
-    segment_id      UUID NOT NULL REFERENCES transcript_segments(id) ON DELETE CASCADE,
-    speaker_id      UUID NOT NULL REFERENCES speakers(id) ON DELETE CASCADE,
+    segment_id      BIGINT NOT NULL REFERENCES transcript_segments(id) ON DELETE CASCADE,
+    speaker_id      BIGINT NOT NULL REFERENCES speakers(id) ON DELETE CASCADE,
     confidence      REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     PRIMARY KEY (segment_id, speaker_id)
 );
@@ -155,7 +156,9 @@ DROP TABLE IF EXISTS speakers;
 -- +goose StatementEnd
 ```
 
-The SQLite variant uses `TEXT` for UUIDs and `BLOB` for voiceprint; the
+SQLite variant: `INTEGER PRIMARY KEY AUTOINCREMENT` for `speakers.id`,
+`INTEGER` for `segment_speakers.{segment,speaker}_id` matching the
+SQLite analogue of `BIGSERIAL`/`BIGINT`; `BLOB` for voiceprint;
 constraints translate directly.
 
 `shared/db/queries/speakers.sql`:
@@ -170,8 +173,9 @@ SELECT id, name, voiceprint, created_at,
  ORDER BY created_at;
 
 -- name: InsertSpeaker :one
-INSERT INTO speakers (id, library_id, voiceprint, name)
-VALUES ($1, $2, $3, $4)
+-- speakers.id is BIGSERIAL — let the DB auto-assign; do NOT pass id.
+INSERT INTO speakers (library_id, voiceprint, name)
+VALUES ($1, $2, $3)
 RETURNING id;
 
 -- name: RenameSpeaker :exec
@@ -201,8 +205,6 @@ DELETE FROM speakers WHERE id = $1;
 
 ```python
 # pipeline/src/maktaba_pipeline/speakers/matcher.py
-from uuid import uuid4
-
 import numpy as np
 
 from .voiceprint import unpack, cosine_distance
@@ -220,16 +222,16 @@ async def match_or_create(db, *, library_id, voiceprint: np.ndarray,
         best = int(np.argmax(dots))
         best_dist = 1.0 - float(dots[best])
         if best_dist <= threshold:
-            return MatchResult(speaker_id=rows[best]["id"],
+            return MatchResult(speaker_id=int(rows[best]["id"]),
                                distance=best_dist, is_new=False)
 
-    new_id = uuid4()
-    await db.execute(
-        "INSERT INTO speakers (id, library_id, voiceprint, name) "
-        "VALUES ($1, $2, $3, NULL)",
-        new_id, library_id, pack(voiceprint),
+    # speakers.id is BIGSERIAL — let the DB assign and return.
+    new_id = await db.fetchval(
+        "INSERT INTO speakers (library_id, voiceprint, name) "
+        "VALUES ($1, $2, NULL) RETURNING id",
+        library_id, pack(voiceprint),
     )
-    return MatchResult(speaker_id=new_id, distance=0.0, is_new=True)
+    return MatchResult(speaker_id=int(new_id), distance=0.0, is_new=True)
 ```
 
 ### 4.2 Per-segment commit
@@ -259,7 +261,7 @@ async def commit_segment_with_speaker(
 ```go
 // api/internal/handlers/speakers/list.go
 type SpeakerView struct {
-    ID           uuid.UUID `json:"id"`
+    ID           int64     `json:"id"`             // speakers.id BIGSERIAL
     Name         string    `json:"name"`           // rendered (unknown-N if null)
     Raw          *string   `json:"raw_name"`       // null if not user-set
     SegmentCount int       `json:"segment_count"`
@@ -276,7 +278,8 @@ func ListHandler(d *handlers.Deps) http.HandlerFunc {
         out := make([]SpeakerView, 0, len(rows))
         for _, s := range rows {
             v := SpeakerView{
-                ID: s.ID, SegmentCount: int(s.SegmentCount),
+                ID: s.ID,                        // int64 (BIGSERIAL)
+                SegmentCount: int(s.SegmentCount),
                 CreatedAt: s.CreatedAt,
             }
             if s.Name.Valid {
@@ -295,9 +298,10 @@ func ListHandler(d *handlers.Deps) http.HandlerFunc {
 
 ```go
 // api/internal/handlers/speakers/merge.go
+// Speaker IDs are BIGSERIAL int64 — JSON-encoded as numbers.
 type MergeRequest struct {
-    Keep uuid.UUID `json:"keep"`
-    Drop uuid.UUID `json:"drop"`
+    Keep int64 `json:"keep"`
+    Drop int64 `json:"drop"`
 }
 
 func MergeHandler(d *handlers.Deps) http.HandlerFunc {

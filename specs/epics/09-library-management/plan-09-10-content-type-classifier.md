@@ -64,6 +64,7 @@
 | `models/content_type/v1.joblib` | The trained model artifact (binary). |
 | `models/content_type/v1.metadata.json` | Class names, feature schema, training-data summary, sklearn version. |
 | `shared/db/migrations/0038_videos_content_type.sql` | Adds `content_type` (if not present), `content_type_source`, the index. |
+| `shared/db/migrations/0038b_media_features.sql` | **Owns** the canonical `media_features` migration (architecture). Schema: `(video_id UUID PK, features JSONB NOT NULL, model TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`. The probe stage populates it; this stage consumes it. |
 
 ### 2.2 Modified files
 
@@ -71,7 +72,7 @@
 |---|---|
 | `pipeline/src/maktaba_pipeline/jobs/dispatcher.py` | Register `categorize` stage handler. |
 | `pipeline/src/maktaba_pipeline/index/commit.py` | After commit, enqueue `categorize` (Story 9.18 also enqueues from here; one combined `enqueue_post_index` helper). |
-| `shared/db/migrations/0010_processing_jobs.sql` | Add `'categorize'` to stage CHECK list (idempotent revision migration). |
+| `shared/db/migrations/0038a_processing_jobs_stage_categorize.sql` | New migration that ALTERs the `processing_jobs.stage` CHECK to include `'categorize'`. Does **not** edit Epic 6's `0010_processing_jobs.sql` (immutable once shipped). Renumber sequentially after the last Epic 6 migration. |
 | `api/internal/handlers/videos/patch.go` | When PATCH sets `content_type`, also stamp `content_type_source = 'user'`. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.10. |
 
@@ -148,6 +149,56 @@ ALTER TABLE videos DROP COLUMN IF EXISTS content_type_source;
 -- +goose StatementEnd
 ```
 
+### 3.1 `media_features` migration (canonical, owned here)
+
+`shared/db/migrations/0038b_media_features.sql`:
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+
+-- Architecture canonicalizes media_features as
+--   (video_id UUID PK, features JSONB NOT NULL, model TEXT NOT NULL,
+--    updated_at TIMESTAMPTZ DEFAULT now())
+-- The probe stage (Epic 1 Story 1.7) populates `features` JSONB; this
+-- stage reads documented keys (silence_pct, music_speech_ratio,
+-- mean_loudness_lufs, diarization_turn_density, segment_density). The
+-- README's older sketch with one-column-per-feature is superseded by
+-- this JSONB shape.
+CREATE TABLE media_features (
+    video_id    UUID        PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+    features    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    model       TEXT        NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT media_features_features_object_chk
+        CHECK (jsonb_typeof(features) = 'object')
+);
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS media_features;
+-- +goose StatementEnd
+```
+
+When this stage reads media_features it does so via JSONB key
+extraction:
+
+```sql
+SELECT v.duration_sec,
+       (mf.features ->> 'silence_pct')::float              AS silence_pct,
+       (mf.features ->> 'music_speech_ratio')::float       AS music_speech_ratio,
+       (mf.features ->> 'diarization_turn_density')::float AS diarization_turn_density,
+       (mf.features ->> 'segment_density')::float          AS segment_density,
+       (mf.features ->> 'mean_loudness_lufs')::float       AS mean_loudness_lufs
+  FROM videos v
+  LEFT JOIN media_features mf ON mf.video_id = v.id
+ WHERE v.id = $1
+```
+
+(The §4.1 feature-assembly Python uses this query shape.)
+
 ## 4. Code scaffolding
 
 ### 4.1 Feature assembly
@@ -167,14 +218,15 @@ FEATURE_NAMES = (
 
 
 async def assemble_features(db, video_id: UUID) -> tuple[np.ndarray, dict] | None:
+    # Canonical media_features shape: (video_id, features JSONB, model, updated_at).
     row = await db.fetchrow(
         """
         SELECT v.duration_sec,
-               mf.silence_pct,
-               mf.music_speech_ratio,
-               mf.diarization_turn_density,
-               mf.segment_density,
-               mf.mean_loudness_lufs
+               (mf.features ->> 'silence_pct')::float              AS silence_pct,
+               (mf.features ->> 'music_speech_ratio')::float       AS music_speech_ratio,
+               (mf.features ->> 'diarization_turn_density')::float AS diarization_turn_density,
+               (mf.features ->> 'segment_density')::float          AS segment_density,
+               (mf.features ->> 'mean_loudness_lufs')::float       AS mean_loudness_lufs
           FROM videos v
           LEFT JOIN media_features mf ON mf.video_id = v.id
          WHERE v.id = $1

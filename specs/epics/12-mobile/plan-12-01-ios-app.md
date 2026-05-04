@@ -4,7 +4,23 @@
 > Capacitor 6 wrapper for the same web bundle as Epic 11.
 > Native plugins live under `apps/mobile/plugins/` with their own READMEs.
 
-## 0. Scope and placement
+## 0. First-launch server URL onboarding
+
+Maktaba is self-hosted, so the app must learn its server URL on first
+launch. Server URL onboarding is **deferred to
+`plan-10-17-auth-pair.md`** (the auth-pair flow). The server URL is
+captured during pair-code claim and stored in:
+
+- iOS: Keychain (kSecClassGenericPassword, account = `server_url`,
+  service = `com.maktaba.app`).
+- Android: EncryptedSharedPreferences (alias = `maktaba_server`).
+
+Until pair-code claim completes, no Capacitor `allowNavigation` host is
+known, so the WebView shows the onboarding screen served from the
+bundled web assets only. Once a server URL is stored, subsequent launches
+read it before constructing `CapacitorConfig`.
+
+## 0a. Scope and placement
 
 | Concern | Decision |
 |---|---|
@@ -52,7 +68,10 @@ const config: CapacitorConfig = {
     backgroundColor: '#0F1115',           // dark; matches splash
     limitsNavigationsToAppBoundDomains: true,
   },
-  server: { allowNavigation: ['*.maktaba.local', 'maktaba.local'] },
+  // {server_url} is the user-configured server host captured during the
+  // pair-code claim flow (see §0 — owned by plan-10-17-auth-pair.md).
+  // At runtime the allowNavigation list is set to ['*.{server_host}', '{server_host}'].
+  server: { allowNavigation: ['*.{server_host}', '{server_host}'] },
   plugins: {
     SplashScreen: { launchAutoHide: false, backgroundColor: '#0F1115' },
     StatusBar: { style: 'DEFAULT', overlaysWebView: false },

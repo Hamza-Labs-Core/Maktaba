@@ -107,9 +107,10 @@ SELECT v.*, ci.position
 `shared/db/queries/tags.sql`:
 
 ```sql
+-- tags.id is BIGSERIAL (architecture §8) → bigint params throughout.
 -- name: UpsertTag :one
-INSERT INTO tags (id, name, name_fold, created_at)
-VALUES ($1, $2, $3, now())
+INSERT INTO tags (name, name_fold, created_at)
+VALUES ($1, $2, now())
 ON CONFLICT (name_fold) DO UPDATE SET name = tags.name
 RETURNING *;
 
@@ -120,7 +121,7 @@ ON CONFLICT (video_id, tag_id) DO NOTHING;
 
 -- name: RemoveVideoTag :exec
 DELETE FROM video_tags
- WHERE video_id = $1 AND tag_id = ANY($2::uuid[]);
+ WHERE video_id = $1 AND tag_id = ANY($2::bigint[]);
 
 -- name: ListTagsForVideo :many
 SELECT t.id, t.name
@@ -183,9 +184,10 @@ type TagDelta struct {
 }
 
 // api/internal/speakers/types.go
+// speakers.id is BIGSERIAL per architecture §8. Same applies to tags.id.
 type MergeRequest struct {
-    Keep uuid.UUID `json:"keep" validate:"required"`
-    Drop uuid.UUID `json:"drop" validate:"required"`
+    Keep int64 `json:"keep" validate:"required"`
+    Drop int64 `json:"drop" validate:"required"`
 }
 
 type MergeResponse struct {

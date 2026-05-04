@@ -1,5 +1,9 @@
 # Epic 13 — Desktop Apps (Tauri)
 
+> `plan-13-01-macos.md` is the base scaffolding plan; the other 7 plans
+> assume its setup (Cargo workspace, capabilities directory, `tauri.conf.json`
+> baseline).
+
 **Goal.** A Tauri 2 wrapper of the same web bundle producing native
 binaries for macOS, Windows, and Linux. Native menus, file associations,
 system tray, file drag-and-drop, auto-update, mDNS server discovery.

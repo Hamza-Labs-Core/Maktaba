@@ -9,7 +9,8 @@
 
 | Concern | Decision |
 |---|---|
-| Roots schema | `library_roots (id UUID PRIMARY KEY, library_id UUID NOT NULL, path TEXT NOT NULL, canonical_path TEXT NOT NULL, added_at TIMESTAMPTZ)`. The `canonical_path` is the realpath at insert time; queries against it use prefix matching. |
+| Roots schema | `library_roots (id UUID PRIMARY KEY, library_id UUID NOT NULL, path TEXT NOT NULL, canonical_path TEXT NOT NULL, added_at TIMESTAMPTZ)`. The `canonical_path` is the realpath at insert time; queries against it use prefix matching. **`library_roots` is the canonical store** (architecture §8.1). |
+| `libraries.roots TEXT[]` deprecation | The legacy `libraries.roots TEXT[]` column is **deprecated** but kept for one release for safety. This story owns the migration that creates `library_roots` and back-fills it from `libraries.roots`; new code reads from `library_roots`. plans 09-02 and 09-03 already read from `library_roots`. |
 | Canonicalization | Go: `filepath.EvalSymlinks` + `filepath.Clean` + trailing-slash strip. Python: `os.path.realpath` + `Path.resolve()` for cross-tool agreement. The fixture parity (`shared/db/test_fixtures/path_canonicalize/`) keeps them aligned. |
 | Overlap rule | Two paths overlap iff `relpath(a, b)` doesn't traverse upward (no leading `..`), or `relpath(b, a)` similarly — i.e., one is a prefix of the other after canonicalization. The store enforces this on insert via a serializable check. |
 | Same-library nesting | AC-3 says even within one library, nested roots are forbidden. The check covers both inter- and intra-library cases. |
@@ -133,6 +134,22 @@ CREATE INDEX library_roots_by_library
 -- canonical_path. We use it for the overlap probe.
 CREATE INDEX library_roots_canonical_prefix
     ON library_roots (canonical_path text_pattern_ops);
+
+-- Backfill from the deprecated libraries.roots TEXT[] column. Each path
+-- becomes a (library_id, path, canonical_path) row. canonical_path
+-- approximates with the raw path here — operators run a one-shot
+-- recanonicalize CLI to refresh the realpath on first deploy.
+INSERT INTO library_roots (id, library_id, path, canonical_path)
+SELECT gen_random_uuid(), id, unnest(roots), unnest(roots)
+  FROM libraries
+ WHERE roots IS NOT NULL
+ON CONFLICT (canonical_path) DO NOTHING;
+
+-- libraries.roots TEXT[] is now deprecated. New code reads from
+-- library_roots. The legacy column is kept transitionally for one
+-- release; a future migration drops it.
+COMMENT ON COLUMN libraries.roots IS
+  'DEPRECATED: read from library_roots (architecture §8.1). Kept for one release.';
 
 -- +goose StatementEnd
 

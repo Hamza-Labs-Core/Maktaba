@@ -7,10 +7,10 @@
 
 | Concern | Decision |
 |---|---|
-| Route | `GET /api/queue/stats`. |
-| Storage | Reads `processing_jobs` + a synthetic `workers` view (claimed-by + last_heartbeat). |
-| Indexes | This story owns three partial indexes (AC-2). Pipeline Story 6.1 may already declare some; we add only the missing ones in a fresh migration. |
-| Out of scope | The workers table itself (workers are encoded as `claimed_by` strings; no separate table). |
+| Routes | `GET /api/queue/stats` (aggregate snapshot) and `GET /api/jobs?state&stage&video&cursor` (per-row listing per architecture §9.5). The list endpoint is mounted by plan-07-12 — its SQL composition lives here, alongside the same partial indexes. |
+| Storage | Reads `processing_jobs` + a synthetic `workers` view (claimed-by + last_heartbeat). The seven canonical stages are `scan, probe, extract, transcribe, subtitle_gen, index, thumbnail` (architecture §3). |
+| Indexes | This story owns three partial indexes (AC-2) plus the cursor-supporting `(updated_at DESC, id DESC)` index for the list endpoint. Pipeline Story 6.1 may already declare some; we add only the missing ones in a fresh migration. |
+| Out of scope | The workers table itself (workers are encoded as `claimed_by` strings; no separate table). The bulk-update SQL (plan-07-12 owns it). |
 
 ## 1. Architecture diagram
 
@@ -87,10 +87,16 @@ CREATE INDEX IF NOT EXISTS pj_oldest_pending_idx
 CREATE INDEX IF NOT EXISTS pj_workers_idx
     ON processing_jobs (state, claimed_by, last_heartbeat_at)
     WHERE state = 'running';
+
+-- Supports the GET /api/jobs?state&stage&video listing endpoint
+-- (architecture §9.5). The cursor primitive uses (updated_at DESC, id DESC).
+CREATE INDEX IF NOT EXISTS pj_list_cursor_idx
+    ON processing_jobs (updated_at DESC, id DESC);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+DROP INDEX IF EXISTS pj_list_cursor_idx;
 DROP INDEX IF EXISTS pj_workers_idx;
 DROP INDEX IF EXISTS pj_oldest_pending_idx;
 DROP INDEX IF EXISTS pj_done24_idx;
@@ -237,7 +243,25 @@ SELECT stage,
 
 -- name: QueueTotalRunning :one
 SELECT count(*)::int FROM processing_jobs WHERE state = 'running';
+
+-- name: ListJobs :many
+-- Drives GET /api/jobs?state&stage&video&cursor. NULL params skip the
+-- predicate. processing_jobs.id is BIGSERIAL → cursor uses
+-- paginate.IDKindBigint.
+SELECT id, video_id, stage, state, priority, attempts, last_error,
+       created_at, updated_at
+  FROM processing_jobs
+ WHERE ($1::text IS NULL OR state    = $1)
+   AND ($2::text IS NULL OR stage    = $2)
+   AND ($3::uuid IS NULL OR video_id = $3)
+   /* paginate.Where fragment inserted at $4..$5 (updated_at, id) */
+ ORDER BY updated_at DESC, id DESC
+ LIMIT $6;
 ```
+
+`stage` is validated against the seven canonical stages
+(`scan, probe, extract, transcribe, subtitle_gen, index, thumbnail`)
+before the query runs; unknown stages return 400.
 
 The Go service issues these in one `BeginTx → run all → Commit` block to
 keep the snapshot consistent. Six queries, but the planner uses tiny

@@ -55,7 +55,7 @@
 | `web/src/features/watch/components/AudioTrackList.tsx` | "Play this track" closes session and reopens (player coordinates). |
 | `web/src/features/watch/components/JobRow.tsx` | Stage badge, state badge, progress, ETA, actions. |
 | `web/src/features/watch/components/ReprocessModal.tsx` | Confirm + dispatch `POST /api/videos/{id}/reprocess` with stage. |
-| `web/src/lib/ws.ts` | Centralized WS client (one socket, fan-in by topic). |
+| `web/src/lib/ws.ts` | Centralized WS client: **one socket per channel** (`/ws/jobs`, `/ws/library/{id}`, `/ws/segments/{video_id}`); topics fanned-in via the `useWsTopic` hook. The server exposes three separate `/ws/*` routes, so the client maintains one socket per route, not one global socket. |
 | `shared/graphql/queries/videoDetail.graphql` | Query + fragments. |
 
 ## 3. Data model
@@ -110,7 +110,7 @@ Active tab is `?tab=` (default `watch`). Tab order: Watch → Transcript → Cha
 
 ### 4.3 Transcript tab
 
-- Source: `GET /api/videos/{id}/transcript?cursor=&limit=200` (Epic 7 Story 7.6). Store as `Map<segmentId, Segment>`.
+- Source: `GET /api/videos/{id}/segments?from=&to=` (Epic 7 Story 7.6, architecture §9 canonical). Store as `Map<segmentId, Segment>`. React Query key: `['video', id, 'segments', { from, to }]`.
 - WS deltas: on `segment.committed` events for this video, prepend to the map and reorder via `start_sec`.
 - Click on segment row → seek the player via `playerApi.seekTo(start_sec)` (the player exposes a stable ref).
 - Follow-playhead toggle: when on, the list scrolls so the current segment is centered (smooth, throttled to 4 Hz).
@@ -124,7 +124,7 @@ The "Reprocess from `transcribe`" affordance opens `<ReprocessModal>`:
 
 ```ts
 await fetch(`/api/videos/${id}/reprocess`, {
-  method: 'POST', body: JSON.stringify({ stage: 'transcribe' }),
+  method: 'POST', body: JSON.stringify({ from_stage: 'transcribe' }),
   headers: { 'Idempotency-Key': uuidv4() },
 });
 ```

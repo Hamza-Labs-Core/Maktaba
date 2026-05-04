@@ -7,7 +7,7 @@
 
 | Concern | Decision |
 |---|---|
-| Routes | `POST /api/stream/sessions/{id}/progress`, `GET /api/users/me/playback/{video_id}` (read-back). |
+| Routes | `POST /api/stream/sessions/{id}/progress` (per-session writer used by the player), `PATCH /api/me/playback-state {video_id, position_sec, completed?}` (session-less writer used by share-target/import flows and the iOS Now-Playing intent), `GET /api/users/me/playback/{video_id}` (read-back). The two writers funnel into the same coarsener and the same `playback_state` upsert path. |
 | Storage | `playback_state(user_id, video_id)` (existing schema; this story adds an index). |
 | Debounce | Per-session 1 Hz coarsening lives in-process; the HTTP returns 200 immediately. |
 | Fan-out | Inserts an `events` row + Postgres `NOTIFY playback.progress` per persisted update; Story 7.16 listens. |
@@ -132,21 +132,31 @@ type snap struct {
 
 type Coarsener struct {
     mu      sync.Mutex
-    pending map[uuid.UUID]snap // keyed by session_id
+    pending map[coarsenKey]snap // keyed by session_id when present, else (user_id, video_id)
     flush   func(context.Context, []snap)
     period  time.Duration       // 1 s
     quit    chan struct{}
 }
 
+// coarsenKey allows the session-less PATCH /api/me/playback-state to
+// coalesce per (user, video) without colliding with other users' Nil
+// session IDs.
+type coarsenKey struct {
+    SessionID uuid.UUID
+    UserID    uuid.UUID
+    VideoID   uuid.UUID
+}
+
 func NewCoarsener(flush func(context.Context, []snap), period time.Duration) *Coarsener {
-    c := &Coarsener{pending: map[uuid.UUID]snap{}, flush: flush, period: period, quit: make(chan struct{})}
+    c := &Coarsener{pending: map[coarsenKey]snap{}, flush: flush, period: period, quit: make(chan struct{})}
     go c.loop()
     return c
 }
 
 func (c *Coarsener) Submit(s snap) {
     c.mu.Lock(); defer c.mu.Unlock()
-    c.pending[s.SessionID] = s   // last-write-wins per session
+    key := coarsenKey{SessionID: s.SessionID, UserID: s.UserID, VideoID: s.VideoID}
+    c.pending[key] = s   // last-write-wins per (session OR user+video)
 }
 
 func (c *Coarsener) loop() {
@@ -168,7 +178,7 @@ func (c *Coarsener) flushOnce() {
     if len(c.pending) == 0 { c.mu.Unlock(); return }
     batch := make([]snap, 0, len(c.pending))
     for _, s := range c.pending { batch = append(batch, s) }
-    c.pending = map[uuid.UUID]snap{}
+    c.pending = map[coarsenKey]snap{}
     c.mu.Unlock()
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancel()
@@ -231,6 +241,47 @@ func (h *handler) progress(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     _ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
 }
+
+// PATCH /api/me/playback-state {video_id, position_sec, completed?}
+// Same write path as the streaming-session progress endpoint, but
+// session-less. The coarsener key is the video_id (not a session_id) so
+// concurrent writes from different surfaces still coalesce per video.
+type MePlaybackInput struct {
+    VideoID     uuid.UUID `json:"video_id"     validate:"required"`
+    PositionSec float64   `json:"position_sec" validate:"required,gte=0"`
+    Completed   *bool     `json:"completed,omitempty"`
+}
+
+func (h *handler) mePlayback(w http.ResponseWriter, r *http.Request) {
+    var in MePlaybackInput
+    if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+        httperror.Write(w, r, httperror.BadRequest("invalid json")); return
+    }
+    if err := validate(in); err != nil { httperror.Write(w, r, err); return }
+    user := userFromCtx(r.Context())
+
+    dur, err := h.db.GetVideoDuration(r.Context(), in.VideoID)
+    if errors.Is(err, sql.ErrNoRows) {
+        httperror.Write(w, r, httperror.NotFound("video")); return
+    }
+    if err != nil { httperror.Write(w, r, httperror.Internal("video lookup")); return }
+
+    pos := in.PositionSec
+    warned := false
+    if dur > 0 && pos > dur { pos = dur; warned = true }
+    completed := dur > 0 && pos/dur > 0.95
+    if in.Completed != nil { completed = *in.Completed }
+
+    // SourceSessionID is uuid.Nil for session-less writes — that's fine,
+    // the events fan-out treats Nil as "no source".
+    h.coarsener.Submit(snap{
+        UserID: user.ID, VideoID: in.VideoID, SessionID: uuid.Nil,
+        Position: pos, Completed: completed, At: h.clock(),
+    })
+    if warned { w.Header().Set("Maktaba-Warning", "position-sec-clamped") }
+    w.WriteHeader(http.StatusOK)
+    _ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
+}
 ```
 
 The flush callback runs the upsert + NOTIFY:
@@ -270,10 +321,14 @@ func (s *service) flush(ctx context.Context, batch []snap) {
 
 ```sql
 -- name: GetSessionMeta :one
-SELECT s.video_id, COALESCE(mi.duration_sec, 0) AS duration_sec
+SELECT s.video_id, COALESCE(v.duration_sec, 0) AS duration_sec
   FROM streaming_sessions s
-  LEFT JOIN media_info mi ON mi.video_id = s.video_id
+  JOIN videos v ON v.id = s.video_id
  WHERE s.id = $1 AND s.user_id = $2;
+
+-- name: GetVideoDuration :one
+SELECT COALESCE(duration_sec, 0) AS duration_sec
+  FROM videos WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: UpsertPlaybackState :exec
 INSERT INTO playback_state

@@ -10,7 +10,7 @@
 | Routes | `GET/POST /api/libraries`, `GET/PATCH/DELETE /api/libraries/{id}`, `POST /api/libraries/{id}/scan`, `GET /api/libraries/{id}/stats`. |
 | Storage | `libraries` table already in `architecture.md §7`; this story does not add new columns. |
 | Settings merge | RFC 7396 JSON Merge Patch — but with our own helper because the Go ecosystem's options either over-merge (replace arrays) or pull in heavyweight deps. |
-| Scan trigger | Calls Pipeline gRPC's `Enqueue` (Story 7.18) which in turn writes to `processing_jobs`; the API does not insert directly so the Pipeline keeps the source-of-truth. |
+| Scan trigger | Direct `INSERT INTO processing_jobs (video_id, stage, state, priority, ...)` from the API handler, then `NOTIFY jobs.new`. Pipeline workers claim rows via `SELECT … FOR UPDATE SKIP LOCKED` per architecture §1.4 — there is **no** `Pipeline.Enqueue` gRPC. |
 | Out of scope | The actual scanner (Epic 1), the stats query body (Epic 9 Story 9.7 owns the SQL composition; we just call it). |
 
 ## 1. Architecture diagram
@@ -41,14 +41,15 @@
    │  Return 200 + full row                             │
    └────────────────────────────────────────────────────┘
 
-   DELETE /api/libraries/{id}?purge=true&confirm=<name>
+   DELETE /api/libraries/{id}?purge=true&confirm=<library_id>
         │
         ▼
    ┌────────────────────────────────────────────────────┐
-   │  Validate confirm == row.name                      │
-   │  Tx:  DELETE FROM libraries WHERE id=$1            │
-   │       (cascade removes videos, jobs, …)            │
-   │  After commit → walk roots, unlink files           │
+   │  Validate confirm == row.id (the library UUID)     │
+   │  Tx:  UPDATE libraries SET deleted_at=now()        │
+   │       WHERE id=$1                                  │
+   │       (soft delete; cascade-soft videos, jobs, …)  │
+   │  If purge: walk roots, unlink files                │
    │       collect failed paths                         │
    │  204 if all unlinked, 207 + body if partial        │
    └────────────────────────────────────────────────────┘
@@ -57,8 +58,11 @@
         │
         ▼
    ┌────────────────────────────────────────────────────┐
-   │  pipelineClient.Enqueue(library_id, stage="scan",  │
-   │                         priority=50)                │
+   │  INSERT INTO processing_jobs                       │
+   │      (id, video_id, stage, state, priority, ...)   │
+   │   VALUES (default, NULL, 'scan', 'pending', 50, …) │
+   │   RETURNING id;                                    │
+   │  pg_notify('jobs.new', job_id::text);              │
    │  202 + {job_id}                                    │
    └────────────────────────────────────────────────────┘
 ```
@@ -145,7 +149,6 @@ import (
 
 type Deps struct {
     DB         DB              // sqlc-generated *Queries
-    Pipeline   PipelineClient  // Story 7.18 wrapper
     FS         FileSystem      // injected so tests stub disk
     Logger     *slog.Logger
 }
@@ -354,24 +357,37 @@ DELETE FROM libraries WHERE id = $1;
 -- name: GetLibraryStats :one
 SELECT
   count(v.id)                                        AS total_videos,
-  COALESCE(sum(mi.duration_sec), 0)                  AS total_duration_sec,
+  COALESCE(sum(v.duration_sec), 0)                   AS total_duration_sec,
   jsonb_object_agg(v.state, count_by_state.n)        AS by_state,
-  jsonb_object_agg(v.detected_language,
+  jsonb_object_agg(t.detected_language,
                    count_by_language.n)              AS by_language
 FROM libraries l
-LEFT JOIN videos v          ON v.library_id = l.id
-LEFT JOIN media_info mi     ON mi.video_id  = v.id
+LEFT JOIN videos v          ON v.library_id = l.id AND v.deleted_at IS NULL
+LEFT JOIN transcripts t     ON t.video_id  = v.id  AND t.superseded_at IS NULL
 LEFT JOIN LATERAL (
     SELECT v2.state AS state, count(*) AS n
-      FROM videos v2 WHERE v2.library_id = l.id GROUP BY v2.state
+      FROM videos v2 WHERE v2.library_id = l.id AND v2.deleted_at IS NULL
+      GROUP BY v2.state
 ) count_by_state ON count_by_state.state = v.state
 LEFT JOIN LATERAL (
-    SELECT v2.detected_language AS detected_language, count(*) AS n
-      FROM videos v2 WHERE v2.library_id = l.id GROUP BY v2.detected_language
-) count_by_language ON count_by_language.detected_language = v.detected_language
-WHERE l.id = $1
+    SELECT t2.detected_language AS detected_language, count(*) AS n
+      FROM transcripts t2
+      JOIN videos v3 ON v3.id = t2.video_id
+     WHERE v3.library_id = l.id
+       AND v3.deleted_at IS NULL
+       AND t2.superseded_at IS NULL
+     GROUP BY t2.detected_language
+) count_by_language ON count_by_language.detected_language = t.detected_language
+WHERE l.id = $1 AND l.deleted_at IS NULL
 GROUP BY l.id;
+
+-- name: EnqueueScanJob :one
+INSERT INTO processing_jobs (video_id, stage, state, priority, payload, created_at, updated_at)
+VALUES (NULL, 'scan', 'pending', $1, jsonb_build_object('library_id', $2::uuid), now(), now())
+RETURNING id;
 ```
+
+Audit-log the scan-trigger as `category='library'` with action `library.scan_enqueued` so the operator dashboard can link a scan to the user that initiated it. The handler emits the row in the same TX as the `INSERT INTO processing_jobs`.
 
 The stats query is the one Epic 9 Story 9.7 owns; this story embeds it
 verbatim so the API can serve `/stats` without waiting for that epic.
@@ -402,10 +418,10 @@ verbatim so the API can serve `/stats` without waiting for that epic.
 | `TestPatchDeepMerge` | PATCH `{settings:{stt:{model:large-v3}}}` over `{stt:{backend:whisper}}` → merged result returned. |
 | `TestDeleteSoft` | `DELETE /api/libraries/{id}` → 204; rows for the library are gone; on-disk files untouched. |
 | `TestDeletePurgeRequiresConfirm` | `DELETE ?purge=true` without `confirm` → 412 `confirmation-required`. |
-| `TestDeletePurgeWithConfirm` | `DELETE ?purge=true&confirm=<name>` → 204; FS-level files unlinked. |
+| `TestDeletePurgeWithConfirm` | `DELETE ?purge=true&confirm=<library_id>` → 204; FS-level files unlinked. (Confirm is the row's UUID, matching the videos-CRUD convention.) |
 | `TestDeletePurgePartial` | Read-only mount → 207 with `failed_paths` listed; DB delete still committed. |
-| `TestScanEnqueues` | POST `/scan` → 202 with `{job_id}`; gRPC fake records exactly one Enqueue call with `priority=50`. |
-| `TestScanIdempotent` | Two concurrent `/scan` POSTs → second returns 200 with the same `job_id`; only one row in `processing_jobs`. |
+| `TestScanEnqueues` | POST `/scan` → 202 with `{job_id}`; exactly one row inserted into `processing_jobs` with `stage='scan'`, `state='pending'`, `priority=50`, and `payload->>'library_id'` matching; one `pg_notify` of channel `jobs.new` observed via a `LISTEN` test fixture. |
+| `TestScanIdempotent` | Two concurrent `/scan` POSTs (same `Idempotency-Key`) → second returns 200 with the same `job_id`; only one row in `processing_jobs`. (The skeleton's idempotency middleware caches the response; no extra coordination needed.) |
 | `TestStatsShape` | Fixture with mixed states → response keys match `total_videos, total_duration_sec, by_state, processed_pct, by_language`. |
 | `TestStatsPerformanceCI` | 50 000-video fixture (CI-nightly only) → query <50 ms. |
 | `TestListPagination` | Seed 30 libraries; list with `?limit=10` → 3 pages, no duplicates, last page `next: null`. |
@@ -414,8 +430,8 @@ verbatim so the API can serve `/stats` without waiting for that epic.
 
 | Test | What it pins |
 |---|---|
-| `TestScanWhenPipelineDown` | gRPC fake returns `UNAVAILABLE` → 503 `streaming-unavailable` (re-using the canonical type). |
-| `TestPurgeWhenLibraryDeletedMidScan` | While a scan job is mid-flight, DELETE → cascade removes the job row; the worker (Pipeline) marks remnants `cancelled` (out-of-scope here, just covered by FK). |
+| `TestScanWhenPostgresDown` | `processing_jobs` insert fails with a transient pg error → 503 `unavailable` with `retry_after_sec`. |
+| `TestPurgeWhenLibraryDeletedMidScan` | While a scan job is mid-flight, DELETE → soft-delete sets `libraries.deleted_at`; the worker tolerates the soft-deleted parent (Pipeline contract). |
 
 ## 8. Edge cases — handling table
 
@@ -424,7 +440,7 @@ verbatim so the API can serve `/stats` without waiting for that epic.
 | Duplicate roots in the same POST | Silently collapsed via `dedup`; debug log emitted. | `TestDedupPreservesOrder` |
 | One library nested inside another | 422 `library-roots-overlap` with the offending pair. | `TestCreateRejectsOverlap` |
 | `?purge=true` without confirm | 412 `confirmation-required`. | `TestDeletePurgeRequiresConfirm` |
-| `confirm=<wrong-name>` | 412 `confirmation-required`. | Same test, variant. |
+| `confirm=<wrong-id>` | 412 `confirmation-required`. | Same test, variant. |
 | `purge=true` against an NFS mount where `unlink` succeeds but the dir cannot be removed | 207 with the directory paths in `failed_paths`. | `TestDeletePurgePartial` |
 | Library deleted while a scan is mid-flight | FK `ON DELETE CASCADE` removes `processing_jobs` rows; the worker tolerates a "library gone" error (Pipeline owns that path). | FK + Pipeline contract |
 | Concurrent `POST /scan` on the same library | The Pipeline-side `Enqueue` is idempotent (Story 6.1); the API just trusts that and returns whatever id comes back. | `TestScanIdempotent` |
@@ -447,9 +463,9 @@ verbatim so the API can serve `/stats` without waiting for that epic.
 - [ ] `updated_at` advances.
 
 **AC-4 — delete with purge**
-- [ ] Default delete leaves files alone.
-- [ ] `purge=true` requires `confirm=<name>`.
-- [ ] DB delete commits before file unlink begins.
+- [ ] Default delete leaves files alone (sets `libraries.deleted_at`; soft delete).
+- [ ] `purge=true` requires `confirm=<library_id>` (matches videos-CRUD).
+- [ ] Soft-delete commits before file unlink begins.
 - [ ] 207 reports `failed_paths` on partial failures.
 
 **AC-5 — trigger scan**

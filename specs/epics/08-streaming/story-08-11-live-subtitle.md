@@ -45,9 +45,11 @@ transcription is complete.
 **AC-5 — Bidi safety in cues.**
 - **Given** mixed-script transcript text,
 - **When** rendered to VTT cues,
-- **Then** each cue's text is bidi-isolated as in Epic 7 Story 7.6 and
-  lines wrap at the source language's natural break points (Arabic
-  punctuation preferred for Arabic source; etc.).
+- **Then** each cue's text is bidi-isolated as in Epic 7 Story 7.6
+  (FSI/PDI wrap so neighbouring runs don't reorder mixed-script content).
+  Line wrapping inside cue text is the player's responsibility — the
+  server emits cue text as-is plus the bidi isolate; we don't run a
+  language-aware wrap pass (UAX #29 is out of scope for v1).
 
 **AC-6 — Burned-in subtitles are session 8.5's responsibility.**
 - **Given** a session opened with `burn_subs=true`,

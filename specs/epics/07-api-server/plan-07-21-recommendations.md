@@ -7,7 +7,7 @@
 
 | Concern | Decision |
 |---|---|
-| Route | `GET /api/recommendations?surface={web-home|tv-home|mobile-home}&limit=N`. |
+| Route | `GET /api/recommendations?surface={web-home|tv-home|mobile-home}&limit=N` (canonical per architecture §9.7.2). |
 | Storage | New `user_recs` table + index. Nightly Pipeline job populates it; this story owns the SQL. |
 | Cache | Per-user in-memory, default 60 s. Single-process — replicas don't share cache. |
 | Surfaces | `tv-home` includes `library` rail; `mobile-home` omits it; `web-home` is the default. |
@@ -105,13 +105,15 @@ import (
     "github.com/google/uuid"
 )
 
+// PosterPath sourced from videos.poster_path (architecture §8). The wire
+// shape uses `poster_path` for parity with the videos list endpoint.
 type Item struct {
     VideoID       uuid.UUID  `json:"video_id"`
     Title         string     `json:"title"`
     PositionSec   *float64   `json:"position_sec,omitempty"`
     DurationSec   float64    `json:"duration_sec"`
     LastWatchedAt *time.Time `json:"last_watched_at,omitempty"`
-    PosterURL     string     `json:"poster_url,omitempty"`
+    PosterPath    string     `json:"poster_path,omitempty"`
     Score         *float64   `json:"score,omitempty"`
 }
 
@@ -251,48 +253,48 @@ func (c *Cache) Invalidate(uid uuid.UUID) {
 `shared/db/queries/recs.sql`:
 
 ```sql
+-- duration / poster columns live on `videos` directly (architecture §8).
 -- name: ContinueRail :many
 SELECT v.id, v.title,
-       ps.position_sec, mi.duration_sec,
+       ps.position_sec, v.duration_sec,
        ps.updated_at,
-       v.poster_url
+       v.poster_path
   FROM playback_state ps
-  JOIN videos     v  ON v.id  = ps.video_id
-  LEFT JOIN media_info mi ON mi.video_id = v.id
+  JOIN videos v ON v.id = ps.video_id
  WHERE ps.user_id = $1
    AND v.library_id = ANY($2::uuid[])
-   AND mi.duration_sec > 0
-   AND ps.position_sec / mi.duration_sec BETWEEN 0.05 AND 0.95
+   AND v.deleted_at IS NULL
+   AND v.duration_sec > 0
+   AND ps.position_sec / v.duration_sec BETWEEN 0.05 AND 0.95
  ORDER BY ps.updated_at DESC
  LIMIT $3;
 
 -- name: ForYouRail :many
-SELECT v.id, v.title, v.poster_url, mi.duration_sec, r.score
+SELECT v.id, v.title, v.poster_path, v.duration_sec, r.score
   FROM user_recs r
   JOIN videos v ON v.id = r.video_id
-  LEFT JOIN media_info mi ON mi.video_id = v.id
  WHERE r.user_id = $1
    AND r.rail_kind = 'for-you'
    AND v.library_id = ANY($2::uuid[])
+   AND v.deleted_at IS NULL
  ORDER BY r.score DESC
  LIMIT $3;
 
 -- name: LibraryRail :many
-SELECT v.id, v.title, v.poster_url, mi.duration_sec, r.score
+SELECT v.id, v.title, v.poster_path, v.duration_sec, r.score
   FROM user_recs r
   JOIN videos v ON v.id = r.video_id
-  LEFT JOIN media_info mi ON mi.video_id = v.id
  WHERE r.user_id = $1
    AND r.rail_kind = 'library'
    AND v.library_id = ANY($2::uuid[])
+   AND v.deleted_at IS NULL
  ORDER BY r.score DESC
  LIMIT $3;
 
 -- name: NextUpForVideo :one
-SELECT v.id, v.title, v.poster_url, mi.duration_sec
+SELECT v.id, v.title, v.poster_path, v.duration_sec
   FROM collection_items ci
   JOIN videos v ON v.id = ci.video_id
-  LEFT JOIN media_info mi ON mi.video_id = v.id
   LEFT JOIN playback_state ps
          ON ps.video_id = v.id AND ps.user_id = $1
  WHERE ci.collection_id IN (
@@ -300,6 +302,7 @@ SELECT v.id, v.title, v.poster_url, mi.duration_sec
        )
    AND ci.position > (SELECT position FROM collection_items WHERE collection_id = ci.collection_id AND video_id = $2)
    AND ps.video_id IS NULL
+   AND v.deleted_at IS NULL
  ORDER BY ci.position ASC
  LIMIT 1;
 ```

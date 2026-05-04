@@ -64,8 +64,6 @@ import (
     "errors"
     "time"
 
-    "github.com/google/uuid"
-
     "maktaba/api/internal/httperror"
 )
 
@@ -73,9 +71,17 @@ const currentVersion = 1
 
 // Cursor is the wire format. Field names are short to keep the base64 string
 // well under 128 bytes (AC-1).
+//
+// ID is a string so the same cursor type works for endpoints whose primary
+// key is a UUID (videos, libraries, collections, ...) and for endpoints whose
+// key is a BIGSERIAL int64 (transcript_segments, transcript_words,
+// processing_jobs, subtitle_files, chapters, audio_tracks, tags, speakers,
+// ...). The caller parses ID as `uuid.Parse(c.ID)` or `strconv.ParseInt(c.ID,
+// 10, 64)` per the endpoint's sort spec; the cursor primitive treats ID as
+// opaque.
 type Cursor struct {
     Updated time.Time `json:"u"`
-    ID      uuid.UUID `json:"i"`
+    ID      string    `json:"i"`
     Version int       `json:"v"`
 }
 
@@ -101,13 +107,17 @@ func Decode(raw string) (Cursor, *httperror.Error) {
     }
     bytes, err := base64.RawURLEncoding.DecodeString(raw)
     if err != nil {
-        return Cursor{}, httperror.BadRequest("invalid cursor encoding").
-            With(httperror.TypeInvalidCursor)
+        return Cursor{}, &httperror.Error{
+            Type: httperror.TypeInvalidCursor, Title: "invalid cursor",
+            Status: 400, Detail: "invalid cursor encoding",
+        }
     }
     var c Cursor
     if err := json.Unmarshal(bytes, &c); err != nil {
-        return Cursor{}, httperror.BadRequest("invalid cursor body").
-            With(httperror.TypeInvalidCursor)
+        return Cursor{}, &httperror.Error{
+            Type: httperror.TypeInvalidCursor, Title: "invalid cursor",
+            Status: 400, Detail: "invalid cursor body",
+        }
     }
     if c.Version > currentVersion {
         return Cursor{}, &httperror.Error{
@@ -115,9 +125,11 @@ func Decode(raw string) (Cursor, *httperror.Error) {
             Status: 400, Detail: "this client cannot decode this cursor",
         }
     }
-    if c.Version < 1 || c.ID == uuid.Nil {
-        return Cursor{}, httperror.BadRequest("malformed cursor").
-            With(httperror.TypeInvalidCursor)
+    if c.Version < 1 || c.ID == "" {
+        return Cursor{}, &httperror.Error{
+            Type: httperror.TypeInvalidCursor, Title: "invalid cursor",
+            Status: 400, Detail: "malformed cursor",
+        }
     }
     return c, nil
 }
@@ -192,15 +204,33 @@ func ParseLimit(q url.Values) (int, *httperror.Error) {
 // api/internal/paginate/sql.go
 package paginate
 
-import "fmt"
+import (
+    "fmt"
+    "strconv"
+
+    "github.com/google/uuid"
+)
+
+// IDKind tells Where how to coerce the cursor's opaque string ID into a SQL
+// argument value. UUID-keyed lists pass UUID; bigint-keyed lists pass Bigint.
+type IDKind int
+
+const (
+    IDKindUUID IDKind = iota
+    IDKindBigint
+)
 
 // Where returns "" or "(<time> <op> $n OR (<time> = $n AND <id> < $n+1))"
 // plus the args slice. `args` is appended to whatever the caller has.
 // op is "<" for DESC, ">" for ASC. Tuple comparisons with (a, b) < ($1, $2)
 // would be cleaner, but Postgres requires parens and SQLite doesn't support
 // row-value comparison consistently; the OR form works on both.
-func Where(spec SortSpec, cur Cursor, nextPlaceholder int) (frag string, args []any) {
-    if cur.ID == (uuid.UUID{}) {
+//
+// idKind selects the conversion of cur.ID: UUID-keyed callers pass
+// IDKindUUID, bigint-keyed callers (segments, words, jobs, ...) pass
+// IDKindBigint.
+func Where(spec SortSpec, cur Cursor, nextPlaceholder int, idKind IDKind) (frag string, args []any) {
+    if cur.ID == "" {
         return "", nil
     }
     op := "<"
@@ -211,7 +241,26 @@ func Where(spec SortSpec, cur Cursor, nextPlaceholder int) (frag string, args []
     p2 := fmt.Sprintf("$%d", nextPlaceholder+1)
     frag = fmt.Sprintf("(%s %s %s OR (%s = %s AND %s %s %s))",
         spec.TimeCol, op, p1, spec.TimeCol, p1, spec.IDCol, op, p2)
-    args = []any{cur.Updated, cur.ID}
+
+    var idArg any
+    switch idKind {
+    case IDKindUUID:
+        u, err := uuid.Parse(cur.ID)
+        if err != nil {
+            // The caller already validated via Decode; if this fails, the cursor
+            // was crafted for a different endpoint. Pass as nil so the query is
+            // empty.
+            return "", nil
+        }
+        idArg = u
+    case IDKindBigint:
+        i, err := strconv.ParseInt(cur.ID, 10, 64)
+        if err != nil {
+            return "", nil
+        }
+        idArg = i
+    }
+    args = []any{cur.Updated, idArg}
     return
 }
 ```
@@ -231,7 +280,7 @@ if perr != nil { httperror.Write(w, r, perr); return }
 cur, perr := paginate.Decode(r.URL.Query().Get("cursor"))
 if perr != nil { httperror.Write(w, r, perr); return }
 
-frag, curArgs := paginate.Where(spec, cur, len(args)+1)
+frag, curArgs := paginate.Where(spec, cur, len(args)+1, paginate.IDKindUUID)
 sql := "SELECT id, updated_at, ... FROM videos WHERE 1=1"
 if frag != "" {
     sql += " AND " + frag

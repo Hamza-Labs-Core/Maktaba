@@ -9,7 +9,7 @@
 | Concern | Decision |
 |---|---|
 | Routes | `GET /ws/jobs`, `GET /ws/library/{id}`, `GET /ws/playback/{video_id}`. |
-| WS library | `nhooyr.io/websocket` (`coder/websocket` fork) — already in arch §1.2. |
+| WS library | `github.com/coder/websocket` (per architecture §1.2 / §2.1; the package was renamed from `nhooyr.io/websocket`). |
 | Channels | Postgres LISTEN with one subscription per channel name per replica; in-process fanout to connected clients. |
 | Replay | A new `events` table stores fired events for `events_retention_hours` (default 24 h). Reconnects with `?since=<at>` replay last 1000 events from the table. |
 | SSE fallback | Same handler; when `Accept: text/event-stream`, no upgrade is attempted and we stream SSE frames over the same code path. |
@@ -113,10 +113,27 @@ import (
     "time"
 )
 
+// Envelope is what the client receives on the wire. Go's encoding/json has
+// no `inline` directive, so we marshal in two steps: first the envelope
+// header (Type, At), then merge in the payload object's keys at the top
+// level. The result on the wire is `{"type":..., "at":..., <payload>}`.
 type Envelope struct {
     Type    string          `json:"type"`     // <channel>.<event>
     At      time.Time       `json:"at"`
-    Payload json.RawMessage `json:",inline"`
+    Payload json.RawMessage `json:"-"`        // merged at marshal time
+}
+
+// MarshalJSON merges Payload's top-level keys into the envelope object.
+// If Payload is empty or not a JSON object, only Type/At are emitted.
+func (e Envelope) MarshalJSON() ([]byte, error) {
+    obj := map[string]any{"type": e.Type, "at": e.At}
+    if len(e.Payload) > 0 {
+        var p map[string]json.RawMessage
+        if err := json.Unmarshal(e.Payload, &p); err == nil {
+            for k, v := range p { obj[k] = v }
+        }
+    }
+    return json.Marshal(obj)
 }
 
 const (
@@ -202,7 +219,7 @@ import (
     "encoding/json"
     "time"
 
-    "nhooyr.io/websocket"
+    "github.com/coder/websocket"
 )
 
 const (
@@ -271,7 +288,7 @@ import (
     "net/http"
 
     "github.com/go-chi/chi/v5"
-    "nhooyr.io/websocket"
+    "github.com/coder/websocket"
 )
 
 func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {

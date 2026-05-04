@@ -3,6 +3,9 @@
 > Companion to [story-13-08-auto-update.md](story-13-08-auto-update.md).
 > Tauri's built-in updater fetches signed delta updates from a server-side manifest.
 > Channels: `stable` (default), `beta` (opt-in).
+>
+> ACL: see `plan-13-01-macos.md` §Capabilities. This story requires
+> `src-tauri/capabilities/updater.json` (granting `updater:default`).
 
 ## 0. Scope and placement
 
@@ -22,7 +25,7 @@
   "updater": {
     "active": true,
     "endpoints": [
-      "https://updates.maktaba.app/v1/{{target}}-{{arch}}/{{channel}}.json"
+      "https://updates.maktaba.app/v1/stable/{{target}}-{{arch}}/{{current_version}}.json"
     ],
     "dialog": false,
     "pubkey": "PUBLIC_ED25519_KEY_BASE64",
@@ -31,7 +34,27 @@
 }
 ```
 
-`{{channel}}` substitution: read from local config; defaults to `stable`.
+Tauri's built-in URL substitutions are `{{target}}`, `{{arch}}`, and
+`{{current_version}}` only. `{{channel}}` is **not** a built-in; the
+config above hard-codes the `stable` path as the default.
+
+For multi-channel support (stable + beta), override the endpoint list at
+boot time after reading the local channel file (see §4):
+
+```rust
+fn build_updater(app: &AppHandle) -> Result<Updater> {
+    let channel = read_channel_file(app)?;  // "stable" or "beta"
+    let endpoint = format!(
+        "https://updates.maktaba.app/v1/{channel}/{{target}}-{{arch}}/{{current_version}}.json",
+        channel = channel,
+    );
+    app.updater_builder().endpoints(vec![endpoint])?.build()
+}
+```
+
+`app.updater_builder()` is the supported way to override updater config
+at runtime. (`tauri::Manager::config_mut` does **not** exist — earlier
+drafts of this plan referred to it; ignore.)
 
 ## 2. Update manifest format
 
@@ -41,16 +64,23 @@
   "notes": "Bug fixes and a faster Library page.",
   "pub_date": "2026-05-04T12:00:00Z",
   "platforms": {
-    "darwin-aarch64": {
+    "darwin-universal": {
       "signature": "<ed25519 base64>",
-      "url": "https://updates.maktaba.app/v1/darwin-aarch64/Maktaba_1.4.2_aarch64.app.tar.gz"
+      "url": "https://updates.maktaba.app/v1/stable/Maktaba_1.4.2_universal.app.tar.gz"
     },
-    "darwin-x86_64":  { "signature": "...", "url": "..." },
     "windows-x86_64": { "signature": "...", "url": "..." },
     "linux-x86_64":   { "signature": "...", "url": "..." }
   }
 }
 ```
+
+**Decision: macOS publishes a single `darwin-universal` entry**, not
+separate `darwin-aarch64` and `darwin-x86_64` entries. Plan 13-01 §7
+already builds `universal-apple-darwin` (one DMG covers both
+architectures), and shipping per-arch updater entries on top of a
+universal build wastes bandwidth and complicates the release pipeline.
+Tauri's updater on macOS resolves `darwin-universal` for both
+`darwin-aarch64` and `darwin-x86_64` at runtime when the bundle is fat.
 
 Build script publishes one manifest per channel.
 
@@ -93,9 +123,20 @@ fn set_channel(app: AppHandle, channel: String) -> tauri::Result<()> {
     fs::write(dir.join("channel"), &channel)?;
     Ok(())
 }
+
+fn read_channel_file(app: &AppHandle) -> tauri::Result<String> {
+    let dir = app.path().app_config_dir()?;
+    Ok(std::fs::read_to_string(dir.join("channel"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "stable".to_string()))
+}
 ```
 
-On boot, the endpoint URL is rewritten with the chosen channel via `tauri::Manager::config_mut` substitution.
+On boot, `build_updater` (§1) reads this file and constructs the
+`endpoints` list with the chosen channel baked in. Channel changes take
+effect on the next launch (or after an explicit `app.updater_builder()`
+rebuild). There is no `config_mut` API; do not attempt to mutate
+`tauri.conf.json` at runtime.
 
 `Allow downgrades` setting: when on, the updater compares versions and proceeds even if the manifest version is lower; default off.
 
@@ -138,6 +179,62 @@ const client = getAppVersion();
 const skew = compareSemver(client, server.data?.version);
 return <p>{t('desktop.about.serverVersion', { server: server.data?.version, client })}{skew !== 0 && <Warning text={t('desktop.about.skew')}/>}</p>;
 ```
+
+## 6.1 Signing & key management
+
+The updater verifies every download with an Ed25519 signature; the app
+ships the public key, the signing pipeline holds the private key.
+
+**Key generation.** Run once per project; output is the keypair for the
+release pipeline:
+
+```bash
+tauri signer generate -w ~/.tauri/maktaba_signing.key
+```
+
+This writes the password-encrypted private key to
+`~/.tauri/maktaba_signing.key` and prints the corresponding public key
+to stdout.
+
+**Public-key storage.** The public key is committed to source under
+`src-tauri/keys/maktaba_signing.pub` and referenced from
+`tauri.conf.json` via `plugins.updater.pubkey`:
+
+```json
+"plugins": {
+  "updater": {
+    "pubkey": "@@SRC_TAURI_KEYS_MAKTABA_SIGNING_PUB@@"
+  }
+}
+```
+
+(In practice Tauri inlines the base64 string; the file under
+`src-tauri/keys/` is the source of truth checked into git.)
+
+**HSM / CI secrets.** The private key is uploaded as a sealed secret to
+the release CI (GitHub Actions) and to the Apple Developer account
+signing pipeline. It is **never** committed, never printed in logs,
+never copied to a developer laptop. CI mounts the secret to a tmpfs at
+build time and unmounts on exit.
+
+**Rotation playbook.** Compromise or scheduled rotation:
+
+1. Generate a new keypair as above (`tauri signer generate`).
+2. Commit the new public key to `src-tauri/keys/` alongside the old one
+   (`maktaba_signing.pub` and `maktaba_signing.next.pub`).
+3. Ship a release whose updater config trusts **both** keys (Tauri
+   supports a public-key list); this release is signed with the **old**
+   private key so existing installs accept it.
+4. Wait for ≥ 90% adoption (tracked via the existing
+   `/api/system/version` telemetry; see §6 above).
+5. Cut over: ship a release signed with the **new** private key,
+   trusting only the new public key.
+6. Revoke the old key (delete from CI secrets, rotate any HSM slot).
+7. Stragglers stuck on pre-cutover versions get a one-time "manual
+   reinstall required" prompt rendered via the existing version-skew UI.
+
+A rotation event is documented in `docs/security/keys.md` (cross-ref:
+plan-13-03 §9 already references this file for Linux GPG keys).
 
 ## 7. Edge cases
 

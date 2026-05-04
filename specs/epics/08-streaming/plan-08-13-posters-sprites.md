@@ -238,8 +238,11 @@ func (h *PosterHandler) Serve(w http.ResponseWriter, r *http.Request) {
     }
 
     w.Header().Set("Cache-Control", "private, max-age=2592000, immutable")
-    h.Direct.ServeFile(w, r, path, &probe.Row{
-        Path: path, MIME: "image/jpeg", ContentHash: row.ContentHash,
+    // Static-asset MIME is fixed by handler — there is no DB MIME column.
+    // ServeFile uses the explicit contentType argument when set; otherwise
+    // it falls back to the file-extension helper.
+    h.Direct.ServeFileWithContentType(w, r, path, "image/jpeg", &probe.Row{
+        Path: path, ContentHash: row.ContentHash,
     })
     h.Metrics.Served.WithLabelValues("poster", "200").Inc()
 }
@@ -271,8 +274,9 @@ func (h *SpriteHandler) Serve(w http.ResponseWriter, r *http.Request) {
             return
         }
         w.Header().Set("Cache-Control", "private, max-age=2592000, immutable")
-        h.Direct.ServeFile(w, r, path, &probe.Row{
-            Path: path, MIME: "image/webp", ContentHash: row.ContentHash,
+        // Sprite MIME is a fixed handler constant — no DB MIME column.
+        h.Direct.ServeFileWithContentType(w, r, path, "image/webp", &probe.Row{
+            Path: path, ContentHash: row.ContentHash,
         })
     case "vtt":
         path := spriteVTTPath(h.CacheRoot, row.ContentHash)

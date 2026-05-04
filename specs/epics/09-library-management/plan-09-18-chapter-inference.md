@@ -50,9 +50,9 @@
       │                 OR f"Chapter {ch.seq + 1}"
       ├─ BEGIN TX
       │     DELETE FROM chapters WHERE video_id=$1 AND source='inferred'
-      │     INSERT INTO chapters (id, video_id, source, seq,
+      │     INSERT INTO chapters (video_id, source, seq,
       │                           start_sec, end_sec, title)
-      │     VALUES (...) -- one per chapter
+      │     VALUES (...) -- one per chapter; id BIGSERIAL auto-assigned
       │ COMMIT
       └─ NOTIFY 'video.chapters_updated', {video_id, n: len(chapters_out)}
 ```
@@ -78,7 +78,7 @@
 |---|---|
 | `pipeline/src/maktaba_pipeline/jobs/dispatcher.py` | Register `chapter_infer` stage. |
 | `pipeline/src/maktaba_pipeline/index/commit.py` | After commit, enqueue `chapter_infer` (alongside `topic_assign`, `categorize`). |
-| `shared/db/migrations/0010_processing_jobs.sql` | Add `'chapter_infer'` to stage CHECK list (idempotent revision). |
+| `shared/db/migrations/0046a_processing_jobs_stage_chapter.sql` | New migration that ALTERs the `processing_jobs.stage` CHECK to include `'chapter_infer'`. Does **not** edit Epic 6's `0010_processing_jobs.sql` (immutable once shipped). Renumber sequentially after the last Epic 6 migration. |
 | `api/internal/router.go` | Wire `POST /api/videos/{id}/chapters/reinfer`. |
 | `specs/epics/09-library-management/README.md` | Tick story 9.18. |
 
@@ -209,13 +209,18 @@ async def run_chapter_infer_job(db, job, *, labeler=None,
     threshold = settings.unknown.get("chapter_drop_threshold", DROP_THRESHOLD_DEFAULT)
     min_sec = settings.unknown.get("min_chapter_sec", MIN_CHAPTER_SEC_DEFAULT)
 
+    # Per architecture §8.4 segment embeddings live in ChromaDB only —
+    # there is no transcript_segments.embedding column. Pull segment
+    # rows from Postgres and look up their embeddings in ChromaDB.
     segments = await db.fetch(
-        "SELECT id, start_sec, end_sec, embedding "
+        "SELECT id, start_sec, end_sec "
         "  FROM transcript_segments "
-        " WHERE video_id=$1 AND embedding IS NOT NULL "
+        " WHERE video_id=$1 "
         " ORDER BY start_sec",
         video_id,
     )
+    library_id = await db.fetchval(
+        "SELECT library_id FROM videos WHERE id=$1", video_id)
     duration = await db.fetchval(
         "SELECT duration_sec FROM videos WHERE id=$1", video_id)
     if duration is None:
@@ -226,8 +231,21 @@ async def run_chapter_infer_job(db, job, *, labeler=None,
         chapters_out = [InferredChapter(seq=0, start_sec=0.0,
                                         end_sec=duration, title="Chapter 1")]
     else:
-        embs = np.stack([unpack_float32(r["embedding"], 768)
-                         for r in segments])
+        # Fetch embeddings from ChromaDB in segment-id order.
+        from ..chroma import chromadb_client
+        seg_ids = [str(r["id"]) for r in segments]
+        coll = chromadb_client.collection(library_id)
+        chroma = coll.get(ids=seg_ids, include=["embeddings"])
+        # ChromaDB returns ids in the same order as requested; map to a dict
+        # to be safe and align to the segment order from Postgres.
+        emb_by_id = dict(zip(chroma["ids"], chroma["embeddings"]))
+        ordered = [emb_by_id.get(str(r["id"])) for r in segments]
+        if any(e is None for e in ordered):
+            chapter_infer_skipped_total.labels(reason="missing_embeddings").inc()
+            chapters_out = [InferredChapter(seq=0, start_sec=0.0,
+                                            end_sec=duration, title="Chapter 1")]
+            return  # falls through to write the single chapter below
+        embs = np.asarray(ordered, dtype=np.float32)
         # Each embedding is already unit-norm in our index; defensive renorm.
         norms = np.linalg.norm(embs, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
@@ -262,16 +280,18 @@ async def run_chapter_infer_job(db, job, *, labeler=None,
             "DELETE FROM chapters WHERE video_id=$1 AND source='inferred'",
             video_id,
         )
+        # chapters.id is BIGSERIAL — DB auto-assigns; do NOT pass id.
         for ch in chapters_out:
             await db.execute(
                 "INSERT INTO chapters "
-                "  (id, video_id, source, seq, start_sec, end_sec, title) "
-                "VALUES ($1, $2, 'inferred', $3, $4, $5, $6)",
-                uuid4(), video_id, ch.seq,
+                "  (video_id, source, seq, start_sec, end_sec, title) "
+                "VALUES ($1, 'inferred', $2, $3, $4, $5)",
+                video_id, ch.seq,
                 ch.start_sec, ch.end_sec, ch.title,
             )
     if bus is not None:
-        bus.publish("video.chapters_updated",
+        # Channel constant from pipeline/db/pubsub.py (see 09-01 §2.5).
+        bus.publish(VIDEO_CHAPTERS_UPDATED,
                     {"video_id": str(video_id), "n": len(chapters_out)})
 ```
 
@@ -407,7 +427,7 @@ A future Story-9.1 schema bump promotes them to first-class.
 
 | Dep | Source | Why |
 |---|---|---|
-| `transcript_segments.embedding` | Epic 5 Story 5.5 | Source of cosine drops. |
+| ChromaDB per-library collection | architecture §8.4 | Source of cosine drops; segment embeddings live in Chroma, not Postgres. |
 | `videos.duration_sec` | Epic 1 Story 1.7 | End of last chapter. |
 | Story 9.9 labeler | required | Title generation fallback. |
 | `numpy` | already pinned | Numerics. |

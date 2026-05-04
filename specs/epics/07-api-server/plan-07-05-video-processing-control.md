@@ -8,8 +8,8 @@
 | Concern | Decision |
 |---|---|
 | Routes | `POST /api/videos/{id}/process`, `POST /api/videos/{id}/reprocess`. |
-| Source of truth | The `processing_jobs` table (Epic 6 Story 6.1). The API never invents jobs; it calls `Pipeline.Enqueue` over gRPC (Story 7.18). |
-| Stage FSM | Owned by Epic 1 Story 1.6. The reprocess predecessor table is mirrored verbatim here so the API can validate without a round-trip. |
+| Source of truth | The `processing_jobs` table (Epic 6 Story 6.1). The API writes rows directly: `INSERT INTO processing_jobs (...)` and `UPDATE` for repriorise/restart. There is **no** `Pipeline.Enqueue`/`EnqueueChain` gRPC — workers claim rows via `SELECT ... FOR UPDATE SKIP LOCKED` per architecture §1.4 and §9.9. |
+| Stage FSM | Owned by Epic 1 Story 1.6 (canonical 7-stage list: `scan, probe, extract, transcribe, subtitle_gen, index, thumbnail`). The reprocess predecessor table is mirrored verbatim here so the API can validate without a round-trip. |
 | Out of scope | The actual transitions in the worker (Pipeline). Mark-superseded SQL belongs to Epic 9 Story 9.6 — we just call the helper. |
 
 ## 1. Architecture diagram
@@ -47,7 +47,12 @@
    │       → 200 {job_id, state}                                │
    │                                                            │
    │ 3d. Else (no row, or only terminal {done, cancelled}):     │
-   │       Pipeline.Enqueue(video_id, stage, priority=$new)     │
+   │       INSERT INTO processing_jobs                          │
+   │           (video_id, stage, state, priority, created_at,   │
+   │            updated_at)                                     │
+   │       VALUES ($1, $2, 'pending', $3, now(), now())          │
+   │       RETURNING id;                                        │
+   │       pg_notify('jobs.new', new_id::text);                 │
    │       → 200 {job_id, state: "pending"}                     │
    └────────────────────────────────────────────────────────────┘
 
@@ -65,8 +70,12 @@
    │       WHERE video_id = $1 AND superseded_at IS NULL;       │
    │       (only when from_stage in {transcribe, subtitle_gen,  │
    │        index})                                             │
-   │    c. Pipeline.EnqueueChain(video_id, from_stage,          │
-   │                              priority=200)                 │
+   │    c. INSERT INTO processing_jobs (video_id, stage, state, │
+   │            priority, created_at, updated_at) VALUES        │
+   │       (one row per stage from `from_stage` through         │
+   │        `thumbnail`, all priority=200, all 'pending')        │
+   │       RETURNING id;                                        │
+   │    d. pg_notify('jobs.new', '') once per inserted row       │
    │ 3. NOTIFY 'videos.state_changed' { video_id, new_state }   │
    │ 4. 202 + { job_ids: [...], from_stage, predecessor_state } │
    └────────────────────────────────────────────────────────────┘
@@ -117,15 +126,18 @@ const (
 )
 
 // predecessorState maps the stage you want to re-run *from* to the video
-// state to roll back to. From the Story 1.6 FSM:
-//   discovered → probed → audio_extracted → transcribed → indexed → ready
+// state to roll back to. The canonical FSM (architecture §3) is:
+//   discovered → probed → audio_extracted → transcribed → subtitle_gen →
+//                indexed → thumbnailed → ready
+// (with auxiliary terminal states `ready_no_audio`, `superseded`, `missing`,
+// `corrupted`, `failed`).
 var predecessorState = map[Stage]string{
     StageProbe:       "discovered",
     StageExtract:     "probed",
     StageTranscribe:  "audio_extracted",
     StageSubtitleGen: "transcribed",
-    StageIndex:       "transcribed",
-    StageThumbnail:   "probed",
+    StageIndex:       "subtitle_gen",
+    StageThumbnail:   "indexed",
 }
 
 // liveStates: the API's view of "in-flight."
@@ -224,12 +236,13 @@ func (s *service) processNow(ctx context.Context, id uuid.UUID, stage Stage, pri
     }
     switch {
     case errors.Is(err, sql.ErrNoRows) || isTerminal(row.State):
-        // No live or paused job → enqueue fresh.
-        res, gerr := s.pipeline.Enqueue(ctx, EnqueueRequest{
+        // No live or paused job → insert fresh row directly.
+        ins, ierr := s.db.InsertProcessingJob(ctx, InsertProcessingJobParams{
             VideoID: id, Stage: string(stage), Priority: prio,
         })
-        if gerr != nil { return nil, mapGRPC(gerr) }
-        return &ProcessResponse{JobID: res.ID, Stage: stage, State: "pending"}, nil
+        if ierr != nil { return nil, httperror.Internal("insert failed") }
+        s.notify.Publish(ctx, "jobs.new", map[string]any{"job_id": ins.ID})
+        return &ProcessResponse{JobID: ins.ID, Stage: stage, State: "pending"}, nil
 
     case row.State == "running":
         return &ProcessResponse{JobID: row.ID, Stage: stage, State: row.State,
@@ -238,6 +251,7 @@ func (s *service) processNow(ctx context.Context, id uuid.UUID, stage Stage, pri
     case row.State == "failed":
         upd, err := s.db.RestartFailed(ctx, RestartFailedParams{ID: row.ID, Priority: prio})
         if err != nil { return nil, httperror.Internal("restart failed") }
+        s.notify.Publish(ctx, "jobs.new", map[string]any{"job_id": upd.ID})
         return &ProcessResponse{JobID: upd.ID, Stage: stage, State: "pending"}, nil
 
     default: // pending | paused | claimed | resuming
@@ -245,6 +259,19 @@ func (s *service) processNow(ctx context.Context, id uuid.UUID, stage Stage, pri
         if err != nil { return nil, httperror.Internal("repriority failed") }
         return &ProcessResponse{JobID: upd.ID, Stage: stage, State: upd.State}, nil
     }
+}
+
+// orderedSuffix returns the canonical 7-stage list starting at `from`
+// (inclusive) through `thumbnail`. Reprocess inserts one job per stage in
+// this slice.
+var stageOrder = []Stage{StageScan, StageProbe, StageExtract, StageTranscribe,
+    StageSubtitleGen, StageIndex, StageThumbnail}
+
+func orderedSuffix(from Stage) []Stage {
+    for i, st := range stageOrder {
+        if st == from { return stageOrder[i:] }
+    }
+    return nil
 }
 
 func (s *service) reprocess(ctx context.Context, id uuid.UUID, from Stage) (*ReprocessResponse, *httperror.Error) {
@@ -261,13 +288,21 @@ func (s *service) reprocess(ctx context.Context, id uuid.UUID, from Stage) (*Rep
         if supersedingStages[from] {
             if err := tx.SupersedeTranscripts(ctx, id); err != nil { return err }
         }
-        ids, err := s.pipeline.EnqueueChain(ctx, id, string(from), 200)
-        if err != nil { return err }
-        jobIDs = ids
+        for _, st := range orderedSuffix(from) {
+            ins, err := tx.InsertProcessingJob(ctx, InsertProcessingJobParams{
+                VideoID: id, Stage: string(st), Priority: 200,
+            })
+            if err != nil { return err }
+            jobIDs = append(jobIDs, ins.ID)
+        }
         return nil
     })
-    if err != nil { return nil, mapGRPC(err) }
+    if err != nil { return nil, httperror.Internal("reprocess tx failed") }
 
+    // Publish one jobs.new event per inserted job (workers wake up).
+    for _, jid := range jobIDs {
+        s.notify.Publish(ctx, "jobs.new", map[string]any{"job_id": jid})
+    }
     s.notify.Publish(ctx, "videos.state_changed", map[string]any{
         "video_id":  id,
         "new_state": pred,
@@ -316,7 +351,18 @@ RETURNING id, state;
 UPDATE transcripts
    SET superseded_at = now()
  WHERE video_id = $1 AND superseded_at IS NULL;
+
+-- name: InsertProcessingJob :one
+INSERT INTO processing_jobs
+    (video_id, stage, state, priority, created_at, updated_at)
+VALUES ($1, $2, 'pending', $3, now(), now())
+RETURNING id, video_id, stage, state, priority, attempts;
 ```
+
+`processing_jobs.id` is `BIGSERIAL` (architecture §8) so the returned id is
+`int64` in Go. The pipeline workers claim rows via `SELECT ... FOR UPDATE
+SKIP LOCKED` per architecture §1.4 — the API only writes; it never asks
+the worker to enqueue.
 
 ## 7. Test plan
 
@@ -334,12 +380,12 @@ UPDATE transcripts
 
 | Test | What it pins |
 |---|---|
-| `TestProcessNoExistingJob` | Empty `processing_jobs` → Pipeline `Enqueue` called once with priority 50; 200 with `state=pending`. |
+| `TestProcessNoExistingJob` | Empty `processing_jobs` → exactly one INSERT with priority 50, state 'pending'; 200 with `state=pending`; one `jobs.new` notify observed. |
 | `TestProcessExistingPending` | Pending job at priority 200 → priority lowered to 50; same `job_id` returned. |
 | `TestProcessExistingRunning` | Running job → 200 with `note: "job already running"`; no UPDATE; no Enqueue. |
 | `TestProcessExistingFailed` | Failed job → state flipped to `pending`, `attempts` reset to 0, error cleared. |
 | `TestProcessConcurrent` | Two concurrent `/process` calls → both return same `job_id`; only one row. |
-| `TestProcessAfterDone` | Existing `done` row → fresh `Enqueue` (because terminal); two rows in DB. |
+| `TestProcessAfterDone` | Existing `done` row → fresh INSERT (because terminal); two rows in DB. |
 | `TestReprocessRollbacksState` | Video in `ready`, reprocess from `transcribe` → state `audio_extracted`; transcripts `superseded_at` set. |
 | `TestReprocessFiresNotify` | Postgres `LISTEN videos.state_changed` → one event with `video_id`, `new_state`. |
 | `TestReprocessKeepsOldTranscript` | After reprocess, the old `transcripts` row is still queryable with `?include_superseded=true`. |
@@ -355,9 +401,9 @@ UPDATE transcripts
 | Reprocess from `subtitle_gen` on a video whose subtitle stage has never run | Predecessor is `transcribed`; the chain starts from `subtitle_gen`. The `SupersedeTranscripts` UPDATE matches no rows → no-op. | Integration |
 | Process called with an explicit priority of 999 | Repriorise still uses `LEAST(priority, $2)` → if existing is 50, no change. The test enforces the floor logic, not "always lower." | Integration |
 | Two reprocess calls in flight | Each opens its own transaction; the second's `SetVideoState` may step on the first's value (last writer wins). This is acceptable: both intend the same predecessor state. | Documented |
-| Pipeline gRPC down | 503 `streaming-unavailable` (canonical). Same as Library scan. | Failure injection |
+| Postgres unavailable for INSERT | 503 `unavailable` with `retry_after_sec`. (Pipeline gRPC is not on the critical path for enqueue.) | Failure injection |
 | Reprocess where the existing transcript is already superseded | UPDATE matches zero rows; chain still enqueues. No 409. | Integration |
-| Process on a non-existent video | `FindLatestJob` returns `sql.ErrNoRows`; the API still calls Enqueue, which the Pipeline rejects with `INVALID_ARGUMENT`; we map to 404. | `TestProcessUnknownVideo` |
+| Process on a non-existent video | Validate the video row exists first (single-row SELECT) before INSERT; missing → 404 `not-found`. The INSERT also has FK `video_id → videos(id)` so a race would surface `pgx` error 23503 → 404. | `TestProcessUnknownVideo` |
 | `priority < 1` | Validator rejects with 422. | Unit |
 | Reprocess fires the NOTIFY before transaction commits | The NOTIFY is published *after* commit (we capture `jobIDs` first, then `notify.Publish` outside the closure). | `TestReprocessFiresNotify` (asserts ordering) |
 

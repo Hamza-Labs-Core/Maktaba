@@ -9,12 +9,51 @@
 
 | Concern | Decision |
 |---|---|
-| Migration file | `shared/db/migrations/0023_jwt_keys.sql` (Postgres) and `0023_jwt_keys.sqlite.sql` (SQLite). The persisted table holds *additional* trusted keys created by `keys rotate`; the bootstrap keypair lives only in env vars per architecture §11.5. |
+| Migration file | `shared/db/migrations/0023_jwt_keys.sql` (Postgres) and `0023_jwt_keys.sqlite.sql` (SQLite). The persisted table holds *additional* trusted keys created by `keys rotate`; the bootstrap keypair lives only in env vars per architecture §11.5. **See §0.1 — deliberate deviation from §11.5 for runtime-rotated keys.** |
 | Keyring | `api/internal/auth/keys.go` — `Keyring` loads env-var keys + DB rows; exposes `ActiveSigner()`, `JWKS()`. |
 | JWKS endpoint | `api/internal/http/jwks.go` — `GET /api/.well-known/jwks.json`. |
 | Rotation CLI | `api/cmd/api/keys.go` — `init`, `rotate`, `rotate --immediate`. |
 | Notification | Postgres `pg_notify('jwks_changed', '<kid>')` after every keyring mutation; SQLite uses the in-process `PubsubBus` shim from Epic 6. |
 | Out of scope | Streaming-side JWKS cache (Story 10.7). Multi-region key sync (no story owns this; documented as v2). |
+
+## 0.1 Deviation note — private-key persistence in `jwt_keys`
+
+Architecture §11.5 ("Secret handling") states: **secrets only in env or
+config files, never in the database.** This plan deliberately deviates
+from that rule for the rotated signing keys (`jwt_keys.private_pem`).
+
+**Why:** `keys rotate` is a runtime operation that generates a new
+keypair and must publish it via JWKS for verifiers to trust without a
+deploy. The new key has nowhere else to live across an API restart that
+satisfies all of: (a) survives restart, (b) shareable across replicas,
+(c) accessible without a deploy. Env vars fail (a) once minted; a
+config file fails (b) and (c) — there is no shared filesystem in our
+single-binary deployment model.
+
+**Constraints we accept by deviating:**
+
+- The bootstrap keypair (`MAKTABA_JWT_PRIVATE_KEY_PEM`) remains
+  env-only; it is never written to `jwt_keys`. Only keys minted by
+  `keys rotate` enter the table.
+- DB encryption-at-rest is mandatory in operations docs; a backup tape
+  must be encrypted (operator runbook).
+- A leaked DB dump *plus* a stolen backup key is a compromise — same
+  attacker model as a leaked env file. Operators rotate via
+  `keys rotate --immediate` and the operations runbook covers it.
+- The CLI never writes `private_pem` to logs or stdout (the rotate
+  command prints only the new `kid`).
+
+**Reviewed alternatives, rejected:**
+
+- "Re-mint a fresh env-only key on every restart" — invalidates every
+  in-flight token, creates an availability cliff on routine restarts.
+- "Use a separate KMS / Vault" — out of v1 scope; v2 plan calls for
+  optional KMS via `MAKTABA_KEY_PROVIDER=vault` config.
+- "Persist in a separate file that operators back up alongside env" —
+  doesn't solve the multi-replica share-state problem.
+
+This deviation is **operationally documented** in the rotation runbook
+and visible in the migration comment in §3.
 
 ## 1. Architecture diagram
 

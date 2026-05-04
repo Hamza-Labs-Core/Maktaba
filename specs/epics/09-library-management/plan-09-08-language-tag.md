@@ -9,8 +9,8 @@
 
 | Concern | Decision |
 |---|---|
-| Trigger point | Inside the transcribe stage's commit transaction (Epic 3 Story 3.6). The `transcribe_worker` already writes `transcripts` and updates `videos.state='TRANSCRIBED'`; this story adds the `videos.detected_language` and `videos.language_source` writes in the same tx. |
-| Confidence column | The transcribe stage already writes `transcripts.detected_language` and `transcripts.language_confidence` per Pipeline Story 3.7. This story consumes them, applies the confidence threshold, and writes the per-video result. |
+| Trigger point | Inside the transcribe stage's commit transaction (Epic 3 Story 3.6). The `transcribe_worker` already writes `transcripts` and updates `videos.state='transcribed'`; this story adds the `videos.detected_language` and `videos.language_source` writes in the same tx. |
+| Confidence column | `transcripts.detected_language` and `transcripts.language_confidence` are canonical now (architecture §8.1) — written by Pipeline Story 3.7. This story consumes them, applies the confidence threshold, and writes the per-video result. No defensive ALTER TABLE needed. |
 | Per-track override (multi_audio) | When `library.multi_audio = True`, the *primary* track's language goes on `videos.detected_language`. "Primary" is the first track ordered by `(is_default DESC, track_index ASC)` — already encoded in `audio_tracks` per Epic 2 Story 2.3. |
 | User override | A new `videos.language_source` enum: `'stt'`, `'user'`, `'forced'`. PATCH from Epic 7 Story 7.4 sets it to `'user'`; once `user`, the auto-tagger never overwrites. |
 | Re-tag trigger | Out of scope here — Epic 7 Story 7.5's reprocess endpoint owns it. This story only ensures the auto-tagger respects existing user/forced values. |

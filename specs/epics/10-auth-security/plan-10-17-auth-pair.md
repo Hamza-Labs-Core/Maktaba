@@ -59,7 +59,7 @@ Reaper (every 60s):
 | `shared/db/queries/pairing_codes.sql` | sqlc input. |
 | `api/internal/auth/pair.go` | `Issue`, `Claim`, `Poll`, `Reap`, `code` generator. |
 | `api/internal/http/auth_pair.go` | All three HTTP handlers. |
-| `pipeline/src/maktaba_pipeline/tasks/pair_reaper.py` | Reaper task. |
+| `pipeline/src/maktaba_pipeline/tasks/auth_reaper.py` | Unified reaper task — sweeps `web_sessions`, `refresh_tokens`, and `pairing_codes`. See §6. |
 | `api/internal/auth/pair_test.go` | Unit tests. |
 | `api/internal/http/auth_pair_test.go` | Integration tests. |
 
@@ -409,38 +409,108 @@ The poll endpoint is the exit door: it mints the JWTs and deletes the
 row in the same handler. Repeating the poll after a successful claim
 returns 404 (the row is gone).
 
-## 6. Reaper
+## 6. Unified auth-table reaper
+
+This story owns the unified Python reaper that sweeps **all three**
+auth-related tables that use TTL-based expiry:
+
+| Table | TTL column | Default retention after expiry | Owner |
+|---|---|---|---|
+| `web_sessions` | `expires_at` | 7 days (then DELETE) | Story 10.2 |
+| `refresh_tokens` | `expires_at` | 90 days (then DELETE if `revoked_at IS NOT NULL`) | Story 10.3 |
+| `pairing_codes` | `expires_at` | 24 hours (then DELETE after `state='expired'`) | This story |
+
+Stories 10.2 and 10.3 ship the reaper *indexes* (`web_sessions_reaper`,
+`refresh_tokens_reaper`) but no reaper code. This plan consolidates the
+reaper here so all three TTL sweeps live in one task with one schedule
+and one shared dedupe-keyed audit emitter — avoiding three separate
+60-second tickers.
 
 ```python
-# pipeline/src/maktaba_pipeline/tasks/pair_reaper.py
+# pipeline/src/maktaba_pipeline/tasks/auth_reaper.py
+"""
+Unified reaper for auth tables (web_sessions, refresh_tokens, pairing_codes).
+Each table has its own (state-flip, delete) pair; they share one tick.
+"""
 import asyncio
 from datetime import datetime, timezone
+from dataclasses import dataclass
 
-async def reap_pairing_codes(db) -> tuple[int, int]:
-    now = datetime.now(timezone.utc)
-    expired = await db.fetchval("""
-        UPDATE pairing_codes SET state = 'expired'
-         WHERE state = 'pending' AND expires_at < $1
-        RETURNING id
-    """, now)
-    deleted = await db.execute("""
-        DELETE FROM pairing_codes
-         WHERE state = 'expired' AND expires_at < $1 - interval '24 hours'
-    """, now)
-    return expired, deleted
+@dataclass
+class ReaperRule:
+    table: str
+    ttl_column: str          # column to compare against now()
+    flip_sql: str | None     # optional state-flip step (None = skip)
+    delete_sql: str          # delete step
+    audit_event: str         # security audit event name on flip
 
-async def run_periodic(db, interval_seconds: int = 60) -> None:
+RULES = [
+    ReaperRule(
+        table="web_sessions",
+        ttl_column="expires_at",
+        flip_sql=None,         # web sessions don't have a "state" — direct delete
+        delete_sql="""
+            DELETE FROM web_sessions
+             WHERE (expires_at < $1 - interval '7 days')
+                OR (revoked_at IS NOT NULL AND revoked_at < $1 - interval '7 days')
+        """,
+        audit_event="web-session.reaped",
+    ),
+    ReaperRule(
+        table="refresh_tokens",
+        ttl_column="expires_at",
+        flip_sql=None,
+        delete_sql="""
+            DELETE FROM refresh_tokens
+             WHERE expires_at < $1 - interval '90 days'
+                OR (revoked_at IS NOT NULL AND revoked_at < $1 - interval '90 days')
+        """,
+        audit_event="refresh-token.reaped",
+    ),
+    ReaperRule(
+        table="pairing_codes",
+        ttl_column="expires_at",
+        flip_sql="""
+            UPDATE pairing_codes SET state = 'expired'
+             WHERE state = 'pending' AND expires_at < $1
+        """,
+        delete_sql="""
+            DELETE FROM pairing_codes
+             WHERE state = 'expired' AND expires_at < $1 - interval '24 hours'
+        """,
+        audit_event="pair.code-expired",
+    ),
+]
+
+async def reap_one(db, rule: ReaperRule, now: datetime) -> tuple[int, int]:
+    flipped = 0
+    if rule.flip_sql:
+        flipped = (await db.execute(rule.flip_sql, now)) or 0
+    deleted = (await db.execute(rule.delete_sql, now)) or 0
+    return flipped, deleted
+
+async def run_periodic(db, audit, interval_seconds: int = 60) -> None:
     while True:
+        now = datetime.now(timezone.utc)
         try:
-            n, d = await reap_pairing_codes(db)
-            if n > 0:
-                # Audit at-most-once per minute via the dedupe key.
-                await audit.record(category="security", event="pair.code-expired",
-                                   payload={"count": n, "dedupe_key": f"pair-expired|{int(now.timestamp() // 60)}"})
+            for rule in RULES:
+                flipped, deleted = await reap_one(db, rule, now)
+                if flipped > 0:
+                    await audit.record(
+                        category="security", event=rule.audit_event,
+                        payload={
+                            "count": flipped,
+                            "dedupe_key": f"{rule.audit_event}|{int(now.timestamp() // 60)}",
+                        },
+                    )
         except Exception as e:
-            log.warning("pair reaper failed", err=str(e))
+            log.warning("auth reaper tick failed", err=str(e))
         await asyncio.sleep(interval_seconds)
 ```
+
+The pairing-codes-only sweep that lived in earlier drafts of this plan
+is folded into the loop above. The default tick is still 60s; operators
+can shorten it via config without touching code.
 
 ## 7. Rate-limit composition
 
@@ -524,7 +594,7 @@ pairRule := rule{
 | Case | Behaviour | Where pinned |
 |---|---|---|
 | Device polls forever, user never scans | Code expires after TTL; subsequent polls return 410 once (until the 24h delete sweeps the row, after which the poll returns 404). | `TestExpiredCodeReturns410` |
-| Two users claim the same code in parallel | Conditional UPDATE makes one win; the other sees `state='claimed'` and gets `ErrPairAlready` → 409 `pair-code-already-claimed`. The story EC mentions 404 — we changed to 409 for clarity; documented. | `TestClaimConcurrentSerializes` |
+| Two users claim the same code in parallel | Conditional UPDATE makes one win; the other sees `state='claimed'` and gets `ErrPairAlready` → 409 `pair-code-already-claimed`. **Story EC update required:** `story-10-17-auth-pair.md` previously said the loser receives 404 `pair-code-unknown`; this plan distinguishes "unknown" from "already-claimed" for clarity, returning 409. The story file has been updated to match. | `TestClaimConcurrentSerializes` |
 | Device claims, then user logs out everywhere | The device's refresh row is in the same family the logout-all sweep touches → revoked. Device falls back to re-pairing. | Story 10.5 plan |
 | Device with a valid refresh re-runs pair | The new pair issues fresh tokens; the old refresh remains valid until rotated/revoked. The device app should overwrite its stored refresh on success. | Documented in mobile/desktop SDKs. |
 | Brute-force the 32^8 keyspace (1.1e12) | Rate-limit caps at 6/min/IP → 660 years per IP; per-username NOT applicable (no username); per-IP rate limit is the defense. | `TestPairIPAttempt32To8BruteForce` |

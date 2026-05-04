@@ -14,7 +14,8 @@
 | Storage | iOS app sandbox (encrypted by default); Android scoped storage `MediaStore.Downloads/Maktaba/` with file-level encryption via Keystore-derived AES-GCM key. |
 | Server flag | `POST /api/videos/{id}/downloaded` (Story 12.11) on completion; `DELETE` on local removal. |
 | Quota | Default 5 GB cap; LRU eviction; pin to prevent eviction. |
-| Out of scope | Web download cache (Story 11.10 explicitly excludes video bytes). |
+| Source format | **v1: direct-play (single-file) videos only.** HLS streams are NOT downloadable. The download affordance is hidden when the chosen variant would require HLS transcode. |
+| Out of scope | Web download cache (Story 11.10 explicitly excludes video bytes); HLS offline (see §12 v2 follow-up). |
 
 ## 1. Data model
 
@@ -39,7 +40,7 @@ export interface DownloadItem {
 }
 
 export interface DownloadManager {
-  start(opts: { videoId: string; quality: DownloadQuality; manifestUrl: string; sidecarSubtitleUrls?: string[]; posterUrl?: string }): Promise<{ id: string }>;
+  start(opts: { videoId: string; quality: DownloadQuality; directUrl: string; sidecarSubtitleUrls?: string[]; posterUrl?: string }): Promise<{ id: string }>;
   pause(opts: { id: string }): Promise<void>;
   resume(opts: { id: string }): Promise<void>;
   cancel(opts: { id: string }): Promise<void>;
@@ -63,9 +64,12 @@ class DownloadManagerNative: NSObject, URLSessionDownloadDelegate {
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }()
 
-    func start(videoId: String, quality: String, manifestUrl: URL) -> String {
+    // v1: directUrl points at a single-file MP4/MKV. URLSessionDownloadTask
+    // downloads the whole file. HLS streams (.m3u8 + segments) are out of
+    // scope for v1 — see §12 v2 follow-up.
+    func start(videoId: String, quality: String, directUrl: URL) -> String {
         let id = UUID().uuidString
-        let task = session.downloadTask(with: manifestUrl)
+        let task = session.downloadTask(with: directUrl)
         task.taskDescription = id
         task.resume()
         store.insertItem(id: id, videoId: videoId, quality: quality, total: 0, state: "downloading")
@@ -195,3 +199,20 @@ On reinstall (no rows locally), call `GET /api/me/devices/{id}/downloads` (provi
 - Story 12.11 for the server flag.
 - Story 12.10 (devices) — `device_id` is the auth context owner.
 - Subtitle sidecar URLs come from `GET /api/videos/{id}/subtitles` (Epic 7 Story 7.7).
+
+## 12. v2 follow-up — HLS offline
+
+v1 ships direct-play offline only. Full HLS-stream offline (manifest +
+all segments + key rotation) is deferred. When picked up, expected work:
+
+- **iOS:** swap `URLSessionDownloadTask` for `AVAssetDownloadTask` /
+  `AVAssetDownloadURLSession` (purpose-built for HLS; handles segments,
+  encryption keys, quality variants).
+- **Android:** swap `DownloadManager` for ExoPlayer's
+  `DownloadHelper` + `DownloadService` (segment-aware; uses an
+  ExoPlayer offline cache and reads back through `CacheDataSource`).
+- Re-encoding/integrity check moves from whole-file SHA-256 to
+  per-segment hashes returned by the manifest endpoint.
+- Server contract (`POST /api/videos/{id}/downloaded`) gains an
+  optional `manifest_etag` field so reconciliation can detect a
+  segment set that has rotated.

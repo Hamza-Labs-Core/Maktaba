@@ -57,36 +57,40 @@
 
 ## 3. SQL — schema
 
+The `saved_searches` table is canonical in architecture §8 with the
+columns `(id, user_id, name, kind, query, created_at, updated_at)`.
+Architecture does NOT enforce `(user_id, name)` uniqueness, but the
+handler's create path requires it for "name already in use" semantics.
+This migration is therefore an ADD-ONLY migration: it adds the
+unique constraint and the user/created index. `kind` and `updated_at`
+already exist canonically.
+
 `shared/db/migrations/0015_saved_searches.sql`:
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE saved_searches (
-    id          UUID PRIMARY KEY,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    query       JSONB NOT NULL,
-    kind        TEXT NOT NULL DEFAULT 'user',
-    -- 'user' for direct user-saves; 'smart_collection' for the consumer
-    -- in Epic 9 Story 9.14 (which inserts rows of its own kind).
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (user_id, name),
-    CHECK (kind IN ('user', 'smart_collection'))
-);
+-- saved_searches(table, id, user_id, name, kind, query, created_at,
+-- updated_at) is created by the canonical schema migration. Here we add:
+--  * the unique-per-user-name constraint the handler relies on
+--  * the supporting index
+ALTER TABLE saved_searches
+  ADD CONSTRAINT saved_searches_user_name_uniq UNIQUE (user_id, name);
 
-CREATE INDEX saved_searches_user_idx
+CREATE INDEX IF NOT EXISTS saved_searches_user_idx
     ON saved_searches (user_id, created_at DESC);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS saved_searches;
+DROP INDEX IF EXISTS saved_searches_user_idx;
+ALTER TABLE saved_searches DROP CONSTRAINT IF EXISTS saved_searches_user_name_uniq;
 -- +goose StatementEnd
 ```
 
-The SQLite mirror swaps `JSONB → TEXT` and `TIMESTAMPTZ → TEXT`.
+The SQLite mirror swaps `ADD CONSTRAINT` for an additional `CREATE UNIQUE
+INDEX saved_searches_user_name_uniq ON saved_searches (user_id, name)`
+(SQLite's `ALTER TABLE ADD CONSTRAINT` does not support UNIQUE).
 
 ## 4. Type definitions
 

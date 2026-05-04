@@ -14,11 +14,11 @@
 | Custom scheme | `maktaba://` registered on both platforms. |
 | Routes | `/watch/{id}?t=`, `/search?q=`, `/library`, `/library/{id}`, `/queue`, `/settings`, `/collection/{id}`. |
 | Auth replay | If unauthenticated, store deep link, redirect to login, replay after success. |
-| Out of scope | Server-side `.well-known` (small; included here as a one-line owner statement). |
+| `.well-known` routes | The `apple-app-site-association` and `assetlinks.json` static-file routes are owned by `plan-07-01-http-server-skeleton.md` per architecture §9.7.3. The content is generated from the configured iOS bundle id + Android package id at boot. This plan defines the file *contents* below for reference; it does not own the route handlers. |
 
 ## 1. Server `.well-known` files
 
-Owned here (single-file additions to API service):
+Routes owned by `plan-07-01-http-server-skeleton.md`; this plan specifies the *content* template (rendered at boot from the configured iOS bundle id + signing team id and Android package id + cert fingerprint):
 
 ```jsonc
 // /.well-known/apple-app-site-association

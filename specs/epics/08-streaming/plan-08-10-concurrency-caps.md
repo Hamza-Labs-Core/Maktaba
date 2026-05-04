@@ -348,7 +348,9 @@ SELECT * FROM streaming_sessions
 
 ### 2.7 The gRPC `WatchQueue` server-streaming RPC
 
-`shared/proto/streaming/v1/streaming.proto` gets a new RPC:
+`WatchQueue` is canonical in architecture §9.9 (server-streaming). This
+story owns wiring it on the server side; the proto file gets the new
+RPC added here:
 
 ```proto
 service StreamingService {

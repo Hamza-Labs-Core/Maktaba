@@ -90,10 +90,15 @@ type Client struct {
     breaker *grpcx.Breaker
 }
 
+// The Pipeline gRPC surface is canonically Embed, Transcribe,
+// ListBackends, HealthCheck (architecture §9.9). There is no
+// Pipeline.Enqueue, Pipeline.EnqueueChain, Pipeline.ExtractEmbeddedSubtitle,
+// or Pipeline.RunSyntheticTranscribe — bulk job control flows through
+// Postgres (`INSERT INTO processing_jobs ...`) and dry-run STT uses
+// Transcribe with a fixture audio source.
 type Config struct {
     EmbedTimeout            time.Duration  // default 2s
     TranscribeTimeout       time.Duration  // default 0 (streaming, parent ctx governs)
-    ExtractSubtitleTimeout  time.Duration  // default 30s
     ListBackendsTimeout     time.Duration  // default 5s
     HealthCheckTimeout      time.Duration  // default 1s
     RetryMaxAttempts        int            // default 3
@@ -122,9 +127,11 @@ func (c *Client) Embed(ctx context.Context, text string) (Vector, error) {
 // Transcribe is a server-streaming RPC; it does not pass through the
 // retry decorator (re-running a streaming transcription mid-stream
 // would be unsafe). The breaker still observes the call's outcome.
+// The settings dry-run path (plan-07-15) uses this same RPC with
+// `dry_run: true` and an embedded fixture WAV — there is no separate
+// RunSyntheticTranscribe RPC.
 func (c *Client) Transcribe(ctx context.Context, req TranscribeRequest) (<-chan TranscribeEvent, error) { /* ... */ }
 
-func (c *Client) ExtractEmbeddedSubtitle(ctx context.Context, videoID string, streamIndex int32) (string, error) { /* ... */ }
 func (c *Client) ListBackends(ctx context.Context) ([]Backend, error) { /* ... */ }
 func (c *Client) HealthCheck(ctx context.Context) (Status, error) { /* ... */ }
 ```
@@ -133,6 +140,11 @@ func (c *Client) HealthCheck(ctx context.Context) (Status, error) { /* ... */ }
 // api/internal/grpc/streaming/client.go
 package streaming
 
+// The Streaming gRPC surface is canonically OpenSession, CloseSession,
+// EvictHashCache, GetCapabilities, WatchQueue, HealthCheck (architecture
+// §9.9). OpenSession returns *pb.OpenSessionResponse {Session,
+// Capabilities}. EvictHashCache returns *pb.EvictHashCacheResponse
+// {entries_removed, artifacts}.
 type Client struct {
     raw     pb.StreamingClient
     cfg     Config
@@ -141,8 +153,15 @@ type Client struct {
 
 func (c *Client) OpenSession(ctx context.Context, req *pb.OpenSessionRequest) (*pb.OpenSessionResponse, error) { /* timeouts + breaker; no retry (open is not idempotent) */ }
 func (c *Client) CloseSession(ctx context.Context, sessionID string) error { /* idempotent → retried */ }
-func (c *Client) EvictHashCache(ctx context.Context, hash string) error    { /* idempotent → retried */ }
+// EvictHashCache returns the canonical typed response with a count of
+// removed cache entries plus the list of artifacts that were dropped.
+func (c *Client) EvictHashCache(ctx context.Context, hash string) (*pb.EvictHashCacheResponse, error) { /* idempotent → retried */ }
 func (c *Client) GetCapabilities(ctx context.Context) (*pb.GetCapabilitiesResponse, error) { /* retried */ }
+// WatchQueue is a server-streaming RPC: each event emits a queue snapshot
+// (depth, in-flight, slot utilisation). The wrapper does not retry but
+// the breaker observes outcomes; the caller iterates until the stream
+// ends or ctx is cancelled.
+func (c *Client) WatchQueue(ctx context.Context, req *pb.WatchQueueRequest) (<-chan *pb.QueueSnapshot, error) { /* ... */ }
 func (c *Client) HealthCheck(ctx context.Context) (Status, error)          { /* retried */ }
 ```
 

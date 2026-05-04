@@ -12,9 +12,9 @@
 | Runtime owner | Pipeline Service. Sweeps run as `scan`-stage jobs (existing stage from Story 6.1) with `payload.reason = "periodic" | "manual" | "watcher_boot_catchup"`. The job worker dispatches to `pipeline/sweep/sweep_runner.py`. |
 | Scheduling | A single `SweepScheduler` task per Pipeline process, ticking every 60 s, evaluating each library's `sweep_interval_sec` against `library_sweeps.started_at` of the most recent run. |
 | Single-flight | Postgres `pg_try_advisory_xact_lock(hash('sweep:'||library_id::text))` taken in the job's transaction. Held for the duration; tick-while-running drops the new tick (AC-2). |
-| Diff query | One `SELECT path, size, mtime, content_hash FROM videos WHERE library_id=$1` snapshot at start; the walker compares each on-disk file against it. New table `library_sweeps` (defined in the README) stores per-sweep stats. |
-| Move detection | When a path is new but `(content_hash, size)` matches an existing row at a different path, the sweep updates `videos.path` and writes a `video_path_history` row (Story 9.2 created the table). Hash is only computed for new-or-changed paths (size+mtime fast path is the gate). |
-| Out of scope | The hashing primitive itself (Story 9.4); the user-facing scan progress (Story 9.6); the FSM transition `→ MISSING` is invoked here but its enum/tests live with Pipeline Story 1.5. |
+| Diff query | One `SELECT path, size_bytes, mtime, content_hash FROM videos WHERE library_id=$1` snapshot at start; the walker compares each on-disk file against it. New table `library_sweeps` (defined in the README) stores per-sweep stats. |
+| Move detection | When a path is new but `(content_hash, size_bytes)` matches an existing row at a different path, the sweep updates `videos.path` and writes a `video_path_history` row (Story 9.2 created the table). Hash is only computed for new-or-changed paths (size+mtime fast path is the gate). |
+| Out of scope | The hashing primitive itself (Story 9.4); the user-facing scan progress (Story 9.6); the FSM transition `→ missing` is invoked here using lowercase canonical state strings; the FSM-extension migration that adds `missing` to the CHECK constraint is owned by plan-09-06. |
 
 ## 1. Architecture diagram
 
@@ -44,8 +44,9 @@
    │                                                              │
    │  insert library_sweeps row (started_at = now()).             │
    │                                                              │
-   │  catalog = SELECT id, path, size, mtime, content_hash        │
-   │              FROM videos WHERE library_id=lib AND state <> 'DELETED'  │
+   │  catalog = SELECT id, path, size_bytes, mtime, content_hash  │
+   │              FROM videos WHERE library_id=lib                │
+   │                AND deleted_at IS NULL  -- soft-delete column │
    │  catalog_by_path = {row.path: row}                           │
    │  catalog_by_hash = {row.content_hash: row}                   │
    │                                                              │
@@ -58,7 +59,7 @@
    │      progress.scanned += 1                                   │
    │                                                              │
    │      cat = catalog_by_path.get(path)                         │
-   │      if cat and cat.size==st.size and cat.mtime==st.mtime:   │
+   │      if cat and cat.size_bytes==st.size and cat.mtime==st.mtime:│
    │        continue   # fast path                                │
    │                                                              │
    │      if cat:                                                 │
@@ -79,14 +80,14 @@
    │      else:                                                   │
    │        enqueue(scan, video_id=None, priority=200,            │
    │                payload={"library_id": lib_id,                │
-   │                         "path": path, "size": st.size,       │
-   │                         "content_hash": h.hex()})            │
+   │                         "path": path, "size_bytes": st.size, │
+   │                         "content_hash": h})  # hex string    │
    │        progress.new_videos += 1                              │
    │                                                              │
-   │  # Missing detection:                                        │
+   │  # Missing detection (lowercase FSM, canonical Epic-9 ext.):  │
    │  for cat in catalog_by_path.values():                        │
-   │    if cat.path not in visited_paths and cat.state <> 'MISSING':│
-   │      UPDATE videos SET state='MISSING' WHERE id=cat.id       │
+   │    if cat.path not in visited_paths and cat.state <> 'missing':│
+   │      UPDATE videos SET state='missing' WHERE id=cat.id       │
    │      progress.removed_videos += 1                            │
    │                                                              │
    │  UPDATE library_sweeps SET finished_at=now(),                │
@@ -117,7 +118,7 @@
 | Path | Change |
 |---|---|
 | `pipeline/src/maktaba_pipeline/jobs/dispatcher.py` | Route `stage='scan'` to `sweep_runner.run_sweep_job` when `payload.library_id` is present and `payload.video_id` is not. |
-| `pipeline/src/maktaba_pipeline/db/pubsub.py` | Add `LIBRARY_SWEEP_DONE = "library.sweep_done"`. |
+| `pipeline/src/maktaba_pipeline/db/pubsub.py` | The canonical channel-name registry (09-01 §2.5) already declares `LIBRARY_SWEEP_DONE`. This plan only consumes it. |
 | `api/internal/db/queries/library_sweeps.sql.go` | Generated by sqlc — read access for the API's stats endpoint (Story 9.7). |
 | `specs/epics/09-library-management/README.md` | Tick story 9.3. |
 
@@ -147,9 +148,9 @@ class SweepProgress:
 class CatalogRow:
     id: UUID
     path: str
-    size: int
+    size_bytes: int                 # videos.size_bytes (architecture §8.1)
     mtime: float
-    content_hash: bytes | None
+    content_hash: str | None        # 64-char hex BLAKE3 (TEXT in DB)
     state: str
 ```
 
@@ -349,10 +350,13 @@ async def run_sweep_job(db, job, *, clock=time.time) -> None:
                                    visited, progress, rehash)
 
         # MISSING detection — anything in catalog the walker did not see.
+        # Lowercase FSM strings (architecture canonical); 'missing' is an
+        # auxiliary terminal state owned by the Epic-9 FSM-extension
+        # migration in plan-09-06.
         for r in catalog:
-            if r.path not in visited and r.state != "MISSING":
+            if r.path not in visited and r.state != "missing":
                 await db.execute(
-                    "UPDATE videos SET state='MISSING', updated_at=now() "
+                    "UPDATE videos SET state='missing', updated_at=now() "
                     "WHERE id=$1", r.id)
                 progress.removed_videos += 1
 
@@ -390,7 +394,7 @@ async def _process_one(db, library_id, path, st,
                        visited, progress, rehash) -> None:
     cat = catalog_by_path.get(str(path))
     if cat is not None and not rehash \
-            and cat.size == st.st_size \
+            and cat.size_bytes == st.st_size \
             and abs(cat.mtime - st.st_mtime) < 1.0:
         return  # fast path
 
@@ -401,7 +405,7 @@ async def _process_one(db, library_id, path, st,
                                "library_id": str(library_id)})
         return
 
-    # New path. Compute hash and check for a moved-file match.
+    # New path. Compute hash (hex string) and check for a moved-file match.
     h = await asyncio.to_thread(blake3_4mib, path, st.st_size)
     moved = catalog_by_hash.get(h)
     if moved is not None and moved.path not in visited:
@@ -424,8 +428,8 @@ async def _process_one(db, library_id, path, st,
                   payload={
                       "library_id": str(library_id),
                       "path": str(path),
-                      "size": st.st_size,
-                      "content_hash": h.hex(),
+                      "size_bytes": st.st_size,
+                      "content_hash": h,    # hex string
                   })
     progress.new_videos += 1
 ```
@@ -515,9 +519,9 @@ async def walk(root: Path, ignore) -> AsyncIterator[tuple[Path, os.stat_result]]
 |---|---|
 | `test_fast_path_skips_unchanged_files` | Pre-populate catalog with 100 files; fixture filesystem has the same 100 with matching size+mtime → 0 enqueues, 0 hashes computed. AC-1 fast path. |
 | `test_new_file_enqueues_scan` | Catalog empty; one new file → one `enqueue` with `payload.path` and `content_hash`. |
-| `test_modified_file_enqueues_scan` | Catalog row with size 1000; on-disk size 2000 → enqueue with `reason='size_changed'`. |
+| `test_modified_file_enqueues_scan` | Catalog row with size_bytes=1000; on-disk size 2000 → enqueue with `reason='size_changed'`. |
 | `test_moved_file_updates_path` | Catalog row at `/a/x.mp4` with `content_hash=H`; filesystem has `/b/x.mp4` with same hash; `/a/x.mp4` is gone → `videos.path` UPDATE; `video_path_history` row written; **no** scan enqueued; `progress.moved_videos == 1`. AC-1 move path. |
-| `test_missing_file_marks_state` | Catalog row at `/a/lost.mp4`; file is gone → `state='MISSING'`; `progress.removed_videos == 1`. |
+| `test_missing_file_marks_state` | Catalog row at `/a/lost.mp4`; file is gone → `state='missing'`; `progress.removed_videos == 1`. |
 | `test_single_flight_drops_concurrent_tick` | Two `run_sweep_job` calls in parallel for the same library → first inserts the `library_sweeps` row; second hits the partial-unique violation and returns without raising. AC-2. |
 | `test_sweep_records_telemetry_row` | After completion, exactly one `library_sweeps` row with `finished_at IS NOT NULL`, `scanned`, `new_videos`, etc. matching the run. AC-4. |
 | `test_sweep_progress_pushed_to_processing_jobs` | After 2 s of running, `processing_jobs.processed_seconds` reflects the file count. |
@@ -583,14 +587,14 @@ No new external deps.
 - [ ] `SweepScheduler.run()` ticks every 60 s and enqueues at priority 200.
 - [ ] `run_sweep_job` is the dispatcher target for `stage='scan'` jobs whose payload has `library_id` but not `video_id`.
 - [ ] Single-flight enforced by the `library_sweeps_one_in_flight` partial-unique index; second concurrent insert quietly returns.
-- [ ] `videos.state='MISSING'` is set for catalog rows the walker did not see.
+- [ ] `videos.state='missing'` is set for catalog rows the walker did not see (lowercase canonical FSM; `missing` added to the CHECK constraint by plan-09-06's FSM-extension migration).
 
 **Migration**
 - [ ] `0032_library_sweeps.sql` creates the table, the lookup index, and the partial-unique index.
 - [ ] SQLite variant applies cleanly.
 
 **Behaviour (story acceptance criteria)**
-- [ ] AC-1: size+mtime fast path; new files enqueued; moves update path; missing files transition to `MISSING`.
+- [ ] AC-1: size+mtime fast path; new files enqueued; moves update path; missing files transition to `missing`.
 - [ ] AC-2: a tick during an in-flight sweep is dropped (no second `library_sweeps` row).
 - [ ] AC-3: per-library `sweep_interval_sec` overrides the default; `0` disables.
 - [ ] AC-4: every sweep writes a `library_sweeps` row.

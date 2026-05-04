@@ -2,13 +2,18 @@
 
 > Companion to [story-12-10-device-registration-api.md](story-12-10-device-registration-api.md).
 > Owns: `devices` table, registration endpoints, push fan-out worker, secrets.
+>
+> **Ownership note.** This plan owns the `devices` table migration per
+> architecture §8.2.3. `plan-07-22-devices-register.md` is superseded; only
+> its handler stubs remain. Schema columns (including `bundle_id`, required
+> for APNs topic routing on iOS/macOS/tvOS) are defined here.
 
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
-| Migration | `shared/db/migrations/0040_devices.sql` (Postgres) + `0040_devices.sqlite.sql`. |
-| Endpoints | `api/internal/http/devices.go`. Routes `/api/devices/register`, `/api/devices/{id}`, `/api/me/devices`. |
+| Migration | `shared/db/migrations/0040_devices.sql` (Postgres) + `0040_devices.sqlite.sql`. Schema matches architecture §8.2.3 exactly (canonical). |
+| Endpoints | `api/internal/http/devices.go`. Routes `POST /api/devices`, `PATCH /api/devices/{id}`, `DELETE /api/devices/{id}`, `GET /api/me/devices` (architecture §9.7.2). |
 | Worker | `pipeline/src/maktaba_pipeline/push_fanout/` (Python). Consumes domain events from internal event bus (architecture §1.4). |
 | APNs | `pipeline/src/maktaba_pipeline/push_fanout/apns.py` — HTTP/2 to `/3/device/{token}`; ES256 JWT signed with `.p8`. |
 | FCM | `pipeline/src/maktaba_pipeline/push_fanout/fcm.py` — HTTP v1 with Google service-account JWT. |
@@ -23,13 +28,14 @@
 CREATE TABLE devices (
   id            UUID PRIMARY KEY,
   user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  platform      TEXT NOT NULL CHECK (platform IN ('ios','android','web')),
+  platform      TEXT NOT NULL CHECK (platform IN ('ios','android','web','macos','tvos')),
+  bundle_id     TEXT,                                  -- required for APNs (iOS/macOS/tvOS); nullable for android/web
   token         TEXT NOT NULL,
   token_hash    BYTEA GENERATED ALWAYS AS (sha256(token::bytea)) STORED,
   app_version   TEXT,
   os_version    TEXT,
   locale        TEXT NOT NULL DEFAULT 'en',
-  categories    JSONB NOT NULL DEFAULT '{"processing":true,"new_content":true,"job_failed":true,"subscription":true}',
+  categories    JSONB NOT NULL DEFAULT '[]',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   revoked_at    TIMESTAMPTZ,
@@ -40,15 +46,20 @@ CREATE INDEX devices_user_active_idx ON devices (user_id, revoked_at);
 CREATE INDEX devices_token_hash_idx  ON devices (token_hash);
 ```
 
+Per architecture §8.2.3, `bundle_id` is required when `platform IN ('ios','macos','tvos')` because APNs uses it as the topic for routing; `categories` is a JSONB array of opted-in category strings (default empty — clients must explicitly opt in).
+
 SQLite analogue: `BYTEA → BLOB`, `JSONB → TEXT` with `CHECK(json_valid)`. Generated column for SQLite expressed as a trigger.
 
 ## 2. Token validation
 
 ```go
 // devices.go
-func validateToken(platform, token string) error {
+func validateRegistration(platform, bundleID, token string) error {
     switch platform {
-    case "ios":
+    case "ios", "macos", "tvos":
+        if bundleID == "" {
+            return errors.New("bundle-id-required")
+        }
         if matched, _ := regexp.MatchString(`^[a-fA-F0-9]{64,200}$`, token); !matched {
             return errors.New("invalid-token")
         }
@@ -58,6 +69,8 @@ func validateToken(platform, token string) error {
         }
     case "web":
         if len(token) < 32 { return errors.New("invalid-token") }
+    default:
+        return errors.New("unsupported-platform")
     }
     return nil
 }
@@ -65,16 +78,29 @@ func validateToken(platform, token string) error {
 
 ## 3. Endpoints
 
-### `POST /api/devices/register`
+### `POST /api/devices`
+
+Body: `{platform, bundle_id?, token, app_version?, os_version?, locale?, categories?}`.
+`bundle_id` is required for `platform ∈ {ios, macos, tvos}`.
 
 ```go
+type RegisterPayload struct {
+    Platform   string   `json:"platform"`
+    BundleID   string   `json:"bundle_id,omitempty"`
+    Token      string   `json:"token"`
+    AppVersion string   `json:"app_version,omitempty"`
+    OSVersion  string   `json:"os_version,omitempty"`
+    Locale     string   `json:"locale,omitempty"`
+    Categories []string `json:"categories,omitempty"`
+}
+
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
     var p RegisterPayload
     if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
         problem.Write(w, 400, "bad-request"); return
     }
-    if err := validateToken(p.Platform, p.Token); err != nil {
-        problem.Write(w, 400, "invalid-token"); return
+    if err := validateRegistration(p.Platform, p.BundleID, p.Token); err != nil {
+        problem.Write(w, 400, err.Error()); return
     }
     ident := auth.IdentityFrom(r)
     res, err := h.svc.Register(r.Context(), ident.UserID, p)
@@ -95,7 +121,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 `Register` resolution:
 
-1. UPSERT by `(user_id, token_hash)`. If row exists → update `last_seen_at`, `app_version`, `os_version`, `locale`, `categories`; un-revoke if previously revoked. Return `{Created:false}`.
+1. UPSERT by `(user_id, token_hash)`. If row exists → update `last_seen_at`, `app_version`, `os_version`, `locale`, `categories`, `bundle_id`; un-revoke if previously revoked. Return `{Created:false}`.
 2. Otherwise check `token_hash` across all users; if owned by another, schedule `revoked_at = now() + 24h` on the previous owner's row + insert new row.
 3. Audit: `category='device', action=Created?'create':'update'`.
 
@@ -185,7 +211,7 @@ Boot-time read; if neither is configured, worker emits a single warning and disa
 
 | Test | Asserts |
 |---|---|
-| `category filter suppresses` | Device with `new_content=false` not in fanout list for that category. |
+| `category filter suppresses` | Device whose `categories` array does not contain `'new_content'` is not in fanout list for that category. |
 | `coalesce window batches` | 6 job.completed → 1 push payload "5 jobs completed" (1 dropped to overflow). |
 | `BadDeviceToken revokes` | Worker revokes the row; subsequent events skip it. |
 | `transient retries 3 times` | 3 retries with backoff, then drop. |

@@ -50,8 +50,8 @@ CREATE TABLE users (
   pw_hash           TEXT NOT NULL,
   is_admin          BOOLEAN NOT NULL DEFAULT false,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  failed_attempts   INTEGER NOT NULL DEFAULT 0,
-  locked_until      TIMESTAMPTZ,
+  failed_attempts   INT NOT NULL DEFAULT 0,           -- added by plan-10-01 (Story 10.11 brute-force counter)
+  locked_until      TIMESTAMPTZ,                       -- added by plan-10-01 (Story 10.11 lockout window)
   CONSTRAINT users_username_lower_unique UNIQUE (lower(username))
 );
 -- Sentinel for the single-user/admin-token bypass path:
@@ -90,8 +90,9 @@ Owned by Story 10.3.
 CREATE TABLE refresh_tokens (
   id            UUID PRIMARY KEY,
   user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  hash          TEXT NOT NULL,                 -- argon2id(token)
+  hash          TEXT NOT NULL,                 -- argon2id of the SECRET HALF of the token only (plan-10-03 §5)
   family_id     UUID NOT NULL,                 -- shared across rotation chain
+  device_id     UUID REFERENCES devices(id) ON DELETE CASCADE,  -- added by plan-10-03 per architecture §8.6; consumed by Plan 12-11
   issued_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at    TIMESTAMPTZ NOT NULL,
   revoked_at    TIMESTAMPTZ,
@@ -99,7 +100,12 @@ CREATE TABLE refresh_tokens (
   client_meta   JSONB
 );
 CREATE INDEX refresh_tokens_user_active ON refresh_tokens (user_id, family_id) WHERE revoked_at IS NULL;
+CREATE INDEX refresh_tokens_device      ON refresh_tokens (device_id) WHERE device_id IS NOT NULL AND revoked_at IS NULL;
 ```
+
+**Notes:**
+- `hash` is the argon2id of *only the secret half* of the opaque token (plan-10-03 §5). The full plaintext is `mkt_rt_v1.<id>.<secret>`; the `id` is the row's UUID v7 (constant-time DB lookup) and only `<secret>` is hashed.
+- `device_id` is set when the row is issued by the native-client login flow or pairing flow (Story 10.17). Web-cookie logins issue *web sessions*, not refresh tokens, so this column is moot for that flow.
 
 ### `pairing_codes`
 
@@ -107,16 +113,21 @@ Owned by Story 10.17.
 
 ```
 CREATE TABLE pairing_codes (
-  code          TEXT PRIMARY KEY,             -- 8-char base32, displayed to user
-  device_id     UUID,
+  id            UUID PRIMARY KEY,                            -- synthetic row id
+  code_hash     TEXT NOT NULL UNIQUE,                        -- sha256(code) hex, lowercase. Plaintext NEVER stored.
+  device_kind   TEXT NOT NULL,
+  device_label  TEXT NOT NULL,
+  bundle_id     TEXT,
   user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
-  state         TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'claimed' | 'expired'
+  state         TEXT NOT NULL DEFAULT 'pending',             -- 'pending' | 'claimed' | 'expired'
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at    TIMESTAMPTZ NOT NULL,
   ip            INET
 );
 CREATE INDEX pairing_codes_state ON pairing_codes (state, expires_at);
 ```
+
+**Note:** the displayed code is shown once (in the `POST /api/auth/pair` response) and never stored as plaintext. Only `code_hash = sha256_hex(code)` is persisted. A DB read leak does not yield active pairing codes (plan-10-17 AC-4). Lookups use `WHERE code_hash = sha256_hex(:input)`.
 
 ### `audit_log` (security category)
 

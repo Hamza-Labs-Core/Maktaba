@@ -46,7 +46,8 @@
    │     score(d) = Σ 1 / (k_rrf + rank_i(d))   k_rrf=60        │
    │                                                            │
    │ 7. Map unit_ids to segment coordinates                     │
-   │     unit.segment_ids[0] → segment row → start/end_sec      │
+   │     unit.segment_id → transcript_segments row              │
+   │     → start/end_sec                                        │
    │                                                            │
    │ 8. Highlight FTS matches: <mark>...</mark>, max 240 chars  │
    │ 9. Bidi-isolate text                                       │
@@ -108,9 +109,11 @@ ALTER TABLE transcript_units DROP COLUMN IF EXISTS search_tsv;
 -- +goose StatementEnd
 ```
 
-The SQLite mirror creates `transcript_units_fts` virtual table with
-`tokenize='unicode61 remove_diacritics 2'` plus the standard
-`INSERT/UPDATE/DELETE` triggers.
+The SQLite mirror is the canonical `transcripts_fts` FTS5 virtual table
+(architecture §8.3) with `tokenize='unicode61 remove_diacritics 2'`. Triggers
+on `transcript_segments` keep it in sync. The Postgres-side `search_tsv`
+generated column on `transcript_units` is the Postgres equivalent — both
+serve the same FTS branch in the search handler.
 
 ## 4. Type definitions
 
@@ -174,11 +177,13 @@ type Hit struct {
     Snippet   string     `json:"snippet"`
 }
 
+// Match.SegmentID is int64 because transcript_segments.id is BIGSERIAL
+// (architecture §8). Same convention applies to transcript_units.id.
 type Match struct {
-    SegmentID uuid.UUID `json:"segment_id"`
-    StartSec  float64   `json:"start_sec"`
-    EndSec    float64   `json:"end_sec"`
-    Text      string    `json:"text"`
+    SegmentID int64   `json:"segment_id"`
+    StartSec  float64 `json:"start_sec"`
+    EndSec    float64 `json:"end_sec"`
+    Text      string  `json:"text"`
 }
 
 type TookBreakdown struct {
@@ -297,8 +302,10 @@ package search
 
 import "sort"
 
+// rankedDoc.UnitID is int64 (transcript_units.id is BIGSERIAL per
+// architecture §8). VideoID stays uuid.UUID.
 type rankedDoc struct {
-    UnitID  uuid.UUID
+    UnitID  int64
     VideoID uuid.UUID
     Score   float64
     Source  string // "fts" | "semantic"
@@ -307,15 +314,15 @@ type rankedDoc struct {
 // rrfFuse returns docs sorted DESC by combined score.
 // score(d) = Σ 1 / (k + rank_i(d))   for each list i where d appears.
 func rrfFuse(fts, semantic []rankedDoc, k float64) []rankedDoc {
-    rank := func(list []rankedDoc) map[uuid.UUID]int {
-        out := make(map[uuid.UUID]int, len(list))
+    rank := func(list []rankedDoc) map[int64]int {
+        out := make(map[int64]int, len(list))
         for i, d := range list { out[d.UnitID] = i + 1 }
         return out
     }
     rFTS := rank(fts)
     rSem := rank(semantic)
 
-    seen := make(map[uuid.UUID]rankedDoc)
+    seen := make(map[int64]rankedDoc)
     add := func(list []rankedDoc) {
         for _, d := range list {
             doc, ok := seen[d.UnitID]
@@ -333,8 +340,8 @@ func rrfFuse(fts, semantic []rankedDoc, k float64) []rankedDoc {
     for _, d := range seen { out = append(out, d) }
     sort.Slice(out, func(i, j int) bool {
         if out[i].Score != out[j].Score { return out[i].Score > out[j].Score }
-        // Deterministic tiebreak by UnitID lexicographic.
-        return out[i].UnitID.String() < out[j].UnitID.String()
+        // Deterministic tiebreak by UnitID ascending.
+        return out[i].UnitID < out[j].UnitID
     })
     return out
 }
@@ -410,22 +417,31 @@ func toSQL(f Filters, baseArgs []any) (clauses []string, args []any) {
         clauses = append(clauses, fmt.Sprintf("%s = ANY($%d)", col, len(args)))
     }
 
-    add("v.detected_language", f.Language)
+    // Language now lives on the active transcript row (architecture §8).
+    if len(f.Language) > 0 {
+        args = append(args, f.Language)
+        clauses = append(clauses, fmt.Sprintf(`EXISTS (
+            SELECT 1 FROM transcripts t
+             WHERE t.video_id = v.id
+               AND t.superseded_at IS NULL
+               AND t.detected_language = ANY($%d))`, len(args)))
+    }
     addUUID("v.library_id", f.LibraryID)
     if r := f.DurationSec; r != nil {
-        if r.GTE != nil { args = append(args, *r.GTE); clauses = append(clauses, fmt.Sprintf("mi.duration_sec >= $%d", len(args))) }
-        if r.LTE != nil { args = append(args, *r.LTE); clauses = append(clauses, fmt.Sprintf("mi.duration_sec <= $%d", len(args))) }
+        if r.GTE != nil { args = append(args, *r.GTE); clauses = append(clauses, fmt.Sprintf("v.duration_sec >= $%d", len(args))) }
+        if r.LTE != nil { args = append(args, *r.LTE); clauses = append(clauses, fmt.Sprintf("v.duration_sec <= $%d", len(args))) }
     }
     if r := f.Date; r != nil {
         if r.GTE != nil { args = append(args, *r.GTE); clauses = append(clauses, fmt.Sprintf("v.created_at >= $%d", len(args))) }
         if r.LTE != nil { args = append(args, *r.LTE); clauses = append(clauses, fmt.Sprintf("v.created_at <= $%d", len(args))) }
     }
     if len(f.Speaker) > 0 {
+        // segment_speakers.segment_id is BIGINT (refs transcript_segments.id).
         args = append(args, f.Speaker)
         clauses = append(clauses, fmt.Sprintf(`EXISTS (
             SELECT 1 FROM segment_speakers ss
-             WHERE ss.segment_id = ANY(u.segment_ids)
-               AND ss.speaker_id = ANY($%d))`, len(args)))
+             WHERE ss.segment_id = u.segment_id
+               AND ss.speaker_id = ANY($%d::bigint[]))`, len(args)))
     }
     if len(f.Tag) > 0 {
         args = append(args, f.Tag)
@@ -448,14 +464,14 @@ func toChromaWhere(f Filters) map[string]any { /* ... */ }
 -- name: FTSUnits :many
 SELECT u.id           AS unit_id,
        v.id           AS video_id,
-       u.segment_ids  AS segment_ids,
+       u.segment_id   AS segment_id,
        u.text         AS text,
        ts_rank(u.search_tsv,
                plainto_tsquery('simple', $1)) AS score
   FROM transcript_units u
   JOIN videos v ON v.id = u.video_id
-  LEFT JOIN media_info mi ON mi.video_id = v.id
  WHERE u.search_tsv @@ plainto_tsquery('simple', $1)
+   AND v.deleted_at IS NULL
    /* filter clauses inserted at $2.. */
  ORDER BY score DESC
  LIMIT $K_PLACEHOLDER;
@@ -469,14 +485,16 @@ SELECT DISTINCT text
  LIMIT 10;
 
 -- name: SegmentByID :one
+-- transcript_segments.id is BIGSERIAL.
 SELECT id, start_sec, end_sec, text
-  FROM segments WHERE id = $1;
+  FROM transcript_segments WHERE id = $1;
 
 -- name: SegmentsForUnits :many
+-- transcript_units.id and transcript_segments.id are both BIGSERIAL.
 SELECT s.id, s.start_sec, s.end_sec, s.text, u.id AS unit_id
-  FROM segments s
-  JOIN transcript_units u ON s.id = ANY(u.segment_ids)
- WHERE u.id = ANY($1::uuid[]);
+  FROM transcript_segments s
+  JOIN transcript_units u ON s.id = u.segment_id
+ WHERE u.id = ANY($1::bigint[]);
 ```
 
 ## 10. Suggest endpoint
@@ -520,7 +538,7 @@ func (h *handler) suggest(w http.ResponseWriter, r *http.Request) {
 
 | Test | What it pins |
 |---|---|
-| `TestLanguageFilter` | `language=[ar]` → `v.detected_language = ANY($1)`. |
+| `TestLanguageFilter` | `language=[ar]` → EXISTS subquery against active `transcripts` row with `detected_language = ANY($1)` (the column lives on transcripts, not videos, per architecture §8). |
 | `TestDurationGTE` | `{gte: 1800}` → `>= $n`. |
 | `TestSpeakerFilter` | Speaker filter generates the EXISTS subquery against `segment_speakers`. |
 | `TestEmptyFilterNoClauses` | `Filters{}` → no WHERE additions. |

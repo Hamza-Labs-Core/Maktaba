@@ -38,6 +38,7 @@ apps/mobile/android/
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <application
       android:label="@string/app_name"
@@ -61,6 +62,10 @@ apps/mobile/android/
     <service
         android:name=".DownloadForegroundService"
         android:foregroundServiceType="dataSync"
+        android:exported="false"/>
+    <service
+        android:name=".MediaPlaybackService"
+        android:foregroundServiceType="mediaPlayback"
         android:exported="false"/>
   </application>
 </manifest>

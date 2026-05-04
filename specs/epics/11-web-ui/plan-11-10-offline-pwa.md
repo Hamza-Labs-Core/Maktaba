@@ -11,7 +11,7 @@
 | SW framework | Workbox 7 with `vite-plugin-pwa`. |
 | Placement | `web/src/sw/sw.ts` (Service Worker entry), `web/src/sw/strategies.ts`, `web/src/lib/bgsync/queue.ts`, `web/src/lib/bgsync/replayer.ts`. |
 | Storage for queue | IndexedDB via `idb-keyval` (or workbox `BackgroundSyncPlugin` queue store). Queue rows persist `{ id, url, method, headers, body, idempotencyKey, queuedAt }`. |
-| Cached endpoints | `/api/libraries`, `/api/libraries/{id}/videos`, `/api/videos/{id}`, `/api/search` (results), `/api/search/suggest`, posters/thumbnails. |
+| Cached endpoints | `/api/libraries`, `/api/videos` (incl. `?library_id=` queries), `/api/videos/{id}`, `/api/search` (results), `/api/search/suggest`, posters/thumbnails. |
 | Never cached | `/api/auth/*`, anything with `Authorization: Bearer mkt_pat_*`, video bytes (handled by player). |
 | Out of scope | Server-side `Idempotency-Key` (Epic 7 Story 7.1); native app downloads (Story 12.6). |
 
@@ -47,11 +47,33 @@
 | `web/src/lib/bgsync/queue.ts` | Queue model + IndexedDB ops. |
 | `web/src/lib/bgsync/replayer.ts` | On `online` event, drain queue. |
 | `web/src/lib/bgsync/api.ts` | `enqueueAndStub(req)` — used by API client when offline. |
-| `web/src/sw/manifest.webmanifest` | App manifest. |
+| `web/src/sw/manifest.webmanifest` | App manifest (see §2.1 for contents). |
 | `web/src/features/install/InstallPrompt.tsx` | Triggers `beforeinstallprompt` capture; shown on session 3+. |
 | `web/src/features/offline/OfflineBanner.tsx` | Sticky banner when `navigator.onLine === false`. |
 | `web/src/features/settings/sections/OfflineQueueSection.tsx` | Lists queued actions; "retry now" / "drop". |
 | `web/src/sw/updatePrompt.ts` | "An update is available — Reload" toast wiring. |
+
+### 2.1 `manifest.webmanifest` contents
+
+```json
+{
+  "name": "Maktaba",
+  "short_name": "Maktaba",
+  "id": "/",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#…",
+  "theme_color": "#…",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
+```
+
+`background_color` and `theme_color` resolve from Story 11.8 design tokens (light theme defaults; the manifest cannot be media-query-aware). `lang`/`dir` ship as Arabic/RTL by default; the in-app language switch (Story 11.12) does not rewrite the manifest at runtime — it only flips `<html lang>` / `<html dir>`. Maskable icons cover Android adaptive icon shapes.
 
 ## 3. Workbox strategies
 
@@ -160,7 +182,7 @@ const { updateServiceWorker } = useRegisterSW({
 
 | Case | Handling |
 |---|---|
-| Quota exhaustion (Safari ITP) | `quotaexceeded` from cache.put → SW logs once; `<OfflineBanner>` reads `navigator.storage.estimate()` and surfaces "Offline cache full". |
+| Quota exhaustion (Safari ITP) | LRU trim path in §10 keeps Safari usage ≤ 45 MB. If a `quotaexceeded` still escapes, the SW logs once and the `<OfflineBanner>` reads `navigator.storage.estimate()` and surfaces "Offline cache full". |
 | iOS Safari kills SW after 30 s | We never depend on long-lived workers; replay is event-driven on `online`. |
 | Auth POST queued? | Never — see whitelist. |
 | Server idempotency window expired | Replay creates a new row; tolerated for `save-search` / `register-device`. |
@@ -186,11 +208,38 @@ const { updateServiceWorker } = useRegisterSW({
 | `SW update toast` | Bump build hash; stale tab shows toast; reload fetches new bundle. |
 | `install prompt at session 3` | Bump session count; prompt appears. |
 
-## 10. Performance
+## 10. Performance & cache budget
 
 - SW registration deferred to `requestIdleCallback` after first paint.
 - Cached responses purged via `ExpirationPlugin` (LRU).
-- Cache budget: 50 MB images + 5 MB API + 10 MB shell — totals ≤ 65 MB (well under Safari ITP cap).
+- **Cache budget — Safari ITP-aware.** A nominal budget of 50 MB images + 5 MB API + 10 MB shell ≈ 65 MB total can blow Safari's ITP storage cap (which can clip to ~50 MB for non-installed origins, and evicts entire origins under pressure). Hard cap on Safari: **≤ 45 MB total**. On Chromium/Firefox the soft target stays at 65 MB.
+- **LRU trim path keyed on `navigator.storage.estimate()`.** Every N writes (default `N = 25`), the SW reads `navigator.storage.estimate()` and, if `usage > 45 MB` (Safari) or `> 60 MB` (other UAs), evicts the oldest images cache entries until under the threshold. Skeleton:
+
+```ts
+// web/src/sw/cacheBudget.ts
+const SAFARI_HARD_CAP = 45 * 1024 * 1024;  // 45 MB
+const OTHER_SOFT_CAP  = 60 * 1024 * 1024;  // 60 MB
+const CHECK_EVERY     = 25;                 // writes between checks
+let writeCounter = 0;
+
+export async function maybeTrim() {
+  if (++writeCounter % CHECK_EVERY !== 0) return;
+  if (!navigator.storage?.estimate) return;
+  const { usage = 0 } = await navigator.storage.estimate();
+  const cap = isSafari() ? SAFARI_HARD_CAP : OTHER_SOFT_CAP;
+  if (usage <= cap) return;
+
+  const cache = await caches.open('images');
+  const reqs = await cache.keys();                  // FIFO order ≈ LRU under Workbox ExpirationPlugin
+  for (const req of reqs) {
+    await cache.delete(req);
+    const { usage: now = 0 } = await navigator.storage.estimate();
+    if (now <= cap * 0.85) break;                   // trim to 85% of cap to avoid thrash
+  }
+}
+```
+
+`maybeTrim()` is called after every `cache.put` in the `images` and `api-list` handlers (wrapped via a Workbox plugin's `cacheDidUpdate`).
 
 ## 11. Dependencies
 

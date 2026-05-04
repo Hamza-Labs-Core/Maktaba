@@ -473,6 +473,25 @@ func createUser(s auth.Store) http.HandlerFunc {
 
 `patchUser` rejects `is_admin` self-promotion (`ctx user.ID == path id
 && body.IsAdmin != nil`) with 403 `type: self-promote-forbidden`.
+
+When `patchUser` (or any future password-change path) successfully
+updates a user's `pw_hash`, it emits a security audit row (Story 10.16
+vocabulary):
+
+```go
+// On a successful UpdateUserPassword:
+audit.Record(r.Context(), auth.AuditPasswordChanged{
+    TargetUserID: target.ID,
+    ByAdmin:      ctxUser.ID != target.ID, // self-change vs admin-set
+})
+// → audit_log row: category='security', event='password.changed',
+//   subject=<target.ID>, payload={by_admin, target_user_id}
+```
+
+The emit happens *after* the UPDATE commits but before the response is
+written; on commit failure no audit row is written (the change didn't
+land).
+
 `deleteUser` runs in a transaction:
 
 ```go

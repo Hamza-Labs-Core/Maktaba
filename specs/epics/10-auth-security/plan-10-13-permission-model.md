@@ -259,21 +259,37 @@ func OwnerScope(ctx context.Context) (uuid.UUID, bool) {
 
 ```go
 // api/internal/http/middleware/requireadmin.go
-func RequireAdmin(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        u, ok := auth.UserFromContext(r.Context())
-        if !ok {
-            problem(w, http.StatusUnauthorized, "unauthorized", "")
-            return
-        }
-        if !u.IsAdmin {
-            problem(w, http.StatusForbidden, "forbidden", "")
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
+func RequireAdmin(audit auth.AuditSink) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            u, ok := auth.UserFromContext(r.Context())
+            if !ok {
+                problem(w, http.StatusUnauthorized, "unauthorized", "")
+                return
+            }
+            if !u.IsAdmin {
+                // Story 10.16 audit emission: log a `permission.denied`
+                // row on every 403 from this gate. Sampled at 1/min per
+                // (user_id, action) at the emitter (per Story 10.16 §6)
+                // — the AuditSink itself does not sample.
+                audit.Record(r.Context(), auth.AuditPermissionDenied{
+                    UserID:   u.ID,
+                    Action:   "admin-required",
+                    Resource: r.URL.Path,
+                })
+                problem(w, http.StatusForbidden, "forbidden", "")
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
 }
 ```
+
+The same emit happens in any other `Authz.Can(...) → false` 403 path
+(e.g., per-resource `library.read` denials in handlers). The
+`permission.denied` event is in the Story 10.16 vocabulary and uses the
+sampled-at-emitter rule to bound write volume on busy denial loops.
 
 ## 7. Per-user filtering
 

@@ -1,5 +1,13 @@
 # Implementation Plan Review — Epics 07-13
 
+> **STATUS: RESOLVED (2026-05-04).** All blockers and majors itemized in
+> this review have been fixed across `specs/architecture.md` and the 105
+> plan files. The architecture document was updated first as the single
+> source of truth, then each epic was swept against it. See
+> §"Resolution log" at the bottom for the per-issue cross-reference, or
+> `git log` on `claude/cool-lichterman-f978aa` for the per-file changes.
+> The findings below are preserved verbatim for historical traceability.
+
 **Scope.** All 105 implementation plans paired with their stories across seven
 epics on `main`:
 
@@ -1044,3 +1052,142 @@ Total: 213 specification files plus the architecture document.
 | Capability/ACL omissions | 8 | 13 |
 | Story↔plan deliberate deviations | 5 | 08, 10, 12 |
 | README schema staleness | 4 | 08, 10 |
+
+---
+
+## Resolution log (2026-05-04)
+
+All cross-cutting and per-epic issues from §1–§8 have been addressed.
+Resolution strategy: update `specs/architecture.md` once with every
+canonical decision, then sweep each epic's plans to align. 91 files
+changed (architecture + 90 plan/story/README files).
+
+### Architecture decisions landed in `specs/architecture.md`
+
+- **§3 FSM**: lowercase state strings canonical (`discovered`, `probed`,
+  `audio_extracted`, `transcribed`, `subtitle_gen`, `indexed`,
+  `thumbnailed`, `ready`, `failed`); auxiliary terminal states canonical
+  (`missing`, `superseded`, `ready_no_audio`, `corrupted`); seven
+  pipeline stages canonical including `subtitle_gen`.
+- **§8 Schema**: `videos` gains `content_type`, `deleted_at`;
+  `libraries` gains `deleted_at`; `transcripts` gains
+  `detected_language`, `language_confidence`, `superseded_at`;
+  `collections` gains `library_id`, `updated_at`; `collection_items`
+  gains `added_at`; `tags` gains `name_fold`, `created_at`; `speakers`
+  gains `updated_at`; `saved_searches` gains `kind`, `updated_at`.
+- **§8 New tables**: `library_roots` (canonical roots store);
+  `media_features` (classifier features); `transcript_units` (indexer
+  units); `audit_log` (partitioned by `created_at`, `category IN
+  ('library','security','device','admin')`); `events` (replay log);
+  `devices` (canonically owned by Epic 12 plan-12-10, with
+  `bundle_id` and generated `token_hash`).
+- **§8.6 Auth cross-references**: `refresh_tokens.device_id` owned by
+  plan-10-03; `pairing_codes.code_hash` (no plaintext); `library_acl`
+  with `LibrariesForUser` accessor.
+- **§9 API**: `GET /api/jobs?…`, `GET /api/videos/{id}/jobs`,
+  `POST /api/jobs/{id}/priority`, `POST /api/jobs:bulk-{pause,resume,cancel,retry}`,
+  `PATCH /api/me/playback-state`, `POST /api/me/password`,
+  `GET/POST/DELETE /api/me/{sessions,pats}`, `GET /api/recommendations`,
+  `POST/PATCH/DELETE /api/devices`, `GET /.well-known/{aasa,assetlinks}`,
+  `GET /api/system/metrics` all documented.
+- **§9.4 Streaming**: separate `/audio/{lang}/seg-{n}.aac` route
+  removed (audio muxes via `var_stream_map`). JWT audiences canonical:
+  `api`, `streaming`, `streaming-direct`, `streaming-static`.
+- **§9.4 lib[] semantics**: signed URLs emit `lib=[resource.library_id]`
+  as a singleton (privacy: do not disclose other library memberships).
+- **§9.9 gRPC**: `Streaming.OpenSession` returns `OpenSessionResponse`
+  (Session + Capabilities); `EvictHashCache` returns
+  `EvictHashCacheResponse{entries_removed, artifacts}`;
+  `GetCapabilities` and `WatchQueue` canonical. Pipeline keeps the
+  four canonical RPCs only — bulk job control flows through Postgres
+  per §1.4. `Pipeline.Enqueue*`, `RunSyntheticTranscribe`, and
+  `ExtractEmbeddedSubtitle` removed from plans.
+
+### Per-epic resolution
+
+| § | Issue | Resolved in |
+|---|-------|-------------|
+| 1.1 | Schema column drift (22+ items) | architecture §8 + sweeps in epics 07/08/09 |
+| 1.2 | ID-type drift (9 plans) | architecture pinned BIGSERIAL; plans 07-04/06/07/08/14, 08-11, 09-11/12/18 updated to int64 |
+| 1.3 | Table-name drift (segments/words/subtitles/videos_fts) | epics 07/08 sweeps |
+| 1.4 | FSM casing | epic 09 sweep + plan-09-06 owns FSM-extension migration |
+| 1.5 | gRPC contract drift | architecture §9.9 + plans 07-03/05/15/18, 08-08/10 |
+| 1.6 | `subtitle_gen` stage canonicalized | architecture §3 + plans 07-05/12/13/15, 11-02 |
+| 1.7 | `devices` double-ownership | plan-07-22 marked superseded; plan-12-10 owns canonical schema with `bundle_id` |
+| 1.8 | `audit_log.category` enum | architecture §8.2.1 extended to `('library','security','device','admin')` |
+| 1.9 | `refresh_tokens.device_id` ownership | plan-10-03 adds the column explicitly |
+| 1.10 | `device-pat` removed | plan-12-11 drops it; only `Source='refresh'` accepted |
+| 1.11 | Web→API endpoint additions and renames | architecture §9 additions; epic 11 endpoint renames |
+| 1.12 | `lib[]` singleton | plan-10-08 rewritten + test renamed |
+| 1.13 | Tauri 2 capabilities/ACL | plan-13-01 §13 capabilities appendix; cross-referenced from 13-04..08 |
+| 1.14 | Migration ownership/ordering | plans 09-09/10/18 ship ALTERs as new files; plan-10-03 stub for `LibrariesForUser`; plan-09-10 owns `media_features` migration; plan-07-01 owns `.well-known` route |
+| 2.1 | Epic 07 Go bugs | plans 07-01 (reqid + With + types registry), 07-02 (cursor type, uuid import), 07-16 (coder/websocket + MarshalJSON), 07-20 (BuildVersion / VersionInfo rename) |
+| 2.2 | Cursor type mismatch | plan-07-02 makes `Cursor.ID string`; `paginate.IDKind` enum |
+| 2.3 | Confirm semantics | both 07-03 and 07-04 use `?confirm=<id>` |
+| 2.4 | `saved_searches` re-creation | plan-07-09 converted to ALTER-only |
+| 2.5 | Problem-type registry | plan-07-01 expanded to 13 canonical constants |
+| 2.6 | New routes (recommendations, devices) | architecture §9.7.2 / §9.7.3 |
+| 3.1 | Epic 08 schema bugs (videos.mime, subtitle_tracks, JOIN) | plans 08-15, 08-03, 08-13, 08-11 |
+| 3.2 | gRPC deviation in plan-08-08 | aligned with canonical §9.9 |
+| 3.3 | `closed_reason` enum | epic 08 README expanded to canonical list |
+| 3.4 | §9.4 audio segments | route removed from architecture §9.4 |
+| 3.5 | `subtitle_files` consumption | plan-08-11 fetches from `subtitle_files WHERE is_external=true` |
+| 3.6 | Epic 08 Go bugs | plans 08-08 (errors.As literal, m.Manager.Close), 08-05 (quoting + var_stream_map), 08-04 (ffprobe binary), 08-09 (SQLite reaper variant) |
+| 3.7 | MediaInfo type duplication | plan-08-15 re-exports `caps.MediaInfo` |
+| 4.1 | Library roots dual-store | plan-09-16 backfills `library_roots`; deprecates `libraries.roots TEXT[]` |
+| 4.2 | plan-09-11 UUID vs BIGSERIAL | rewrote to BIGSERIAL throughout |
+| 4.3 | content_hash type silent change | plan-09-04 keeps TEXT NOT NULL UNIQUE; uses `RETURNING (xmax=0)` |
+| 4.4 | Channel-name registry | plan-09-01 §2.5 hosts the 10 canonical channel constants |
+| 4.5 | Audit-write semantics | plans 09-04/15 use non-blocking `audit.Write` per 09-17 |
+| 5.1 | plan-10-08 `lib[]` | singleton; test renamed; admin bypass keeps singleton |
+| 5.2 | plan-10-16 partition index | partition key `created_at` included |
+| 5.3 | RS256 key DB storage | plan-10-06 §0.1 deviation note + encryption-at-rest constraint |
+| 5.4 | Epic 10 README staleness | users/refresh_tokens/pairing_codes schemas updated; device_id added |
+| 5.5 | Audit emitters missing | plan-10-01 (password.changed), 10-07 (streaming.direct.access), 10-13 (permission.denied) |
+| 5.6 | Reaper unification | plan-10-17 unified reaper covers `web_sessions`, `refresh_tokens`, `pairing_codes` |
+| 5.7 | Sequencing bug | plan-10-03 ships stub `LibrariesForUser`; plan-10-13 replaces |
+| 5.8 | plan-10-17 EC change | story-10-17 updated to 409 |
+| 5.9 | Smaller polish | plan-10-08 `clampTTL` 5-min default + WARN; plan-10-09 dropped unused header; test names cleaned |
+| 5.10 | Audiences in arch | architecture §9.4 lists all four canonical audiences |
+| 6.1 | TanStack Router | plans 11-01, 11-12 migrated from react-router-dom |
+| 6.2 | TanStack Query v5 | plan-11-04 uses `placeholderData: keepPreviousData` |
+| 6.3 | WebSocket multiplexing | plan-11-02 description corrected |
+| 6.4 | If-Match | plan-11-06 switched to `If-Unmodified-Since` |
+| 6.5 | Manifest fields | plan-11-10 §2.1 enumerates manifest |
+| 6.6 | Safari ITP budget | plan-11-10 §10 Safari-specific cap + LRU trim |
+| 7.1 | HLS offline broken | plan-12-06 scoped to direct-play; v2 follow-up notes AVAssetDownloadTask/DownloadHelper |
+| 7.2 | iOS background-POST claim | plan-12-05 softened |
+| 7.3 | MediaPlaybackService missing | plan-12-02 manifest entry added |
+| 7.4 | `.well-known` ownership | plan-12-09 cross-references plan-07-01 |
+| 7.5 | Hard-coded `maktaba.local` | replaced with `{server_host}`; plan-12-01 §0 onboarding via plan-10-17 |
+| 7.6 | Bundle-size budget | epic 12 README updated to 750 KB |
+| 7.7 | plan-12-03 defects | force-unwrap, sync artwork load, race condition all fixed |
+| 7.8 | AirPlay button | plan-12-07 drops inline button |
+| 8.1 | plan-13-06 Tauri 1 API + security | DragDrop API names + path-traversal validator + fs capability |
+| 8.2 | plan-13-08 channel/config_mut | runtime `build_updater` + signing-key playbook |
+| 8.3 | universal vs per-arch | plan-13-08 publishes `darwin-universal` |
+| 8.4 | plan-13-04 prose | tray header references built-in `tauri::tray::*` |
+| 8.5 | plan-13-04 lifetime | owned `Vec<MenuItem>` then `Vec<&dyn IsMenuItem>` |
+| 8.6 | plan-13-02 typos | `MainActivity` replaced with Rust argv parser; `app://` registered explicitly |
+| 8.7 | plan-13-03 gaps | HLS MIME removed; AppImage trade-off note; avahi-daemon probe |
+| 8.8 | plan-13-07 private window | `WebviewWindowBuilder::data_directory(...)` per-private-window |
+| 8.9 | Shared scaffolding plan | plan-13-01 marked as base; epic 13 README updated |
+
+### Verification
+
+`git diff --stat` on `claude/cool-lichterman-f978aa`:
+
+```
+91 files changed, 3307 insertions(+), 927 deletions(-)
+```
+
+Per-epic file counts:
+
+- Epic 07: 21 plans modified (plan-07-19 needed no changes)
+- Epic 08: 12 files modified (10 plans + README + 1 story softened)
+- Epic 09: 14 files modified (13 plans + README)
+- Epic 10: 13 files modified (12 plans + README + 1 story EC update)
+- Epic 11: 9 plans modified
+- Epic 12: 11 files modified (10 plans + README)
+- Epic 13: 9 files modified (8 plans + README)
+- `specs/architecture.md`: 1 file (288 insertions / 24 deletions)

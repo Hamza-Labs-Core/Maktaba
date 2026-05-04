@@ -308,12 +308,26 @@ class Stage[I, O](Protocol):
 ```
 
 Stages do **not** call each other. They read/write through the job store,
-which advances `videos.state` along a finite-state machine:
+which advances `videos.state` along a finite-state machine. State names
+are **lowercase** in SQL (`videos.state TEXT`); diagrams show uppercase
+purely for visual emphasis.
 
 ```
-DISCOVERED → PROBED → AUDIO_EXTRACTED → TRANSCRIBED → INDEXED → THUMBNAILED → READY
-                ↘ FAILED (per-stage, with retry counter and backoff)
+discovered → probed → audio_extracted → transcribed → subtitle_gen → indexed → thumbnailed → ready
+                ↘ failed (per-stage, with retry counter and backoff)
+
+Auxiliary terminal states (set by sweeps and dedup, not the linear pipeline):
+    ready_no_audio  — file has no audio stream; pipeline short-circuits past STT
+    missing         — file removed/unreachable; sweep flips state, row kept for audit
+    superseded      — replaced by another `content_hash`; row kept for audit, hidden in lists
+    corrupted       — probe failed irrecoverably; surfaced in admin UI
 ```
+
+The seven canonical pipeline **stages** are `scan`, `probe`, `extract`,
+`transcribe`, `subtitle_gen`, `index`, `thumbnail` — these are the strings
+written to `processing_jobs.stage`. `subtitle_gen` runs after `transcribe`
+and emits the SRT/VTT sidecar files; it is a separate stage so the
+queue/UI can surface its progress independently.
 
 The orchestrator picks the next eligible stage for each video by joining
 `videos` against `processing_jobs`. This makes "where is video X stuck?" a
@@ -326,7 +340,7 @@ trivial SQL query.
 
 **Inputs:** library root path, ignore globs, supported extensions.
 
-**Outputs:** rows in `videos` for newly-seen files, in state `DISCOVERED`.
+**Outputs:** rows in `videos` for newly-seen files, in state `discovered`.
 
 **Notes:**
 - Skip files that match an existing `content_hash` even at a new path —
@@ -1294,11 +1308,23 @@ PostgreSQL syntax shown; SQLite is identical aside from `JSONB`→`JSON`,
 CREATE TABLE libraries (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name         TEXT NOT NULL UNIQUE,
-    roots        TEXT[] NOT NULL,         -- absolute paths
     settings     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    deleted_at   TIMESTAMPTZ,                 -- soft delete; lists filter on NULL
     created_at   TIMESTAMPTZ DEFAULT now(),
     updated_at   TIMESTAMPTZ DEFAULT now()
 );
+
+-- Library root paths live in their own table (one library, many roots).
+-- Owner: plan-09-16. Plans pre-09-16 may treat `libraries.roots TEXT[]`
+-- as a transitional column; the canonical store is `library_roots`.
+CREATE TABLE library_roots (
+    id          BIGSERIAL PRIMARY KEY,
+    library_id  UUID NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    path        TEXT NOT NULL,                -- absolute path
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (library_id, path)
+);
+CREATE INDEX ON library_roots (library_id);
 
 -- One row per unique video file (by content hash).
 CREATE TABLE videos (
@@ -1316,11 +1342,14 @@ CREATE TABLE videos (
     poster_path        TEXT,                    -- relative to cache root
     sprite_path        TEXT,
     duration_sec       REAL,
+    content_type       TEXT,                    -- 'lecture'|'lesson'|'movie'|...; set by classifier
+    deleted_at         TIMESTAMPTZ,             -- soft delete (file gone or user-removed)
     created_at         TIMESTAMPTZ DEFAULT now(),
     updated_at         TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX ON videos (library_id, state);
 CREATE INDEX ON videos (detected_language);
+CREATE INDEX ON videos (content_type);
 
 -- One row per probe; we keep history if a file changes.
 CREATE TABLE media_info (
@@ -1351,19 +1380,23 @@ CREATE TABLE audio_tracks (
 
 -- One transcript per (video, audio_track, stt_run).
 CREATE TABLE transcripts (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id       UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    audio_track_id BIGINT NOT NULL REFERENCES audio_tracks(id),
-    language       TEXT NOT NULL,
-    backend        TEXT NOT NULL,         -- whisper-mlx, openai-api, ...
-    model          TEXT NOT NULL,         -- large-v3, ...
-    backend_version TEXT,
-    word_level     BOOLEAN NOT NULL,
-    diarized       BOOLEAN NOT NULL,
-    quality_score  REAL,                  -- aggregate confidence
-    created_at     TIMESTAMPTZ DEFAULT now(),
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    video_id            UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    audio_track_id      BIGINT NOT NULL REFERENCES audio_tracks(id),
+    language            TEXT NOT NULL,         -- ISO 639-1; primary language tag
+    detected_language   TEXT,                  -- raw STT detection (may differ from `language`)
+    language_confidence REAL,                  -- 0..1, set by language-tag stage
+    backend             TEXT NOT NULL,         -- whisper-mlx, openai-api, ...
+    model               TEXT NOT NULL,         -- large-v3, ...
+    backend_version     TEXT,
+    word_level          BOOLEAN NOT NULL,
+    diarized            BOOLEAN NOT NULL,
+    quality_score       REAL,                  -- aggregate confidence
+    superseded_at       TIMESTAMPTZ,           -- non-null = newer transcript replaces this one
+    created_at          TIMESTAMPTZ DEFAULT now(),
     UNIQUE (video_id, audio_track_id, backend, model)
 );
+CREATE INDEX ON transcripts (video_id) WHERE superseded_at IS NULL;
 
 CREATE TABLE transcript_segments (
     id             BIGSERIAL PRIMARY KEY,
@@ -1416,8 +1449,10 @@ CREATE TABLE chapters (
 
 ```sql
 CREATE TABLE tags (
-    id    BIGSERIAL PRIMARY KEY,
-    name  TEXT NOT NULL UNIQUE
+    id         BIGSERIAL PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    name_fold  TEXT,                    -- diacritic-folded form for search
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE video_tags (
@@ -1428,17 +1463,21 @@ CREATE TABLE video_tags (
 
 CREATE TABLE collections (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    library_id  UUID REFERENCES libraries(id) ON DELETE CASCADE,  -- NULL = cross-library
     name        TEXT NOT NULL,
     description TEXT,
     is_smart    BOOLEAN NOT NULL DEFAULT false,
     smart_query JSONB,                   -- filter spec when is_smart
-    created_at  TIMESTAMPTZ DEFAULT now()
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now()
 );
+CREATE INDEX ON collections (library_id);
 
 CREATE TABLE collection_items (
     collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
     video_id      UUID REFERENCES videos(id) ON DELETE CASCADE,
     position      INT NOT NULL,
+    added_at      TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (collection_id, video_id)
 );
 
@@ -1447,6 +1486,7 @@ CREATE TABLE speakers (
     library_id  UUID NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
     name        TEXT,                    -- null = unknown
     voiceprint  BYTEA,                   -- d-vector / x-vector
+    updated_at  TIMESTAMPTZ DEFAULT now(),
     UNIQUE (library_id, name)
 );
 
@@ -1456,6 +1496,112 @@ CREATE TABLE segment_speakers (
     confidence REAL,
     PRIMARY KEY (segment_id, speaker_id)
 );
+
+-- Per-video derived features used by classifiers and recommenders.
+-- Owned by Epic 09 (`plan-09-10-content-type-classifier.md`).
+CREATE TABLE media_features (
+    video_id    UUID PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+    features    JSONB NOT NULL,          -- { duration_bucket, speech_ratio, music_ratio, ... }
+    model       TEXT NOT NULL,           -- classifier model id
+    updated_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- Search-indexable token unit (typically a transcript segment or sentence
+-- chunk; populated by `index` stage). Decoupled from `transcript_segments`
+-- so chunking strategy can change without rewriting STT outputs.
+CREATE TABLE transcript_units (
+    id              BIGSERIAL PRIMARY KEY,
+    transcript_id   UUID NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    video_id        UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    segment_id      BIGINT REFERENCES transcript_segments(id) ON DELETE CASCADE,
+    seq             INT NOT NULL,
+    start_sec       REAL NOT NULL,
+    end_sec         REAL NOT NULL,
+    text            TEXT NOT NULL,
+    language        TEXT,
+    UNIQUE (transcript_id, seq)
+);
+CREATE INDEX ON transcript_units (video_id);
+CREATE INDEX ON transcript_units (segment_id);
+```
+
+### 8.2.1 Audit log
+
+Append-only event store, used both for security events (login,
+permission-deny, signed-URL mint, …) and for library/admin actions
+(library deletion, scan trigger, …). Owned by Epic 9
+(`plan-09-17-library-audit.md`); Epic 10 extends the security category
+(`plan-10-16-security-audit.md`).
+
+```sql
+CREATE TABLE audit_log (
+    id          BIGSERIAL,
+    category    TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
+    event       TEXT NOT NULL,           -- e.g. 'library.deleted', 'auth.login.success'
+    actor_user  UUID REFERENCES users(id) ON DELETE SET NULL,
+    actor_ip    INET,
+    target_id   TEXT,                    -- resource id (library/video/device/...)
+    target_kind TEXT,                    -- 'library'|'video'|'device'|'session'|...
+    payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    dedupe_key  TEXT,                    -- security writers may set for once-per-window dedupe
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
+
+-- Monthly partitions; the management script in plan-09-17 keeps a 13-month rolling window.
+-- Unique indexes on partitioned tables must include the partition key:
+CREATE UNIQUE INDEX audit_log_security_dedupe
+  ON audit_log (created_at, dedupe_key)
+  WHERE category = 'security' AND dedupe_key IS NOT NULL;
+```
+
+`category='device'` is reserved for device registration / token
+rotation events (Epic 12). Mobile push-token events go here, not under
+`security`.
+
+### 8.2.2 Events bus replay log
+
+A short-retention table the API uses to replay missed WebSocket frames
+when a client reconnects. Owned by Epic 7
+(`plan-07-16-websocket-fanout.md`).
+
+```sql
+CREATE TABLE events (
+    id          BIGSERIAL PRIMARY KEY,
+    channel     TEXT NOT NULL,            -- 'videos.new', 'jobs.progress', ...
+    payload     JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ON events (channel, id);
+-- Reaper trims rows older than 1 h.
+```
+
+### 8.2.3 Devices
+
+Mobile / desktop / TV clients register a device on first launch and on
+push-token rotation. One row per (user, token_hash) pair; raw push
+tokens are not stored. Owned by Epic 12
+(`plan-12-10-device-registration-api.md`); supersedes the earlier
+`plan-07-22-devices-register.md` migration.
+
+```sql
+CREATE TABLE devices (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform      TEXT NOT NULL,           -- 'ios'|'android'|'macos'|'windows'|'linux'|'tvos'|'androidtv'
+    bundle_id     TEXT,                    -- APNs topic / Android packageName; required on iOS/macOS/tvOS
+    token         TEXT,                    -- raw push token; never read after writing
+    token_hash    TEXT GENERATED ALWAYS AS (encode(sha256(coalesce(token, '')::bytea), 'hex')) STORED,
+    app_version   TEXT,
+    os_version    TEXT,
+    locale        TEXT,
+    categories    JSONB NOT NULL DEFAULT '[]'::jsonb,  -- notification topics opted into
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at    TIMESTAMPTZ,
+    UNIQUE (user_id, token_hash)
+);
+CREATE INDEX ON devices (user_id) WHERE revoked_at IS NULL;
 ```
 
 ### 8.3 Search index (SQLite FTS5 variant)
@@ -1522,10 +1668,28 @@ CREATE TABLE saved_searches (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID REFERENCES users(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
+    kind       TEXT,                          -- 'fts'|'semantic'|'hybrid' (default at save time)
     query      JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 ```
+
+### 8.6 Auth tables (cross-reference)
+
+The auth tables (`web_sessions`, `refresh_tokens`, `pairing_codes`,
+`personal_access_tokens`, `library_acl`, `jwt_keys`) are owned by
+Epic 10. Notable cross-cutting columns:
+
+- `refresh_tokens.device_id UUID REFERENCES devices(id) ON DELETE CASCADE` —
+  set on native logins (iOS, Android, desktop, TV). Owned by
+  `plan-10-03-native-login.md`. The web flow leaves it null.
+- `pairing_codes.code_hash TEXT NOT NULL` — argon2id of the displayed
+  code. Owner: `plan-10-17-auth-pair.md`. The plaintext `code` column is
+  not stored.
+- `library_acl (library_id, user_id, role)` — permission grants.
+  Owner: `plan-10-13-permission-model.md`. `LibrariesForUser(user_id)`
+  is the canonical accessor.
 
 ---
 
@@ -1639,8 +1803,7 @@ talks to the Streaming Service directly.
 GET    /stream/{session_id}/manifest.m3u8        → HLS master
 GET    /stream/{session_id}/manifest.mpd         → DASH (if requested)
 GET    /stream/{session_id}/{rendition}/index.m3u8
-GET    /stream/{session_id}/{rendition}/seg-{n}.ts
-GET    /stream/{session_id}/audio/{lang}/seg-{n}.aac
+GET    /stream/{session_id}/{rendition}/seg-{n}.ts    → audio is muxed into the variant via var_stream_map
 GET    /stream/{session_id}/subs/{lang}.vtt      → live-rendered from DB
 GET    /stream/direct/{video_id}                 → 206 Partial Content (signed JWT in query)
 GET    /stream/posters/{video_id}.jpg
@@ -1652,23 +1815,55 @@ content properly so Safari (the strictest) plays back without reload loops.
 All Streaming endpoints validate a JWT signature against the API's RS256
 public key; the Streaming Service does not call back to the API to authorize.
 
+**JWT audiences** (token `aud` claim):
+
+| `aud` value         | Issued for                                    | Carried to                                            |
+|---------------------|-----------------------------------------------|-------------------------------------------------------|
+| `api`               | API REST/GraphQL                              | API Service                                            |
+| `streaming`         | HLS/DASH manifests + segments + live subs     | `/stream/{session}/manifest.*`, `/stream/{session}/...` |
+| `streaming-direct`  | Direct-play 206 Partial Content               | `GET /stream/direct/{video_id}`                        |
+| `streaming-static`  | Posters, sprites, chapter thumbs              | `GET /stream/posters/*`, `/stream/sprites/*`           |
+
+Signed-URL minting (`plan-10-08-signed-url-minter.md`) emits `lib=[library_id]`
+as a **singleton** containing only the resource's library, not the user's
+full library set — leaking a URL must not disclose other library
+memberships. The full snapshot lives only in the API access token (`api`
+audience).
+
 ### 9.5 Processing
 
 ```
 GET    /api/jobs                         ?state&stage&video&cursor
 GET    /api/jobs/{id}
+GET    /api/videos/{id}/jobs             → jobs for a single video (used by detail page)
 POST   /api/jobs/{id}/pause              → sets pause_requested
 POST   /api/jobs/{id}/pause?force=true   → flips state immediately, drops in-flight segment
 POST   /api/jobs/{id}/resume             → makes a paused job re-claimable
 POST   /api/jobs/{id}/cancel             → sets cancel_requested
 POST   /api/jobs/{id}/retry              → resets attempts (failed → pending)
+POST   /api/jobs/{id}/priority           {priority}  → adjust queue priority
+POST   /api/jobs:bulk-pause              {ids: [...] | filter: {...}}
+POST   /api/jobs:bulk-resume             {ids: [...] | filter: {...}}
+POST   /api/jobs:bulk-cancel             {ids: [...] | filter: {...}}
+POST   /api/jobs:bulk-retry              {ids: [...] | filter: {...}}
 
 POST   /api/videos/{id}/pause            → pauses every active job for this video
 POST   /api/videos/{id}/resume           → resumes every paused job for this video
+POST   /api/videos/{id}/process          {stage?, priority?}
+POST   /api/videos/{id}/reprocess        {from_stage}     → resets state
 
 GET    /api/queue/stats                  → per-stage counts and ETA
 WS     /ws/jobs                          → live job state + progress (see §7.10)
 ```
+
+The `from_stage` request key is canonical on `reprocess`; `stage` is
+canonical on `process`. The seven canonical pipeline stage strings are
+`scan`, `probe`, `extract`, `transcribe`, `subtitle_gen`, `index`,
+`thumbnail` (see §3).
+
+Bulk and priority endpoints flip flags / insert rows in
+`processing_jobs` directly — they do **not** call Pipeline gRPC. This
+matches §1.4: "bulk job control flows through Postgres, not gRPC."
 
 `pause`, `resume`, and `cancel` are idempotent: re-issuing a request that
 matches the current state (or pending request flag) returns 200 with the
@@ -1699,7 +1894,50 @@ GET        /api/settings/stt-backends    → enumerate available backends
 POST       /api/settings/stt-test        {backend, config} → dry run
 GET        /api/system/health
 GET        /api/system/version
+GET        /api/system/metrics           → Prometheus exposition
 ```
+
+### 9.7.1 Per-user (`/api/me`)
+
+```
+GET    /api/me                            → user profile
+PATCH  /api/me                            {display_name?, locale?, ...}
+POST   /api/me/password                   {current_password, new_password}
+PATCH  /api/me/playback-state             {video_id, position_sec, completed?}
+GET    /api/me/devices                    → list devices for the current user
+GET    /api/me/sessions                   → active web/native sessions
+DELETE /api/me/sessions/{id}              → revoke a session
+GET    /api/me/pats                       → personal access tokens
+POST   /api/me/pats                       {name, scopes, ttl}
+DELETE /api/me/pats/{id}
+```
+
+`PATCH /api/me/playback-state` is the offline-tolerant write path the
+PWA flushes on reconnect; the streaming-session progress endpoint
+(§9.4) writes the same row from an active watch session.
+
+### 9.7.2 Recommendations & devices
+
+```
+GET    /api/recommendations              ?library&limit  → "next up", "continue watching"
+GET    /api/recommendations/similar/{video_id}
+
+POST   /api/devices                      {platform, bundle_id?, token, app_version, ...}
+                                         → registers / refreshes a device row
+DELETE /api/devices/{id}                 → revokes a device
+PATCH  /api/devices/{id}                 {categories?, locale?, app_version?}
+```
+
+### 9.7.3 Universal links / app association (`/.well-known`)
+
+```
+GET  /.well-known/apple-app-site-association
+GET  /.well-known/assetlinks.json
+```
+
+Static-file responses owned by the API server skeleton
+(`plan-07-01-http-server-skeleton.md`). Content is generated from the
+configured iOS bundle id + Android package id at boot.
 
 ### 9.8 Auth
 
@@ -1735,12 +1973,38 @@ service Pipeline {
 }
 
 service Streaming {
-  rpc OpenSession(OpenSessionRequest) returns (Session);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc CloseSession(CloseSessionRequest) returns (google.protobuf.Empty);
-  rpc EvictHashCache(EvictRequest) returns (google.protobuf.Empty);
+  rpc EvictHashCache(EvictRequest) returns (EvictHashCacheResponse);
+  rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
+  rpc WatchQueue(WatchQueueRequest) returns (stream QueueEvent);
   rpc HealthCheck(google.protobuf.Empty) returns (HealthStatus);
 }
+
+message OpenSessionResponse {
+  Session session = 1;
+  CapabilitiesResponse capabilities = 2;          // returned for handshake convenience
+}
+
+message EvictHashCacheResponse {
+  int32 entries_removed = 1;
+  repeated string artifacts = 2;                  // cleared cache file paths
+}
 ```
+
+**Pipeline does not expose `Enqueue*`.** Bulk job control flows through
+Postgres, not gRPC: the API enqueues by `INSERT INTO processing_jobs`
+and Pipeline workers claim with `SELECT … FOR UPDATE SKIP LOCKED` (§7;
+also §1.4). Synthetic transcribe runs (used by settings dry-run) reuse
+`Pipeline.Transcribe` with a fixture audio source — there is no
+`RunSyntheticTranscribe` RPC. Embedded subtitle extraction is folded
+into the `extract` stage of the linear pipeline; clients do not invoke
+it directly.
+
+**Streaming extensions** (`GetCapabilities`, `WatchQueue`, richer
+response messages) are non-breaking additions consumed by Epic 8's
+streaming-server plan and Epic 7's `plan-07-18-grpc-clients.md`
+client wrapper.
 
 `shared/proto/` generates Go (via `protoc-gen-go-grpc`) and Python (via
 `grpc_tools.protoc`) clients; both are checked in so neither side needs

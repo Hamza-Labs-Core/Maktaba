@@ -73,19 +73,21 @@ CREATE INDEX video_topics_topic ON video_topics (library_id, topic_id, score DES
 
 ### `media_features`
 
-Owned by Story 9.10.
+Owned by Story 9.10. Canonical schema (architecture):
 
 ```
 CREATE TABLE media_features (
-  video_id                 UUID PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
-  music_speech_ratio       REAL,
-  silence_pct              REAL,
-  mean_loudness_lufs       REAL,
-  diarization_turn_density REAL,
-  segment_density          REAL,
-  computed_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+  video_id    UUID        PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  features    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  model       TEXT        NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
+
+The probe stage (Epic 1) populates `features` with documented keys:
+`silence_pct`, `music_speech_ratio`, `mean_loudness_lufs`,
+`diarization_turn_density`, `segment_density`. The classifier (Story
+9.10) reads them via JSONB key extraction.
 
 ### `library_sweeps`
 
@@ -136,17 +138,19 @@ audit-table proposals from REVIEW.md §1.1.f are unified into a single
 
 ```
 CREATE TABLE audit_log (
-  id              UUID PRIMARY KEY,                     -- v7 (so ordered)
-  ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
-  category        TEXT NOT NULL,                         -- 'library' | 'security' | ...
+  id              UUID NOT NULL,                         -- v7 (so ordered)
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  category        TEXT NOT NULL CHECK (category IN ('library','security','device','admin')),
   event           TEXT NOT NULL,
   actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
   library_id      UUID REFERENCES libraries(id) ON DELETE SET NULL,
   video_id        UUID REFERENCES videos(id) ON DELETE SET NULL,
   ip              INET,
   user_agent      TEXT,
-  payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb
-) PARTITION BY RANGE (ts);
+  dedupe_key      TEXT,
+  payload_jsonb   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (created_at, id)
+) PARTITION BY RANGE (created_at);
 
 -- Append-only enforcement
 CREATE OR REPLACE FUNCTION audit_log_no_mutation() RETURNS trigger AS $$
@@ -157,15 +161,36 @@ CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
   FOR EACH ROW EXECUTE FUNCTION audit_log_no_mutation();
 
-CREATE INDEX audit_log_lookup ON audit_log (category, ts DESC);
-CREATE INDEX audit_log_actor ON audit_log (actor_user_id, ts DESC) WHERE actor_user_id IS NOT NULL;
-CREATE INDEX audit_log_library ON audit_log (library_id, ts DESC) WHERE library_id IS NOT NULL;
+CREATE INDEX audit_log_lookup ON audit_log (category, created_at DESC);
+CREATE INDEX audit_log_actor ON audit_log (actor_user_id, created_at DESC) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX audit_log_library ON audit_log (library_id, created_at DESC) WHERE library_id IS NOT NULL;
+
+-- Security dedupe — partition key (created_at) must be in the unique index.
+CREATE UNIQUE INDEX audit_log_security_dedupe
+  ON audit_log (created_at, dedupe_key)
+  WHERE category = 'security' AND dedupe_key IS NOT NULL;
 ```
 
 Monthly partitions are managed by a maintenance job (Epic 22). Old
 partitions are detached and archived after `audit_retention_days`
 (default 365). Story 9.17 surfaces `category='library'` rows; Epic 10
 Story 10.16 surfaces `category='security'` rows.
+
+## Canonical FSM and stages
+
+The canonical FSM (architecture §8.1) uses **lowercase** state strings:
+
+- Primary states: `discovered, probed, audio_extracted, transcribed, subtitle_gen, indexed, thumbnailed, ready, failed`.
+- Auxiliary terminal states (canonical now, owned by Epic 9): `missing, superseded, ready_no_audio, corrupted`. Story 9.6 (`plan-09-06-manual-scan.md`) owns the FSM-extension migration that ALTERs the `videos.state` CHECK to include them.
+
+Canonical stage list (7 stages): `scan, probe, extract, transcribe, subtitle_gen, index, thumbnail`. Stage extensions added by Epic 9 stories (`topic_recluster`, `topic_assign`, `categorize`, `chapter_infer`) ship as **separate** ALTER migrations sequenced after Epic 6's last migration — they do not edit Epic 6's `0010_processing_jobs.sql`.
+
+## Roots: canonical store
+
+`library_roots` (Story 9.16) is the canonical store for library root
+paths (architecture §8.1). The legacy `libraries.roots TEXT[]` column
+is **deprecated** but kept transitionally for one release; it is
+back-filled at migration time. New code reads from `library_roots`.
 
 ## Sequencing
 

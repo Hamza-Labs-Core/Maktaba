@@ -15,6 +15,7 @@
 | Caller surfaces | API session-open handler (Epic 7 Story 7.10), direct-play (Epic 7 Story 7.7), static-asset (Epic 7 Story 7.13). Each calls `minter.MintXxx(...)`. |
 | TTL clamp | `clampTTL(want, max)` returns the smaller value and increments a counter. |
 | Pre-mint ACL check | `LibrariesForUser(ctx, user) → []library_id`; mint refuses (with `403 access-denied`) if the resource library is not in the set. |
+| `lib[]` singleton | Per architecture §9.4 / §9.8: signed URLs emit `lib=[resource.library_id]` (a singleton — only the resource's own library), NOT the user's full library set. The user's full library snapshot lives only in the API access token (`aud="api"`). Privacy: a leaked URL must not disclose other library memberships. |
 | Out of scope | Server-side verify (Story 10.7), DB ACL row schema (owned by 10.13's plan). |
 
 ## 1. Architecture diagram
@@ -131,8 +132,9 @@ type minter struct {
 }
 
 func (m *minter) MintManifestURL(ctx context.Context, p ManifestParams) (string, error) {
-    libs, err := m.resolveAccess(ctx, p.UserID, p.LibraryID)
-    if err != nil { return "", err }
+    if err := m.resolveAccess(ctx, p.UserID, p.LibraryID); err != nil {
+        return "", err
+    }
 
     ttl := clampTTL(p.TTL, time.Duration(m.cfg.MaxSignedURLTTLSec)*time.Second)
     now := time.Now().Unix()
@@ -140,7 +142,10 @@ func (m *minter) MintManifestURL(ctx context.Context, p ManifestParams) (string,
         Iss: "maktaba", Aud: "streaming", Sub: p.SessionID.String(),
         Iat: now, Exp: now + int64(ttl.Seconds()),
         Usr: p.UserID.String(),
-        Lib: libsToStrings(libs),       // see §5 — admin gets every library
+        // Architecture §9.4 / §9.8: signed URLs are a singleton — only the
+        // resource's library. The user's full library snapshot lives only
+        // in the API access token (aud="api"). See §5.
+        Lib: []string{p.LibraryID.String()},
     }
     tok, err := auth.Mint(claims, m.signer)
     if err != nil { return "", fmt.Errorf("%w: %v", ErrKeyUnavailable, err) }
@@ -151,8 +156,9 @@ func (m *minter) MintManifestURL(ctx context.Context, p ManifestParams) (string,
 }
 
 func (m *minter) MintDirectURL(ctx context.Context, p DirectParams) (string, error) {
-    libs, err := m.resolveAccess(ctx, p.UserID, p.LibraryID)
-    if err != nil { return "", err }
+    if err := m.resolveAccess(ctx, p.UserID, p.LibraryID); err != nil {
+        return "", err
+    }
 
     ttl := clampTTL(p.TTL, time.Duration(m.cfg.MaxSignedURLTTLSec)*time.Second)
     now := time.Now().Unix()
@@ -160,7 +166,7 @@ func (m *minter) MintDirectURL(ctx context.Context, p DirectParams) (string, err
         Iss: "maktaba", Aud: "streaming-direct", Sub: p.VideoID.String(),
         Iat: now, Exp: now + int64(ttl.Seconds()),
         Usr: p.UserID.String(),
-        Lib: libsToStrings(libs),
+        Lib: []string{p.LibraryID.String()},   // singleton — see §5
     }
     tok, err := auth.Mint(claims, m.signer)
     if err != nil { return "", fmt.Errorf("%w: %v", ErrKeyUnavailable, err) }
@@ -168,8 +174,9 @@ func (m *minter) MintDirectURL(ctx context.Context, p DirectParams) (string, err
 }
 
 func (m *minter) MintStaticURL(ctx context.Context, p StaticParams) (string, error) {
-    libs, err := m.resolveAccess(ctx, p.UserID, p.LibraryID)
-    if err != nil { return "", err }
+    if err := m.resolveAccess(ctx, p.UserID, p.LibraryID); err != nil {
+        return "", err
+    }
 
     ttl := clampTTL(p.TTL, time.Duration(m.cfg.MaxSignedURLTTLSec)*time.Second)
     sub := sha256Hex(p.ArtifactPath)   // 64 hex chars
@@ -178,7 +185,7 @@ func (m *minter) MintStaticURL(ctx context.Context, p StaticParams) (string, err
         Iss: "maktaba", Aud: "streaming-static", Sub: sub,
         Iat: now, Exp: now + int64(ttl.Seconds()),
         Usr: p.UserID.String(),
-        Lib: libsToStrings(libs),
+        Lib: []string{p.LibraryID.String()},   // singleton — see §5
     }
     tok, err := auth.Mint(claims, m.signer)
     if err != nil { return "", fmt.Errorf("%w: %v", ErrKeyUnavailable, err) }
@@ -186,21 +193,24 @@ func (m *minter) MintStaticURL(ctx context.Context, p StaticParams) (string, err
     return fmt.Sprintf("%s/stream/static/%s?sig=%s", m.origin, url.PathEscape(p.ArtifactPath), tok), nil
 }
 
-func (m *minter) resolveAccess(ctx context.Context, userID, libID uuid.UUID) ([]uuid.UUID, error) {
+// resolveAccess performs the pre-mint ACL check. It does NOT return a
+// library list: per architecture §9.4 / §9.8, signed URLs only carry the
+// resource's own library in `lib[]` (singleton). Admins skip the ACL
+// check entirely (Story 10.9 AC-5 + Story 10.13 AC-1).
+func (m *minter) resolveAccess(ctx context.Context, userID, libID uuid.UUID) error {
     user, err := m.users.GetByID(ctx, userID)
-    if err != nil { return nil, ErrAccessDenied }
+    if err != nil { return ErrAccessDenied }
 
     if user.IsAdmin {
-        // Story 10.9 AC-5 + Story 10.13 AC-1: admin/sentinel → every library.
-        return m.libACL.AllLibraryIDs(ctx)
+        return nil   // admin/sentinel always passes the ACL gate
     }
 
     libs, err := m.libACL.LibrariesForUser(ctx, userID)
-    if err != nil { return nil, err }
+    if err != nil { return err }
     for _, l := range libs {
-        if l == libID { return libs, nil }
+        if l == libID { return nil }
     }
-    return nil, ErrAccessDenied
+    return ErrAccessDenied
 }
 ```
 
@@ -213,12 +223,20 @@ var ttlClampedCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
     Help: "Number of mint calls whose requested TTL exceeded MaxSignedURLTTLSec",
 }, nil)
 
+// safeFallbackTTL is used when a caller passes want<=0 (a programming
+// bug). We deliberately use a SMALL value (5 minutes) rather than `max`
+// so a bug doesn't silently mint long-lived URLs for 24h before anyone
+// notices; the bug surfaces quickly via expired URLs and the WARN log.
+const safeFallbackTTL = 5 * time.Minute
+
 func clampTTL(want time.Duration, max time.Duration) time.Duration {
     if want <= 0 {
-        // A zero or negative ttl is a programming bug; surface as max so a
-        // bad call still produces a working URL until the operator notices.
+        // A zero or negative ttl is a programming bug. Use a short safe
+        // default and emit a WARN so the bug surfaces in operator logs.
+        slog.Warn("signedurl: clampTTL called with non-positive ttl; using safe fallback",
+            "want", want, "fallback", safeFallbackTTL)
         ttlClampedCounter.WithLabelValues().Inc()
-        return max
+        return safeFallbackTTL
     }
     if want > max {
         ttlClampedCounter.WithLabelValues().Inc()
@@ -231,18 +249,29 @@ func clampTTL(want time.Duration, max time.Duration) time.Duration {
 The clamp is silent (no error) per AC-4. The metric increment is the
 operator-visible signal.
 
-## 5. `lib[]` resolution
+## 5. `lib[]` resolution (singleton)
 
-`libsToStrings([]uuid.UUID) []string` is a thin helper. The substantive
-logic is in `resolveAccess`:
+Per architecture §9.4 / §9.8, signed URLs emit `lib=[resource.library_id]`
+— a singleton list containing only the library the resource itself
+belongs to. The user's full library set is **not** disclosed in signed
+URLs; it lives only in the API access token (`aud="api"`, owned by Story
+10.3).
 
-1. Admin / sentinel → every library id (`AllLibraryIDs` from the ACL).
-2. Non-admin → the user's `library_acl` rows.
-3. Mint refuses (with `ErrAccessDenied`) when the resource's `libID`
-   is not in the user's set.
+Privacy rationale: a leaked signed URL must not reveal which other
+libraries the user has access to. Signed URLs land in browser history,
+proxy logs, and analytics; access tokens do not.
 
-This guarantees the streaming verify (Story 10.7) sees only tokens
-whose `lib[]` is honest.
+The mint pipeline becomes:
+
+1. `resolveAccess(ctx, userID, libID)` — ACL gate only; no list returned.
+   - Admin / sentinel: always passes.
+   - Non-admin: must have `libID` in their `library_acl` rows; otherwise `ErrAccessDenied`.
+2. Build `Lib: []string{libID.String()}` — exactly one entry.
+3. Sign and return URL.
+
+This guarantees the streaming verify (Story 10.7) sees a `lib[]` that
+is both honest (the user does have access) and minimal (no other-library
+disclosure).
 
 ## 6. HTTP error envelope from callers
 
@@ -281,9 +310,9 @@ if err != nil {
 
 | Test | What it pins |
 |---|---|
-| `TestMintManifestClaimsMatchAC1` | Decode the resulting JWT: `aud="streaming"`, `sub=session_id`, `usr=user_id`, `lib=[library_id]`, `exp - iat == ttl`. |
-| `TestMintDirectClaimsMatchAC2` | `aud="streaming-direct"`, `sub=video_id`, `usr=user_id`, `lib=[library_id]`. |
-| `TestMintStaticClaimsMatchAC3` | `aud="streaming-static"`, `sub=sha256(artifact_path)`, `usr=user_id`, `lib=[library_id]`. |
+| `TestMintManifestClaimsMatchAC1` | Decode the resulting JWT: `aud="streaming"`, `sub=session_id`, `usr=user_id`, `lib=[library_id]` (length 1, equal to the resource's library), `exp - iat == ttl`. |
+| `TestMintDirectClaimsMatchAC2` | `aud="streaming-direct"`, `sub=video_id`, `usr=user_id`, `lib=[library_id]` (singleton). |
+| `TestMintStaticClaimsMatchAC3` | `aud="streaming-static"`, `sub=sha256(artifact_path)`, `usr=user_id`, `lib=[library_id]` (singleton). |
 | `TestMintStaticTTLDefaults` | Without an explicit ttl, defaults: poster 1h, sprite 1h, subtitle 1h, chapters 1h. |
 | `TestMintIncludesKID` | Header `kid` matches signer.KID(); payload `kid` matches. |
 | `TestMintFailsWhenSignerKeyUnavailable` | Stub signer returns error → minter returns wrapped `ErrKeyUnavailable`. |
@@ -296,9 +325,9 @@ if err != nil {
 |---|---|
 | `TestMintRefusesWhenLibNotInACL` | User U has libs [L1]; mint for L2 → `ErrAccessDenied`; no JWT issued. |
 | `TestHandlerReturns403WhenAccessDenied` | The integration test for the session-open handler returns 403 `access-denied`; never any token in the response body. |
-| `TestAdminGetsEveryLibInLibClaim` | User with `is_admin=true`; `lib[]` in the issued token contains every library id from `AllLibraryIDs`. |
-| `TestSentinelGetsEveryLib` | Same as above but specifically for the sentinel UUID (Story 10.9 AC-5). |
-| `TestMintIncludesUserLibsNotJustResourceLib` | User U has libs [L1, L2]; mint for L1 → `lib[]` = [L1, L2] (the full snapshot, not a singleton). This means a single signed URL can be reused by Streaming to validate multiple resources, but Streaming still enforces per-resource lib match (Story 10.7). |
+| `TestAdminBypassesACLCheck` | User with `is_admin=true`; mint for any library succeeds (Story 10.9 AC-5 + Story 10.13 AC-1). The token's `lib[]` is still a singleton equal to the requested library id. |
+| `TestSentinelBypassesACLCheck` | Same as above but specifically for the sentinel UUID (Story 10.9 AC-5). |
+| `TestMintEmitsOnlyResourceLibrary` | User U has libs [L1, L2]; mint for L1 → `lib[]` = [L1] exactly (singleton, NOT the full snapshot). This guarantees a leaked signed URL discloses only the resource's library, never the user's full library set. The user's full snapshot lives only in the API access token (`aud="api"`, Story 10.3). |
 
 ### 8.3 TTL clamp
 
@@ -306,8 +335,8 @@ if err != nil {
 |---|---|
 | `TestClampReturnsMaxOnOverflow` | `want=48h, max=24h` → returns 24h; counter += 1. |
 | `TestClampReturnsWantWhenInRange` | `want=1h` → returns 1h; counter unchanged. |
-| `TestClampHandlesZeroTTL` | `want=0` → returns max; counter += 1. |
-| `TestClampHandlesNegativeTTL` | `want=-1m` → returns max; counter += 1. |
+| `TestClampHandlesZeroTTL` | `want=0` → returns 5 minutes (safe fallback, NOT max); counter += 1; WARN emitted. |
+| `TestClampHandlesNegativeTTL` | `want=-1m` → returns 5 minutes (safe fallback); counter += 1; WARN emitted. |
 | `TestMintEnforcesTTLClampInJWT` | A 48h request with 24h max → token's `exp-iat == 86400`. |
 
 ### 8.4 End-to-end with Streaming verify
@@ -333,7 +362,7 @@ in-process and asserts:
 | Caller passes the wrong `LibraryID` for the resource | The minter trusts the caller for "what library this resource is in" because the caller already had to look it up; we do *not* re-check the resource→library binding here. The Streaming side re-checks (Story 10.7) — defense in depth. | n/a |
 | Caller passes a UUID that isn't a real video | The minter doesn't load the video; it just signs. The verify side will fail at the resource-lookup step (`ErrUnknownVideo` → 401). | Story 10.7 plan |
 | `MaxSignedURLTTLSec` set to 0 in config | The clamp would always return 0 (every URL immediately expired). The config validator (Epic 7 Story 7.15) rejects 0 with a startup error. | Config validation |
-| Token URL exceeds 8 KB browser query-string limit | An RSA-4096 JWT is ~700 bytes base64; well under any limit. The `lib[]` claim with 1000 entries (Story 10.13's cap) brings the token to ~30 KB — beyond browser query-string limits in some configurations. The mitigation is the lib cap; the v2 plan calls for a "lib_all" sentinel. Documented in Story 10.13. | Story 10.13 plan |
+| Token URL exceeds 8 KB browser query-string limit | An RSA-4096 JWT with a singleton `lib[]` is ~700 bytes base64 — well under any limit. The size concern that motivated Story 10.13's `lib[]` cap (1000 entries) does not apply to signed URLs because architecture §9.4 / §9.8 makes `lib[]` a singleton here. The cap still applies to the API access token, where the user's full library snapshot lives. | Story 10.13 plan |
 | Two callers mint for the same `(user, lib, video)` | Both succeed; both URLs are independently valid until expiry. No deduplication. | n/a |
 
 ## 10. Dependencies
@@ -349,7 +378,11 @@ No new dependencies beyond Stories 10.3 and 10.6.
 
 **Pre-mint ACL**
 - [ ] AC-5: a user without ACL access to the requested library → `ErrAccessDenied`; handler returns 403; no JWT is ever issued.
-- [ ] Admin / sentinel → every library id appears in `lib[]`.
+- [ ] Admin / sentinel: ACL gate is bypassed; mint succeeds for any library.
+
+**`lib[]` singleton (architecture §9.4 / §9.8)**
+- [ ] Every minted token's `lib[]` contains exactly one entry, equal to the resource's library id.
+- [ ] No leaked URL discloses other library memberships of the calling user.
 
 **TTL clamp**
 - [ ] AC-4: requested TTL above `MaxSignedURLTTLSec` is silently capped; metric `maktaba_signedurl_ttl_clamped_total` increments.
