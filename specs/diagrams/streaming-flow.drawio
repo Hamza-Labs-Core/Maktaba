@@ -1,355 +1,75 @@
-<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="Maktaba" version="24.7.0">
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
   <diagram id="streaming-flow" name="Streaming Flow">
-    <mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1600" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1140" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="title" value="Streaming Architecture &amp;amp; Playback Flow" style="text;html=1;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="20" width="2320" height="40" as="geometry" />
+        <mxCell id="title" value="Maktaba — Streaming Flow (Epic 08)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
         </mxCell>
-
-        <!-- ============ CLIENT TIER ============ -->
-        <mxCell id="clients_swim" value="CLIENT TIER" style="swimlane;startSize=24;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="40" y="80" width="600" height="180" as="geometry" />
+        <mxCell id="subtitle" value="Client requests playback → API opens session → Streaming serves HLS/DASH or direct play" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="client_web" value="Web (PWA)&#10;Vidstack player&#10;UA: Chrome/Safari/Firefox" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="clients_swim">
-          <mxGeometry x="20" y="40" width="170" height="70" as="geometry" />
+        <mxCell id="s1" value="&lt;b&gt;Client requests playback&lt;/b&gt;&#10;GET /api/videos/{id}/play" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="120" width="720" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="client_mobile" value="Mobile (Capacitor)&#10;AVPlayer / ExoPlayer&#10;native handoff" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="clients_swim">
-          <mxGeometry x="215" y="40" width="170" height="70" as="geometry" />
+        <mxCell id="s2" value="&lt;b&gt;API: pick best profile&lt;/b&gt;&#10;Match client capabilities → direct play / remux / transcode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="230" width="720" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="client_tv" value="TV (tvOS / AndroidTV)&#10;AVPlayer / ExoPlayer&#10;HDR + 4K" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="clients_swim">
-          <mxGeometry x="410" y="40" width="170" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="client_desktop" value="Desktop (Tauri)&#10;OS WebView decoder" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="clients_swim">
-          <mxGeometry x="120" y="120" width="170" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="client_capabilities" value="Capability profile&#10;(codecs, max bitrate, hwaccel)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="clients_swim">
-          <mxGeometry x="320" y="120" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- ============ EDGE / TLS ============ -->
-        <mxCell id="edge_caddy" value="Caddy / Reverse Proxy&#10;TLS termination&#10;routes /api · /stream · /ws" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="700" y="100" width="240" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- ============ API SERVICE ============ -->
-        <mxCell id="api_swim" value="API SERVICE (Go)" style="swimlane;startSize=24;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1000" y="80" width="520" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="api_session_mint" value="POST /api/stream/sessions&#10;{video_id, client_profile,&#10;audio_track?, subtitle_track?,&#10;start_sec?}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="api_swim">
-          <mxGeometry x="20" y="40" width="220" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="api_authz" value="Auth &amp; ACL check&#10;(LibrariesForUser,&#10;library_acl)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="api_swim">
-          <mxGeometry x="270" y="40" width="220" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="api_signurl" value="Signed-URL minter (RS256)&#10;aud=streaming · lib=[id]&#10;exp=ttl · sub=user_id&#10;&#10;manifest_url + JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="api_swim">
-          <mxGeometry x="20" y="140" width="220" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="api_grpc_open" value="gRPC: OpenSession()&#10;to Streaming&#10;→ session_id, capabilities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="api_swim">
-          <mxGeometry x="270" y="140" width="220" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="api_progress" value="POST /api/stream/sessions/{id}/progress&#10;{position_sec, completed?}&#10;writes playback_state · WS fan-out" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="api_swim">
-          <mxGeometry x="20" y="260" width="470" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- ============ STREAMING SERVICE ============ -->
-        <mxCell id="stream_swim" value="STREAMING SERVICE (Go)" style="swimlane;startSize=24;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="40" y="320" width="2320" height="640" as="geometry" />
-        </mxCell>
-
-        <!-- JWT verifier -->
-        <mxCell id="stream_jwt" value="JWT verify (offline)&#10;RS256 against JWKS cache&#10;aud · exp · lib check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stream_swim">
-          <mxGeometry x="20" y="40" width="220" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Session lookup -->
-        <mxCell id="stream_session_lookup" value="Session lookup&#10;streaming_sessions row&#10;(sticky transcoder pin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stream_swim">
-          <mxGeometry x="270" y="40" width="220" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Probe cache -->
-        <mxCell id="stream_probe" value="Probe cache&#10;LRU mem + media_info DB&#10;(container, codecs, fps,&#10; bitrate, has_subtitles)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stream_swim">
-          <mxGeometry x="520" y="40" width="220" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Capability matrix -->
-        <mxCell id="stream_capmatrix" value="Capability matrix&#10;(per client_profile)&#10;codecs · containers · max bitrate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="stream_swim">
-          <mxGeometry x="770" y="40" width="220" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Decision tree start -->
-        <mxCell id="dec_compatible" value="Container &amp;&#10;codecs compatible?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="stream_swim">
-          <mxGeometry x="40" y="160" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="dec_remux" value="Container wrong&#10;but codecs OK?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="stream_swim">
-          <mxGeometry x="290" y="160" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="dec_burnin" value="Force burn-in subs?&#10;(client lacks VTT)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="stream_swim">
-          <mxGeometry x="540" y="160" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- Mode 1: Direct play -->
-        <mxCell id="mode_direct" value="Direct play&#10;HTTP range serve&#10;206 Partial Content&#10;http.ServeContent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="stream_swim">
-          <mxGeometry x="40" y="280" width="200" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- Mode 2: Remux -->
-        <mxCell id="mode_remux" value="Direct stream (remux)&#10;ffmpeg -c copy&#10;MKV→fMP4 / AVI→MP4&#10;low CPU, no quality loss" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="stream_swim">
-          <mxGeometry x="290" y="280" width="200" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- Mode 3: Transcode -->
-        <mxCell id="mode_transcode" value="HLS / DASH transcode&#10;libx264 / videotoolbox /&#10;nvenc / qsv&#10;ladder: 1080p · 720p · 480p" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="stream_swim">
-          <mxGeometry x="540" y="280" width="240" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- FFmpeg pool -->
-        <mxCell id="ffmpeg_pool" value="FFmpeg subprocess pool&#10;1 process per session (sticky)&#10;hwaccel auto-detect&#10;per-host semaphore (max_concurrent)&#10;-hls_time 4 -hls_list_size 6&#10;var_stream_map: v0/a0 v1/a0 v2/a0" style="shape=process;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="stream_swim">
-          <mxGeometry x="820" y="160" width="320" height="220" as="geometry" />
-        </mxCell>
-
-        <!-- Manifest writer -->
-        <mxCell id="manifest_writer" value="HLS / DASH manifest writer&#10;#EXT-X-VERSION:7&#10;#EXT-X-MEDIA AUDIO + SUBTITLES&#10;#EXT-X-STREAM-INF rungs&#10;#EXT-X-DATERANGE chapters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="stream_swim">
-          <mxGeometry x="1180" y="160" width="280" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- Subtitle injection -->
-        <mxCell id="subs_pipeline" value="Subtitle pipeline" style="swimlane;startSize=22;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="stream_swim">
-          <mxGeometry x="1180" y="280" width="540" height="240" as="geometry" />
-        </mxCell>
-        <mxCell id="subs_auto" value="Auto-generated&#10;live VTT renderer&#10;reads transcript_segments&#10;(no .vtt file)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subs_pipeline">
-          <mxGeometry x="20" y="40" width="160" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="subs_sidecar" value="Sidecar SRT/VTT&#10;{name}.{lang}.srt&#10;converted to VTT,&#10;cached" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subs_pipeline">
-          <mxGeometry x="190" y="40" width="160" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="subs_embedded" value="Embedded in container&#10;ffmpeg -map 0:s:N&#10;-c:s webvtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subs_pipeline">
-          <mxGeometry x="360" y="40" width="160" height="80" as="geometry" />
-        </mxCell>
-        <mxCell id="subs_mux" value="VTT mux into HLS&#10;#EXT-X-MEDIA:TYPE=SUBTITLES&#10;GROUP-ID=&quot;subs&quot; · per-lang m3u8" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="subs_pipeline">
-          <mxGeometry x="20" y="140" width="500" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Session store -->
-        <mxCell id="session_store" value="streaming_sessions (PG)&#10;session_id · video_id&#10;client_profile · transcoder_pid&#10;last_segment_fetch_at&#10;reaper: stale &gt; 90 s" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="stream_swim">
-          <mxGeometry x="1500" y="40" width="240" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- ============ CACHE LAYERS ============ -->
-        <mxCell id="cache_swim" value="Cache layers · /var/maktaba/cache/streaming/" style="swimlane;startSize=22;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=11;" vertex="1" parent="stream_swim">
-          <mxGeometry x="1760" y="40" width="540" height="580" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_hls" value="hls/{session_id}/&#10;v0/seg-N.ts · v1/seg-N.ts · v2/seg-N.ts&#10;audio/{lang}/seg-N.aac&#10;subs/{lang}/seg-N.vtt&#10;rolling 6-segment window · purged on CloseSession" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="40" width="500" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_remux" value="remux/{hash[:2]}/{hash}/&#10;short-lived MP4 — LRU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="160" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_direct" value="direct/&#10;transient buffers&#10;range serves" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="280" y="160" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_posters" value="posters/{hash[:2]}/{hash}.jpg&#10;pre-generated by Pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="240" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_sprites" value="sprites/{hash[:2]}/{hash}.{webp,vtt}&#10;scrub preview thumbs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="280" y="240" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_thumbs" value="thumbs/{hash[:2]}/{hash}/chapter-N.jpg" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="320" width="500" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_gc" value="LRU GC&#10;default 50 GiB cap · survives restarts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="380" width="500" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="cache_gc_note" value="Posters/sprites/thumbs reused indefinitely.&#10;hls/* purged at session close or reap.&#10;remux/* short LRU." style="text;html=1;align=left;verticalAlign=top;fontSize=10;" vertex="1" parent="cache_swim">
-          <mxGeometry x="20" y="450" width="500" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- Media volume -->
-        <mxCell id="media_vol" value="Media volume (read-only)&#10;NAS / NFS / SMB&#10;30 TB+" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="stream_swim">
-          <mxGeometry x="40" y="430" width="220" height="100" as="geometry" />
-        </mxCell>
-
-        <!-- Outbound delivery -->
-        <mxCell id="delivery_manifest" value="GET /stream/{session}/manifest.m3u8&#10;→ master m3u8 (rungs + audio + subs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stream_swim">
-          <mxGeometry x="290" y="430" width="380" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="delivery_seg" value="GET /stream/{session}/{rendition}/seg-{n}.ts&#10;→ HLS segment (range-aware)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stream_swim">
-          <mxGeometry x="290" y="480" width="380" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="delivery_subs" value="GET /stream/{session}/subs/{lang}.vtt&#10;→ live-rendered from DB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stream_swim">
-          <mxGeometry x="700" y="430" width="380" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="delivery_direct" value="GET /stream/direct/{video_id}&#10;→ 206 Partial Content" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stream_swim">
-          <mxGeometry x="700" y="480" width="380" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="delivery_static" value="GET /stream/posters/{id}.jpg · /stream/sprites/{id}.{webp,vtt}&#10;→ static, no session" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="stream_swim">
-          <mxGeometry x="290" y="530" width="790" height="40" as="geometry" />
-        </mxCell>
-
-        <!-- ============ POSTGRES ============ -->
-        <mxCell id="pg" value="PostgreSQL 16&#10;videos · media_info · audio_tracks&#10;streaming_sessions · playback_state&#10;LISTEN/NOTIFY: playback.progress" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="1580" y="80" width="260" height="200" as="geometry" />
-        </mxCell>
-
-        <!-- ============ PIPELINE PUBLISHERS (poster/sprite producers) ============ -->
-        <mxCell id="pipe_thumb" value="Pipeline · thumbnail stage&#10;produces posters / sprites&#10;to cache (Streaming reads)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="1880" y="180" width="240" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- Edges: client → caddy → API session mint -->
-        <mxCell id="e1" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="client_web" target="edge_caddy">
+        <mxCell id="e_s1_s2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s1" target="s2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="client_mobile" target="edge_caddy">
+        <mxCell id="s3" value="&lt;b&gt;API → Streaming gRPC OpenSession&lt;/b&gt;&#10;session row, signed JWT, playlist URL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="340" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_s3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s2" target="s3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="client_tv" target="edge_caddy">
+        <mxCell id="s4_dp" value="&lt;b&gt;Direct play (range)&lt;/b&gt;&#10;HTTP 206 byte ranges from media volume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="450" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_s4_dp" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s3" target="s4_dp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="HTTPS / WSS" style="endArrow=classic;html=1;curved=0;dashed=0;fontSize=11;" edge="1" parent="1" source="edge_caddy" target="api_session_mint">
+        <mxCell id="s4_hls" value="&lt;b&gt;HLS/DASH origin&lt;/b&gt;&#10;On-the-fly transcode + remux pool · segments cached" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="560" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;Player plays&lt;/b&gt;&#10;Vidstack / AVPlayer / ExoPlayer · seek triggers new requests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="670" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s4_hls_s5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s4_hls" target="s5">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e5" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="api_session_mint" target="api_authz">
+        <mxCell id="s6" value="&lt;b&gt;Periodic watch progress&lt;/b&gt;&#10;PUT /api/watch_progress (debounced)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="780" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_s6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s5" target="s6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e6" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="api_authz" target="api_grpc_open">
+        <mxCell id="s7" value="&lt;b&gt;Close session&lt;/b&gt;&#10;client end-of-playback or timeout → CloseSession gRPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="240" y="890" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s6_s7" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s6" target="s7">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" style="endArrow=classic;html=1;curved=0;" edge="1" parent="1" source="api_authz" target="api_signurl">
+        <mxCell id="e_s3_s4dp" value="if compatible" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;dashed=1" edge="1" parent="1" source="s3" target="s4_dp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_pg" value="reads videos/media_info" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="api_authz" target="pg">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="g_caps" value="Per-host caps &amp; cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="840" y="250" width="320" height="320" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_grpc" value="gRPC OpenSession" style="endArrow=classic;html=1;curved=0;strokeColor=#9673a6;fontSize=11;fontStyle=1;" edge="1" parent="1" source="api_grpc_open" target="stream_session_lookup">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="cap_n" value="&lt;b&gt;Transcode pool&lt;/b&gt;&#10;FFmpeg subprocess pool · config-defined ceiling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="860" y="290" width="280" height="70" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_resp" value="{session_id, manifest_url, expires_at}" style="endArrow=classic;html=1;curved=0;dashed=1;fontSize=10;" edge="1" parent="1" source="api_signurl" target="edge_caddy">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="cache_n" value="&lt;b&gt;LRU streaming cache&lt;/b&gt;&#10;hls/{session}/ · remux/ · sprites/&#10;default 50 GiB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="860" y="370" width="280" height="80" as="geometry" />
         </mxCell>
-
-        <!-- Client → Streaming directly for manifest -->
-        <mxCell id="e_play" value="GET manifest.m3u8 (signed JWT)" style="endArrow=classic;html=1;curved=0;strokeColor=#b85450;fontSize=11;fontStyle=1;" edge="1" parent="1" source="client_web" target="stream_jwt">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="evict_n" value="&lt;b&gt;Cache eviction&lt;/b&gt;&#10;LRU + Postgres EvictHashCache hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="860" y="460" width="280" height="70" as="geometry" />
         </mxCell>
-
-        <!-- Streaming internal flow -->
-        <mxCell id="es1" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="stream_jwt" target="stream_session_lookup">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="legend" value="Legend&#10;Solid arrows: primary path · Dashed arrows: alt branch (direct play)&#10;Right column: capacity / cache controls" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="1020" width="1120" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="es2" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="stream_session_lookup" target="stream_probe">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es3" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="stream_probe" target="stream_capmatrix">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es4" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="stream_capmatrix" target="dec_compatible">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es5" value="yes" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="dec_compatible" target="mode_direct">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es6" value="no" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="dec_compatible" target="dec_remux">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es7" value="yes" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="dec_remux" target="mode_remux">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es8" value="no" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="dec_remux" target="dec_burnin">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es9" value="any" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="dec_burnin" target="mode_transcode">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Mode → ffmpeg -->
-        <mxCell id="es10" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="mode_remux" target="ffmpeg_pool">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es11" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="mode_transcode" target="ffmpeg_pool">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- ffmpeg → manifest writer -->
-        <mxCell id="es12" value="seg-N.ts (per rendition)" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="ffmpeg_pool" target="manifest_writer">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es13" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="manifest_writer" target="subs_pipeline">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- ffmpeg + manifest → cache_hls -->
-        <mxCell id="es14" value="writes" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="stream_swim" source="ffmpeg_pool" target="cache_hls">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Cache → delivery -->
-        <mxCell id="es15" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="cache_hls" target="delivery_manifest">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es16" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="cache_hls" target="delivery_seg">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es17" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="subs_pipeline" target="delivery_subs">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es18" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="mode_direct" target="delivery_direct">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es19" style="endArrow=classic;html=1;" edge="1" parent="stream_swim" source="cache_posters" target="delivery_static">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- ffmpeg ← media volume -->
-        <mxCell id="es20" value="raw bytes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="stream_swim" source="media_vol" target="ffmpeg_pool">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es21" value="byte ranges" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="stream_swim" source="media_vol" target="mode_direct">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Sessions DB -->
-        <mxCell id="es22" value="upsert" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="stream_swim" source="stream_session_lookup" target="session_store">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es23" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="stream_swim" source="ffmpeg_pool" target="session_store">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Subs DB read -->
-        <mxCell id="es24" value="reads transcript_segments" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="subs_auto" target="pg">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Pipeline writes posters/sprites -->
-        <mxCell id="es25" value="writes" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="pipe_thumb" target="cache_posters">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Player → progress -->
-        <mxCell id="es26" value="POST progress every 10 s" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="client_web" target="api_progress">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="es27" value="UPDATE playback_state · NOTIFY" style="endArrow=classic;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="api_progress" target="pg">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Legend -->
-        <mxCell id="legend" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="40" y="980" width="900" height="160" as="geometry" />
-        </mxCell>
-        <mxCell id="legend_text" value="• Solid arrows: synchronous request/response&#10;• Dashed arrows: read/write to a state surface (DB, cache, file)&#10;• Diamonds: capability decisions in the streaming origin&#10;• Tier swimlanes: client · API (Go) · Streaming (Go) · Postgres / cache&#10;• JWT verification at Streaming is OFFLINE against the API's JWKS — API can be down without breaking in-flight playback&#10;• Sticky session: session_id pins one FFmpeg subprocess so adaptive switching keeps monotonic segment numbers" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="60" y="1010" width="860" height="120" as="geometry" />
-        </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>

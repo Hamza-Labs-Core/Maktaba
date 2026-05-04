@@ -1,248 +1,63 @@
 <mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
-  <diagram id="security" name="Security Architecture">
-    <mxGraphModel dx="2000" dy="1300" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1500" math="0" shadow="0">
+  <diagram id="security-architecture" name="Security Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1262" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="title" value="Maktaba — Security Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
-          <mxGeometry x="40" y="20" width="1920" height="40" as="geometry" />
+        <mxCell id="title" value="Maktaba — Security Architecture (Epic 23)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="JWT minting, validation, signed URLs, streaming auth · Trust boundaries between services · CORS / TLS / HSTS · Rate-limit + lockout" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontColor=#475569" vertex="1" parent="1">
-          <mxGeometry x="40" y="55" width="1920" height="22" as="geometry" />
+        <mxCell id="subtitle" value="Defence in depth: TLS edge → AuthN/AuthZ → input validation → store-level RBAC → audit" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-
-        <!-- TRUST BOUNDARY: untrusted internet -->
-        <mxCell id="tbInet" value="UNTRUSTED — Public Internet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;dashed=1;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="40" y="100" width="1920" height="200" as="geometry" />
+        <mxCell id="l_edge" value="&lt;b&gt;1. Edge &amp; Transport&lt;/b&gt;&#10;• TLS 1.3 (Caddy)&#10;• HSTS · CSP · CORS allowlist&#10;• Rate-limit /auth/* and /search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="1120" height="110" as="geometry" />
         </mxCell>
-
-        <mxCell id="webUser" value="Web user&#10;(browser)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11" vertex="1" parent="1">
-          <mxGeometry x="100" y="160" width="120" height="60" as="geometry" />
+        <mxCell id="l_authn" value="&lt;b&gt;2. Authentication&lt;/b&gt;&#10;• Argon2id password hashing&#10;• Short-lived JWT access (15m)&#10;• Rotating refresh (httpOnly Secure cookie)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="244" width="1120" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="mobileUser" value="Mobile / Desktop&#10;(Capacitor / Tauri)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11" vertex="1" parent="1">
-          <mxGeometry x="260" y="160" width="160" height="60" as="geometry" />
+        <mxCell id="l_authz" value="&lt;b&gt;3. Authorisation&lt;/b&gt;&#10;• RBAC scopes per library&#10;• Resource ownership checks (videos, jobs)&#10;• Subscription gating (optional, Epic 16)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="368" width="1120" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="tvUser" value="TV (tvOS / AndroidTV)&#10;native bearer JWT" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11" vertex="1" parent="1">
-          <mxGeometry x="450" y="160" width="180" height="60" as="geometry" />
+        <mxCell id="l_input" value="&lt;b&gt;4. Input Validation&lt;/b&gt;&#10;• JSON schema · gqlgen typed inputs&#10;• File path canonicalisation (no traversal)&#10;• Strict allowlist on filter params" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="492" width="1120" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="apiClient" value="3rd-party API client&#10;PAT (personal_access_token)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11" vertex="1" parent="1">
-          <mxGeometry x="660" y="160" width="200" height="60" as="geometry" />
+        <mxCell id="l_data" value="&lt;b&gt;5. Data Layer Hardening&lt;/b&gt;&#10;• Parametrised SQL (sqlc, asyncpg)&#10;• Row-level access in queries&#10;• Backups + restore drill (Epic 24)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="616" width="1120" height="110" as="geometry" />
         </mxCell>
-
-        <mxCell id="threatActor" value="Threat actor&#10;XSS / CSRF / brute-force&#10;leaked URL replay" style="rectangle;whiteSpace=wrap;html=1;fillColor=#FCA5A5;strokeColor=#991B1B;fontSize=11;dashed=1" vertex="1" parent="1">
-          <mxGeometry x="900" y="160" width="200" height="60" as="geometry" />
+        <mxCell id="l_secret" value="&lt;b&gt;6. Secrets &amp; Keys&lt;/b&gt;&#10;• Env-only secrets · 12-factor&#10;• Signing keys rotated (JWT)&#10;• No secrets in git/logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="1120" height="110" as="geometry" />
         </mxCell>
-
-        <mxCell id="threatNotes" value="Mitigations enforced at perimeter (Caddy + API middleware):&#10;• TLS 1.3 only · HSTS max-age=63072000; includeSubDomains; preload · OCSP stapling · cipher allow-list&#10;• CORS allow-list (origin) on /api · CSRF double-submit token on web (state-changing methods)&#10;• Rate-limit: /api/auth/login 10/min/IP · /api/auth/* 30/min/IP · 30/min/IP general · 5 failed/15 min lockout&#10;• Argon2id pw_hash (m=64MB, t=3, p=4) · constant-time comparators · audit_log writes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="1140" y="135" width="800" height="115" as="geometry" />
+        <mxCell id="l_audit" value="&lt;b&gt;7. Audit &amp; Detection&lt;/b&gt;&#10;• audit_log table for sensitive ops&#10;• WAF-style anomaly logs (auth failures)&#10;• Alerting on dead-letter spikes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="864" width="1120" height="110" as="geometry" />
         </mxCell>
-
-        <!-- EDGE: Caddy / TLS -->
-        <mxCell id="tbEdge" value="EDGE — TLS terminator + reverse proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="40" y="320" width="1920" height="120" as="geometry" />
+        <mxCell id="l_supply" value="&lt;b&gt;8. Supply Chain&lt;/b&gt;&#10;• Pinned dependencies + lockfiles&#10;• SCA/SAST in CI&#10;• Container provenance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8" vertex="1" parent="1">
+          <mxGeometry x="40" y="988" width="1120" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="caddy" value="Caddy / nginx&#10;TLS 1.3 · auto-cert · HSTS · OCSP staple&#10;X-Content-Type-Options: nosniff · Referrer-Policy · CSP · X-Frame-Options: DENY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="700" y="358" width="600" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- TRUST BOUNDARY: Trusted backend -->
-        <mxCell id="tbBack" value="TRUSTED — backend services (private LAN / docker network)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="40" y="460" width="1920" height="650" as="geometry" />
-        </mxCell>
-
-        <!-- API service block -->
-        <mxCell id="apiSvc" value="&lt;b&gt;API Service (Go) — token issuer&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="80" y="500" width="700" height="560" as="geometry" />
-        </mxCell>
-
-        <mxCell id="loginEP" value="POST /api/auth/login&#10;(username + password, argon2id verify)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="100" y="540" width="320" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="refreshEP" value="POST /api/auth/refresh&#10;(opaque refresh token, hashed in DB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="440" y="540" width="320" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="jwtMint" value="JWT MINTER (Epic 10 · plan-10-06 / 10-08)&#10;Algorithm: RS256 · 2048-bit key · key rotation via jwt_keys (kid)&#10;&#10;API access token (aud=api, 15 min):&#10;{ iss, aud=&quot;api&quot;, sub, iat, exp, jti, kid, is_admin, library_ids[] }&#10;&#10;Streaming session token (aud=streaming, expires_at):&#10;{ aud=&quot;streaming&quot;, sub, exp, jti, sid (session_id), lib=[res_lib] }&#10;&#10;Streaming direct-play (aud=streaming-direct):&#10;{ aud=&quot;streaming-direct&quot;, sub, exp, jti, vid, lib=[res_lib] }&#10;&#10;Streaming static (aud=streaming-static — posters/sprites/subs):&#10;{ aud=&quot;streaming-static&quot;, sub, exp, jti, vid, lib=[res_lib] }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;spacingLeft=10;spacingTop=8;arcSize=8;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="100" y="610" width="660" height="220" as="geometry" />
-        </mxCell>
-
-        <mxCell id="jwks" value="GET /.well-known/jwks.json&#10;Public key set (no secret) · cache-control: 1 h&#10;Streaming + clients fetch this to verify offline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="100" y="850" width="660" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="cookieAuth" value="Web cookie session (web only)&#10;httpOnly · Secure · SameSite=Lax · CSRF double-submit&#10;web_sessions row · revocable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="100" y="930" width="320" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="bearerAuth" value="Bearer access JWT (native)&#10;15-min RS256 · refresh_tokens (sha256 hash)&#10;device_id binding · refresh family rotation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="440" y="930" width="320" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="patAuth" value="PAT for API automation&#10;personal_access_tokens · scoped · revocable · sha256-hashed&#10;rate-limited per-token" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="100" y="1000" width="320" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="acl" value="library_acl + LibrariesForUser(user_id)&#10;(viewer/curator/admin) — checked on every request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=11;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="440" y="1000" width="320" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Streaming service block -->
-        <mxCell id="streamSvc" value="&lt;b&gt;Streaming Service (Go) — verifies offline&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="800" y="500" width="650" height="560" as="geometry" />
-        </mxCell>
-
-        <mxCell id="signedMW" value="Signed-URL middleware (Epic 8 · plan-08-01 / Epic 23 · plan-23-02)&#10;1. Parse ?token= from query (or Bearer header)&#10;2. Decode JWT header → kid → cached public key (JWKS, 60 s ttl)&#10;3. Verify RS256 signature offline (no API roundtrip)&#10;4. Validate iss, aud (whitelist per route), exp, nbf, iat&#10;5. Check lib claim — only the resource's library_id&#10;6. Check session_id (sid) for /stream/{session}/* — must match streaming_sessions row" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;spacingLeft=10;spacingTop=8;arcSize=8;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="820" y="540" width="610" height="160" as="geometry" />
-        </mxCell>
-
-        <mxCell id="audMatrix" value="Audience → Route allowlist&#10;&#10;aud=streaming         → /stream/{sid}/manifest.* · /stream/{sid}/{rendition}/* · /stream/{sid}/subs/*&#10;aud=streaming-direct  → /stream/direct/{video_id} (range 206)&#10;aud=streaming-static  → /stream/posters/* · /stream/sprites/* · /stream/{sid}/subs/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#166534;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="820" y="710" width="610" height="120" as="geometry" />
-        </mxCell>
-
-        <mxCell id="ffmpeg" value="FFmpeg subprocess pool (per session_id pinned)&#10;Read media volume (ro) · write to streaming cache (LRU)&#10;Subprocess sandboxed: no network, no /etc, ulimit cpu/mem&#10;CloseSession (gRPC) → SIGTERM → cleanup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="820" y="850" width="610" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="grpcMtls" value="gRPC channel (API ↔ Streaming, API ↔ Pipeline)&#10;Loopback / docker-internal only · optional mTLS (Epic 23)&#10;Bound to 127.0.0.1 outside compose; no external listener" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#1E40AF;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="820" y="950" width="610" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- DB / secrets -->
-        <mxCell id="dbBlock" value="&lt;b&gt;Postgres / SQLite&lt;/b&gt;&#10;TLS in transit (sslmode=verify-full)&#10;at-rest: filesystem encryption&#10;jwt_keys: private_pem encrypted with libsodium secretbox" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=11;align=center" vertex="1" parent="1">
-          <mxGeometry x="1480" y="540" width="450" height="100" as="geometry" />
-        </mxCell>
-
-        <mxCell id="secretsBox" value="Secrets (env / docker secrets / file mode 0400)&#10;• JWT_SIGNING_KEY (per kid) · ROTATION every 90 d&#10;• POSTGRES_PASSWORD · CADDY_TLS_KEY&#10;• OPENAI_API_KEY (Pipeline only) · SENTRY_DSN&#10;• Initial admin token (single-user bootstrap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="1480" y="660" width="450" height="100" as="geometry" />
-        </mxCell>
-
-        <mxCell id="auditBox" value="audit_log (partitioned by month)&#10;categories: library | security | device | admin&#10;Security events: login.success/fail · refresh.replay-detected · pat.created · jwt_keys.rotated · stream.signed-url-mint&#10;dedupe_key for once-per-window write reduction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="1480" y="780" width="450" height="120" as="geometry" />
-        </mxCell>
-
-        <mxCell id="rateLimit" value="Rate-limit + brute-force lockout (Epic 7 · plan-07-19 + Epic 23 · plan-23-06)&#10;• /api/auth/login: 10/min/IP — sliding-window in Postgres&#10;• /api/auth/*: 30/min/IP&#10;• Per-user fail counter: 5 in 15 min → 15 min lockout · audit_log entry&#10;• /api/* general: 30/min/IP · /stream: signed-URL exp acts as throttle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#854D0E;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=8" vertex="1" parent="1">
-          <mxGeometry x="1480" y="920" width="450" height="120" as="geometry" />
-        </mxCell>
-
-        <!-- FLOW: Login & token mint -->
-        <mxCell id="e_web_caddy" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="webUser" target="caddy">
+        <mxCell id="e_0" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_edge" target="l_authn">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_web_caddy_lbl" value="① TLS 1.3 / HSTS&#10;httpOnly cookie + CSRF" style="text;html=1;align=center;fontSize=10;fontColor=#1E40AF" vertex="1" parent="1">
-          <mxGeometry x="50" y="278" width="220" height="32" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mob_caddy" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.4;entryY=0" edge="1" parent="1" source="mobileUser" target="caddy">
+        <mxCell id="e_1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_authn" target="l_authz">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_tv_caddy" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.55;entryY=0" edge="1" parent="1" source="tvUser" target="caddy">
+        <mxCell id="e_2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_authz" target="l_input">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_api_caddy" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.7;entryY=0" edge="1" parent="1" source="apiClient" target="caddy">
+        <mxCell id="e_3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_input" target="l_data">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_caddy_login" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.3;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="caddy" target="loginEP">
+        <mxCell id="e_4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_data" target="l_secret">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_caddy_login_lbl" value="② POST /api/auth/login&#10;(rate-limited 10/min/IP)" style="text;html=1;align=center;fontSize=10;fontColor=#1E40AF" vertex="1" parent="1">
-          <mxGeometry x="100" y="442" width="220" height="32" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_caddy_refresh" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.4;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="caddy" target="refreshEP">
+        <mxCell id="e_5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_secret" target="l_audit">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_login_mint" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.3;entryY=0" edge="1" parent="1" source="loginEP" target="jwtMint">
+        <mxCell id="e_6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_audit" target="l_supply">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_login_mint_lbl" value="③ argon2id verify → mint" style="text;html=1;align=center;fontSize=10;fontColor=#1E40AF" vertex="1" parent="1">
-          <mxGeometry x="170" y="592" width="180" height="14" as="geometry" />
+        <mxCell id="legend" value="Legend&#10;Defence-in-depth — each downstream layer assumes the upstream may have been bypassed.&#10;Sensitive flows (auth, billing, admin) write to audit_log inside the same TX." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+          <mxGeometry x="40" y="1132" width="1120" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="e_refresh_mint" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.7;entryY=0" edge="1" parent="1" source="refreshEP" target="jwtMint">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_mint_db" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;exitX=1;exitY=0.2;entryX=0;entryY=0.2" edge="1" parent="1" source="jwtMint" target="dbBlock">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mint_db_lbl" value="④ load private key (kid)&#10;refresh_tokens (sha256)&#10;web_sessions" style="text;html=1;align=center;fontSize=10;fontColor=#854D0E" vertex="1" parent="1">
-          <mxGeometry x="780" y="540" width="160" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_mint_audit" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1.5;exitX=1;exitY=0.6;entryX=0;entryY=0.2;dashed=1" edge="1" parent="1" source="jwtMint" target="auditBox">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mint_audit_lbl" value="⑤ audit: auth.login.success / auth.refresh.minted / stream.signed-url-mint" style="text;html=1;align=center;fontSize=10;fontColor=#854D0E" vertex="1" parent="1">
-          <mxGeometry x="800" y="775" width="500" height="14" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_mint_rl" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;exitX=1;exitY=0.95;entryX=0;entryY=0.2;dashed=1" edge="1" parent="1" source="jwtMint" target="rateLimit">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_mint_jwks" style="endArrow=none;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="jwtMint" target="jwks">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- FLOW: Streaming -->
-        <mxCell id="streamFlowLabel" value="STREAMING FLOW" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#166534" vertex="1" parent="1">
-          <mxGeometry x="800" y="465" width="400" height="22" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_user_signedurl" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="mobileUser" target="caddy">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_caddy_stream" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;exitX=0.7;exitY=1;entryX=0.3;entryY=0" edge="1" parent="1" source="caddy" target="signedMW">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_caddy_stream_lbl" value="⑥ /stream/{sid}/manifest.m3u8?token=&lt;JWT&gt;" style="text;html=1;align=center;fontSize=10;fontColor=#166534" vertex="1" parent="1">
-          <mxGeometry x="900" y="442" width="400" height="14" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_stream_jwks" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=1.5;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5" edge="1" parent="1" source="signedMW" target="jwks">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_stream_jwks_lbl" value="⑦ JWKS fetch (cached 60 s)&#10;OFFLINE verify — no API roundtrip" style="text;html=1;align=center;fontSize=10;fontColor=#1E40AF" vertex="1" parent="1">
-          <mxGeometry x="780" y="850" width="280" height="32" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_mw_aud" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="signedMW" target="audMatrix">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_aud_ffmpeg" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0" edge="1" parent="1" source="audMatrix" target="ffmpeg">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_ffmpeg_audit" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.4" edge="1" parent="1" source="ffmpeg" target="auditBox">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_grpc" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;exitX=0.05;exitY=0.5;entryX=0.95;entryY=0.95" edge="1" parent="1" source="grpcMtls" target="acl">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_grpc_lbl" value="OpenSession / CloseSession&#10;EvictHashCache (gRPC)" style="text;html=1;align=center;fontSize=10;fontColor=#1E40AF" vertex="1" parent="1">
-          <mxGeometry x="500" y="1060" width="220" height="32" as="geometry" />
-        </mxCell>
-
-        <!-- Threat actor / replay annotations -->
-        <mxCell id="leakWarn" value="If a signed URL leaks: lib=[res_lib] only — does not expose other library memberships.&#10;exp limits replay window. jti can be added to a deny-list (Streaming + audit_log) on suspicion." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4E6;strokeColor=#9F1239;fontSize=10;align=left;spacingLeft=10;spacingTop=6;arcSize=4;dashed=1" vertex="1" parent="1">
-          <mxGeometry x="40" y="1130" width="1900" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Boundary labels -->
-        <mxCell id="bound1" value="🚧 TRUST BOUNDARY · TLS terminator" style="text;html=1;align=center;fontSize=11;fontColor=#B45309;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="40" y="305" width="1920" height="14" as="geometry" />
-        </mxCell>
-        <mxCell id="bound2" value="🚧 TRUST BOUNDARY · Caddy → backend (HTTP/2 cleartext or mTLS, internal-only)" style="text;html=1;align=center;fontSize=11;fontColor=#166534;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="40" y="445" width="1920" height="14" as="geometry" />
-        </mxCell>
-
-        <mxCell id="footerSec" value="Single-user mode: env-configured admin bootstrap token bypasses users + JWT — disabled when MAKTABA_AUTH_MODE=multi-user.&#10;Native clients (mobile/desktop/TV) store the refresh token in OS keychain (iOS Keychain · Android Keystore · macOS Keychain · libsecret · WinCred).&#10;Offline JWT verification means an in-flight watch session keeps playing through API restarts; revocation enforces on next refresh." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;align=left;spacingLeft=10;spacingTop=8;verticalAlign=top;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="40" y="1200" width="1920" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="numLegend" value="Numbered flow: ① TLS handshake → ② login (rate-limited) → ③ argon2id + JWT mint → ④ refresh + cookie/web_session writes → ⑤ audit log → ⑥ client uses signed URL on /stream → ⑦ Streaming verifies JWT OFFLINE against cached JWKS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;arcSize=4" vertex="1" parent="1">
-          <mxGeometry x="40" y="1290" width="1920" height="60" as="geometry" />
-        </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>
