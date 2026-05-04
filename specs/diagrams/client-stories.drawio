@@ -10,133 +10,133 @@
         <mxCell id="subtitle" value="Frontend backlog per platform · vertical layout per epic" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="g_0" value="Epic 11 — Web (PWA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_0" value="Epic 11 — Web (PWA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="120" width="1120" height="530" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_0" value="11.1 React + Vite scaffold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_0" value="11.1 React + Vite scaffold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_1" value="11.2 Tailwind + design tokens" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_1" value="11.2 Tailwind + design tokens" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_2" value="11.3 Vidstack player integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_2" value="11.3 Vidstack player integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_3" value="11.4 Service worker + offline shell" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_3" value="11.4 Service worker + offline shell" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_4" value="11.5 Library browse + search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_4" value="11.5 Library browse + search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="280" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_5" value="11.6 Watch progress sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_5" value="11.6 Watch progress sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="280" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_6" value="11.7 Subtitle picker · audio track picker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_6" value="11.7 Subtitle picker · audio track picker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="340" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_7" value="11.8 RTL support" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_7" value="11.8 RTL support" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="340" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_1" value="Epic 12 — Mobile (Capacitor)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_1" value="Epic 12 — Mobile (Capacitor)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="440" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_0" value="12.1 Capacitor wrapper over PWA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_0" value="12.1 Capacitor wrapper over PWA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_1" value="12.2 Native player handoff (iOS / Android)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_1" value="12.2 Native player handoff (iOS / Android)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_2" value="12.3 Background download (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_2" value="12.3 Background download (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="540" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_3" value="12.4 Push notifications hooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_3" value="12.4 Push notifications hooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="540" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_4" value="12.5 Universal links" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_4" value="12.5 Universal links" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="600" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_2" value="Epic 13 — Desktop (Tauri 2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_2" value="Epic 13 — Desktop (Tauri 2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="700" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_0" value="13.1 Tauri 2 wrapper" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_0" value="13.1 Tauri 2 wrapper" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="740" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_1" value="13.2 ~10 MB native binary target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_1" value="13.2 ~10 MB native binary target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="740" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_2" value="13.3 Auto-update pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_2" value="13.3 Auto-update pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="800" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_3" value="13.4 Local server discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_3" value="13.4 Local server discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="800" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_4" value="13.5 OS keyring integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_4" value="13.5 OS keyring integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="860" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_3" value="Epic 14 — TV (tvOS / Android TV)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_3" value="Epic 14 — TV (tvOS / Android TV)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="960" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_0" value="14.1 SwiftUI/AVPlayer (tvOS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_0" value="14.1 SwiftUI/AVPlayer (tvOS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1000" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_1" value="14.2 Compose/ExoPlayer (Android TV)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_1" value="14.2 Compose/ExoPlayer (Android TV)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1000" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_2" value="14.3 Remote-friendly grid UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_2" value="14.3 Remote-friendly grid UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1060" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_3" value="14.4 Resume playback from cloud" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_3" value="14.4 Resume playback from cloud" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1060" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_4" value="14.5 Subtitle/audio track UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_4" value="14.5 Subtitle/audio track UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1120" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_4" value="Epic 15 — Discovery / Pairing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_4" value="Epic 15 — Discovery / Pairing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1220" width="1120" height="290" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_0" value="15.1 mDNS server advertisement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_0" value="15.1 mDNS server advertisement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1260" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_1" value="15.2 QR code pairing flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_1" value="15.2 QR code pairing flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1260" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_2" value="15.3 Universal link handoff" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_2" value="15.3 Universal link handoff" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1320" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_3" value="15.4 LAN-vs-WAN detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_3" value="15.4 LAN-vs-WAN detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1320" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_5" value="Epic 16 — Subscriptions (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_5" value="Epic 16 — Subscriptions (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1420" width="1120" height="290" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_0" value="16.1 Stripe integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_0" value="16.1 Stripe integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1460" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_1" value="16.2 Paywall &amp;amp; trial logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_1" value="16.2 Paywall &amp;amp; trial logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1460" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_2" value="16.3 Webhook handling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_2" value="16.3 Webhook handling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1520" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_3" value="16.4 Entitlements check at /api boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_3" value="16.4 Entitlements check at /api boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1520" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_6" value="Epic 17 — Design System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_6" value="Epic 17 — Design System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1620" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_6_0" value="17.1 Tokens (color · type · spacing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_6_0" value="17.1 Tokens (color · type · spacing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1660" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_6_1" value="17.2 Components (button · card · input)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_6_1" value="17.2 Components (button · card · input)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1660" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_6_2" value="17.3 Motion library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_6_2" value="17.3 Motion library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1720" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_6_3" value="17.4 RTL primitives" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_6_3" value="17.4 RTL primitives" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1720" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_6_4" value="17.5 Accessibility (WCAG AA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_6_4" value="17.5 Accessibility (WCAG AA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1780" width="530" height="50" as="geometry" />
         </mxCell>
       </root>

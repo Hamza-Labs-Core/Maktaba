@@ -13,61 +13,61 @@
         <mxCell id="h_q" value="&lt;b&gt;Query path&lt;/b&gt; — read flow" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1;fontColor=#1F2A44;spacingLeft=10" vertex="1" parent="1">
           <mxGeometry x="40" y="120" width="1120" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="g_top" value="Search consumers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_top" value="Search consumers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="160" width="1120" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="c_web" value="Web (PWA) — search box, filters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="c_web" value="Web (PWA) — search box, filters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="60" y="196" width="353" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="c_mob" value="Mobile — voice + text search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="c_mob" value="Mobile — voice + text search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="423" y="196" width="353" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="c_tv" value="TV — remote-friendly search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="c_tv" value="TV — remote-friendly search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="786" y="196" width="353" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="api" value="&lt;b&gt;API: GET /api/search&lt;/b&gt;&#10;chi handler · RBAC scoping by libraries · pagination · filters (lang, type, date)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="api" value="&lt;b&gt;API: GET /api/search&lt;/b&gt;&#10;chi handler · RBAC scoping by libraries · pagination · filters (lang, type, date)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="290" width="1120" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="fts" value="&lt;b&gt;Postgres FTS&lt;/b&gt;&#10;tsvector + GIN · websearch_to_tsquery&#10;Filters via SQL JOINs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="fts" value="&lt;b&gt;Postgres FTS&lt;/b&gt;&#10;tsvector + GIN · websearch_to_tsquery&#10;Filters via SQL JOINs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="410" width="530" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="vec" value="&lt;b&gt;ChromaDB vector search&lt;/b&gt;&#10;multilingual-e5-large embeddings&#10;Per-library collection · k=50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="vec" value="&lt;b&gt;ChromaDB vector search&lt;/b&gt;&#10;multilingual-e5-large embeddings&#10;Per-library collection · k=50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="630" y="410" width="530" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="rrf" value="&lt;b&gt;Reciprocal Rank Fusion (RRF)&lt;/b&gt;&#10;score = Σ 1/(k + rank_i)&#10;Tie-breaks: recency, library affinity, language match" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="rrf" value="&lt;b&gt;Reciprocal Rank Fusion (RRF)&lt;/b&gt;&#10;score = Σ 1/(k + rank_i)&#10;Tie-breaks: recency, library affinity, language match" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="560" width="1120" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="hydrate" value="&lt;b&gt;Hydrate results&lt;/b&gt;&#10;JOIN videos · segments · subtitles · libraries · speakers&#10;Snippet generation · highlight terms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="hydrate" value="&lt;b&gt;Hydrate results&lt;/b&gt;&#10;JOIN videos · segments · subtitles · libraries · speakers&#10;Snippet generation · highlight terms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="690" width="1120" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="resp" value="&lt;b&gt;JSON response&lt;/b&gt;&#10;hits: [{video_id, t_start, snippet, score, badges}]&#10;Page tokens for cursor pagination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="resp" value="&lt;b&gt;JSON response&lt;/b&gt;&#10;hits: [{video_id, t_start, snippet, score, badges}]&#10;Page tokens for cursor pagination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="820" width="1120" height="80" as="geometry" />
         </mxCell>
         <mxCell id="h_i" value="&lt;b&gt;Index update path&lt;/b&gt; — write flow (Pipeline)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1;fontColor=#1F2A44;spacingLeft=10" vertex="1" parent="1">
           <mxGeometry x="40" y="960" width="1120" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="ing_emb" value="&lt;b&gt;Embedding worker&lt;/b&gt;&#10;multilingual-e5-large · batched per segment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="ing_emb" value="&lt;b&gt;Embedding worker&lt;/b&gt;&#10;multilingual-e5-large · batched per segment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1000" width="1120" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="ing_chr" value="&lt;b&gt;Chroma upsert&lt;/b&gt;&#10;collection per library · idempotent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="ing_chr" value="&lt;b&gt;Chroma upsert&lt;/b&gt;&#10;collection per library · idempotent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1095" width="1120" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_ing_emb_ing_chr" value="" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2" edge="1" parent="1" source="ing_emb" target="ing_chr">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="ing_pg" value="&lt;b&gt;Postgres tsvector update&lt;/b&gt;&#10;trigger on segments / subtitles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="ing_pg" value="&lt;b&gt;Postgres tsvector update&lt;/b&gt;&#10;trigger on segments / subtitles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1190" width="1120" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_ing_chr_ing_pg" value="" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2" edge="1" parent="1" source="ing_chr" target="ing_pg">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="ing_notif" value="&lt;b&gt;NOTIFY index.updated&lt;/b&gt;&#10;API may invalidate caches" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="ing_notif" value="&lt;b&gt;NOTIFY index.updated&lt;/b&gt;&#10;API may invalidate caches" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1285" width="1120" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_ing_pg_ing_notif" value="" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2" edge="1" parent="1" source="ing_pg" target="ing_notif">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Top half: query path (read). Bottom half: index update path (write).&#10;Arrows show data flow direction. Blue = API · Yellow = Postgres FTS · Pink = vector search · Green = ranking · Red = ingestion." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Top half: query path (read). Bottom half: index update path (write).&#10;Arrows show data flow direction. Blue = API · Yellow = Postgres FTS · Pink = vector search · Green = ranking · Red = ingestion." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1400" width="1120" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_w_api" value="" style="endArrow=classic;html=1;strokeColor=#3730A3;strokeWidth=2" edge="1" parent="1" source="c_web" target="api">

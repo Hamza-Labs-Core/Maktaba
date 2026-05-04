@@ -10,118 +10,118 @@
         <mxCell id="subtitle" value="Backend pipeline backlog grouped by epic · vertical layout" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="g_0" value="Epic 01 — Library Scanner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_0" value="Epic 01 — Library Scanner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="120" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_0" value="01.1 watchdog detects new files (debounced)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_0" value="01.1 watchdog detects new files (debounced)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_1" value="01.2 hashing &amp;amp; sha256 dedup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_1" value="01.2 hashing &amp;amp; sha256 dedup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="160" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_2" value="01.3 idempotent video row upsert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_2" value="01.3 idempotent video row upsert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_3" value="01.4 admin manual re-scan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_3" value="01.4 admin manual re-scan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="220" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_0_4" value="01.5 exclude/include path globs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_0_4" value="01.5 exclude/include path globs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="280" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_1" value="Epic 02 — Audio Extraction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_1" value="Epic 02 — Audio Extraction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="380" width="1120" height="290" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_0" value="02.1 FFmpeg extract → 16 kHz mono PCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_0" value="02.1 FFmpeg extract → 16 kHz mono PCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="420" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_1" value="02.2 cache extracted audio in scratch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_1" value="02.2 cache extracted audio in scratch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="420" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_2" value="02.3 cleanup on failure / completion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_2" value="02.3 cleanup on failure / completion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_1_3" value="02.4 supported container matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_1_3" value="02.4 supported container matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="480" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_2" value="Epic 03 — Speech-to-Text" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_2" value="Epic 03 — Speech-to-Text" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="580" width="1120" height="410" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_0" value="03.1 backend router (MLX → faster → API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_0" value="03.1 backend router (MLX → faster → API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="620" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_1" value="03.2 language detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_1" value="03.2 language detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="620" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_2" value="03.3 GPU/MLX detection at boot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_2" value="03.3 GPU/MLX detection at boot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="680" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_3" value="03.4 token-level confidences" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_3" value="03.4 token-level confidences" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="680" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_4" value="03.5 long-form chunking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_4" value="03.5 long-form chunking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="740" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_2_5" value="03.6 fallback chain on backend failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_2_5" value="03.6 fallback chain on backend failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="740" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_3" value="Epic 04 — Subtitles &amp;amp; Diarization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_3" value="Epic 04 — Subtitles &amp;amp; Diarization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="840" width="1120" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_0" value="04.1 WhisperX word alignment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_0" value="04.1 WhisperX word alignment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="880" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_1" value="04.2 pyannote diarization (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_1" value="04.2 pyannote diarization (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="880" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_2" value="04.3 .srt / .vtt sidecar emission" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_2" value="04.3 .srt / .vtt sidecar emission" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="940" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_3" value="04.4 segment_speakers M:N rows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_3" value="04.4 segment_speakers M:N rows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="940" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_3_4" value="04.5 speaker re-identification across videos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_3_4" value="04.5 speaker re-identification across videos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1000" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_4" value="Epic 05 — Search Index" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_4" value="Epic 05 — Search Index" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1100" width="1120" height="410" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_0" value="05.1 multilingual-e5 embeddings (batched)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_0" value="05.1 multilingual-e5 embeddings (batched)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1140" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_1" value="05.2 ChromaDB upsert per library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_1" value="05.2 ChromaDB upsert per library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1140" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_2" value="05.3 Postgres tsvector trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_2" value="05.3 Postgres tsvector trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1200" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_3" value="05.4 hybrid retrieval (FTS + vectors)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_3" value="05.4 hybrid retrieval (FTS + vectors)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1200" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_4" value="05.5 RRF score merge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_4" value="05.5 RRF score merge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1260" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_4_5" value="05.6 admin reindex command" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_4_5" value="05.6 admin reindex command" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1260" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="g_5" value="Epic 06 — Job Queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_5" value="Epic 06 — Job Queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1360" width="1120" height="410" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_0" value="06.1 SELECT FOR UPDATE SKIP LOCKED claim" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_0" value="06.1 SELECT FOR UPDATE SKIP LOCKED claim" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1400" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_1" value="06.2 NOTIFY job.{kind}.{state} on transitions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_1" value="06.2 NOTIFY job.{kind}.{state} on transitions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1400" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_2" value="06.3 heartbeat &amp;amp; stale claim recovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_2" value="06.3 heartbeat &amp;amp; stale claim recovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1460" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_3" value="06.4 attempts &amp;amp; max-attempts dead letter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_3" value="06.4 attempts &amp;amp; max-attempts dead letter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1460" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_4" value="06.5 admin replay / cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_4" value="06.5 admin replay / cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1520" width="530" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_5" value="06.6 idempotency key (lib, kind, target)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6" vertex="1" parent="1">
+        <mxCell id="s_5_5" value="06.6 idempotency key (lib, kind, target)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="620" y="1520" width="530" height="50" as="geometry" />
         </mxCell>
       </root>
