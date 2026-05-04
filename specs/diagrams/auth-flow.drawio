@@ -10,19 +10,19 @@
         <mxCell id="subtitle" value="Login → access token + refresh token; access token verified per request; refresh rotates" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="a_client" value="Client (PWA / native)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6" vertex="1" parent="1">
+        <mxCell id="a_client" value="Client (PWA / native)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="130" width="211" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="a_caddy" value="Caddy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6" vertex="1" parent="1">
+        <mxCell id="a_caddy" value="Caddy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="267" y="130" width="211" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="a_api" value="API Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6" vertex="1" parent="1">
+        <mxCell id="a_api" value="API Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="494" y="130" width="211" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="a_pg" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6" vertex="1" parent="1">
+        <mxCell id="a_pg" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="721" y="130" width="211" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="a_stream" value="Streaming Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6" vertex="1" parent="1">
+        <mxCell id="a_stream" value="Streaming Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="948" y="130" width="211" height="50" as="geometry" />
         </mxCell>
         <mxCell id="ll_a_client" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">

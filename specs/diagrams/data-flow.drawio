@@ -10,79 +10,79 @@
         <mxCell id="subtitle" value="Library scan → audio extract → transcribe → align → embed → index → search &amp; playback" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="scan" value="&lt;b&gt;1. Filesystem Scan&lt;/b&gt;&#10;watchdog detects new files; Pipeline emits scan event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="scan" value="&lt;b&gt;1. Filesystem Scan&lt;/b&gt;&#10;watchdog detects new files; Pipeline emits scan event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="120" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="scan_io" value="Reads: media volume&#10;Writes: videos row · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="scan_io" value="Reads: media volume&#10;Writes: videos row · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="130" width="240" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="audio" value="&lt;b&gt;2. Audio Extract&lt;/b&gt;&#10;FFmpeg → 16 kHz mono PCM in tmp scratch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="audio" value="&lt;b&gt;2. Audio Extract&lt;/b&gt;&#10;FFmpeg → 16 kHz mono PCM in tmp scratch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="260" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="audio_io" value="Reads: video file&#10;Writes: tmp wav · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="audio_io" value="Reads: video file&#10;Writes: tmp wav · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="270" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_scan_audio" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="scan" target="audio">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="stt" value="&lt;b&gt;3. Speech-to-Text&lt;/b&gt;&#10;Whisper backend (MLX / faster-whisper / API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="stt" value="&lt;b&gt;3. Speech-to-Text&lt;/b&gt;&#10;Whisper backend (MLX / faster-whisper / API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="400" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="stt_io" value="Reads: tmp wav&#10;Writes: segments · transcripts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="stt_io" value="Reads: tmp wav&#10;Writes: segments · transcripts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="410" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_audio_stt" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="audio" target="stt">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="align" value="&lt;b&gt;4. Word/Sub Alignment + Diarization&lt;/b&gt;&#10;WhisperX align · pyannote diarization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="align" value="&lt;b&gt;4. Word/Sub Alignment + Diarization&lt;/b&gt;&#10;WhisperX align · pyannote diarization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="540" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="align_io" value="Reads: segments · audio&#10;Writes: word_timings · speakers · segment_speakers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="align_io" value="Reads: segments · audio&#10;Writes: word_timings · speakers · segment_speakers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="550" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_stt_align" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="stt" target="align">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="subs" value="&lt;b&gt;5. Subtitle Output&lt;/b&gt;&#10;Generate .srt / .vtt sidecars + DB rows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="subs" value="&lt;b&gt;5. Subtitle Output&lt;/b&gt;&#10;Generate .srt / .vtt sidecars + DB rows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="680" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="subs_io" value="Reads: segments · word_timings&#10;Writes: .srt/.vtt files · subtitles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="subs_io" value="Reads: segments · word_timings&#10;Writes: .srt/.vtt files · subtitles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="690" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_align_subs" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="align" target="subs">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="embed" value="&lt;b&gt;6. Embeddings + Index&lt;/b&gt;&#10;multilingual-e5 → ChromaDB upsert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="embed" value="&lt;b&gt;6. Embeddings + Index&lt;/b&gt;&#10;multilingual-e5 → ChromaDB upsert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="820" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="embed_io" value="Reads: segments&#10;Writes: ChromaDB · search_index_meta" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="embed_io" value="Reads: segments&#10;Writes: ChromaDB · search_index_meta" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="830" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_subs_embed" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="subs" target="embed">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="search" value="&lt;b&gt;7. Search &amp; Playback&lt;/b&gt;&#10;API serves FTS + vector hybrid; Streaming serves HLS/DASH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="search" value="&lt;b&gt;7. Search &amp; Playback&lt;/b&gt;&#10;API serves FTS + vector hybrid; Streaming serves HLS/DASH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="300" y="960" width="600" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="search_io" value="Reads: Postgres · Chroma · media&#10;Writes: watch_progress · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4B5563;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="search_io" value="Reads: Postgres · Chroma · media&#10;Writes: watch_progress · audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4B5563;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="920" y="970" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_embed_search" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0" edge="1" parent="1" source="embed" target="search">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="g_stores" value="Persistence &amp; Stores" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_stores" value="Persistence &amp; Stores" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1120" width="1120" height="230" as="geometry" />
         </mxCell>
-        <mxCell id="st_pg" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&#10;libraries · videos · segments&#10;subtitles · processing_jobs&#10;watch_progress · audit_log" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=11;align=center" vertex="1" parent="1">
+        <mxCell id="st_pg" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt;&#10;libraries · videos · segments&#10;subtitles · processing_jobs&#10;watch_progress · audit_log" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=11;align=center;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="60" y="1170" width="353" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="st_chroma" value="&lt;b&gt;ChromaDB&lt;/b&gt;&#10;Per-library collection&#10;multilingual-e5 vectors" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=11;align=center" vertex="1" parent="1">
+        <mxCell id="st_chroma" value="&lt;b&gt;ChromaDB&lt;/b&gt;&#10;Per-library collection&#10;multilingual-e5 vectors" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=11;align=center;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="428" y="1170" width="353" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="st_media" value="&lt;b&gt;Media Volume + .maktaba/&lt;/b&gt;&#10;original files (RO)&#10;.srt, .vtt, .json sidecars" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fontSize=11;fillColor=#F3F4F6;strokeColor=#4B5563;align=center" vertex="1" parent="1">
+        <mxCell id="st_media" value="&lt;b&gt;Media Volume + .maktaba/&lt;/b&gt;&#10;original files (RO)&#10;.srt, .vtt, .json sidecars" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fontSize=11;fillColor=#F3F4F6;strokeColor=#4B5563;align=center;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="796" y="1170" width="353" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Vertical flow: each stage is the only writer for its outputs.&#10;Side annotations show Reads/Writes by stage.&#10;All writes pass through audit_log; LISTEN/NOTIFY notifies search index updates." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Vertical flow: each stage is the only writer for its outputs.&#10;Side annotations show Reads/Writes by stage.&#10;All writes pass through audit_log; LISTEN/NOTIFY notifies search index updates." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1370" width="1120" height="70" as="geometry" />
         </mxCell>
       </root>

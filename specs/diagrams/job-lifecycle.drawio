@@ -10,67 +10,67 @@
         <mxCell id="subtitle" value="States in processing_jobs · transitions guarded by SELECT FOR UPDATE SKIP LOCKED" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="st_q" value="&lt;b&gt;queued&lt;/b&gt;&#10;fresh row inserted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_q" value="&lt;b&gt;queued&lt;/b&gt;&#10;fresh row inserted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="420" y="120" width="360" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_c" value="&lt;b&gt;claimed&lt;/b&gt;&#10;worker won SELECT FOR UPDATE SKIP LOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_c" value="&lt;b&gt;claimed&lt;/b&gt;&#10;worker won SELECT FOR UPDATE SKIP LOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="420" y="240" width="360" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_r" value="&lt;b&gt;running&lt;/b&gt;&#10;active execution; heartbeat every 30s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_r" value="&lt;b&gt;running&lt;/b&gt;&#10;active execution; heartbeat every 30s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="420" y="360" width="360" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_d" value="&lt;b&gt;done&lt;/b&gt;&#10;success; outputs committed; NOTIFY emitted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_d" value="&lt;b&gt;done&lt;/b&gt;&#10;success; outputs committed; NOTIFY emitted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="420" y="480" width="360" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_f" value="&lt;b&gt;failed&lt;/b&gt;&#10;captured error · attempt incremented" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_f" value="&lt;b&gt;failed&lt;/b&gt;&#10;captured error · attempt incremented" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="840" y="270" width="300" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_dl" value="&lt;b&gt;dead letter&lt;/b&gt;&#10;attempts ≥ max; admin must replay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_dl" value="&lt;b&gt;dead letter&lt;/b&gt;&#10;attempts ≥ max; admin must replay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="840" y="370" width="300" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_x" value="&lt;b&gt;cancelled&lt;/b&gt;&#10;admin or precondition lost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=13;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="st_x" value="&lt;b&gt;cancelled&lt;/b&gt;&#10;admin or precondition lost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="30" y="270" width="300" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="e_q_c" value="claim" style="endArrow=classic;html=1;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="st_q" target="st_c">
+        <mxCell id="e_q_c" value="claim" style="endArrow=classic;html=1;strokeColor=#1E40AF;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="st_q" target="st_c">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_c_r" value="start" style="endArrow=classic;html=1;strokeColor=#166534;strokeWidth=2" edge="1" parent="1" source="st_c" target="st_r">
+        <mxCell id="e_c_r" value="start" style="endArrow=classic;html=1;strokeColor=#166534;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="st_c" target="st_r">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_r_d" value="success" style="endArrow=classic;html=1;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="st_r" target="st_d">
+        <mxCell id="e_r_d" value="success" style="endArrow=classic;html=1;strokeColor=#475569;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="st_r" target="st_d">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_r_f" value="error" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2;dashed=1" edge="1" parent="1" source="st_r" target="st_f">
+        <mxCell id="e_r_f" value="error" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="st_r" target="st_f">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_f_q" value="retry (backoff)" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2;dashed=1" edge="1" parent="1" source="st_f" target="st_q">
+        <mxCell id="e_f_q" value="retry (backoff)" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="st_f" target="st_q">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_f_dl" value="max attempts" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2" edge="1" parent="1" source="st_f" target="st_dl">
+        <mxCell id="e_f_dl" value="max attempts" style="endArrow=classic;html=1;strokeColor=#991B1B;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="st_f" target="st_dl">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_q_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1" edge="1" parent="1" source="st_q" target="st_x">
+        <mxCell id="e_q_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="st_q" target="st_x">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_c_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1" edge="1" parent="1" source="st_c" target="st_x">
+        <mxCell id="e_c_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="st_c" target="st_x">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_r_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1" edge="1" parent="1" source="st_r" target="st_x">
+        <mxCell id="e_r_x" value="cancel" style="endArrow=classic;html=1;strokeColor=#4B5563;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="st_r" target="st_x">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="g_notes" value="Invariants" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_notes" value="Invariants" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="720" width="1120" height="220" as="geometry" />
         </mxCell>
-        <mxCell id="n_0" value="&lt;b&gt;Every transition writes to audit_log&lt;/b&gt;&#10;atomic with the state change in one TX" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="n_0" value="&lt;b&gt;Every transition writes to audit_log&lt;/b&gt;&#10;atomic with the state change in one TX" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="60" y="760" width="530" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n_1" value="&lt;b&gt;LISTEN/NOTIFY emits on done / failed&lt;/b&gt;&#10;API forwards to clients via WS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="n_1" value="&lt;b&gt;LISTEN/NOTIFY emits on done / failed&lt;/b&gt;&#10;API forwards to clients via WS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="610" y="760" width="530" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n_2" value="&lt;b&gt;Heartbeat lapse → reclaim&lt;/b&gt;&#10;stale claimed rows reset to queued after grace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="n_2" value="&lt;b&gt;Heartbeat lapse → reclaim&lt;/b&gt;&#10;stale claimed rows reset to queued after grace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="60" y="840" width="530" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n_3" value="&lt;b&gt;Idempotency&lt;/b&gt;&#10;(library_id, job_kind, target) is UNIQUE; duplicate enqueues are no-ops" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="n_3" value="&lt;b&gt;Idempotency&lt;/b&gt;&#10;(library_id, job_kind, target) is UNIQUE; duplicate enqueues are no-ops" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="610" y="840" width="530" height="70" as="geometry" />
         </mxCell>
       </root>

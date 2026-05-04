@@ -10,82 +10,82 @@
         <mxCell id="subtitle" value="Audio extraction → STT (Whisper backends) → alignment → diarization → subtitle outputs" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
           <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="video_in" value="&lt;b&gt;Video file (mkv/mp4/...)&lt;/b&gt;&#10;Read-only mount" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="video_in" value="&lt;b&gt;Video file (mkv/mp4/...)&lt;/b&gt;&#10;Read-only mount" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="120" width="580" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="ffmpeg" value="&lt;b&gt;FFmpeg audio extract&#10;→ 16 kHz mono PCM s16le wav&lt;/b&gt;&#10;subprocess (Python)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="ffmpeg" value="&lt;b&gt;FFmpeg audio extract&#10;→ 16 kHz mono PCM s16le wav&lt;/b&gt;&#10;subprocess (Python)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="230" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_video_in_ffmpeg" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="video_in" target="ffmpeg">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="vad" value="&lt;b&gt;Optional VAD&#10;(Silero / pyannote)&lt;/b&gt;&#10;trims silences" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="vad" value="&lt;b&gt;Optional VAD&#10;(Silero / pyannote)&lt;/b&gt;&#10;trims silences" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="340" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_ffmpeg_vad" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="ffmpeg" target="vad">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="stt_router" value="&lt;b&gt;STT Router (Epic 03)&#10;MLX → faster-whisper → OpenAI API&lt;/b&gt;&#10;backend selected per host capability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="stt_router" value="&lt;b&gt;STT Router (Epic 03)&#10;MLX → faster-whisper → OpenAI API&lt;/b&gt;&#10;backend selected per host capability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="450" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_vad_stt_router" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="vad" target="stt_router">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="stt_run" value="&lt;b&gt;Whisper run&#10;language detect · token-level confidences&lt;/b&gt;&#10;GPU/MLX or CPU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="stt_run" value="&lt;b&gt;Whisper run&#10;language detect · token-level confidences&lt;/b&gt;&#10;GPU/MLX or CPU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="560" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_stt_router_stt_run" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="stt_router" target="stt_run">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="align" value="&lt;b&gt;WhisperX alignment&#10;word-level timestamps&lt;/b&gt;&#10;Epic 04" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="align" value="&lt;b&gt;WhisperX alignment&#10;word-level timestamps&lt;/b&gt;&#10;Epic 04" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="670" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_stt_run_align" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="stt_run" target="align">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="diar" value="&lt;b&gt;pyannote diarization&#10;speaker turns + voiceprints&lt;/b&gt;&#10;optional · Epic 04" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="diar" value="&lt;b&gt;pyannote diarization&#10;speaker turns + voiceprints&lt;/b&gt;&#10;optional · Epic 04" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="780" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_align_diar" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="align" target="diar">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="merge" value="&lt;b&gt;Merge segments + speakers&#10;→ DB rows&lt;/b&gt;&#10;transactional commit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="merge" value="&lt;b&gt;Merge segments + speakers&#10;→ DB rows&lt;/b&gt;&#10;transactional commit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="890" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_diar_merge" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="diar" target="merge">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="emit_subs" value="&lt;b&gt;Emit subtitles&#10;.srt + .vtt sidecars&lt;/b&gt;&#10;.maktaba/ next to media" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="emit_subs" value="&lt;b&gt;Emit subtitles&#10;.srt + .vtt sidecars&lt;/b&gt;&#10;.maktaba/ next to media" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="1000" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_merge_emit_subs" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="merge" target="emit_subs">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="subs_db" value="&lt;b&gt;Subtitles row + segments rows&lt;/b&gt;&#10;Postgres" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="subs_db" value="&lt;b&gt;Subtitles row + segments rows&lt;/b&gt;&#10;Postgres" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="1110" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_emit_subs_subs_db" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="emit_subs" target="subs_db">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="done" value="&lt;b&gt;Job complete · NOTIFY job.done&lt;/b&gt;&#10;Pipeline → API → clients" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8" vertex="1" parent="1">
+        <mxCell id="done" value="&lt;b&gt;Job complete · NOTIFY job.done&lt;/b&gt;&#10;Pipeline → API → clients" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="310" y="1220" width="580" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e_subs_db_done" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="subs_db" target="done">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="g_err" value="Failure handling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4" vertex="1" parent="1">
+        <mxCell id="g_err" value="Failure handling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="840" y="250" width="320" height="280" as="geometry" />
         </mxCell>
-        <mxCell id="err_retry" value="&lt;b&gt;Backoff retry&lt;/b&gt;&#10;up to 3× with exponential delay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="err_retry" value="&lt;b&gt;Backoff retry&lt;/b&gt;&#10;up to 3× with exponential delay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="860" y="290" width="280" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="err_dlq" value="&lt;b&gt;Dead letter&lt;/b&gt;&#10;processing_jobs.status='failed'&#10;visible in Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="err_dlq" value="&lt;b&gt;Dead letter&lt;/b&gt;&#10;processing_jobs.status='failed'&#10;visible in Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="860" y="360" width="280" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="err_resume" value="&lt;b&gt;Resume on restart&lt;/b&gt;&#10;crash → claim again with SKIP LOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8" vertex="1" parent="1">
+        <mxCell id="err_resume" value="&lt;b&gt;Resume on restart&lt;/b&gt;&#10;crash → claim again with SKIP LOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="860" y="450" width="280" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Vertical flow = strict order. Side rail summarises retry &amp;amp; failure paths.&#10;All writes within a stage are wrapped in a single transaction; partial state is never observable." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Vertical flow = strict order. Side rail summarises retry &amp;amp; failure paths.&#10;All writes within a stage are wrapped in a single transaction; partial state is never observable." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1350" width="1120" height="70" as="geometry" />
         </mxCell>
       </root>
