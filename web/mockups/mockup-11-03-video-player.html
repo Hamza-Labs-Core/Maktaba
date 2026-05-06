@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maktaba — Player</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #050608;
+        --surface: #0e1118;
+        --surface-2: #161a25;
+        --surface-3: #1f2533;
+        --border: #232938;
+        --text: #e8edf5;
+        --text-muted: #8a96b0;
+        --text-dim: #5d6883;
+        --primary: #5b9eff;
+        --primary-hover: #7aafff;
+        --accent: #7c5cff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
+          system-ui, sans-serif;
+        background: #000;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+
+      .player {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        overflow: hidden;
+      }
+
+      /* Mock "video" — gradient with subtle pattern */
+      .video-area {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 30% 30%, rgba(91, 158, 255, 0.18), transparent 55%),
+          radial-gradient(circle at 70% 70%, rgba(124, 92, 255, 0.18), transparent 55%),
+          linear-gradient(135deg, #0a0e1a 0%, #1a1430 50%, #0a0e1a 100%);
+      }
+      .video-area::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image:
+          repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px);
+        pointer-events: none;
+      }
+      .frame-stamp {
+        position: absolute;
+        top: 50%;
+        inset-inline-start: 50%;
+        transform: translate(-50%, -50%);
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.18);
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+      }
+
+      /* Top bar */
+      .top-bar {
+        position: absolute;
+        top: 0;
+        inset-inline: 0;
+        padding: 18px 24px;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        z-index: 5;
+      }
+      .icon-btn {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: white;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(8px);
+      }
+      .icon-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .titles {
+        flex: 1;
+        min-width: 0;
+      }
+      .titles .t {
+        font-size: 16px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .titles .s {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* Center play overlay */
+      .center {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        z-index: 4;
+        pointer-events: none;
+      }
+      .big-play {
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: white;
+        display: grid;
+        place-items: center;
+        pointer-events: auto;
+        cursor: pointer;
+        transition: transform 0.18s;
+      }
+      .big-play:hover {
+        transform: scale(1.06);
+      }
+
+      /* Subtitle overlay */
+      .subtitle {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 130px;
+        text-align: center;
+        z-index: 3;
+        padding: 0 80px;
+        pointer-events: none;
+      }
+      .subtitle span {
+        display: inline-block;
+        max-width: 80%;
+        background: rgba(0, 0, 0, 0.78);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 22px;
+        font-weight: 500;
+        line-height: 1.35;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      }
+      .subtitle .ar {
+        font-family: 'Noto Naskh Arabic', 'Geeza Pro', serif;
+        font-size: 26px;
+      }
+
+      /* Controls bar */
+      .controls {
+        position: absolute;
+        bottom: 0;
+        inset-inline: 0;
+        padding: 24px 24px 18px;
+        background: linear-gradient(0deg, rgba(0, 0, 0, 0.85), transparent);
+        z-index: 6;
+      }
+
+      /* Seekbar */
+      .seek-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .seek {
+        flex: 1;
+        height: 16px;
+        position: relative;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+      }
+      .seek-track {
+        width: 100%;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 999px;
+        position: relative;
+        overflow: hidden;
+        transition: height 0.15s;
+      }
+      .seek:hover .seek-track {
+        height: 6px;
+      }
+      .seek-buffered {
+        position: absolute;
+        inset-inline-start: 0;
+        top: 0;
+        bottom: 0;
+        width: 65%;
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .seek-played {
+        position: absolute;
+        inset-inline-start: 0;
+        top: 0;
+        bottom: 0;
+        width: 38%;
+        background: var(--primary);
+      }
+      .seek-thumb {
+        position: absolute;
+        top: 50%;
+        inset-inline-start: 38%;
+        transform: translate(-50%, -50%);
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: white;
+        opacity: 0;
+        transition: opacity 0.15s;
+        pointer-events: none;
+      }
+      .seek:hover .seek-thumb {
+        opacity: 1;
+      }
+      /* Chapter markers */
+      .seek-marker {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 2px;
+        height: 10px;
+        background: rgba(255, 255, 255, 0.55);
+        pointer-events: none;
+        border-radius: 1px;
+      }
+      .time {
+        color: white;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        min-width: 90px;
+      }
+      .time .total {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      /* Hover preview */
+      .preview {
+        position: absolute;
+        bottom: 26px;
+        inset-inline-start: 38%;
+        transform: translateX(-50%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      .seek:hover .preview {
+        opacity: 1;
+      }
+      .preview .thumb {
+        width: 160px;
+        height: 90px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #1e3a8a, #312e81);
+        border: 2px solid white;
+        margin-bottom: 4px;
+      }
+      .preview .pt {
+        text-align: center;
+        font-size: 11px;
+        color: white;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 1px 6px;
+        border-radius: 4px;
+        display: inline-block;
+        font-variant-numeric: tabular-nums;
+      }
+      .preview .pn {
+        font-size: 11px;
+        color: white;
+        text-align: center;
+        margin-top: 2px;
+        max-width: 160px;
+      }
+
+      .ctrl-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ctrl-row .spacer {
+        flex: 1;
+      }
+      .cbtn {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: white;
+      }
+      .cbtn:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .cbtn.play {
+        width: 44px;
+        height: 44px;
+      }
+      .cbtn.play:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      /* Volume slider */
+      .vol {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .vol .bar {
+        width: 0;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 999px;
+        overflow: hidden;
+        transition: width 0.18s;
+      }
+      .vol:hover .bar {
+        width: 80px;
+      }
+      .vol .bar > div {
+        height: 100%;
+        width: 70%;
+        background: white;
+      }
+
+      /* Dropdowns */
+      .dd {
+        position: relative;
+      }
+      .dd-menu {
+        position: absolute;
+        bottom: calc(100% + 6px);
+        inset-inline-end: 0;
+        background: rgba(15, 18, 26, 0.96);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        min-width: 220px;
+        max-height: 320px;
+        overflow-y: auto;
+        padding: 6px;
+        display: none;
+        z-index: 20;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+      }
+      .dd.open .dd-menu {
+        display: block;
+      }
+      .dd-title {
+        text-transform: uppercase;
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        color: var(--text-dim);
+        font-weight: 700;
+        padding: 8px 10px 4px;
+      }
+      .dd-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: white;
+        cursor: pointer;
+      }
+      .dd-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .dd-item .check {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        opacity: 0;
+        color: var(--primary);
+      }
+      .dd-item.on .check {
+        opacity: 1;
+      }
+      .dd-item .label {
+        flex: 1;
+      }
+      .dd-item .meta {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .dd-item.chapter {
+        align-items: flex-start;
+      }
+      .dd-item.chapter .label {
+        line-height: 1.3;
+      }
+      .dd-item .time {
+        font-size: 11px;
+        color: var(--primary);
+        font-variant-numeric: tabular-nums;
+        min-width: auto;
+      }
+
+      .speed-pill {
+        height: 38px;
+        padding: 0 12px;
+        border-radius: 8px;
+        color: white;
+        font-size: 12.5px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .speed-pill:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      /* Live indicator (off here, but show capability) */
+      .badge-live {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        background: var(--primary);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-inline-start: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="player">
+      <div class="video-area">
+        <div class="frame-stamp">video • 1080p • h264</div>
+      </div>
+
+      <!-- Top bar -->
+      <div class="top-bar">
+        <button class="icon-btn"><i data-lucide="arrow-left" width="18" height="18"></i></button>
+        <div class="titles">
+          <div class="t">Tafsir of Surat Al-Baqarah — Lesson 1: The Opening</div>
+          <div class="s">Tafsir Lectures • Sheikh Muhammad Al-Fulani</div>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn" title="Cast"><i data-lucide="cast" width="18" height="18"></i></button>
+          <button class="icon-btn" title="Picture-in-picture"><i data-lucide="picture-in-picture-2" width="18" height="18"></i></button>
+          <button class="icon-btn" title="More"><i data-lucide="more-vertical" width="18" height="18"></i></button>
+        </div>
+      </div>
+
+      <!-- Center play -->
+      <div class="center">
+        <button class="big-play" id="centerPlay"><i data-lucide="play" width="40" height="40"></i></button>
+      </div>
+
+      <!-- Subtitle overlay -->
+      <div class="subtitle">
+        <span class="ar">ذَٰلِكَ ٱلْكِتَـٰبُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًۭى لِّلْمُتَّقِينَ</span>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls">
+        <div class="seek-row">
+          <div class="time"><span id="cur">32:14</span></div>
+          <div class="seek">
+            <div class="seek-track">
+              <div class="seek-buffered"></div>
+              <div class="seek-played"></div>
+            </div>
+            <div class="seek-thumb"></div>
+            <!-- chapter markers (positions match chapter dropdown) -->
+            <div class="seek-marker" style="inset-inline-start: 3.8%"></div>
+            <div class="seek-marker" style="inset-inline-start: 12.8%"></div>
+            <div class="seek-marker" style="inset-inline-start: 26.7%"></div>
+            <div class="seek-marker" style="inset-inline-start: 37.8%"></div>
+            <div class="seek-marker" style="inset-inline-start: 54.6%"></div>
+            <div class="seek-marker" style="inset-inline-start: 76.0%"></div>
+            <div class="seek-marker" style="inset-inline-start: 94.2%"></div>
+            <div class="preview">
+              <div class="thumb"></div>
+              <div class="pt">31:52</div>
+              <div class="pn">Verse 1 — The disjointed letters</div>
+            </div>
+          </div>
+          <div class="time"><span class="total">1:24:18</span></div>
+        </div>
+
+        <div class="ctrl-row">
+          <button class="cbtn" title="Previous chapter">
+            <i data-lucide="skip-back" width="18" height="18"></i>
+          </button>
+          <button class="cbtn play" id="playBtn" title="Play / pause">
+            <i data-lucide="play" width="22" height="22"></i>
+          </button>
+          <button class="cbtn" title="Next chapter">
+            <i data-lucide="skip-forward" width="18" height="18"></i>
+          </button>
+          <button class="cbtn" title="Rewind 10s">
+            <i data-lucide="rotate-ccw" width="18" height="18"></i>
+          </button>
+          <button class="cbtn" title="Forward 10s">
+            <i data-lucide="rotate-cw" width="18" height="18"></i>
+          </button>
+
+          <div class="vol">
+            <button class="cbtn" title="Mute"><i data-lucide="volume-2" width="18" height="18"></i></button>
+            <div class="bar"><div></div></div>
+          </div>
+
+          <div class="spacer"></div>
+
+          <!-- Audio tracks -->
+          <div class="dd" data-dd>
+            <button class="cbtn" title="Audio track" data-dd-toggle>
+              <i data-lucide="audio-lines" width="18" height="18"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-title">Audio</div>
+              <div class="dd-item on">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">Arabic — Original<br /><span class="meta">aac • 2.0 • 192 kb/s</span></div>
+              </div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">English — Dubbed<br /><span class="meta">aac • 2.0 • 160 kb/s</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subtitles -->
+          <div class="dd" data-dd>
+            <button class="cbtn" title="Subtitles" data-dd-toggle>
+              <i data-lucide="captions" width="18" height="18"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-title">Subtitles</div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">Off</div>
+              </div>
+              <div class="dd-item on">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">Arabic <span class="meta">(auto)</span></div>
+              </div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">English</div>
+              </div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">English (SDH)</div>
+              </div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">Urdu</div>
+              </div>
+              <div class="dd-title">Style</div>
+              <div class="dd-item">
+                <i class="check" data-lucide="check"></i>
+                <div class="label">Customize…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chapters -->
+          <div class="dd" data-dd>
+            <button class="cbtn" title="Chapters" data-dd-toggle>
+              <i data-lucide="bookmark" width="18" height="18"></i>
+            </button>
+            <div class="dd-menu" style="min-width: 320px">
+              <div class="dd-title">Chapters · 8</div>
+              <div class="dd-item chapter"><span class="time">00:00</span><div class="label">Opening du'a and introduction</div></div>
+              <div class="dd-item chapter"><span class="time">03:12</span><div class="label">Series overview</div></div>
+              <div class="dd-item chapter"><span class="time">10:48</span><div class="label">Methodology of classical Tafsir</div></div>
+              <div class="dd-item chapter"><span class="time">22:31</span><div class="label">Why begin with Al-Baqarah</div></div>
+              <div class="dd-item chapter on"><i class="check" data-lucide="check"></i><span class="time">31:52</span><div class="label">Verse 1 — The disjointed letters</div></div>
+              <div class="dd-item chapter"><span class="time">46:03</span><div class="label">Verse 2 — On guidance and certainty</div></div>
+              <div class="dd-item chapter"><span class="time">1:04:11</span><div class="label">Q&A from students</div></div>
+              <div class="dd-item chapter"><span class="time">1:19:24</span><div class="label">Closing remarks</div></div>
+            </div>
+          </div>
+
+          <!-- Speed -->
+          <div class="dd" data-dd>
+            <button class="speed-pill" data-dd-toggle><span id="spdLabel">1×</span></button>
+            <div class="dd-menu" style="min-width: 130px">
+              <div class="dd-title">Speed</div>
+              <div class="dd-item" data-speed="0.5"><i class="check" data-lucide="check"></i><div class="label">0.5×</div></div>
+              <div class="dd-item" data-speed="0.75"><i class="check" data-lucide="check"></i><div class="label">0.75×</div></div>
+              <div class="dd-item on" data-speed="1"><i class="check" data-lucide="check"></i><div class="label">1× <span class="meta">Normal</span></div></div>
+              <div class="dd-item" data-speed="1.25"><i class="check" data-lucide="check"></i><div class="label">1.25×</div></div>
+              <div class="dd-item" data-speed="1.5"><i class="check" data-lucide="check"></i><div class="label">1.5×</div></div>
+              <div class="dd-item" data-speed="1.75"><i class="check" data-lucide="check"></i><div class="label">1.75×</div></div>
+              <div class="dd-item" data-speed="2"><i class="check" data-lucide="check"></i><div class="label">2×</div></div>
+            </div>
+          </div>
+
+          <!-- Quality -->
+          <div class="dd" data-dd>
+            <button class="cbtn" title="Quality" data-dd-toggle>
+              <i data-lucide="settings" width="18" height="18"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-title">Quality (HLS)</div>
+              <div class="dd-item on"><i class="check" data-lucide="check"></i><div class="label">Auto <span class="meta">— 1080p</span></div></div>
+              <div class="dd-item"><i class="check" data-lucide="check"></i><div class="label">1080p <span class="meta">2.1 Mb/s</span></div></div>
+              <div class="dd-item"><i class="check" data-lucide="check"></i><div class="label">720p <span class="meta">1.2 Mb/s</span></div></div>
+              <div class="dd-item"><i class="check" data-lucide="check"></i><div class="label">480p <span class="meta">640 kb/s</span></div></div>
+              <div class="dd-item"><i class="check" data-lucide="check"></i><div class="label">Audio only</div></div>
+            </div>
+          </div>
+
+          <button class="cbtn" title="Fullscreen">
+            <i data-lucide="maximize" width="18" height="18"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons();
+
+      // Dropdown toggle
+      document.querySelectorAll('[data-dd]').forEach((dd) => {
+        const tgl = dd.querySelector('[data-dd-toggle]');
+        tgl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          document.querySelectorAll('[data-dd]').forEach((d) => {
+            if (d !== dd) d.classList.remove('open');
+          });
+          dd.classList.toggle('open');
+        });
+        // Item selection within dropdown (visual only)
+        dd.querySelectorAll('.dd-item').forEach((it) => {
+          it.addEventListener('click', () => {
+            const siblings = it.parentElement.querySelectorAll('.dd-item');
+            // simple "single select" within a section
+            siblings.forEach((s) => s.classList.remove('on'));
+            it.classList.add('on');
+            const spd = it.dataset.speed;
+            if (spd) document.getElementById('spdLabel').textContent = spd + '×';
+          });
+        });
+      });
+      document.addEventListener('click', () => {
+        document.querySelectorAll('[data-dd]').forEach((d) => d.classList.remove('open'));
+      });
+
+      // Play / pause toggle (visual only)
+      let playing = false;
+      const playBtn = document.getElementById('playBtn');
+      const centerPlay = document.getElementById('centerPlay');
+      function setPlay(p) {
+        playing = p;
+        const ic = playing ? 'pause' : 'play';
+        playBtn.innerHTML = `<i data-lucide="${ic}" width="22" height="22"></i>`;
+        centerPlay.style.opacity = playing ? '0' : '1';
+        centerPlay.style.pointerEvents = playing ? 'none' : 'auto';
+        lucide.createIcons();
+      }
+      playBtn.addEventListener('click', () => setPlay(!playing));
+      centerPlay.addEventListener('click', () => setPlay(true));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maktaba — Search</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --surface: #131826;
+        --surface-2: #1c2333;
+        --surface-3: #262f43;
+        --border: #2a334a;
+        --border-strong: #3a4663;
+        --text: #e8edf5;
+        --text-muted: #8a96b0;
+        --text-dim: #5d6883;
+        --primary: #5b9eff;
+        --primary-hover: #7aafff;
+        --primary-dim: rgba(91, 158, 255, 0.15);
+        --highlight: #fde047;
+        --highlight-bg: rgba(253, 224, 71, 0.18);
+        --accent: #7c5cff;
+        --success: #34d399;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --radius-sm: 6px;
+        --radius: 10px;
+        --radius-lg: 14px;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      [data-theme='light'] {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --surface-3: #eef2f7;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --text-muted: #475569;
+        --text-dim: #94a3b8;
+        --highlight-bg: rgba(252, 211, 77, 0.35);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
+          system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+
+      /* Header */
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        position: sticky;
+        top: 0;
+        z-index: 30;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+      }
+      .header-right {
+        margin-inline-start: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--text-muted);
+      }
+      .icon-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f97316, #ec4899);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      /* Page */
+      .page {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 32px 24px 64px;
+      }
+      h1 {
+        margin: 0 0 18px;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      /* Search box with instant results */
+      .searchbox {
+        position: relative;
+        max-width: 800px;
+        margin-bottom: 24px;
+      }
+      .searchbox .field {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 4px 6px 4px 16px;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .searchbox .field:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px var(--primary-dim);
+      }
+      .searchbox input {
+        flex: 1;
+        height: 44px;
+        background: none;
+        border: 0;
+        color: var(--text);
+        font-size: 15px;
+        outline: none;
+      }
+      .searchbox .scope-pill {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .searchbox .clear {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        color: var(--text-dim);
+      }
+      .searchbox .clear:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .search-go {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 10px;
+        background: var(--primary);
+        color: white;
+        font-weight: 600;
+        font-size: 13px;
+        margin-inline-end: 4px;
+      }
+
+      /* Instant results dropdown */
+      .instant {
+        position: absolute;
+        top: calc(100% + 6px);
+        inset-inline: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        z-index: 40;
+        overflow: hidden;
+      }
+      .instant-section {
+        padding: 4px 0;
+        border-top: 1px solid var(--border);
+      }
+      .instant-section:first-child {
+        border-top: 0;
+      }
+      .instant-title {
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 10.5px;
+        color: var(--text-dim);
+        padding: 8px 14px 4px;
+        font-weight: 700;
+      }
+      .instant-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .instant-item:hover {
+        background: var(--surface-2);
+      }
+      .instant-item .ico {
+        width: 28px;
+        height: 28px;
+        background: var(--surface-2);
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+      .instant-item .meta {
+        margin-inline-start: auto;
+        font-size: 11px;
+        color: var(--text-dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .instant-item .label b {
+        color: var(--text);
+      }
+
+      /* Body grid */
+      .body {
+        display: grid;
+        grid-template-columns: 270px 1fr;
+        gap: 24px;
+      }
+      @media (max-width: 900px) {
+        .body {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Filters */
+      .filters {
+        position: sticky;
+        top: 80px;
+        align-self: start;
+      }
+      .filter-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        margin-bottom: 14px;
+        overflow: hidden;
+      }
+      .fc-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border);
+      }
+      .fc-head .clear {
+        margin-inline-start: auto;
+        font-size: 11px;
+        color: var(--primary);
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .fc-body {
+        padding: 6px;
+      }
+      .chk {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: var(--text-muted);
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .chk:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .chk input {
+        accent-color: var(--primary);
+      }
+      .chk .count {
+        margin-inline-start: auto;
+        color: var(--text-dim);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .range {
+        padding: 8px 16px 14px;
+      }
+      .range label {
+        display: block;
+        font-size: 12px;
+        color: var(--text-muted);
+        margin: 6px 0 4px;
+      }
+      .range input[type='date'],
+      .range input[type='number'] {
+        width: 100%;
+        height: 32px;
+        padding: 0 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 12.5px;
+      }
+      .range .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .range input[type='range'] {
+        width: 100%;
+        accent-color: var(--primary);
+      }
+      .range .row-vals {
+        display: flex;
+        justify-content: space-between;
+        color: var(--text-dim);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .applied {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--primary-dim);
+        color: var(--primary);
+        font-size: 11.5px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .chip:hover {
+        background: rgba(91, 158, 255, 0.25);
+      }
+
+      /* Results */
+      .results-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .results-head .meta {
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .results-head .meta b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .results-head .spacer {
+        flex: 1;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .seg button {
+        padding: 5px 10px;
+        border-radius: 6px;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .seg button.active {
+        background: var(--surface-3);
+        color: var(--text);
+      }
+      .select {
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 12.5px;
+      }
+
+      /* Result card */
+      .result {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 18px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        margin-bottom: 14px;
+        transition: border-color 0.15s;
+      }
+      .result:hover {
+        border-color: var(--border-strong);
+      }
+      .result .thumb {
+        position: relative;
+        aspect-ratio: 16/10;
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: linear-gradient(135deg, #1e3a8a, #312e81);
+      }
+      .result .thumb .lang {
+        position: absolute;
+        inset-inline-start: 6px;
+        top: 6px;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .result .thumb .duration {
+        position: absolute;
+        inset-inline-end: 6px;
+        bottom: 6px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .result .thumb .matches-count {
+        position: absolute;
+        top: 6px;
+        inset-inline-end: 6px;
+        background: var(--primary);
+        color: white;
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 999px;
+      }
+      .result h3 {
+        margin: 0 0 4px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .result h3 a:hover {
+        color: var(--primary);
+      }
+      .result .submeta {
+        color: var(--text-muted);
+        font-size: 12px;
+        margin-bottom: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .result .submeta .dot {
+        width: 3px;
+        height: 3px;
+        background: currentColor;
+        border-radius: 50%;
+        opacity: 0.5;
+      }
+      .matches {
+        background: var(--surface-2);
+        border-radius: var(--radius);
+        padding: 4px 0;
+      }
+      .match {
+        display: grid;
+        grid-template-columns: 60px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 8px 14px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .match:first-child {
+        border-top: 0;
+      }
+      .match:hover {
+        background: var(--surface-3);
+      }
+      .match .t {
+        font-variant-numeric: tabular-nums;
+        color: var(--primary);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .match .text {
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .match .text mark {
+        background: var(--highlight-bg);
+        color: var(--highlight);
+        padding: 0 2px;
+        border-radius: 3px;
+        font-weight: 600;
+      }
+      [data-theme='light'] .match .text mark {
+        color: #92400e;
+      }
+      .match .text.ar {
+        font-family: 'Noto Naskh Arabic', 'Geeza Pro', serif;
+        font-size: 14px;
+        text-align: start;
+        direction: rtl;
+        unicode-bidi: plaintext;
+      }
+      .match .play {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--surface);
+        color: var(--text-muted);
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .match:hover .play {
+        opacity: 1;
+      }
+      .more-matches {
+        text-align: center;
+        font-size: 12px;
+        color: var(--primary);
+        padding: 8px;
+        cursor: pointer;
+      }
+
+      /* Pagination */
+      .pag {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 24px;
+      }
+      .pag button {
+        min-width: 32px;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 8px;
+        color: var(--text-muted);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .pag button:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .pag button.active {
+        background: var(--primary);
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <a class="brand"><span class="brand-mark">M</span><span>Maktaba</span></a>
+      <div class="header-right">
+        <button class="icon-btn" onclick="document.documentElement.dir = document.documentElement.dir==='rtl'?'ltr':'rtl'" title="Direction">
+          <i data-lucide="languages" width="18" height="18"></i>
+        </button>
+        <button class="icon-btn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='light'?'dark':'light'" title="Theme">
+          <i data-lucide="sun-moon" width="18" height="18"></i>
+        </button>
+        <div class="avatar">MD</div>
+      </div>
+    </header>
+
+    <div class="page">
+      <h1>Search</h1>
+
+      <div class="searchbox" id="searchbox">
+        <div class="field">
+          <i data-lucide="search" width="18" height="18" style="color: var(--text-muted)"></i>
+          <input id="searchInput" placeholder="Search transcripts, titles, chapters…" value="patience" autocomplete="off" />
+          <span class="scope-pill"><i data-lucide="filter" width="11" height="11"></i> All libraries</span>
+          <button class="clear" id="clearBtn" title="Clear"><i data-lucide="x" width="14" height="14"></i></button>
+          <button class="search-go">Search</button>
+        </div>
+        <div class="instant" id="instant">
+          <div class="instant-section">
+            <div class="instant-title">Top result</div>
+            <div class="instant-item">
+              <div class="ico"><i data-lucide="play-circle" width="14" height="14"></i></div>
+              <div class="label"><b>Patience</b> in Hardship — Friday Khutbah</div>
+              <div class="meta">Khutbahs</div>
+            </div>
+          </div>
+          <div class="instant-section">
+            <div class="instant-title">Transcript matches · 142</div>
+            <div class="instant-item">
+              <div class="ico"><i data-lucide="captions" width="14" height="14"></i></div>
+              <div class="label">"…the believers must show <b>patience</b> when…" — 12:34</div>
+              <div class="meta">Tafsir L1</div>
+            </div>
+            <div class="instant-item">
+              <div class="ico"><i data-lucide="captions" width="14" height="14"></i></div>
+              <div class="label">"…and <b>patience</b> is half of faith, as…" — 47:08</div>
+              <div class="meta">Hadith series</div>
+            </div>
+            <div class="instant-item">
+              <div class="ico"><i data-lucide="captions" width="14" height="14"></i></div>
+              <div class="label">"…three levels of <b>patience</b>: with worship…" — 23:51</div>
+              <div class="meta">Tazkiyah</div>
+            </div>
+          </div>
+          <div class="instant-section">
+            <div class="instant-title">Suggested</div>
+            <div class="instant-item"><div class="ico"><i data-lucide="search" width="14" height="14"></i></div><div class="label">patience <i>in trials</i></div></div>
+            <div class="instant-item"><div class="ico"><i data-lucide="search" width="14" height="14"></i></div><div class="label">patience <i>and gratitude</i></div></div>
+            <div class="instant-item"><div class="ico"><i data-lucide="search" width="14" height="14"></i></div><div class="label">patience <i>verses Quran</i></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="body">
+        <aside class="filters">
+          <div class="filter-card">
+            <div class="fc-head"><i data-lucide="languages" width="13" height="13"></i> Language <span class="clear">Clear</span></div>
+            <div class="fc-body">
+              <label class="chk"><input type="checkbox" checked /> Arabic <span class="count">86</span></label>
+              <label class="chk"><input type="checkbox" checked /> English <span class="count">38</span></label>
+              <label class="chk"><input type="checkbox" /> Urdu <span class="count">12</span></label>
+              <label class="chk"><input type="checkbox" /> Turkish <span class="count">6</span></label>
+            </div>
+          </div>
+
+          <div class="filter-card">
+            <div class="fc-head"><i data-lucide="library" width="13" height="13"></i> Library</div>
+            <div class="fc-body">
+              <label class="chk"><input type="checkbox" checked /> Tafsir Lectures <span class="count">52</span></label>
+              <label class="chk"><input type="checkbox" checked /> Fiqh Series <span class="count">31</span></label>
+              <label class="chk"><input type="checkbox" /> Documentaries <span class="count">14</span></label>
+              <label class="chk"><input type="checkbox" /> Conferences <span class="count">9</span></label>
+              <label class="chk"><input type="checkbox" /> Khutbahs <span class="count">36</span></label>
+            </div>
+          </div>
+
+          <div class="filter-card">
+            <div class="fc-head"><i data-lucide="calendar" width="13" height="13"></i> Date</div>
+            <div class="range">
+              <div class="row">
+                <div>
+                  <label>From</label>
+                  <input type="date" value="2024-01-01" />
+                </div>
+                <div>
+                  <label>To</label>
+                  <input type="date" value="2026-05-05" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-card">
+            <div class="fc-head"><i data-lucide="clock" width="13" height="13"></i> Duration</div>
+            <div class="range">
+              <input type="range" min="0" max="180" value="0" />
+              <input type="range" min="0" max="180" value="120" />
+              <div class="row-vals"><span>0 min</span><span>120 min</span></div>
+            </div>
+          </div>
+
+          <div class="filter-card">
+            <div class="fc-head"><i data-lucide="captions" width="13" height="13"></i> Match in</div>
+            <div class="fc-body">
+              <label class="chk"><input type="checkbox" checked /> Transcript <span class="count">142</span></label>
+              <label class="chk"><input type="checkbox" checked /> Title <span class="count">7</span></label>
+              <label class="chk"><input type="checkbox" /> Chapters <span class="count">23</span></label>
+              <label class="chk"><input type="checkbox" /> Tags <span class="count">4</span></label>
+            </div>
+          </div>
+        </aside>
+
+        <main>
+          <div class="results-head">
+            <div class="meta"><b>142</b> matches across <b>23</b> videos for "<b>patience</b>" — 0.18s</div>
+            <div class="spacer"></div>
+            <div class="seg">
+              <button class="active"><i data-lucide="list" width="13" height="13"></i> Segments</button>
+              <button><i data-lucide="layout-grid" width="13" height="13"></i> Videos</button>
+            </div>
+            <select class="select">
+              <option>Most relevant</option>
+              <option>Most recent</option>
+              <option>Most matches</option>
+              <option>Title (A→Z)</option>
+            </select>
+          </div>
+
+          <div class="applied">
+            <span class="chip">Language: Arabic, English <i data-lucide="x" width="11" height="11"></i></span>
+            <span class="chip">Library: Tafsir, Fiqh <i data-lucide="x" width="11" height="11"></i></span>
+            <span class="chip">Match in: Transcript, Title <i data-lucide="x" width="11" height="11"></i></span>
+            <span class="chip" style="background: transparent; color: var(--text-muted)">Clear all</span>
+          </div>
+
+          <article class="result">
+            <a class="thumb" style="background: linear-gradient(135deg, #155e75, #0e7490)">
+              <span class="lang">AR</span>
+              <span class="matches-count">12 matches</span>
+              <span class="duration">34:11</span>
+            </a>
+            <div>
+              <h3><a>Friday Khutbah — <mark style="background: var(--highlight-bg); color: var(--highlight); padding: 0 3px; border-radius: 3px">Patience</mark> in Hardship</a></h3>
+              <div class="submeta">
+                <span>Khutbahs</span><span class="dot"></span><span>Sheikh A. Rahman</span><span class="dot"></span><span>14 Apr 2024</span>
+              </div>
+              <div class="matches">
+                <div class="match">
+                  <span class="t">02:14</span>
+                  <span class="text">"My beloved brothers and sisters, today we speak about a virtue beloved to Allah — <mark>patience</mark> in the face of hardship and trials…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="match">
+                  <span class="t">08:42</span>
+                  <span class="text ar">"…وَبَشِّرِ ٱلصَّـٰبِرِينَ الَّذِينَ إِذَا أَصَابَتْهُم مُّصِيبَةٌ — give glad tidings to those who have <mark>patience</mark>…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="match">
+                  <span class="t">19:31</span>
+                  <span class="text">"There are three levels of <mark>patience</mark>: <mark>patience</mark> in performing acts of worship, <mark>patience</mark> in avoiding sin, and <mark>patience</mark> with what has been decreed…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="more-matches">+ 9 more matches</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="result">
+            <a class="thumb" style="background: linear-gradient(135deg, #1e3a8a, #312e81)">
+              <span class="lang">AR</span>
+              <span class="matches-count">8 matches</span>
+              <span class="duration">1:24:18</span>
+            </a>
+            <div>
+              <h3><a>Tafsir of Surat Al-Baqarah — Lesson 1: The Opening</a></h3>
+              <div class="submeta">
+                <span>Tafsir Lectures</span><span class="dot"></span><span>Sheikh M. Al-Fulani</span><span class="dot"></span><span>22 Mar 2024</span>
+              </div>
+              <div class="matches">
+                <div class="match">
+                  <span class="t">12:34</span>
+                  <span class="text">"…the believers must show <mark>patience</mark> when guidance is being explained, for understanding takes time and reflection…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="match">
+                  <span class="t">52:08</span>
+                  <span class="text">"And from the qualities of the muttaqin is <mark>patience</mark> — sabr — which the Quran mentions over ninety times…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="more-matches">+ 6 more matches</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="result">
+            <a class="thumb" style="background: linear-gradient(135deg, #581c87, #6b21a8)">
+              <span class="lang">AR</span>
+              <span class="matches-count">6 matches</span>
+              <span class="duration">1:08:55</span>
+            </a>
+            <div>
+              <h3><a>Sahih al-Bukhari — Book of Faith Commentary</a></h3>
+              <div class="submeta">
+                <span>Hadith</span><span class="dot"></span><span>Dr. F. Hassan</span><span class="dot"></span><span>3 May 2024</span>
+              </div>
+              <div class="matches">
+                <div class="match">
+                  <span class="t">47:08</span>
+                  <span class="text">"…the Prophet ﷺ said: '<mark>patience</mark> is half of faith, and gratitude is the other half'…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="match">
+                  <span class="t">58:24</span>
+                  <span class="text">"This narration shows the rank of <mark>patience</mark> in our religion — it is not merely an ethical virtue, but a fundamental pillar…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="more-matches">+ 4 more matches</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="result">
+            <a class="thumb" style="background: linear-gradient(135deg, #92400e, #b45309)">
+              <span class="lang">EN</span>
+              <span class="matches-count">5 matches</span>
+              <span class="duration">52:07</span>
+            </a>
+            <div>
+              <h3><a>Introduction to Islamic Jurisprudence</a></h3>
+              <div class="submeta">
+                <span>Fiqh Series</span><span class="dot"></span><span>Sheikh Y. Khan</span><span class="dot"></span><span>11 Feb 2024</span>
+              </div>
+              <div class="matches">
+                <div class="match">
+                  <span class="t">23:51</span>
+                  <span class="text">"…Imam Ibn al-Qayyim categorizes <mark>patience</mark> into three levels: with worship, against disobedience, and with divine decree…"</span>
+                  <button class="play"><i data-lucide="play" width="13" height="13"></i></button>
+                </div>
+                <div class="more-matches">+ 4 more matches</div>
+              </div>
+            </div>
+          </article>
+
+          <div class="pag">
+            <button><i data-lucide="chevron-left" width="14" height="14"></i></button>
+            <button class="active">1</button>
+            <button>2</button>
+            <button>3</button>
+            <button>4</button>
+            <button>5</button>
+            <button style="color: var(--text-dim)">…</button>
+            <button>23</button>
+            <button><i data-lucide="chevron-right" width="14" height="14"></i></button>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons();
+
+      const inp = document.getElementById('searchInput');
+      const instant = document.getElementById('instant');
+      const sb = document.getElementById('searchbox');
+      function setOpen(o) {
+        instant.style.display = o ? 'block' : 'none';
+      }
+      setOpen(false);
+      inp.addEventListener('focus', () => setOpen(true));
+      inp.addEventListener('input', () => setOpen(inp.value.length > 0));
+      document.addEventListener('click', (e) => {
+        if (!sb.contains(e.target)) setOpen(false);
+      });
+      document.getElementById('clearBtn').addEventListener('click', () => {
+        inp.value = '';
+        inp.focus();
+        setOpen(false);
+      });
+    </script>
+  </body>
+</html>

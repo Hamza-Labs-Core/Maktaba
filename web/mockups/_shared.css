@@ -1,0 +1,36 @@
+/* Maktaba mockup shared design tokens — referenced for documentation; each mockup file inlines these. */
+:root {
+  --bg: #0a0e1a;
+  --surface: #131826;
+  --surface-2: #1c2333;
+  --surface-3: #262f43;
+  --border: #2a334a;
+  --border-strong: #3a4663;
+  --text: #e8edf5;
+  --text-muted: #8a96b0;
+  --text-dim: #5d6883;
+  --primary: #5b9eff;
+  --primary-hover: #7aafff;
+  --primary-dim: rgba(91, 158, 255, 0.15);
+  --accent: #7c5cff;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='light'] {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f7;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #94a3b8;
+}
