@@ -198,6 +198,57 @@
   .btn-danger {
     background: transparent; border: 1px solid var(--error); color: var(--error);
   }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .ss-label .stag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico-t { background: rgba(239,68,68,0.15); color: var(--error); }
+  .toast.warn .ico-t { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.error { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+  .di-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .di-icon.info { background: rgba(56,189,248,0.12); color: var(--info); border: 1px solid rgba(56,189,248,0.3); }
+  .di-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+  .empty-state { text-align: center; padding: 24px; }
+  .em-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px; }
+  .empty-state h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 12px; color: var(--text-dim); max-width: 240px; margin: 0 auto; line-height: 1.5; }
+  .skeleton-row { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 240px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
+  .dropdown { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 220px; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .dd-item { padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dd-item:hover { background: var(--panel-2); }
+  .dd-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 </style>
 </head>
 <body>
@@ -351,6 +402,215 @@
         </button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · cloud relay</h2>
+    <div class="desc">Every dialog, toast, and overlay state for remote access</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · disable relay <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/></svg>
+            </div>
+            <h3>Disable cloud relay?</h3>
+            <p>Mobile devices will lose remote access immediately. They'll only work on your home Wi-Fi until you turn it back on.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Disable relay</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · regenerate keys <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </div>
+            <h3>Regenerate identity keys?</h3>
+            <p>Every paired device will be signed out and need to re-verify the new fingerprint. Use this if you suspect your keys were leaked.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Regenerate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dialog · bandwidth quota <span class="stag warn">WARNING</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h3>92% of monthly relay quota used</h3>
+            <p>You've streamed 92 GB of 100 GB this month. Streams will throttle to SD quality at 100% to avoid extra charges.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Got it</button>
+            <button class="d-btn primary">Upgrade limit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · relay connected <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Cloud relay active</strong>
+            <span>eu-1.relay.maktaba.app · 12ms RTT</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · relay disconnected <span class="stag error">ERROR</span></div>
+      <div class="ss-preview">
+        <div class="toast error">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/></svg></div>
+          <div class="body">
+            <strong>Lost connection to relay</strong>
+            <span>Reconnecting in 5s · attempt 1/5</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · auth required <span class="stag warn">WARNING</span></div>
+      <div class="ss-preview">
+        <div class="toast warn">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <div class="body">
+            <strong>Premium subscription required</strong>
+            <span>Cloud relay needs a Premium plan — try free for 7 days</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dropdown · region picker <span class="stag">SELECT</span></div>
+      <div class="ss-preview">
+        <div class="dropdown">
+          <div class="dd-item">
+            🇩🇪 Frankfurt
+            <span style="margin-left: auto; font-size: 11px; color: var(--accent); font-family: ui-monospace, monospace;">12ms</span>
+          </div>
+          <div class="dd-item">
+            🇳🇱 Amsterdam
+            <span style="margin-left: auto; font-size: 11px; color: var(--accent); font-family: ui-monospace, monospace;">18ms</span>
+          </div>
+          <div class="dd-item">
+            🇬🇧 London
+            <span style="margin-left: auto; font-size: 11px; color: var(--text-dim); font-family: ui-monospace, monospace;">32ms</span>
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item">
+            🇺🇸 New York
+            <span style="margin-left: auto; font-size: 11px; color: var(--warn); font-family: ui-monospace, monospace;">112ms</span>
+          </div>
+          <div class="dd-item">
+            🇸🇬 Singapore
+            <span style="margin-left: auto; font-size: 11px; color: var(--warn); font-family: ui-monospace, monospace;">218ms</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Skeleton · connecting <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <div class="skeleton-row">
+          <div style="display: flex; gap: 14px; align-items: center;">
+            <div class="sk-line shimmer" style="width: 56px; height: 56px; border-radius: 14px; flex: none;"></div>
+            <div class="sk-line shimmer" style="height: 24px; flex: 1;"></div>
+            <div class="sk-line shimmer" style="width: 56px; height: 56px; border-radius: 14px; flex: none;"></div>
+          </div>
+          <div class="sk-line shimmer" style="margin-top: 8px;"></div>
+          <div class="sk-line short shimmer"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · relay disabled <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/></svg>
+          </div>
+          <h4>Relay is off</h4>
+          <p>This server is only reachable on your home Wi-Fi. Enable relay above to allow remote access.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tooltip · TOFU explained <span class="stag">HOVER</span></div>
+      <div class="ss-preview" style="padding-top: 70px;">
+        <div class="tooltip">TOFU = Trust On First Use. We save the server's key the first time you connect. Future connections fail if the key changes — preventing impersonation.</div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Inline · throttled by quota <span class="stag warn">WARNING</span></div>
+      <div class="ss-preview">
+        <div style="width: 100%; max-width: 340px; background: rgba(245,165,36,0.08); border: 1px solid rgba(245,165,36,0.3); border-radius: 10px; padding: 14px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <strong style="font-size: 13px; color: var(--warn);">Streams throttled to SD</strong>
+          </div>
+          <p style="font-size: 12px; color: var(--text-dim); line-height: 1.5;">You've used 100% of your 100 GB monthly relay quota. Streams will be capped to 480p until quota resets in 6 days.</p>
+          <div style="margin-top: 10px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden;">
+            <div style="height: 100%; background: var(--warn); width: 100%;"></div>
+          </div>
+          <div style="margin-top: 4px; font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace; display: flex; justify-content: space-between;">
+            <span>100 GB / 100 GB</span>
+            <span>Resets May 11</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · key changed warning <span class="stag error">SECURITY</span></div>
+      <div class="ss-preview">
+        <div class="toast error">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg></div>
+          <div class="body">
+            <strong>⚠ Server key changed</strong>
+            <span>Connection blocked — verify or accept new key in Settings</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 

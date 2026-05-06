@@ -173,6 +173,59 @@
     line-height: 1.6;
   }
   .footnote a { color: var(--accent); }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .ss-label .stag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .ss-label .stag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico-t { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .toast.warn .ico-t { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.error { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .di-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .di-icon.info { background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+  .di-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .di-icon.gold { background: rgba(251,191,36,0.12); color: var(--gold); border: 1px solid rgba(251,191,36,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .d-btn.danger { background: #ef4444; border-color: #ef4444; color: #fff; }
+  .d-btn.gold { background: linear-gradient(135deg, var(--gold), #fb923c); border: 0; color: #000; }
+  .empty-state { text-align: center; padding: 24px; }
+  .em-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px; }
+  .empty-state h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 12px; color: var(--text-dim); max-width: 240px; margin: 0 auto; line-height: 1.5; }
+  .skeleton-card { width: 100%; max-width: 280px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.tall { height: 28px; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 240px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
+  .btn-loading { background: var(--accent); color: #fff; padding: 11px 18px; border-radius: 8px; border: 0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; opacity: 0.7; cursor: wait; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -392,6 +445,202 @@
   <div class="footnote">
     Premium subscriptions support Maktaba's open-source development.<br>
     Already paid? <a href="#">Restore purchase</a> · Questions? <a href="#">See FAQ</a>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · plans</h2>
+    <div class="desc">Every dialog, toast, and overlay state for subscription management</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Modal · checkout summary <span class="stag">PURCHASE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x" style="max-width: 360px;">
+          <div style="padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+            <h4 style="font-size: 13px; font-weight: 600;">Confirm subscription</h4>
+            <button style="background: none; border: 0; color: var(--text-muted); cursor: pointer;">×</button>
+          </div>
+          <div style="padding: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-dim);">Plan</span><strong style="color: var(--text);">Premium · yearly</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-dim);">Subtotal</span><span>$60.00</span></div>
+            <div style="display: flex; justify-content: space-between; color: var(--accent);"><span>Yearly discount −20%</span><span>−$12.00</span></div>
+            <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-dim);">VAT</span><span>$0.00</span></div>
+            <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
+            <div style="display: flex; justify-content: space-between; font-weight: 600;"><span>Today</span><strong style="color: var(--gold); font-size: 16px;">$48.00</strong></div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Renews May 5, 2027 · cancel anytime</div>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn gold">Pay $48 & subscribe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · cancel subscription <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+            </div>
+            <h3>Cancel Premium subscription?</h3>
+            <p>You'll keep Premium features until <strong style="color: var(--text);">May 5, 2027</strong>. After that you'll be downgraded to Free — videos and libraries stay, but cloud relay and AI features will lock.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Keep Premium</button>
+            <button class="d-btn danger">Cancel anyway</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · subscription active <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Welcome to Premium 🎉</strong>
+            <span>All features unlocked · receipt sent to your email</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · payment failed <span class="stag error">ERROR</span></div>
+      <div class="ss-preview">
+        <div class="toast error">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div>
+          <div class="body">
+            <strong>Payment declined</strong>
+            <span>Card ending 4242 — try another payment method</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · renewal upcoming <span class="stag warn">REMINDER</span></div>
+      <div class="ss-preview">
+        <div class="toast warn">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div class="body">
+            <strong>Renewing in 3 days</strong>
+            <span>$48.00 will be charged to Visa ending 4242 on May 8</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dialog · payment failed <span class="stag error">ERROR</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h3>We couldn't charge your card</h3>
+            <p>Your payment for $48.00 was declined. Update your payment method to keep Premium features active. We'll retry in 3 days.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Later</button>
+            <button class="d-btn primary">Update payment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dialog · trial offer <span class="stag">PROMO</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon gold">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 8l5.5 4L12 4l3.5 8L21 8l-2 8H5z"/></svg>
+            </div>
+            <h3>Try Premium free for 7 days</h3>
+            <p>No credit card required. Cancel before <strong style="color: var(--text);">May 12</strong> and you won't be charged.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">No thanks</button>
+            <button class="d-btn gold">Start free trial</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Loading · processing payment <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <button class="btn-loading" style="background: var(--gold); color: #000;">
+          <span class="spinner" style="border-color: rgba(0,0,0,0.3); border-top-color: #000;"></span>
+          Processing payment…
+        </button>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Skeleton · loading prices <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <div class="skeleton-card">
+          <div class="sk-line short shimmer"></div>
+          <div class="sk-line tall shimmer" style="height: 40px; width: 80px;"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line tall shimmer"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · no payment methods <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          </div>
+          <h4>No payment method on file</h4>
+          <p>Add a card or PayPal to subscribe. We accept Visa, Mastercard, and Amex.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Banner · current plan <span class="stag success">ACTIVE</span></div>
+      <div class="ss-preview">
+        <div style="width: 100%; max-width: 340px; background: linear-gradient(135deg, rgba(251,191,36,0.08), rgba(251,191,36,0.02)); border: 1px solid rgba(251,191,36,0.3); border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: center;">
+          <div style="width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, var(--gold), #fb923c); display: flex; align-items: center; justify-content: center; color: #fff;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 8l5.5 4L12 4l3.5 8L21 8l-2 8H5z"/></svg>
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 13px; font-weight: 600;">Premium · yearly</div>
+            <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">Renews May 5, 2027 · $48/yr</div>
+          </div>
+          <button style="padding: 6px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--text); cursor: pointer;">Manage</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tooltip · why subscribe <span class="stag">HOVER</span></div>
+      <div class="ss-preview" style="padding-top: 70px;">
+        <div class="tooltip">Premium subscriptions fund Maktaba's open-source development. The free tier remains feature-complete for personal self-hosted use.</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
