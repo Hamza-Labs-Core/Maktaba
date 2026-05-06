@@ -104,6 +104,67 @@
     margin-top: 20px; text-align: center; font-size: 13px; color: var(--text-dim);
   }
   .footer-text a { color: var(--accent); text-decoration: none; }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .state-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .state-label {
+    padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+    font-weight: 600; display: flex; justify-content: space-between; align-items: center;
+  }
+  .state-label .tag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .state-label .tag.error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .state-label .tag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .state-label .tag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .state-preview { padding: 24px 20px; background: var(--bg); min-height: 160px; display: flex; align-items: center; justify-content: center; }
+  .toast {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    width: 100%; max-width: 320px; font-size: 12px;
+  }
+  .toast .ico { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico { background: rgba(239,68,68,0.15); color: var(--error); }
+  .toast.warn .ico { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 360px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-body { padding: 20px; text-align: center; }
+  .dialog-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .dialog-icon.error { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+  .dialog-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .dialog-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .dialog-icon.info { background: rgba(56,189,248,0.12); color: var(--info); border: 1px solid rgba(56,189,248,0.3); }
+  .dialog h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .dialog-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .skeleton { width: 100%; max-width: 280px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.tall { height: 36px; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .btn-loading { background: var(--accent); color: #fff; padding: 11px 18px; border-radius: 8px; border: 0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; opacity: 0.7; cursor: wait; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 220px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
+  .pw-strength-demo { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; }
+  .pw-row { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .pw-row .lbl { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+  .pw-row .val { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text); margin-bottom: 6px; }
+  .pw-meter { display: flex; gap: 3px; }
+  .pw-meter > div { flex: 1; height: 4px; border-radius: 2px; background: var(--panel-2); }
+  .pw-row .verdict { margin-top: 6px; font-size: 10px; }
 </style>
 </head>
 <body>
@@ -182,6 +243,180 @@
 
   <div class="footer-text">
     Already have an account? <a href="#">Sign in</a>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · register</h2>
+    <div class="desc">Every dialog, toast, error variant, and form state for this screen</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="state-card">
+      <div class="state-label">Toast · account created <span class="tag success">SUCCESS</span></div>
+      <div class="state-preview">
+        <div class="toast success">
+          <div class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Account created</strong>
+            <span>Verify your email — link sent to mahmoud@example.com</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Toast · email taken <span class="tag error">ERROR</span></div>
+      <div class="state-preview">
+        <div class="toast error">
+          <div class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+          <div class="body">
+            <strong>Email already in use</strong>
+            <span>An account exists for this email — try signing in instead</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Toast · server busy <span class="tag warn">WARNING</span></div>
+      <div class="state-preview">
+        <div class="toast warn">
+          <div class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div class="body">
+            <strong>Server is busy — retrying</strong>
+            <span>3rd attempt in 5s · processing 28 jobs</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Dialog · email verification sent <span class="tag success">SUCCESS</span></div>
+      <div class="state-preview">
+        <div class="dialog">
+          <div class="dialog-body">
+            <div class="dialog-icon success">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </div>
+            <h3>Verify your email</h3>
+            <p>We sent a confirmation link to <strong style="color: var(--text);">mahmoud@example.com</strong>. Click the link to finish setting up your account.</p>
+          </div>
+          <div class="dialog-actions">
+            <button class="d-btn">Resend</button>
+            <button class="d-btn primary">Got it</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Dialog · weak password warning <span class="tag warn">WARNING</span></div>
+      <div class="state-preview">
+        <div class="dialog">
+          <div class="dialog-body">
+            <div class="dialog-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>
+            </div>
+            <h3>Continue with weak password?</h3>
+            <p>This password could be cracked in about 4 hours. We strongly recommend using something stronger.</p>
+          </div>
+          <div class="dialog-actions">
+            <button class="d-btn primary">Choose stronger</button>
+            <button class="d-btn">Continue anyway</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Dialog · ToS not accepted <span class="tag error">ERROR</span></div>
+      <div class="state-preview">
+        <div class="dialog">
+          <div class="dialog-body">
+            <div class="dialog-icon error">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h3>Accept Terms to continue</h3>
+            <p>You must agree to the Terms of Service and Privacy Policy before creating an account.</p>
+          </div>
+          <div class="dialog-actions">
+            <button class="d-btn primary">Review terms</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Password strength · all variants</div>
+      <div class="state-preview">
+        <div class="pw-strength-demo">
+          <div class="pw-row">
+            <div class="lbl">Very weak</div>
+            <div class="val">password123</div>
+            <div class="pw-meter"><div style="background: var(--error);"></div><div></div><div></div><div></div></div>
+            <div class="verdict" style="color: var(--error);">Crack time: instant · top 1000 leaked password</div>
+          </div>
+          <div class="pw-row">
+            <div class="lbl">Weak</div>
+            <div class="val">summer2025</div>
+            <div class="pw-meter"><div style="background: var(--error);"></div><div style="background: var(--warn);"></div><div></div><div></div></div>
+            <div class="verdict" style="color: var(--warn);">Crack time: 4 hours · easily guessed</div>
+          </div>
+          <div class="pw-row">
+            <div class="lbl">Good</div>
+            <div class="val">Maktaba_2026!</div>
+            <div class="pw-meter"><div style="background: var(--accent);"></div><div style="background: var(--accent);"></div><div style="background: var(--accent);"></div><div></div></div>
+            <div class="verdict" style="color: var(--accent);">Crack time: 3 months</div>
+          </div>
+          <div class="pw-row">
+            <div class="lbl">Strong</div>
+            <div class="val">cR-ʁY!7p$Vz#qN9wL</div>
+            <div class="pw-meter"><div style="background: var(--accent);"></div><div style="background: var(--accent);"></div><div style="background: var(--accent);"></div><div style="background: var(--accent);"></div></div>
+            <div class="verdict" style="color: var(--accent);">Crack time: 3 centuries</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Tooltip · privacy guarantee <span class="tag">HOVER</span></div>
+      <div class="state-preview" style="padding-top: 60px;">
+        <div class="tooltip" style="margin-bottom: 28px;">Your data stays on your server — Maktaba never sends video files or transcripts to the cloud unless you opt in.</div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Loading · creating account <span class="tag">PROGRESS</span></div>
+      <div class="state-preview">
+        <button class="btn-loading">
+          <span class="spinner"></span>
+          Creating account…
+        </button>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Skeleton · ToS preview loading <span class="tag">PROGRESS</span></div>
+      <div class="state-preview">
+        <div class="skeleton">
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line short shimmer"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line short shimmer"></div>
+          <div class="sk-line shimmer"></div>
+          <div class="sk-line tall shimmer"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 

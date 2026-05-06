@@ -223,6 +223,60 @@
     height: 100%; background: var(--accent);
   }
   .stage-throughput .gauge-fill.warn { background: var(--warn); }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1500px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .ss-label .stag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico-t { background: rgba(239,68,68,0.15); color: var(--error); }
+  .toast.warn .ico-t { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.error { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+  .di-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .di-icon.info { background: rgba(56,189,248,0.12); color: var(--info); border: 1px solid rgba(56,189,248,0.3); }
+  .di-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+  .dropdown { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 220px; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .dd-item { padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dd-item:hover { background: var(--panel-2); }
+  .dd-item.danger { color: var(--error); }
+  .dd-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .dd-shortcut { margin-left: auto; font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+  .empty-state { text-align: center; padding: 24px; }
+  .em-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px; }
+  .empty-state h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 12px; color: var(--text-dim); max-width: 240px; margin: 0 auto; line-height: 1.5; }
+  .skeleton-col { width: 100%; max-width: 200px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.tall { height: 50px; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 240px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
 </style>
 </head>
 <body>
@@ -561,6 +615,247 @@
         <div class="gauge"><div class="gauge-fill" style="width: 5%;"></div></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · job pipeline</h2>
+    <div class="desc">Every dialog, toast, dropdown, and overlay state for pipeline management</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · retry failed job <span class="stag">CONFIRM</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon info">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </div>
+            <h3>Retry transcription?</h3>
+            <p><strong style="color: var(--text);">VID_20250115_192234.mp4</strong> failed earlier with <code style="font-family: ui-monospace, monospace;">AUDIO_CODEC_UNSUPPORTED</code>. Try again with the new ffmpeg build that supports TrueHD?</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Retry job</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · cancel jobs <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <h3>Cancel 9 queued transcribe jobs?</h3>
+            <p>The 2 currently running will finish first. Queued jobs will be removed and need to be re-queued manually.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Keep queued</button>
+            <button class="d-btn danger">Cancel jobs</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · pause pipeline <span class="stag warn">PAUSE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </div>
+            <h3>Pause all processing?</h3>
+            <p>Running jobs finish their current stage. Queued jobs wait. New scans still detect files but don't process them. Resume anytime.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Pause</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · pipeline drained <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Queue is empty</strong>
+            <span>All 28 jobs completed in 14m 32s</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · job failed <span class="stag error">ERROR</span></div>
+      <div class="ss-preview">
+        <div class="toast error">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div>
+          <div class="body">
+            <strong>VID_20250115 failed at retry 3/3</strong>
+            <span>Codec unsupported · marked as abandoned</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · bottleneck warning <span class="stag warn">WARNING</span></div>
+      <div class="ss-preview">
+        <div class="toast warn">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg></div>
+          <div class="body">
+            <strong>Transcribe stage is bottlenecking</strong>
+            <span>Queue grew by 14 in last hour · consider adding workers</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dropdown · job context menu <span class="stag">CONTEXT</span></div>
+      <div class="ss-preview">
+        <div class="dropdown">
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+            View details
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            View logs
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Reveal source file
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Bump priority
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Retry from current stage
+            <span class="dd-shortcut">⌘R</span>
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item danger">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel job
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dialog · stage details <span class="stag">INFO</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x" style="max-width: 340px;">
+          <div style="padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--info);"></span>
+            <h4 style="font-size: 13px; font-weight: 600; flex: 1;">Transcribe stage</h4>
+            <button style="background: none; border: 0; color: var(--text-muted); cursor: pointer;">×</button>
+          </div>
+          <div style="padding: 16px 18px; font-size: 12px; color: var(--text-dim); display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;"><span>Queue depth</span><strong style="color: var(--warn);">12 jobs</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span>Active workers</span><strong style="color: var(--text);">2 / 4</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span>Avg duration</span><strong style="color: var(--text);">4m 32s</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span>p95 duration</span><strong style="color: var(--text);">11m 18s</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span>Throughput · 24h</span><strong style="color: var(--text);">22 / hr</strong></div>
+            <div style="display: flex; justify-content: space-between;"><span>Failure rate</span><strong style="color: var(--accent);">0.4%</strong></div>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Close</button>
+            <button class="d-btn primary">Add worker</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Skeleton · pipeline loading <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <div style="display: flex; gap: 10px;">
+          <div class="skeleton-col">
+            <div class="sk-line short shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+          </div>
+          <div class="skeleton-col">
+            <div class="sk-line short shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · pipeline idle <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon" style="background: rgba(61,220,151,0.08); border-color: rgba(61,220,151,0.2); color: var(--accent);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h4>Pipeline is idle</h4>
+          <p>All caught up · workers waiting · Maktaba will pick up new files automatically.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · stage paused <span class="stag warn">PAUSED</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon" style="background: rgba(245,165,36,0.08); border-color: rgba(245,165,36,0.2); color: var(--warn);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          </div>
+          <h4>Diarize stage paused</h4>
+          <p>Resume the stage to continue processing 6 queued jobs.</p>
+          <button style="margin-top: 12px; padding: 8px 14px; background: var(--accent); border: 0; color: #fff; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer;">Resume stage</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tooltip · bottleneck explained <span class="stag">HOVER</span></div>
+      <div class="ss-preview" style="padding-top: 70px;">
+        <div class="tooltip">A stage is "bottlenecking" when its queue grows faster than it drains. Throughput of the whole pipeline is capped at the slowest stage's rate.</div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Inline · job retrying <span class="stag warn">RETRYING</span></div>
+      <div class="ss-preview">
+        <div style="width: 100%; max-width: 320px; background: var(--panel); border: 1px solid var(--warn); border-left-width: 3px; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 11px; font-weight: 500; margin-bottom: 4px;">recording-truncated.mp4</div>
+          <div style="font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace; display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+            <span style="color: var(--warn);">↻ Retry 2/3</span>
+            <span>backoff 30s</span>
+          </div>
+          <div style="height: 3px; background: var(--panel-2); border-radius: 2px; overflow: hidden;">
+            <div style="height: 100%; background: var(--warn); width: 50%; animation: pulse-bar 1.5s infinite;"></div>
+          </div>
+          <div style="margin-top: 6px; font-size: 10px; color: var(--text-dim);">Last error: <code style="font-family: ui-monospace, monospace;">FILE_TRUNCATED at byte 1,247,392</code></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
