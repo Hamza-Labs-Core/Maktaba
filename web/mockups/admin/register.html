@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba — Register (Epic 10)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161922; --panel-2: #1d2130; --border: #262b3a;
+    --text: #e6e8ef; --text-dim: #8b91a7; --text-muted: #5a6079;
+    --accent: #3ddc97; --accent-2: #2ab87a; --warn: #f5a524; --error: #ef4444;
+    --shadow: 0 20px 50px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa; --panel: #ffffff; --panel-2: #f0f2f7; --border: #e1e4ec;
+    --text: #1a1d26; --text-dim: #5a6079; --text-muted: #8b91a7;
+    --accent: #1aa56c; --accent-2: #138a58; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at top, rgba(61,220,151,0.08), transparent 50%);
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    position: fixed; top: 16px; left: 16px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--panel-2);
+  }
+  .auth-card {
+    width: 460px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 36px; box-shadow: var(--shadow);
+    position: relative; z-index: 1;
+  }
+  .brand {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; margin-bottom: 24px;
+  }
+  .brand-logo {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 24px;
+  }
+  .brand h1 { font-size: 20px; font-weight: 600; }
+  .brand p { font-size: 13px; color: var(--text-dim); }
+  .field { margin-bottom: 14px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 500;
+    margin-bottom: 6px; color: var(--text-dim);
+  }
+  .field input {
+    width: 100%; padding: 10px 14px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 14px; outline: none;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field input.valid { border-color: var(--accent); }
+  .strength-meter {
+    margin-top: 8px; display: flex; gap: 4px;
+  }
+  .strength-bar {
+    flex: 1; height: 4px; border-radius: 2px; background: var(--panel-2);
+  }
+  .strength-bar.s1 { background: var(--error); }
+  .strength-bar.s2 { background: var(--warn); }
+  .strength-bar.s3 { background: var(--accent); }
+  .strength-label {
+    margin-top: 6px; font-size: 11px;
+    display: flex; justify-content: space-between;
+  }
+  .strength-label .strong { color: var(--accent); font-weight: 600; }
+  .strength-label .hint { color: var(--text-muted); }
+  .pw-checks {
+    margin-top: 10px; padding: 10px 12px; background: var(--panel-2);
+    border-radius: 8px; font-size: 11px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .pw-check { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+  .pw-check.ok { color: var(--accent); }
+  .pw-check svg { flex-shrink: 0; }
+  .checkbox-row { display: flex; gap: 8px; margin: 16px 0; font-size: 12px; color: var(--text-dim); }
+  .checkbox-row input { margin-top: 2px; accent-color: var(--accent); }
+  .checkbox-row a { color: var(--accent); }
+  .btn-primary {
+    width: 100%; padding: 12px; border-radius: 8px; border: 0;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--accent-2); }
+  .footer-text {
+    margin-top: 20px; text-align: center; font-size: 13px; color: var(--text-dim);
+  }
+  .footer-text a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="label">EPIC 10 · STORY 10.02 · REGISTER</div>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="auth-card">
+  <div class="brand">
+    <div class="brand-logo">م</div>
+    <h1>Create your account</h1>
+    <p>Set up your personal Maktaba server</p>
+  </div>
+
+  <form>
+    <div class="field-row">
+      <div class="field">
+        <label>First name</label>
+        <input type="text" value="Mahmoud" />
+      </div>
+      <div class="field">
+        <label>Last name</label>
+        <input type="text" value="Darwish" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Email address</label>
+      <input type="email" class="valid" value="mahmoud@example.com" />
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <input type="password" value="MyStr0ng!Pass2026" />
+      <div class="strength-meter">
+        <div class="strength-bar s3"></div>
+        <div class="strength-bar s3"></div>
+        <div class="strength-bar s3"></div>
+        <div class="strength-bar s3"></div>
+      </div>
+      <div class="strength-label">
+        <span class="strong">Strong password</span>
+        <span class="hint">Estimated crack time: 3 centuries</span>
+      </div>
+      <div class="pw-checks">
+        <div class="pw-check ok">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          At least 12 characters
+        </div>
+        <div class="pw-check ok">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Mixed case letters
+        </div>
+        <div class="pw-check ok">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Contains a number
+        </div>
+        <div class="pw-check ok">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Special character
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Confirm password</label>
+      <input type="password" class="valid" value="MyStr0ng!Pass2026" />
+    </div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="tos" checked />
+      <label for="tos">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>. Maktaba runs locally on my own hardware — my data never leaves my server unless I share it.</label>
+    </div>
+
+    <button type="submit" class="btn-primary">Create account & start server</button>
+  </form>
+
+  <div class="footer-text">
+    Already have an account? <a href="#">Sign in</a>
+  </div>
+</div>
+
+</body>
+</html>

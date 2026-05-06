@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba — Plans (Epic 16)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161922; --panel-2: #1d2130; --border: #262b3a;
+    --text: #e6e8ef; --text-dim: #8b91a7; --text-muted: #5a6079;
+    --accent: #3ddc97; --accent-2: #2ab87a; --warn: #f5a524; --error: #ef4444;
+    --gold: #fbbf24;
+    --shadow: 0 12px 32px rgba(0,0,0,0.4);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa; --panel: #ffffff; --panel-2: #f0f2f7; --border: #e1e4ec;
+    --text: #1a1d26; --text-dim: #5a6079; --text-muted: #8b91a7;
+    --accent: #1aa56c; --accent-2: #138a58; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    min-height: 100vh; padding: 32px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at top, rgba(61,220,151,0.06), transparent 50%);
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 16px; text-align: center;
+  }
+  .container { max-width: 1100px; margin: 0 auto; position: relative; }
+
+  .hero { text-align: center; margin-bottom: 36px; }
+  .hero h1 {
+    font-size: 36px; font-weight: 800; letter-spacing: -0.5px;
+    margin-bottom: 12px;
+    background: linear-gradient(180deg, var(--text), var(--text-dim));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero p { font-size: 14px; color: var(--text-dim); max-width: 540px; margin: 0 auto; line-height: 1.6; }
+
+  .billing-toggle {
+    display: inline-flex; padding: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    margin: 24px auto; gap: 4px;
+  }
+  .billing-opt {
+    padding: 8px 18px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    color: var(--text-dim); display: flex; align-items: center; gap: 6px;
+  }
+  .billing-opt.active { background: var(--accent); color: #fff; font-weight: 500; }
+  .billing-opt .save {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: rgba(61,220,151,0.15); color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .billing-opt.active .save { background: rgba(255,255,255,0.2); color: #fff; }
+  .toggle-wrap { text-align: center; }
+
+  .plans {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    margin-bottom: 32px;
+  }
+  .plan {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 18px; padding: 32px;
+    position: relative; display: flex; flex-direction: column;
+  }
+  .plan.featured {
+    background: linear-gradient(180deg, rgba(61,220,151,0.05), var(--panel));
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 0 4px rgba(61,220,151,0.08), var(--shadow);
+  }
+  .recommended {
+    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #fff;
+    padding: 4px 14px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .plan-name {
+    font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim); margin-bottom: 8px;
+  }
+  .plan-name.premium { color: var(--gold); display: flex; align-items: center; gap: 8px; }
+  .plan-tagline { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.5; }
+  .plan-price {
+    font-size: 48px; font-weight: 800; line-height: 1; margin-bottom: 4px;
+    display: flex; align-items: baseline; gap: 4px;
+  }
+  .plan-price .currency { font-size: 18px; color: var(--text-dim); font-weight: 500; }
+  .plan-price .period { font-size: 14px; color: var(--text-dim); font-weight: 400; }
+  .plan-price-sub { font-size: 11px; color: var(--text-muted); margin-bottom: 20px; }
+
+  .plan-cta {
+    width: 100%; padding: 12px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    margin-bottom: 24px; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .plan-cta.primary { background: var(--accent); border: 0; color: #fff; }
+  .plan-cta.primary:hover { background: var(--accent-2); }
+  .plan-cta.secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+  .plan-cta.current {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    cursor: default;
+  }
+
+  .features-list { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .feature-row {
+    display: flex; gap: 10px; font-size: 13px; align-items: flex-start;
+  }
+  .feature-row svg { flex-shrink: 0; margin-top: 2px; }
+  .feature-row.yes { color: var(--text); }
+  .feature-row.yes svg { color: var(--accent); }
+  .feature-row.no { color: var(--text-muted); }
+  .feature-row.no svg { color: var(--text-muted); }
+  .feature-row strong { font-weight: 600; }
+  .feature-row .badge-new {
+    margin-left: 6px; font-size: 9px; padding: 1px 5px;
+    background: rgba(245,165,36,0.15); color: var(--warn);
+    border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    border: 1px solid rgba(245,165,36,0.25);
+  }
+
+  /* Comparison table */
+  .compare-section { margin-top: 40px; }
+  .compare-section h2 {
+    font-size: 18px; font-weight: 700; margin-bottom: 6px; text-align: center;
+  }
+  .compare-section p { font-size: 12px; color: var(--text-dim); text-align: center; margin-bottom: 24px; }
+  .compare-table {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .compare-row {
+    display: grid; grid-template-columns: 2fr 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-row:last-child { border-bottom: 0; }
+  .compare-row.head {
+    background: var(--panel-2); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim);
+  }
+  .compare-row.head .cell { padding: 12px 16px; }
+  .compare-row.section-head {
+    background: var(--panel-2); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
+  }
+  .compare-row.section-head .cell { padding: 8px 16px; }
+  .cell {
+    padding: 12px 16px; font-size: 13px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cell.center { justify-content: center; }
+  .cell.feature-name { color: var(--text); }
+  .cell .yes-icon { color: var(--accent); }
+  .cell .no-icon { color: var(--text-muted); }
+  .cell .label-text { font-size: 11px; color: var(--text-dim); }
+
+  .footnote {
+    margin-top: 24px; text-align: center;
+    font-size: 12px; color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .footnote a { color: var(--accent); }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="label">EPIC 16 · STORY 16.01 · PLAN COMPARISON</div>
+
+  <div class="hero">
+    <h1>Maktaba is free, forever.</h1>
+    <p>Run unlimited libraries on your own hardware. Upgrade to Premium for cloud relay, multi-user features, and advanced AI processing.</p>
+  </div>
+
+  <div class="toggle-wrap">
+    <div class="billing-toggle">
+      <div class="billing-opt">Monthly</div>
+      <div class="billing-opt active">Yearly <span class="save">−20%</span></div>
+    </div>
+  </div>
+
+  <div class="plans">
+    <div class="plan">
+      <div class="plan-name">Free · Self-hosted</div>
+      <div class="plan-tagline">Everything you need to run your own private video library on hardware you own.</div>
+      <div class="plan-price">
+        <span class="currency">$</span>0
+        <span class="period">/forever</span>
+      </div>
+      <div class="plan-price-sub">No credit card required.</div>
+      <button class="plan-cta current">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Your current plan
+      </button>
+      <div class="features-list">
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span><strong>Unlimited videos & libraries</strong> · stored on your own disks</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Local network playback (Mac, iOS, Android, TV)</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Transcription, chapters, search (local Whisper)</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Up to <strong>2 user accounts</strong> per server</span>
+        </div>
+        <div class="feature-row no">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Cloud relay for remote access</span>
+        </div>
+        <div class="feature-row no">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Speaker identification & diarization</span>
+        </div>
+        <div class="feature-row no">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>AI summaries & translation</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="plan featured">
+      <div class="recommended">★ Most popular</div>
+      <div class="plan-name premium">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.1-6.2-4.5-6.2 4.5 2.4-7.1L2 9.4h7.6z"/></svg>
+        Premium
+      </div>
+      <div class="plan-tagline">Unlock cloud relay, multi-user libraries, and advanced AI processing for the whole household.</div>
+      <div class="plan-price">
+        <span class="currency">$</span>5
+        <span class="period">/month</span>
+      </div>
+      <div class="plan-price-sub">Billed $48/year · cancel anytime</div>
+      <button class="plan-cta primary">
+        Upgrade to Premium
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="features-list">
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span><strong>Everything in Free, plus:</strong></span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span><strong>Cloud relay for remote access</strong> · 100GB bandwidth/month</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span><strong>Up to 8 user accounts</strong> with per-user libraries</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Speaker identification & diarization <span class="badge-new">AI</span></span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>AI summaries & 30-language translation</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Hardware-accelerated transcoding</span>
+        </div>
+        <div class="feature-row yes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Priority support · response within 1 business day</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare-section">
+    <h2>Detailed feature comparison</h2>
+    <p>Every feature, side-by-side</p>
+
+    <div class="compare-table">
+      <div class="compare-row head">
+        <div class="cell">Feature</div>
+        <div class="cell center">Free</div>
+        <div class="cell center">Premium</div>
+      </div>
+
+      <div class="compare-row section-head">
+        <div class="cell">Library & playback</div>
+        <div class="cell"></div>
+        <div class="cell"></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Videos / library size</div>
+        <div class="cell center">Unlimited</div>
+        <div class="cell center">Unlimited</div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Concurrent streams</div>
+        <div class="cell center">2</div>
+        <div class="cell center">8</div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Hardware transcoding</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+
+      <div class="compare-row section-head">
+        <div class="cell">AI processing</div>
+        <div class="cell"></div>
+        <div class="cell"></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Transcription (Whisper)</div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Speaker diarization</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">AI summaries (per video)</div>
+        <div class="cell center"><span class="label-text">First 5 then locked</span></div>
+        <div class="cell center">Unlimited</div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Translation</div>
+        <div class="cell center"><span class="label-text">English only</span></div>
+        <div class="cell center">30 languages</div>
+      </div>
+
+      <div class="compare-row section-head">
+        <div class="cell">Remote access</div>
+        <div class="cell"></div>
+        <div class="cell"></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">LAN access</div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Cloud relay (E2E encrypted)</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center">100 GB/mo</div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Custom domain</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+
+      <div class="compare-row section-head">
+        <div class="cell">Multi-user & sharing</div>
+        <div class="cell"></div>
+        <div class="cell"></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Accounts per server</div>
+        <div class="cell center">2</div>
+        <div class="cell center">8</div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Per-user libraries</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+      <div class="compare-row">
+        <div class="cell feature-name">Share links to external viewers</div>
+        <div class="cell center"><svg class="no-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="cell center"><svg class="yes-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    Premium subscriptions support Maktaba's open-source development.<br>
+    Already paid? <a href="#">Restore purchase</a> · Questions? <a href="#">See FAQ</a>
+  </div>
+</div>
+
+</body>
+</html>

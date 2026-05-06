@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba — Library Config (Epic 09)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161922; --panel-2: #1d2130; --border: #262b3a;
+    --text: #e6e8ef; --text-dim: #8b91a7; --text-muted: #5a6079;
+    --accent: #3ddc97; --accent-2: #2ab87a; --warn: #f5a524; --error: #ef4444;
+    --shadow: 0 12px 32px rgba(0,0,0,0.4);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa; --panel: #ffffff; --panel-2: #f0f2f7; --border: #e1e4ec;
+    --text: #1a1d26; --text-dim: #5a6079; --text-muted: #8b91a7;
+    --accent: #1aa56c; --accent-2: #138a58; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    min-height: 100vh; padding: 32px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 16px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .breadcrumb a { color: var(--accent); text-decoration: none; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 28px; }
+
+  .layout {
+    display: grid; grid-template-columns: 220px 1fr; gap: 32px;
+  }
+  .tabs {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px;
+  }
+  .tab {
+    padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .tab:hover { background: var(--panel-2); color: var(--text); }
+  .tab.active { background: var(--accent); color: #fff; font-weight: 500; }
+
+  .content { display: flex; flex-direction: column; gap: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 600; margin-bottom: 4px;
+  }
+  .card-subtitle {
+    font-size: 12px; color: var(--text-dim); margin-bottom: 20px;
+  }
+  .field { margin-bottom: 16px; }
+  .field-label {
+    display: block; font-size: 12px; font-weight: 500; color: var(--text);
+    margin-bottom: 6px;
+  }
+  .field-help { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .input, .select, .textarea {
+    width: 100%; padding: 10px 12px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 13px; outline: none;
+    font-family: inherit;
+  }
+  .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); }
+  .textarea { font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; resize: vertical; min-height: 100px; }
+
+  .folder-picker {
+    display: flex; gap: 8px;
+  }
+  .folder-picker .input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+  .btn {
+    padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-secondary {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+  .btn-primary { background: var(--accent); border: 0; color: #fff; }
+  .btn-primary:hover { background: var(--accent-2); }
+  .btn-ghost { background: transparent; border: 0; color: var(--accent); }
+
+  .folder-list {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px; margin-top: 8px;
+  }
+  .folder-row {
+    padding: 8px 10px; border-radius: 6px;
+    display: flex; align-items: center; gap: 10px;
+    font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .folder-row:hover { background: var(--panel); }
+  .folder-row svg { color: var(--accent); flex-shrink: 0; }
+  .folder-row .stats { color: var(--text-muted); font-family: inherit; font-size: 11px; }
+  .folder-row .x { color: var(--text-muted); cursor: pointer; }
+  .folder-row .x:hover { color: var(--error); }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0; border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-child { border-bottom: 0; }
+  .toggle-info h4 { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .toggle-info p { font-size: 11px; color: var(--text-dim); }
+  .toggle {
+    width: 36px; height: 20px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    position: relative; cursor: pointer; transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--text-muted); transition: transform 0.15s;
+  }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle.on::after { transform: translateX(16px); background: #fff; }
+
+  .footer-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 18px 24px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px;
+    position: sticky; bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .footer-actions .left { color: var(--text-dim); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .footer-actions .left .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .right { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="label">EPIC 09 · STORY 09.01 · LIBRARY CONFIGURATION</div>
+  <div class="breadcrumb"><a href="#">Settings</a> · <a href="#">Libraries</a> · Edit "Family Lectures"</div>
+  <h1>Edit library</h1>
+  <div class="subtitle">Configure folders, scan behavior, and what gets included or skipped.</div>
+
+  <div class="layout">
+    <div class="tabs">
+      <div class="tab active">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Folders & sources
+      </div>
+      <div class="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Scanning
+      </div>
+      <div class="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Ignore patterns
+      </div>
+      <div class="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Processing
+      </div>
+      <div class="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Advanced
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="card">
+        <div class="card-title">Library identity</div>
+        <div class="card-subtitle">Display name and an optional emoji for the sidebar.</div>
+        <div class="row-2">
+          <div class="field">
+            <label class="field-label">Library name</label>
+            <input class="input" value="Family Lectures" />
+          </div>
+          <div class="field">
+            <label class="field-label">Icon</label>
+            <input class="input" value="📚" style="font-size: 16px;" />
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Description (optional)</label>
+          <input class="input" value="Recordings from family Sunday gatherings" />
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Watched folders</div>
+        <div class="card-subtitle">Maktaba scans these locations for new videos. Drop files inside to import.</div>
+
+        <div class="folder-picker">
+          <input class="input" value="/Users/mahmoud/Movies/Family-Lectures" readonly />
+          <button class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Browse…
+          </button>
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
+        </div>
+
+        <div class="folder-list">
+          <div class="folder-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span style="flex: 1;">/Users/mahmoud/Movies/Family-Lectures</span>
+            <span class="stats">432 files · 84 GB</span>
+            <span class="x">×</span>
+          </div>
+          <div class="folder-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span style="flex: 1;">/Volumes/External SSD/Recordings/2024</span>
+            <span class="stats">128 files · 31 GB</span>
+            <span class="x">×</span>
+          </div>
+          <div class="folder-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span style="flex: 1;">smb://nas.local/share/family/talks</span>
+            <span class="stats">network · 2.1 TB</span>
+            <span class="x">×</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Scan behavior</div>
+        <div class="card-subtitle">Control how often Maktaba checks watched folders for changes.</div>
+
+        <div class="row-2">
+          <div class="field">
+            <label class="field-label">Scan mode</label>
+            <select class="select">
+              <option>Automatic — watch filesystem (recommended)</option>
+              <option>Scheduled — every 15 minutes</option>
+              <option>Scheduled — every hour</option>
+              <option>Manual only</option>
+            </select>
+            <div class="field-help">Filesystem watching uses fsevents on macOS.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">When new file detected</label>
+            <select class="select">
+              <option>Wait 30s for write to complete, then queue</option>
+              <option>Queue immediately</option>
+              <option>Wait 5 minutes (batch mode)</option>
+            </select>
+            <div class="field-help">Avoids re-processing during slow file copies.</div>
+          </div>
+        </div>
+
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <h4>Recursive scan</h4>
+            <p>Include all subfolders inside watched paths.</p>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <h4>Follow symlinks</h4>
+            <p>Traverse symbolic links — risky on circular setups.</p>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <h4>Generate thumbnails on import</h4>
+            <p>Extract frame thumbnails immediately rather than on first view.</p>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Ignore patterns</div>
+        <div class="card-subtitle">Glob patterns or filenames that should be skipped during scan. One per line.</div>
+        <textarea class="textarea"># Hidden files and system folders
+.*
+@eaDir/**
+.DS_Store
+Thumbs.db
+
+# Sample / test artifacts
+*sample*.mp4
+*test*.mov
+draft_*.mkv
+
+# Specific folders
+/Volumes/External SSD/Recordings/2024/raw-takes/**
+
+# Files smaller than 30s are usually clips
+# (handled by min-duration setting in Processing)</textarea>
+        <div class="field-help" style="margin-top: 8px;">Uses gitignore-style globs. Patterns starting with <code>/</code> match from the watched-folder root.</div>
+      </div>
+
+      <div class="footer-actions">
+        <div class="left">
+          <span class="dot"></span>
+          You have unsaved changes
+        </div>
+        <div class="right">
+          <button class="btn btn-secondary">Discard</button>
+          <button class="btn btn-primary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Save & rescan
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
