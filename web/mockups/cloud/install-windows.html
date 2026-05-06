@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Server — Install on Windows</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+
+    --win-bg: #202020; --win-panel: #2b2b2b; --win-border: #3a3a3a; --win-text: #ffffff;
+    --win-blue: #0078d4; --win-blue-2: #106ebe;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; min-height: 100vh; padding: 32px 24px; }
+  .theme-switch { position: fixed; top: 16px; right: 16px; z-index: 1000; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  a { color: var(--primary); text-decoration: none; }
+  .container { max-width: 1280px; margin: 0 auto; }
+
+  .top-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; }
+  .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; text-align: center; }
+  .hero { text-align: center; margin-bottom: 36px; }
+  .hero h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.4px; margin-bottom: 10px; }
+  .hero p { font-size: 15px; color: var(--text-dim); max-width: 540px; margin: 0 auto; }
+
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 32px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+  .step .num { width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+  .step.active { color: var(--text); }
+  .step.active .num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .step.done .num { background: var(--success); border-color: var(--success); color: #fff; }
+  .step-line { width: 24px; height: 1px; background: var(--border); }
+  .step.done + .step-line { background: var(--success); }
+
+  .stepblock { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; overflow: hidden; }
+  .sb-h { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+  .sb-num { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .sb-num.done { background: var(--success); }
+  .sb-h h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .sb-h p { font-size: 12px; color: var(--text-dim); }
+  .sb-body { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+  .sb-body .copy h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .sb-body .copy p { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.6; }
+  .ol { padding-left: 18px; font-size: 13px; line-height: 1.9; }
+  .ol li code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--panel-2); padding: 1px 6px; border-radius: 4px; color: var(--primary); border: 1px solid var(--border); }
+
+  .btn { padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Windows window mocks */
+  .win-window {
+    background: var(--win-panel); border: 1px solid var(--win-border);
+    border-radius: 8px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    color: var(--win-text); font-family: "Segoe UI", -apple-system, sans-serif;
+  }
+  .win-titlebar {
+    height: 32px; background: var(--win-bg);
+    display: flex; align-items: center; padding: 0 0 0 12px;
+    border-bottom: 1px solid var(--win-border);
+    font-size: 12px;
+  }
+  .win-titlebar .ttl { flex: 1; color: #ccc; }
+  .win-titlebar .icons { display: flex; }
+  .win-titlebar .ic {
+    width: 46px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    color: #ddd; font-size: 12px;
+  }
+  .win-titlebar .ic.close:hover { background: #e81123; color: #fff; }
+  .win-titlebar .ic:hover { background: rgba(255,255,255,0.1); }
+  .win-content { padding: 22px; }
+
+  /* UAC dialog */
+  .uac {
+    background: linear-gradient(180deg, #0a3460, #061f3d);
+    border: 1px solid #1a4d80; border-radius: 8px;
+    width: 100%; max-width: 380px;
+    overflow: hidden; box-shadow: 0 16px 50px rgba(0,0,0,0.7);
+    color: #fff; font-family: "Segoe UI", sans-serif;
+  }
+  .uac-h {
+    padding: 14px 18px; border-bottom: 1px solid #1a4d80;
+    font-size: 14px; font-weight: 500;
+  }
+  .uac-body { padding: 18px; }
+  .uac-icon {
+    width: 56px; height: 56px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; font-weight: 800; font-size: 24px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 12px;
+  }
+  .uac p { font-size: 12px; line-height: 1.55; margin-bottom: 8px; color: #e0e0e0; }
+  .uac .verified { font-size: 12px; color: #b3e0ff; display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+  .uac .verified::before { content: '✓'; color: #4ade80; font-weight: 700; }
+  .uac-meta { font-size: 11px; color: #aab8c8; margin-bottom: 14px; line-height: 1.6; }
+  .uac-meta div { display: flex; gap: 8px; }
+  .uac-meta div b { color: #fff; font-weight: 500; min-width: 90px; }
+  .uac-actions { display: flex; gap: 8px; padding: 10px 18px; background: rgba(0,0,0,0.2); border-top: 1px solid #1a4d80; }
+  .uac-btn { flex: 1; padding: 8px; border: 1px solid #2a5a90; background: rgba(255,255,255,0.05); color: #fff; cursor: pointer; font-size: 13px; font-family: inherit; }
+  .uac-btn.primary { background: rgba(255,255,255,0.15); }
+
+  /* Setup installer */
+  .installer-h {
+    background: linear-gradient(135deg, #0a3460, #1a4d80);
+    padding: 16px 22px; color: #fff;
+    display: flex; gap: 14px; align-items: center;
+  }
+  .installer-h .ic-big {
+    width: 44px; height: 44px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; font-weight: 800; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .installer-h h3 { font-size: 16px; font-weight: 600; }
+  .installer-h .sub { font-size: 11px; opacity: 0.85; }
+  .installer-body { padding: 18px 22px; min-height: 200px; background: var(--win-panel); }
+  .installer-body label { display: block; font-size: 11px; color: #b8b8b8; margin-bottom: 4px; margin-top: 14px; font-weight: 500; }
+  .installer-body label:first-child { margin-top: 0; }
+  .installer-body .path-row {
+    display: flex; gap: 6px;
+  }
+  .installer-body input[type="text"] {
+    flex: 1; padding: 7px 10px; background: var(--win-bg);
+    border: 1px solid var(--win-border); color: #fff; font-size: 12px;
+    font-family: ui-monospace, monospace; outline: none;
+  }
+  .installer-body input[type="text"]:focus { border-color: var(--win-blue); }
+  .installer-body button.browse {
+    padding: 7px 14px; background: #404040; border: 1px solid #505050;
+    color: #fff; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .installer-body .checkbox-row {
+    display: flex; gap: 10px; align-items: center;
+    font-size: 12px; color: #ccc; margin-top: 14px;
+  }
+  .check {
+    width: 14px; height: 14px; border: 1px solid #888;
+    background: var(--win-bg); position: relative;
+  }
+  .check.on { background: var(--win-blue); border-color: var(--win-blue); }
+  .check.on::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .installer-foot {
+    padding: 12px 22px; background: var(--win-bg); border-top: 1px solid var(--win-border);
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+  .installer-btn {
+    padding: 7px 24px; border: 1px solid #505050;
+    background: #404040; color: #fff; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .installer-btn.primary { background: var(--win-blue); border-color: var(--win-blue); }
+
+  /* Service / firewall dialogs */
+  .firewall {
+    background: var(--win-panel); border: 1px solid var(--win-border);
+    border-radius: 4px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    color: #fff; font-family: "Segoe UI", sans-serif;
+    width: 100%; max-width: 420px;
+  }
+  .fw-h {
+    padding: 14px 18px; background: var(--win-bg);
+    border-bottom: 1px solid var(--win-border);
+    font-size: 14px;
+  }
+  .fw-body { padding: 18px; font-size: 12px; line-height: 1.55; }
+  .fw-body p { margin-bottom: 12px; color: #ddd; }
+  .fw-body strong { color: #fff; }
+  .fw-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .fw-actions { display: flex; gap: 8px; padding: 10px 18px; background: var(--win-bg); justify-content: flex-end; border-top: 1px solid var(--win-border); }
+
+  /* Tray icon */
+  .tray-area {
+    display: flex; gap: 8px; align-items: center;
+    padding: 6px 12px; background: rgba(20,20,20,0.95); backdrop-filter: blur(12px);
+    border: 1px solid #333; border-radius: 6px;
+    color: #fff; font-size: 11px;
+  }
+  .tray-area .ic { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+  .tray-area .m-mark {
+    width: 18px; height: 18px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1px #fff;
+  }
+  .tray-area .clock { margin-left: auto; }
+  .tray-pop {
+    margin-top: 6px; background: rgba(40,40,40,0.95); backdrop-filter: blur(12px);
+    border: 1px solid #444; border-radius: 6px;
+    padding: 6px 0; min-width: 240px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  }
+  .tp-row {
+    padding: 8px 14px; font-size: 12px;
+    color: #fff; display: flex; align-items: center; gap: 10px;
+  }
+  .tp-row:hover { background: rgba(255,255,255,0.1); }
+  .tp-row .stat-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); margin-left: auto; }
+  .tp-sep { height: 1px; background: #444; margin: 4px 0; }
+  .tp-row.muted { color: #888; }
+
+  /* All states common */
+  .all-states { padding: 60px 0 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 200px; display: flex; align-items: center; justify-content: center; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .progress-bar {
+    height: 6px; background: var(--win-bg); border-radius: 3px; overflow: hidden;
+    margin: 12px 0;
+  }
+  .progress-bar > div { height: 100%; background: var(--win-blue); border-radius: 3px; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Server · Windows</span></div>
+    <a class="btn">Switch to macOS / Docker / NAS →</a>
+  </div>
+
+  <div class="label">SERVER INSTALL · WINDOWS 10 / 11</div>
+  <div class="hero">
+    <h1>Install Maktaba on Windows</h1>
+    <p>5 steps · admin password required once. MSI installer · runs as a Windows service so the server starts at boot.</p>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><div class="num"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><span>Download</span></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="num">2</div><span>UAC</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="num">3</div><span>Install location</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="num">4</div><span>Service &amp; firewall</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="num">5</div><span>Setup wizard</span></div>
+  </div>
+
+  <!-- STEP 1: UAC -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">1</div>
+      <div>
+        <h2>Step 1 · Run the MSI · approve UAC</h2>
+        <p>Windows User Account Control asks once before installing</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>Right-click MaktabaSetup.msi → Run</h3>
+        <p>Windows will dim the screen and show a UAC prompt. Maktaba is signed with an EV code-signing certificate, so you'll see "Verified publisher: Maktaba Studio LLC" — click <strong>Yes</strong>.</p>
+        <ol class="ol">
+          <li>Open Downloads → double-click <code>MaktabaSetup-1.0.0-x64.msi</code></li>
+          <li>UAC dialog appears (blue background)</li>
+          <li>Verify publisher is <strong>Maktaba Studio LLC</strong></li>
+          <li>Click <strong>Yes</strong> to continue</li>
+        </ol>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: center;">
+        <div class="uac">
+          <div class="uac-h">User Account Control</div>
+          <div class="uac-body">
+            <div class="uac-icon">M</div>
+            <p style="font-size: 14px; font-weight: 500; color: #fff; margin-bottom: 12px;">Do you want to allow this app to make changes to your device?</p>
+            <p style="font-weight: 600; color: #fff; margin-bottom: 4px;">Maktaba Setup</p>
+            <div class="verified">Verified publisher: <strong>Maktaba Studio LLC</strong></div>
+            <div class="uac-meta">
+              <div><b>File origin:</b><span>Hard drive on this computer</span></div>
+              <div><b>Program path:</b><span style="font-family: ui-monospace, monospace;">C:\Users\you\Downloads\MaktabaSetup-1.0.0-x64.msi</span></div>
+            </div>
+          </div>
+          <div class="uac-actions">
+            <button class="uac-btn">No</button>
+            <button class="uac-btn primary">Yes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: install location -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">2</div>
+      <div>
+        <h2>Step 2 · Choose install location &amp; library folder</h2>
+        <p>Default is C:\Program Files\Maktaba — change if you need a custom path</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="win-window">
+        <div class="installer-h">
+          <div class="ic-big">M</div>
+          <div>
+            <h3>Maktaba Setup</h3>
+            <div class="sub">Installing version 1.0.0 (x64)</div>
+          </div>
+        </div>
+        <div class="installer-body">
+          <label>Install location</label>
+          <div class="path-row">
+            <input type="text" value="C:\Program Files\Maktaba">
+            <button class="browse">Browse…</button>
+          </div>
+
+          <label>Default media library folder</label>
+          <div class="path-row">
+            <input type="text" value="C:\Users\Public\Videos\Maktaba">
+            <button class="browse">Browse…</button>
+          </div>
+
+          <label>Disk space</label>
+          <div style="font-size: 11px; color: #b8b8b8; line-height: 1.6;">
+            Required: <strong style="color: #fff;">428 MB</strong> · Available: <strong style="color: var(--success);">412 GB</strong> on C:\
+          </div>
+
+          <div class="checkbox-row" style="margin-top: 18px;">
+            <span class="check on"></span>
+            <span>Install for all users on this PC (recommended)</span>
+          </div>
+          <div class="checkbox-row">
+            <span class="check on"></span>
+            <span>Start Maktaba automatically at boot (Windows service)</span>
+          </div>
+          <div class="checkbox-row">
+            <span class="check on"></span>
+            <span>Create desktop shortcut</span>
+          </div>
+          <div class="checkbox-row">
+            <span class="check"></span>
+            <span>Add to Start menu Tile pinned</span>
+          </div>
+        </div>
+        <div class="installer-foot">
+          <button class="installer-btn">Back</button>
+          <button class="installer-btn primary">Install</button>
+          <button class="installer-btn">Cancel</button>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Recommended defaults</h3>
+        <p>For most home Windows machines we recommend installing to <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">C:\Program Files\Maktaba</code>, enabling the <strong>Maktaba service</strong>, and choosing a media library folder on your largest drive.</p>
+        <div style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim); margin-bottom: 10px;">
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Custom drive?</strong>
+          If your videos are on a separate drive (e.g. D:\Media), point the library folder there during install — Maktaba won't move files, just index them in place.
+        </div>
+        <div style="background: rgba(91,158,255,0.06); border: 1px solid rgba(91,158,255,0.3); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim);">
+          <strong style="color: var(--primary); display: block; margin-bottom: 4px;">NTFS only</strong>
+          Maktaba requires NTFS (not FAT32 or exFAT) for the install location and the cache directory. Library folders on other filesystems work fine.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: service -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">3</div>
+      <div>
+        <h2>Step 3 · Service &amp; Windows Firewall</h2>
+        <p>Two automated dialogs · approve both to enable streaming</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>Service: "Maktaba Server"</h3>
+        <p>The installer creates a Windows service named <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">MaktabaServer</code> set to start automatically. It runs as <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">NT SERVICE\MaktabaServer</code> with limited privileges — it can read your library, but cannot touch system files.</p>
+        <h3 style="margin-top: 18px;">Firewall: allow on private networks</h3>
+        <p>Windows Firewall asks whether Maktaba can communicate. Tick <strong>Private networks</strong> (home Wi-Fi). Leave <strong>Public networks</strong> unticked unless you specifically need it.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px; align-items: center;">
+        <div class="firewall">
+          <div class="fw-h" style="display: flex; gap: 8px; align-items: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffd633" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            Windows Defender Firewall
+          </div>
+          <div class="fw-body">
+            <p>Windows Defender Firewall has blocked some features of <strong>Maktaba Server</strong> on all public, private and domain networks.</p>
+            <p style="color: #b8b8b8; font-size: 11px;"><strong>Name:</strong> Maktaba Server<br><strong>Publisher:</strong> Maktaba Studio LLC<br><strong>Path:</strong> C:\Program Files\Maktaba\MaktabaServer.exe</p>
+            <p style="margin-top: 14px; color: #fff;">Allow Maktaba Server to communicate on these networks:</p>
+            <div class="fw-row"><span class="check"></span> Domain networks (work)</div>
+            <div class="fw-row"><span class="check on"></span> <strong>Private networks</strong> (home, recommended)</div>
+            <div class="fw-row"><span class="check"></span> Public networks (cafés, airports)</div>
+          </div>
+          <div class="fw-actions">
+            <button class="installer-btn">Cancel</button>
+            <button class="installer-btn primary">Allow access</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: progress -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">4</div>
+      <div>
+        <h2>Step 4 · Installing</h2>
+        <p>Copies files, creates the service, registers in Add/Remove Programs</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="win-window">
+        <div class="installer-h">
+          <div class="ic-big">M</div>
+          <div>
+            <h3>Installing Maktaba…</h3>
+            <div class="sub">Step 4 of 5 · creating Windows service</div>
+          </div>
+        </div>
+        <div class="installer-body">
+          <div style="font-size: 12px; color: #ccc; margin-bottom: 4px;">Copying files to C:\Program Files\Maktaba</div>
+          <div class="progress-bar"><div style="width: 64%;"></div></div>
+          <div style="font-size: 11px; color: #888; font-family: ui-monospace, monospace;">412 / 643 files · 14 MB / 84 MB · ~12s remaining</div>
+
+          <div style="margin-top: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #ccc; font-family: ui-monospace, monospace;">
+            <div style="color: var(--success);">✓ Verified MSI signature</div>
+            <div style="color: var(--success);">✓ Created C:\Program Files\Maktaba</div>
+            <div style="color: var(--success);">✓ Copied core binaries</div>
+            <div style="color: var(--success);">✓ Created service "MaktabaServer"</div>
+            <div style="color: #ffd633;">→ Configuring Windows Firewall…</div>
+            <div style="color: #888;">  Registering uninstaller</div>
+            <div style="color: #888;">  Creating Start menu entry</div>
+          </div>
+        </div>
+        <div class="installer-foot">
+          <button class="installer-btn" disabled style="opacity: 0.4;">Back</button>
+          <button class="installer-btn primary" disabled style="opacity: 0.4;">Next</button>
+          <button class="installer-btn">Cancel</button>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Takes about 30 seconds</h3>
+        <p>The installer copies binaries, registers the service, configures the firewall rule, and registers Maktaba in Add/Remove Programs. Disk space used: <strong>~428 MB</strong>.</p>
+        <p style="margin-top: 12px; font-size: 12px;">If install fails partway, the rollback runs automatically — your system is left exactly as it was before.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: tray icon -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">5</div>
+      <div>
+        <h2>Step 5 · Tray icon &amp; setup wizard</h2>
+        <p>Look for the M icon in the system tray (bottom right)</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div>
+        <div style="margin-bottom: 16px;">
+          <div class="tray-area">
+            <span style="color: #888;">^</span>
+            <span class="ic">📶</span>
+            <span class="ic">🔋</span>
+            <span class="m-mark">M</span>
+            <span class="ic">🔊</span>
+            <span class="clock"><span style="font-size: 10px; line-height: 1.1; display: block;">14:08</span><span style="font-size: 9px; color: #888;">5/6/2026</span></span>
+          </div>
+          <div class="tray-pop">
+            <div class="tp-row" style="opacity: 0.7; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 14px; cursor: default;">Maktaba 1.0.0</div>
+            <div class="tp-row">Server status<span style="margin-left: auto; color: var(--success); font-size: 11px;">● Running</span></div>
+            <div class="tp-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>Open library</div>
+            <div class="tp-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>Settings…</div>
+            <div class="tp-sep"></div>
+            <div class="tp-row muted">312 videos · 0 streams</div>
+            <div class="tp-row muted">Uptime · 14s</div>
+            <div class="tp-sep"></div>
+            <div class="tp-row">Quit</div>
+          </div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.6;">
+          The <strong style="color: var(--text);">M</strong> badge is visible in the notification area. Click to see status, right-click for the full menu.
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Setup wizard launches in your default browser</h3>
+        <p>After install completes, Maktaba opens <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">http://localhost:8000/setup</code>. Pick your library folder, choose a transcription engine (CUDA accelerated if you have an NVIDIA GPU), link Cloud, and run the initial scan.</p>
+        <a href="setup-wizard-server.html"><button class="btn primary">Open setup wizard →</button></a>
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
+          The wizard runs locally · no data leaves your PC unless you opt into Cloud.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · Windows install</h2>
+    <div class="desc">Edge cases for SmartScreen, Defender, service failures</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">SmartScreen warning <span class="stag warn">SCREEN</span></div>
+      <div class="ss-preview">
+        <div class="firewall" style="max-width: 360px;">
+          <div class="fw-h" style="background: linear-gradient(90deg, #003c8b, #0078d4);">
+            <strong>Microsoft Defender SmartScreen</strong>
+          </div>
+          <div class="fw-body">
+            <p style="font-size: 14px; color: #fff;">Windows protected your PC</p>
+            <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+            <p style="color: #b8b8b8; font-size: 11px;">App: <strong>MaktabaSetup-1.0.0-x64.msi</strong><br>Publisher: Maktaba Studio LLC</p>
+          </div>
+          <div class="fw-actions">
+            <button class="installer-btn">More info</button>
+            <button class="installer-btn primary">Don't run</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">UAC denied <span class="stag error">DENIED</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <div>
+            <strong>Install canceled · admin denied</strong>
+            <span>You clicked No on the UAC prompt. Re-launch MaktabaSetup.msi as administrator to continue.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Service start failed <span class="stag error">SERVICE</span></div>
+      <div class="ss-preview">
+        <div class="firewall" style="max-width: 360px;">
+          <div class="fw-h" style="display: flex; gap: 8px; align-items: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+            Service start failed
+          </div>
+          <div class="fw-body">
+            <p>Could not start the <strong>MaktabaServer</strong> service.</p>
+            <p style="color: #b8b8b8; font-size: 11px;">Error 1067: The process terminated unexpectedly. Port 8000 is already in use by Plex Media Server.</p>
+          </div>
+          <div class="fw-actions">
+            <button class="installer-btn">View logs</button>
+            <button class="installer-btn primary">Use port 8001</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Defender exclusion suggested <span class="stag info">DEFENDER</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/></svg>
+          <div>
+            <strong>Faster scans · add Defender exclusion</strong>
+            <span>For best performance, add C:\ProgramData\Maktaba\Cache to Defender's exclusions. Optional · skip if unsure.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Reboot requested <span class="stag warn">REBOOT</span></div>
+      <div class="ss-preview">
+        <div class="firewall" style="max-width: 360px;">
+          <div class="fw-h" style="display: flex; gap: 8px; align-items: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffd633" stroke-width="2"><polyline points="23 4 23 10 17 10"/></svg>
+            Restart required
+          </div>
+          <div class="fw-body">
+            <p>Maktaba was installed, but a Windows update needs a restart before the service can start.</p>
+            <p style="color: #b8b8b8;">No data will be lost · all open windows will be closed automatically.</p>
+          </div>
+          <div class="fw-actions">
+            <button class="installer-btn">Restart later</button>
+            <button class="installer-btn primary">Restart now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · install complete <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Maktaba installed successfully</strong>
+            <span>Service running · tray icon visible · setup wizard opening</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">CUDA detected · GPU upgrade <span class="stag success">GPU</span></div>
+      <div class="ss-preview">
+        <div class="alert success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div>
+            <strong>NVIDIA RTX 4070 detected</strong>
+            <span>CUDA acceleration available — transcription will run ~5× faster than CPU. Enable in setup wizard.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">.NET runtime missing <span class="stag warn">DEP</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>.NET 8 runtime not installed</strong>
+            <span>Required for the management UI. Maktaba can install it for you (84 MB) — adds ~1 minute to setup.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · firewall configured <span class="stag info">FIREWALL</span></div>
+      <div class="ss-preview">
+        <div class="toast info">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/></svg></div>
+          <div class="body">
+            <strong>Firewall rule added</strong>
+            <span>Inbound TCP 8000 · profile: Private · Maktaba Server can accept LAN connections</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

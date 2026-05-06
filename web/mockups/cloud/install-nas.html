@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Server — Install on Synology / QNAP</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+
+    --syn-blue: #1abc9c; --syn-bg: #f4f6f8; --syn-text: #2c3e50;
+    --qnap-red: #e30613; --qnap-bg: #f8f9fb;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; min-height: 100vh; padding: 32px 24px; }
+  .theme-switch { position: fixed; top: 16px; right: 16px; z-index: 1000; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  a { color: var(--primary); text-decoration: none; }
+  .container { max-width: 1280px; margin: 0 auto; }
+
+  .top-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; }
+  .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; text-align: center; }
+  .hero { text-align: center; margin-bottom: 36px; }
+  .hero h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.4px; margin-bottom: 10px; }
+  .hero p { font-size: 15px; color: var(--text-dim); max-width: 600px; margin: 0 auto; }
+
+  /* Platform tabs */
+  .nav-tabs {
+    display: flex; gap: 6px; padding: 4px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; margin: 0 auto 28px;
+    width: fit-content;
+  }
+  .nav-tab {
+    padding: 9px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    color: var(--text-dim); display: flex; align-items: center; gap: 8px;
+  }
+  .nav-tab.active { background: var(--panel-2); color: var(--text); font-weight: 500; box-shadow: var(--shadow); }
+  .nav-tab .badge {
+    width: 22px; height: 22px; border-radius: 6px;
+    color: #fff; font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-tab .badge.syn { background: linear-gradient(135deg, #2ecc71, #1abc9c); }
+  .nav-tab .badge.qnap { background: var(--qnap-red); }
+  .nav-tab .badge.unraid { background: linear-gradient(135deg, #f15a24, #ff7a3a); }
+  .nav-tab .badge.truenas { background: linear-gradient(135deg, #0c4f9a, #2563eb); }
+
+  /* Section blocks */
+  .stepblock { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; overflow: hidden; }
+  .sb-h { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+  .sb-num { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .sb-h h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .sb-h p { font-size: 12px; color: var(--text-dim); }
+  .sb-body { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+
+  .btn { padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Synology Package Center mock */
+  .nas-window {
+    border-radius: 8px; overflow: hidden;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.4);
+    background: var(--syn-bg); color: var(--syn-text);
+    border: 1px solid #ccd1d9;
+  }
+  .syn-titlebar {
+    background: linear-gradient(180deg, #fff, #e8ecf0);
+    border-bottom: 1px solid #ccd1d9;
+    height: 28px; display: flex; align-items: center; padding: 0 12px; gap: 6px;
+  }
+  .syn-titlebar .dot { width: 11px; height: 11px; border-radius: 50%; background: #ccc; }
+  .syn-titlebar .ttl { flex: 1; font-size: 11px; color: #5a6779; font-weight: 500; }
+
+  .pkg-toolbar {
+    background: #fff; border-bottom: 1px solid #ddd;
+    padding: 10px 16px; display: flex; gap: 14px; align-items: center;
+    font-size: 12px;
+  }
+  .pkg-search {
+    flex: 1; max-width: 260px; padding: 6px 12px;
+    background: #f0f3f5; border: 1px solid #ccd1d9; border-radius: 4px;
+    font-size: 12px; color: #2c3e50;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .pkg-search input {
+    flex: 1; background: transparent; border: 0; outline: 0;
+    color: inherit; font-size: 12px; font-family: inherit;
+  }
+  .pkg-side {
+    display: flex; gap: 16px; padding: 8px 16px; background: #fff;
+    font-size: 12px; color: #5a6779;
+    border-bottom: 1px solid #ddd;
+  }
+  .pkg-side a.active { color: #1abc9c; font-weight: 600; }
+
+  .pkg-results { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pkg-card {
+    background: #fff; border: 1px solid #ddd; border-radius: 6px;
+    padding: 14px; display: flex; gap: 12px;
+  }
+  .pkg-card.featured { border-color: var(--syn-blue); box-shadow: 0 0 0 3px rgba(26,188,156,0.1); }
+  .pkg-card .ic {
+    width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
+    color: #fff; font-weight: 800; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pkg-card .ic.maktaba { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+  .pkg-card .ic.plex { background: #e5a00d; }
+  .pkg-card .info { flex: 1; min-width: 0; }
+  .pkg-card .info h4 { font-size: 13px; color: #2c3e50; margin-bottom: 2px; }
+  .pkg-card .info .meta { font-size: 11px; color: #7f8c98; }
+  .pkg-card .info .desc { font-size: 11px; color: #5a6779; margin-top: 4px; line-height: 1.45;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pkg-card .install-btn {
+    align-self: center;
+    padding: 5px 14px; background: var(--syn-blue); color: #fff;
+    border: 0; border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit;
+    flex-shrink: 0;
+  }
+  .pkg-card .install-btn.installed { background: #fff; color: #5a6779; border: 1px solid #ddd; }
+
+  /* QNAP App Center */
+  .qnap-titlebar {
+    background: linear-gradient(180deg, #2c3e50, #1a2735);
+    color: #fff; padding: 8px 14px; display: flex; align-items: center; gap: 10px;
+    font-size: 12px;
+  }
+  .qnap-titlebar .ttl { flex: 1; }
+  .qnap-titlebar .badge {
+    background: var(--qnap-red); padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700;
+  }
+
+  .qnap-body { background: #f5f7fa; }
+  .qnap-toolbar {
+    background: #fff; padding: 12px 16px; border-bottom: 1px solid #d8dde3;
+    display: flex; gap: 14px; align-items: center;
+  }
+  .qnap-tabs { display: flex; gap: 14px; font-size: 12px; color: #5a6779; }
+  .qnap-tabs .t { padding-bottom: 4px; }
+  .qnap-tabs .t.active { color: var(--qnap-red); border-bottom: 2px solid var(--qnap-red); font-weight: 600; }
+
+  /* Permission dialog (Synology style) */
+  .syn-dialog {
+    width: 100%; max-width: 420px;
+    background: #fff; border: 1px solid #ccd1d9; border-radius: 6px;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.3);
+    overflow: hidden; color: #2c3e50;
+  }
+  .syn-dialog-h {
+    background: linear-gradient(180deg, #fff, #e8ecf0);
+    padding: 10px 16px; border-bottom: 1px solid #ddd;
+    font-size: 13px; font-weight: 600;
+  }
+  .syn-dialog-body { padding: 18px; font-size: 12px; line-height: 1.55; }
+  .syn-dialog-body p { margin-bottom: 10px; color: #5a6779; }
+  .syn-dialog-body strong { color: #2c3e50; }
+  .syn-perms {
+    background: #f0f3f5; border: 1px solid #ddd; border-radius: 4px;
+    padding: 10px 12px; margin-top: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+    font-size: 11.5px;
+  }
+  .syn-perms .row {
+    display: grid; grid-template-columns: 22px 110px 1fr;
+    gap: 8px; align-items: center;
+  }
+  .syn-perms .row svg { color: #1abc9c; }
+  .syn-perms .row span:first-of-type { color: #2c3e50; font-weight: 500; }
+  .syn-perms .row span:last-of-type { color: #5a6779; font-size: 11px; }
+  .syn-dialog-foot {
+    padding: 10px 16px; background: #f0f3f5; border-top: 1px solid #ddd;
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+  .syn-btn {
+    padding: 5px 16px; border: 1px solid #ccd1d9; background: #fff; color: #2c3e50;
+    border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .syn-btn.primary { background: var(--syn-blue); color: #fff; border-color: var(--syn-blue); }
+
+  /* Port config */
+  .port-config { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .port-config h4 { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+  .port-row {
+    display: grid; grid-template-columns: 1fr 100px 1fr;
+    gap: 8px; align-items: center; padding: 8px 0;
+    border-bottom: 1px dashed var(--border); font-size: 12px;
+  }
+  .port-row:last-child { border-bottom: 0; }
+  .port-row .name strong { font-size: 12px; }
+  .port-row .name small { display: block; color: var(--text-muted); font-size: 11px; }
+  .port-row .num { font-family: ui-monospace, monospace; text-align: center; font-weight: 600; }
+  .port-row select, .port-row input {
+    padding: 5px 8px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-size: 11px; font-family: ui-monospace, monospace;
+    width: 100%;
+  }
+
+  /* All states common */
+  .all-states { padding: 60px 0 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 200px; display: flex; align-items: center; justify-content: center; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Server · NAS</span></div>
+    <a class="btn">Switch to macOS / Windows / Docker →</a>
+  </div>
+
+  <div class="label">SERVER INSTALL · NAS</div>
+  <div class="hero">
+    <h1>Install Maktaba on your NAS</h1>
+    <p>Native packages for Synology DSM 7+ and QNAP QTS 5+. Unraid &amp; TrueNAS use the Docker template. CPU-only transcription on most NAS hardware.</p>
+  </div>
+
+  <!-- Platform tabs -->
+  <div class="nav-tabs">
+    <div class="nav-tab active"><span class="badge syn">S</span>Synology</div>
+    <div class="nav-tab"><span class="badge qnap">Q</span>QNAP</div>
+    <div class="nav-tab"><span class="badge unraid">U</span>Unraid</div>
+    <div class="nav-tab"><span class="badge truenas">T</span>TrueNAS</div>
+  </div>
+
+  <!-- Synology: Step 1 — Package Center search -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">1</div>
+      <div>
+        <h2>Step 1 · Open Synology Package Center, search "Maktaba"</h2>
+        <p>DSM 7.0+ required · works on DS218+, DS220+, DS920+, DS923+, DS1522+, DS1821+, RS-series</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>From DSM, open Package Center</h3>
+        <p>Sign in to your Synology DSM as administrator. Click <strong>Package Center</strong> in the main menu, then type <strong>"maktaba"</strong> in the search bar.</p>
+        <ol style="padding-left: 18px; line-height: 1.9; font-size: 13px;">
+          <li>Sign in to DSM as admin</li>
+          <li>Open <strong>Package Center</strong></li>
+          <li>Search <strong>maktaba</strong></li>
+          <li>Click <strong>Install</strong> on the verified result</li>
+        </ol>
+        <div style="background: rgba(91,158,255,0.06); border: 1px solid rgba(91,158,255,0.3); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim); margin-top: 14px;">
+          <strong style="color: var(--primary); display: block; margin-bottom: 4px;">Don't see it?</strong>
+          Settings → Package Sources → add <code style="font-family: ui-monospace, monospace; background: var(--panel); padding: 1px 6px; border-radius: 4px;">https://nas.maktaba.app/syno</code> as a trusted source.
+        </div>
+      </div>
+
+      <div class="nas-window">
+        <div class="syn-titlebar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="ttl">Package Center — DSM 7.2</div>
+        </div>
+        <div class="pkg-toolbar">
+          <div class="pkg-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7f8c98" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input value="maktaba" />
+          </div>
+        </div>
+        <div class="pkg-side">
+          <a class="active">Search "maktaba"</a>
+          <a>Featured</a>
+          <a>All packages</a>
+          <a>Updates</a>
+        </div>
+        <div class="pkg-results">
+          <div class="pkg-card featured">
+            <div class="ic maktaba">M</div>
+            <div class="info">
+              <h4>Maktaba Server</h4>
+              <div class="meta">v1.0.0 · 84 MB · by Maktaba Studio · ★ 4.8 (218)</div>
+              <div class="desc">Self-hosted media server for your home library. Stream, transcode, transcribe, and access from anywhere.</div>
+            </div>
+            <button class="install-btn">Install</button>
+          </div>
+          <div class="pkg-card">
+            <div class="ic plex">P</div>
+            <div class="info">
+              <h4>Plex Media Server</h4>
+              <div class="meta">v1.40 · 312 MB · by Plex Inc.</div>
+              <div class="desc">Organize your videos, music and photos. Stream them to any device.</div>
+            </div>
+            <button class="install-btn installed">Installed</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: install confirmation -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">2</div>
+      <div>
+        <h2>Step 2 · Confirm install &amp; review permissions</h2>
+        <p>Synology lists what the package will access · Maktaba uses minimal permissions</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div style="display: flex; align-items: center; justify-content: center;">
+        <div class="syn-dialog">
+          <div class="syn-dialog-h">Install Maktaba Server</div>
+          <div class="syn-dialog-body">
+            <p>The package wants the following permissions on your DiskStation:</p>
+            <div class="syn-perms">
+              <div class="row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>File access</span>
+                <span>read-only on /volume1/video and selected shared folders</span>
+              </div>
+              <div class="row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Network</span>
+                <span>listen on TCP 8000 · outbound HTTPS for Cloud relay</span>
+              </div>
+              <div class="row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>System</span>
+                <span>create user "maktaba" with limited shell · no root</span>
+              </div>
+              <div class="row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Storage</span>
+                <span>14 GB on the volume of your choice (config + cache + models)</span>
+              </div>
+              <div class="row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Login</span>
+                <span>auto-start on DSM boot · run as user "maktaba"</span>
+              </div>
+            </div>
+            <p style="margin-top: 14px; font-size: 11px; color: #7f8c98;">Signed by <strong>Maktaba Studio LLC</strong> · verified by Synology Package Trust</p>
+          </div>
+          <div class="syn-dialog-foot">
+            <button class="syn-btn">Cancel</button>
+            <button class="syn-btn">Advanced…</button>
+            <button class="syn-btn primary">Agree &amp; Install</button>
+          </div>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Read-only mounts by default</h3>
+        <p>Maktaba reads videos from your existing shared folders (e.g. <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">/volume1/video</code>) but never modifies them. Config and transcoded segments live in the Maktaba app data folder, isolated from your media.</p>
+        <p>The package creates a system user named <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">maktaba</code> with no shell login and no sudo access — strictly less privilege than admin.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: port config -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">3</div>
+      <div>
+        <h2>Step 3 · Port &amp; volume configuration</h2>
+        <p>Defaults work for most setups · adjust if you have port conflicts or want HTTPS</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="port-config">
+        <h4>Port assignment</h4>
+        <div class="port-row">
+          <div class="name"><strong>Web UI</strong><small>HTTP · setup wizard, library browsing</small></div>
+          <div class="num">→</div>
+          <input value="8000" />
+        </div>
+        <div class="port-row">
+          <div class="name"><strong>Web UI · HTTPS</strong><small>Optional · use Synology reverse proxy or self-signed</small></div>
+          <div class="num">→</div>
+          <input value="8443" />
+        </div>
+        <div class="port-row">
+          <div class="name"><strong>mDNS / Bonjour</strong><small>Auto-discovery on LAN · UDP 5353</small></div>
+          <div class="num">→</div>
+          <select><option>Enabled</option><option>Disabled</option></select>
+        </div>
+        <div class="port-row">
+          <div class="name"><strong>Cloud relay</strong><small>Outbound HTTPS to maktaba.app · no inbound port needed</small></div>
+          <div class="num">→</div>
+          <select><option>Enabled</option><option>Disabled</option></select>
+        </div>
+
+        <h4 style="margin-top: 18px;">Storage volume</h4>
+        <div class="port-row" style="grid-template-columns: 1fr 1fr;">
+          <div class="name"><strong>App data &amp; cache</strong><small>Config DB, transcodes, ML models</small></div>
+          <select><option>/volume1/maktaba (recommended)</option><option>/volume2/...</option></select>
+        </div>
+        <div class="port-row" style="grid-template-columns: 1fr 1fr;">
+          <div class="name"><strong>Media library</strong><small>Read-only mount</small></div>
+          <select><option>/volume1/video</option><option>+ Add another folder</option></select>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Use Synology's reverse proxy for HTTPS</h3>
+        <p>Maktaba ships HTTP-only by default. To get HTTPS at <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">https://maktaba.your-nas.synology.me</code>, use Control Panel → Login Portal → Reverse Proxy. We have a <a href="#">5-step guide</a> with screenshots.</p>
+        <div style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim); margin-top: 12px;">
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">CPU-only transcription</strong>
+          Most Synology models lack a discrete GPU. Maktaba auto-selects <code style="font-family: ui-monospace, monospace;">whisper-cpu small</code> on NAS hardware — fast enough for ~3 minutes of video per minute of CPU on a DS920+.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: post-install -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">4</div>
+      <div>
+        <h2>Step 4 · Open Maktaba from the DSM main menu</h2>
+        <p>The Maktaba icon appears in your DSM main menu &amp; on the desktop</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>Click the Maktaba icon · setup wizard launches</h3>
+        <p>The package adds an icon to your DSM main menu and (optionally) your desktop. Click it to open the web UI in a new tab — the setup wizard auto-launches on first run.</p>
+        <a href="setup-wizard-server.html"><button class="btn primary">Open setup wizard →</button></a>
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
+          You can also reach Maktaba directly at <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">http://your-nas:8000</code>.
+        </div>
+      </div>
+      <div class="nas-window">
+        <div class="syn-titlebar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="ttl">DiskStation · Main Menu</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #2c3e50, #1a2735); padding: 24px; min-height: 220px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-content: flex-start;">
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #3498db, #1abc9c); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">FS</div>
+            File Station
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #e74c3c, #c0392b); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">CP</div>
+            Control Panel
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px; box-shadow: 0 0 0 2px var(--syn-blue); border-radius: 14px; padding: 4px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--accent)); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 24px;">M</div>
+            Maktaba <span style="display: block; font-size: 9px; color: var(--syn-blue); font-weight: 600;">just installed</span>
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #f39c12, #e67e22); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">PC</div>
+            Package Center
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #9b59b6, #8e44ad); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">P</div>
+            Photos
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #16a085, #1abc9c); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">N</div>
+            Notes
+          </div>
+          <div style="text-align: center; color: #fff; font-size: 11px;">
+            <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #2980b9, #3498db); margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;">SS</div>
+            Surveillance
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QNAP App Center mini-section -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num" style="background: var(--qnap-red);">Q</div>
+      <div>
+        <h2>QNAP · App Center</h2>
+        <p>QTS 5.0+ &amp; QuTS hero · search "Maktaba" or sideload the .qpkg</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="nas-window">
+        <div class="qnap-titlebar">
+          <div class="badge">QNAP</div>
+          <div class="ttl">App Center · QTS 5.1</div>
+          <span style="font-size: 11px; opacity: 0.7;">admin@qnap-home</span>
+        </div>
+        <div class="qnap-body">
+          <div class="qnap-toolbar">
+            <div class="qnap-tabs">
+              <span class="t">My Apps</span>
+              <span class="t active">All Apps</span>
+              <span class="t">Recommended</span>
+              <span class="t">Update Center</span>
+            </div>
+            <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+              <input style="padding: 5px 10px; border: 1px solid #ccd1d9; border-radius: 3px; font-size: 11px; font-family: inherit; width: 180px;" value="maktaba">
+            </div>
+          </div>
+          <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+            <div style="background: #fff; border: 1px solid #d8dde3; border-radius: 4px; padding: 14px; text-align: center; box-shadow: 0 0 0 2px var(--qnap-red);">
+              <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; font-weight: 800; font-size: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;">M</div>
+              <div style="font-size: 12px; font-weight: 600; color: #2c3e50;">Maktaba Server</div>
+              <div style="font-size: 10px; color: #7f8c98; margin: 2px 0 8px;">1.0.0 · 84 MB</div>
+              <button style="padding: 4px 16px; background: var(--qnap-red); color: #fff; border: 0; border-radius: 3px; font-size: 11px; cursor: pointer; font-family: inherit;">Install</button>
+            </div>
+            <div style="background: #fff; border: 1px solid #d8dde3; border-radius: 4px; padding: 14px; text-align: center;">
+              <div style="width: 56px; height: 56px; border-radius: 12px; background: #e5a00d; color: #fff; font-weight: 800; font-size: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;">P</div>
+              <div style="font-size: 12px; font-weight: 600; color: #2c3e50;">Plex Media Server</div>
+              <div style="font-size: 10px; color: #7f8c98; margin: 2px 0 8px;">1.40 · 312 MB</div>
+              <button style="padding: 4px 12px; background: #fff; color: #5a6779; border: 1px solid #d8dde3; border-radius: 3px; font-size: 11px; cursor: pointer; font-family: inherit;">Open</button>
+            </div>
+            <div style="background: #fff; border: 1px solid #d8dde3; border-radius: 4px; padding: 14px; text-align: center;">
+              <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, #34495e, #2c3e50); color: #fff; font-weight: 800; font-size: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;">J</div>
+              <div style="font-size: 12px; font-weight: 600; color: #2c3e50;">Jellyfin</div>
+              <div style="font-size: 10px; color: #7f8c98; margin: 2px 0 8px;">10.9 · 198 MB</div>
+              <button style="padding: 4px 16px; background: var(--qnap-red); color: #fff; border: 0; border-radius: 3px; font-size: 11px; cursor: pointer; font-family: inherit;">Install</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>QPKG installation</h3>
+        <p>QNAP installs are nearly identical to Synology — search, click Install, agree to permissions. The package creates a non-privileged user, listens on TCP 8000, and registers an app icon on your QTS desktop.</p>
+        <div style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim); margin-top: 12px;">
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Sideload from .qpkg</strong>
+          App Center → Install Manually → upload <code style="font-family: ui-monospace, monospace; background: var(--panel); padding: 1px 6px; border-radius: 4px;">maktaba-server-1.0.0.qpkg</code>. Useful when QNAP hasn't approved the latest version yet.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · NAS install</h2>
+    <div class="desc">Permission gotchas, hardware compatibility, and platform-specific dialogs</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">DSM version too old <span class="stag error">UNSUPPORTED</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>DSM 6.2 is not supported</strong>
+            <span>Maktaba requires DSM 7.0+. Update via Control Panel → Update &amp; Restore. DSM 7 is free for all supported models.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">CPU not supported · ARM <span class="stag warn">CPU</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div>
+            <strong>Realtek RTD1296 (DS118) detected</strong>
+            <span>Transcription will be slow — about 8× realtime. Consider a Celeron/x86 NAS or use a Mac/PC for the server, with the NAS as remote storage.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Port already in use <span class="stag error">PORT</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <div>
+            <strong>Port 8000 in use by Jellyfin</strong>
+            <span>Choose another port — recommended 8800 or 9000. We'll update the package config and restart automatically.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Insufficient RAM warning <span class="stag warn">RAM</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>2 GB RAM may be tight</strong>
+            <span>DS220j has 512 MB. Maktaba runs but transcription is constrained — limit to 1 concurrent transcribe job in settings.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Folder permission needed <span class="stag warn">PERMS</span></div>
+      <div class="ss-preview">
+        <div class="syn-dialog" style="max-width: 360px;">
+          <div class="syn-dialog-h">Grant access to /volume1/video</div>
+          <div class="syn-dialog-body">
+            <p>Maktaba needs <strong>read-only</strong> access to the shared folder <strong>/volume1/video</strong> to scan your library. It will not create or modify files.</p>
+            <p style="font-size: 11px;">Granting will add user "maktaba" to the share's read-only ACL.</p>
+          </div>
+          <div class="syn-dialog-foot">
+            <button class="syn-btn">Cancel</button>
+            <button class="syn-btn primary">Grant access</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · package installed <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Maktaba Server installed</strong>
+            <span>Open from main menu · setup wizard at port 8000</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Cert chain trust prompt <span class="stag info">SOURCE</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/></svg>
+          <div>
+            <strong>Add Maktaba package source?</strong>
+            <span>nas.maktaba.app/syno is signed by a trusted CA. You'll get updates directly from us instead of waiting for Synology curation.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Unraid template added <span class="stag success">UNRAID</span></div>
+      <div class="ss-preview">
+        <div class="alert success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <div>
+            <strong>Community Apps template added</strong>
+            <span>Install in Docker tab · pre-configured with /mnt/user/media:ro mount and 8000 port mapping</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">TrueNAS jail config <span class="stag info">JAIL</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/></svg>
+          <div>
+            <strong>TrueNAS uses Docker template</strong>
+            <span>Apps → Available → search "Maktaba" · or use our Helm chart at github.com/maktaba/charts for SCALE.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud Admin — Connected servers</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --gold: #fbbf24;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; min-height: 100vh; }
+  .theme-switch { position: fixed; top: 14px; right: 14px; z-index: 1000; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  a { color: var(--primary); text-decoration: none; }
+
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  .side { background: var(--panel); border-right: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; }
+  .side .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--error)); color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .brand-name { font-size: 14px; font-weight: 700; }
+  .brand-name small { display: block; font-size: 10px; color: var(--text-muted); font-weight: 500; }
+  .side-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 14px 10px 6px; font-weight: 600; }
+  .side-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; font-size: 13px; color: var(--text-dim); cursor: pointer; margin-bottom: 1px; }
+  .side-item:hover { background: var(--panel-2); color: var(--text); }
+  .side-item.active { background: var(--panel-2); color: var(--text); font-weight: 500; }
+  .side-item.active svg { color: var(--accent); }
+  .side-badge { margin-left: auto; font-size: 10px; padding: 0 6px; height: 16px; border-radius: 999px; background: var(--error); color: #fff; display: inline-flex; align-items: center; font-weight: 600; }
+  .side-foot { margin-top: auto; padding: 12px 10px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); }
+
+  .main { padding: 20px 28px 60px; max-width: 1500px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .crumbs { font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+  .crumbs strong { color: var(--text); }
+  .av-admin { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--error)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 11px; }
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .h-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .btn { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Stat strip with regions */
+  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
+  .stat .v { font-size: 20px; font-weight: 800; line-height: 1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat .v.green { color: var(--success); }
+  .stat .v.warn { color: var(--warn); }
+  .stat .v.red { color: var(--error); }
+  .stat .s { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Region map / bars */
+  .region-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .region-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .region-h h3 { font-size: 13px; font-weight: 600; }
+  .region-h span { font-size: 11px; color: var(--text-muted); }
+  .region-row { display: grid; grid-template-columns: 110px 70px 1fr 90px 90px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .region-row:last-child { border-bottom: 0; }
+  .region-row .name strong { font-size: 13px; }
+  .region-row .name small { display: block; color: var(--text-muted); font-size: 11px; }
+  .region-bar { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; display: flex; }
+  .region-bar > div { height: 100%; }
+  .region-stat { font-family: ui-monospace, monospace; font-weight: 600; }
+  .region-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; text-align: center; }
+  .region-status.ok { background: rgba(52,211,153,0.12); color: var(--success); }
+  .region-status.degraded { background: rgba(251,191,36,0.12); color: var(--warn); }
+  .region-status.down { background: rgba(248,113,113,0.12); color: var(--error); }
+
+  /* Filter bar */
+  .filterbar { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 14px; display: flex; gap: 10px; align-items: center; }
+  .search-input { flex: 1; position: relative; }
+  .search-input input { width: 100%; padding: 9px 12px 9px 34px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-family: inherit; }
+  .search-input svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+  .filter-pill { padding: 7px 12px; border-radius: 7px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .filter-pill.active { background: var(--primary-dim); border-color: var(--primary); color: var(--primary); }
+  .filter-pill .num { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--panel-3); color: var(--text); }
+  .filter-pill.active .num { background: var(--primary); color: #fff; }
+
+  /* Table */
+  .table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .tbar { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+  .tbar .meta { color: var(--text-dim); }
+  .tbar .meta strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+  td { padding: 12px 14px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tr:hover td { background: var(--panel-2); }
+
+  .server-cell { display: flex; gap: 10px; align-items: center; }
+  .server-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .server-name strong { display: block; font-weight: 500; }
+  .server-name small { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, monospace; }
+
+  .heart {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .heart .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); flex-shrink: 0;
+    animation: pulse 1.5s infinite;
+  }
+  .heart.off .dot { background: var(--text-muted); animation: none; }
+  .heart.bad .dot { background: var(--error); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .qual-mini { display: flex; gap: 1px; align-items: flex-end; height: 14px; }
+  .qual-mini > div { width: 3px; background: var(--success); border-radius: 1px; }
+  .qual-mini > div.dim { background: var(--panel-3); }
+  .qual-mini.med > div { background: var(--warn); }
+  .qual-mini.bad > div { background: var(--error); }
+
+  .pill { font-size: 10px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .pill.online { background: rgba(52,211,153,0.12); color: var(--success); }
+  .pill.offline { background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--border); }
+  .pill.error { background: rgba(248,113,113,0.12); color: var(--error); }
+  .pill.degraded { background: rgba(251,191,36,0.12); color: var(--warn); }
+  .pill.relay { background: rgba(124,92,255,0.12); color: var(--accent); }
+  .pill.direct { background: rgba(91,158,255,0.12); color: var(--primary); }
+
+  .ver { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-dim); }
+  .ver.outdated { color: var(--warn); }
+
+  .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .icon-btn { width: 28px; height: 28px; border-radius: 6px; background: transparent; border: 1px solid transparent; color: var(--text-dim); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .icon-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--border); }
+  .pagination { padding: 12px 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-dim); }
+  .pg-controls { display: flex; gap: 4px; }
+  .pg-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px; font-family: inherit; }
+  .pg-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* ==== ALL STATES ==== */
+  .all-states { padding: 60px 28px 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast.warn .ico-t { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .di-icon.error { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
+  .di-icon.info { background: rgba(91,158,255,0.12); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; font-family: inherit; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="layout">
+  <aside class="side">
+    <div class="brand"><div class="brand-mark">M</div><div class="brand-name">Maktaba<small>Cloud Admin</small></div></div>
+    <div class="side-section">Overview</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><a href="admin-dashboard.html" style="color: inherit;">Dashboard</a></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg><a href="admin-revenue.html" style="color: inherit;">Revenue</a></div>
+    <div class="side-section">Customers</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><a href="admin-users.html" style="color: inherit;">Users</a></div>
+    <div class="side-item active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>Servers<span class="side-badge">12</span></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2"/></svg>Subscriptions</div>
+    <div class="side-section">Operations</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Relay traffic</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Support tickets<span class="side-badge" style="background: var(--warn);">3</span></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Feature flags</div>
+    <div class="side-foot">Build <strong style="color: var(--text-dim);">cloud-1.4.2</strong></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">Maktaba <span style="opacity: 0.4;">/</span> Admin <span style="opacity: 0.4;">/</span> Customers <span style="opacity: 0.4;">/</span> <strong>Servers</strong></div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button class="btn">Export CSV</button>
+        <button class="btn primary">Force version check</button>
+        <div class="av-admin">AD</div>
+      </div>
+    </div>
+
+    <div class="header">
+      <div>
+        <h1>Connected servers</h1>
+        <div class="h-sub">12,033 home servers · 9,142 online right now</div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat"><div class="l">Total servers</div><div class="v">12,033</div><div class="s">+184 this week</div></div>
+      <div class="stat"><div class="l">Online now</div><div class="v green">9,142</div><div class="s">76% online</div></div>
+      <div class="stat"><div class="l">Offline</div><div class="v">2,891</div><div class="s">no heartbeat 5+ min</div></div>
+      <div class="stat"><div class="l">Errored</div><div class="v red">87</div><div class="s">disk full or panic</div></div>
+      <div class="stat"><div class="l">Outdated version</div><div class="v warn">412</div><div class="s">below v1.0.0</div></div>
+      <div class="stat"><div class="l">BW (24h)</div><div class="v">8.4 TB</div><div class="s">71% direct</div></div>
+    </div>
+
+    <!-- Region health -->
+    <div class="region-card">
+      <div class="region-h">
+        <h3>Relay regions · health</h3>
+        <span>5 regions · 9,142 servers connected</span>
+      </div>
+
+      <div class="region-row">
+        <div class="name"><strong>us-east-1</strong><small>Virginia</small></div>
+        <div class="region-status ok">● OK</div>
+        <div class="region-bar">
+          <div style="width: 64%; background: var(--success);"></div>
+          <div style="width: 18%; background: var(--warn);"></div>
+          <div style="width: 5%; background: var(--error);"></div>
+        </div>
+        <div class="region-stat">3,842</div>
+        <div style="font-family: ui-monospace, monospace; color: var(--success); font-size: 11px;">28 ms p95</div>
+      </div>
+
+      <div class="region-row">
+        <div class="name"><strong>us-west-2</strong><small>Oregon</small></div>
+        <div class="region-status ok">● OK</div>
+        <div class="region-bar">
+          <div style="width: 70%; background: var(--success);"></div>
+          <div style="width: 12%; background: var(--warn);"></div>
+        </div>
+        <div class="region-stat">2,184</div>
+        <div style="font-family: ui-monospace, monospace; color: var(--success); font-size: 11px;">22 ms p95</div>
+      </div>
+
+      <div class="region-row">
+        <div class="name"><strong>eu-frankfurt</strong><small>Frankfurt</small></div>
+        <div class="region-status degraded">● Degraded</div>
+        <div class="region-bar">
+          <div style="width: 42%; background: var(--success);"></div>
+          <div style="width: 38%; background: var(--warn);"></div>
+          <div style="width: 8%; background: var(--error);"></div>
+        </div>
+        <div class="region-stat">1,892</div>
+        <div style="font-family: ui-monospace, monospace; color: var(--warn); font-size: 11px;">412 ms p95</div>
+      </div>
+
+      <div class="region-row">
+        <div class="name"><strong>ap-southeast</strong><small>Singapore</small></div>
+        <div class="region-status ok">● OK</div>
+        <div class="region-bar">
+          <div style="width: 75%; background: var(--success);"></div>
+          <div style="width: 8%; background: var(--warn);"></div>
+        </div>
+        <div class="region-stat">748</div>
+        <div style="font-family: ui-monospace, monospace; color: var(--success); font-size: 11px;">42 ms p95</div>
+      </div>
+
+      <div class="region-row">
+        <div class="name"><strong>sa-east-1</strong><small>São Paulo</small></div>
+        <div class="region-status ok">● OK</div>
+        <div class="region-bar">
+          <div style="width: 80%; background: var(--success);"></div>
+          <div style="width: 5%; background: var(--warn);"></div>
+        </div>
+        <div class="region-stat">476</div>
+        <div style="font-family: ui-monospace, monospace; color: var(--success); font-size: 11px;">38 ms p95</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filterbar">
+      <div class="search-input">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input placeholder="Search by hostname, owner email, or server ID…">
+      </div>
+      <button class="filter-pill active">All <span class="num">12,033</span></button>
+      <button class="filter-pill">Online <span class="num">9,142</span></button>
+      <button class="filter-pill">Offline <span class="num">2,891</span></button>
+      <button class="filter-pill">Errored <span class="num">87</span></button>
+      <button class="filter-pill">Outdated <span class="num">412</span></button>
+      <button class="filter-pill">Region: any</button>
+    </div>
+
+    <!-- Servers table -->
+    <div class="table-wrap">
+      <div class="tbar">
+        <div class="meta"><strong>1–10</strong> of 12,033 servers · sorted by Last heartbeat ↓</div>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn" style="padding: 5px 10px; font-size: 12px;">Refresh</button>
+          <button class="btn" style="padding: 5px 10px; font-size: 12px;">Columns</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Server</th>
+            <th>Owner</th>
+            <th>Status</th>
+            <th>Heartbeat</th>
+            <th>Quality</th>
+            <th>Path</th>
+            <th>BW (24h)</th>
+            <th>Version</th>
+            <th>Region</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>home-imac.local</strong><small>srv_KpL3Mn7</small></div>
+              </div>
+            </td>
+            <td>sara.k@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>2s ago</div></td>
+            <td><div class="qual-mini"><div style="height:30%"></div><div style="height:50%"></div><div style="height:70%"></div><div style="height:90%"></div><div style="height:100%"></div></div></td>
+            <td><span class="pill direct">DIRECT</span></td>
+            <td style="font-family: ui-monospace, monospace;">94 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">us-east</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, var(--accent), #ec4899);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>maktaba-mini.local</strong><small>srv_8Qx2Lp9</small></div>
+              </div>
+            </td>
+            <td>omar.farouk@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>4s ago</div></td>
+            <td><div class="qual-mini"><div style="height:30%"></div><div style="height:50%"></div><div style="height:70%"></div><div style="height:80%; background: var(--warn);"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span class="pill relay">RELAY</span></td>
+            <td style="font-family: ui-monospace, monospace;">68 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace; color: var(--warn);">eu-frankfurt</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, var(--success), var(--primary));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>maktaba-mac.local</strong><small>srv_Pq9Wn4K</small></div>
+              </div>
+            </td>
+            <td>meywd84@gmail.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>1s ago</div></td>
+            <td><div class="qual-mini"><div style="height:40%"></div><div style="height:60%"></div><div style="height:80%"></div><div style="height:100%"></div><div style="height:100%"></div></div></td>
+            <td><span class="pill direct">DIRECT</span></td>
+            <td style="font-family: ui-monospace, monospace;">44 GB</td>
+            <td class="ver">v1.0.0-beta</td>
+            <td style="font-family: ui-monospace, monospace;">us-east</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, var(--warn), #ef4444);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>home-server-yq</strong><small>srv_Mn3Qp7L</small></div>
+              </div>
+            </td>
+            <td>yusuf.q@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>2s ago</div></td>
+            <td><div class="qual-mini"><div style="height:50%"></div><div style="height:70%"></div><div style="height:90%"></div><div style="height:100%"></div><div style="height:100%"></div></div></td>
+            <td><span class="pill direct">DIRECT</span></td>
+            <td style="font-family: ui-monospace, monospace;">62 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">us-west</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, #ec4899, var(--accent));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>synology-fh</strong><small>srv_Kv8Rn2P</small></div>
+              </div>
+            </td>
+            <td>fhassan@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>3s ago</div></td>
+            <td><div class="qual-mini"><div style="height:30%"></div><div style="height:50%"></div><div style="height:70%"></div><div style="height:80%"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span class="pill relay">RELAY</span></td>
+            <td style="font-family: ui-monospace, monospace;">38 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">ap-southeast</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, #2563eb, #06b6d4);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>karim-mac</strong><small>srv_Xp7Ln4K</small></div>
+              </div>
+            </td>
+            <td>karim.elsayed@example.com</td>
+            <td><span class="pill offline">● Offline</span></td>
+            <td><div class="heart off"><div class="dot"></div>4h 12m</div></td>
+            <td><div class="qual-mini"><div class="dim" style="height:30%"></div><div class="dim" style="height:50%"></div><div class="dim" style="height:70%"></div><div class="dim" style="height:80%"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span style="color: var(--text-muted);">—</span></td>
+            <td style="font-family: ui-monospace, monospace; color: var(--text-muted);">0 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">us-east</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, var(--error), #ec4899);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>old-mini.lan</strong><small>srv_Bn3Wt5R</small></div>
+              </div>
+            </td>
+            <td>old.user@example.com</td>
+            <td><span class="pill error">● Errored</span></td>
+            <td><div class="heart bad"><div class="dot"></div>22m ago</div></td>
+            <td><div class="qual-mini bad"><div style="height:20%"></div><div class="dim" style="height:50%"></div><div class="dim" style="height:70%"></div><div class="dim" style="height:80%"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span style="color: var(--error); font-size: 11px;">disk full</span></td>
+            <td style="font-family: ui-monospace, monospace; color: var(--text-muted);">2 GB</td>
+            <td class="ver outdated">v0.8.4</td>
+            <td style="font-family: ui-monospace, monospace;">us-east</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, var(--gold), var(--success));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>nas-bashir</strong><small>srv_Zr4Nl9M</small></div>
+              </div>
+            </td>
+            <td>bashir.kahn@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>3s ago</div></td>
+            <td><div class="qual-mini med"><div style="height:30%"></div><div style="height:50%"></div><div style="height:60%"></div><div class="dim" style="height:80%"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span class="pill relay">RELAY</span></td>
+            <td style="font-family: ui-monospace, monospace;">28 GB</td>
+            <td class="ver outdated">v0.9.6</td>
+            <td style="font-family: ui-monospace, monospace; color: var(--warn);">eu-frankfurt</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>maktaba-rpi.local</strong><small>srv_Wn7Pq3K</small></div>
+              </div>
+            </td>
+            <td>raspberry.pi@example.com</td>
+            <td><span class="pill degraded">● Degraded</span></td>
+            <td><div class="heart"><div class="dot" style="background: var(--warn);"></div>22s ago</div></td>
+            <td><div class="qual-mini med"><div style="height:30%"></div><div style="height:40%"></div><div class="dim" style="height:60%"></div><div class="dim" style="height:80%"></div><div class="dim" style="height:100%"></div></div></td>
+            <td><span class="pill relay">RELAY</span></td>
+            <td style="font-family: ui-monospace, monospace;">8 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">eu-frankfurt</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="server-cell">
+                <div class="server-icon" style="background: linear-gradient(135deg, #06b6d4, var(--success));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg></div>
+                <div class="server-name"><strong>brisbane-imac</strong><small>srv_Tr8Qm2N</small></div>
+              </div>
+            </td>
+            <td>down.under@example.com</td>
+            <td><span class="pill online">● Online</span></td>
+            <td><div class="heart"><div class="dot"></div>1s ago</div></td>
+            <td><div class="qual-mini"><div style="height:50%"></div><div style="height:70%"></div><div style="height:90%"></div><div style="height:100%"></div><div style="height:100%"></div></div></td>
+            <td><span class="pill direct">DIRECT</span></td>
+            <td style="font-family: ui-monospace, monospace;">22 GB</td>
+            <td class="ver">v1.0.0</td>
+            <td style="font-family: ui-monospace, monospace;">ap-southeast</td>
+            <td><div class="row-actions"><button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pagination">
+        <span>Showing 1–10 of 12,033</span>
+        <div class="pg-controls">
+          <button class="pg-btn" disabled>← Previous</button>
+          <button class="pg-btn active">1</button>
+          <button class="pg-btn">2</button>
+          <button class="pg-btn">3</button>
+          <button class="pg-btn">…</button>
+          <button class="pg-btn">1204</button>
+          <button class="pg-btn">Next →</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · servers</h2>
+    <div class="desc">Server lifecycle alerts, force-disconnect, and version rollouts</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Region degraded alert <span class="stag warn">WARNING</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+          <div>
+            <strong>eu-frankfurt P95 latency 412ms</strong>
+            <span>Target is 100ms. 248 streams falling back to us-east. Edge node fra-2 unhealthy.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Mass server offline <span class="stag error">INCIDENT</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          <div>
+            <strong>1,247 servers dropped in 2 min</strong>
+            <span>Likely upstream network event · all in eu-frankfurt · investigate before declaring incident.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Force update prompt <span class="stag warn">UPDATE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </div>
+            <h3>Force version check on 412 servers?</h3>
+            <p>Servers running &lt;v1.0.0 will receive an upgrade prompt. They keep running until the user accepts. No forced restart.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Send prompt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Disconnect confirm <span class="stag error">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </div>
+            <h3>Force-disconnect old-mini.lan?</h3>
+            <p>Active streams (1) drop. Server attempts reconnect every 30s — disable for 24h to prevent that.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Disconnect</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · region recovered <span class="stag success">RECOVERED</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>eu-frankfurt back to OK</strong>
+            <span>Latency normalized · 1,892 servers reconnected · 14 min outage</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Server detail · quick info <span class="stag">PEEK</span></div>
+      <div class="ss-preview">
+        <div style="background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 360px; padding: 16px; box-shadow: var(--shadow);">
+          <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 12px;">
+            <div class="server-icon" style="width: 36px; height: 36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/></svg></div>
+            <div>
+              <strong style="font-size: 14px;">home-imac.local</strong>
+              <div style="font-size: 11px; color: var(--text-muted); font-family: ui-monospace, monospace;">srv_KpL3Mn7 · sara.k@example.com</div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
+            <div><span style="color: var(--text-muted);">CPU:</span> <strong>38%</strong></div>
+            <div><span style="color: var(--text-muted);">Mem:</span> <strong>9.2 / 32 GB</strong></div>
+            <div><span style="color: var(--text-muted);">Disk:</span> <strong>2.4 / 4 TB</strong></div>
+            <div><span style="color: var(--text-muted);">GPU:</span> <strong>72%</strong></div>
+            <div><span style="color: var(--text-muted);">Streams:</span> <strong>6 active</strong></div>
+            <div><span style="color: var(--text-muted);">Uptime:</span> <strong>24d 8h</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Outdated version warning <span class="stag warn">VERSION</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/></svg>
+          <div>
+            <strong>412 servers below v1.0.0</strong>
+            <span>Older versions miss security patches and use legacy heartbeat protocol. Send upgrade prompt or set hard cutoff date.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · server reconnected <span class="stag success">EVENT</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/></svg></div>
+          <div class="body">
+            <strong>karim-mac reconnected</strong>
+            <span>After 4h 12m offline · resuming 2 paused subscriptions</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · no errored servers <span class="stag success">EMPTY</span></div>
+      <div class="ss-preview">
+        <div style="text-align: center; padding: 12px;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); display: flex; align-items: center; justify-content: center; color: var(--success); margin: 0 auto 12px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">No errored servers</h4>
+          <p style="font-size: 12px; color: var(--text-dim); max-width: 240px; margin: 0 auto;">All connected servers are healthy right now — last error 4h ago.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud — Link your server</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.55;
+    min-height: 100vh; padding: 32px 24px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(ellipse 700px 500px at 50% 0%, rgba(91,158,255,0.08), transparent 60%);
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  .container { max-width: 920px; margin: 0 auto; position: relative; z-index: 1; }
+
+  .top-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 36px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: #fff;
+  }
+  .skip { font-size: 13px; color: var(--text-dim); }
+
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 12px; text-align: center;
+  }
+  .pre-title { text-align: center; margin-bottom: 28px; }
+  .pre-title h1 {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 8px;
+  }
+  .pre-title p { font-size: 14px; color: var(--text-dim); max-width: 520px; margin: 0 auto; }
+
+  /* Stepper */
+  .stepper {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-bottom: 32px;
+  }
+  .step {
+    display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);
+  }
+  .step .num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+  }
+  .step.active .num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .step.active { color: var(--text); }
+  .step.done .num { background: var(--success); border-color: var(--success); color: #fff; }
+  .step.done { color: var(--text-dim); }
+  .step.done .num svg { stroke-width: 3; }
+  .step-line { width: 32px; height: 1px; background: var(--border); }
+  .step.done + .step-line { background: var(--success); }
+
+  /* Main panel */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .panel-h {
+    padding: 22px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .step-badge {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; flex-shrink: 0;
+  }
+  .panel-h h2 { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+  .panel-h p { font-size: 12px; color: var(--text-dim); }
+  .panel-body { padding: 32px 36px; }
+
+  /* Step 1: open server settings */
+  .open-step { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; }
+  .ol { padding-left: 18px; font-size: 14px; line-height: 1.9; color: var(--text); }
+  .ol li { margin-bottom: 4px; }
+  .ol li strong { color: var(--text); }
+  .ol li code {
+    font-family: ui-monospace, monospace; font-size: 12px;
+    background: var(--panel-2); padding: 2px 8px;
+    border-radius: 5px; color: var(--primary);
+    border: 1px solid var(--border);
+  }
+  .menu-mock {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .mm-bar {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+    border-radius: 6px; font-size: 12px; color: var(--text);
+  }
+  .mm-bar.active { background: var(--primary-dim); color: var(--primary); }
+  .mm-bar svg { color: var(--text-muted); }
+  .mm-bar.active svg { color: var(--primary); }
+  .mm-sep { height: 1px; background: var(--border); margin: 6px 0; }
+
+  /* Step 2: claim code */
+  .claim-step { text-align: center; }
+  .claim-step .lead { font-size: 14px; color: var(--text-dim); margin-bottom: 28px; max-width: 480px; margin-left: auto; margin-right: auto; }
+  .claim-display {
+    display: inline-flex; gap: 10px; padding: 22px 32px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .claim-char {
+    font-family: ui-monospace, monospace; font-size: 38px; font-weight: 700;
+    width: 50px; height: 64px;
+    background: var(--panel); border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary);
+    text-shadow: 0 0 12px rgba(91,158,255,0.4);
+  }
+  .claim-dash {
+    font-size: 38px; color: var(--text-muted);
+    display: flex; align-items: center;
+  }
+  .claim-meta {
+    margin-top: 18px; font-size: 13px; color: var(--text-dim);
+    display: flex; gap: 14px; justify-content: center; align-items: center;
+  }
+  .claim-meta .kbd {
+    font-family: ui-monospace, monospace;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; font-size: 11px;
+  }
+  .copy-btn {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px;
+    color: var(--text); cursor: pointer; display: inline-flex; gap: 5px; align-items: center;
+    font-family: inherit;
+  }
+
+  .alt-row { display: flex; gap: 12px; align-items: stretch; margin: 32px 0 0; }
+  .alt-divider {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    margin: 28px 0;
+  }
+  .alt-divider::before, .alt-divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  .qr-block {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 26px 32px;
+    display: flex; gap: 22px; align-items: center;
+    max-width: 480px; margin: 0 auto;
+  }
+  .qr {
+    width: 132px; height: 132px;
+    background: #fff; border-radius: 10px; padding: 10px;
+    flex-shrink: 0;
+  }
+  .qr-grid {
+    display: grid; grid-template-columns: repeat(15, 1fr); gap: 1px;
+    width: 100%; height: 100%;
+  }
+  .qr-grid > div { background: #000; border-radius: 1px; }
+  .qr-info h4 { font-size: 14px; font-weight: 600; margin-bottom: 6px; text-align: left; }
+  .qr-info p { font-size: 12px; color: var(--text-dim); line-height: 1.5; text-align: left; }
+
+  /* Step 3: waiting */
+  .wait-step { text-align: center; padding: 18px 0; }
+  .wait-spinner {
+    position: relative; width: 110px; height: 110px; margin: 0 auto 18px;
+  }
+  .wait-spinner .ring1, .wait-spinner .ring2 {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 3px solid var(--panel-2);
+    border-top-color: var(--primary);
+  }
+  .wait-spinner .ring1 { animation: spin 2s linear infinite; }
+  .wait-spinner .ring2 { inset: 12px; border-top-color: var(--accent); animation: spin 2.5s linear infinite reverse; }
+  .wait-spinner .core {
+    position: absolute; inset: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .wait-step h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .wait-step p { font-size: 14px; color: var(--text-dim); max-width: 420px; margin: 0 auto; }
+  .wait-log {
+    margin: 24px auto 0; max-width: 480px; text-align: left;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+    font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .wait-log .l { display: flex; gap: 10px; padding: 4px 0; color: var(--text-dim); }
+  .wait-log .l .t { color: var(--text-muted); flex-shrink: 0; }
+  .wait-log .l.ok { color: var(--success); }
+  .wait-log .l.pending { color: var(--warn); }
+
+  /* Step 4: connected */
+  .ok-step { text-align: center; padding: 12px 0; }
+  .ok-icon {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: rgba(52,211,153,0.15); color: var(--success);
+    border: 2px solid var(--success);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 18px;
+  }
+  .ok-step h3 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .ok-step p { font-size: 14px; color: var(--text-dim); max-width: 460px; margin: 0 auto 24px; }
+
+  .ok-card {
+    max-width: 480px; margin: 0 auto;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px;
+    display: flex; gap: 14px; align-items: center; text-align: left;
+  }
+  .ok-card-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; flex-shrink: 0;
+  }
+  .ok-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .ok-card .m { font-size: 12px; color: var(--text-dim); }
+
+  /* CTA row */
+  .cta-row { display: flex; gap: 10px; justify-content: center; margin-top: 28px; }
+  .btn {
+    padding: 11px 20px; border-radius: 10px; font-size: 14px; font-weight: 500;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    cursor: pointer; display: inline-flex; gap: 8px; align-items: center;
+    font-family: inherit;
+  }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.ghost { background: transparent; border-color: var(--border); }
+
+  /* Help footer */
+  .help-row {
+    margin-top: 24px; padding: 14px 18px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; gap: 12px; align-items: center; justify-content: space-between;
+    font-size: 13px;
+  }
+  .help-row .icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--primary-dim); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ==== ALL STATES ==== */
+  .all-states { max-width: 1320px; margin: 60px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert-banner { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert-banner.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert-banner.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert-banner.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert-banner.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert-banner strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert-banner span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .di-icon.info { background: rgba(91,158,255,0.12); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .di-icon.error { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; font-family: inherit; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Cloud</span></div>
+    <a class="skip">Skip for now →</a>
+  </div>
+
+  <div class="label">CLOUD ONBOARDING · STEP 3 OF 3 · LINK YOUR HOME SERVER</div>
+
+  <div class="pre-title">
+    <h1>Connect your home server</h1>
+    <p>Maktaba Cloud needs to be linked to a Maktaba server you're already running at home. This takes about 60 seconds and never expires.</p>
+  </div>
+
+  <!-- Stepper -->
+  <div class="stepper">
+    <div class="step done"><div class="num"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg></div><span>Account</span></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="num"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg></div><span>Verify email</span></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="num">3</div><span>Link server</span></div>
+  </div>
+
+  <!-- Step 2 (active): claim code -->
+  <div class="panel" style="margin-bottom: 18px;">
+    <div class="panel-h">
+      <div class="step-badge">2</div>
+      <div>
+        <h2>Enter this claim code in your server</h2>
+        <p>In the server settings panel you just opened, paste this code into the "Cloud claim code" field</p>
+      </div>
+    </div>
+    <div class="panel-body claim-step">
+      <div class="lead">This 8-character code authenticates the link between your account and your home server. It expires in 10 minutes if unused.</div>
+      <div class="claim-display">
+        <div class="claim-char">A</div>
+        <div class="claim-char">7</div>
+        <div class="claim-char">F</div>
+        <div class="claim-char">K</div>
+        <div class="claim-dash">–</div>
+        <div class="claim-char">9</div>
+        <div class="claim-char">M</div>
+        <div class="claim-char">2</div>
+        <div class="claim-char">B</div>
+      </div>
+      <div class="claim-meta">
+        <button class="copy-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy code
+        </button>
+        <span>Expires in <strong style="color: var(--warn);">9:42</strong></span>
+        <a href="#">Get a new code</a>
+      </div>
+
+      <div class="alt-divider">or</div>
+
+      <div class="qr-block">
+        <div class="qr">
+          <div class="qr-grid">
+            <!-- generates a stylized QR pattern -->
+            <div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div>
+            <div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div>
+            <div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div></div>
+            <div style="background:transparent;"></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div>
+            <div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div></div><div></div>
+            <div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div>
+            <div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div>
+            <div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div>
+            <div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div>
+            <div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div>
+            <div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div>
+            <div style="background:transparent;"></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div></div>
+            <div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div><div></div>
+            <div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div>
+            <div></div><div></div><div></div><div style="background:transparent;"></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div style="background:transparent;"></div><div></div><div></div><div></div><div></div>
+          </div>
+        </div>
+        <div class="qr-info">
+          <h4>Or scan with your server admin app</h4>
+          <p>Open Maktaba on the same Mac as your server, go to <strong>Settings → Cloud → Pair</strong>, and aim the camera at this QR.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1 (collapsed/done) -->
+  <div class="panel" style="margin-bottom: 18px; opacity: 0.85;">
+    <div class="panel-h">
+      <div class="step-badge" style="background: var(--success);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <h2>Step 1 · Open Cloud settings on your server</h2>
+        <p>Go to <strong style="color: var(--text);">Settings → Cloud → Pair with cloud account</strong></p>
+      </div>
+    </div>
+    <div class="panel-body open-step">
+      <ol class="ol">
+        <li>On the Mac running your Maktaba server, click the <strong>menu bar icon</strong></li>
+        <li>Open <strong>Settings</strong> → scroll to the <strong>Cloud</strong> section</li>
+        <li>Click <strong>"Pair with cloud account"</strong></li>
+        <li>Enter the code <code>A7FK-9M2B</code> that's displayed below</li>
+        <li>Confirm with the <strong>"Link account"</strong> button</li>
+      </ol>
+      <div class="menu-mock">
+        <div class="mm-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Library</div>
+        <div class="mm-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Activity</div>
+        <div class="mm-sep"></div>
+        <div class="mm-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg> General</div>
+        <div class="mm-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7"/></svg> Library paths</div>
+        <div class="mm-bar active"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg> Cloud</div>
+        <div class="mm-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Security</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 (waiting) -->
+  <div class="panel">
+    <div class="panel-h">
+      <div class="step-badge">3</div>
+      <div>
+        <h2>Waiting for server to confirm…</h2>
+        <p>This will turn green once your server connects back to the cloud</p>
+      </div>
+    </div>
+    <div class="panel-body wait-step">
+      <div class="wait-spinner">
+        <div class="ring1"></div>
+        <div class="ring2"></div>
+        <div class="core">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12" y2="20"/></svg>
+        </div>
+      </div>
+      <h3>Listening for your server</h3>
+      <p>Polling the relay every 2 seconds. As soon as your server confirms the code, we'll move you forward.</p>
+      <div class="wait-log">
+        <div class="l ok">[14:08:22] <span>Claim code generated · A7FK-9M2B</span></div>
+        <div class="l ok">[14:08:23] <span>Relay session opened · us-east-1</span></div>
+        <div class="l">[14:08:25] <span>Polling for server confirmation…</span></div>
+        <div class="l">[14:08:27] <span>Polling for server confirmation…</span></div>
+        <div class="l pending">[14:08:29] <span>Still waiting · 6s elapsed</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="help-row">
+    <div class="icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div style="flex: 1;">
+      <strong style="display: block;">Don't have a Maktaba server yet?</strong>
+      <span style="color: var(--text-dim); font-size: 12px;">Download the free server app for macOS, Linux, or Synology — takes 5 minutes.</span>
+    </div>
+    <button class="btn primary">Download server →</button>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · server linking</h2>
+    <div class="desc">Success, errors, expiry, and recovery flows</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Step 4 · Connected <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="ok-step" style="padding: 4px 0;">
+          <div class="ok-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <h3 style="font-size: 18px;">Connected!</h3>
+          <p style="font-size: 13px;">Your server is now reachable from anywhere.</p>
+          <div class="ok-card" style="margin-top: 14px;">
+            <div class="ok-card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+            </div>
+            <div>
+              <h4>maktaba-mac.local</h4>
+              <div class="m">312 videos · v1.0.0-beta · us-east</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Code expired <span class="stag warn">EXPIRED</span></div>
+      <div class="ss-preview">
+        <div class="alert-banner warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div>
+            <strong>Claim code expired</strong>
+            <span>Codes expire after 10 minutes. We'll generate a fresh one — paste it into your server.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Wrong code · server <span class="stag error">REJECTED</span></div>
+      <div class="ss-preview">
+        <div class="alert-banner error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <div>
+            <strong>Server rejected the code</strong>
+            <span>Double-check you copied A7FK-9M2B exactly · 4 attempts left before lockout.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Server offline · can't reach <span class="stag error">UNREACHABLE</span></div>
+      <div class="ss-preview">
+        <div class="alert-banner error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/></svg>
+          <div>
+            <strong>Can't reach your server</strong>
+            <span>Make sure the Maktaba app is running and connected to the internet on your home Mac.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · linked successfully <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Server linked</strong>
+            <span>maktaba-mac.local · 312 videos · ready to stream</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · replace existing link <span class="stag warn">CONFIRM</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>
+            </div>
+            <h3>Replace existing server link?</h3>
+            <p>This account is already linked to <strong>old-imac.local</strong>. Linking a new server unlinks the old one — devices will need to re-pair.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Replace link</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · code copied <span class="stag info">CLIPBOARD</span></div>
+      <div class="ss-preview">
+        <div class="toast info">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+          <div class="body">
+            <strong>A7FK-9M2B copied</strong>
+            <span>Paste into your server's Cloud settings panel</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Server version mismatch <span class="stag error">UPGRADE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+            </div>
+            <h3>Server too old to link</h3>
+            <p>Your server is v0.8.2. Cloud requires v1.0.0+. Upgrade Maktaba on your home Mac and try again.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Show upgrade guide</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tip · NAT traversal <span class="stag info">HELP</span></div>
+      <div class="ss-preview">
+        <div class="alert-banner info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <div>
+            <strong>You don't need to forward ports</strong>
+            <span>Maktaba Cloud holds an outbound connection from your server — works even behind double NAT or carrier-grade NAT.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Step 1 · checked <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div style="display: flex; gap: 12px; align-items: center; padding: 12px 16px; background: var(--panel); border: 1px solid var(--success); border-radius: 10px; max-width: 360px; width: 100%;">
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(52,211,153,0.15); color: var(--success); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <strong style="font-size: 13px;">Server settings opened</strong>
+            <div style="font-size: 11px; color: var(--text-dim);">Detected open settings panel on maktaba-mac.local</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

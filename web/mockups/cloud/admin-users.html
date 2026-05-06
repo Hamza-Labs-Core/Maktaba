@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud Admin — Users</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --gold: #fbbf24;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    min-height: 100vh;
+  }
+  .theme-switch {
+    position: fixed; top: 14px; right: 14px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+
+  /* Admin layout — same shell as admin-dashboard */
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  .side { background: var(--panel); border-right: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; }
+  .side .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--error)); color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .brand-name { font-size: 14px; font-weight: 700; }
+  .brand-name small { display: block; font-size: 10px; color: var(--text-muted); font-weight: 500; }
+  .side-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 14px 10px 6px; font-weight: 600; }
+  .side-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; font-size: 13px; color: var(--text-dim); cursor: pointer; margin-bottom: 1px; }
+  .side-item:hover { background: var(--panel-2); color: var(--text); }
+  .side-item.active { background: var(--panel-2); color: var(--text); font-weight: 500; }
+  .side-item.active svg { color: var(--accent); }
+  .side-badge { margin-left: auto; font-size: 10px; padding: 0 6px; height: 16px; border-radius: 999px; background: var(--error); color: #fff; display: inline-flex; align-items: center; font-weight: 600; }
+  .side-foot { margin-top: auto; padding: 12px 10px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); }
+
+  .main { padding: 20px 28px 60px; max-width: 1400px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .crumbs { font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+  .crumbs strong { color: var(--text); }
+  .topbar-right { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  .av-admin { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--error)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 11px; }
+
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .h-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .btn { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Stats strip */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
+  .stat .v { font-size: 20px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .s { font-size: 11px; color: var(--text-dim); }
+  .stat.active { border-color: var(--primary); background: linear-gradient(180deg, rgba(91,158,255,0.06), var(--panel)); }
+
+  /* Filter bar */
+  .filterbar {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+    margin-bottom: 14px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .search-input {
+    flex: 1; position: relative;
+  }
+  .search-input input {
+    width: 100%; padding: 9px 12px 9px 34px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px;
+    font-family: inherit;
+  }
+  .search-input input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-dim); }
+  .search-input svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+
+  .filter-pill {
+    padding: 7px 12px; border-radius: 7px; font-size: 12px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+    font-family: inherit;
+  }
+  .filter-pill.active { background: var(--primary-dim); border-color: var(--primary); color: var(--primary); }
+  .filter-pill .num {
+    font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: var(--panel-3); color: var(--text);
+  }
+  .filter-pill.active .num { background: var(--primary); color: #fff; }
+
+  /* Table */
+  .table-wrap {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .tbar {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px;
+  }
+  .tbar .meta { color: var(--text-dim); }
+  .tbar .meta strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 14px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); font-weight: 600;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 14px; font-size: 13px;
+    border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: 0; }
+  tr:hover td { background: var(--panel-2); }
+  .ck { width: 16px; height: 16px; border: 1.5px solid var(--border); border-radius: 4px; display: inline-block; vertical-align: middle; }
+  .ck.on {
+    background: var(--primary); border-color: var(--primary);
+    position: relative;
+  }
+  .ck.on::after {
+    content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+    border: solid #fff; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+  }
+
+  .user-cell { display: flex; align-items: center; gap: 10px; }
+  .user-av {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    color: #fff; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gradient-1 { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+  .gradient-2 { background: linear-gradient(135deg, var(--accent), #ec4899); }
+  .gradient-3 { background: linear-gradient(135deg, var(--success), var(--primary)); }
+  .gradient-4 { background: linear-gradient(135deg, var(--warn), #ef4444); }
+  .gradient-5 { background: linear-gradient(135deg, #ec4899, var(--accent)); }
+  .gradient-6 { background: linear-gradient(135deg, #2563eb, #06b6d4); }
+  .user-name strong { display: block; font-weight: 500; font-size: 13px; }
+  .user-name small { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, monospace; }
+
+  .pill {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pill.free { background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--border); }
+  .pill.pro { background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .pill.family { background: rgba(124,92,255,0.12); color: var(--accent); border: 1px solid rgba(124,92,255,0.3); }
+  .pill.trial { background: rgba(251,191,36,0.12); color: var(--gold); border: 1px solid rgba(251,191,36,0.3); }
+  .pill.suspended { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
+  .pill.canceled { background: var(--panel-2); color: var(--text-muted); border: 1px solid var(--border); text-decoration: line-through; }
+
+  .server-cell { font-size: 12px; color: var(--text); }
+  .server-cell small { display: block; color: var(--text-muted); font-size: 11px; font-family: ui-monospace, monospace; }
+  .server-cell .stat-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); margin-right: 5px; vertical-align: middle;
+  }
+  .server-cell .stat-dot.off { background: var(--text-muted); }
+
+  .rev { font-family: ui-monospace, monospace; font-weight: 600; font-size: 12px; }
+  .rev small { display: block; color: var(--text-muted); font-weight: 400; font-size: 11px; }
+
+  .date { font-size: 12px; color: var(--text); }
+  .date small { display: block; color: var(--text-muted); font-size: 11px; }
+
+  .row-actions {
+    display: flex; gap: 4px; justify-content: flex-end;
+  }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: transparent; border: 1px solid transparent;
+    color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--border); }
+
+  .pagination {
+    padding: 12px 14px; border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--text-dim);
+  }
+  .pg-controls { display: flex; gap: 4px; }
+  .pg-btn {
+    padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px;
+    font-family: inherit;
+  }
+  .pg-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .pg-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* User detail drawer (open) */
+  .drawer {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
+    margin-top: 18px; box-shadow: var(--shadow);
+  }
+  .drawer-h {
+    background: linear-gradient(180deg, rgba(91,158,255,0.06), var(--panel));
+    padding: 22px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  .drawer-h .lg { width: 48px; height: 48px; border-radius: 50%; font-size: 16px; }
+  .drawer-h h3 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .drawer-h .e { color: var(--text-dim); font-size: 12px; font-family: ui-monospace, monospace; }
+  .drawer-h .actions { margin-left: auto; display: flex; gap: 6px; }
+  .drawer-body { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; padding: 22px 24px; }
+  .dgroup h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+  .dkv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 12px; }
+  .dkv .k { color: var(--text-dim); }
+  .dkv .v { color: var(--text); font-family: ui-monospace, monospace; }
+
+  /* ==== ALL STATES ==== */
+  .all-states { padding: 60px 28px 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.warn .ico-t { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 20px; }
+  .dialog-x-body.center { text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .di-icon.error { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
+  .di-icon.info { background: rgba(91,158,255,0.12); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; font-family: inherit; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+
+  .dropdown { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 220px; box-shadow: var(--shadow); }
+  .dd-item { padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dd-item:hover { background: var(--panel-2); }
+  .dd-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="layout">
+  <!-- Sidebar (same shell) -->
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div class="brand-name">Maktaba<small>Cloud Admin</small></div>
+    </div>
+    <div class="side-section">Overview</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><a href="admin-dashboard.html" style="color: inherit;">Dashboard</a></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg><a href="admin-revenue.html" style="color: inherit;">Revenue</a></div>
+    <div class="side-section">Customers</div>
+    <div class="side-item active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Users</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg><a href="admin-servers.html" style="color: inherit;">Servers</a><span class="side-badge">12</span></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2"/></svg>Subscriptions</div>
+    <div class="side-section">Operations</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Relay traffic</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Support tickets<span class="side-badge" style="background: var(--warn);">3</span></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Feature flags</div>
+    <div class="side-foot">Build <strong style="color: var(--text-dim);">cloud-1.4.2</strong></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">Maktaba <span style="opacity: 0.4;">/</span> Admin <span style="opacity: 0.4;">/</span> Customers <span style="opacity: 0.4;">/</span> <strong>Users</strong></div>
+      <div class="topbar-right">
+        <button class="btn">Export CSV</button>
+        <button class="btn primary">+ Invite admin</button>
+        <div class="av-admin">AD</div>
+      </div>
+    </div>
+
+    <div class="header">
+      <div>
+        <h1>Users</h1>
+        <div class="h-sub">12,487 customers · search, filter, impersonate, suspend</div>
+      </div>
+    </div>
+
+    <!-- Stats strip -->
+    <div class="stats">
+      <div class="stat active">
+        <div class="l">Total</div>
+        <div class="v">12,487</div>
+        <div class="s">+248 this week</div>
+      </div>
+      <div class="stat">
+        <div class="l">Free</div>
+        <div class="v">7,294</div>
+        <div class="s">58% of total</div>
+      </div>
+      <div class="stat">
+        <div class="l">Pro</div>
+        <div class="v">3,624</div>
+        <div class="s">$18,066 MRR</div>
+      </div>
+      <div class="stat">
+        <div class="l">Family</div>
+        <div class="v">1,191</div>
+        <div class="s">$11,898 MRR</div>
+      </div>
+      <div class="stat">
+        <div class="l">Suspended</div>
+        <div class="v" style="color: var(--error);">42</div>
+        <div class="s">14 in last 7d</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filterbar">
+      <div class="search-input">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input placeholder="Search by email, name, or server name…" value="">
+      </div>
+      <button class="filter-pill active">All <span class="num">12,487</span></button>
+      <button class="filter-pill">Free <span class="num">7,294</span></button>
+      <button class="filter-pill">Pro <span class="num">3,624</span></button>
+      <button class="filter-pill">Family <span class="num">1,191</span></button>
+      <button class="filter-pill">Trial <span class="num">378</span></button>
+      <button class="filter-pill">Suspended <span class="num">42</span></button>
+      <button class="filter-pill">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        More filters
+      </button>
+    </div>
+
+    <!-- Users table -->
+    <div class="table-wrap">
+      <div class="tbar">
+        <div class="meta"><strong>1–8</strong> of 12,487 users · sorted by Last activity ↓</div>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn" style="padding: 5px 10px; font-size: 12px;">Bulk action</button>
+          <button class="btn" style="padding: 5px 10px; font-size: 12px;">Columns</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 32px;"><span class="ck"></span></th>
+            <th>User</th>
+            <th>Plan</th>
+            <th>Linked server</th>
+            <th>MRR</th>
+            <th>Joined</th>
+            <th>Last activity</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-1">MD</div>
+                <div class="user-name">
+                  <strong>Mahmoud Darwish</strong>
+                  <small>meywd84@gmail.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill trial">Pro · trial</span></td>
+            <td class="server-cell">
+              <span class="stat-dot"></span>maktaba-mac.local
+              <small>v1.0.0-beta · 312 videos · us-east</small>
+            </td>
+            <td class="rev">$0.00<small>trial</small></td>
+            <td class="date">Apr 12, 2026<small>3w 4d ago</small></td>
+            <td class="date" style="color: var(--success);">Just now<small>streaming</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn" title="Impersonate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></button>
+                <button class="icon-btn" title="More"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck on"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-2">SK</div>
+                <div class="user-name">
+                  <strong>Sara Kassem</strong>
+                  <small>sara.k@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill family">Family · yearly</span></td>
+            <td class="server-cell">
+              <span class="stat-dot"></span>home-imac.local
+              <small>v1.0.0 · 1.2k videos · us-east</small>
+            </td>
+            <td class="rev">$9.99<small>yearly</small></td>
+            <td class="date">Feb 18, 2025<small>1y 2mo ago</small></td>
+            <td class="date" style="color: var(--success);">8m ago<small>streaming · 6 viewers</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn" title="Impersonate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-3">OF</div>
+                <div class="user-name">
+                  <strong>Omar Farouk</strong>
+                  <small>omar.farouk@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill pro">Pro · monthly</span></td>
+            <td class="server-cell">
+              <span class="stat-dot"></span>maktaba-mini.local
+              <small>v1.0.0 · 488 videos · eu-frankfurt</small>
+            </td>
+            <td class="rev">$4.99<small>monthly</small></td>
+            <td class="date">Aug 4, 2025<small>9mo ago</small></td>
+            <td class="date" style="color: var(--success);">14m ago<small>streaming · 3 viewers</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-4">YQ</div>
+                <div class="user-name">
+                  <strong>Yusuf Qasim</strong>
+                  <small>yusuf.q@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill family">Family · monthly</span></td>
+            <td class="server-cell">
+              <span class="stat-dot"></span>home-server-yq
+              <small>v1.0.0 · 824 videos · us-west</small>
+            </td>
+            <td class="rev">$9.99<small>monthly</small></td>
+            <td class="date">Nov 14, 2025<small>5mo ago</small></td>
+            <td class="date">2h ago<small>idle</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-5">FH</div>
+                <div class="user-name">
+                  <strong>Fatima Hassan</strong>
+                  <small>fhassan@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill family">Family · yearly</span></td>
+            <td class="server-cell">
+              <span class="stat-dot"></span>synology-fh
+              <small>v1.0.0 · 2.3k videos · ap-southeast</small>
+            </td>
+            <td class="rev">$9.99<small>yearly</small></td>
+            <td class="date">Mar 22, 2025<small>1y 1mo ago</small></td>
+            <td class="date">3h ago<small>idle</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-6">KE</div>
+                <div class="user-name">
+                  <strong>Karim El-Sayed</strong>
+                  <small>karim.elsayed@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill pro">Pro · monthly</span></td>
+            <td class="server-cell">
+              <span class="stat-dot off"></span>karim-mac
+              <small style="color: var(--error);">offline · last seen 4h ago</small>
+            </td>
+            <td class="rev" style="color: var(--error);">$4.99<small>payment failed</small></td>
+            <td class="date">Sep 7, 2025<small>8mo ago</small></td>
+            <td class="date">2 days ago<small style="color: var(--warn);">payment retry pending</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-1">JA</div>
+                <div class="user-name">
+                  <strong>Joseph Andrews</strong>
+                  <small>joseph.a@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill suspended">Suspended</span></td>
+            <td class="server-cell">
+              <span class="stat-dot off"></span>—
+              <small>unlinked Apr 30, 2026</small>
+            </td>
+            <td class="rev" style="color: var(--text-muted);">$0.00<small>was Pro</small></td>
+            <td class="date">Jan 11, 2025<small>1y 4mo ago</small></td>
+            <td class="date" style="color: var(--error);">Apr 30 · suspended<small>abuse: 5 ToS reports</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="ck"></span></td>
+            <td>
+              <div class="user-cell">
+                <div class="user-av gradient-3">AB</div>
+                <div class="user-name">
+                  <strong>Aisha Benali</strong>
+                  <small>aisha.benali@example.com</small>
+                </div>
+              </div>
+            </td>
+            <td><span class="pill free">Free</span></td>
+            <td class="server-cell">
+              <small style="color: var(--text-muted); font-style: italic;">no server linked yet</small>
+            </td>
+            <td class="rev" style="color: var(--text-muted);">$0.00<small>free</small></td>
+            <td class="date">May 6, 2026<small>just now</small></td>
+            <td class="date">2m ago<small>signup flow</small></td>
+            <td>
+              <div class="row-actions">
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="pagination">
+        <span>Showing 1–8 of 12,487</span>
+        <div class="pg-controls">
+          <button class="pg-btn" disabled>← Previous</button>
+          <button class="pg-btn active">1</button>
+          <button class="pg-btn">2</button>
+          <button class="pg-btn">3</button>
+          <button class="pg-btn">…</button>
+          <button class="pg-btn">1561</button>
+          <button class="pg-btn">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail drawer (open on user click) -->
+    <div class="drawer">
+      <div class="drawer-h">
+        <div class="user-av lg gradient-2">SK</div>
+        <div>
+          <h3>Sara Kassem</h3>
+          <div class="e">sara.k@example.com · ID usr_2nW7K4xqLp · Stripe cus_PqKL3...</div>
+        </div>
+        <div class="actions">
+          <button class="btn">Email</button>
+          <button class="btn">Impersonate →</button>
+          <button class="btn primary">Edit user</button>
+        </div>
+      </div>
+      <div class="drawer-body">
+        <div class="dgroup">
+          <h4>Account</h4>
+          <div class="dkv">
+            <div class="k">Plan</div><div class="v">Family · yearly</div>
+            <div class="k">Trial</div><div class="v">—</div>
+            <div class="k">Joined</div><div class="v">Feb 18, 2025</div>
+            <div class="k">Country</div><div class="v">United States</div>
+            <div class="k">Time zone</div><div class="v">America/New_York</div>
+            <div class="k">2FA</div><div class="v" style="color: var(--success);">Enabled</div>
+          </div>
+        </div>
+        <div class="dgroup">
+          <h4>Billing</h4>
+          <div class="dkv">
+            <div class="k">MRR</div><div class="v" style="color: var(--success);">$9.99 yearly</div>
+            <div class="k">Total paid</div><div class="v">$119.88 (12 invoices)</div>
+            <div class="k">Card</div><div class="v">Visa •••• 4242</div>
+            <div class="k">Next charge</div><div class="v">Feb 18, 2027 · $9.99</div>
+            <div class="k">Failed payments</div><div class="v">0</div>
+            <div class="k">Refunds</div><div class="v">$0.00</div>
+          </div>
+        </div>
+        <div class="dgroup">
+          <h4>Server &amp; usage</h4>
+          <div class="dkv">
+            <div class="k">Server</div><div class="v">home-imac.local</div>
+            <div class="k">Status</div><div class="v" style="color: var(--success);">● Online · 6 viewers</div>
+            <div class="k">Videos</div><div class="v">1,247 · 2.4 TB</div>
+            <div class="k">Users on server</div><div class="v">5 of 6</div>
+            <div class="k">BW (30d)</div><div class="v">428 GB</div>
+            <div class="k">Region</div><div class="v">us-east-1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · users</h2>
+    <div class="desc">Bulk actions, suspend/unsuspend, impersonation flows</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · suspend user <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body center">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            </div>
+            <h3>Suspend Joseph Andrews?</h3>
+            <p>The user is signed out, sessions revoked, server unlinked. They keep access to billing history. Reversible.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Suspend user</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · ban user <span class="stag error">PERMANENT</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error" style="margin-left: 0;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            </div>
+            <h3>Ban Joseph Andrews permanently</h3>
+            <p>Email and IP blocked. They cannot create new accounts. Provide a reason for the audit log:</p>
+            <textarea style="width: 100%; margin-top: 10px; padding: 9px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; font-family: inherit; min-height: 50px; resize: none;" placeholder="e.g. ToS violation · 5 abuse reports..."></textarea>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Ban user</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Impersonation banner <span class="stag warn">SAFETY</span></div>
+      <div class="ss-preview">
+        <div style="width: 100%; max-width: 360px; padding: 10px 14px; background: linear-gradient(90deg, rgba(251,191,36,0.15), rgba(251,191,36,0.08)); border: 1px solid var(--warn); border-radius: 8px; display: flex; align-items: center; gap: 10px; font-size: 12px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <div style="flex: 1; color: var(--warn);">
+            <strong>Impersonating sara.k@example.com</strong>
+            <div style="color: var(--text-dim); font-size: 11px;">Read-only · all actions logged · started 2 min ago</div>
+          </div>
+          <button class="btn" style="padding: 5px 10px; font-size: 11px;">Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · user suspended <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Joseph Andrews suspended</strong>
+            <span>1 server unlinked · 4 sessions revoked · email sent</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Bulk action menu <span class="stag">SELECTION</span></div>
+      <div class="ss-preview">
+        <div style="background: var(--panel); border: 1px solid var(--primary); border-radius: 10px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); width: 100%; max-width: 380px;">
+          <span class="ck on"></span>
+          <span style="font-size: 13px;"><strong>3 users</strong> selected</span>
+          <button class="btn" style="margin-left: auto; padding: 5px 10px; font-size: 11px;">Email all</button>
+          <button class="btn" style="padding: 5px 10px; font-size: 11px;">Refund</button>
+          <button class="btn" style="padding: 5px 10px; font-size: 11px; color: var(--error); border-color: rgba(248,113,113,0.4);">Suspend</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Row action dropdown <span class="stag">MENU</span></div>
+      <div class="ss-preview">
+        <div class="dropdown">
+          <div class="dd-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Impersonate (read-only)</div>
+          <div class="dd-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>Send email</div>
+          <div class="dd-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Manage subscription</div>
+          <div class="dd-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Issue refund</div>
+          <div class="dd-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/></svg>Reset password</div>
+          <div class="dd-sep"></div>
+          <div class="dd-item" style="color: var(--warn);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>Suspend</div>
+          <div class="dd-item" style="color: var(--error);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/></svg>Ban &amp; delete</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · search no match <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div style="text-align: center; padding: 14px;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">No users match "xyzabc"</h4>
+          <p style="font-size: 12px; color: var(--text-dim);">Try a partial email, name, or server hostname.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Refund confirm <span class="stag warn">REFUND</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon" style="background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); margin-left: 0;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 9 9 9 9 3"/><path d="M3 9l9-9"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+            </div>
+            <h3>Issue refund</h3>
+            <p style="margin-bottom: 10px;">Refund Visa •••• 4242 for invoice <strong style="color: var(--text);">$9.99 · April 17</strong>. Choose amount:</p>
+            <div style="display: flex; gap: 6px;">
+              <button class="filter-pill active" style="flex: 1;">Full ($9.99)</button>
+              <button class="filter-pill" style="flex: 1;">Prorated ($3.42)</button>
+              <button class="filter-pill" style="flex: 1;">Custom</button>
+            </div>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Issue refund</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Filter chips · advanced <span class="stag">FILTER</span></div>
+      <div class="ss-preview">
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; max-width: 360px;">
+          <span class="filter-pill active" style="font-size: 11px; padding: 5px 10px;">Plan: Pro, Family ×</span>
+          <span class="filter-pill active" style="font-size: 11px; padding: 5px 10px;">Created: last 30d ×</span>
+          <span class="filter-pill active" style="font-size: 11px; padding: 5px 10px;">Has server: yes ×</span>
+          <span class="filter-pill active" style="font-size: 11px; padding: 5px 10px;">MRR ≥ $4.99 ×</span>
+          <span class="filter-pill" style="font-size: 11px; padding: 5px 10px;">+ Add filter</span>
+          <button class="filter-pill" style="font-size: 11px; padding: 5px 10px; color: var(--text-muted);">Clear all</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
