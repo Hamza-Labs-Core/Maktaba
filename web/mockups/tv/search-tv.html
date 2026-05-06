@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba TV — Search (Epic 14)</title>
+<style>
+  :root {
+    --bg: #07080c;
+    --bg-2: #0e1118;
+    --panel: #161922;
+    --border: rgba(255,255,255,0.08);
+    --text: #f3f5fb;
+    --text-dim: #b6bcce;
+    --text-muted: #6f7691;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --focus-ring: #3ddc97;
+    --key-bg: rgba(255,255,255,0.06);
+    --key-bg-hover: rgba(255,255,255,0.12);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --bg-2: #e8eaf2;
+    --panel: #ffffff;
+    --border: rgba(0,0,0,0.08);
+    --text: #1a1d26;
+    --text-dim: #4a5066;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --focus-ring: #1aa56c;
+    --key-bg: rgba(0,0,0,0.04);
+    --key-bg-hover: rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+    background: #000;
+    color: var(--text);
+    font-size: 16px;
+    padding: 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #5a6079; margin-bottom: 18px; text-align: center;
+  }
+  .tv-frame {
+    width: 1920px; height: 1080px; margin: 0 auto;
+    background: var(--bg);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  }
+  /* subtle background */
+  .tv-frame::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 0%, rgba(61, 220, 151, 0.08), transparent 60%),
+      radial-gradient(ellipse at 70% 100%, rgba(99, 102, 241, 0.06), transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Top bar minimal */
+  .top-bar {
+    position: relative; z-index: 5;
+    height: 80px; padding: 0 80px;
+    display: flex; align-items: center; gap: 32px;
+  }
+  .brand-row { display: flex; align-items: center; gap: 12px; }
+  .brand-logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 18px;
+  }
+  .brand-name { font-weight: 600; font-size: 18px; }
+  .nav-tabs { display: flex; gap: 28px; margin-left: 40px; }
+  .nav-tab {
+    font-size: 17px; font-weight: 500; color: var(--text-muted);
+    padding: 8px 4px; position: relative;
+  }
+  .nav-tab.active {
+    color: var(--text); font-weight: 600;
+  }
+  .nav-tab.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px; background: var(--accent); border-radius: 2px;
+  }
+  .top-right {
+    margin-left: auto; display: flex; align-items: center; gap: 22px;
+    color: var(--text-dim);
+  }
+
+  /* Main split layout */
+  .main {
+    position: relative;
+    display: grid;
+    grid-template-columns: 720px 1fr;
+    gap: 60px;
+    padding: 0 80px 60px;
+    height: calc(100% - 80px);
+    z-index: 2;
+  }
+
+  /* LEFT: search input + keyboard */
+  .left-pane { display: flex; flex-direction: column; }
+  .search-input {
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    display: flex; align-items: center; gap: 18px;
+    font-size: 32px;
+    color: var(--text);
+    margin-bottom: 32px;
+    min-height: 88px;
+  }
+  .search-input.focused {
+    border-color: var(--focus-ring);
+    box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18);
+  }
+  .search-input svg { width: 32px; height: 32px; color: var(--text-muted); }
+  .typed-text {
+    color: var(--text); flex: 1;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cursor {
+    display: inline-block; width: 3px; height: 36px;
+    background: var(--accent);
+    margin-left: 6px;
+    animation: blink 1s infinite;
+    vertical-align: middle;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Voice search prompt */
+  .voice-prompt {
+    background: linear-gradient(135deg, rgba(61, 220, 151, 0.12), rgba(99, 102, 241, 0.08));
+    border: 1px solid rgba(61, 220, 151, 0.3);
+    border-radius: 16px;
+    padding: 18px 22px;
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 26px;
+  }
+  .voice-icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    color: #000;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .voice-icon::before {
+    content: '';
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    animation: ripple 1.5s infinite;
+  }
+  @keyframes ripple {
+    0% { transform: scale(1); opacity: 0.7; }
+    100% { transform: scale(1.4); opacity: 0; }
+  }
+  .voice-text { font-size: 18px; line-height: 1.4; }
+  .voice-text strong { color: var(--accent); }
+  .voice-text small { display: block; color: var(--text-muted); font-size: 14px; margin-top: 2px; }
+
+  /* Keyboard grid */
+  .keyboard {
+    flex: 1;
+    background: var(--bg-2);
+    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid var(--border);
+  }
+  .kb-tabs {
+    display: flex; gap: 8px;
+    margin-bottom: 18px;
+  }
+  .kb-tab {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px; font-weight: 600;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .kb-tab.active {
+    background: var(--panel);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .kb-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .key {
+    aspect-ratio: 1;
+    background: var(--key-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+    position: relative;
+  }
+  .key:hover { background: var(--key-bg-hover); }
+  .key.focused {
+    background: var(--accent);
+    color: #000;
+    transform: scale(1.1);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 24px rgba(61, 220, 151, 0.6);
+    z-index: 5;
+    border-color: transparent;
+  }
+  .key.dim { color: var(--text-muted); }
+  .kb-row-special { display: grid; grid-template-columns: 2fr 3fr 1fr 1fr; gap: 8px; }
+  .key.wide {
+    aspect-ratio: auto;
+    height: 70px;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+  }
+
+  /* RIGHT: results */
+  .right-pane { padding-top: 8px; overflow: hidden; }
+  .results-header {
+    display: flex; align-items: baseline; gap: 14px;
+    margin-bottom: 22px;
+  }
+  .results-title {
+    font-size: 24px; font-weight: 700;
+  }
+  .results-count {
+    font-size: 16px; color: var(--text-muted);
+  }
+  .filter-chips { margin-left: auto; display: flex; gap: 10px; }
+  .chip {
+    padding: 8px 16px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    font-size: 14px; font-weight: 500;
+    color: var(--text-dim);
+  }
+  .chip.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .result-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex; gap: 18px;
+    cursor: pointer;
+    transition: transform 0.2s;
+    position: relative;
+  }
+  .result-card.focused {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 32px rgba(61, 220, 151, 0.5);
+    border-color: transparent;
+    z-index: 4;
+  }
+  .result-thumb {
+    width: 200px; height: 124px;
+    border-radius: 10px; flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .result-thumb.t1 { background: linear-gradient(135deg, #1e3a5f, #2d4f7c); }
+  .result-thumb.t2 { background: linear-gradient(135deg, #3d2e5c, #5e3d8a); }
+  .result-thumb.t3 { background: linear-gradient(135deg, #4a2e1f, #7a4d33); }
+  .result-thumb.t4 { background: linear-gradient(135deg, #1f4a3d, #2e7a5e); }
+  .result-thumb.t5 { background: linear-gradient(135deg, #5c2e3d, #8a3d5e); }
+  .result-thumb.t6 { background: linear-gradient(135deg, #2e3d5c, #3d5c8a); }
+  .result-thumb .duration {
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); color: #fff;
+    padding: 3px 8px; border-radius: 4px;
+    font-size: 13px; font-family: ui-monospace, monospace;
+  }
+  .result-thumb .lang {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0,0,0,0.7); color: #fff;
+    padding: 3px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 700;
+  }
+  .play-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0);
+    transition: background 0.2s;
+  }
+  .result-card.focused .play-overlay { background: rgba(0,0,0,0.4); }
+  .play-overlay svg { width: 40px; height: 40px; color: #fff; opacity: 0; }
+  .result-card.focused .play-overlay svg { opacity: 1; }
+  .result-info { flex: 1; min-width: 0; }
+  .result-title {
+    font-size: 19px; font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .result-title em {
+    background: rgba(61, 220, 151, 0.25); color: var(--accent);
+    font-style: normal; padding: 0 4px; border-radius: 3px;
+  }
+  .result-meta {
+    font-size: 14px; color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .result-snippet {
+    font-size: 14px; line-height: 1.4; color: var(--text-muted);
+    background: rgba(255,255,255,0.03);
+    padding: 8px 12px; border-radius: 8px;
+    border-left: 2px solid var(--accent);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .result-snippet em {
+    color: var(--accent); font-style: normal; font-weight: 600;
+  }
+  .timestamp {
+    font-size: 12px; font-family: ui-monospace, monospace;
+    color: var(--accent); font-weight: 600;
+    margin-right: 6px;
+  }
+
+  /* Recent searches block */
+  .recent-block {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .recent-label {
+    font-size: 12px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .recent-items { display: flex; flex-wrap: wrap; gap: 10px; }
+  .recent-item {
+    padding: 10px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 15px; color: var(--text-dim);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 14 · STORY 14.03 · TV SEARCH — KEYBOARD GRID + RESULTS</div>
+
+<div class="tv-frame">
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="brand-row">
+      <div class="brand-logo">م</div>
+      <div class="brand-name">Maktaba</div>
+    </div>
+    <div class="nav-tabs">
+      <div class="nav-tab">Home</div>
+      <div class="nav-tab">Library</div>
+      <div class="nav-tab active">Search</div>
+      <div class="nav-tab">Settings</div>
+    </div>
+    <div class="top-right">
+      <span style="font-family: ui-monospace, monospace;">7:24 PM</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- LEFT: search box + keyboard -->
+    <div class="left-pane">
+      <div class="search-input focused">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span class="typed-text">arabic gram</span>
+        <span class="cursor"></span>
+      </div>
+
+      <div class="voice-prompt">
+        <div class="voice-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/><line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="voice-text">
+          <strong>Hold mic on remote to speak</strong>
+          <small>Try "Show me Arabic grammar lectures" — supports AR, EN, ES, FR</small>
+        </div>
+      </div>
+
+      <div class="keyboard">
+        <div class="kb-tabs">
+          <button class="kb-tab active">ABC</button>
+          <button class="kb-tab">عربي</button>
+          <button class="kb-tab">123</button>
+          <button class="kb-tab">#@!</button>
+          <button class="kb-tab" style="margin-left: auto;">Shift</button>
+        </div>
+        <div class="kb-grid">
+          <div class="key">A</div><div class="key">B</div><div class="key">C</div><div class="key">D</div><div class="key">E</div><div class="key">F</div><div class="key">G</div>
+          <div class="key">H</div><div class="key">I</div><div class="key">J</div><div class="key">K</div><div class="key">L</div><div class="key focused">M</div><div class="key">N</div>
+          <div class="key">O</div><div class="key">P</div><div class="key">Q</div><div class="key">R</div><div class="key">S</div><div class="key">T</div><div class="key">U</div>
+          <div class="key">V</div><div class="key">W</div><div class="key">X</div><div class="key">Y</div><div class="key">Z</div><div class="key dim">'</div><div class="key dim">-</div>
+        </div>
+        <div class="kb-row-special">
+          <button class="key wide">Space</button>
+          <button class="key wide" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">⌫ Delete</button>
+          <button class="key wide">Clear</button>
+          <button class="key wide" style="background: var(--accent); color: #000; border-color: var(--accent);">Search</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: results -->
+    <div class="right-pane">
+      <div class="results-header">
+        <div class="results-title">Results for "arabic gram"</div>
+        <div class="results-count">28 matches</div>
+        <div class="filter-chips">
+          <div class="chip active">All</div>
+          <div class="chip">Videos</div>
+          <div class="chip">Transcripts</div>
+          <div class="chip">Chapters</div>
+        </div>
+      </div>
+
+      <div class="results-grid">
+        <div class="result-card focused">
+          <div class="result-thumb t1">
+            <span class="lang">AR</span>
+            <span class="duration">42:18</span>
+            <div class="play-overlay">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+          </div>
+          <div class="result-info">
+            <div class="result-title">دروس في النحو الع<em>رب</em>ي · Lesson 1</div>
+            <div class="result-meta">Sheikh Yasir · 12 episodes · 4.9 ★</div>
+            <div class="result-snippet">
+              <span class="timestamp">17:42</span>
+              "<em>Arabic gram</em>mar follows precise rules that govern sentence structure…"
+            </div>
+          </div>
+        </div>
+        <div class="result-card">
+          <div class="result-thumb t2">
+            <span class="lang">EN</span>
+            <span class="duration">58:30</span>
+            <div class="play-overlay">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+          </div>
+          <div class="result-info">
+            <div class="result-title">Introduction to <em>Arabic Gram</em>mar</div>
+            <div class="result-meta">Lecture · Cambridge University · 2024</div>
+            <div class="result-snippet">
+              <span class="timestamp">04:18</span>
+              "Today we'll cover the foundational rules of <em>Arabic gram</em>mar starting with…"
+            </div>
+          </div>
+        </div>
+        <div class="result-card">
+          <div class="result-thumb t3">
+            <span class="lang">AR</span>
+            <span class="duration">1:24:00</span>
+            <div class="play-overlay">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+          </div>
+          <div class="result-info">
+            <div class="result-title">شرح الأجرومية في النحو</div>
+            <div class="result-meta">Series · 24 episodes · 4.8 ★</div>
+            <div class="result-snippet">
+              <span class="timestamp">22:08</span>
+              "تعتبر هذه القواعد أساسية في تعلم <em>arabic gram</em>mar للمبتدئين…"
+            </div>
+          </div>
+        </div>
+        <div class="result-card">
+          <div class="result-thumb t4">
+            <span class="lang">EN</span>
+            <span class="duration">31:45</span>
+            <div class="play-overlay">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+          </div>
+          <div class="result-info">
+            <div class="result-title">Modern Standard <em>Arabic Gram</em>mar</div>
+            <div class="result-meta">Course · Beginner level</div>
+            <div class="result-snippet">
+              <span class="timestamp">12:30</span>
+              "Modern standard <em>arabic gram</em>mar differs from classical Arabic in several…"
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="recent-block">
+        <div class="recent-label">Recent searches</div>
+        <div class="recent-items">
+          <div class="recent-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ottoman architecture
+          </div>
+          <div class="recent-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            تفسير القرآن
+          </div>
+          <div class="recent-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            calligraphy tutorial
+          </div>
+          <div class="recent-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            golden age islam
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

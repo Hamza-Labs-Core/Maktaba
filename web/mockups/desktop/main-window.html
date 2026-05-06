@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Desktop — Main Window (Epic 13)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2130;
+    --border: #262b3a;
+    --text: #e6e8ef;
+    --text-dim: #8b91a7;
+    --text-muted: #5a6079;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --warn: #f5a524;
+    --shadow: 0 8px 24px rgba(0,0,0,0.4);
+    --titlebar: #0a0c11;
+    --hover: rgba(255,255,255,0.05);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --panel-2: #f0f2f7;
+    --border: #e1e4ec;
+    --text: #1a1d26;
+    --text-dim: #5a6079;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --warn: #d97706;
+    --shadow: 0 4px 16px rgba(0,0,0,0.08);
+    --titlebar: #ebedf2;
+    --hover: rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: #050608;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 32px;
+    min-height: 100vh;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .desktop-frame {
+    width: 1440px;
+    margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    background: var(--bg);
+  }
+  /* Native title bar */
+  .titlebar {
+    background: var(--titlebar);
+    height: 36px;
+    display: flex; align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    -webkit-app-region: drag;
+  }
+  .traffic-lights {
+    display: flex; gap: 8px; padding-right: 16px;
+  }
+  .light {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 0.5px solid rgba(0,0,0,0.15);
+  }
+  .light.close { background: #ff5f56; }
+  .light.min { background: #ffbd2e; }
+  .light.max { background: #27c93f; }
+  .titlebar-title {
+    flex: 1; text-align: center; font-size: 12px;
+    color: var(--text-dim); font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+  .titlebar-spacer { width: 64px; }
+  /* Main layout */
+  .app-body { display: grid; grid-template-columns: 240px 1fr; min-height: 800px; }
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    display: flex; flex-direction: column;
+  }
+  .brand {
+    padding: 0 20px 20px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .brand-logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 16px;
+  }
+  .brand-name { font-weight: 600; font-size: 15px; }
+  .brand-sub { font-size: 11px; color: var(--text-muted); }
+  .nav-section { padding: 0 12px; margin-bottom: 20px; }
+  .nav-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); padding: 0 8px 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    color: var(--text-dim); font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--hover); color: var(--text); }
+  .nav-item.active {
+    background: var(--accent); color: #fff;
+  }
+  .nav-item.active .nav-count { background: rgba(255,255,255,0.25); color: #fff; }
+  .nav-icon { width: 16px; height: 16px; opacity: 0.8; }
+  .nav-count {
+    margin-left: auto; font-size: 11px;
+    background: var(--panel-2); padding: 2px 8px; border-radius: 10px;
+    color: var(--text-muted);
+  }
+  .sidebar-footer {
+    margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; color: #fff; font-size: 12px;
+  }
+  .user-name { font-size: 13px; font-weight: 500; }
+  .user-status { font-size: 11px; color: var(--accent); display: flex; align-items: center; gap: 4px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  /* Main content */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .toolbar {
+    height: 56px; padding: 0 24px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .breadcrumb { font-size: 14px; font-weight: 600; }
+  .breadcrumb-sep { color: var(--text-muted); margin: 0 6px; }
+  .breadcrumb-current { color: var(--text); }
+  .search-box {
+    margin-left: auto;
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px;
+    width: 320px; display: flex; align-items: center; gap: 8px;
+  }
+  .search-box input {
+    background: transparent; border: 0; outline: 0;
+    color: var(--text); font-size: 13px; flex: 1;
+  }
+  .kbd {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+  }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; cursor: pointer; color: var(--text-dim);
+    border: 0;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .btn-primary {
+    background: var(--accent); color: #fff;
+    border: 0; padding: 8px 14px; border-radius: 8px;
+    font-weight: 500; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn-primary:hover { background: var(--accent-2); }
+
+  /* Library content */
+  .library {
+    flex: 1; overflow-y: auto; padding: 24px;
+    display: flex; flex-direction: column; gap: 28px;
+  }
+  .section-header {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px;
+  }
+  .section-title { font-size: 16px; font-weight: 600; }
+  .section-count { font-size: 12px; color: var(--text-muted); }
+  .section-link { margin-left: auto; font-size: 12px; color: var(--accent); cursor: pointer; }
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .thumb {
+    aspect-ratio: 16/10; position: relative;
+    background: linear-gradient(135deg, #1e3a5f, #2d4f7c);
+  }
+  .thumb-2 { background: linear-gradient(135deg, #3d2e5c, #5e3d8a); }
+  .thumb-3 { background: linear-gradient(135deg, #4a2e1f, #7a4d33); }
+  .thumb-4 { background: linear-gradient(135deg, #1f4a3d, #2e7a5e); }
+  .thumb-5 { background: linear-gradient(135deg, #5c2e3d, #8a3d5e); }
+  .thumb-6 { background: linear-gradient(135deg, #2e3d5c, #3d5c8a); }
+  .duration {
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); color: #fff;
+    padding: 2px 6px; border-radius: 4px; font-size: 10px;
+    font-family: ui-monospace, monospace;
+  }
+  .progress-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 3px; background: rgba(255,255,255,0.2);
+  }
+  .progress-fill { height: 100%; background: var(--accent); }
+  .lang-flag {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.6); color: #fff;
+    padding: 2px 6px; border-radius: 3px; font-size: 9px;
+    font-weight: 600; letter-spacing: 0.5px;
+    backdrop-filter: blur(4px);
+  }
+  .card-body { padding: 10px 12px; }
+  .card-title {
+    font-size: 13px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-meta {
+    font-size: 11px; color: var(--text-muted);
+    margin-top: 2px;
+    display: flex; gap: 8px;
+  }
+
+  /* Status bar */
+  .statusbar {
+    height: 28px;
+    background: var(--titlebar);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px; gap: 16px;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .status-item.success { color: var(--accent); }
+
+  /* System tray illustration */
+  .tray-illustration {
+    width: 1440px; margin: 32px auto 0;
+    background: linear-gradient(180deg, transparent, rgba(255,255,255,0.02));
+    padding: 24px;
+    border-radius: 12px;
+    display: flex; gap: 24px; align-items: flex-start;
+  }
+  .tray-bar {
+    flex: 1;
+    background: var(--titlebar); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px;
+    display: flex; align-items: center; gap: 16px; height: 32px;
+    color: var(--text-dim); font-size: 11px;
+  }
+  .tray-icons { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .tray-icons .icon { width: 14px; height: 14px; opacity: 0.6; }
+  .tray-icons .maktaba-icon {
+    width: 14px; height: 14px; border-radius: 3px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 0 2px var(--titlebar), 0 0 0 3px var(--accent);
+  }
+  .tray-caption {
+    color: var(--text-muted); font-size: 11px; max-width: 280px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 32px; text-align: center;
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 13 · STORY 13.01 · DESKTOP MAIN WINDOW (1440 × 900)</div>
+
+<div class="desktop-frame">
+  <!-- Native macOS-style title bar -->
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="light close"></div>
+      <div class="light min"></div>
+      <div class="light max"></div>
+    </div>
+    <div class="titlebar-title">Maktaba — Library</div>
+    <div class="titlebar-spacer"></div>
+  </div>
+
+  <div class="app-body">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">م</div>
+        <div>
+          <div class="brand-name">Maktaba</div>
+          <div class="brand-sub">Personal Library</div>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Library</div>
+        <div class="nav-item active">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          All Videos <span class="nav-count">847</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Recent <span class="nav-count">24</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/></svg>
+          Favorites <span class="nav-count">62</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          Trash <span class="nav-count">3</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Collections</div>
+        <div class="nav-item">📚 Lectures <span class="nav-count">123</span></div>
+        <div class="nav-item">🎓 Courses <span class="nav-count">88</span></div>
+        <div class="nav-item">🎬 Documentaries <span class="nav-count">45</span></div>
+        <div class="nav-item">🎤 Podcasts <span class="nav-count">201</span></div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Pipeline</div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Processing <span class="nav-count" style="background: var(--warn); color: #000;">3</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Failed <span class="nav-count">1</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="avatar">MD</div>
+        <div>
+          <div class="user-name">Mahmoud</div>
+          <div class="user-status"><span class="status-dot"></span> Local server running</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <div class="toolbar">
+        <div class="breadcrumb">
+          <span class="breadcrumb-current">All Videos</span>
+        </div>
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input placeholder="Search videos, transcripts, chapters…" />
+          <span class="kbd">⌘K</span>
+        </div>
+        <button class="icon-btn" title="Sort">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+        </button>
+        <button class="icon-btn" title="Grid view">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </button>
+        <button class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Video
+        </button>
+      </div>
+
+      <div class="library">
+        <section>
+          <div class="section-header">
+            <div class="section-title">Continue Watching</div>
+            <div class="section-count">5</div>
+            <div class="section-link">View all →</div>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <div class="thumb thumb-1">
+                <div class="lang-flag">AR</div>
+                <div class="duration">42:18</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 67%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">دروس في النحو العربي</div>
+                <div class="card-meta"><span>Sheikh Yasir</span> · <span>2 days ago</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-2">
+                <div class="lang-flag">EN</div>
+                <div class="duration">1:24:56</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 23%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">Introduction to Arabic Calligraphy</div>
+                <div class="card-meta"><span>Course</span> · <span>Yesterday</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-3">
+                <div class="lang-flag">AR</div>
+                <div class="duration">38:42</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 91%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">تاريخ الأندلس</div>
+                <div class="card-meta"><span>Documentary</span> · <span>3 days ago</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-4">
+                <div class="lang-flag">EN</div>
+                <div class="duration">52:11</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 45%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">The Golden Age of Islam</div>
+                <div class="card-meta"><span>Lecture</span> · <span>1 week ago</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-5">
+                <div class="lang-flag">AR</div>
+                <div class="duration">28:09</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 12%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">شرح صحيح البخاري</div>
+                <div class="card-meta"><span>Series</span> · <span>Today</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-6">
+                <div class="lang-flag">EN</div>
+                <div class="duration">19:33</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: 78%"></div></div>
+              </div>
+              <div class="card-body">
+                <div class="card-title">Quranic Recitation Methods</div>
+                <div class="card-meta"><span>Tutorial</span> · <span>2 days ago</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-header">
+            <div class="section-title">Recently Added</div>
+            <div class="section-count">12</div>
+            <div class="section-link">View all →</div>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <div class="thumb thumb-2"><div class="lang-flag">AR</div><div class="duration">1:12:30</div></div>
+              <div class="card-body"><div class="card-title">محاضرة في الفقه</div><div class="card-meta">Added today</div></div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-3"><div class="lang-flag">EN</div><div class="duration">22:45</div></div>
+              <div class="card-body"><div class="card-title">Ottoman Architecture</div><div class="card-meta">Added today</div></div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-1"><div class="lang-flag">AR</div><div class="duration">45:00</div></div>
+              <div class="card-body"><div class="card-title">دروس التفسير</div><div class="card-meta">Added yesterday</div></div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-4"><div class="lang-flag">EN</div><div class="duration">1:05:22</div></div>
+              <div class="card-body"><div class="card-title">Mediterranean Trade Routes</div><div class="card-meta">2 days ago</div></div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-5"><div class="lang-flag">AR</div><div class="duration">33:18</div></div>
+              <div class="card-body"><div class="card-title">السيرة النبوية</div><div class="card-meta">3 days ago</div></div>
+            </div>
+            <div class="card">
+              <div class="thumb thumb-6"><div class="lang-flag">EN</div><div class="duration">17:42</div></div>
+              <div class="card-body"><div class="card-title">Calligraphy Tutorial Pt. 4</div><div class="card-meta">3 days ago</div></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Status bar -->
+      <div class="statusbar">
+        <div class="status-item success">● Server running on :8080</div>
+        <div class="status-item">847 videos · 312 GB</div>
+        <div class="status-item">⚡ Processing 3 videos (62%)</div>
+        <div class="status-item" style="margin-left: auto;">v1.0.0-beta · Tauri 2.0</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- macOS menu bar with Maktaba tray icon -->
+<div class="tray-illustration">
+  <div class="tray-bar">
+    <span style="font-weight: 600;"> Maktaba</span>
+    <span>File</span><span>Edit</span><span>Library</span><span>Playback</span><span>Window</span><span>Help</span>
+    <div class="tray-icons">
+      <span style="font-size: 10px; color: var(--text-muted);">12:34</span>
+      <div class="maktaba-icon" title="Maktaba is in the system tray"></div>
+      <span class="icon">🔔</span>
+      <span class="icon">📶</span>
+      <span class="icon">🔋</span>
+    </div>
+  </div>
+  <div class="tray-caption">
+    The Maktaba menu-bar icon stays visible even when the main window is closed — pulses while videos are processing.
+  </div>
+</div>
+
+</body>
+</html>

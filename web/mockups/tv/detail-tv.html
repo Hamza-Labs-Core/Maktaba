@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba TV — Video Detail (Epic 14)</title>
+<style>
+  :root {
+    --bg: #07080c;
+    --bg-2: #0e1118;
+    --panel: #161922;
+    --border: rgba(255,255,255,0.08);
+    --text: #f3f5fb;
+    --text-dim: #b6bcce;
+    --text-muted: #6f7691;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --focus-ring: #3ddc97;
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --bg-2: #ebedf3;
+    --panel: #ffffff;
+    --border: rgba(0,0,0,0.08);
+    --text: #1a1d26;
+    --text-dim: #4a5066;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --focus-ring: #1aa56c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+    background: #000; color: var(--text);
+    font-size: 16px; padding: 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #5a6079; margin-bottom: 18px; text-align: center;
+  }
+  .tv-frame {
+    width: 1920px; height: 1080px; margin: 0 auto;
+    background: var(--bg);
+    border-radius: 14px; overflow: hidden;
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  }
+  /* Backdrop based on poster */
+  .backdrop {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(180deg, rgba(7, 8, 12, 0.6) 0%, var(--bg) 80%),
+      linear-gradient(135deg, #1e3a5f 0%, #2d4f7c 50%, #6b3a8a 100%);
+    background-size: cover;
+    filter: blur(2px);
+  }
+  [data-theme="light"] .backdrop {
+    background:
+      linear-gradient(180deg, rgba(245, 246, 250, 0.85) 0%, var(--bg) 80%),
+      linear-gradient(135deg, #b8d0ed 0%, #c4d0eb 50%, #d8c4eb 100%);
+  }
+
+  /* Top bar */
+  .top-bar {
+    position: relative; z-index: 5;
+    height: 80px; padding: 0 80px;
+    display: flex; align-items: center; gap: 32px;
+  }
+  .back-btn {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-dim); font-size: 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 10px;
+    cursor: pointer;
+  }
+  .brand-row { display: flex; align-items: center; gap: 12px; }
+  .brand-logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 16px;
+  }
+  .brand-name { font-weight: 600; font-size: 16px; color: var(--text-dim); }
+  .top-right {
+    margin-left: auto; display: flex; align-items: center; gap: 22px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 16px;
+  }
+
+  /* Main detail layout */
+  .main {
+    position: relative; z-index: 4;
+    padding: 0 80px;
+  }
+  .top-section {
+    display: grid;
+    grid-template-columns: 480px 1fr;
+    gap: 56px;
+    margin-bottom: 50px;
+  }
+
+  /* LEFT: poster */
+  .poster {
+    width: 480px;
+    aspect-ratio: 2/3;
+    border-radius: 18px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+    background: linear-gradient(135deg, #1e3a5f, #4b2870);
+  }
+  .poster::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 0%, transparent 60%, rgba(0,0,0,0.7) 100%);
+  }
+  .poster .poster-art {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 70% 30%, rgba(255, 200, 100, 0.3), transparent 60%),
+      radial-gradient(ellipse at 30% 70%, rgba(99, 102, 241, 0.4), transparent 60%);
+  }
+  .poster-title {
+    position: absolute; left: 24px; right: 24px; bottom: 24px;
+    direction: rtl; text-align: right;
+    font-family: -apple-system, "SF Arabic", "Geeza Pro", sans-serif;
+    font-size: 44px; font-weight: 700; line-height: 1.1;
+    color: #fff;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.6);
+    z-index: 1;
+  }
+  .poster-meta-bar {
+    position: absolute; top: 24px; left: 24px; right: 24px;
+    display: flex; justify-content: space-between;
+    z-index: 1;
+  }
+  .poster-pill {
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 13px; font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .poster-pill.rating {
+    background: var(--accent); color: #000;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  /* RIGHT: metadata + actions */
+  .info {
+    padding-top: 16px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--accent);
+    font-size: 16px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.2px;
+    margin-bottom: 14px;
+  }
+  .eyebrow svg { width: 16px; height: 16px; }
+  .title {
+    font-size: 56px; font-weight: 800; line-height: 1.05;
+    letter-spacing: -1.5px;
+    margin-bottom: 14px;
+  }
+  .subtitle {
+    font-size: 22px; color: var(--text-dim); line-height: 1.4;
+    margin-bottom: 22px;
+    direction: rtl; text-align: left;
+    font-family: -apple-system, "SF Arabic", "Geeza Pro", sans-serif;
+  }
+  .meta-pills {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 28px;
+  }
+  .mp {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 15px; color: var(--text-dim);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .mp svg { width: 16px; height: 16px; }
+  .mp.green { color: var(--accent); border-color: rgba(61, 220, 151, 0.4); background: rgba(61, 220, 151, 0.08); }
+
+  .description {
+    font-size: 18px; line-height: 1.6;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    max-width: 800px;
+  }
+  .description em { color: var(--text); font-style: normal; font-weight: 600; }
+
+  /* Resume strip */
+  .resume-strip {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+    display: flex; align-items: center; gap: 16px;
+    max-width: 800px;
+  }
+  .resume-info { flex: 1; }
+  .resume-label {
+    font-size: 13px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .resume-text {
+    font-size: 17px; font-weight: 500;
+  }
+  .resume-time {
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim); font-size: 16px;
+  }
+  .resume-bar {
+    margin-top: 10px;
+    height: 4px; background: rgba(255,255,255,0.1);
+    border-radius: 2px; overflow: hidden;
+  }
+  .resume-bar-fill { height: 100%; background: var(--accent); width: 23%; }
+
+  /* Action buttons */
+  .actions {
+    display: flex; gap: 16px; align-items: center;
+    margin-bottom: 14px;
+  }
+  .btn {
+    height: 72px; padding: 0 32px;
+    border: 0; border-radius: 14px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 12px;
+    font-size: 18px; font-weight: 600;
+    transition: transform 0.15s;
+    position: relative;
+  }
+  .btn-primary {
+    background: #fff; color: #000;
+    padding: 0 38px;
+  }
+  .btn-secondary {
+    background: rgba(255,255,255,0.12); color: var(--text);
+    backdrop-filter: blur(10px);
+  }
+  .btn-icon {
+    width: 72px; height: 72px;
+    padding: 0;
+    background: rgba(255,255,255,0.12); color: var(--text);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btn.focused {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 32px rgba(61, 220, 151, 0.5);
+  }
+  .focus-tag {
+    position: absolute; left: 50%; top: -32px;
+    transform: translateX(-50%);
+    background: var(--accent); color: #000;
+    padding: 4px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+
+  /* Bottom related row */
+  .related-section { padding: 0 80px; }
+  .related-header {
+    display: flex; align-items: baseline; gap: 14px;
+    margin-bottom: 18px;
+  }
+  .related-title {
+    font-size: 22px; font-weight: 700;
+  }
+  .related-sub {
+    font-size: 16px; color: var(--text-muted);
+  }
+  .related-cards {
+    display: flex; gap: 20px;
+  }
+  .related-card {
+    flex-shrink: 0;
+    width: 280px; height: 170px;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .related-card.focused {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 28px rgba(61, 220, 151, 0.5);
+  }
+  .related-card .thumb {
+    position: absolute; inset: 0;
+  }
+  .rt1 { background: linear-gradient(135deg, #1e3a5f, #2d4f7c); }
+  .rt2 { background: linear-gradient(135deg, #3d2e5c, #5e3d8a); }
+  .rt3 { background: linear-gradient(135deg, #4a2e1f, #7a4d33); }
+  .rt4 { background: linear-gradient(135deg, #1f4a3d, #2e7a5e); }
+  .rt5 { background: linear-gradient(135deg, #5c2e3d, #8a3d5e); }
+  .rt6 { background: linear-gradient(135deg, #2e3d5c, #3d5c8a); }
+  .related-card .grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.85));
+  }
+  .related-card .info {
+    position: absolute; left: 14px; right: 14px; bottom: 12px;
+    z-index: 2;
+  }
+  .related-card .name {
+    font-size: 15px; font-weight: 600; color: #fff;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .related-card .meta {
+    font-size: 12px; color: rgba(255,255,255,0.7);
+  }
+  .related-card .lang {
+    position: absolute; top: 10px; left: 10px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+    color: #fff; padding: 3px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 700;
+  }
+  .related-card .dur {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+    color: #fff; padding: 3px 8px; border-radius: 4px;
+    font-size: 12px; font-family: ui-monospace, monospace;
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 14 · STORY 14.04 · TV VIDEO DETAIL — FOCUS ON RESUME BUTTON</div>
+
+<div class="tv-frame">
+  <div class="backdrop"></div>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="back-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </div>
+    <div class="brand-row" style="margin-left: 24px;">
+      <div class="brand-logo">م</div>
+      <div class="brand-name">Maktaba</div>
+    </div>
+    <div class="top-right">
+      <span>7:24 PM</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="top-section">
+      <!-- LEFT: poster -->
+      <div class="poster">
+        <div class="poster-art"></div>
+        <div class="poster-meta-bar">
+          <span class="poster-pill rating">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279L12 19.012l-7.416 4.401 1.48-8.279L0 9.306l8.332-1.151z"/></svg>
+            4.9
+          </span>
+          <span class="poster-pill">12 EPISODES</span>
+        </div>
+        <div class="poster-title">دروس<br>في النحو<br>العربي</div>
+      </div>
+
+      <!-- RIGHT: info -->
+      <div class="info">
+        <div class="eyebrow">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279L12 19.012l-7.416 4.401 1.48-8.279L0 9.306l8.332-1.151z"/></svg>
+          Series · Featured
+        </div>
+        <h1 class="title">Lessons in Arabic Grammar</h1>
+        <div class="subtitle">دروس في النحو العربي · للشيخ ياسر القاضي</div>
+
+        <div class="meta-pills">
+          <div class="mp">2026</div>
+          <div class="mp">12 Episodes · 8h 24m</div>
+          <div class="mp">Lecture</div>
+          <div class="mp">Sheikh Yasir Qadhi</div>
+          <div class="mp green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+            AR Audio
+          </div>
+          <div class="mp green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/></svg>
+            EN Subs
+          </div>
+          <div class="mp">4K HDR</div>
+          <div class="mp">★ 4.9</div>
+        </div>
+
+        <div class="description">
+          A comprehensive series on classical Arabic grammar, covering <em>syntax (نحو)</em>, <em>morphology (صرف)</em>, and <em>rhetoric (بلاغة)</em>. Each episode includes interactive transcripts, chapter markers, and reference materials. Recorded in 4K with professional studio audio.
+        </div>
+
+        <div class="resume-strip">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="resume-info">
+            <div class="resume-label">Continue from</div>
+            <div class="resume-text">Episode 4 · المبتدأ والخبر <span class="resume-time">— 17:54 / 42:18</span></div>
+            <div class="resume-bar"><div class="resume-bar-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary focused">
+            <span class="focus-tag">D-PAD FOCUS</span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume Episode 4
+          </button>
+          <button class="btn btn-secondary">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Play From Start
+          </button>
+          <button class="btn btn-icon" title="Add to my list">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="btn btn-icon" title="Like">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7m8-12V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/></svg>
+          </button>
+          <button class="btn btn-icon" title="Episodes list">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Related row -->
+  <div class="related-section">
+    <div class="related-header">
+      <div class="related-title">Related videos</div>
+      <div class="related-sub">· Because you watched Arabic Grammar</div>
+    </div>
+    <div class="related-cards">
+      <div class="related-card">
+        <div class="thumb rt2"></div>
+        <div class="grad"></div>
+        <span class="lang">AR</span>
+        <span class="dur">1:08:00</span>
+        <div class="info">
+          <div class="name">شرح الأجرومية</div>
+          <div class="meta">24 episodes · 4.7 ★</div>
+        </div>
+      </div>
+      <div class="related-card">
+        <div class="thumb rt3"></div>
+        <div class="grad"></div>
+        <span class="lang">EN</span>
+        <span class="dur">58:30</span>
+        <div class="info">
+          <div class="name">Modern Standard Arabic</div>
+          <div class="meta">Course · 12 lessons</div>
+        </div>
+      </div>
+      <div class="related-card">
+        <div class="thumb rt4"></div>
+        <div class="grad"></div>
+        <span class="lang">AR</span>
+        <span class="dur">42:00</span>
+        <div class="info">
+          <div class="name">علم البلاغة</div>
+          <div class="meta">8 episodes</div>
+        </div>
+      </div>
+      <div class="related-card">
+        <div class="thumb rt5"></div>
+        <div class="grad"></div>
+        <span class="lang">EN</span>
+        <span class="dur">31:45</span>
+        <div class="info">
+          <div class="name">Arabic Calligraphy 101</div>
+          <div class="meta">Tutorial · 6 lessons</div>
+        </div>
+      </div>
+      <div class="related-card">
+        <div class="thumb rt6"></div>
+        <div class="grad"></div>
+        <span class="lang">AR</span>
+        <span class="dur">52:30</span>
+        <div class="info">
+          <div class="name">شرح ألفية ابن مالك</div>
+          <div class="meta">Series · 30 episodes</div>
+        </div>
+      </div>
+      <div class="related-card">
+        <div class="thumb rt1"></div>
+        <div class="grad"></div>
+        <span class="lang">EN</span>
+        <span class="dur">22:15</span>
+        <div class="info">
+          <div class="name">Verb Conjugation</div>
+          <div class="meta">Tutorial</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
