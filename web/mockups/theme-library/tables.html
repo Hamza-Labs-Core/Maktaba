@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Tables</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-fg: #ffffff; --primary-soft: #eef2ff; --primary-soft-fg: #4338ca;
+    --success: #16a34a; --success-soft: #dcfce7; --success-soft-fg: #15803d;
+    --warning: #d97706; --warning-soft: #fef3c7; --warning-soft-fg: #b45309;
+    --error: #dc2626; --error-soft: #fee2e2; --error-soft-fg: #b91c1c;
+    --info: #2563eb; --info-soft: #dbeafe; --info-soft-fg: #1d4ed8;
+    --row-hover: rgba(0,0,0,0.025); --row-selected: rgba(79, 70, 229, 0.05);
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8; --primary-fg: #18181b; --primary-soft: #1e1b4b; --primary-soft-fg: #c7d2fe;
+    --success: #34d399; --success-soft: #052e16; --success-soft-fg: #6ee7b7;
+    --warning: #facc15; --warning-soft: #422006; --warning-soft-fg: #fde047;
+    --error: #f87171; --error-soft: #450a0a; --error-soft-fg: #fca5a5;
+    --info: #60a5fa; --info-soft: #172554; --info-soft-fg: #93c5fd;
+    --row-hover: rgba(255,255,255,0.03); --row-selected: rgba(129, 140, 248, 0.07);
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ============ TABLE WRAPPER ============ */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .table-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-toolbar-search {
+    flex: 1; max-width: 320px; position: relative;
+  }
+  .table-toolbar-search input {
+    width: 100%; height: 32px; padding: 0 10px 0 30px;
+    background: var(--surface-2); border: 1px solid transparent;
+    border-radius: 7px; font: inherit; font-size: 12.5px;
+    color: var(--text); outline: none;
+  }
+  .table-toolbar-search input:focus { background: var(--surface); border-color: var(--primary); }
+  .table-toolbar-search svg { position: absolute; top: 50%; left: 9px; transform: translateY(-50%); width: 12px; height: 12px; color: var(--text-subtle); }
+  .table-toolbar-actions { margin-left: auto; display: flex; gap: 6px; }
+  .tb-btn {
+    height: 32px; padding: 0 10px; font: inherit; font-size: 12px; font-weight: 500;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text-muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .tb-btn:hover { background: var(--surface-2); color: var(--text); }
+  .tb-btn svg { width: 12px; height: 12px; }
+  .tb-btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .tb-btn-primary:hover { filter: brightness(1.05); color: var(--primary-fg); background: var(--primary); }
+
+  /* Selection bar */
+  .selection-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    background: var(--primary-soft); color: var(--primary-soft-fg);
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px; font-weight: 500;
+  }
+  .selection-bar .actions { margin-left: auto; display: flex; gap: 6px; }
+  .selection-bar .actions .tb-btn { background: transparent; border-color: transparent; color: var(--primary-soft-fg); }
+  .selection-bar .actions .tb-btn:hover { background: rgba(255,255,255,0.5); }
+  [data-theme="dark"] .selection-bar .actions .tb-btn:hover { background: rgba(255,255,255,0.1); }
+
+  /* ============ TABLE ============ */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; font-weight: 500; font-size: 11px;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    user-select: none;
+  }
+  thead th.sortable { cursor: pointer; }
+  thead th.sortable:hover { color: var(--text); }
+  thead th.sortable .sort-arrow { display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 4px; opacity: 0.5; gap: 1px; }
+  thead th.sortable .sort-arrow svg { width: 8px; height: 5px; }
+  thead th.sorted .sort-arrow { opacity: 1; color: var(--primary); }
+  thead th.right { text-align: right; }
+  thead th.center { text-align: center; }
+  thead th.checkbox-col { width: 32px; padding-right: 0; }
+  thead th.action-col { width: 40px; }
+
+  tbody td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background .12s; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr.selected { background: var(--row-selected); }
+
+  td.muted { color: var(--text-muted); }
+  td.right { text-align: right; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, 'SF Mono', monospace; }
+  td.center { text-align: center; }
+
+  /* Cell components */
+  .cell-title { display: flex; align-items: center; gap: 10px; }
+  .thumb {
+    width: 36px; height: 24px; border-radius: 4px; flex-shrink: 0;
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    position: relative; overflow: hidden;
+  }
+  .thumb-2 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .thumb-3 { background: linear-gradient(135deg, #10b981, #06b6d4); }
+  .thumb-4 { background: linear-gradient(135deg, #8b5cf6, #d946ef); }
+  .thumb-5 { background: linear-gradient(135deg, #14b8a6, #0ea5e9); }
+  .thumb-6 { background: linear-gradient(135deg, #f97316, #f43f5e); }
+  .cell-title-text { display: flex; flex-direction: column; min-width: 0; }
+  .cell-title-name { font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .cell-title-sub { font-size: 11px; color: var(--text-subtle); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 500;
+    padding: 2px 8px; border-radius: 999px; line-height: 1.4;
+  }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .badge.success { background: var(--success-soft); color: var(--success-soft-fg); }
+  .badge.success .badge-dot { background: var(--success); }
+  .badge.warning { background: var(--warning-soft); color: var(--warning-soft-fg); }
+  .badge.warning .badge-dot { background: var(--warning); }
+  .badge.error { background: var(--error-soft); color: var(--error-soft-fg); }
+  .badge.error .badge-dot { background: var(--error); }
+  .badge.info { background: var(--info-soft); color: var(--info-soft-fg); }
+  .badge.info .badge-dot { background: var(--info); }
+  .badge.processing { background: var(--primary-soft); color: var(--primary-soft-fg); }
+  .badge.processing .badge-dot { background: var(--primary); position: relative; }
+  .badge.processing .badge-dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: currentColor; opacity: 0.5; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.4); opacity: 0; } }
+
+  /* Lang chip */
+  .lang {
+    display: inline-flex; align-items: center;
+    font-size: 10px; font-weight: 600;
+    padding: 2px 5px; border-radius: 4px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border);
+    letter-spacing: 0.04em;
+  }
+  .lang + .lang { margin-left: 4px; }
+
+  /* Checkbox */
+  .check {
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--surface);
+    display: inline-grid; place-items: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .check svg { width: 10px; height: 10px; color: var(--primary-fg); opacity: 0; }
+  .check.checked { background: var(--primary); border-color: var(--primary); }
+  .check.checked svg { opacity: 1; }
+  .check.indeterminate { background: var(--primary); border-color: var(--primary); position: relative; }
+  .check.indeterminate::after { content: ''; position: absolute; left: 3px; right: 3px; height: 1.5px; background: var(--primary-fg); }
+
+  .more-btn {
+    width: 26px; height: 26px; border-radius: 6px;
+    border: none; background: transparent; color: var(--text-muted);
+    cursor: pointer; display: grid; place-items: center;
+  }
+  .more-btn:hover { background: var(--surface-2); color: var(--text); }
+  .more-btn svg { width: 14px; height: 14px; }
+
+  /* Progress bar */
+  .progress {
+    width: 80px; height: 4px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 999px;
+    background: var(--primary);
+  }
+  .progress-text { font-size: 11px; color: var(--text-muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
+
+  /* Avatar */
+  .avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: linear-gradient(135deg, #818cf8, #c084fc);
+    color: #fff; font-size: 10px; font-weight: 600;
+    display: inline-grid; place-items: center;
+    border: 1.5px solid var(--surface);
+  }
+  .avatar.av-2 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .avatar.av-3 { background: linear-gradient(135deg, #10b981, #06b6d4); }
+
+  /* Empty state */
+  .empty-row td { padding: 48px 16px; text-align: center; color: var(--text-muted); }
+  .empty-row .icon-wrap {
+    width: 48px; height: 48px; background: var(--surface-2); border-radius: 12px;
+    display: grid; place-items: center;
+    margin: 0 auto 12px;
+  }
+  .empty-row .icon-wrap svg { width: 22px; height: 22px; color: var(--text-subtle); }
+  .empty-row .empty-title { color: var(--text); font-weight: 500; font-size: 13px; }
+  .empty-row .empty-sub { font-size: 12px; margin-top: 4px; }
+
+  /* Pagination */
+  .pagination {
+    display: flex; align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 12px; gap: 8px;
+  }
+  .pagination .info { color: var(--text-muted); margin-right: auto; font-variant-numeric: tabular-nums; }
+  .pagination .info b { color: var(--text); font-weight: 600; }
+  .page-btn {
+    min-width: 28px; height: 28px; padding: 0 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    border-radius: 6px; color: var(--text); cursor: pointer;
+    font: inherit; font-size: 11.5px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .page-btn:hover:not(:disabled) { background: var(--surface-2); }
+  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-btn.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .page-btn svg { width: 11px; height: 11px; }
+
+  @media (max-width: 1100px) { .comparison { grid-template-columns: 1fr; } .pane { padding: 24px; } }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / tables.html</div>
+    <h1>Tables</h1>
+    <p>Sortable columns, row selection, pagination, status badges, and an empty state — covering video lists and job queues.</p>
+  </header>
+
+  <div class="comparison" id="comparison">
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Video Library</div>
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <div class="table-toolbar-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input placeholder="Search videos…">
+            </div>
+            <div class="table-toolbar-actions">
+              <button class="tb-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>Filter</button>
+              <button class="tb-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Export</button>
+              <button class="tb-btn tb-btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>New</button>
+            </div>
+          </div>
+          <div class="selection-bar">
+            <span><b>2</b> videos selected</span>
+            <div class="actions">
+              <button class="tb-btn">Add tags</button>
+              <button class="tb-btn">Reprocess</button>
+              <button class="tb-btn">Delete</button>
+              <button class="tb-btn">Cancel</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th class="checkbox-col"><span class="check indeterminate"></span></th>
+                <th class="sortable sorted">Title <span class="sort-arrow"><svg viewBox="0 0 8 5" fill="currentColor"><polygon points="0,5 4,0 8,5"/></svg></span></th>
+                <th class="sortable">Languages</th>
+                <th class="sortable">Status</th>
+                <th class="sortable right">Duration</th>
+                <th class="sortable">Owner</th>
+                <th class="sortable right">Updated</th>
+                <th class="action-col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="selected">
+                <td><span class="check checked"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">Mu'allaqat — Lecture 04: Imru' al-Qais</div>
+                      <div class="cell-title-sub">classical-poetry · seminar-2024</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span><span class="lang">EN</span></td>
+                <td><span class="badge processing"><span class="badge-dot"></span>Processing 64%</span></td>
+                <td class="num">42:18</td>
+                <td><span class="avatar">MD</span> <span class="muted">M. Darwish</span></td>
+                <td class="right muted">2 days ago</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr class="selected">
+                <td><span class="check checked"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb thumb-2"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">Theology Foundations — Module 12</div>
+                      <div class="cell-title-sub">theology · core-curriculum</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span><span class="lang">EN</span><span class="lang">FR</span></td>
+                <td><span class="badge success"><span class="badge-dot"></span>Done</span></td>
+                <td class="num">1:24:05</td>
+                <td><span class="avatar av-2">SR</span> <span class="muted">S. Rahman</span></td>
+                <td class="right muted">1 week ago</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb thumb-3"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">Calligraphy Workshop: The Diwani Script</div>
+                      <div class="cell-title-sub">workshop · arts</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span></td>
+                <td><span class="badge success"><span class="badge-dot"></span>Done</span></td>
+                <td class="num">28:42</td>
+                <td><span class="avatar av-3">FA</span> <span class="muted">F. Ali</span></td>
+                <td class="right muted">3 weeks ago</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb thumb-4"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">Philosophy of Language in Andalusia</div>
+                      <div class="cell-title-sub">philosophy · seminar</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span><span class="lang">ES</span></td>
+                <td><span class="badge error"><span class="badge-dot"></span>Failed</span></td>
+                <td class="num">52:30</td>
+                <td><span class="avatar">MD</span> <span class="muted">M. Darwish</span></td>
+                <td class="right muted">3 weeks ago</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb thumb-5"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">Rhetoric & Eloquence — Reading Group</div>
+                      <div class="cell-title-sub">arabic-studies · reading</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span><span class="lang">EN</span></td>
+                <td><span class="badge warning"><span class="badge-dot"></span>Paused</span></td>
+                <td class="num">1:08:14</td>
+                <td><span class="avatar av-2">SR</span> <span class="muted">S. Rahman</span></td>
+                <td class="right muted">1 month ago</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
+                <td>
+                  <div class="cell-title">
+                    <div class="thumb thumb-6"></div>
+                    <div class="cell-title-text">
+                      <div class="cell-title-name">History of the Andalus — Episode 02</div>
+                      <div class="cell-title-sub">history · podcast</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="lang">AR</span><span class="lang">EN</span><span class="lang">ES</span></td>
+                <td><span class="badge info"><span class="badge-dot"></span>Queued</span></td>
+                <td class="num">38:46</td>
+                <td><span class="avatar av-3">FA</span> <span class="muted">F. Ali</span></td>
+                <td class="right muted">just now</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pagination">
+            <span class="info">Showing <b>1–6</b> of <b>128</b></span>
+            <button class="page-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+            <button class="page-btn active">1</button>
+            <button class="page-btn">2</button>
+            <button class="page-btn">3</button>
+            <span style="color: var(--text-subtle); padding: 0 4px;">…</span>
+            <button class="page-btn">22</button>
+            <button class="page-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Job Queue</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable sorted">Job <span class="sort-arrow"><svg viewBox="0 0 8 5" fill="currentColor"><polygon points="0,0 4,5 8,0"/></svg></span></th>
+                <th>Stage</th>
+                <th class="right">Progress</th>
+                <th class="sortable right">Started</th>
+                <th class="sortable right">ETA</th>
+                <th class="action-col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div style="font-weight: 500;">job_aQ4kP8v2c</div>
+                  <div class="cell-title-sub">Mu'allaqat — Lecture 04</div>
+                </td>
+                <td><span class="badge processing"><span class="badge-dot"></span>Transcribing</span></td>
+                <td class="right"><span class="progress"><span class="progress-fill" style="width: 64%"></span></span><span class="progress-text">64%</span></td>
+                <td class="right muted">14:08:22</td>
+                <td class="right muted">~18 min</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="font-weight: 500;">job_xR9zP2k7m</div>
+                  <div class="cell-title-sub">History of Andalus — E02</div>
+                </td>
+                <td><span class="badge info"><span class="badge-dot"></span>Queued</span></td>
+                <td class="right"><span class="progress"><span class="progress-fill" style="width: 0%; background: var(--text-subtle);"></span></span><span class="progress-text">0%</span></td>
+                <td class="right muted">—</td>
+                <td class="right muted">~32 min</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="font-weight: 500;">job_kV3nL8w1d</div>
+                  <div class="cell-title-sub">Theology Foundations — M12</div>
+                </td>
+                <td><span class="badge success"><span class="badge-dot"></span>Done</span></td>
+                <td class="right"><span class="progress"><span class="progress-fill" style="width: 100%; background: var(--success);"></span></span><span class="progress-text">100%</span></td>
+                <td class="right muted">12:20:14</td>
+                <td class="right muted">—</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="font-weight: 500;">job_pY7tH5j9b</div>
+                  <div class="cell-title-sub">Andalusian Philosophy</div>
+                </td>
+                <td><span class="badge error"><span class="badge-dot"></span>Failed</span></td>
+                <td class="right"><span class="progress"><span class="progress-fill" style="width: 22%; background: var(--error);"></span></span><span class="progress-text">22%</span></td>
+                <td class="right muted">11:55:08</td>
+                <td class="right muted">—</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="font-weight: 500;">job_wB1cF6h2e</div>
+                  <div class="cell-title-sub">Rhetoric & Eloquence</div>
+                </td>
+                <td><span class="badge warning"><span class="badge-dot"></span>Paused</span></td>
+                <td class="right"><span class="progress"><span class="progress-fill" style="width: 41%; background: var(--warning);"></span></span><span class="progress-text">41%</span></td>
+                <td class="right muted">10:42:31</td>
+                <td class="right muted">paused</td>
+                <td><button class="more-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Empty State</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Languages</th>
+                <th>Status</th>
+                <th class="right">Duration</th>
+                <th class="right">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="empty-row">
+                <td colspan="5">
+                  <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+                  <div class="empty-title">No videos match this filter</div>
+                  <div class="empty-sub">Try removing some filters, or upload a new video to get started.</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+      <div id="dark-mount"></div>
+    </section>
+  </div>
+
+<script>
+  const lightPane = document.querySelector('.pane[data-theme="light"]');
+  const darkMount = document.getElementById('dark-mount');
+  const clone = lightPane.cloneNode(true);
+  clone.querySelector('.theme-label')?.remove();
+  while (clone.firstChild) darkMount.appendChild(clone.firstChild);
+</script>
+</body>
+</html>
