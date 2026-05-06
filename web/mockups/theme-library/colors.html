@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Colors</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  /* ============ DESIGN TOKENS ============ */
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-fg: #ffffff;
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.08), 0 1px 2px -1px rgba(0,0,0,0.06);
+
+    /* Primary — Indigo */
+    --primary-50:#eef2ff; --primary-100:#e0e7ff; --primary-200:#c7d2fe; --primary-300:#a5b4fc; --primary-400:#818cf8;
+    --primary-500:#6366f1; --primary-600:#4f46e5; --primary-700:#4338ca; --primary-800:#3730a3; --primary-900:#312e81;
+    /* Secondary — Slate */
+    --secondary-50:#f8fafc; --secondary-100:#f1f5f9; --secondary-200:#e2e8f0; --secondary-300:#cbd5e1; --secondary-400:#94a3b8;
+    --secondary-500:#64748b; --secondary-600:#475569; --secondary-700:#334155; --secondary-800:#1e293b; --secondary-900:#0f172a;
+    /* Accent — Amber */
+    --accent-50:#fffbeb; --accent-100:#fef3c7; --accent-200:#fde68a; --accent-300:#fcd34d; --accent-400:#fbbf24;
+    --accent-500:#f59e0b; --accent-600:#d97706; --accent-700:#b45309; --accent-800:#92400e; --accent-900:#78350f;
+    /* Neutral — Zinc */
+    --neutral-50:#fafafa; --neutral-100:#f4f4f5; --neutral-200:#e4e4e7; --neutral-300:#d4d4d8; --neutral-400:#a1a1aa;
+    --neutral-500:#71717a; --neutral-600:#52525b; --neutral-700:#3f3f46; --neutral-800:#27272a; --neutral-900:#18181b;
+    /* Success — Emerald */
+    --success-50:#ecfdf5; --success-100:#d1fae5; --success-200:#a7f3d0; --success-300:#6ee7b7; --success-400:#34d399;
+    --success-500:#10b981; --success-600:#059669; --success-700:#047857; --success-800:#065f46; --success-900:#064e3b;
+    /* Warning — Orange */
+    --warning-50:#fff7ed; --warning-100:#ffedd5; --warning-200:#fed7aa; --warning-300:#fdba74; --warning-400:#fb923c;
+    --warning-500:#f97316; --warning-600:#ea580c; --warning-700:#c2410c; --warning-800:#9a3412; --warning-900:#7c2d12;
+    /* Error — Red */
+    --error-50:#fef2f2; --error-100:#fee2e2; --error-200:#fecaca; --error-300:#fca5a5; --error-400:#f87171;
+    --error-500:#ef4444; --error-600:#dc2626; --error-700:#b91c1c; --error-800:#991b1b; --error-900:#7f1d1d;
+    /* Info — Sky */
+    --info-50:#f0f9ff; --info-100:#e0f2fe; --info-200:#bae6fd; --info-300:#7dd3fc; --info-400:#38bdf8;
+    --info-500:#0ea5e9; --info-600:#0284c7; --info-700:#0369a1; --info-800:#075985; --info-900:#0c4a6e;
+  }
+
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8; --primary-fg: #18181b;
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.4), 0 1px 2px -1px rgba(0,0,0,0.4);
+
+    --primary-50:#1e1b4b; --primary-100:#312e81; --primary-200:#3730a3; --primary-300:#4338ca; --primary-400:#4f46e5;
+    --primary-500:#6366f1; --primary-600:#818cf8; --primary-700:#a5b4fc; --primary-800:#c7d2fe; --primary-900:#e0e7ff;
+    --secondary-50:#020617; --secondary-100:#0f172a; --secondary-200:#1e293b; --secondary-300:#334155; --secondary-400:#475569;
+    --secondary-500:#64748b; --secondary-600:#94a3b8; --secondary-700:#cbd5e1; --secondary-800:#e2e8f0; --secondary-900:#f1f5f9;
+    --accent-50:#451a03; --accent-100:#78350f; --accent-200:#92400e; --accent-300:#b45309; --accent-400:#d97706;
+    --accent-500:#f59e0b; --accent-600:#fbbf24; --accent-700:#fcd34d; --accent-800:#fde68a; --accent-900:#fef3c7;
+    --neutral-50:#09090b; --neutral-100:#18181b; --neutral-200:#27272a; --neutral-300:#3f3f46; --neutral-400:#52525b;
+    --neutral-500:#71717a; --neutral-600:#a1a1aa; --neutral-700:#d4d4d8; --neutral-800:#e4e4e7; --neutral-900:#f4f4f5;
+    --success-50:#022c22; --success-100:#064e3b; --success-200:#065f46; --success-300:#047857; --success-400:#059669;
+    --success-500:#10b981; --success-600:#34d399; --success-700:#6ee7b7; --success-800:#a7f3d0; --success-900:#d1fae5;
+    --warning-50:#431407; --warning-100:#7c2d12; --warning-200:#9a3412; --warning-300:#c2410c; --warning-400:#ea580c;
+    --warning-500:#f97316; --warning-600:#fb923c; --warning-700:#fdba74; --warning-800:#fed7aa; --warning-900:#ffedd5;
+    --error-50:#450a0a; --error-100:#7f1d1d; --error-200:#991b1b; --error-300:#b91c1c; --error-400:#dc2626;
+    --error-500:#ef4444; --error-600:#f87171; --error-700:#fca5a5; --error-800:#fecaca; --error-900:#fee2e2;
+    --info-50:#082f49; --info-100:#0c4a6e; --info-200:#075985; --info-300:#0369a1; --info-400:#0284c7;
+    --info-500:#0ea5e9; --info-600:#38bdf8; --info-700:#7dd3fc; --info-800:#bae6fd; --info-900:#e0f2fe;
+  }
+
+  /* ============ PAGE LAYOUT ============ */
+  .page-header {
+    padding: 32px 48px;
+    background: #0a0a0a;
+    border-bottom: 1px solid #27272a;
+  }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; }
+  .pane[data-theme="light"] { background: var(--bg); color: var(--text); }
+  .pane[data-theme="dark"] { background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  /* ============ COMPONENT STYLES ============ */
+  .section { margin-bottom: 40px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 16px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+
+  .ramp { margin-bottom: 28px; }
+  .ramp-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .ramp-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .ramp-desc { font-size: 11px; color: var(--text-subtle); font-family: ui-monospace, 'SF Mono', monospace; }
+  .swatches { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+  .swatch {
+    aspect-ratio: 1.1;
+    border-radius: 6px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 6px;
+    font-size: 9px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    line-height: 1.2;
+    border: 1px solid rgba(0,0,0,0.06);
+    transition: transform .15s ease;
+    cursor: pointer;
+  }
+  .swatch:hover { transform: translateY(-2px); }
+  .swatch-label { font-weight: 600; opacity: 0.85; }
+  .swatch-hex { opacity: 0.7; margin-top: 2px; }
+
+  .surface-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .surface-card {
+    border-radius: 10px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    min-height: 100px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .surface-card-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .surface-card-token { font-size: 11px; color: var(--text-subtle); font-family: ui-monospace, 'SF Mono', monospace; margin-top: 4px; }
+  .surface-card-hex { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, 'SF Mono', monospace; }
+  .surface-card.bg { background: var(--bg); }
+  .surface-card.surface { background: var(--surface); }
+  .surface-card.surface-2 { background: var(--surface-2); }
+
+  .text-row { display: flex; flex-direction: column; gap: 6px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .text-row .text-primary { color: var(--text); font-size: 16px; font-weight: 500; }
+  .text-row .text-muted { color: var(--text-muted); font-size: 14px; }
+  .text-row .text-subtle { color: var(--text-subtle); font-size: 13px; }
+  .text-row .text-link { color: var(--primary); font-size: 14px; }
+
+  .semantic-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .semantic-pill {
+    padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .semantic-pill .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pill-success { background: var(--success-100); color: var(--success-700); }
+  .pill-success .dot { background: var(--success-500); }
+  .pill-warning { background: var(--warning-100); color: var(--warning-700); }
+  .pill-warning .dot { background: var(--warning-500); }
+  .pill-error { background: var(--error-100); color: var(--error-700); }
+  .pill-error .dot { background: var(--error-500); }
+  .pill-info { background: var(--info-100); color: var(--info-700); }
+  .pill-info .dot { background: var(--info-500); }
+
+  [data-theme="dark"] .pill-success { background: var(--success-100); color: var(--success-700); }
+  [data-theme="dark"] .pill-warning { background: var(--warning-100); color: var(--warning-700); }
+  [data-theme="dark"] .pill-error { background: var(--error-100); color: var(--error-700); }
+  [data-theme="dark"] .pill-info { background: var(--info-100); color: var(--info-700); }
+
+  @media (max-width: 900px) {
+    .comparison { grid-template-columns: 1fr; }
+    .pane { padding: 24px; }
+    .swatches { grid-template-columns: repeat(5, 1fr); }
+  }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / colors.html</div>
+    <h1>Color System</h1>
+    <p>Full token palette — primary, secondary, accent, neutral, and semantic ramps from 50 to 900.</p>
+  </header>
+
+  <div class="comparison">
+    <!-- ============ LIGHT THEME ============ -->
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Surfaces</div>
+        <div class="surface-row">
+          <div class="surface-card bg">
+            <div>
+              <div class="surface-card-name">Background</div>
+              <div class="surface-card-token">--bg</div>
+            </div>
+            <div class="surface-card-hex">#fafafa</div>
+          </div>
+          <div class="surface-card surface">
+            <div>
+              <div class="surface-card-name">Surface</div>
+              <div class="surface-card-token">--surface</div>
+            </div>
+            <div class="surface-card-hex">#ffffff</div>
+          </div>
+          <div class="surface-card surface-2">
+            <div>
+              <div class="surface-card-name">Surface 2</div>
+              <div class="surface-card-token">--surface-2</div>
+            </div>
+            <div class="surface-card-hex">#f4f4f5</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Text Tokens</div>
+        <div class="text-row">
+          <div class="text-primary">Primary text — body and headings</div>
+          <div class="text-muted">Muted text — secondary information</div>
+          <div class="text-subtle">Subtle text — labels and captions</div>
+          <div class="text-link">Link text — interactive references</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Semantic States</div>
+        <div class="semantic-row">
+          <div class="semantic-pill pill-success"><span class="dot"></span>Success — completed</div>
+          <div class="semantic-pill pill-warning"><span class="dot"></span>Warning — needs attention</div>
+          <div class="semantic-pill pill-error"><span class="dot"></span>Error — failed state</div>
+          <div class="semantic-pill pill-info"><span class="dot"></span>Info — informational</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Color Ramps</div>
+
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Primary — Indigo</span>
+            <span class="ramp-desc">--primary-50 → --primary-900</span>
+          </div>
+          <div class="swatches" id="light-primary"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Secondary — Slate</span>
+            <span class="ramp-desc">--secondary-50 → --secondary-900</span>
+          </div>
+          <div class="swatches" id="light-secondary"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Accent — Amber</span>
+            <span class="ramp-desc">--accent-50 → --accent-900</span>
+          </div>
+          <div class="swatches" id="light-accent"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Neutral — Zinc</span>
+            <span class="ramp-desc">--neutral-50 → --neutral-900</span>
+          </div>
+          <div class="swatches" id="light-neutral"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Success — Emerald</span>
+            <span class="ramp-desc">--success-50 → --success-900</span>
+          </div>
+          <div class="swatches" id="light-success"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Warning — Orange</span>
+            <span class="ramp-desc">--warning-50 → --warning-900</span>
+          </div>
+          <div class="swatches" id="light-warning"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Error — Red</span>
+            <span class="ramp-desc">--error-50 → --error-900</span>
+          </div>
+          <div class="swatches" id="light-error"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Info — Sky</span>
+            <span class="ramp-desc">--info-50 → --info-900</span>
+          </div>
+          <div class="swatches" id="light-info"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DARK THEME ============ -->
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+
+      <div class="section">
+        <div class="section-title">Surfaces</div>
+        <div class="surface-row">
+          <div class="surface-card bg">
+            <div>
+              <div class="surface-card-name">Background</div>
+              <div class="surface-card-token">--bg</div>
+            </div>
+            <div class="surface-card-hex">#09090b</div>
+          </div>
+          <div class="surface-card surface">
+            <div>
+              <div class="surface-card-name">Surface</div>
+              <div class="surface-card-token">--surface</div>
+            </div>
+            <div class="surface-card-hex">#18181b</div>
+          </div>
+          <div class="surface-card surface-2">
+            <div>
+              <div class="surface-card-name">Surface 2</div>
+              <div class="surface-card-token">--surface-2</div>
+            </div>
+            <div class="surface-card-hex">#27272a</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Text Tokens</div>
+        <div class="text-row">
+          <div class="text-primary">Primary text — body and headings</div>
+          <div class="text-muted">Muted text — secondary information</div>
+          <div class="text-subtle">Subtle text — labels and captions</div>
+          <div class="text-link">Link text — interactive references</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Semantic States</div>
+        <div class="semantic-row">
+          <div class="semantic-pill pill-success"><span class="dot"></span>Success — completed</div>
+          <div class="semantic-pill pill-warning"><span class="dot"></span>Warning — needs attention</div>
+          <div class="semantic-pill pill-error"><span class="dot"></span>Error — failed state</div>
+          <div class="semantic-pill pill-info"><span class="dot"></span>Info — informational</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Color Ramps</div>
+
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Primary — Indigo</span>
+            <span class="ramp-desc">--primary-50 → --primary-900</span>
+          </div>
+          <div class="swatches" id="dark-primary"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Secondary — Slate</span>
+            <span class="ramp-desc">--secondary-50 → --secondary-900</span>
+          </div>
+          <div class="swatches" id="dark-secondary"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Accent — Amber</span>
+            <span class="ramp-desc">--accent-50 → --accent-900</span>
+          </div>
+          <div class="swatches" id="dark-accent"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Neutral — Zinc</span>
+            <span class="ramp-desc">--neutral-50 → --neutral-900</span>
+          </div>
+          <div class="swatches" id="dark-neutral"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Success — Emerald</span>
+            <span class="ramp-desc">--success-50 → --success-900</span>
+          </div>
+          <div class="swatches" id="dark-success"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Warning — Orange</span>
+            <span class="ramp-desc">--warning-50 → --warning-900</span>
+          </div>
+          <div class="swatches" id="dark-warning"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Error — Red</span>
+            <span class="ramp-desc">--error-50 → --error-900</span>
+          </div>
+          <div class="swatches" id="dark-error"></div>
+        </div>
+        <div class="ramp">
+          <div class="ramp-header">
+            <span class="ramp-name">Info — Sky</span>
+            <span class="ramp-desc">--info-50 → --info-900</span>
+          </div>
+          <div class="swatches" id="dark-info"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<script>
+  const ramps = {
+    primary: {
+      light: ['#eef2ff','#e0e7ff','#c7d2fe','#a5b4fc','#818cf8','#6366f1','#4f46e5','#4338ca','#3730a3','#312e81'],
+      dark:  ['#1e1b4b','#312e81','#3730a3','#4338ca','#4f46e5','#6366f1','#818cf8','#a5b4fc','#c7d2fe','#e0e7ff']
+    },
+    secondary: {
+      light: ['#f8fafc','#f1f5f9','#e2e8f0','#cbd5e1','#94a3b8','#64748b','#475569','#334155','#1e293b','#0f172a'],
+      dark:  ['#020617','#0f172a','#1e293b','#334155','#475569','#64748b','#94a3b8','#cbd5e1','#e2e8f0','#f1f5f9']
+    },
+    accent: {
+      light: ['#fffbeb','#fef3c7','#fde68a','#fcd34d','#fbbf24','#f59e0b','#d97706','#b45309','#92400e','#78350f'],
+      dark:  ['#451a03','#78350f','#92400e','#b45309','#d97706','#f59e0b','#fbbf24','#fcd34d','#fde68a','#fef3c7']
+    },
+    neutral: {
+      light: ['#fafafa','#f4f4f5','#e4e4e7','#d4d4d8','#a1a1aa','#71717a','#52525b','#3f3f46','#27272a','#18181b'],
+      dark:  ['#09090b','#18181b','#27272a','#3f3f46','#52525b','#71717a','#a1a1aa','#d4d4d8','#e4e4e7','#f4f4f5']
+    },
+    success: {
+      light: ['#ecfdf5','#d1fae5','#a7f3d0','#6ee7b7','#34d399','#10b981','#059669','#047857','#065f46','#064e3b'],
+      dark:  ['#022c22','#064e3b','#065f46','#047857','#059669','#10b981','#34d399','#6ee7b7','#a7f3d0','#d1fae5']
+    },
+    warning: {
+      light: ['#fff7ed','#ffedd5','#fed7aa','#fdba74','#fb923c','#f97316','#ea580c','#c2410c','#9a3412','#7c2d12'],
+      dark:  ['#431407','#7c2d12','#9a3412','#c2410c','#ea580c','#f97316','#fb923c','#fdba74','#fed7aa','#ffedd5']
+    },
+    error: {
+      light: ['#fef2f2','#fee2e2','#fecaca','#fca5a5','#f87171','#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d'],
+      dark:  ['#450a0a','#7f1d1d','#991b1b','#b91c1c','#dc2626','#ef4444','#f87171','#fca5a5','#fecaca','#fee2e2']
+    },
+    info: {
+      light: ['#f0f9ff','#e0f2fe','#bae6fd','#7dd3fc','#38bdf8','#0ea5e9','#0284c7','#0369a1','#075985','#0c4a6e'],
+      dark:  ['#082f49','#0c4a6e','#075985','#0369a1','#0284c7','#0ea5e9','#38bdf8','#7dd3fc','#bae6fd','#e0f2fe']
+    }
+  };
+  const stops = [50,100,200,300,400,500,600,700,800,900];
+
+  function buildRamp(id, colors) {
+    const root = document.getElementById(id);
+    if (!root) return;
+    colors.forEach((hex, i) => {
+      const stop = stops[i];
+      const isDarkText = i < 5;
+      const swatch = document.createElement('div');
+      swatch.className = 'swatch';
+      swatch.style.background = hex;
+      swatch.style.color = isDarkText ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.95)';
+      swatch.innerHTML = `<div class="swatch-label">${stop}</div><div class="swatch-hex">${hex}</div>`;
+      swatch.title = `${id.replace(/^(light|dark)-/, '')}-${stop}: ${hex}`;
+      root.appendChild(swatch);
+    });
+  }
+
+  Object.entries(ramps).forEach(([name, themes]) => {
+    buildRamp(`light-${name}`, themes.light);
+    buildRamp(`dark-${name}`, themes.dark);
+  });
+</script>
+</body>
+</html>

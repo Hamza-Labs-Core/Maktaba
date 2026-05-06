@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Buttons</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-hover: #4338ca; --primary-active: #3730a3;
+    --primary-fg: #ffffff; --primary-soft: #eef2ff; --primary-soft-fg: #4338ca;
+    --danger: #dc2626; --danger-hover: #b91c1c; --danger-fg: #ffffff; --danger-soft: #fee2e2;
+    --ghost-hover: rgba(0,0,0,0.04); --ghost-active: rgba(0,0,0,0.08);
+    --ring: rgba(79, 70, 229, 0.18);
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #6366f1; --primary-hover: #818cf8; --primary-active: #a5b4fc;
+    --primary-fg: #ffffff; --primary-soft: #1e1b4b; --primary-soft-fg: #c7d2fe;
+    --danger: #ef4444; --danger-hover: #f87171; --danger-fg: #ffffff; --danger-soft: #450a0a;
+    --ghost-hover: rgba(255,255,255,0.06); --ghost-active: rgba(255,255,255,0.1);
+    --ring: rgba(129, 140, 248, 0.3);
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.4);
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
+  .row-label { font-size: 11px; color: var(--text-subtle); font-family: ui-monospace, 'SF Mono', monospace; min-width: 80px; }
+
+  /* ============ BUTTON BASE ============ */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-family: inherit; font-weight: 500; line-height: 1;
+    border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent;
+    transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .05s ease;
+    white-space: nowrap; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+  .btn:active:not(:disabled) { transform: translateY(0.5px); }
+  .btn:disabled { cursor: not-allowed; opacity: 0.5; }
+
+  /* Sizes */
+  .btn-sm { padding: 6px 10px; font-size: 12px; height: 28px; gap: 4px; }
+  .btn-md { padding: 8px 14px; font-size: 13px; height: 36px; }
+  .btn-lg { padding: 10px 18px; font-size: 14px; height: 44px; gap: 8px; }
+
+  .btn-icon-sm { width: 28px; height: 28px; padding: 0; }
+  .btn-icon-md { width: 36px; height: 36px; padding: 0; }
+  .btn-icon-lg { width: 44px; height: 44px; padding: 0; }
+
+  /* Variants */
+  .btn-primary { background: var(--primary); color: var(--primary-fg); box-shadow: var(--shadow-sm); }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .btn-primary:active:not(:disabled) { background: var(--primary-active); }
+
+  .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--text-muted); }
+  .btn-secondary:active:not(:disabled) { background: var(--border); }
+
+  .btn-ghost { background: transparent; color: var(--text); }
+  .btn-ghost:hover:not(:disabled) { background: var(--ghost-hover); }
+  .btn-ghost:active:not(:disabled) { background: var(--ghost-active); }
+
+  .btn-soft { background: var(--primary-soft); color: var(--primary-soft-fg); }
+  .btn-soft:hover:not(:disabled) { background: var(--primary-soft); filter: brightness(0.95); }
+  [data-theme="dark"] .btn-soft:hover:not(:disabled) { filter: brightness(1.15); }
+
+  .btn-destructive { background: var(--danger); color: var(--danger-fg); box-shadow: var(--shadow-sm); }
+  .btn-destructive:hover:not(:disabled) { background: var(--danger-hover); }
+
+  .btn-link { background: transparent; color: var(--primary); padding-left: 0; padding-right: 0; height: auto; text-decoration: none; }
+  .btn-link:hover:not(:disabled) { text-decoration: underline; }
+
+  /* States */
+  .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
+  .btn-loading::after {
+    content: ''; position: absolute; width: 14px; height: 14px;
+    border: 2px solid currentColor; border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    color: var(--primary-fg);
+    top: 50%; left: 50%; margin-top: -7px; margin-left: -7px;
+  }
+  .btn-loading.btn-secondary::after, .btn-loading.btn-ghost::after { color: var(--text); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Icon */
+  .icon { width: 14px; height: 14px; flex-shrink: 0; }
+  .btn-lg .icon { width: 16px; height: 16px; }
+  .btn-sm .icon { width: 12px; height: 12px; }
+
+  /* Group */
+  .btn-group { display: inline-flex; }
+  .btn-group .btn { border-radius: 0; border-right-width: 0; }
+  .btn-group .btn:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+  .btn-group .btn:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-right-width: 1px; }
+  .btn-group .btn-secondary { border-color: var(--border-strong); }
+
+  @media (max-width: 900px) {
+    .comparison { grid-template-columns: 1fr; }
+    .pane { padding: 24px; }
+  }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / buttons.html</div>
+    <h1>Buttons</h1>
+    <p>Primary, secondary, ghost, soft, destructive, link, and icon variants — sm/md/lg sizes with hover, active, disabled, and loading states.</p>
+  </header>
+
+  <div class="comparison">
+    <!-- ====== TEMPLATE: Will be cloned for each theme ====== -->
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Variants — Medium</div>
+        <div class="row">
+          <span class="row-label">primary</span>
+          <button class="btn btn-md btn-primary">Save changes</button>
+          <button class="btn btn-md btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New job</button>
+          <button class="btn btn-md btn-primary">Continue<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">secondary</span>
+          <button class="btn btn-md btn-secondary">Cancel</button>
+          <button class="btn btn-md btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Download</button>
+        </div>
+        <div class="row">
+          <span class="row-label">ghost</span>
+          <button class="btn btn-md btn-ghost">View details</button>
+          <button class="btn btn-md btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings</button>
+        </div>
+        <div class="row">
+          <span class="row-label">soft</span>
+          <button class="btn btn-md btn-soft">Add language</button>
+          <button class="btn btn-md btn-soft"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New playlist</button>
+        </div>
+        <div class="row">
+          <span class="row-label">destructive</span>
+          <button class="btn btn-md btn-destructive">Delete video</button>
+          <button class="btn btn-md btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2"/></svg>Remove</button>
+        </div>
+        <div class="row">
+          <span class="row-label">link</span>
+          <button class="btn btn-md btn-link">Learn more →</button>
+          <button class="btn btn-md btn-link">View documentation</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Sizes</div>
+        <div class="row">
+          <span class="row-label">small</span>
+          <button class="btn btn-sm btn-primary">Save</button>
+          <button class="btn btn-sm btn-secondary">Cancel</button>
+          <button class="btn btn-sm btn-ghost">Skip</button>
+          <button class="btn btn-sm btn-destructive">Delete</button>
+        </div>
+        <div class="row">
+          <span class="row-label">medium</span>
+          <button class="btn btn-md btn-primary">Save</button>
+          <button class="btn btn-md btn-secondary">Cancel</button>
+          <button class="btn btn-md btn-ghost">Skip</button>
+          <button class="btn btn-md btn-destructive">Delete</button>
+        </div>
+        <div class="row">
+          <span class="row-label">large</span>
+          <button class="btn btn-lg btn-primary">Save changes</button>
+          <button class="btn btn-lg btn-secondary">Cancel</button>
+          <button class="btn btn-lg btn-ghost">Skip</button>
+          <button class="btn btn-lg btn-destructive">Delete forever</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Icon Buttons</div>
+        <div class="row">
+          <span class="row-label">small</span>
+          <button class="btn btn-icon-sm btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-sm btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-sm btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button class="btn btn-icon-sm btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">medium</span>
+          <button class="btn btn-icon-md btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-md btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-md btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button class="btn btn-icon-md btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">large</span>
+          <button class="btn btn-icon-lg btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-lg btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-lg btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">States</div>
+        <div class="row">
+          <span class="row-label">default</span>
+          <button class="btn btn-md btn-primary">Default</button>
+          <button class="btn btn-md btn-secondary">Default</button>
+          <button class="btn btn-md btn-ghost">Default</button>
+        </div>
+        <div class="row">
+          <span class="row-label">hover</span>
+          <button class="btn btn-md btn-primary" style="background: var(--primary-hover)">Hovered</button>
+          <button class="btn btn-md btn-secondary" style="background: var(--surface-2); border-color: var(--text-muted)">Hovered</button>
+          <button class="btn btn-md btn-ghost" style="background: var(--ghost-hover)">Hovered</button>
+        </div>
+        <div class="row">
+          <span class="row-label">active</span>
+          <button class="btn btn-md btn-primary" style="background: var(--primary-active); transform: translateY(0.5px)">Active</button>
+          <button class="btn btn-md btn-secondary" style="background: var(--border)">Active</button>
+        </div>
+        <div class="row">
+          <span class="row-label">focus</span>
+          <button class="btn btn-md btn-primary" style="box-shadow: 0 0 0 3px var(--ring)">Focused</button>
+          <button class="btn btn-md btn-secondary" style="box-shadow: 0 0 0 3px var(--ring)">Focused</button>
+        </div>
+        <div class="row">
+          <span class="row-label">disabled</span>
+          <button class="btn btn-md btn-primary" disabled>Disabled</button>
+          <button class="btn btn-md btn-secondary" disabled>Disabled</button>
+          <button class="btn btn-md btn-ghost" disabled>Disabled</button>
+          <button class="btn btn-md btn-destructive" disabled>Disabled</button>
+        </div>
+        <div class="row">
+          <span class="row-label">loading</span>
+          <button class="btn btn-md btn-primary btn-loading">Saving…</button>
+          <button class="btn btn-md btn-secondary btn-loading">Loading</button>
+          <button class="btn btn-md btn-destructive btn-loading">Deleting</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Button Group</div>
+        <div class="row">
+          <div class="btn-group">
+            <button class="btn btn-md btn-secondary">Day</button>
+            <button class="btn btn-md btn-secondary" style="background: var(--surface-2)">Week</button>
+            <button class="btn btn-md btn-secondary">Month</button>
+            <button class="btn btn-md btn-secondary">Year</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== DARK ====== -->
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+
+      <div class="section">
+        <div class="section-title">Variants — Medium</div>
+        <div class="row">
+          <span class="row-label">primary</span>
+          <button class="btn btn-md btn-primary">Save changes</button>
+          <button class="btn btn-md btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New job</button>
+          <button class="btn btn-md btn-primary">Continue<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">secondary</span>
+          <button class="btn btn-md btn-secondary">Cancel</button>
+          <button class="btn btn-md btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Download</button>
+        </div>
+        <div class="row">
+          <span class="row-label">ghost</span>
+          <button class="btn btn-md btn-ghost">View details</button>
+          <button class="btn btn-md btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings</button>
+        </div>
+        <div class="row">
+          <span class="row-label">soft</span>
+          <button class="btn btn-md btn-soft">Add language</button>
+          <button class="btn btn-md btn-soft"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New playlist</button>
+        </div>
+        <div class="row">
+          <span class="row-label">destructive</span>
+          <button class="btn btn-md btn-destructive">Delete video</button>
+          <button class="btn btn-md btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2"/></svg>Remove</button>
+        </div>
+        <div class="row">
+          <span class="row-label">link</span>
+          <button class="btn btn-md btn-link">Learn more →</button>
+          <button class="btn btn-md btn-link">View documentation</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Sizes</div>
+        <div class="row">
+          <span class="row-label">small</span>
+          <button class="btn btn-sm btn-primary">Save</button>
+          <button class="btn btn-sm btn-secondary">Cancel</button>
+          <button class="btn btn-sm btn-ghost">Skip</button>
+          <button class="btn btn-sm btn-destructive">Delete</button>
+        </div>
+        <div class="row">
+          <span class="row-label">medium</span>
+          <button class="btn btn-md btn-primary">Save</button>
+          <button class="btn btn-md btn-secondary">Cancel</button>
+          <button class="btn btn-md btn-ghost">Skip</button>
+          <button class="btn btn-md btn-destructive">Delete</button>
+        </div>
+        <div class="row">
+          <span class="row-label">large</span>
+          <button class="btn btn-lg btn-primary">Save changes</button>
+          <button class="btn btn-lg btn-secondary">Cancel</button>
+          <button class="btn btn-lg btn-ghost">Skip</button>
+          <button class="btn btn-lg btn-destructive">Delete forever</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Icon Buttons</div>
+        <div class="row">
+          <span class="row-label">small</span>
+          <button class="btn btn-icon-sm btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-sm btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-sm btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button class="btn btn-icon-sm btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">medium</span>
+          <button class="btn btn-icon-md btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-md btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-md btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <button class="btn btn-icon-md btn-destructive"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+        </div>
+        <div class="row">
+          <span class="row-label">large</span>
+          <button class="btn btn-icon-lg btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn btn-icon-lg btn-secondary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="btn btn-icon-lg btn-ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">States</div>
+        <div class="row">
+          <span class="row-label">default</span>
+          <button class="btn btn-md btn-primary">Default</button>
+          <button class="btn btn-md btn-secondary">Default</button>
+          <button class="btn btn-md btn-ghost">Default</button>
+        </div>
+        <div class="row">
+          <span class="row-label">hover</span>
+          <button class="btn btn-md btn-primary" style="background: var(--primary-hover)">Hovered</button>
+          <button class="btn btn-md btn-secondary" style="background: var(--surface-2); border-color: var(--text-muted)">Hovered</button>
+          <button class="btn btn-md btn-ghost" style="background: var(--ghost-hover)">Hovered</button>
+        </div>
+        <div class="row">
+          <span class="row-label">active</span>
+          <button class="btn btn-md btn-primary" style="background: var(--primary-active); transform: translateY(0.5px)">Active</button>
+          <button class="btn btn-md btn-secondary" style="background: var(--border)">Active</button>
+        </div>
+        <div class="row">
+          <span class="row-label">focus</span>
+          <button class="btn btn-md btn-primary" style="box-shadow: 0 0 0 3px var(--ring)">Focused</button>
+          <button class="btn btn-md btn-secondary" style="box-shadow: 0 0 0 3px var(--ring)">Focused</button>
+        </div>
+        <div class="row">
+          <span class="row-label">disabled</span>
+          <button class="btn btn-md btn-primary" disabled>Disabled</button>
+          <button class="btn btn-md btn-secondary" disabled>Disabled</button>
+          <button class="btn btn-md btn-ghost" disabled>Disabled</button>
+          <button class="btn btn-md btn-destructive" disabled>Disabled</button>
+        </div>
+        <div class="row">
+          <span class="row-label">loading</span>
+          <button class="btn btn-md btn-primary btn-loading">Saving…</button>
+          <button class="btn btn-md btn-secondary btn-loading">Loading</button>
+          <button class="btn btn-md btn-destructive btn-loading">Deleting</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Button Group</div>
+        <div class="row">
+          <div class="btn-group">
+            <button class="btn btn-md btn-secondary">Day</button>
+            <button class="btn btn-md btn-secondary" style="background: var(--surface-2)">Week</button>
+            <button class="btn btn-md btn-secondary">Month</button>
+            <button class="btn btn-md btn-secondary">Year</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

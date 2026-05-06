@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Typography</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-arabic: 'IBM Plex Sans Arabic', 'Geeza Pro', 'Tahoma', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  html { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; font-feature-settings: 'cv11','ss01'; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5;
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8;
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: var(--font-mono); }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 40px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 16px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  .type-row {
+    display: grid; grid-template-columns: 90px 1fr; gap: 24px;
+    padding: 16px 0; border-bottom: 1px solid var(--border);
+    align-items: baseline;
+  }
+  .type-spec {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-subtle);
+    line-height: 1.6;
+  }
+  .type-spec strong { display: block; color: var(--text); font-weight: 600; }
+  .type-sample { color: var(--text); }
+
+  .ltr { direction: ltr; text-align: left; }
+  .rtl { direction: rtl; text-align: right; font-family: var(--font-arabic); }
+
+  /* Type scale */
+  .h1 { font-size: 36px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.1; }
+  .h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  .h3 { font-size: 22px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; }
+  .h4 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.4; }
+  .h5 { font-size: 15px; font-weight: 600; line-height: 1.45; }
+  .h6 { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; text-transform: uppercase; line-height: 1.5; color: var(--text-muted); }
+  .body-lg { font-size: 16px; font-weight: 400; line-height: 1.65; }
+  .body { font-size: 14px; font-weight: 400; line-height: 1.6; }
+  .body-sm { font-size: 13px; font-weight: 400; line-height: 1.55; }
+  .caption { font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--text-muted); }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-subtle); }
+
+  .link { color: var(--primary); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+  .link:hover { border-bottom-color: currentColor; }
+
+  .weight-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .weight-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px;
+  }
+  .weight-card .sample { font-size: 28px; line-height: 1.2; color: var(--text); }
+  .weight-card .label-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; }
+  .weight-card .name { font-size: 11px; color: var(--text-muted); }
+  .weight-card .num { font-size: 11px; color: var(--text-subtle); font-family: var(--font-mono); }
+
+  .lh-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .lh-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px;
+  }
+  .lh-card .lh-label { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 8px; }
+  .lh-card.tight .demo { line-height: 1.2; font-size: 13px; }
+  .lh-card.normal .demo { line-height: 1.55; font-size: 13px; }
+  .lh-card.relaxed .demo { line-height: 1.85; font-size: 13px; }
+
+  .arabic-block {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px;
+    font-family: var(--font-arabic);
+    direction: rtl; text-align: right;
+  }
+  .arabic-block h2 { font-size: 26px; font-weight: 700; line-height: 1.3; }
+  .arabic-block h3 { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
+  .arabic-block p { font-size: 16px; line-height: 1.85; color: var(--text); margin-top: 14px; }
+
+  @media (max-width: 900px) { .comparison { grid-template-columns: 1fr; } .pane { padding: 24px; } .weight-row { grid-template-columns: repeat(2, 1fr); } .lh-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / typography.html</div>
+    <h1>Typography</h1>
+    <p>Type scale h1–h6, body, captions, labels, and links — in English (LTR) and Arabic (RTL). Inter for Latin script, IBM Plex Sans Arabic for Arabic.</p>
+  </header>
+
+  <div class="comparison" id="comparison">
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Headings — LTR</div>
+        <div class="type-row"><div class="type-spec"><strong>H1</strong>36 / 1.1<br>700 · -0.025em</div><div class="type-sample h1 ltr">A library of voices in every language</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H2</strong>28 / 1.2<br>700 · -0.02em</div><div class="type-sample h2 ltr">Transcribe and translate with care</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H3</strong>22 / 1.3<br>600 · -0.015em</div><div class="type-sample h3 ltr">Built for scholars and creators alike</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H4</strong>18 / 1.4<br>600 · -0.01em</div><div class="type-sample h4 ltr">Section heading for content blocks</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H5</strong>15 / 1.45<br>600 · normal</div><div class="type-sample h5 ltr">Subsection inside a card</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H6</strong>13 / 1.5<br>600 · UPPER</div><div class="type-sample h6 ltr">Eyebrow / category label</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Body & Supporting — LTR</div>
+        <div class="type-row"><div class="type-spec"><strong>Body LG</strong>16 / 1.65<br>400</div><div class="type-sample body-lg ltr">Maktaba processes hours of recorded knowledge into searchable transcripts and faithful translations, so what was once locked in a single voice can travel.</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Body</strong>14 / 1.6<br>400</div><div class="type-sample body ltr">Each transcription pass aligns to the source's natural cadence — sentence boundaries from prosody, not just punctuation. Edit any segment and the timestamps stay in sync.</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Body SM</strong>13 / 1.55<br>400</div><div class="type-sample body-sm ltr">Smaller body copy used inside cards and dense layouts where information density matters more than breathing room.</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Caption</strong>12 / 1.5<br>400 · muted</div><div class="type-sample caption ltr">Captions, helper text, and metadata. 14 minutes ago · 2.4 GB · 1080p H.264</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Label</strong>11 / 1.5<br>600 · UPPER</div><div class="type-sample label ltr">Form Label · Status · Eyebrow</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Link</strong>14 / 1.6<br>500 · primary</div><div class="type-sample body ltr">Read more in <a href="#" class="link">the documentation</a> or <a href="#" class="link">contact support</a> if a job won't start.</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Headings — RTL (Arabic)</div>
+        <div class="type-row"><div class="type-spec"><strong>H1</strong>36 / 1.1<br>700</div><div class="type-sample h1 rtl">مكتبة الأصوات بكل لغة</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H2</strong>28 / 1.2<br>700</div><div class="type-sample h2 rtl">تفريغ النصوص والترجمة بإتقان</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H3</strong>22 / 1.3<br>600</div><div class="type-sample h3 rtl">مصممة للباحثين والمبدعين</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H4</strong>18 / 1.4<br>600</div><div class="type-sample h4 rtl">عنوان فرعي للقسم</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H5</strong>15 / 1.45<br>600</div><div class="type-sample h5 rtl">عنوان داخل بطاقة</div></div>
+        <div class="type-row"><div class="type-spec"><strong>H6</strong>13 / 1.5<br>600</div><div class="type-sample h6 rtl">تصنيف · فئة</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Body & Supporting — RTL (Arabic)</div>
+        <div class="type-row"><div class="type-spec"><strong>Body LG</strong>16 / 1.65<br>400</div><div class="type-sample body-lg rtl">تقوم منصة مكتبة بمعالجة ساعات من المعرفة المسجلة وتحويلها إلى نصوص قابلة للبحث وترجمات دقيقة، حتى ينتقل ما كان حبيس صوت واحد إلى آفاق أوسع.</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Body</strong>14 / 1.6<br>400</div><div class="type-sample body rtl">يحاذي كل تمرير للنص الإيقاع الطبيعي للمصدر، فحدود الجمل تُستخلص من النبرة لا من علامات الترقيم وحدها. وعند تحرير أي مقطع تظل الطوابع الزمنية متناسقة.</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Caption</strong>12 / 1.5<br>400</div><div class="type-sample caption rtl">قبل ١٤ دقيقة · ٢٫٤ ج.ب · ١٠٨٠ بكسل</div></div>
+        <div class="type-row"><div class="type-spec"><strong>Link</strong>14 / 1.6<br>500</div><div class="type-sample body rtl">تابع القراءة في <a href="#" class="link">التوثيق</a> أو <a href="#" class="link">تواصل مع الدعم</a> في حال تعثّر تشغيل المهمة.</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Mixed Direction Block</div>
+        <div class="arabic-block">
+          <h2>المعلّقة الرابعة — مقدمة</h2>
+          <h3>Lecture 04 · Mu'allaqat Series</h3>
+          <p>قِفَا نَبْكِ مِنْ ذِكْرَى حَبيبٍ ومَنْزِلِ — بِسِقْطِ اللِّوَى بَيْنَ الدَّخُولِ فَحَوْمَلِ. تتناول هذه المحاضرة بنية القصيدة الجاهلية وعلاقتها بأنماط المعنى لدى السامعين، مع وقوف خاص على افتتاحية امرئ القيس.</p>
+          <p style="font-family: var(--font-sans); direction: ltr; text-align: left; color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-top: 16px;">English summary appears in LTR, Latin script, and inherits its own type metrics. Mixing scripts in a single block is supported — each direction respects its own font stack and reading flow.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Font Weights</div>
+        <div class="weight-row">
+          <div class="weight-card">
+            <div class="sample" style="font-weight: 400;">Aa</div>
+            <div class="label-row"><span class="name">Regular</span><span class="num">400</span></div>
+          </div>
+          <div class="weight-card">
+            <div class="sample" style="font-weight: 500;">Aa</div>
+            <div class="label-row"><span class="name">Medium</span><span class="num">500</span></div>
+          </div>
+          <div class="weight-card">
+            <div class="sample" style="font-weight: 600;">Aa</div>
+            <div class="label-row"><span class="name">Semibold</span><span class="num">600</span></div>
+          </div>
+          <div class="weight-card">
+            <div class="sample" style="font-weight: 700;">Aa</div>
+            <div class="label-row"><span class="name">Bold</span><span class="num">700</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Line Heights</div>
+        <div class="lh-row">
+          <div class="lh-card tight">
+            <div class="lh-label">tight · 1.2</div>
+            <div class="demo">For headings and short labels where each line should sit close to the next, preserving visual unity.</div>
+          </div>
+          <div class="lh-card normal">
+            <div class="lh-label">normal · 1.55</div>
+            <div class="demo">For most body copy. Comfortable to read across paragraph lengths and small to medium font sizes.</div>
+          </div>
+          <div class="lh-card relaxed">
+            <div class="lh-label">relaxed · 1.85</div>
+            <div class="demo">For long-form content and Arabic body text, where extra room between lines aids the eye's return.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+      <div id="dark-mount"></div>
+    </section>
+  </div>
+
+<script>
+  const lightPane = document.querySelector('.pane[data-theme="light"]');
+  const darkMount = document.getElementById('dark-mount');
+  const clone = lightPane.cloneNode(true);
+  clone.querySelector('.theme-label')?.remove();
+  while (clone.firstChild) darkMount.appendChild(clone.firstChild);
+</script>
+</body>
+</html>

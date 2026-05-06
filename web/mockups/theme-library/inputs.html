@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Inputs</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-fg: #ffffff; --primary-soft: #eef2ff;
+    --error: #dc2626; --error-soft: #fee2e2; --error-border: #fca5a5;
+    --success: #16a34a;
+    --ring: rgba(79, 70, 229, 0.2);
+    --ring-error: rgba(220, 38, 38, 0.2);
+    --shadow-input: inset 0 1px 1px 0 rgba(0,0,0,0.04);
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #3f3f46; --border-strong: #52525b;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8; --primary-fg: #18181b; --primary-soft: #1e1b4b;
+    --error: #f87171; --error-soft: #450a0a; --error-border: #991b1b;
+    --success: #34d399;
+    --ring: rgba(129, 140, 248, 0.3);
+    --ring-error: rgba(248, 113, 113, 0.3);
+    --shadow-input: inset 0 1px 1px 0 rgba(0,0,0,0.3);
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* ============ FIELD ============ */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label {
+    font-size: 12px; font-weight: 500; color: var(--text);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .field-label .req { color: var(--error); }
+  .field-help { font-size: 11px; color: var(--text-subtle); }
+  .field-error { font-size: 11px; color: var(--error); display: flex; align-items: center; gap: 4px; }
+  .field-error svg { width: 12px; height: 12px; }
+  .field-success { font-size: 11px; color: var(--success); display: flex; align-items: center; gap: 4px; }
+  .field-success svg { width: 12px; height: 12px; }
+
+  /* ============ INPUTS ============ */
+  .input {
+    font: inherit; font-size: 13px;
+    width: 100%; height: 36px;
+    padding: 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+    box-shadow: var(--shadow-input);
+  }
+  .input::placeholder { color: var(--text-subtle); }
+  .input:hover { border-color: var(--border-strong); }
+  .input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+  .input:disabled { background: var(--surface-2); color: var(--text-subtle); cursor: not-allowed; opacity: 0.7; }
+  .input.error { border-color: var(--error-border); background: var(--error-soft); }
+  .input.error:focus { border-color: var(--error); box-shadow: 0 0 0 3px var(--ring-error); }
+  [data-theme="dark"] .input.error { background: var(--surface); }
+
+  /* Search */
+  .input-search { position: relative; }
+  .input-search .input { padding-left: 36px; }
+  .input-search-icon {
+    position: absolute; top: 50%; left: 12px; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--text-subtle); pointer-events: none;
+  }
+  .input-search-clear {
+    position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+    width: 22px; height: 22px; border-radius: 5px; border: none; background: transparent;
+    color: var(--text-subtle); cursor: pointer; display: grid; place-items: center;
+  }
+  .input-search-clear:hover { background: var(--surface-2); color: var(--text); }
+  .input-search-clear svg { width: 12px; height: 12px; }
+
+  /* Select */
+  .select-wrap { position: relative; }
+  .select {
+    font: inherit; font-size: 13px;
+    width: 100%; height: 36px;
+    padding: 0 32px 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .select:hover { border-color: var(--border-strong); }
+  .select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+  .select-chevron {
+    position: absolute; top: 50%; right: 10px; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+  }
+
+  /* Number input */
+  .number-wrap { position: relative; display: flex; }
+  .number-wrap .input { padding-right: 32px; font-variant-numeric: tabular-nums; }
+  .number-controls {
+    position: absolute; top: 1px; right: 1px; bottom: 1px;
+    width: 24px;
+    display: flex; flex-direction: column;
+    border-left: 1px solid var(--border);
+  }
+  .number-btn {
+    flex: 1; border: none; background: transparent;
+    color: var(--text-muted); cursor: pointer;
+    display: grid; place-items: center;
+    border-radius: 0;
+  }
+  .number-btn:first-child { border-bottom: 1px solid var(--border); border-top-right-radius: 7px; }
+  .number-btn:last-child { border-bottom-right-radius: 7px; }
+  .number-btn:hover { background: var(--surface-2); color: var(--text); }
+  .number-btn svg { width: 9px; height: 9px; }
+
+  /* Checkbox */
+  .check {
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    font-size: 13px; color: var(--text);
+  }
+  .check input { position: absolute; opacity: 0; pointer-events: none; }
+  .check-box {
+    width: 16px; height: 16px; flex-shrink: 0;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 5px;
+    background: var(--surface);
+    display: grid; place-items: center;
+    transition: background .15s, border-color .15s;
+  }
+  .check-box svg { width: 10px; height: 10px; color: var(--primary-fg); opacity: 0; transform: scale(0.5); transition: opacity .12s, transform .12s; }
+  .check input:checked + .check-box { background: var(--primary); border-color: var(--primary); }
+  .check input:checked + .check-box svg { opacity: 1; transform: scale(1); }
+  .check input:focus-visible + .check-box { box-shadow: 0 0 0 3px var(--ring); }
+  .check input:disabled + .check-box { opacity: 0.5; }
+  .check.indeterminate .check-box { background: var(--primary); border-color: var(--primary); position: relative; }
+  .check.indeterminate .check-box::after { content: ''; width: 8px; height: 1.5px; background: var(--primary-fg); }
+
+  /* Radio */
+  .radio {
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    font-size: 13px; color: var(--text);
+  }
+  .radio input { position: absolute; opacity: 0; pointer-events: none; }
+  .radio-circle {
+    width: 16px; height: 16px; flex-shrink: 0;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    display: grid; place-items: center;
+    transition: border-color .15s;
+  }
+  .radio-circle::after {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--primary-fg); opacity: 0; transform: scale(0.5);
+    transition: opacity .12s, transform .12s;
+  }
+  .radio input:checked + .radio-circle { background: var(--primary); border-color: var(--primary); }
+  .radio input:checked + .radio-circle::after { opacity: 1; transform: scale(1); }
+  .radio input:focus-visible + .radio-circle { box-shadow: 0 0 0 3px var(--ring); }
+
+  /* Toggle */
+  .toggle {
+    display: inline-flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+    font-size: 13px; color: var(--text);
+  }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .toggle-track {
+    width: 32px; height: 18px; flex-shrink: 0;
+    background: var(--border-strong);
+    border-radius: 999px;
+    position: relative;
+    transition: background .2s;
+  }
+  .toggle-thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform .2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--primary); }
+  .toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(14px); }
+  .toggle input:focus-visible + .toggle-track { box-shadow: 0 0 0 3px var(--ring); }
+  .toggle input:disabled + .toggle-track { opacity: 0.5; }
+
+  /* Range slider */
+  .range-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .range-row { display: flex; align-items: center; gap: 12px; }
+  .range {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 999px;
+    background: var(--border-strong);
+    outline: none;
+  }
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--primary);
+    cursor: pointer;
+    transition: transform .12s;
+  }
+  .range::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  .range::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--surface);
+    cursor: pointer;
+  }
+  .range-value {
+    font-size: 12px; font-family: ui-monospace, 'SF Mono', monospace;
+    color: var(--text); min-width: 36px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Textarea */
+  .textarea {
+    font: inherit; font-size: 13px;
+    width: 100%; min-height: 88px; resize: vertical;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+    box-shadow: var(--shadow-input);
+    line-height: 1.5;
+  }
+  .textarea::placeholder { color: var(--text-subtle); }
+  .textarea:hover { border-color: var(--border-strong); }
+  .textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+
+  /* Filechip */
+  .file-drop {
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 10px;
+    padding: 24px; text-align: center;
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .file-drop:hover { border-color: var(--primary); background: var(--primary-soft); }
+  .file-drop-icon { width: 32px; height: 32px; color: var(--text-muted); margin: 0 auto 8px; display: block; }
+  .file-drop-title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .file-drop-sub { font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+
+  @media (max-width: 900px) { .comparison { grid-template-columns: 1fr; } .pane { padding: 24px; } .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / inputs.html</div>
+    <h1>Form Inputs</h1>
+    <p>Text, search, select, checkbox, radio, toggle, slider, textarea, number — with label, placeholder, error, and disabled states.</p>
+  </header>
+
+  <div class="comparison" id="comparison">
+    <!-- LIGHT -->
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Text Inputs</div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">Email <span class="req">*</span></label>
+            <input class="input" type="email" placeholder="you@example.com" value="meywd84@gmail.com">
+            <div class="field-help">We'll never share your email.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">Display name</label>
+            <input class="input" type="text" placeholder="Your full name">
+          </div>
+          <div class="field">
+            <label class="field-label">Password</label>
+            <input class="input" type="password" value="hunter2hunter2">
+          </div>
+          <div class="field">
+            <label class="field-label">Username</label>
+            <input class="input error" type="text" value="invalid name!">
+            <div class="field-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Only letters, numbers, and underscores allowed.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">Slug</label>
+            <input class="input" type="text" value="maktaba-arabic-poetry">
+            <div class="field-success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Available.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">API key</label>
+            <input class="input" type="text" value="sk-••••••••••••••••" disabled>
+            <div class="field-help">Disabled — managed by your admin.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Search</div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">Search videos</label>
+            <div class="input-search">
+              <svg class="input-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="input" type="search" placeholder="Search by title, tag, or transcript">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Active query</label>
+            <div class="input-search">
+              <svg class="input-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="input" type="search" value="classical poetry">
+              <button class="input-search-clear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Select & Number</div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">Source language</label>
+            <div class="select-wrap">
+              <select class="select">
+                <option>Arabic (العربية)</option>
+                <option>English</option>
+                <option>French (Français)</option>
+                <option>Spanish (Español)</option>
+              </select>
+              <svg class="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Quality preset</label>
+            <div class="select-wrap">
+              <select class="select" disabled>
+                <option>Standard (1080p)</option>
+              </select>
+              <svg class="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Concurrent jobs</label>
+            <div class="number-wrap">
+              <input class="input" type="number" value="4" min="1" max="32">
+              <div class="number-controls">
+                <button class="number-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 15 12 9 18 15"/></svg></button>
+                <button class="number-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+              </div>
+            </div>
+            <div class="field-help">Max 32 on your current plan.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">Retry attempts</label>
+            <div class="number-wrap">
+              <input class="input" type="number" value="3">
+              <div class="number-controls">
+                <button class="number-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 15 12 9 18 15"/></svg></button>
+                <button class="number-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Choice — Checkbox / Radio / Toggle</div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">Output formats</label>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);">
+              <label class="check"><input type="checkbox" checked><span class="check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>SRT subtitles</label>
+              <label class="check"><input type="checkbox" checked><span class="check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>VTT subtitles</label>
+              <label class="check indeterminate"><input type="checkbox"><span class="check-box"></span>Plain text transcript</label>
+              <label class="check"><input type="checkbox"><span class="check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Translated audio</label>
+              <label class="check"><input type="checkbox" disabled><span class="check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Disabled option</label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Subtitle alignment</label>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);">
+              <label class="radio"><input type="radio" name="align"><span class="radio-circle"></span>Word-level (precise)</label>
+              <label class="radio"><input type="radio" name="align" checked><span class="radio-circle"></span>Sentence-level (recommended)</label>
+              <label class="radio"><input type="radio" name="align"><span class="radio-circle"></span>Paragraph-level (rough)</label>
+              <label class="radio"><input type="radio" name="align" disabled><span class="radio-circle"></span>Custom (Pro plan)</label>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-top: 12px;">
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Auto-publish when done</label>
+          <label class="toggle"><input type="checkbox"><span class="toggle-track"><span class="toggle-thumb"></span></span>Send notification on failure</label>
+          <label class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span>Encrypt at rest (locked by plan)</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Range / Sliders</div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">Translation confidence threshold</label>
+            <div class="range-row">
+              <input type="range" class="range" min="0" max="100" value="72">
+              <span class="range-value">72%</span>
+            </div>
+            <div class="field-help">Below this, segments are flagged for review.</div>
+          </div>
+          <div class="field">
+            <label class="field-label">Speaker volume normalization</label>
+            <div class="range-row">
+              <input type="range" class="range" min="-12" max="12" value="0">
+              <span class="range-value">0 dB</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Textarea & File Upload</div>
+        <div class="field" style="margin-bottom: 12px;">
+          <label class="field-label">Description</label>
+          <textarea class="textarea" placeholder="Describe what's in this video — speakers, context, vocabulary that might be unfamiliar."></textarea>
+          <div class="field-help">Supports markdown. 0 / 500 characters.</div>
+        </div>
+        <div class="field">
+          <label class="field-label">Source file</label>
+          <div class="file-drop">
+            <svg class="file-drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <div class="file-drop-title">Drop video here, or click to browse</div>
+            <div class="file-drop-sub">MP4, MOV, MKV, WebM up to 5 GB</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DARK (mirror) -->
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+      <!-- The dark side replicates the markup; we'll inject via the script below. -->
+      <div id="dark-mount"></div>
+    </section>
+  </div>
+
+<script>
+  // Mirror light pane content into dark pane (minus its theme-label)
+  const lightPane = document.querySelector('.pane[data-theme="light"]');
+  const darkMount = document.getElementById('dark-mount');
+  const clone = lightPane.cloneNode(true);
+  // remove theme-label from clone
+  clone.querySelector('.theme-label')?.remove();
+  // move children into dark mount
+  while (clone.firstChild) darkMount.appendChild(clone.firstChild);
+</script>
+</body>
+</html>
