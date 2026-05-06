@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Settings (Mockup 11.06)</title>
+<style>
+  :root[data-theme="dark"] {
+    --bg: #0a0e1a;
+    --surface: #131826;
+    --elevated: #1a2033;
+    --border: #232a3d;
+    --border-strong: #303855;
+    --text: #e8eaf0;
+    --text-muted: #8b94a8;
+    --text-faint: #5b6478;
+    --accent: #6366f1;
+    --accent-hover: #7c7ff5;
+    --accent-soft: rgba(99, 102, 241, 0.15);
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --danger-soft: rgba(239, 68, 68, 0.12);
+    --shadow: 0 4px 12px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 100vh;
+  }
+  /* Sidebar */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .brand {
+    padding: 0 20px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .brand-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: white; font-weight: 800;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    border-left: 2px solid transparent;
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .nav-item.active {
+    color: var(--text);
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+  .nav-icon { width: 18px; height: 18px; opacity: 0.85; }
+  .nav-section-label {
+    padding: 16px 20px 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+  }
+  /* Main */
+  main { padding: 32px 40px; max-width: 1100px; }
+  .page-header {
+    margin-bottom: 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: var(--text-muted); font-size: 14px; }
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 12px 18px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .card-title { font-size: 16px; font-weight: 600; }
+  .card-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  /* Field */
+  .field { margin-bottom: 20px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-row:last-child { border-bottom: none; }
+  .field-label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    display: block;
+  }
+  .field-help {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  /* Inputs */
+  .input, .select {
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input:focus, .select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .input-sm { width: 220px; }
+  /* Toggle */
+  .toggle {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    background: var(--border-strong);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 20px; height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { transform: translateX(18px); }
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: var(--elevated);
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-danger {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+  .btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
+  .btn-ghost { color: var(--text-muted); }
+  .btn-ghost:hover { color: var(--text); background: var(--elevated); }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  /* Library list */
+  .library-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: var(--bg);
+  }
+  .library-icon {
+    width: 40px; height: 40px;
+    background: var(--accent-soft);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .library-info { flex: 1; min-width: 0; }
+  .library-name { font-weight: 500; font-size: 14px; }
+  .library-path {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .library-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .stat-num { color: var(--text); font-weight: 600; }
+  /* Status pills */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pill-ok {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+  }
+  .pill-warn {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+  }
+  .pill-err {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+  }
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  /* STT engine row */
+  .engine-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: var(--bg);
+  }
+  .engine-row.selected {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .engine-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .engine-desc { font-size: 12px; color: var(--text-muted); }
+  /* Range */
+  .range-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 16px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-strong);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.5);
+  }
+  .range-val {
+    min-width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  /* PAT/Session table */
+  .session-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .session-row:last-child { border-bottom: none; }
+  .session-meta {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .session-current {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  .pat-token {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  /* Tab content */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  /* Hint banner */
+  .hint {
+    background: var(--accent-soft);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .hint-icon { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+  /* Responsive */
+  @media (max-width: 880px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    main { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">M</div>
+      <span>Maktaba</span>
+    </div>
+    <a class="nav-item" href="#"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9v9a2 2 0 01-2 2H5a2 2 0 01-2-2v-9z"/></svg> Library</a>
+    <a class="nav-item" href="#"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> Search</a>
+    <a class="nav-item" href="#"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h12"/></svg> Queue</a>
+    <a class="nav-item" href="#"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg> Player</a>
+    <div class="nav-section-label">Account</div>
+    <a class="nav-item active" href="#"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</a>
+  </aside>
+
+  <!-- Main content -->
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>Settings</h1>
+        <div class="subtitle">Configure your Maktaba server, libraries, and account.</div>
+      </div>
+      <button class="btn btn-secondary btn-sm">Server v0.4.2</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" role="tablist">
+      <div class="tab active" data-tab="general">General</div>
+      <div class="tab" data-tab="libraries">Libraries</div>
+      <div class="tab" data-tab="stt">STT Engine</div>
+      <div class="tab" data-tab="processing">Processing</div>
+      <div class="tab" data-tab="account">Account</div>
+    </div>
+
+    <!-- General -->
+    <div class="tab-content active" data-pane="general">
+      <div class="card">
+        <div class="card-title">Appearance</div>
+        <div class="card-desc">Personalize how Maktaba looks on your devices.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Theme</span>
+            <span class="field-help">Follows your operating system by default.</span>
+          </div>
+          <select class="select input-sm">
+            <option>System (auto)</option>
+            <option>Light</option>
+            <option selected>Dark</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">UI density</span>
+            <span class="field-help">Compact mode reduces padding throughout.</span>
+          </div>
+          <select class="select input-sm">
+            <option selected>Comfortable</option>
+            <option>Compact</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Language &amp; region</div>
+        <div class="card-desc">Affects UI labels, dates, and number formatting.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Interface language</span>
+            <span class="field-help">RTL is enabled automatically for Arabic.</span>
+          </div>
+          <select class="select input-sm">
+            <option selected>English</option>
+            <option>العربية</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Number format</span>
+            <span class="field-help">Choose Western or Arabic-Indic numerals.</span>
+          </div>
+          <select class="select input-sm">
+            <option selected>1,234,567</option>
+            <option>1٬234٬567</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Date format</span>
+          </div>
+          <select class="select input-sm">
+            <option selected>2026-05-05 (ISO)</option>
+            <option>May 5, 2026</option>
+            <option>5 May 2026</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Libraries -->
+    <div class="tab-content" data-pane="libraries">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Library roots</div>
+            <div class="card-desc">Folders Maktaba scans for media. Per-library STT engine and search settings.</div>
+          </div>
+          <button class="btn btn-primary">+ Add library</button>
+        </div>
+
+        <div class="library-row">
+          <div class="library-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          </div>
+          <div class="library-info">
+            <div class="library-name">Films</div>
+            <div class="library-path">/mnt/media/films</div>
+          </div>
+          <div class="library-stats">
+            <span><span class="stat-num">1,247</span> videos</span>
+            <span><span class="stat-num">8.4 TB</span></span>
+            <span class="pill pill-ok"><span class="dot"></span>Synced</span>
+          </div>
+          <div style="display:flex; gap: 6px;">
+            <button class="btn btn-secondary btn-sm">Scan</button>
+            <button class="btn btn-ghost btn-sm">Edit</button>
+            <button class="btn btn-danger btn-sm">Remove</button>
+          </div>
+        </div>
+
+        <div class="library-row">
+          <div class="library-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--warning);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="13" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+          </div>
+          <div class="library-info">
+            <div class="library-name">Lectures</div>
+            <div class="library-path">/home/admin/lectures</div>
+          </div>
+          <div class="library-stats">
+            <span><span class="stat-num">312</span> videos</span>
+            <span><span class="stat-num">87 GB</span></span>
+            <span class="pill pill-warn"><span class="dot"></span>Scanning</span>
+          </div>
+          <div style="display:flex; gap: 6px;">
+            <button class="btn btn-secondary btn-sm">Pause</button>
+            <button class="btn btn-ghost btn-sm">Edit</button>
+            <button class="btn btn-danger btn-sm">Remove</button>
+          </div>
+        </div>
+
+        <div class="library-row">
+          <div class="library-icon" style="background: rgba(239, 68, 68, 0.15); color: var(--danger);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          </div>
+          <div class="library-info">
+            <div class="library-name">Old Backups</div>
+            <div class="library-path">/Volumes/External (offline)</div>
+          </div>
+          <div class="library-stats">
+            <span><span class="stat-num">—</span></span>
+            <span class="pill pill-err"><span class="dot"></span>Unreachable</span>
+          </div>
+          <div style="display:flex; gap: 6px;">
+            <button class="btn btn-secondary btn-sm">Reconnect</button>
+            <button class="btn btn-danger btn-sm">Remove</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STT Engine -->
+    <div class="tab-content" data-pane="stt">
+      <div class="hint">
+        <svg class="hint-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <div>Apple Silicon detected — <strong>whisper-mlx</strong> is recommended for the best speed/quality trade-off on this device.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Speech-to-text engine</div>
+        <div class="card-desc">Backends are auto-discovered. Test latency and quality before switching.</div>
+
+        <div class="engine-row selected">
+          <div>
+            <div class="engine-name">whisper-mlx <span class="pill pill-ok" style="margin-left:6px;"><span class="dot"></span>OK</span></div>
+            <div class="engine-desc">Apple Silicon GPU acceleration · 4.2× realtime · large-v3 model</div>
+          </div>
+          <button class="btn btn-secondary btn-sm">Test</button>
+          <span class="pill" style="background: var(--accent); color: white;">Active</span>
+        </div>
+
+        <div class="engine-row">
+          <div>
+            <div class="engine-name">whisper-cpu <span class="pill pill-ok" style="margin-left:6px;"><span class="dot"></span>OK</span></div>
+            <div class="engine-desc">Pure CPU fallback · 0.4× realtime · medium model</div>
+          </div>
+          <button class="btn btn-secondary btn-sm">Test</button>
+          <button class="btn btn-ghost btn-sm">Use</button>
+        </div>
+
+        <div class="engine-row">
+          <div>
+            <div class="engine-name">whisper-cuda <span class="pill pill-err" style="margin-left:6px;"><span class="dot"></span>unavailable</span></div>
+            <div class="engine-desc">No NVIDIA GPU detected on this host.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" disabled style="opacity:0.4;">Test</button>
+          <button class="btn btn-ghost btn-sm" disabled style="opacity:0.4;">Use</button>
+        </div>
+
+        <div class="engine-row">
+          <div>
+            <div class="engine-name">openai-api <span class="pill pill-warn" style="margin-left:6px;"><span class="dot"></span>API key required</span></div>
+            <div class="engine-desc">Cloud transcription · pay-per-minute · whisper-1</div>
+          </div>
+          <button class="btn btn-secondary btn-sm">Configure</button>
+          <button class="btn btn-ghost btn-sm" disabled style="opacity:0.4;">Use</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Model configuration</div>
+        <div class="card-desc">Larger models give better accuracy but use more memory.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Model size</span>
+            <span class="field-help">large-v3 uses ~3 GB VRAM on Apple Silicon.</span>
+          </div>
+          <select class="select input-sm">
+            <option>tiny</option>
+            <option>base</option>
+            <option>small</option>
+            <option>medium</option>
+            <option selected>large-v3</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Compute precision</span>
+          </div>
+          <select class="select input-sm">
+            <option>float32</option>
+            <option selected>float16</option>
+            <option>int8 (faster, lower quality)</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Auto-detect language</span>
+            <span class="field-help">Disable to force a specific language.</span>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Processing -->
+    <div class="tab-content" data-pane="processing">
+      <div class="card">
+        <div class="card-title">Concurrency</div>
+        <div class="card-desc">How many videos process in parallel. Higher uses more CPU and memory.</div>
+        <div class="field" style="margin-top: 16px;">
+          <div class="range-row">
+            <input type="range" min="1" max="8" value="3">
+            <span class="range-val">3 jobs</span>
+          </div>
+          <span class="field-help" style="display:block; margin-top:6px;">Recommended: 1–4 on Apple Silicon, 1–2 on CPU-only hosts.</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Job priorities</div>
+        <div class="card-desc">Order in which queued jobs are picked up.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">User-initiated transcriptions</span>
+            <span class="field-help">Manually queued from the video page.</span>
+          </div>
+          <select class="select input-sm">
+            <option selected>Highest</option>
+            <option>High</option>
+            <option>Normal</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Library auto-scans</span>
+          </div>
+          <select class="select input-sm">
+            <option>High</option>
+            <option selected>Normal</option>
+            <option>Low</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Re-transcription / model upgrades</span>
+          </div>
+          <select class="select input-sm">
+            <option>Normal</option>
+            <option selected>Low</option>
+            <option>Idle only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Resource limits</div>
+        <div class="card-desc">Pause processing under sustained load.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Pause when CPU &gt; 85%</span>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Pause on battery (laptop)</span>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Quiet hours</span>
+            <span class="field-help">Defer non-urgent jobs between these hours.</span>
+          </div>
+          <div style="display:flex; gap: 8px; align-items:center;">
+            <input class="input" style="width:90px;" type="time" value="22:00">
+            <span style="color: var(--text-muted);">→</span>
+            <input class="input" style="width:90px;" type="time" value="07:00">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account -->
+    <div class="tab-content" data-pane="account">
+      <div class="card">
+        <div class="card-title">Personal access tokens</div>
+        <div class="card-desc">Use PATs to authenticate CLI tools and integrations. Tokens are shown once at creation.</div>
+
+        <div style="margin: 16px 0;">
+          <button class="btn btn-primary">+ Create token</button>
+        </div>
+
+        <div style="border-top: 1px solid var(--border); margin-top: 4px;">
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">CI deploy bot</div>
+              <div class="session-meta pat-token">mkb_pat_••••••••••••••••a4f2 · scopes: read:library, write:queue</div>
+            </div>
+            <div class="session-meta">Last used 2 hours ago</div>
+            <div class="session-meta">Expires 2026-08-12</div>
+            <button class="btn btn-danger btn-sm">Revoke</button>
+          </div>
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">Local CLI (laptop)</div>
+              <div class="session-meta pat-token">mkb_pat_••••••••••••••••91d8 · scopes: read:*, write:*</div>
+            </div>
+            <div class="session-meta">Last used 3 days ago</div>
+            <div class="session-meta">Never expires</div>
+            <button class="btn btn-danger btn-sm">Revoke</button>
+          </div>
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">Subtitle exporter</div>
+              <div class="session-meta pat-token">mkb_pat_••••••••••••••••e103 · scopes: read:transcripts</div>
+            </div>
+            <div class="session-meta">Never used</div>
+            <div class="session-meta">Expires 2026-05-20</div>
+            <button class="btn btn-danger btn-sm">Revoke</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Active sessions</div>
+        <div class="card-desc">Browsers and devices currently signed in to your account.</div>
+
+        <div style="border-top: 1px solid var(--border); margin-top: 16px;">
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">Safari on macOS <span class="session-current">This device</span></div>
+              <div class="session-meta">192.168.1.42 · San Francisco, CA · started 1 hour ago</div>
+            </div>
+            <div></div>
+            <div></div>
+            <button class="btn btn-ghost btn-sm" disabled style="opacity:0.4;">Revoke</button>
+          </div>
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">Chrome on iOS</div>
+              <div class="session-meta">100.64.12.7 · cellular · started 3 days ago</div>
+            </div>
+            <div class="session-meta">Last active 2 hours ago</div>
+            <div></div>
+            <button class="btn btn-danger btn-sm">Revoke</button>
+          </div>
+          <div class="session-row">
+            <div>
+              <div style="font-weight:500;">Firefox on Linux</div>
+              <div class="session-meta">10.0.0.18 · home network · started 18 days ago</div>
+            </div>
+            <div class="session-meta">Last active 4 days ago</div>
+            <div></div>
+            <button class="btn btn-danger btn-sm">Revoke</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+          <button class="btn btn-danger">Revoke all other sessions</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Password</div>
+        <div class="card-desc">Choose a strong password — at least 12 characters with mixed cases.</div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">Current password</span>
+          </div>
+          <input type="password" class="input input-sm" placeholder="••••••••">
+        </div>
+        <div class="field-row">
+          <div>
+            <span class="field-label">New password</span>
+          </div>
+          <input type="password" class="input input-sm" placeholder="At least 12 characters">
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top: 16px;">
+          <button class="btn btn-primary">Change password</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+      document.querySelectorAll('.tab-content').forEach(c => {
+        c.classList.toggle('active', c.dataset.pane === target);
+      });
+    });
+  });
+  // Toggle switches
+  document.querySelectorAll('.toggle').forEach(t => {
+    t.addEventListener('click', () => t.classList.toggle('on'));
+  });
+</script>
+</body>
+</html>

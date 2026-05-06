@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Theme Demo (Mockup 11.07)</title>
+<style>
+  /* Token-based theming via data-theme on each panel */
+  [data-theme="dark"] {
+    --bg: #0a0e1a;
+    --surface: #131826;
+    --elevated: #1a2033;
+    --border: #232a3d;
+    --border-strong: #303855;
+    --text: #e8eaf0;
+    --text-muted: #8b94a8;
+    --text-faint: #5b6478;
+    --accent: #818cf8;
+    --accent-bg: rgba(129, 140, 248, 0.15);
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --shadow: 0 4px 14px rgba(0,0,0,0.4);
+    --poster-overlay: linear-gradient(180deg, transparent 30%, rgba(10,14,26,0.95));
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --elevated: #ffffff;
+    --border: #e4e7ee;
+    --border-strong: #cbd1dc;
+    --text: #1a1f2e;
+    --text-muted: #5b6478;
+    --text-faint: #8b94a8;
+    --accent: #4f46e5;
+    --accent-bg: rgba(79, 70, 229, 0.08);
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    --poster-overlay: linear-gradient(180deg, transparent 30%, rgba(255,255,255,0.95));
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+    background: #050714;
+    color: #e8eaf0;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* Page chrome */
+  .page-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: #0a0e1a;
+    border-bottom: 1px solid #232a3d;
+    color: #e8eaf0;
+  }
+  .top-title { font-size: 16px; font-weight: 600; display:flex; align-items:center; gap:10px; }
+  .top-title .dot { width:8px; height:8px; border-radius:50%; background: linear-gradient(135deg, #818cf8, #c084fc); }
+  .system-pref {
+    display: flex; gap: 8px; align-items: center;
+    padding: 6px 12px;
+    background: #131826;
+    border: 1px solid #232a3d;
+    border-radius: 999px;
+    font-size: 12px;
+    color: #8b94a8;
+  }
+  .system-pref .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #34d399;
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+  .toggle-row {
+    display: flex; gap: 6px;
+    background: #131826;
+    border: 1px solid #232a3d;
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .toggle-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: transparent;
+    color: #8b94a8;
+    cursor: pointer;
+    font-size: 13px;
+    border: none;
+    font-family: inherit;
+    display: flex; align-items: center; gap: 6px;
+    transition: all 0.15s;
+  }
+  .toggle-btn.active {
+    background: #818cf8;
+    color: #0a0e1a;
+    font-weight: 600;
+  }
+  .toggle-btn:hover:not(.active) { color: #e8eaf0; }
+
+  /* Side-by-side panels */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex: 1;
+    min-height: 0;
+  }
+  .panel {
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    position: relative;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .panel-label {
+    position: absolute;
+    top: 16px; left: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    z-index: 5;
+    box-shadow: var(--shadow);
+  }
+  .panel-label .dot { width: 8px; height: 8px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align: middle; }
+  .panel-light .panel-label .dot { background: #fbbf24; }
+  .panel-dark .panel-label .dot { background: #818cf8; }
+
+  /* Mock content inside panel */
+  .panel-inner {
+    padding: 56px 24px 24px;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .nav-left { display: flex; gap: 14px; align-items: center; }
+  .brand-mark {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent), #c084fc);
+    border-radius: 7px;
+    display: grid; place-items: center;
+    color: white;
+    font-weight: 800;
+    font-size: 13px;
+  }
+  .brand-name { font-weight: 700; font-size: 14px; }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tabs span {
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .nav-tabs span.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nav-right { display: flex; gap: 10px; align-items: center; }
+  .search-box {
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    width: 160px;
+    font-family: inherit;
+  }
+  .avatar {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #ec4899, #8b5cf6);
+    border-radius: 50%;
+    display: grid; place-items: center;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* Hero card */
+  .hero {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .hero h2 { font-size: 17px; margin-bottom: 4px; }
+  .hero p { color: var(--text-muted); font-size: 13px; margin-bottom: 14px; }
+  .hero-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-family: inherit;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: filter 0.15s, background 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .btn-ghost:hover { background: var(--accent-bg); }
+
+  /* Video grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .video-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: background 150ms ease, border-color 150ms ease, transform 0.2s;
+    cursor: pointer;
+  }
+  .video-card:hover { transform: translateY(-2px); }
+  .poster {
+    width: 100%; aspect-ratio: 16/9;
+    background-size: cover; background-position: center;
+    position: relative;
+  }
+  .poster::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: var(--poster-overlay);
+  }
+  .poster-1 { background: linear-gradient(135deg, #4f46e5, #ec4899); }
+  .poster-2 { background: linear-gradient(135deg, #06b6d4, #3b82f6); }
+  .poster-3 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .poster-4 { background: linear-gradient(135deg, #10b981, #14b8a6); }
+  .video-meta { padding: 10px 12px; }
+  .video-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .video-sub { font-size: 11px; color: var(--text-muted); }
+
+  /* Pills row */
+  .stat-row { display: flex; gap: 10px; margin-bottom: 20px; }
+  .stat {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .stat-num {
+    font-size: 20px; font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label { font-size: 11px; color: var(--text-muted); }
+  .stat-trend {
+    font-size: 10px;
+    color: var(--success);
+    margin-left: 6px;
+  }
+
+  /* Player */
+  .player-mock {
+    background: #0a0e1a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .player-poster {
+    aspect-ratio: 16/9;
+    background: linear-gradient(135deg, #312e81, #581c87);
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+  .play-btn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.92);
+    display: grid; place-items: center;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    cursor: pointer;
+  }
+  .play-btn svg { fill: #1a1f2e; margin-left: 3px; }
+  .player-subs {
+    position: absolute; bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.78);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  /* Type sample */
+  .type-sample {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .type-sample h3 {
+    font-size: 14px; margin-bottom: 8px;
+    color: var(--text);
+  }
+  .type-sample p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .badge-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+  .badge-warn { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
+  .badge-err { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
+
+  /* Bottom info bar */
+  .info-bar {
+    background: #0a0e1a;
+    border-top: 1px solid #232a3d;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #8b94a8;
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .feature-list {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .feature {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .feature svg { color: #34d399; }
+
+  /* Responsive */
+  @media (max-width: 880px) {
+    .compare { grid-template-columns: 1fr; }
+    .panel { min-height: 60vh; }
+  }
+</style>
+</head>
+<body>
+<div class="page-shell">
+
+  <!-- Top control bar -->
+  <header class="top-bar">
+    <div class="top-title">
+      <span class="dot"></span>
+      Maktaba — Theme Demo
+    </div>
+    <div class="system-pref" title="prefers-color-scheme: dark">
+      <span class="pulse"></span>
+      System preference: <strong style="color:#e8eaf0;">dark</strong>
+    </div>
+    <div class="toggle-row" role="tablist" aria-label="Theme">
+      <button class="toggle-btn" data-mode="light">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        Light
+      </button>
+      <button class="toggle-btn active" data-mode="system">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        System
+      </button>
+      <button class="toggle-btn" data-mode="dark">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        Dark
+      </button>
+    </div>
+  </header>
+
+  <!-- Side by side panels -->
+  <div class="compare">
+
+    <!-- LIGHT panel -->
+    <section class="panel panel-light" data-theme="light">
+      <div class="panel-label"><span class="dot"></span>Light</div>
+      <div class="panel-inner">
+
+        <nav class="nav">
+          <div class="nav-left">
+            <div class="brand-mark">M</div>
+            <div class="brand-name">Maktaba</div>
+            <div class="nav-tabs">
+              <span class="active">Library</span>
+              <span>Search</span>
+              <span>Queue</span>
+            </div>
+          </div>
+          <div class="nav-right">
+            <input class="search-box" placeholder="Search videos…">
+            <div class="avatar">MD</div>
+          </div>
+        </nav>
+
+        <div class="hero">
+          <h2>Welcome back, Mahmoud</h2>
+          <p>Your library has 1,247 videos and 312 hours of transcribed audio.</p>
+          <div class="hero-buttons">
+            <button class="btn btn-primary">Resume watching</button>
+            <button class="btn btn-ghost">Browse library</button>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat">
+            <div class="stat-num">1,247 <span class="stat-trend">+12</span></div>
+            <div class="stat-label">Videos indexed</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">312h</div>
+            <div class="stat-label">Transcribed</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">8</div>
+            <div class="stat-label">In queue</div>
+          </div>
+        </div>
+
+        <div class="player-mock">
+          <div class="player-poster">
+            <div class="play-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20"/></svg>
+            </div>
+            <div class="player-subs">"This is how the algorithm distributes work."</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="video-card">
+            <div class="poster poster-1"></div>
+            <div class="video-meta">
+              <div class="video-title">Distributed Systems</div>
+              <div class="video-sub">42 min · transcribed</div>
+            </div>
+          </div>
+          <div class="video-card">
+            <div class="poster poster-2"></div>
+            <div class="video-meta">
+              <div class="video-title">Quantum Field Theory</div>
+              <div class="video-sub">1h 14m · transcribed</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="type-sample">
+          <h3>Typography &amp; states</h3>
+          <p>Body text is set in 1.5 line height for comfortable reading on both themes.</p>
+          <p>Muted text reads at AA contrast against the surface.</p>
+          <div class="badge-row">
+            <span class="badge badge-ok">Synced</span>
+            <span class="badge badge-warn">Scanning</span>
+            <span class="badge badge-err">Failed</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- DARK panel -->
+    <section class="panel panel-dark" data-theme="dark">
+      <div class="panel-label"><span class="dot"></span>Dark</div>
+      <div class="panel-inner">
+
+        <nav class="nav">
+          <div class="nav-left">
+            <div class="brand-mark">M</div>
+            <div class="brand-name">Maktaba</div>
+            <div class="nav-tabs">
+              <span class="active">Library</span>
+              <span>Search</span>
+              <span>Queue</span>
+            </div>
+          </div>
+          <div class="nav-right">
+            <input class="search-box" placeholder="Search videos…">
+            <div class="avatar">MD</div>
+          </div>
+        </nav>
+
+        <div class="hero">
+          <h2>Welcome back, Mahmoud</h2>
+          <p>Your library has 1,247 videos and 312 hours of transcribed audio.</p>
+          <div class="hero-buttons">
+            <button class="btn btn-primary">Resume watching</button>
+            <button class="btn btn-ghost">Browse library</button>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat">
+            <div class="stat-num">1,247 <span class="stat-trend">+12</span></div>
+            <div class="stat-label">Videos indexed</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">312h</div>
+            <div class="stat-label">Transcribed</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">8</div>
+            <div class="stat-label">In queue</div>
+          </div>
+        </div>
+
+        <div class="player-mock">
+          <div class="player-poster">
+            <div class="play-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20"/></svg>
+            </div>
+            <div class="player-subs">"This is how the algorithm distributes work."</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="video-card">
+            <div class="poster poster-3"></div>
+            <div class="video-meta">
+              <div class="video-title">Compiler Design</div>
+              <div class="video-sub">58 min · transcribed</div>
+            </div>
+          </div>
+          <div class="video-card">
+            <div class="poster poster-4"></div>
+            <div class="video-meta">
+              <div class="video-title">Topology Lecture 3</div>
+              <div class="video-sub">1h 02m · transcribed</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="type-sample">
+          <h3>Typography &amp; states</h3>
+          <p>Body text is set in 1.5 line height for comfortable reading on both themes.</p>
+          <p>Muted text reads at AA contrast against the surface.</p>
+          <div class="badge-row">
+            <span class="badge badge-ok">Synced</span>
+            <span class="badge badge-warn">Scanning</span>
+            <span class="badge badge-err">Failed</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Bottom info -->
+  <footer class="info-bar">
+    <div>Both panels render the <em>same components</em> — only CSS custom properties on <code style="color:#e8eaf0; background:#131826; padding:2px 6px; border-radius:4px;">:root[data-theme]</code> change.</div>
+    <div class="feature-list">
+      <span class="feature">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+        Persists in localStorage
+      </span>
+      <span class="feature">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+        No FOUC on cold load
+      </span>
+      <span class="feature">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+        WCAG 2.1 AA contrast
+      </span>
+      <span class="feature">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+        150 ms transition
+      </span>
+    </div>
+  </footer>
+</div>
+
+<script>
+  // Detect system preference and update indicator
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const sysIndicator = document.querySelector('.system-pref strong');
+  const updateSys = () => sysIndicator.textContent = mq.matches ? 'dark' : 'light';
+  updateSys();
+  mq.addEventListener('change', updateSys);
+
+  // Toggle behavior — when the user picks a single theme,
+  // both panels render the same theme so they can compare components in one mode
+  const panels = document.querySelectorAll('.panel');
+  const buttons = document.querySelectorAll('.toggle-btn');
+  buttons.forEach(b => b.addEventListener('click', () => {
+    buttons.forEach(x => x.classList.toggle('active', x === b));
+    const mode = b.dataset.mode;
+    panels.forEach((p, idx) => {
+      if (mode === 'system') {
+        // restore side-by-side
+        p.dataset.theme = idx === 0 ? 'light' : 'dark';
+        p.querySelector('.panel-label').firstChild.style.background =
+          idx === 0 ? '#fbbf24' : '#818cf8';
+      } else {
+        p.dataset.theme = mode;
+      }
+    });
+  }));
+</script>
+</body>
+</html>
