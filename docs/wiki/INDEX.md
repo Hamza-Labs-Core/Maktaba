@@ -1,14 +1,14 @@
 # Maktaba Wiki — Master Index
 
-> Comprehensive index of every artifact in the Maktaba project: 24 epics,
-> 236 stories, 237 plans, 14 diagrams,
-> 48 mockups, 70 API endpoints, 32 DB entities.
+> Comprehensive index of every artifact in the Maktaba project: 25 epics,
+> 272 stories, 237 plans, 14 diagrams,
+> 48 mockups, 130+ API endpoints, 47 DB entities.
 
 ## Quick navigation
 
 | Catalog | File | Entries |
 |---|---|---|
-| Stories | [stories-map.md](stories-map.md) | 236 |
+| Stories | [stories-map.md](stories-map.md) | 272 |
 | Features | [features.md](features.md) | per epic |
 | DB entities | [entities.md](entities.md) | 32 |
 | API endpoints | [api-catalog.md](api-catalog.md) | 70 |
@@ -43,6 +43,7 @@
 | 22 | [DevOps](../../specs/epics/22-devops/README.md) | 4 | Cross-cutting | 8 | 8 | 0 | A self-hoster gets running in one command and stays running |
 | 23 | [Security Hardening](../../specs/epics/23-security/README.md) | 4 | API + Streaming | 8 | 8 | 0 | Maktaba is safe to expose on a home LAN by default and safe to |
 | 24 | [Data Integrity](../../specs/epics/24-data-integrity/README.md) | 4 | Cross-cutting | 9 | 9 | 0 | A user's media library and the platform's derived state survive |
+| 25 | [Cloud Relay](../../specs/epics/25-cloud-relay/README.md) | 5 | Cloud (Go) + Distribution | 36 | — | 0 | Maktaba Cloud — hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing, plus native installers for macOS / Windows / Linux / NAS / ARM / VPS. |
 
 ## Diagrams
 
