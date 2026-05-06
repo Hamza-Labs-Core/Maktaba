@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba TV — Player (Epic 14)</title>
+<style>
+  :root {
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --focus-ring: #3ddc97;
+    --text-on-dim: #f3f5fb;
+  }
+  [data-theme="light"] {
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --focus-ring: #1aa56c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+    background: #000;
+    color: #f3f5fb;
+    font-size: 16px;
+    padding: 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #5a6079; margin-bottom: 18px; text-align: center;
+  }
+  .tv-frame {
+    width: 1920px; height: 1080px; margin: 0 auto;
+    background: #000; border-radius: 14px; overflow: hidden;
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  }
+  /* Video background fill */
+  .video-bg {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(135deg, #1a1a2e 0%, #16213e 30%, #0f3460 65%, #533483 100%);
+    background-size: cover;
+  }
+  .video-bg::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 40%, rgba(255, 200, 100, 0.12), transparent 55%),
+      radial-gradient(ellipse at 70% 60%, rgba(100, 100, 255, 0.15), transparent 50%);
+  }
+  .video-vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse, transparent 50%, rgba(0,0,0,0.5) 100%);
+    pointer-events: none;
+  }
+
+  /* Subtle simulated speaker silhouette */
+  .speaker {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.15);
+    font-size: 280px; font-weight: 700;
+    letter-spacing: -10px;
+    pointer-events: none;
+  }
+
+  /* Subtitles — placed very high (typical TV): about 10-13% above bottom for big-screen comfort */
+  .subtitle-area {
+    position: absolute; left: 0; right: 0; bottom: 220px;
+    display: flex; justify-content: center;
+    z-index: 8;
+    padding: 0 240px;
+  }
+  .subtitle-line {
+    background: rgba(0,0,0,0.78);
+    backdrop-filter: blur(6px);
+    padding: 16px 32px;
+    border-radius: 10px;
+    font-size: 36px;
+    line-height: 1.4;
+    font-weight: 500;
+    text-align: center;
+    color: #fff;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    max-width: 1400px;
+  }
+  .subtitle-line .ar {
+    direction: rtl; display: block;
+    font-family: -apple-system, "SF Arabic", "Geeza Pro", sans-serif;
+    font-size: 38px; margin-bottom: 4px;
+  }
+  .subtitle-line .en {
+    color: rgba(255,255,255,0.85);
+    font-size: 28px; font-weight: 400;
+  }
+
+  /* Top fade-in info — minimal during playback */
+  .top-overlay {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 36px 80px 100px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.75) 0%, transparent 100%);
+    z-index: 5;
+    display: flex; align-items: flex-start; gap: 24px;
+  }
+  .top-info {
+    flex: 1;
+  }
+  .top-eyebrow {
+    font-size: 14px; color: var(--accent); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .top-title {
+    font-size: 32px; font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .top-meta {
+    font-size: 16px; color: rgba(255,255,255,0.75);
+  }
+  .top-clock {
+    font-size: 18px; font-family: ui-monospace, monospace;
+    color: rgba(255,255,255,0.85);
+  }
+  .quality-pill {
+    background: rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; color: #fff;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .quality-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+  /* Bottom controls overlay */
+  .bottom-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 80px 80px 60px;
+    background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+    z-index: 6;
+  }
+  .progress-block { margin-bottom: 28px; }
+  .timeline {
+    height: 6px; background: rgba(255,255,255,0.25);
+    border-radius: 3px; position: relative;
+    cursor: pointer;
+  }
+  .timeline-buffer {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: rgba(255,255,255,0.4);
+    width: 56%; border-radius: 3px;
+  }
+  .timeline-progress {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: var(--accent);
+    width: 42%; border-radius: 3px;
+  }
+  .timeline-thumb {
+    position: absolute; left: 42%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 22px; height: 22px;
+    background: var(--accent); border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.3), 0 0 20px var(--accent);
+  }
+  .timeline-marker {
+    position: absolute; top: -3px;
+    width: 3px; height: 12px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 2px;
+  }
+  .time-row {
+    display: flex; justify-content: space-between;
+    margin-top: 12px;
+    font-size: 18px;
+    font-family: ui-monospace, monospace;
+    color: rgba(255,255,255,0.85);
+  }
+
+  .controls-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 24px;
+  }
+  .ctrl-btn {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    border: 0; color: #fff; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(10px);
+    transition: transform 0.15s;
+    position: relative;
+  }
+  .ctrl-btn.large {
+    width: 100px; height: 100px;
+    background: #fff; color: #000;
+  }
+  .ctrl-btn.focused {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 5px var(--focus-ring), 0 0 32px rgba(61, 220, 151, 0.6);
+  }
+  .ctrl-btn .label-floating {
+    position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--accent); font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .secondary-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 28px;
+  }
+  .pill-row { display: flex; gap: 12px; }
+  .pill {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+    padding: 10px 18px; border-radius: 10px;
+    font-size: 15px; color: #fff;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .pill svg { width: 18px; height: 18px; }
+  .pill .check { color: var(--accent); }
+
+  /* D-pad cheatsheet */
+  .dpad-hint {
+    position: absolute; right: 80px; bottom: 60px;
+    display: flex; gap: 16px;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 18px; border-radius: 12px;
+    z-index: 7;
+  }
+  .dpad-hint-row {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: rgba(255,255,255,0.85);
+  }
+  .key-cap {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+
+  /* Slide-up info panel — positioned partially visible to demo "press up" */
+  .info-panel {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 380px;
+    background: linear-gradient(180deg, transparent 0%, rgba(8, 10, 18, 0.92) 14%, rgba(8, 10, 18, 0.98) 100%);
+    backdrop-filter: blur(20px);
+    padding: 50px 80px 60px;
+    transform: translateY(100%);
+    transition: transform 0.3s;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    z-index: 9;
+  }
+  /* show partial peek to demonstrate */
+  .demo-peek .info-panel { transform: translateY(70%); }
+  .info-grab {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: 64px; height: 4px; background: rgba(255,255,255,0.4); border-radius: 2px;
+  }
+  .info-panel-label {
+    font-size: 13px; color: var(--accent); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    text-align: center; margin-top: 16px;
+  }
+
+  /* Chapter peek (left/right) */
+  .chapter-peek {
+    position: absolute; top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(20px);
+    padding: 16px 24px;
+    border-radius: 14px;
+    z-index: 7;
+    border: 1px solid rgba(255,255,255,0.08);
+    display: none;
+  }
+  .chapter-peek.show { display: block; }
+  .chapter-peek.left { left: 40px; }
+  .chapter-peek.right { right: 40px; }
+  .chapter-peek .label {
+    font-size: 12px; color: var(--accent); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 6px; text-align: left;
+  }
+  .chapter-peek .num {
+    font-size: 30px; font-weight: 700; color: #fff;
+    margin-bottom: 4px;
+  }
+  .chapter-peek .name {
+    font-size: 16px; color: rgba(255,255,255,0.7);
+    max-width: 240px;
+  }
+  .chapter-peek .time {
+    font-family: ui-monospace, monospace;
+    font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 14 · STORY 14.02 · TV PLAYER — CONTROLS VISIBLE, FOCUS ON PLAY</div>
+
+<div class="tv-frame">
+  <div class="video-bg">
+    <div class="speaker">م</div>
+    <div class="video-vignette"></div>
+  </div>
+
+  <!-- Top info overlay (fades in/out with controls) -->
+  <div class="top-overlay">
+    <div class="top-info">
+      <div class="top-eyebrow">Now Playing · Episode 4 of 12</div>
+      <div class="top-title">دروس في النحو العربي · Lesson 4: المبتدأ والخبر</div>
+      <div class="top-meta">Sheikh Yasir Qadhi · Arabic with English subtitles</div>
+    </div>
+    <div class="top-clock">7:24 PM</div>
+    <div class="quality-pill"><div class="dot"></div> 4K HDR · 5.1</div>
+  </div>
+
+  <!-- Subtitle high-positioned for TV -->
+  <div class="subtitle-area">
+    <div class="subtitle-line">
+      <span class="ar">المبتدأ هو الاسم المرفوع المجرّد عن العوامل اللفظية</span>
+      <span class="en">The subject (mubtada') is a noun in the nominative case, free of any verbal influences.</span>
+    </div>
+  </div>
+
+  <!-- Chapter skip peek (left = previous chapter) -->
+  <div class="chapter-peek left show">
+    <div class="label">◀ Previous Chapter</div>
+    <div class="num">3</div>
+    <div class="name">Introduction to Sentence Types</div>
+    <div class="time">12:08 → 18:42</div>
+  </div>
+
+  <!-- Chapter skip peek (right = next chapter) -->
+  <div class="chapter-peek right show">
+    <div class="label">Next Chapter ▶</div>
+    <div class="num">5</div>
+    <div class="name">Rules of Predicate Agreement</div>
+    <div class="time">28:30 → 35:18</div>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="bottom-overlay">
+    <div class="progress-block">
+      <div class="timeline">
+        <div class="timeline-buffer"></div>
+        <div class="timeline-progress"></div>
+        <div class="timeline-marker" style="left: 0%;"></div>
+        <div class="timeline-marker" style="left: 12%;"></div>
+        <div class="timeline-marker" style="left: 28%;"></div>
+        <div class="timeline-marker" style="left: 50%;"></div>
+        <div class="timeline-marker" style="left: 67%;"></div>
+        <div class="timeline-marker" style="left: 83%;"></div>
+        <div class="timeline-thumb"></div>
+      </div>
+      <div class="time-row">
+        <span>17:54</span>
+        <span style="color: rgba(255,255,255,0.5);">Chapter 4 of 7 — Definitions</span>
+        <span>−24:24</span>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <button class="ctrl-btn" title="Previous chapter">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <button class="ctrl-btn" title="Skip back 10s">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg>
+      </button>
+      <button class="ctrl-btn large focused" title="Pause">
+        <span class="label-floating">D-PAD FOCUS</span>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button class="ctrl-btn" title="Skip forward 10s">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg>
+      </button>
+      <button class="ctrl-btn" title="Next chapter">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
+
+    <div class="secondary-row">
+      <div class="pill-row">
+        <div class="pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          Audio · Arabic
+        </div>
+        <div class="pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="11" x2="14" y2="11"/><line x1="6" y1="14" x2="11" y2="14"/></svg>
+          Subtitles · AR + EN
+        </div>
+        <div class="pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Speed · 1.0×
+        </div>
+      </div>
+      <div class="pill-row">
+        <div class="pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          Chapters
+        </div>
+        <div class="pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Info
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D-pad legend -->
+  <div class="dpad-hint">
+    <div class="dpad-hint-row"><span class="key-cap">▲</span> Info</div>
+    <div class="dpad-hint-row"><span class="key-cap">◀</span><span class="key-cap">▶</span> Chapter</div>
+    <div class="dpad-hint-row"><span class="key-cap">OK</span> Pause</div>
+    <div class="dpad-hint-row"><span class="key-cap">↩</span> Back</div>
+  </div>
+</div>
+
+</body>
+</html>
