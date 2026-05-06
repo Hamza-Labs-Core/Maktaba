@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud — Access your media from anywhere</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --gold: #fbbf24;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
+    min-height: 100vh;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 800px 600px at 50% -200px, rgba(91,158,255,0.12), transparent 60%),
+      radial-gradient(ellipse 600px 400px at 90% 30%, rgba(124,92,255,0.08), transparent 60%);
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* Top nav */
+  .nav {
+    position: relative; z-index: 10;
+    max-width: 1200px; margin: 0 auto; padding: 20px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  .logo-mark {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; color: #fff;
+  }
+  .logo-mark::after {
+    content: ''; position: absolute; width: 32px; height: 32px;
+    border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+  }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; }
+  .nav-links a { color: var(--text-dim); }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta { display: flex; gap: 10px; align-items: center; }
+  .btn {
+    padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    border: 1px solid transparent; transition: all 0.15s; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; line-height: 1;
+  }
+  .btn.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn.ghost:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.lg { padding: 12px 22px; font-size: 14px; font-weight: 600; }
+  .btn.xl { padding: 14px 28px; font-size: 15px; font-weight: 600; }
+
+  /* Hero */
+  .hero {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto; padding: 60px 32px 80px;
+    text-align: center;
+  }
+  .pre-tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 999px;
+    background: var(--primary-dim); color: var(--primary);
+    border: 1px solid rgba(91,158,255,0.3);
+    font-size: 12px; font-weight: 500; margin-bottom: 28px;
+  }
+  .pre-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .hero h1 {
+    font-size: 60px; line-height: 1.05; font-weight: 800; letter-spacing: -1.5px;
+    margin-bottom: 24px;
+    background: linear-gradient(180deg, var(--text), var(--text-dim));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero h1 .em {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero p {
+    font-size: 18px; color: var(--text-dim); max-width: 620px; margin: 0 auto;
+    line-height: 1.6;
+  }
+  .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 36px; }
+
+  /* Hero illustration: phone + tv + laptop + home server */
+  .hero-vis {
+    position: relative; max-width: 1080px; margin: 60px auto 0;
+    height: 360px;
+  }
+  .hv-server {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 200px; height: 240px;
+    background: var(--panel); border: 1px solid var(--border-strong);
+    border-radius: 16px; padding: 18px;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .hv-server::before {
+    content: ''; position: absolute; inset: -1px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary), var(--accent), var(--primary));
+    z-index: -1; opacity: 0.5;
+  }
+  .hv-srv-head {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  .hv-srv-icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #fff; font-weight: 800;
+  }
+  .hv-srv-head .nm { font-size: 12px; font-weight: 600; }
+  .hv-srv-head .st { font-size: 10px; color: var(--success); display: flex; align-items: center; gap: 4px; margin-top: 1px; }
+  .hv-srv-head .st::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+  .hv-bar {
+    height: 8px; border-radius: 3px; background: var(--panel-2);
+    position: relative; overflow: hidden;
+  }
+  .hv-bar::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+  }
+  .hv-bar.small::after { width: 65%; }
+  .hv-bar.tiny::after { width: 30%; }
+  .hv-meta {
+    display: flex; justify-content: space-between;
+    font-size: 9px; color: var(--text-muted); margin-top: 1px;
+    font-family: ui-monospace, monospace;
+  }
+  .hv-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .hv-stat {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 9px;
+  }
+  .hv-stat .v { font-size: 13px; font-weight: 700; font-family: ui-monospace, monospace; }
+  .hv-stat .l { color: var(--text-muted); margin-top: 1px; }
+
+  /* Devices around the server */
+  .hv-device {
+    position: absolute; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .hv-phone {
+    width: 110px; height: 200px; left: 60px; top: 80px;
+    border-radius: 18px; padding: 6px;
+  }
+  .hv-phone .scr {
+    width: 100%; height: 100%; border-radius: 14px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel-3));
+    padding: 12px 8px; display: flex; flex-direction: column; gap: 5px;
+    overflow: hidden;
+  }
+  .hv-phone .pill { font-size: 7px; color: var(--text-muted); text-align: center; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .hv-phone .row {
+    display: flex; gap: 4px; align-items: center;
+    padding: 3px 0;
+  }
+  .hv-phone .row .thumb {
+    width: 24px; height: 16px; border-radius: 3px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    flex-shrink: 0;
+  }
+  .hv-phone .row .thumb.alt { background: linear-gradient(135deg, var(--accent), #ec4899); }
+  .hv-phone .row .thumb.alt2 { background: linear-gradient(135deg, var(--success), var(--primary)); }
+  .hv-phone .row .lines { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .hv-phone .row .lines div:first-child { height: 4px; background: var(--text-dim); border-radius: 2px; opacity: 0.6; }
+  .hv-phone .row .lines div:last-child { height: 3px; background: var(--text-muted); border-radius: 2px; opacity: 0.4; width: 60%; }
+
+  .hv-tv {
+    width: 280px; height: 180px; right: 40px; top: 50px;
+    padding: 10px;
+  }
+  .hv-tv .scr {
+    width: 100%; height: 100%; border-radius: 8px;
+    background: linear-gradient(135deg, #0a0e1a, var(--panel-3));
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hv-tv .play {
+    width: 50px; height: 50px; border-radius: 50%;
+    background: rgba(255,255,255,0.95); color: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hv-tv .ttl {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    color: #fff; font-size: 11px; font-weight: 600;
+  }
+  .hv-tv .ttl small { display: block; font-size: 9px; opacity: 0.7; font-weight: 400; margin-top: 1px; }
+  .hv-tv .qual {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(0,0,0,0.6); color: #fff;
+    padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 600;
+  }
+
+  .hv-laptop {
+    width: 240px; height: 150px; left: 30px; bottom: 20px;
+    padding: 8px;
+  }
+  .hv-laptop .scr {
+    width: 100%; height: 100%; border-radius: 6px;
+    background: var(--panel-3); padding: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .hv-laptop .scr .topbar {
+    height: 14px; background: var(--panel-2); border-radius: 3px; margin-bottom: 2px;
+    display: flex; align-items: center; padding: 0 4px; gap: 3px;
+  }
+  .hv-laptop .scr .topbar div { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); opacity: 0.4; }
+  .hv-laptop .scr .grid {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+  }
+  .hv-laptop .scr .grid > div {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 3px;
+  }
+  .hv-laptop .scr .grid > div:nth-child(2) { background: linear-gradient(135deg, var(--accent), #ec4899); }
+  .hv-laptop .scr .grid > div:nth-child(3) { background: linear-gradient(135deg, var(--success), var(--primary)); }
+  .hv-laptop .scr .grid > div:nth-child(4) { background: linear-gradient(135deg, var(--warn), #ec4899); }
+  .hv-laptop .scr .grid > div:nth-child(5) { background: linear-gradient(135deg, var(--primary), var(--success)); }
+  .hv-laptop .scr .grid > div:nth-child(6) { background: linear-gradient(135deg, #ec4899, var(--accent)); }
+
+  .hv-link {
+    position: absolute; pointer-events: none;
+    stroke: var(--primary); stroke-width: 2; fill: none;
+    stroke-dasharray: 4 4; opacity: 0.45;
+  }
+  .hv-pkt {
+    position: absolute; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--primary); box-shadow: 0 0 12px var(--primary);
+  }
+
+  /* Trust badges */
+  .trust-row {
+    margin-top: 60px; padding: 20px 32px;
+    display: flex; gap: 36px; flex-wrap: wrap; justify-content: center;
+    color: var(--text-muted); font-size: 12px; align-items: center;
+  }
+  .trust-row strong { color: var(--text-dim); font-weight: 600; }
+
+  /* Section: features */
+  .section { max-width: 1200px; margin: 0 auto; padding: 80px 32px; position: relative; z-index: 1; }
+  .section-head { text-align: center; margin-bottom: 48px; }
+  .section-tag {
+    color: var(--primary); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px;
+    margin-bottom: 12px;
+  }
+  .section h2 {
+    font-size: 36px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px;
+  }
+  .section-head p { color: var(--text-dim); font-size: 16px; max-width: 540px; margin: 0 auto; }
+
+  .features {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;
+  }
+  .feat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px;
+  }
+  .feat-icon {
+    width: 44px; height: 44px; border-radius: 11px;
+    background: var(--primary-dim); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .feat h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .feat p { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+
+  /* Comparison */
+  .cmp-wrap { max-width: 1100px; margin: 0 auto; }
+  .cmp {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+  }
+  .cmp-row {
+    display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr;
+    border-bottom: 1px solid var(--border); align-items: center;
+  }
+  .cmp-row:last-child { border-bottom: 0; }
+  .cmp-cell { padding: 14px 22px; font-size: 14px; }
+  .cmp-cell.center { text-align: center; }
+  .cmp-row.head .cmp-cell {
+    padding: 22px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .cmp-row.head .cmp-cell.featured {
+    background: linear-gradient(180deg, rgba(91,158,255,0.08), transparent);
+    color: var(--primary);
+    position: relative;
+  }
+  .cmp-row.head .cmp-cell.featured::after {
+    content: 'POPULAR'; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    background: var(--primary); color: #fff; padding: 2px 8px; border-radius: 999px;
+    font-size: 9px; letter-spacing: 1px;
+  }
+  .cmp-row.section .cmp-cell {
+    background: var(--panel-2);
+    text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
+    color: var(--text-muted); font-weight: 600;
+    padding: 10px 22px;
+  }
+  .cmp-cell.feature { color: var(--text); }
+  .cmp-cell.feature small { display: block; color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .yes-icon { color: var(--success); }
+  .no-icon { color: var(--text-muted); }
+  .check-bg {
+    display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(52,211,153,0.15); color: var(--success);
+    align-items: center; justify-content: center;
+  }
+
+  /* Pricing */
+  .pricing { max-width: 1100px; margin: 0 auto; }
+  .billing-toggle {
+    display: inline-flex; padding: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    margin: 0 auto 36px; gap: 4px; position: relative; left: 50%; transform: translateX(-50%);
+  }
+  .billing-opt {
+    padding: 8px 18px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    color: var(--text-dim); display: flex; align-items: center; gap: 6px;
+    border: 0; background: transparent;
+  }
+  .billing-opt.active { background: var(--primary); color: #fff; font-weight: 500; }
+  .billing-opt .save {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: rgba(91,158,255,0.15); color: var(--primary);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .billing-opt.active .save { background: rgba(255,255,255,0.2); color: #fff; }
+  .toggle-wrap { text-align: center; }
+
+  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .plan {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 18px; padding: 32px; position: relative;
+    display: flex; flex-direction: column;
+  }
+  .plan.featured {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(91,158,255,0.08), var(--shadow);
+    background: linear-gradient(180deg, rgba(91,158,255,0.05), var(--panel));
+  }
+  .plan-pop {
+    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    background: var(--primary); color: #fff;
+    padding: 4px 14px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .plan-name {
+    font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim); margin-bottom: 10px;
+  }
+  .plan-name.gold { color: var(--gold); }
+  .plan-tagline { font-size: 13px; color: var(--text-dim); margin-bottom: 22px; line-height: 1.5; min-height: 38px; }
+  .plan-price {
+    font-size: 44px; font-weight: 800; line-height: 1; margin-bottom: 6px;
+    display: flex; align-items: baseline; gap: 4px;
+  }
+  .plan-price .currency { font-size: 18px; color: var(--text-dim); font-weight: 500; }
+  .plan-price .period { font-size: 14px; color: var(--text-dim); font-weight: 400; }
+  .plan-price-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 22px; }
+  .plan-cta {
+    width: 100%; padding: 12px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    margin-bottom: 22px; transition: all 0.15s;
+  }
+  .plan-cta.primary { background: var(--primary); border: 0; color: #fff; }
+  .plan-cta.primary:hover { background: var(--primary-hover); }
+  .plan-cta.secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+  .feat-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .feat-list li {
+    list-style: none; display: flex; gap: 8px; font-size: 13px;
+    color: var(--text); align-items: flex-start;
+  }
+  .feat-list li svg { flex-shrink: 0; margin-top: 2px; color: var(--success); }
+  .feat-list li.muted { color: var(--text-muted); }
+  .feat-list li.muted svg { color: var(--text-muted); }
+
+  /* CTA bottom */
+  .cta-block {
+    max-width: 900px; margin: 80px auto 0; padding: 56px 32px;
+    background: linear-gradient(135deg, rgba(91,158,255,0.1), rgba(124,92,255,0.1));
+    border: 1px solid rgba(91,158,255,0.3);
+    border-radius: 20px; text-align: center;
+  }
+  .cta-block h2 {
+    font-size: 32px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px;
+  }
+  .cta-block p { color: var(--text-dim); font-size: 16px; margin-bottom: 28px; max-width: 480px; margin-left: auto; margin-right: auto; }
+  .cta-block .row { display: flex; gap: 12px; justify-content: center; }
+
+  /* Footer */
+  .footer {
+    border-top: 1px solid var(--border); margin-top: 80px;
+    padding: 40px 32px; text-align: center; color: var(--text-muted); font-size: 13px;
+  }
+  .footer .links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
+
+  /* ==== ALL STATES ==== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 32px 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert { width: 100%; max-width: 360px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 22px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+  .di-icon.info { background: rgba(91,158,255,0.12); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .dialog-x h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .dialog-x p { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 9px; border-radius: 8px; font-size: 13px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  .cookie {
+    width: 100%; max-width: 380px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; box-shadow: var(--shadow);
+  }
+  .cookie h4 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .cookie p { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 12px; }
+  .cookie .row { display: flex; gap: 8px; }
+  .cookie .b { flex: 1; padding: 8px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .cookie .b.primary { background: var(--primary); color: #fff; border: 0; }
+  .cookie .b.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+  .video-modal {
+    width: 100%; max-width: 420px; height: 240px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; position: relative;
+    box-shadow: var(--shadow);
+  }
+  .video-modal::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    opacity: 0.85;
+  }
+  .video-modal .ply {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .video-modal .ply div {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(255,255,255,0.95);
+    display: flex; align-items: center; justify-content: center; color: #000;
+  }
+  .video-modal .cap {
+    position: absolute; left: 16px; bottom: 12px; right: 16px; color: #fff; font-size: 13px; font-weight: 600;
+  }
+  .video-modal .x {
+    position: absolute; top: 10px; right: 10px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0,0,0,0.4); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+
+  .testimonial {
+    width: 100%; max-width: 360px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px;
+  }
+  .testimonial p { font-size: 13px; line-height: 1.6; color: var(--text); margin-bottom: 14px; }
+  .testimonial .auth { display: flex; gap: 10px; align-items: center; }
+  .testimonial .av {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    font-weight: 700; font-size: 13px;
+  }
+  .testimonial .ai-name { font-size: 12px; font-weight: 600; }
+  .testimonial .ai-role { font-size: 11px; color: var(--text-dim); }
+
+  .feature-card {
+    width: 100%; max-width: 320px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; transition: all 0.2s;
+  }
+  .feature-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(91,158,255,0.08); }
+
+  .signup-banner {
+    width: 100%; max-width: 360px;
+    background: linear-gradient(135deg, rgba(91,158,255,0.15), rgba(124,92,255,0.15));
+    border: 1px solid rgba(91,158,255,0.3);
+    border-radius: 10px; padding: 14px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .signup-banner .ic {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .signup-banner .tx { flex: 1; }
+  .signup-banner strong { font-size: 13px; display: block; }
+  .signup-banner span { font-size: 11px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<!-- Top nav -->
+<nav class="nav">
+  <div class="logo">
+    <div class="logo-mark">M</div>
+    <span>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Cloud</span></span>
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="plans.html">Pricing</a>
+    <a href="#how">How it works</a>
+    <a href="#help">Help</a>
+  </div>
+  <div class="nav-cta">
+    <a href="#" class="btn ghost">Sign in</a>
+    <a href="signup.html" class="btn primary">Get started</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="pre-tag">
+    <span class="dot"></span>
+    Now in public beta · join 12,400+ households
+  </div>
+  <h1>Access your media<br><span class="em">from anywhere</span></h1>
+  <p>Run Maktaba on your home server. Stream from your phone, TV, laptop, or browser — anywhere in the world. End-to-end encrypted. No re-uploads. No limits.</p>
+  <div class="hero-cta">
+    <a href="signup.html" class="btn primary xl">Start free →</a>
+    <a href="#how" class="btn ghost xl">See how it works</a>
+  </div>
+
+  <!-- Hero illustration -->
+  <div class="hero-vis">
+    <!-- Connection lines (under devices) -->
+    <svg style="position: absolute; inset: 0; width: 100%; height: 100%;" viewBox="0 0 1080 360" preserveAspectRatio="none">
+      <path class="hv-link" d="M225,180 Q360,180 460,180"/>
+      <path class="hv-link" d="M620,180 Q720,180 820,140"/>
+      <path class="hv-link" d="M540,300 Q380,320 270,310"/>
+    </svg>
+
+    <!-- Phone (left) -->
+    <div class="hv-device hv-phone">
+      <div class="scr">
+        <div class="pill">My Library</div>
+        <div class="row"><div class="thumb"></div><div class="lines"><div></div><div></div></div></div>
+        <div class="row"><div class="thumb alt"></div><div class="lines"><div></div><div></div></div></div>
+        <div class="row"><div class="thumb alt2"></div><div class="lines"><div></div><div></div></div></div>
+        <div class="row"><div class="thumb"></div><div class="lines"><div></div><div></div></div></div>
+        <div class="row"><div class="thumb alt"></div><div class="lines"><div></div><div></div></div></div>
+        <div class="row"><div class="thumb alt2"></div><div class="lines"><div></div><div></div></div></div>
+      </div>
+    </div>
+
+    <!-- TV (top right) -->
+    <div class="hv-device hv-tv">
+      <div class="scr">
+        <div class="qual">4K HDR</div>
+        <div class="play">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        </div>
+        <div class="ttl">
+          Ottoman Architecture · Ep. 2
+          <small>Streaming from home · 24 Mbps</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server (center) -->
+    <div class="hv-server">
+      <div class="hv-srv-head">
+        <div class="hv-srv-icon">M</div>
+        <div>
+          <div class="nm">maktaba-mac.local</div>
+          <div class="st">Online · 3 streams</div>
+        </div>
+      </div>
+      <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Bandwidth · upload</div>
+      <div class="hv-bar small"></div>
+      <div class="hv-meta"><span>42 Mbps</span><span>peak 78</span></div>
+      <div class="hv-stats">
+        <div class="hv-stat"><div class="v">312</div><div class="l">videos</div></div>
+        <div class="hv-stat"><div class="v">3</div><div class="l">viewers</div></div>
+      </div>
+      <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">Sessions</div>
+      <div style="display: flex; gap: 4px;">
+        <div style="flex: 1; height: 14px; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 3px; font-size: 8px; color: #fff; padding: 0 4px; display: flex; align-items: center;">iPhone · LAN</div>
+      </div>
+      <div style="display: flex; gap: 4px;">
+        <div style="flex: 1; height: 14px; background: linear-gradient(90deg, var(--accent), #ec4899); border-radius: 3px; font-size: 8px; color: #fff; padding: 0 4px; display: flex; align-items: center;">Apple TV · LAN</div>
+      </div>
+      <div style="display: flex; gap: 4px;">
+        <div style="flex: 1; height: 14px; background: linear-gradient(90deg, var(--success), var(--primary)); border-radius: 3px; font-size: 8px; color: #fff; padding: 0 4px; display: flex; align-items: center;">Web · Relay</div>
+      </div>
+    </div>
+
+    <!-- Laptop (bottom left) -->
+    <div class="hv-device hv-laptop">
+      <div class="scr">
+        <div class="topbar"><div></div><div></div><div></div></div>
+        <div class="grid">
+          <div></div><div></div><div></div>
+          <div></div><div></div><div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trust -->
+  <div class="trust-row">
+    <span><strong>End-to-end encrypted</strong> by default</span>
+    <span style="opacity: 0.4;">•</span>
+    <span><strong>Zero-knowledge</strong> · we never see your media</span>
+    <span style="opacity: 0.4;">•</span>
+    <span><strong>Open source</strong> server agent</span>
+    <span style="opacity: 0.4;">•</span>
+    <span><strong>Cancel anytime</strong></span>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section" id="features">
+  <div class="section-head">
+    <div class="section-tag">What you get</div>
+    <h2>Built for your home media library</h2>
+    <p>Maktaba Cloud is a thin relay for the Maktaba server you already run at home. We don't store your videos — we just connect you to them.</p>
+  </div>
+
+  <div class="features">
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12" y2="20"/></svg>
+      </div>
+      <h3>Remote streaming, no port forwarding</h3>
+      <p>Skip router config and dynamic-DNS hassle. Maktaba Cloud holds an outbound connection from your home server, so you can reach it from anywhere.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h3>End-to-end encrypted</h3>
+      <p>Sessions are TLS 1.3 with certificate pinning to your server's identity. We can't decrypt your video — even if we wanted to.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      </div>
+      <h3>Smart relay routing</h3>
+      <p>When direct connection works, we get out of the way. When it doesn't, we relay traffic through the nearest edge node — usually under 30 ms latency.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"/><circle cx="12" cy="11" r="4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+      </div>
+      <h3>Family-ready</h3>
+      <p>Family plan includes 6 user accounts with per-user history, watch progress, and parental controls — all sharing the same home library.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </div>
+      <h3>Push notifications</h3>
+      <p>Get notified when new videos finish processing, when family members start watching, or when something breaks at home.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+      </div>
+      <h3>Bandwidth dashboard</h3>
+      <p>See usage by device and per-user, including 4K stream quality, transcode counts, and monthly relay traffic — broken down clearly.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section class="section" id="compare">
+  <div class="section-head">
+    <div class="section-tag">Plan comparison</div>
+    <h2>Pick the plan that fits</h2>
+    <p>Free covers home-network use forever. Pro and Family add remote access, more users, and priority bandwidth.</p>
+  </div>
+
+  <div class="cmp-wrap">
+    <div class="cmp">
+      <div class="cmp-row head">
+        <div class="cmp-cell">Feature</div>
+        <div class="cmp-cell center">Free</div>
+        <div class="cmp-cell center featured">Pro</div>
+        <div class="cmp-cell center">Family</div>
+      </div>
+      <div class="cmp-row section"><div class="cmp-cell">Access</div><div class="cmp-cell"></div><div class="cmp-cell"></div><div class="cmp-cell"></div></div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Local network streaming<small>From any device on your home network</small></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Remote streaming<small>Stream when you're away from home</small></div>
+        <div class="cmp-cell center no-icon">—</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Concurrent remote streams</div>
+        <div class="cmp-cell center" style="color: var(--text-muted);">—</div>
+        <div class="cmp-cell center">2</div>
+        <div class="cmp-cell center">5</div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">4K HDR streaming</div>
+        <div class="cmp-cell center" style="color: var(--text-muted);">—</div>
+        <div class="cmp-cell center" style="color: var(--text-muted);">1080p only</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+
+      <div class="cmp-row section"><div class="cmp-cell">Users &amp; sharing</div><div class="cmp-cell"></div><div class="cmp-cell"></div><div class="cmp-cell"></div></div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">User accounts</div>
+        <div class="cmp-cell center">1</div>
+        <div class="cmp-cell center">3</div>
+        <div class="cmp-cell center"><strong>6</strong></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Per-user watch history &amp; progress</div>
+        <div class="cmp-cell center no-icon">—</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Parental controls &amp; kids profile</div>
+        <div class="cmp-cell center no-icon">—</div>
+        <div class="cmp-cell center no-icon">—</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+
+      <div class="cmp-row section"><div class="cmp-cell">Bandwidth &amp; relay</div><div class="cmp-cell"></div><div class="cmp-cell"></div><div class="cmp-cell"></div></div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Direct (P2P) connection</div>
+        <div class="cmp-cell center">LAN only</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Relay tier</div>
+        <div class="cmp-cell center" style="color: var(--text-muted);">—</div>
+        <div class="cmp-cell center">Standard</div>
+        <div class="cmp-cell center"><strong style="color: var(--gold);">Priority</strong></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Monthly relay traffic</div>
+        <div class="cmp-cell center" style="color: var(--text-muted);">—</div>
+        <div class="cmp-cell center">100 GB</div>
+        <div class="cmp-cell center">500 GB</div>
+      </div>
+
+      <div class="cmp-row section"><div class="cmp-cell">Notifications &amp; support</div><div class="cmp-cell"></div><div class="cmp-cell"></div><div class="cmp-cell"></div></div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Push notifications</div>
+        <div class="cmp-cell center no-icon">—</div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+        <div class="cmp-cell center"><span class="check-bg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-cell feature">Email support</div>
+        <div class="cmp-cell center">Community</div>
+        <div class="cmp-cell center">48h response</div>
+        <div class="cmp-cell center"><strong>12h response</strong></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="section" id="pricing">
+  <div class="section-head">
+    <div class="section-tag">Pricing</div>
+    <h2>Simple monthly or yearly</h2>
+    <p>Save 20% when you pay yearly. All plans cancel anytime, no questions asked.</p>
+  </div>
+  <div class="toggle-wrap">
+    <div class="billing-toggle">
+      <button class="billing-opt active">Monthly</button>
+      <button class="billing-opt">Yearly <span class="save">Save 20%</span></button>
+    </div>
+  </div>
+
+  <div class="pricing">
+    <div class="plans">
+      <div class="plan">
+        <div class="plan-name">Free</div>
+        <div class="plan-tagline">Forever free for local streaming on your home network.</div>
+        <div class="plan-price"><span class="currency">$</span>0<span class="period">/mo</span></div>
+        <div class="plan-price-sub">No credit card required</div>
+        <button class="plan-cta secondary">Download server</button>
+        <ul class="feat-list">
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>LAN streaming, all quality</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Single user account</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>All transcription &amp; AI features</li>
+          <li class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>No remote access</li>
+          <li class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>No push notifications</li>
+        </ul>
+      </div>
+
+      <div class="plan featured">
+        <div class="plan-pop">Most popular</div>
+        <div class="plan-name" style="color: var(--primary);">Pro</div>
+        <div class="plan-tagline">Stream from anywhere. For solo users and couples sharing one library.</div>
+        <div class="plan-price"><span class="currency">$</span>4.99<span class="period">/mo</span></div>
+        <div class="plan-price-sub">$47.88 billed yearly · save $12</div>
+        <button class="plan-cta primary">Start 14-day free trial</button>
+        <ul class="feat-list">
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Everything in Free</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Remote streaming worldwide</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>3 user accounts</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>1080p remote · 4K on LAN</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Push notifications</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>100 GB monthly relay</li>
+        </ul>
+      </div>
+
+      <div class="plan">
+        <div class="plan-name gold">★ Family</div>
+        <div class="plan-tagline">For households. Up to 6 family members with parental controls.</div>
+        <div class="plan-price"><span class="currency">$</span>9.99<span class="period">/mo</span></div>
+        <div class="plan-price-sub">$95.88 billed yearly · save $24</div>
+        <button class="plan-cta secondary">Start 14-day free trial</button>
+        <ul class="feat-list">
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Everything in Pro</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>6 user accounts</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>4K HDR remote streaming</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Priority relay (lower latency)</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>500 GB monthly relay</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Parental controls &amp; kids profile</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>12h support response</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA block -->
+<section class="cta-block">
+  <h2>Ready to access your library from anywhere?</h2>
+  <p>Free forever for local use. Two weeks free on Pro. No credit card needed to start.</p>
+  <div class="row">
+    <a href="signup.html" class="btn primary xl">Create free account</a>
+    <a href="plans.html" class="btn ghost xl">Compare plans</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="links">
+    <a href="#">Pricing</a>
+    <a href="#">Status</a>
+    <a href="#">Docs</a>
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Open source</a>
+  </div>
+  <div>© 2026 Maktaba · Your media, your server, your terms.</div>
+</footer>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · landing</h2>
+    <div class="desc">Banners, modals, toasts and overlays for the marketing surface</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Cookie banner · privacy choice <span class="stag">CONSENT</span></div>
+      <div class="ss-preview">
+        <div class="cookie">
+          <h4>We use one essential cookie</h4>
+          <p>To remember your theme preference and keep you signed in. We don't track you across the web — open source proof in our docs.</p>
+          <div class="row">
+            <button class="b ghost">Reject all</button>
+            <button class="b primary">Accept essential</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · email collected <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>You're on the early-access list</strong>
+            <span>We'll email you when self-hosted iOS lands · est. June 2026</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Demo video lightbox <span class="stag">MODAL</span></div>
+      <div class="ss-preview">
+        <div class="video-modal">
+          <div class="ply"><div><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></div></div>
+          <div class="cap">2-minute walkthrough</div>
+          <div class="x">×</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Region notice · GDPR <span class="stag warn">REGION</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <div>
+            <strong>EU data residency available</strong>
+            <span>If you sign up from the EU, your relay traffic is routed via Frankfurt. Choose your region during signup.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Newsletter exit-intent <span class="stag">DIALOG</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon info">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </div>
+            <h3>Save 20% on Pro</h3>
+            <p>Drop your email and we'll send you a discount code for your first year — no other emails, ever.</p>
+            <input type="email" placeholder="you@example.com" style="width: 100%; margin-top: 12px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: 13px;">
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">No thanks</button>
+            <button class="d-btn primary">Send me the code</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Sign-up nudge banner <span class="stag">PROMO</span></div>
+      <div class="ss-preview">
+        <div class="signup-banner">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="tx">
+            <strong>14-day Pro trial included</strong>
+            <span>Unlock remote access on signup · cancel anytime</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Testimonial card <span class="stag">CONTENT</span></div>
+      <div class="ss-preview">
+        <div class="testimonial">
+          <p>"Replaced my Plex Pass and saved me four hours of router config. The relay just works and my mom can finally watch her recordings on vacation."</p>
+          <div class="auth">
+            <div class="av">SK</div>
+            <div>
+              <div class="ai-name">Sara Kassem</div>
+              <div class="ai-role">Pro plan · home library, 240 videos</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Trust feature card · hover <span class="stag">HOVER</span></div>
+      <div class="ss-preview">
+        <div class="feature-card" style="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(91,158,255,0.08);">
+          <div style="width: 36px; height: 36px; border-radius: 9px; background: var(--primary-dim); color: var(--primary); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">End-to-end encrypted</h4>
+          <p style="font-size: 12px; color: var(--text-dim); line-height: 1.5;">TLS 1.3 with cert pinning to your server's identity. We never see decrypted media — proven by our open relay code.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · download started <span class="stag info">INFO</span></div>
+      <div class="ss-preview">
+        <div class="toast info">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+          <div class="body">
+            <strong>Maktaba server · macOS download started</strong>
+            <span>maktaba-server-1.0.0-macos.dmg · 84 MB</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

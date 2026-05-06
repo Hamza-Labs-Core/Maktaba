@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud — Choose your plan</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --gold: #fbbf24;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.55;
+    min-height: 100vh; padding: 36px 24px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(ellipse 800px 600px at 50% -100px, rgba(91,158,255,0.1), transparent 60%);
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  .container { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
+
+  .top-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 36px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: #fff;
+  }
+  .top-nav .right { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text-dim); }
+
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 12px; text-align: center;
+  }
+  .hero { text-align: center; margin-bottom: 32px; }
+  .hero h1 {
+    font-size: 38px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 14px;
+  }
+  .hero p { font-size: 16px; color: var(--text-dim); max-width: 540px; margin: 0 auto; }
+
+  .billing-toggle-wrap { text-align: center; margin-bottom: 32px; }
+  .billing-toggle {
+    display: inline-flex; padding: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    gap: 4px;
+  }
+  .billing-opt {
+    padding: 9px 22px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    color: var(--text-dim); display: flex; align-items: center; gap: 8px;
+    border: 0; background: transparent; font-family: inherit;
+  }
+  .billing-opt.active { background: var(--primary); color: #fff; font-weight: 500; }
+  .billing-opt .save {
+    font-size: 10px; padding: 1px 7px; border-radius: 4px;
+    background: rgba(91,158,255,0.15); color: var(--primary);
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+  }
+  .billing-opt.active .save { background: rgba(255,255,255,0.2); color: #fff; }
+
+  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-bottom: 36px; }
+  .plan {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 18px; padding: 32px;
+    position: relative; display: flex; flex-direction: column;
+  }
+  .plan.current {
+    border-color: var(--text-muted);
+  }
+  .plan.current::before {
+    content: 'CURRENT'; position: absolute; top: -10px; left: 22px;
+    background: var(--panel-2); color: var(--text-dim);
+    padding: 3px 12px; border-radius: 999px; font-size: 10px;
+    font-weight: 600; letter-spacing: 1px;
+    border: 1px solid var(--border);
+  }
+  .plan.featured {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(91,158,255,0.08), var(--shadow);
+    background: linear-gradient(180deg, rgba(91,158,255,0.05), var(--panel));
+  }
+  .plan-pop {
+    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    background: var(--primary); color: #fff;
+    padding: 4px 14px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .plan-name {
+    font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim); margin-bottom: 10px;
+  }
+  .plan-name.gold { color: var(--gold); display: inline-flex; align-items: center; gap: 6px; }
+  .plan-tagline { font-size: 13px; color: var(--text-dim); margin-bottom: 22px; line-height: 1.5; min-height: 38px; }
+  .plan-price {
+    font-size: 44px; font-weight: 800; line-height: 1; margin-bottom: 6px;
+    display: flex; align-items: baseline; gap: 4px;
+  }
+  .plan-price .currency { font-size: 18px; color: var(--text-dim); font-weight: 500; }
+  .plan-price .period { font-size: 14px; color: var(--text-dim); font-weight: 400; }
+  .plan-price-was {
+    font-size: 13px; color: var(--text-muted); text-decoration: line-through; margin-right: 6px;
+  }
+  .plan-price-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 22px; }
+  .plan-price-sub strong { color: var(--success); font-weight: 600; }
+
+  .plan-cta {
+    width: 100%; padding: 12px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    margin-bottom: 22px; transition: all 0.15s; font-family: inherit;
+    border: 1px solid transparent;
+  }
+  .plan-cta.primary { background: var(--primary); color: #fff; }
+  .plan-cta.primary:hover { background: var(--primary-hover); }
+  .plan-cta.secondary { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+  .plan-cta.current { background: transparent; border-color: var(--border); color: var(--text-muted); cursor: default; }
+  .plan-cta.gold { background: linear-gradient(135deg, var(--gold), #ec4899); color: #fff; }
+
+  .feat-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .feat-list li {
+    list-style: none; display: flex; gap: 8px; font-size: 13px;
+    color: var(--text); align-items: flex-start;
+  }
+  .feat-list li svg { flex-shrink: 0; margin-top: 2px; color: var(--success); }
+  .feat-list li.muted { color: var(--text-muted); }
+  .feat-list li.muted svg { color: var(--text-muted); }
+  .feat-list li strong { font-weight: 600; }
+
+  /* FAQ */
+  .faq-section { margin-top: 56px; max-width: 720px; margin-left: auto; margin-right: auto; }
+  .faq-section h2 { font-size: 22px; font-weight: 700; margin-bottom: 24px; text-align: center; }
+  .faq-item {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 10px;
+  }
+  .faq-q {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+  }
+  .faq-q svg { color: var(--text-muted); }
+  .faq-a {
+    font-size: 13px; color: var(--text-dim); line-height: 1.6;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+  }
+
+  /* ==== Stripe checkout mockup ==== */
+  .checkout-section { margin-top: 60px; }
+  .checkout-section h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; text-align: center; }
+  .checkout-section .desc { font-size: 13px; color: var(--text-dim); text-align: center; margin-bottom: 24px; }
+
+  .checkout {
+    max-width: 920px; margin: 0 auto;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+    box-shadow: var(--shadow);
+  }
+  .co-summary { padding: 32px; background: var(--panel-2); border-right: 1px solid var(--border); }
+  .co-summary .pre { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .co-summary h3 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .co-summary .full-price { font-size: 36px; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+  .co-summary .full-price .ml { color: var(--text-dim); font-size: 16px; font-weight: 500; margin-left: 4px; }
+  .co-summary .billed { font-size: 12px; color: var(--text-dim); margin-bottom: 22px; }
+  .co-line { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px dashed var(--border); }
+  .co-line.total { font-weight: 700; border-bottom: 0; padding-top: 14px; font-size: 14px; }
+  .co-line .v { font-family: ui-monospace, monospace; }
+  .co-line.discount { color: var(--success); }
+  .promo-row {
+    margin-top: 12px; display: flex; gap: 6px;
+  }
+  .promo-row input {
+    flex: 1; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px; font-family: inherit;
+  }
+  .promo-row button {
+    padding: 8px 14px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); cursor: pointer; font-size: 12px; font-family: inherit;
+  }
+
+  .co-form { padding: 32px; }
+  .co-form h4 { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+  .co-pay-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .co-pay-tab {
+    padding: 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel-2); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 12px; color: var(--text);
+  }
+  .co-pay-tab.active { border-color: var(--primary); background: var(--primary-dim); }
+  .field-row { margin-bottom: 12px; }
+  .field-row label {
+    display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px; font-weight: 500;
+  }
+  .field-row input {
+    width: 100%; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+  .field-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-dim); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .powered { display: flex; align-items: center; gap: 6px; margin-top: 18px; font-size: 11px; color: var(--text-muted); justify-content: center; }
+  .powered strong { color: var(--text-dim); }
+
+  .checkout-cta {
+    width: 100%; padding: 13px;
+    background: var(--primary); color: #fff;
+    border: 0; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    margin-top: 18px; font-family: inherit;
+  }
+  .legal { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 12px; line-height: 1.5; }
+
+  /* ==== ALL STATES ==== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.success { background: rgba(52,211,153,0.12); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .di-icon.error { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; font-family: inherit; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+
+  .small-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; max-width: 320px; width: 100%; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Cloud · plans</div>
+    <div class="right">
+      <a href="dashboard.html">← Dashboard</a>
+      <span style="opacity: 0.4;">·</span>
+      <span>Signed in as <strong style="color: var(--text);">meywd84@gmail.com</strong></span>
+    </div>
+  </div>
+
+  <div class="label">SUBSCRIPTION · CHOOSE YOUR PLAN</div>
+  <div class="hero">
+    <h1>Choose what fits your home</h1>
+    <p>You're currently on the free Pro trial. Pick a plan before your trial ends on May 17 — or stay on Free forever.</p>
+  </div>
+
+  <div class="billing-toggle-wrap">
+    <div class="billing-toggle">
+      <button class="billing-opt active">Monthly</button>
+      <button class="billing-opt">Yearly <span class="save">Save 20%</span></button>
+    </div>
+  </div>
+
+  <div class="plans">
+    <div class="plan current">
+      <div class="plan-name">Free</div>
+      <div class="plan-tagline">Forever free for streaming on your home network.</div>
+      <div class="plan-price"><span class="currency">$</span>0<span class="period">/mo</span></div>
+      <div class="plan-price-sub">No credit card required</div>
+      <button class="plan-cta current">Your starting plan</button>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>LAN streaming, all quality</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>1 user account</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>All transcription &amp; AI features</li>
+        <li class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>No remote access</li>
+        <li class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>No push notifications</li>
+        <li class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>Community support only</li>
+      </ul>
+    </div>
+
+    <div class="plan featured">
+      <div class="plan-pop">Trial active</div>
+      <div class="plan-name" style="color: var(--primary);">Pro</div>
+      <div class="plan-tagline">Stream from anywhere. For solo users and couples.</div>
+      <div class="plan-price"><span class="currency">$</span>4.99<span class="period">/mo</span></div>
+      <div class="plan-price-sub"><strong>11 days</strong> left in your trial · then $4.99/mo</div>
+      <button class="plan-cta primary">Continue with Pro →</button>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Everything in Free</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg><strong>Remote streaming</strong> worldwide</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>3 user accounts</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>1080p remote · 4K on LAN</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Push notifications</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>100 GB monthly relay</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>48h email support</li>
+      </ul>
+    </div>
+
+    <div class="plan">
+      <div class="plan-name gold">★ Family</div>
+      <div class="plan-tagline">For households. Up to 6 members with parental controls.</div>
+      <div class="plan-price"><span class="currency">$</span>9.99<span class="period">/mo</span></div>
+      <div class="plan-price-sub">14-day free trial · cancel anytime</div>
+      <button class="plan-cta gold">Upgrade to Family →</button>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Everything in Pro</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg><strong>6 user accounts</strong></li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg><strong>4K HDR remote</strong> streaming</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg><strong>Priority relay</strong> (lower latency)</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>500 GB monthly relay</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Parental controls &amp; kids profile</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>12h support response</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Stripe checkout mock -->
+  <div class="checkout-section">
+    <h2>Confirm your subscription</h2>
+    <div class="desc">Powered by Stripe · cancel anytime from settings</div>
+
+    <div class="checkout">
+      <div class="co-summary">
+        <div class="pre">Selected plan</div>
+        <h3>Pro · monthly</h3>
+        <div class="full-price">$4.99<span class="ml">/ month</span></div>
+        <div class="billed">Billed monthly · first charge May 17 after trial</div>
+
+        <div class="co-line"><span>Pro plan · monthly</span><span class="v">$4.99</span></div>
+        <div class="co-line discount"><span>Trial credit (11 days)</span><span class="v">−$1.83</span></div>
+        <div class="co-line"><span>Tax (8.875%)</span><span class="v">$0.28</span></div>
+        <div class="co-line total"><span>Due today</span><span class="v">$0.00</span></div>
+
+        <div class="promo-row">
+          <input type="text" placeholder="Promo code">
+          <button>Apply</button>
+        </div>
+      </div>
+
+      <div class="co-form">
+        <h4>Payment method</h4>
+        <div class="co-pay-row">
+          <div class="co-pay-tab active">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            Card
+          </div>
+          <div class="co-pay-tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01z"/></svg>
+            Apple Pay
+          </div>
+          <div class="co-pay-tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            Google Pay
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Card number</label>
+          <input value="4242 4242 4242 4242">
+        </div>
+        <div class="grid-2">
+          <div class="field-row">
+            <label>Expiry</label>
+            <input value="12 / 28">
+          </div>
+          <div class="field-row">
+            <label>CVC</label>
+            <input value="•••">
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="field-row">
+            <label>Postal code</label>
+            <input value="10013" style="font-family: inherit;">
+          </div>
+          <div class="field-row">
+            <label>Country</label>
+            <input value="United States" style="font-family: inherit;">
+          </div>
+        </div>
+
+        <button class="checkout-cta">Confirm subscription · $0.00 due now</button>
+        <div class="powered">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Secured by <strong>Stripe</strong> · 256-bit encryption
+        </div>
+        <div class="legal">By confirming you agree to our <a href="#">Terms</a> and <a href="#">Privacy Policy</a>. Cancel anytime in settings — no questions asked.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="faq-section">
+    <h2>Frequently asked</h2>
+    <div class="faq-item">
+      <div class="faq-q">Can I switch plans later?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      <div class="faq-a">Yes — upgrades take effect immediately and you're charged the prorated difference. Downgrades take effect at the end of your billing period; you keep paid features until then.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">What happens if I exceed my relay quota?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Does Maktaba store my videos in the cloud?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">How does cancellation work?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · plans &amp; checkout</h2>
+    <div class="desc">Subscription transitions, payment failures, and confirmation states</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Payment success <span class="stag success">PAID</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon success">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <h3>You're on Pro!</h3>
+            <p>Charged $4.99 to Visa •••• 4242 · receipt sent to meywd84@gmail.com</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">View receipt</button>
+            <button class="d-btn primary">Back to dashboard</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Card declined <span class="stag error">FAILED</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <div>
+            <strong>Your card was declined</strong>
+            <span>Visa •••• 4242 · "insufficient funds". Try another card or contact your bank.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">3DS challenge · authenticate <span class="stag info">PROGRESS</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon" style="background: var(--panel-3); color: var(--text);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h3>Approve in your bank app</h3>
+            <p>We sent a request to your card issuer. Open your bank app to authenticate this $4.99 payment.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary" disabled style="opacity:0.5;">Waiting…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Promo applied <span class="stag success">PROMO</span></div>
+      <div class="ss-preview">
+        <div class="alert success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <div>
+            <strong>Code FAMILY20 applied</strong>
+            <span>20% off Family for the first 3 months · saves $5.99</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Promo invalid <span class="stag error">CODE</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>That code isn't valid</strong>
+            <span>It may be expired or for a different plan. Contact support if you think it's a mistake.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Plan switch · upgrade prorate <span class="stag info">SWITCH</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon" style="background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(91,158,255,0.3);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+            </div>
+            <h3>Switch to Family · $9.99/mo</h3>
+            <p>Prorated charge of <strong style="color: var(--text);">$3.42</strong> today for the remaining 14 days. Then $9.99 on May 17.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Confirm switch</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Plan switch · downgrade <span class="stag warn">DOWNGRADE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+            </div>
+            <h3>Switch to Free at next renewal?</h3>
+            <p>You'll keep Pro features until <strong style="color: var(--text);">May 17, 2026</strong>. After that, remote streaming and 2 of your 3 user accounts will be disabled.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Stay on Pro</button>
+            <button class="d-btn">Confirm downgrade</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · subscription saved <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Subscription updated</strong>
+            <span>Now on Family · 4K HDR &amp; 6 users unlocked</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Region required <span class="stag warn">REGION</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>Tax region needed</strong>
+            <span>Pick your country and postal code so we can calculate the right tax.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Yearly toggle · price card <span class="stag">YEARLY</span></div>
+      <div class="ss-preview">
+        <div class="small-card">
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--primary); margin-bottom: 6px;">Pro · yearly</div>
+          <div style="font-size: 28px; font-weight: 800;"><span class="plan-price-was">$59.88</span>$47.88</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">$3.99/mo equivalent · save $12/year</div>
+          <button class="checkout-cta" style="margin-top: 12px; padding: 10px; font-size: 13px;">Switch to yearly</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Cancel subscription confirm <span class="stag error">CANCEL</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+            </div>
+            <h3>Cancel Pro subscription?</h3>
+            <p>You'll keep Pro features until May 17, 2026. After that, your account moves to Free. We'll miss you — and we don't ask why.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Keep Pro</button>
+            <button class="d-btn danger">Cancel anyway</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Resubscribe banner <span class="stag info">WIN BACK</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <div>
+            <strong>Welcome back!</strong>
+            <span>We saved your devices and watch history. Pick up exactly where you left off — same plan or a new one.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

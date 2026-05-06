@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Server — Install on macOS</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+
+    --mac-bg: #2a2a2a; --mac-panel: #3a3a3a; --mac-text: #f5f5f7;
+    --mac-window: #1e1e1e; --mac-blue: #007aff;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5;
+    min-height: 100vh; padding: 32px 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+
+  .container { max-width: 1280px; margin: 0 auto; }
+  .top-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; }
+
+  .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; text-align: center; }
+  .hero { text-align: center; margin-bottom: 36px; }
+  .hero h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.4px; margin-bottom: 10px; }
+  .hero p { font-size: 15px; color: var(--text-dim); max-width: 540px; margin: 0 auto; }
+
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 32px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+  .step .num { width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+  .step.active { color: var(--text); }
+  .step.active .num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .step.done .num { background: var(--success); border-color: var(--success); color: #fff; }
+  .step-line { width: 24px; height: 1px; background: var(--border); }
+  .step.done + .step-line { background: var(--success); }
+
+  /* Step blocks */
+  .stepblock {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; margin-bottom: 18px; overflow: hidden;
+  }
+  .sb-h {
+    padding: 18px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .sb-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; flex-shrink: 0;
+  }
+  .sb-num.done { background: var(--success); }
+  .sb-h h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .sb-h p { font-size: 12px; color: var(--text-dim); }
+  .sb-body { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+  .sb-body .copy h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .sb-body .copy p { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.6; }
+  .ol { padding-left: 18px; font-size: 13px; line-height: 1.9; }
+  .ol li { color: var(--text); }
+  .ol li code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--panel-2); padding: 1px 6px; border-radius: 4px; color: var(--primary); border: 1px solid var(--border); }
+
+  .btn { padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-hover); }
+
+  /* macOS window mocks */
+  .mac-win {
+    background: #1e1e1e; border-radius: 10px; overflow: hidden;
+    border: 1px solid #444; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    color: var(--mac-text);
+  }
+  .mac-bar {
+    height: 26px; background: #2a2a2a;
+    display: flex; align-items: center; padding: 0 12px; gap: 6px;
+    border-bottom: 1px solid #444;
+  }
+  .mac-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .mac-dot.r { background: #ff5f56; } .mac-dot.y { background: #ffbd2e; } .mac-dot.g { background: #27c93f; }
+  .mac-bar .title { flex: 1; text-align: center; font-size: 11px; color: #ccc; }
+
+  /* DMG window */
+  .dmg-content {
+    height: 220px; padding: 22px;
+    background: linear-gradient(180deg, #2a2a2a, #1e1e1e);
+    display: flex; align-items: center; justify-content: space-around; position: relative;
+  }
+  .dmg-app, .dmg-folder { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; }
+  .dmg-app-icon {
+    width: 80px; height: 80px; border-radius: 18px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 36px;
+    box-shadow: 0 8px 20px rgba(91,158,255,0.4);
+  }
+  .dmg-folder-icon {
+    width: 80px; height: 64px; border-radius: 6px;
+    background: linear-gradient(180deg, #5BB6FF, #4D9DDB);
+    position: relative;
+  }
+  .dmg-folder-icon::before {
+    content: ''; position: absolute; top: -6px; left: 6px; width: 30px; height: 8px;
+    background: #4D9DDB; border-radius: 4px 4px 0 0;
+  }
+  .dmg-arrow {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    color: #ffd633; font-size: 36px; font-weight: 800;
+  }
+  .dmg-arrow svg { filter: drop-shadow(0 2px 8px rgba(255,214,51,0.4)); }
+
+  /* Gatekeeper modal */
+  .gk-modal {
+    background: rgba(40,40,40,0.95); backdrop-filter: blur(18px);
+    border: 1px solid #555; border-radius: 12px;
+    width: 100%; max-width: 380px;
+    padding: 22px; text-align: center;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.7);
+    color: var(--mac-text);
+  }
+  .gk-icon {
+    width: 64px; height: 64px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; font-weight: 800; font-size: 28px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .gk-modal h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #fff; }
+  .gk-modal p { font-size: 12px; color: #aaa; line-height: 1.55; margin-bottom: 16px; }
+  .gk-actions { display: flex; gap: 8px; }
+  .gk-btn {
+    flex: 1; padding: 8px; border-radius: 7px;
+    font-size: 13px; cursor: pointer; border: 0; font-family: inherit;
+  }
+  .gk-btn.cancel { background: #4a4a4a; color: #fff; }
+  .gk-btn.danger { background: #ff453a; color: #fff; }
+  .gk-btn.primary { background: var(--mac-blue); color: #fff; }
+
+  /* Menu bar */
+  .menubar {
+    height: 24px; background: rgba(30,30,30,0.9); backdrop-filter: blur(12px);
+    border-radius: 6px;
+    display: flex; align-items: center; gap: 16px; padding: 0 12px;
+    font-size: 11px; color: #ccc;
+    border: 1px solid #333;
+  }
+  .menubar .m-apple { color: #fff; font-size: 14px; }
+  .menubar .m-spacer { flex: 1; }
+  .menubar .m-icons { display: flex; gap: 12px; align-items: center; color: #fff; }
+  .m-maktaba {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 11px;
+    display: flex; align-items: center; gap: 4px;
+    box-shadow: 0 0 0 1px #fff;
+  }
+  .menubar-pop {
+    margin-top: 8px; background: rgba(30,30,30,0.95);
+    border: 1px solid #444; border-radius: 8px;
+    padding: 6px; min-width: 220px;
+  }
+  .mp-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    color: var(--mac-text); font-size: 12px; border-radius: 5px;
+  }
+  .mp-row:hover { background: var(--mac-blue); color: #fff; }
+  .mp-row .indicator { color: var(--success); font-size: 10px; margin-left: auto; }
+  .mp-sep { height: 1px; background: #444; margin: 4px 4px; }
+  .mp-row.muted { color: #888; font-size: 11px; }
+
+  /* Status pill */
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(52,211,153,0.15); color: var(--success);
+    font-size: 11px; font-weight: 600;
+  }
+  .status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+  /* Common UI states */
+  .all-states { padding: 60px 0 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 200px; display: flex; align-items: center; justify-content: center; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast.warn .ico-t { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Server · macOS</span></div>
+    <a class="btn">Switch to Windows / Docker / NAS →</a>
+  </div>
+
+  <div class="label">SERVER INSTALL · MACOS</div>
+  <div class="hero">
+    <h1>Install Maktaba on your Mac</h1>
+    <p>3 steps · about 60 seconds. Works on macOS 14 (Sonoma) or newer · Apple Silicon &amp; Intel.</p>
+  </div>
+
+  <!-- Stepper -->
+  <div class="stepper">
+    <div class="step done"><div class="num"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><span>Download</span></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="num">2</div><span>Drag to Applications</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="num">3</div><span>First launch</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="num">4</div><span>Setup wizard</span></div>
+  </div>
+
+  <!-- STEP 1: DMG -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num done"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <h2>Step 1 · Download &amp; open the DMG</h2>
+        <p>Choose your Mac architecture · 84 MB universal · 64 MB Apple Silicon-only</p>
+      </div>
+      <span class="status-pill" style="margin-left: auto;">Downloaded</span>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>Open Maktaba.dmg from Downloads</h3>
+        <p>The disk image mounts and a Finder window opens automatically. Inside you'll see the Maktaba app icon and a shortcut to your Applications folder.</p>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn primary">↓ Download for Apple Silicon</button>
+          <button class="btn">↓ Intel</button>
+        </div>
+        <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); font-family: ui-monospace, monospace;">SHA256: 3d5f7a9b2c4e8d6f1a3c5b7e9d2f4a6c8e0b1d3a5c7e9d1f3a5c7e9b1d3a5</div>
+      </div>
+      <div class="mac-win">
+        <div class="mac-bar">
+          <div class="mac-dot r"></div><div class="mac-dot y"></div><div class="mac-dot g"></div>
+          <div class="title">Maktaba 1.0.0</div>
+        </div>
+        <div class="dmg-content">
+          <div class="dmg-app">
+            <div class="dmg-app-icon">M</div>
+            <div>Maktaba.app</div>
+          </div>
+          <div class="dmg-arrow">
+            <svg width="60" height="20" viewBox="0 0 60 20" fill="none">
+              <path d="M2 10 H50 M44 4 L50 10 L44 16" stroke="#ffd633" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="dmg-folder">
+            <div class="dmg-folder-icon"></div>
+            <div>Applications</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: drag to Applications -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">2</div>
+      <div>
+        <h2>Step 2 · Drag the app into Applications</h2>
+        <p>Standard macOS install · no installer, no admin password needed</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="mac-win">
+        <div class="mac-bar">
+          <div class="mac-dot r"></div><div class="mac-dot y"></div><div class="mac-dot g"></div>
+          <div class="title">Applications</div>
+        </div>
+        <div style="height: 220px; padding: 16px; background: linear-gradient(180deg, #2a2a2a, #1e1e1e); display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-content: flex-start;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #ccc;">
+            <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #34d399, #10b981);"></div>
+            <span>Calendar</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #ccc;">
+            <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #f59e0b, #ec4899);"></div>
+            <span>Photos</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #fff; box-shadow: 0 0 0 2px var(--mac-blue); padding: 4px; border-radius: 10px; background: rgba(0,122,255,0.15);">
+            <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 22px;">M</div>
+            <span style="font-weight: 600;">Maktaba</span>
+            <span style="font-size: 9px; color: var(--mac-blue);">just installed</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #ccc;">
+            <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #06b6d4, #2563eb);"></div>
+            <span>Safari</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #ccc;">
+            <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #94a3b8, #475569);"></div>
+            <span>Settings</span>
+          </div>
+        </div>
+      </div>
+      <div class="copy">
+        <h3>Drag Maktaba.app onto the Applications shortcut</h3>
+        <p>The app copies in about 2 seconds. macOS verifies the code signature in the background. Once it appears in <code style="font-family: ui-monospace, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px;">/Applications</code>, you're ready to launch.</p>
+        <div style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim);">
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Tip · install for everyone</strong>
+          Drag to <code style="background: var(--panel); padding: 1px 6px; border-radius: 4px; font-family: ui-monospace, monospace;">/Applications</code> (system-wide, requires admin) or <code style="background: var(--panel); padding: 1px 6px; border-radius: 4px; font-family: ui-monospace, monospace;">~/Applications</code> (user-only, no admin).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: first launch + Gatekeeper -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">3</div>
+      <div>
+        <h2>Step 3 · First launch · approve Gatekeeper</h2>
+        <p>macOS asks once before running a freshly-downloaded app · Maktaba is signed &amp; notarized</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="copy">
+        <h3>"Maktaba is from a verified developer"</h3>
+        <p>The first time you double-click Maktaba, macOS shows a Gatekeeper dialog. Click <strong>Open</strong> to allow it. You won't be asked again on this Mac.</p>
+        <ol class="ol">
+          <li>Open Applications · double-click <strong>Maktaba</strong></li>
+          <li>The Gatekeeper dialog appears</li>
+          <li>Click <strong>Open</strong> · Maktaba launches in the menu bar</li>
+        </ol>
+        <div style="background: rgba(91,158,255,0.06); border: 1px solid rgba(91,158,255,0.3); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--text-dim); margin-top: 14px;">
+          <strong style="color: var(--primary); display: block; margin-bottom: 4px;">If you see "cannot be opened"</strong>
+          Right-click → Open instead. Or in Settings → Privacy &amp; Security, click "Open Anyway".
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: center;">
+        <div class="gk-modal">
+          <div class="gk-icon">M</div>
+          <h4>"Maktaba" is an app downloaded from the Internet. Are you sure you want to open it?</h4>
+          <p>Apple checked it for malicious software and none was detected. <br><br>Maktaba.app · Apple Developer ID: Maktaba Studio LLC · downloaded today from maktaba.app</p>
+          <div class="gk-actions">
+            <button class="gk-btn cancel">Show in Finder</button>
+            <button class="gk-btn cancel">Cancel</button>
+            <button class="gk-btn primary">Open</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: menu bar icon + setup wizard -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">4</div>
+      <div>
+        <h2>Step 4 · Menu bar icon &amp; setup wizard</h2>
+        <p>Maktaba lives in your menu bar — click to open the wizard</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div>
+        <div style="margin-bottom: 16px;">
+          <div class="menubar">
+            <span class="m-apple"></span>
+            <span>Maktaba</span>
+            <span style="color: #888;">File</span>
+            <span style="color: #888;">Edit</span>
+            <span style="color: #888;">View</span>
+            <span class="m-spacer"></span>
+            <div class="m-icons">
+              <span class="m-maktaba">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7"/><path d="M5 9v11h14V9"/></svg>
+                M
+              </span>
+              <span>🔋</span>
+              <span>📶</span>
+              <span>🔍</span>
+              <span style="font-size: 10px;">14:08</span>
+            </div>
+          </div>
+          <div class="menubar-pop" style="margin-left: auto; max-width: 240px; margin-top: 6px;">
+            <div style="padding: 8px 10px; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Maktaba 1.0.0</div>
+            <div class="mp-row">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+              Server running
+              <span class="indicator">● online</span>
+            </div>
+            <div class="mp-row">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+              Open library
+            </div>
+            <div class="mp-row">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+              Settings…
+            </div>
+            <div class="mp-sep"></div>
+            <div class="mp-row muted">312 videos · 0 streams</div>
+            <div class="mp-row muted">Uptime · 14s</div>
+            <div class="mp-sep"></div>
+            <div class="mp-row">Quit Maktaba</div>
+          </div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.6;">
+          The <strong style="color: var(--text);">M</strong> badge appears in the top-right of your menu bar. Click it to see server status, open the library, or quit.
+        </div>
+      </div>
+      <div class="copy">
+        <h3>The setup wizard launches automatically</h3>
+        <p>On first launch, Maktaba opens a 4-step wizard: pick your library folder, choose a transcription engine, link your Cloud account, and run the initial scan. It usually takes 2–3 minutes for a fresh install.</p>
+        <a href="setup-wizard-server.html"><button class="btn primary">Open setup wizard →</button></a>
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
+          Maktaba runs as a background agent · launches at login · no Dock icon by default.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · macOS install</h2>
+    <div class="desc">Edge cases, error dialogs, system-level interactions</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Gatekeeper · unsigned blocked <span class="stag error">BLOCKED</span></div>
+      <div class="ss-preview">
+        <div class="gk-modal" style="max-width: 320px;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(255,69,58,0.2); border: 1px solid #ff453a; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff453a" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </div>
+          <h4>"Maktaba" cannot be opened because the developer cannot be verified</h4>
+          <p>macOS cannot verify that this app is free of malware. Right-click and choose Open if you trust the source.</p>
+          <div class="gk-actions">
+            <button class="gk-btn cancel">Show in Finder</button>
+            <button class="gk-btn primary">Move to Trash</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Notarization spinner <span class="stag info">VERIFY</span></div>
+      <div class="ss-preview">
+        <div class="gk-modal">
+          <div style="width: 48px; height: 48px; border: 3px solid #444; border-top-color: var(--mac-blue); border-radius: 50%; margin: 0 auto 14px; animation: spin 1s linear infinite;"></div>
+          <h4>Verifying "Maktaba"…</h4>
+          <p>macOS is checking the app with Apple's notarization service. This usually takes a few seconds.</p>
+        </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Privacy &amp; Security · Open Anyway <span class="stag info">SETTINGS</span></div>
+      <div class="ss-preview">
+        <div style="background: var(--mac-window); border: 1px solid #444; border-radius: 10px; padding: 16px; max-width: 360px; width: 100%; color: var(--mac-text);">
+          <div style="font-size: 12px; color: #ccc; margin-bottom: 8px;">Privacy &amp; Security</div>
+          <div style="font-size: 13px; margin-bottom: 8px; font-weight: 500;">"Maktaba" was blocked from use because it is not from an identified developer.</div>
+          <div style="display: flex; gap: 8px; font-size: 12px; align-items: center;">
+            <button style="padding: 5px 14px; border-radius: 6px; background: var(--mac-blue); color: #fff; border: 0; font-size: 12px; cursor: pointer; font-family: inherit;">Open Anyway</button>
+            <span style="color: #888;">Maktaba.app · last blocked 2 min ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Already installed warning <span class="stag warn">EXISTS</span></div>
+      <div class="ss-preview">
+        <div class="gk-modal">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(245,165,36,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          </div>
+          <h4>An older version of Maktaba is in Applications</h4>
+          <p>Replace v0.9.6 with v1.0.0? Your library and settings are kept.</p>
+          <div class="gk-actions">
+            <button class="gk-btn cancel">Stop</button>
+            <button class="gk-btn cancel">Keep both</button>
+            <button class="gk-btn primary">Replace</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Login items prompt <span class="stag info">PERMISSION</span></div>
+      <div class="ss-preview">
+        <div class="gk-modal">
+          <div class="gk-icon">M</div>
+          <h4>"Maktaba" wants to add itself to Login Items</h4>
+          <p>This lets the server start automatically when you log in — recommended so your library stays available.</p>
+          <div class="gk-actions">
+            <button class="gk-btn cancel">Don't allow</button>
+            <button class="gk-btn primary">Allow</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Local network permission <span class="stag info">PERMISSION</span></div>
+      <div class="ss-preview">
+        <div class="gk-modal">
+          <div class="gk-icon" style="background: linear-gradient(135deg, #34c759, #2db84c);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/></svg>
+          </div>
+          <h4>"Maktaba" would like to find and connect to devices on your local network.</h4>
+          <p>Required to discover Apple TVs, iPhones, and iPads to stream to them.</p>
+          <div class="gk-actions">
+            <button class="gk-btn cancel">Don't allow</button>
+            <button class="gk-btn primary">Allow</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · Maktaba running <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Maktaba is running</strong>
+            <span>Menu bar icon ready · setup wizard opened in background</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Insufficient macOS version <span class="stag error">UNSUPPORTED</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>macOS 13 not supported</strong>
+            <span>Maktaba requires macOS 14 (Sonoma) or newer. Update via System Settings → General → Software Update.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Wrong architecture warning <span class="stag warn">ARCH</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>You downloaded the Intel build</strong>
+            <span>This Mac has Apple Silicon (M3 Pro). Switch to the Apple Silicon build for native performance — runs ~3× faster.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · update available <span class="stag info">UPDATE</span></div>
+      <div class="ss-preview">
+        <div class="toast info">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/></svg></div>
+          <div class="body">
+            <strong>Maktaba 1.0.1 is available</strong>
+            <span>4 fixes · 12 MB · install on next quit (recommended)</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
