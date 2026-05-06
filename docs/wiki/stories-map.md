@@ -1,6 +1,6 @@
 # Stories Map
 
-All 236 stories across 24 epics. Cross-referenced against plans, mockups,
+All 272 stories across 25 epics. Cross-referenced against plans, mockups,
 API endpoints (from `openapi.yaml`), DB tables (from architecture §8), and diagrams.
 
 Linear issue IDs are not embedded in story files — column shown for completeness.
@@ -243,3 +243,39 @@ Linear issue IDs are not embedded in story files — column shown for completene
 | **[24.7](../../specs/epics/24-data-integrity/story-24-07-integrity-verification.md)** | Integrity verification | Data Integrity | 4 | [plan](../../specs/epics/24-data-integrity/plan-24-07-integrity-verification.md) | — | — | `audit_log` |
 | **[24.8](../../specs/epics/24-data-integrity/story-24-08-identity-stability.md)** | Identity stability across operations | Data Integrity | 4 | [plan](../../specs/epics/24-data-integrity/plan-24-08-identity-stability.md) | — | — | `videos` |
 | **[24.9](../../specs/epics/24-data-integrity/story-24-09-forward-back-compat.md)** | Forward and backward compatibility | Data Integrity | 4 | [plan](../../specs/epics/24-data-integrity/plan-24-09-forward-back-compat.md) | — | — | — |
+| **[25.1](../../specs/epics/25-cloud-relay/story-25-01-cloud-api-bootstrap.md)** | Cloud API service bootstrap | Cloud Relay | 5 | — | — | `GET /healthz`, `GET /readyz`, `GET /metrics` | `cloud_users` + 9 |
+| **[25.2](../../specs/epics/25-cloud-relay/story-25-02-email-registration.md)** | Email + password registration | Cloud Relay | 5 | — | — | `POST /api/auth/register` + 7 | `cloud_users`, `cloud_sessions` |
+| **[25.3](../../specs/epics/25-cloud-relay/story-25-03-google-oauth.md)** | Google OAuth sign-in | Cloud Relay | 5 | — | — | `GET /api/auth/oauth/google/start`, `/callback` | `cloud_identities` |
+| **[25.4](../../specs/epics/25-cloud-relay/story-25-04-apple-oauth.md)** | Apple OAuth (Sign in with Apple) | Cloud Relay | 5 | — | — | `GET /api/auth/oauth/apple/*`, `POST /api/auth/oauth/apple/native` | `cloud_identities` |
+| **[25.5](../../specs/epics/25-cloud-relay/story-25-05-account-profile.md)** | Account profile, deletion & export | Cloud Relay | 5 | — | — | `GET/PATCH/DELETE /api/me`, `GET /api/me/export` | `cloud_users` |
+| **[25.6](../../specs/epics/25-cloud-relay/story-25-06-server-claim-token.md)** | Server claim token flow | Cloud Relay | 5 | — | — | `POST /api/servers/claim/init`, `POST /api/servers/claim` | `cloud_servers`, `cloud_claim_tokens`, `cloud_server_tokens` |
+| **[25.7](../../specs/epics/25-cloud-relay/story-25-07-relay-tunnel-server.md)** | Relay tunnel — server side | Cloud Relay | 5 | — | — | `WSS /tunnel/v1/connect` | — |
+| **[25.8](../../specs/epics/25-cloud-relay/story-25-08-relay-tunnel-cloud.md)** | Relay tunnel — cloud side | Cloud Relay | 5 | — | — | `WSS /tunnel/v1/connect` | `cloud_servers` |
+| **[25.9](../../specs/epics/25-cloud-relay/story-25-09-http-relay-proxy.md)** | HTTP relay proxy | Cloud Relay | 5 | — | — | `ANY https://{user}.maktaba.app/*` | `cloud_subdomains` |
+| **[25.10](../../specs/epics/25-cloud-relay/story-25-10-direct-connection-fallback.md)** | Direct-connection probe & LAN fallback | Cloud Relay | 5 | — | — | `GET /api/servers/{id}/endpoints` | — |
+| **[25.11](../../specs/epics/25-cloud-relay/story-25-11-bandwidth-metering.md)** | Bandwidth metering & accounting | Cloud Relay | 5 | — | — | `GET /api/me/usage`, `GET /api/servers/{id}/usage` | `cloud_bandwidth_daily`, `cloud_streams_active` |
+| **[25.12](../../specs/epics/25-cloud-relay/story-25-12-tier-enforcement.md)** | Tier enforcement (concurrent + caps) | Cloud Relay | 5 | — | — | (gate inside relay) | `cloud_subscriptions` |
+| **[25.13](../../specs/epics/25-cloud-relay/story-25-13-stripe-checkout.md)** | Stripe checkout session | Cloud Relay | 5 | — | — | `POST /api/billing/checkout`, `POST /api/billing/portal` | `cloud_subscriptions` |
+| **[25.14](../../specs/epics/25-cloud-relay/story-25-14-stripe-webhook.md)** | Stripe webhook handler | Cloud Relay | 5 | — | — | `POST /api/billing/webhook` | `cloud_webhook_events`, `cloud_subscriptions`, `cloud_invoices` |
+| **[25.15](../../specs/epics/25-cloud-relay/story-25-15-plan-comparison-ui.md)** | Plan comparison & subscription UI | Cloud Relay | 5 | — | — | `GET /api/billing/plans` | — |
+| **[25.16](../../specs/epics/25-cloud-relay/story-25-16-server-status-dashboard.md)** | Server status dashboard | Cloud Relay | 5 | — | — | `GET /api/servers`, `GET /api/servers/{id}`, `WS /ws/servers` | `cloud_servers` |
+| **[25.17](../../specs/epics/25-cloud-relay/story-25-17-push-notification-ingest.md)** | Push notification ingest | Cloud Relay | 5 | — | — | `POST /api/push/dispatch`, `POST/DELETE /api/push/devices` | `cloud_devices`, `cloud_push_outbox`, `cloud_push_templates` |
+| **[25.18](../../specs/epics/25-cloud-relay/story-25-18-apns-dispatcher.md)** | APNs dispatcher | Cloud Relay | 5 | — | — | (worker) | `cloud_push_outbox`, `cloud_devices` |
+| **[25.19](../../specs/epics/25-cloud-relay/story-25-19-fcm-dispatcher.md)** | FCM dispatcher | Cloud Relay | 5 | — | — | (worker) | `cloud_push_outbox`, `cloud_devices` |
+| **[25.20](../../specs/epics/25-cloud-relay/story-25-20-admin-fleet.md)** | Admin: user & server fleet | Cloud Relay | 5 | — | — | `GET /api/admin/users`, `GET /api/admin/servers` + 6 | `cloud_audit` |
+| **[25.21](../../specs/epics/25-cloud-relay/story-25-21-admin-revenue.md)** | Admin: revenue dashboard | Cloud Relay | 5 | — | — | `GET /api/admin/revenue` + 2 | `cloud_revenue_snapshots` |
+| **[25.22](../../specs/epics/25-cloud-relay/story-25-22-subdomain-provisioning.md)** | Subdomain provisioning | Cloud Relay | 5 | — | — | (claim flow) | `cloud_subdomains`, `cloud_subdomain_reserved` |
+| **[25.23](../../specs/epics/25-cloud-relay/story-25-23-tls-edge.md)** | TLS at the edge (wildcard ACME) | Cloud Relay | 5 | — | — | (worker) | `cloud_tls_certs` |
+| **[25.24](../../specs/epics/25-cloud-relay/story-25-24-rate-limiting.md)** | Rate limiting & quota | Cloud Relay | 5 | — | — | (middleware) | `cloud_rate_limit_overrides` |
+| **[25.25](../../specs/epics/25-cloud-relay/story-25-25-abuse-detection.md)** | Abuse detection & response | Cloud Relay | 5 | — | — | (worker) | `cloud_abuse_events` |
+| **[25.26](../../specs/epics/25-cloud-relay/story-25-26-entitlement-signing.md)** | Cloud→server entitlement signing | Cloud Relay | 5 | — | — | `GET /api/entitlements`, `GET /api/servers/{id}/entitlement`, `GET /.well-known/maktaba-ent-jwks.json` | — |
+| **[25.27](../../specs/epics/25-cloud-relay/story-25-27-macos-installer.md)** | macOS installer | Cloud Relay | 6 | — | — | — | — |
+| **[25.28](../../specs/epics/25-cloud-relay/story-25-28-windows-installer.md)** | Windows installer | Cloud Relay | 6 | — | — | — | — |
+| **[25.29](../../specs/epics/25-cloud-relay/story-25-29-linux-packages.md)** | Linux packages | Cloud Relay | 6 | — | — | — | — |
+| **[25.30](../../specs/epics/25-cloud-relay/story-25-30-docker-image.md)** | Official Docker image | Cloud Relay | 6 | — | — | — | — |
+| **[25.31](../../specs/epics/25-cloud-relay/story-25-31-nas-support.md)** | NAS support | Cloud Relay | 6 | — | — | — | — |
+| **[25.32](../../specs/epics/25-cloud-relay/story-25-32-raspberry-pi-arm.md)** | Raspberry Pi & ARM builds | Cloud Relay | 6 | — | — | — | — |
+| **[25.33](../../specs/epics/25-cloud-relay/story-25-33-one-click-cloud-deploy.md)** | One-click cloud-VPS deploy | Cloud Relay | 6 | — | — | — | — |
+| **[25.34](../../specs/epics/25-cloud-relay/story-25-34-auto-update.md)** | Auto-update mechanism | Cloud Relay | 6 | — | — | — | — |
+| **[25.35](../../specs/epics/25-cloud-relay/story-25-35-first-run-setup-wizard.md)** | First-run setup wizard | Cloud Relay | 6 | — | — | — | — |
+| **[25.36](../../specs/epics/25-cloud-relay/story-25-36-uninstaller.md)** | Cross-platform uninstaller | Cloud Relay | 6 | — | — | — | — |
