@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba — Log Viewer (Epic 21)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161922; --panel-2: #1d2130; --border: #262b3a;
+    --text: #e6e8ef; --text-dim: #8b91a7; --text-muted: #5a6079;
+    --accent: #3ddc97; --accent-2: #2ab87a; --warn: #f5a524; --error: #ef4444;
+    --info: #38bdf8; --purple: #8b5cf6;
+    --shadow: 0 12px 32px rgba(0,0,0,0.4);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa; --panel: #ffffff; --panel-2: #f0f2f7; --border: #e1e4ec;
+    --text: #1a1d26; --text-dim: #5a6079; --text-muted: #8b91a7;
+    --accent: #1aa56c; --accent-2: #138a58; --warn: #d97706; --error: #dc2626;
+    --info: #0284c7; --purple: #7c3aed;
+    --shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    min-height: 100vh; padding: 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 16px;
+  }
+  .container { max-width: 1440px; margin: 0 auto; }
+
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .subtitle { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .live-pill {
+    padding: 4px 10px; background: rgba(61,220,151,0.12);
+    border: 1px solid rgba(61,220,151,0.3); border-radius: 999px;
+    color: var(--accent); font-size: 11px; font-weight: 500;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .live-pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100% {opacity:1} 50% {opacity:0.4} }
+  .btn {
+    padding: 7px 12px; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; cursor: pointer; font-size: 12px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn:hover { border-color: var(--text-dim); }
+
+  .filter-bar {
+    display: flex; gap: 8px; margin-bottom: 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .filter-group .lbl { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .filter-group select, .filter-group input {
+    background: transparent; border: 0; color: var(--text); font-size: 12px;
+    outline: none; font-family: inherit;
+  }
+
+  .search-input {
+    flex: 1; min-width: 220px;
+    padding: 8px 14px 8px 34px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px; outline: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238b91a7' stroke-width='2'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+    background-repeat: no-repeat; background-position: 11px center;
+    font-family: ui-monospace, monospace;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  .level-toggle {
+    display: flex; gap: 4px; padding: 4px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .level-btn {
+    padding: 4px 10px; border-radius: 5px; font-size: 11px; cursor: pointer;
+    color: var(--text-muted); display: flex; align-items: center; gap: 5px;
+    font-weight: 500;
+  }
+  .level-btn .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .level-btn.active { background: var(--panel); color: var(--text); }
+  .level-btn .dot.error { background: var(--error); }
+  .level-btn .dot.warn { background: var(--warn); }
+  .level-btn .dot.info { background: var(--info); }
+  .level-btn .dot.debug { background: var(--text-muted); }
+  .level-btn.active.error { color: var(--error); }
+  .level-btn.active.warn { color: var(--warn); }
+  .level-btn.active.info { color: var(--info); }
+
+  .stats-row {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+    margin-bottom: 16px;
+  }
+  .stat-mini {
+    padding: 10px 14px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .stat-mini .l { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-mini .v { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat-mini .v.error { color: var(--error); }
+  .stat-mini .v.warn { color: var(--warn); }
+  .stat-mini .v.info { color: var(--info); }
+
+  /* Logs */
+  .logs {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", monospace;
+  }
+  .logs-header {
+    display: grid; grid-template-columns: 80px 60px 130px 120px 1fr 50px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    background: var(--panel-2); font-size: 10px;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .log-row {
+    display: grid; grid-template-columns: 80px 60px 130px 120px 1fr 50px;
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px; align-items: center;
+    cursor: pointer;
+  }
+  .log-row:hover { background: var(--panel-2); }
+  .log-row.expanded {
+    background: var(--panel-2);
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+  }
+  .log-time { color: var(--text-muted); font-size: 11px; }
+  .log-level {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; text-align: center;
+    width: 48px;
+  }
+  .log-level.error { background: rgba(239,68,68,0.15); color: var(--error); border: 1px solid rgba(239,68,68,0.25); }
+  .log-level.warn { background: rgba(245,165,36,0.15); color: var(--warn); border: 1px solid rgba(245,165,36,0.25); }
+  .log-level.info { background: rgba(56,189,248,0.15); color: var(--info); border: 1px solid rgba(56,189,248,0.25); }
+  .log-level.debug { background: var(--panel); color: var(--text-muted); border: 1px solid var(--border); }
+  .log-service { color: var(--purple); font-weight: 500; font-size: 11px; }
+  .log-trace { color: var(--text-muted); font-size: 11px; }
+  .log-msg {
+    color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .log-msg .key { color: var(--text-muted); }
+  .log-msg .num { color: var(--accent); }
+  .log-msg .str { color: var(--info); }
+  .expand-icon {
+    color: var(--text-muted); text-align: right;
+  }
+
+  .log-detail {
+    background: #0a0c11;
+    border-top: 1px dashed var(--border);
+    padding: 14px 18px;
+    margin: 0 -14px;
+    font-family: ui-monospace, monospace; font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-dim);
+  }
+  [data-theme="light"] .log-detail { background: #1a1d26; color: #cbd5e1; }
+  .log-detail .key { color: #f59e0b; }
+  .log-detail .str { color: #34d399; }
+  .log-detail .num { color: #60a5fa; }
+  .log-detail .null { color: var(--text-muted); }
+  .log-detail .indent { padding-left: 20px; }
+
+  .pagination {
+    margin-top: 12px; padding: 12px 16px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--text-dim);
+  }
+  .pagination .right { display: flex; gap: 6px; }
+  .page-btn {
+    padding: 5px 10px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 5px; cursor: pointer; color: var(--text); font-size: 11px;
+  }
+  .page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1440px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .ss-label .stag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico-t { background: rgba(239,68,68,0.15); color: var(--error); }
+  .toast.warn .ico-t { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.error { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+  .di-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .di-icon.info { background: rgba(56,189,248,0.12); color: var(--info); border: 1px solid rgba(56,189,248,0.3); }
+  .di-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+  .dropdown { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 240px; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .dd-item { padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dd-item:hover { background: var(--panel-2); }
+  .dd-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .dd-shortcut { margin-left: auto; font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+  .empty-state { text-align: center; padding: 24px; }
+  .em-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px; }
+  .empty-state h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 12px; color: var(--text-dim); max-width: 260px; margin: 0 auto; line-height: 1.5; }
+  .skeleton-list { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 280px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
+  .btn-loading { background: var(--accent); color: #fff; padding: 11px 18px; border-radius: 8px; border: 0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; opacity: 0.7; cursor: wait; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="label">EPIC 21 · STORY 21.04 · STRUCTURED LOG VIEWER</div>
+
+  <div class="header">
+    <div>
+      <h1>Logs</h1>
+      <div class="subtitle">Real-time structured logs from all server services · 4,237 entries in window</div>
+    </div>
+    <div class="header-right">
+      <span class="live-pill">Streaming</span>
+      <button class="btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export NDJSON
+      </button>
+      <button class="btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-mini">
+      <div class="l">Total · last 24h</div>
+      <div class="v">28,412</div>
+    </div>
+    <div class="stat-mini">
+      <div class="l">Errors</div>
+      <div class="v error">7</div>
+    </div>
+    <div class="stat-mini">
+      <div class="l">Warnings</div>
+      <div class="v warn">142</div>
+    </div>
+    <div class="stat-mini">
+      <div class="l">Info</div>
+      <div class="v info">22,840</div>
+    </div>
+    <div class="stat-mini">
+      <div class="l">Debug (suppressed)</div>
+      <div class="v">5,423</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar">
+    <input class="search-input" placeholder='Search: video_id="abc-123" OR error.code:DECODE_FAIL  ...' value='service:transcribe AND video.duration > 1800' />
+
+    <div class="level-toggle">
+      <span class="level-btn active error"><span class="dot error"></span>ERROR</span>
+      <span class="level-btn active warn"><span class="dot warn"></span>WARN</span>
+      <span class="level-btn active info"><span class="dot info"></span>INFO</span>
+      <span class="level-btn"><span class="dot debug"></span>DEBUG</span>
+    </div>
+
+    <div class="filter-group">
+      <span class="lbl">Service</span>
+      <select>
+        <option>All (12)</option>
+        <option selected>transcribe, diarize</option>
+        <option>relay, gateway</option>
+        <option>scanner, indexer</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <span class="lbl">Time</span>
+      <select>
+        <option>Last 5 min</option>
+        <option>Last 1 hour</option>
+        <option selected>Last 24h</option>
+        <option>Last 7 days</option>
+        <option>Custom range…</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Logs table -->
+  <div class="logs">
+    <div class="logs-header">
+      <div>Time</div>
+      <div>Level</div>
+      <div>Service</div>
+      <div>Trace</div>
+      <div>Message</div>
+      <div></div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:42:18</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">transcribe</div>
+      <div class="log-trace">7H2K9P-1843</div>
+      <div class="log-msg">whisper.complete <span class="key">video=</span><span class="str">"durus-nahw-04"</span> <span class="key">duration=</span><span class="num">42.3s</span> <span class="key">model=</span>medium <span class="key">words=</span><span class="num">8,412</span></div>
+      <div class="expand-icon">▾</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:42:14</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">diarize</div>
+      <div class="log-trace">7H2K9P-1842</div>
+      <div class="log-msg">speakers.assigned <span class="key">video=</span><span class="str">"ottoman-arch-ep02"</span> <span class="key">count=</span><span class="num">3</span> <span class="key">confidence=</span><span class="num">0.94</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row expanded">
+      <div class="log-time">14:42:09</div>
+      <div><span class="log-level error">error</span></div>
+      <div class="log-service">transcribe</div>
+      <div class="log-trace">7H2K9P-1841</div>
+      <div class="log-msg">decode.failed <span class="key">video=</span><span class="str">"VID_20250115_192234"</span> <span class="key">error.code=</span><span class="str">"AUDIO_CODEC_UNSUPPORTED"</span> <span class="key">codec=</span><span class="str">"truehd"</span></div>
+      <div class="expand-icon">▾</div>
+    </div>
+    <div class="log-detail" style="grid-column: 1 / -1;">
+{<br>
+&nbsp;&nbsp;<span class="key">"timestamp"</span>: <span class="str">"2026-05-05T14:42:09.142Z"</span>,<br>
+&nbsp;&nbsp;<span class="key">"level"</span>: <span class="str">"error"</span>,<br>
+&nbsp;&nbsp;<span class="key">"service"</span>: <span class="str">"transcribe"</span>,<br>
+&nbsp;&nbsp;<span class="key">"trace_id"</span>: <span class="str">"7H2K9P-1841"</span>,<br>
+&nbsp;&nbsp;<span class="key">"event"</span>: <span class="str">"decode.failed"</span>,<br>
+&nbsp;&nbsp;<span class="key">"video"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"id"</span>: <span class="str">"v_8a4c2e91"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"path"</span>: <span class="str">"/Volumes/External SSD/raw-imports/VID_20250115_192234.mp4"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"duration_seconds"</span>: <span class="num">2547</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"size_bytes"</span>: <span class="num">3247586302</span><br>
+&nbsp;&nbsp;},<br>
+&nbsp;&nbsp;<span class="key">"error"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"code"</span>: <span class="str">"AUDIO_CODEC_UNSUPPORTED"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"message"</span>: <span class="str">"ffmpeg cannot decode TrueHD audio without --enable-libtruehd"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"recoverable"</span>: <span class="num">true</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"retry_after"</span>: <span class="null">null</span><br>
+&nbsp;&nbsp;},<br>
+&nbsp;&nbsp;<span class="key">"detected_streams"</span>: [<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{<span class="key">"type"</span>:<span class="str">"video"</span>, <span class="key">"codec"</span>:<span class="str">"hevc"</span>, <span class="key">"resolution"</span>:<span class="str">"3840x2160"</span>},<br>
+&nbsp;&nbsp;&nbsp;&nbsp;{<span class="key">"type"</span>:<span class="str">"audio"</span>, <span class="key">"codec"</span>:<span class="str">"truehd"</span>, <span class="key">"channels"</span>:<span class="num">8</span>}<br>
+&nbsp;&nbsp;]<br>
+}
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:42:01</div>
+      <div><span class="log-level warn">warn</span></div>
+      <div class="log-service">scanner</div>
+      <div class="log-trace">scn-0042</div>
+      <div class="log-msg">scan.slow <span class="key">path=</span><span class="str">"smb://nas.local/share"</span> <span class="key">files_per_sec=</span><span class="num">2.1</span> <span class="key">avg_latency_ms=</span><span class="num">412</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:58</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">gateway</div>
+      <div class="log-trace">req-9821</div>
+      <div class="log-msg">http.request <span class="key">method=</span>GET <span class="key">path=</span><span class="str">"/api/videos/v_8a4c2e91"</span> <span class="key">status=</span><span class="num">200</span> <span class="key">latency_ms=</span><span class="num">14</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:52</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">relay</div>
+      <div class="log-trace">rly-1142</div>
+      <div class="log-msg">stream.start <span class="key">user=</span><span class="str">"mahmoud"</span> <span class="key">video=</span><span class="str">"durus-nahw-04"</span> <span class="key">quality=</span>1080p <span class="key">via=</span>cloud-relay-eu-1</div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:48</div>
+      <div><span class="log-level warn">warn</span></div>
+      <div class="log-service">transcribe</div>
+      <div class="log-trace">7H2K9P-1840</div>
+      <div class="log-msg">model.fallback <span class="key">requested=</span>large-v3 <span class="key">used=</span>medium <span class="key">reason=</span><span class="str">"insufficient_vram"</span> <span class="key">vram_free_mb=</span><span class="num">1842</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:42</div>
+      <div><span class="log-level error">error</span></div>
+      <div class="log-service">indexer</div>
+      <div class="log-trace">idx-2204</div>
+      <div class="log-msg">embed.timeout <span class="key">video=</span><span class="str">"qa-2024-12-22"</span> <span class="key">timeout_seconds=</span><span class="num">120</span> <span class="key">retry=</span><span class="num">2</span> <span class="key">will_retry=</span><span class="num">true</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:38</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">auth</div>
+      <div class="log-trace">auth-512</div>
+      <div class="log-msg">session.created <span class="key">user=</span><span class="str">"mahmoud"</span> <span class="key">device=</span><span class="str">"iPhone 15 Pro"</span> <span class="key">ip=</span>192.168.1.108 <span class="key">via=</span>qr-pairing</div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:30</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">diarize</div>
+      <div class="log-trace">7H2K9P-1839</div>
+      <div class="log-msg">embedding.computed <span class="key">video=</span><span class="str">"family-halaqa-44"</span> <span class="key">speakers_found=</span><span class="num">5</span> <span class="key">duration_ms=</span><span class="num">3,142</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:24</div>
+      <div><span class="log-level warn">warn</span></div>
+      <div class="log-service">scanner</div>
+      <div class="log-trace">scn-0042</div>
+      <div class="log-msg">file.locked <span class="key">path=</span><span class="str">"…/raw-takes/clip-2024.mov"</span> <span class="key">reason=</span><span class="str">"open_for_writing"</span> <span class="key">retry_in_seconds=</span><span class="num">30</span></div>
+      <div class="expand-icon">▸</div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-time">14:41:18</div>
+      <div><span class="log-level info">info</span></div>
+      <div class="log-service">transcribe</div>
+      <div class="log-trace">7H2K9P-1838</div>
+      <div class="log-msg">whisper.start <span class="key">video=</span><span class="str">"tafsir-baqarah-pt-12"</span> <span class="key">model=</span>large-v3 <span class="key">language=</span>ar <span class="key">device=</span>metal</div>
+      <div class="expand-icon">▸</div>
+    </div>
+  </div>
+
+  <div class="pagination">
+    <div>Showing <strong style="color: var(--text);">1–12</strong> of 4,237 matching entries · auto-refresh every 2s</div>
+    <div class="right">
+      <button class="page-btn">‹ Prev</button>
+      <button class="page-btn active">1</button>
+      <button class="page-btn">2</button>
+      <button class="page-btn">3</button>
+      <button class="page-btn">…</button>
+      <button class="page-btn">354</button>
+      <button class="page-btn">Next ›</button>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · log viewer</h2>
+    <div class="desc">Every dialog, toast, dropdown, and overlay state for log search</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · export logs <span class="stag">EXPORT</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon info">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <h3>Export 4,237 log entries?</h3>
+            <p>NDJSON format · ~2.4 MB · includes all matching records from the current filter and time range.</p>
+            <div style="margin-top: 12px; padding: 10px 12px; background: var(--panel-2); border-radius: 6px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-dim); text-align: left;">maktaba-logs-2026-05-05.ndjson.gz</div>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Download</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · clear logs <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            </div>
+            <h3>Purge logs older than 30 days?</h3>
+            <p>This frees ~1.8 GB and removes 184,562 entries. Logs from the last 30 days will be kept.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Purge old logs</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · export ready <span class="stag success">SUCCESS</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Export complete</strong>
+            <span>maktaba-logs.ndjson.gz · 2.4 MB · downloading…</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · stream paused <span class="stag warn">PAUSED</span></div>
+      <div class="ss-preview">
+        <div class="toast warn">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></div>
+          <div class="body">
+            <strong>Live stream paused</strong>
+            <span>Resume to see new entries · 142 buffered</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · query syntax error <span class="stag error">ERROR</span></div>
+      <div class="ss-preview">
+        <div class="toast error">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div>
+          <div class="body">
+            <strong>Invalid filter syntax</strong>
+            <span><code style="font-family: ui-monospace, monospace;">service:</code> needs a value · check column 9</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dropdown · service filter <span class="stag">SELECT</span></div>
+      <div class="ss-preview">
+        <div class="dropdown">
+          <div style="padding: 6px 10px; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Filter by service</div>
+          <div class="dd-item">
+            <input type="checkbox" checked style="margin: 0; accent-color: var(--accent);">
+            transcribe
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">8,412</span>
+          </div>
+          <div class="dd-item">
+            <input type="checkbox" checked style="margin: 0; accent-color: var(--accent);">
+            diarize
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">2,184</span>
+          </div>
+          <div class="dd-item">
+            <input type="checkbox" style="margin: 0; accent-color: var(--accent);">
+            scanner
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">12,402</span>
+          </div>
+          <div class="dd-item">
+            <input type="checkbox" style="margin: 0; accent-color: var(--accent);">
+            relay
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">3,118</span>
+          </div>
+          <div class="dd-item">
+            <input type="checkbox" style="margin: 0; accent-color: var(--accent);">
+            gateway
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">2,296</span>
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item" style="color: var(--accent);">Select all (12)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dropdown · row context menu <span class="stag">CONTEXT</span></div>
+      <div class="ss-preview">
+        <div class="dropdown">
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy as JSON
+            <span class="dd-shortcut">⌘C</span>
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3"/><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Filter by trace ID
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add to filter
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Show 30s before/after
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/></svg>
+            Export this trace
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Loading · running query <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <button class="btn-loading">
+          <span class="spinner"></span>
+          Searching 28,412 entries…
+        </button>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Skeleton · loading log rows <span class="stag">PROGRESS</span></div>
+      <div class="ss-preview">
+        <div class="skeleton-list">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="sk-line shimmer" style="width: 50px; flex: none;"></div>
+            <div class="sk-line shimmer" style="width: 36px; height: 14px; flex: none; border-radius: 3px;"></div>
+            <div class="sk-line shimmer" style="width: 70px; flex: none;"></div>
+            <div class="sk-line shimmer" style="flex: 1;"></div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="sk-line shimmer" style="width: 50px; flex: none;"></div>
+            <div class="sk-line shimmer" style="width: 36px; height: 14px; flex: none; border-radius: 3px;"></div>
+            <div class="sk-line shimmer" style="width: 70px; flex: none;"></div>
+            <div class="sk-line shimmer" style="flex: 1;"></div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="sk-line shimmer" style="width: 50px; flex: none;"></div>
+            <div class="sk-line shimmer" style="width: 36px; height: 14px; flex: none; border-radius: 3px;"></div>
+            <div class="sk-line shimmer" style="width: 70px; flex: none;"></div>
+            <div class="sk-line shimmer" style="flex: 1;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · no results <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <h4>No log entries match</h4>
+          <p>Try widening the time range, changing services, or removing filters.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Empty · log retention <span class="stag">EMPTY</span></div>
+      <div class="ss-preview">
+        <div class="empty-state">
+          <div class="em-icon" style="background: rgba(245,165,36,0.08); border-color: rgba(245,165,36,0.2); color: var(--warn);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h4>Logs older than 30 days were purged</h4>
+          <p>Increase retention in Settings → Logs to keep older history. Default: 30 days.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tooltip · query syntax <span class="stag">HOVER</span></div>
+      <div class="ss-preview" style="padding-top: 70px;">
+        <div class="tooltip">Lucene-like syntax: <code style="font-family: ui-monospace, monospace; color: var(--accent);">field:value</code>, <code style="font-family: ui-monospace, monospace; color: var(--accent);">AND</code>/<code style="font-family: ui-monospace, monospace; color: var(--accent);">OR</code>, <code style="font-family: ui-monospace, monospace; color: var(--accent);">"quoted phrases"</code>, ranges with <code style="font-family: ui-monospace, monospace; color: var(--accent);">{a TO b}</code>.</div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Inline · saved filter <span class="stag success">SAVED</span></div>
+      <div class="ss-preview">
+        <div style="width: 100%; max-width: 320px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <strong style="font-size: 12px;">Saved filters</strong>
+            <span style="margin-left: auto; font-size: 10px; color: var(--text-muted);">3 saved</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="padding: 8px 10px; background: var(--panel-2); border-radius: 7px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+              <span style="font-size: 11px; flex: 1;">Errors only</span>
+              <span style="font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace;">level:error</span>
+            </div>
+            <div style="padding: 8px 10px; background: var(--panel-2); border-radius: 7px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2"><polygon points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span style="font-size: 11px; flex: 1;">Slow transcripts</span>
+              <span style="font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace;">duration{30 TO}</span>
+            </div>
+            <div style="padding: 8px 10px; background: var(--panel-2); border-radius: 7px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              <span style="font-size: 11px; flex: 1;">Auth events</span>
+              <span style="font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace;">service:auth</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

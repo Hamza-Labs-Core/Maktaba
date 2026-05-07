@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba Mobile — Player</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #2a2a2e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 12px 60px;
+    gap: 24px;
+    color: #fff;
+  }
+  .page-title { color: #fff; font-size: 14px; opacity: 0.7; font-weight: 500; }
+  .label-row { display: flex; gap: 32px; justify-content: center; width: 100%; max-width: 1200px; }
+  .label { font-size: 13px; opacity: 0.6; text-align: center; flex: 1; max-width: 812px; }
+
+  .phones { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  /* Landscape phone */
+  .phone-landscape {
+    width: 812px; height: 375px;
+    background: #000; border-radius: 44px;
+    box-shadow: 0 0 0 12px #1a1a1d, 0 0 0 14px #2a2a2e, 0 24px 60px rgba(0,0,0,0.5);
+    overflow: hidden; position: relative;
+  }
+  .notch-h {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    width: 28px; height: 130px; background: #1a1a1d;
+    border-radius: 0 18px 18px 0; z-index: 100;
+  }
+
+  /* Portrait phone */
+  .phone-portrait {
+    width: 375px; height: 812px;
+    background: #0b0d12; border-radius: 44px;
+    box-shadow: 0 0 0 12px #1a1a1d, 0 0 0 14px #2a2a2e, 0 24px 60px rgba(0,0,0,0.5);
+    overflow: hidden; position: relative; color: #fff;
+    display: flex; flex-direction: column;
+  }
+  .notch-v {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 130px; height: 28px; background: #1a1a1d;
+    border-radius: 0 0 18px 18px; z-index: 100;
+  }
+
+  /* Landscape video area */
+  .video-stage {
+    width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, #1a2a4a 0%, #050810 100%);
+    position: relative; display: flex; align-items: center; justify-content: center;
+  }
+  .video-stage::before {
+    content: ''; position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='55' font-size='14' fill='%23ffffff15' text-anchor='middle' font-family='serif'%3EIbn Sina%3C/text%3E%3C/svg%3E");
+    background-size: 200px;
+    opacity: 0.5;
+  }
+  /* Top bar landscape */
+  .l-top {
+    position: absolute; top: 12px; left: 60px; right: 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 20px; z-index: 10;
+    background: linear-gradient(180deg, rgba(0,0,0,0.7), transparent);
+    border-radius: 16px;
+  }
+  .l-top-left { display: flex; align-items: center; gap: 14px; }
+  .icon-button {
+    width: 44px; height: 44px; border-radius: 22px;
+    background: rgba(0,0,0,0.4); backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; border: none; cursor: pointer;
+  }
+  .icon-button svg { width: 20px; height: 20px; }
+  .l-title { font-size: 15px; font-weight: 600; color: #fff; }
+  .l-time-elapsed { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  .l-top-right { display: flex; gap: 8px; }
+  .badge {
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+    color: #fff; font-size: 11px; font-weight: 600;
+  }
+  .badge-live { background: rgba(220, 38, 38, 0.85); }
+
+  /* Subtitle overlay */
+  .subtitle-overlay {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 100px; max-width: 80%; text-align: center;
+    background: rgba(0,0,0,0.65);
+    color: #fff; padding: 8px 14px; border-radius: 6px;
+    font-size: 18px; font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    z-index: 8;
+  }
+
+  /* Center play */
+  .l-center {
+    position: relative; z-index: 5;
+    display: flex; gap: 32px; align-items: center;
+  }
+  .l-center .ctrl {
+    width: 56px; height: 56px; border-radius: 28px;
+    background: rgba(0,0,0,0.4); backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; border: none; cursor: pointer;
+  }
+  .l-center .ctrl svg { width: 24px; height: 24px; }
+  .l-center .play-big {
+    width: 76px; height: 76px; border-radius: 38px;
+    background: rgba(255,255,255,0.95); color: #000;
+  }
+  .l-center .play-big svg { width: 32px; height: 32px; margin-left: 4px; }
+
+  /* Bottom controls */
+  .l-bottom {
+    position: absolute; bottom: 16px; left: 60px; right: 24px;
+    z-index: 10;
+    background: linear-gradient(0deg, rgba(0,0,0,0.7), transparent);
+    border-radius: 16px;
+    padding: 14px 20px;
+  }
+  .seek-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
+  }
+  .time-text { font-size: 12px; opacity: 0.85; min-width: 44px; }
+  .seek-bar {
+    flex: 1; height: 4px; background: rgba(255,255,255,0.25);
+    border-radius: 2px; position: relative; cursor: pointer;
+  }
+  .seek-fill {
+    height: 100%; width: 38%;
+    background: #3b82f6; border-radius: 2px;
+  }
+  .seek-thumb {
+    position: absolute; left: 38%; top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px; border-radius: 7px;
+    background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .l-bottom-row {
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .l-bot-left { display: flex; gap: 4px; align-items: center; }
+  .l-bot-right { display: flex; gap: 4px; align-items: center; }
+  .ctrl-mini {
+    width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: none; color: #fff; cursor: pointer;
+  }
+  .ctrl-mini svg { width: 20px; height: 20px; }
+
+  /* Volume slider in landscape */
+  .vol-group {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.4); padding: 6px 12px; border-radius: 22px;
+  }
+  .vol-bar {
+    width: 80px; height: 3px; background: rgba(255,255,255,0.25);
+    border-radius: 2px; position: relative;
+  }
+  .vol-fill {
+    height: 100%; width: 70%; background: #fff; border-radius: 2px;
+  }
+
+  /* PORTRAIT MINI PLAYER */
+  .p-status {
+    height: 44px; padding: 0 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 600; color: #fff;
+  }
+  .p-header {
+    padding: 8px 16px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .p-back, .p-more {
+    width: 44px; height: 44px; border-radius: 22px;
+    background: rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; border: none; cursor: pointer;
+  }
+  .p-back svg, .p-more svg { width: 20px; height: 20px; }
+  .p-rotate-hint {
+    flex: 1; text-align: center; font-size: 12px; opacity: 0.6;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .p-rotate-hint svg { width: 14px; height: 14px; }
+
+  .p-video {
+    aspect-ratio: 16/9;
+    margin: 0 12px;
+    background: linear-gradient(135deg, #1a2a4a, #050810);
+    border-radius: 12px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .p-video::before {
+    content: ''; position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='55' font-size='10' fill='%23ffffff15' text-anchor='middle' font-family='serif'%3EIbn Sina%3C/text%3E%3C/svg%3E");
+    background-size: 100px;
+  }
+  .p-video .play-big {
+    position: relative; z-index: 2;
+    width: 64px; height: 64px; border-radius: 32px;
+    background: rgba(255,255,255,0.95); color: #000;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+  }
+  .p-video .play-big svg { width: 28px; height: 28px; margin-left: 3px; }
+  .p-video .pip-corner {
+    position: absolute; top: 8px; right: 8px;
+    width: 36px; height: 36px; border-radius: 18px;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; z-index: 3; border: none; cursor: pointer;
+  }
+  .p-video .pip-corner svg { width: 16px; height: 16px; }
+  .p-sub {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 8px; max-width: 90%; text-align: center;
+    background: rgba(0,0,0,0.7); color: #fff;
+    padding: 4px 8px; border-radius: 4px;
+    font-size: 11px; z-index: 4;
+  }
+
+  .p-info {
+    padding: 16px 16px 0;
+  }
+  .p-info h2 { font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .p-info .meta { font-size: 12px; opacity: 0.6; margin-top: 4px; }
+
+  .p-seek {
+    padding: 12px 16px 0;
+  }
+  .p-seek-bar {
+    height: 4px; background: rgba(255,255,255,0.18);
+    border-radius: 2px; position: relative; margin-bottom: 6px;
+  }
+  .p-seek-fill {
+    height: 100%; width: 38%; background: #3b82f6; border-radius: 2px;
+  }
+  .p-seek-thumb {
+    position: absolute; left: 38%; top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px; border-radius: 7px;
+    background: #fff;
+  }
+  .p-time {
+    display: flex; justify-content: space-between;
+    font-size: 11px; opacity: 0.65;
+  }
+
+  .p-controls {
+    padding: 12px 16px;
+    display: flex; justify-content: space-around; align-items: center;
+  }
+  .p-ctrl {
+    width: 56px; height: 56px; border-radius: 28px;
+    background: rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; border: none; cursor: pointer;
+  }
+  .p-ctrl.main {
+    width: 64px; height: 64px; border-radius: 32px;
+    background: #3b82f6;
+  }
+  .p-ctrl svg { width: 22px; height: 22px; }
+  .p-ctrl.main svg { width: 28px; height: 28px; margin-left: 2px; }
+
+  .p-secondary {
+    padding: 8px 16px 0;
+    display: flex; justify-content: space-around; align-items: center;
+  }
+  .p-secondary button {
+    background: none; border: none; color: #fff;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 10px; opacity: 0.85; cursor: pointer;
+    min-height: 44px; padding: 4px 8px;
+  }
+  .p-secondary button svg { width: 22px; height: 22px; }
+  .p-secondary button.active { color: #3b82f6; opacity: 1; }
+
+  .home-indicator-v {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    width: 134px; height: 5px; background: #fff;
+    opacity: 0.4; border-radius: 3px;
+  }
+  .home-indicator-h {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 5px; height: 134px; background: #fff;
+    opacity: 0.4; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+  <div class="page-title">Mobile · Player (Landscape + Portrait)</div>
+  <div class="phones">
+
+    <!-- LANDSCAPE -->
+    <div class="phone-landscape">
+      <div class="notch-h"></div>
+      <div class="video-stage">
+        <div class="l-top">
+          <div class="l-top-left">
+            <button class="icon-button" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <div>
+              <div class="l-title">Ibn Sina: A Persian Polymath</div>
+              <div class="l-time-elapsed">Chapter 4 — The Canon of Medicine</div>
+            </div>
+          </div>
+          <div class="l-top-right">
+            <span class="badge">HD</span>
+            <span class="badge">5.1</span>
+            <span class="badge">EN · CC</span>
+          </div>
+        </div>
+
+        <div class="l-center">
+          <button class="ctrl" aria-label="Back 10s">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9M3 12V6M3 12h6"/><text x="12" y="16" font-size="7" fill="currentColor">10</text></svg>
+          </button>
+          <button class="ctrl play-big" aria-label="Pause">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+          </button>
+          <button class="ctrl" aria-label="Forward 10s">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9M21 12V6M21 12h-6"/><text x="9" y="16" font-size="7" fill="currentColor">10</text></svg>
+          </button>
+        </div>
+
+        <div class="subtitle-overlay">"Knowledge is whatever is grasped by the intellect."</div>
+
+        <div class="l-bottom">
+          <div class="seek-row">
+            <span class="time-text">38:42</span>
+            <div class="seek-bar">
+              <div class="seek-fill"></div>
+              <div class="seek-thumb"></div>
+            </div>
+            <span class="time-text">1:42:30</span>
+          </div>
+          <div class="l-bottom-row">
+            <div class="l-bot-left">
+              <button class="ctrl-mini" aria-label="Lock rotation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="9" width="12" height="11" rx="2"/><path d="M9 9V6a3 3 0 016 0v3"/></svg>
+              </button>
+              <button class="ctrl-mini" aria-label="Picture in Picture">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="13" y="11" width="6" height="6" rx="1" fill="currentColor"/></svg>
+              </button>
+              <div class="vol-group">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 010 7"/></svg>
+                <div class="vol-bar"><div class="vol-fill"></div></div>
+              </div>
+            </div>
+            <div class="l-bot-right">
+              <button class="ctrl-mini" aria-label="Subtitles">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 13h4M14 13h4M6 16h2M10 16h8"/></svg>
+              </button>
+              <button class="ctrl-mini" aria-label="Audio">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1v-6h3zM3 19a2 2 0 002 2h1v-6H3z"/></svg>
+              </button>
+              <button class="ctrl-mini" aria-label="Speed">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              </button>
+              <button class="ctrl-mini" aria-label="Cast">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/><circle cx="3" cy="20" r="1" fill="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-indicator-h"></div>
+    </div>
+
+    <!-- PORTRAIT -->
+    <div class="phone-portrait">
+      <div class="notch-v"></div>
+      <div class="p-status">
+        <span>9:41</span>
+        <div style="display:flex;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="18" height="10" rx="2"/></svg>
+        </div>
+      </div>
+      <div class="p-header">
+        <button class="p-back" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="p-rotate-hint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 7.5l3 3-3 3M19.5 10.5h-9a4 4 0 00-4 4v3"/></svg>
+          Rotate for fullscreen
+        </div>
+        <button class="p-more" aria-label="More">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        </button>
+      </div>
+      <div class="p-video">
+        <button class="pip-corner" aria-label="Picture in Picture">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="13" y="11" width="6" height="6" rx="1" fill="currentColor"/></svg>
+        </button>
+        <button class="play-big" aria-label="Pause">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+        </button>
+        <div class="p-sub">"Knowledge is whatever is grasped by the intellect."</div>
+      </div>
+      <div class="p-info">
+        <h2>Ibn Sina: A Persian Polymath</h2>
+        <div class="meta">Chapter 4 · The Canon of Medicine</div>
+      </div>
+      <div class="p-seek">
+        <div class="p-seek-bar">
+          <div class="p-seek-fill"></div>
+          <div class="p-seek-thumb"></div>
+        </div>
+        <div class="p-time">
+          <span>38:42</span>
+          <span>−1:03:48</span>
+        </div>
+      </div>
+      <div class="p-controls">
+        <button class="p-ctrl" aria-label="Previous chapter">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 20L9 12l10-8v16zM5 19V5h2v14H5z"/></svg>
+        </button>
+        <button class="p-ctrl" aria-label="Back 10s">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9M3 12V6M3 12h6"/></svg>
+        </button>
+        <button class="p-ctrl main" aria-label="Pause">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+        </button>
+        <button class="p-ctrl" aria-label="Forward 10s">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9M21 12V6M21 12h-6"/></svg>
+        </button>
+        <button class="p-ctrl" aria-label="Next chapter">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l10 8-10 8V4zM17 5h2v14h-2z"/></svg>
+        </button>
+      </div>
+      <div class="p-secondary">
+        <button class="active" aria-label="Lock rotation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="9" width="12" height="11" rx="2"/><path d="M9 9V6a3 3 0 016 0v3"/></svg>
+          <span>Lock</span>
+        </button>
+        <button aria-label="PiP">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="13" y="11" width="6" height="6" rx="1" fill="currentColor"/></svg>
+          <span>PiP</span>
+        </button>
+        <button aria-label="Subtitles">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 13h4M14 13h4M6 16h2M10 16h8"/></svg>
+          <span>CC</span>
+        </button>
+        <button aria-label="Cast">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/></svg>
+          <span>Cast</span>
+        </button>
+        <button aria-label="Speed">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <span>1.0×</span>
+        </button>
+      </div>
+      <div class="home-indicator-v"></div>
+    </div>
+
+  </div>
+</body>
+</html>

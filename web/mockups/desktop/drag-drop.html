@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Desktop — Drag &amp; Drop (Epic 13)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2130;
+    --border: #262b3a;
+    --text: #e6e8ef;
+    --text-dim: #8b91a7;
+    --text-muted: #5a6079;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --warn: #f5a524;
+    --danger: #ef4444;
+    --titlebar: #0a0c11;
+    --hover: rgba(255,255,255,0.05);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --panel-2: #f0f2f7;
+    --border: #e1e4ec;
+    --text: #1a1d26;
+    --text-dim: #5a6079;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --titlebar: #ebedf2;
+    --hover: rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: #050608;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 32px;
+    min-height: 100vh;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: #5a6079; margin-bottom: 24px; text-align: center;
+  }
+  .desktop-frame {
+    width: 1440px; margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    background: var(--bg);
+  }
+  /* title bar */
+  .titlebar {
+    background: var(--titlebar); height: 36px;
+    display: flex; align-items: center;
+    border-bottom: 1px solid var(--border); padding: 0 12px;
+  }
+  .traffic-lights { display: flex; gap: 8px; padding-right: 16px; }
+  .light { width: 12px; height: 12px; border-radius: 50%; }
+  .light.close { background: #ff5f56; }
+  .light.min { background: #ffbd2e; }
+  .light.max { background: #27c93f; }
+  .titlebar-title {
+    flex: 1; text-align: center; font-size: 12px;
+    color: var(--text-dim); font-weight: 500;
+  }
+  .titlebar-spacer { width: 64px; }
+
+  .body-grid { display: grid; grid-template-columns: 240px 1fr; min-height: 760px; }
+  .sidebar {
+    background: var(--panel); border-right: 1px solid var(--border);
+    padding: 20px 0;
+  }
+  .brand {
+    padding: 0 20px 20px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .brand-logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 16px;
+  }
+  .brand-name { font-weight: 600; font-size: 15px; }
+  .brand-sub { font-size: 11px; color: var(--text-muted); }
+  .nav-section { padding: 0 12px; margin-bottom: 16px; }
+  .nav-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); padding: 0 8px 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    color: var(--text-dim); font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .nav-item.active { background: var(--accent); color: #fff; }
+  .nav-icon { width: 16px; height: 16px; }
+
+  /* Main area */
+  .main { padding: 24px; display: flex; flex-direction: column; gap: 24px; position: relative; }
+
+  /* Top breadcrumb */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .breadcrumb-current { font-size: 16px; font-weight: 600; }
+  .toolbar .right { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px;
+    font-size: 13px; color: var(--text); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: var(--panel); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+
+  /* Drop zone */
+  .drop-zone {
+    flex: 1;
+    border: 2px dashed var(--accent);
+    background: linear-gradient(180deg, rgba(61, 220, 151, 0.06), rgba(61, 220, 151, 0.02));
+    border-radius: 16px;
+    padding: 40px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; min-height: 360px;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .drop-zone::before {
+    content: '';
+    position: absolute; inset: -2px;
+    border-radius: 16px;
+    background: linear-gradient(45deg, transparent, rgba(61, 220, 151, 0.3), transparent);
+    z-index: -1; opacity: 0.6;
+    animation: shimmer 3s infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+  .drop-icon {
+    width: 96px; height: 96px;
+    background: rgba(61, 220, 151, 0.15);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+    margin-bottom: 18px;
+    animation: bounce 2s infinite;
+  }
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  .drop-title {
+    font-size: 22px; font-weight: 600; margin-bottom: 6px;
+  }
+  .drop-sub {
+    color: var(--text-dim); margin-bottom: 24px; font-size: 14px;
+  }
+  .drop-actions { display: flex; gap: 12px; align-items: center; }
+  .drop-formats {
+    margin-top: 28px; display: flex; gap: 8px;
+    color: var(--text-muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.8px;
+  }
+  .drop-formats .chip {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 12px;
+    font-family: ui-monospace, monospace; font-weight: 600;
+  }
+
+  /* Floating dragged file overlay */
+  .dragged-files {
+    position: absolute; top: 60px; left: 50%;
+    transform: translateX(-50%) rotate(-3deg);
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .dragged-file {
+    background: var(--panel);
+    border: 1px solid rgba(61, 220, 151, 0.6);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.5);
+    width: 320px;
+  }
+  .dragged-file:nth-child(2) { transform: translate(8px, -4px) rotate(2deg); }
+  .dragged-file:nth-child(3) { transform: translate(-4px, -8px) rotate(-1deg); }
+  .file-icon {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .file-name { font-size: 12px; font-weight: 500; }
+  .file-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .badge-count {
+    position: absolute; top: -8px; right: -8px;
+    background: var(--warn); color: #000;
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+
+  /* Recent uploads list (alt: file browser style) */
+  .recent {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .recent-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .recent-title { font-size: 13px; font-weight: 600; }
+  .recent-count { font-size: 11px; color: var(--text-muted); }
+  .recent-list { display: flex; flex-direction: column; }
+  .recent-row {
+    display: grid; grid-template-columns: 40px 1fr 100px 80px 120px 28px;
+    gap: 12px; padding: 12px 18px; align-items: center;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .recent-row:last-child { border-bottom: 0; }
+  .row-icon {
+    width: 32px; height: 32px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 600; font-size: 11px;
+  }
+  .row-icon.video { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+  .row-icon.audio { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .row-name { font-weight: 500; color: var(--text); }
+  .row-path { color: var(--text-muted); font-size: 11px; margin-top: 1px; }
+  .row-size, .row-duration { color: var(--text-dim); font-family: ui-monospace, monospace; }
+
+  /* Status pill in row */
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 500;
+  }
+  .status-pill.processing {
+    background: rgba(245, 165, 36, 0.15); color: var(--warn);
+  }
+  .status-pill.done {
+    background: rgba(61, 220, 151, 0.15); color: var(--accent);
+  }
+  .status-pill.queued {
+    background: rgba(139, 145, 167, 0.15); color: var(--text-dim);
+  }
+  .status-pill.failed {
+    background: rgba(239, 68, 68, 0.15); color: var(--danger);
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .processing-row .status-dot { background: var(--warn); animation: pulse 1.4s infinite; }
+  .done-row .status-dot { background: var(--accent); }
+  .queued-row .status-dot { background: var(--text-dim); }
+  .failed-row .status-dot { background: var(--danger); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .progress-mini {
+    height: 4px; background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden; margin-top: 6px;
+  }
+  .progress-mini-fill { height: 100%; background: var(--warn); transition: width 0.3s; }
+
+  .row-action {
+    color: var(--text-muted); cursor: pointer;
+    width: 28px; height: 28px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .row-action:hover { background: var(--hover); color: var(--text); }
+
+  /* Progress overlay (hovering) */
+  .progress-overlay {
+    position: fixed; bottom: 60px; right: 60px;
+    width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+  .overlay-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, rgba(245, 165, 36, 0.06), transparent);
+  }
+  .overlay-spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(245, 165, 36, 0.3);
+    border-top-color: var(--warn);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .overlay-title { font-size: 13px; font-weight: 600; }
+  .overlay-eta { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .overlay-body { padding: 12px 16px; }
+  .overlay-bar {
+    height: 6px; background: rgba(255,255,255,0.08);
+    border-radius: 3px; overflow: hidden; margin: 10px 0;
+  }
+  .overlay-bar-fill { height: 100%; background: linear-gradient(90deg, var(--warn), #fbbf24); }
+  .overlay-stage {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .overlay-actions {
+    display: flex; gap: 6px; padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .overlay-btn {
+    flex: 1; background: transparent; border: 1px solid var(--border);
+    padding: 6px; border-radius: 6px; font-size: 11px;
+    color: var(--text-dim); cursor: pointer;
+  }
+  .overlay-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .annotation {
+    position: absolute; top: 100px; right: 60px;
+    background: rgba(61, 220, 151, 0.08);
+    border: 1px dashed rgba(61, 220, 151, 0.4);
+    padding: 12px 14px; border-radius: 8px;
+    color: var(--text-dim); font-size: 11px;
+    line-height: 1.6; max-width: 220px;
+  }
+  .annotation strong { color: var(--accent); }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 13 · STORY 13.03 · DRAG &amp; DROP — ACTIVE STATE</div>
+
+<div class="desktop-frame">
+  <div class="titlebar">
+    <div class="traffic-lights"><div class="light close"></div><div class="light min"></div><div class="light max"></div></div>
+    <div class="titlebar-title">Maktaba — Add Videos</div>
+    <div class="titlebar-spacer"></div>
+  </div>
+
+  <div class="body-grid">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">م</div>
+        <div>
+          <div class="brand-name">Maktaba</div>
+          <div class="brand-sub">Personal Library</div>
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">Library</div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          All Videos
+        </div>
+        <div class="nav-item active">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Video
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">Pipeline</div>
+        <div class="nav-item">⚡ Processing <span style="margin-left: auto; background: var(--warn); color: #000; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">3</span></div>
+        <div class="nav-item">📋 Queue <span style="margin-left: auto; color: var(--text-muted); font-size: 11px;">2</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="breadcrumb-current">Add Video</div>
+        <div class="right">
+          <button class="btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            From URL…
+          </button>
+          <button class="btn primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Browse files…
+          </button>
+        </div>
+      </div>
+
+      <!-- Drop zone -->
+      <div class="drop-zone">
+        <div class="dragged-files">
+          <div class="dragged-file">
+            <div class="file-icon">MP4</div>
+            <div>
+              <div class="file-name">دروس_النحو_الجزء_4.mp4</div>
+              <div class="file-meta">2.4 GB · MP4 · H.264</div>
+            </div>
+            <div class="badge-count">3</div>
+          </div>
+          <div class="dragged-file">
+            <div class="file-icon">MKV</div>
+            <div>
+              <div class="file-name">Lecture-Series-Ep08.mkv</div>
+              <div class="file-meta">1.1 GB · MKV · HEVC</div>
+            </div>
+          </div>
+          <div class="dragged-file">
+            <div class="file-icon">MOV</div>
+            <div>
+              <div class="file-name">recording_2026-05-04.mov</div>
+              <div class="file-meta">812 MB · MOV · ProRes</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="drop-icon">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="drop-title">Drop your videos to add them</div>
+        <div class="drop-sub">Or paste a URL · open Finder · scan a folder for new content</div>
+        <div class="drop-actions">
+          <button class="btn primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Browse Files…
+          </button>
+          <button class="btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 5"/><path d="M21 3v6h-6"/></svg>
+            Scan Folder…
+          </button>
+        </div>
+        <div class="drop-formats">
+          <span>Supported:</span>
+          <span class="chip">MP4</span>
+          <span class="chip">MKV</span>
+          <span class="chip">MOV</span>
+          <span class="chip">WEBM</span>
+          <span class="chip">AVI</span>
+          <span class="chip">M4V</span>
+        </div>
+      </div>
+
+      <!-- Recent uploads -->
+      <div class="recent">
+        <div class="recent-header">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="recent-title">Recent activity</div>
+          <div class="recent-count">· 4 items</div>
+        </div>
+        <div class="recent-list">
+          <div class="recent-row processing-row">
+            <div class="row-icon video">MP4</div>
+            <div>
+              <div class="row-name">دروس_النحو_الجزء_3.mp4</div>
+              <div class="row-path">~/Downloads · added 8 minutes ago</div>
+            </div>
+            <div class="row-size">2.1 GB</div>
+            <div class="row-duration">42:18</div>
+            <div>
+              <div class="status-pill processing"><span class="status-dot"></span> Transcribing 78%</div>
+              <div class="progress-mini"><div class="progress-mini-fill" style="width: 78%;"></div></div>
+            </div>
+            <div class="row-action">⋯</div>
+          </div>
+          <div class="recent-row processing-row">
+            <div class="row-icon video">MKV</div>
+            <div>
+              <div class="row-name">Ottoman Architecture Lecture.mkv</div>
+              <div class="row-path">~/Movies/Lectures · added 4 minutes ago</div>
+            </div>
+            <div class="row-size">1.8 GB</div>
+            <div class="row-duration">1:24:56</div>
+            <div>
+              <div class="status-pill processing"><span class="status-dot"></span> Transcoding 42%</div>
+              <div class="progress-mini"><div class="progress-mini-fill" style="width: 42%;"></div></div>
+            </div>
+            <div class="row-action">⋯</div>
+          </div>
+          <div class="recent-row done-row">
+            <div class="row-icon video">MP4</div>
+            <div>
+              <div class="row-name">Calligraphy Tutorial Pt 4.mp4</div>
+              <div class="row-path">~/Movies · added 12 minutes ago</div>
+            </div>
+            <div class="row-size">624 MB</div>
+            <div class="row-duration">17:42</div>
+            <div>
+              <div class="status-pill done"><span class="status-dot"></span> Ready to play</div>
+            </div>
+            <div class="row-action">⋯</div>
+          </div>
+          <div class="recent-row queued-row">
+            <div class="row-icon audio">M4A</div>
+            <div>
+              <div class="row-name">podcast_episode_42.m4a</div>
+              <div class="row-path">~/Downloads · added 1 minute ago</div>
+            </div>
+            <div class="row-size">68 MB</div>
+            <div class="row-duration">52:30</div>
+            <div>
+              <div class="status-pill queued"><span class="status-dot"></span> Queued · #2</div>
+            </div>
+            <div class="row-action">⋯</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annotation">
+        <strong>Drop zone</strong> activates when files are dragged from Finder.<br><br>
+        Multi-file drops are batched — count appears as a badge on the topmost file.
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Persistent progress overlay -->
+<div class="progress-overlay">
+  <div class="overlay-header">
+    <div class="overlay-spinner"></div>
+    <div class="overlay-title">Processing 3 videos</div>
+    <div class="overlay-eta">ETA 12m</div>
+  </div>
+  <div class="overlay-body">
+    <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">دروس_النحو_الجزء_3.mp4</div>
+    <div class="overlay-bar"><div class="overlay-bar-fill" style="width: 78%;"></div></div>
+    <div class="overlay-stage">
+      <span>Transcribing audio · whisper-large-v3</span>
+      <span style="font-family: ui-monospace, monospace;">78% · 2:14 left</span>
+    </div>
+  </div>
+  <div class="overlay-actions">
+    <button class="overlay-btn">Pause All</button>
+    <button class="overlay-btn">View Queue</button>
+    <button class="overlay-btn">Show Logs</button>
+  </div>
+</div>
+
+</body>
+</html>

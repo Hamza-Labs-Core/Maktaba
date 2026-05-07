@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Cards</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-fg: #fff; --primary-soft: #eef2ff; --primary-soft-fg: #4338ca;
+    --success: #16a34a; --success-soft: #dcfce7; --success-fg: #15803d;
+    --warning: #ca8a04; --warning-soft: #fef9c3; --warning-fg: #a16207;
+    --error: #dc2626; --error-soft: #fee2e2; --error-fg: #b91c1c;
+    --info: #2563eb; --info-soft: #dbeafe; --info-fg: #1d4ed8;
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.08), 0 1px 2px -1px rgba(0,0,0,0.06);
+    --shadow-lg: 0 8px 24px -8px rgba(0,0,0,0.12);
+    --poster-1: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --poster-2: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+    --poster-3: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+    --poster-4: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8; --primary-fg: #18181b; --primary-soft: #1e1b4b; --primary-soft-fg: #c7d2fe;
+    --success: #22c55e; --success-soft: #052e16; --success-fg: #6ee7b7;
+    --warning: #facc15; --warning-soft: #422006; --warning-fg: #fde047;
+    --error: #f87171; --error-soft: #450a0a; --error-fg: #fca5a5;
+    --info: #60a5fa; --info-soft: #172554; --info-fg: #93c5fd;
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.4);
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.4), 0 1px 2px -1px rgba(0,0,0,0.4);
+    --shadow-lg: 0 12px 32px -8px rgba(0,0,0,0.6);
+    --poster-1: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+    --poster-2: linear-gradient(135deg, #b45309 0%, #991b1b 100%);
+    --poster-3: linear-gradient(135deg, #047857 0%, #0e7490 100%);
+    --poster-4: linear-gradient(135deg, #be185d 0%, #6d28d9 100%);
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ============ VIDEO CARD ============ */
+  .video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .video-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    cursor: pointer;
+  }
+  .video-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
+  .video-poster {
+    aspect-ratio: 16/9;
+    position: relative;
+    overflow: hidden;
+  }
+  .poster-1 { background: var(--poster-1); }
+  .poster-2 { background: var(--poster-2); }
+  .poster-3 { background: var(--poster-3); }
+  .poster-4 { background: var(--poster-4); }
+  .video-poster::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.55) 100%);
+  }
+  .video-duration {
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0,0,0,0.78); color: #fff;
+    font-size: 11px; font-weight: 500; font-family: ui-monospace, 'SF Mono', monospace;
+    padding: 3px 6px; border-radius: 4px; z-index: 1;
+  }
+  .video-status {
+    position: absolute; top: 8px; left: 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 4px;
+    backdrop-filter: blur(8px);
+    z-index: 1;
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .video-status.processing { background: rgba(234, 179, 8, 0.92); color: #422006; }
+  .video-status.done { background: rgba(34, 197, 94, 0.92); color: #052e16; }
+  .video-status.failed { background: rgba(239, 68, 68, 0.92); color: #450a0a; }
+
+  .play-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .15s ease;
+  }
+  .video-card:hover .play-overlay { opacity: 1; }
+  .play-overlay svg { width: 48px; height: 48px; color: #fff; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+
+  .video-body { padding: 12px 14px 14px; }
+  .video-title {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    line-height: 1.3; margin-bottom: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .video-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-subtle); }
+  .video-meta-dot { width: 2px; height: 2px; border-radius: 50%; background: currentColor; opacity: 0.5; }
+  .video-langs { display: flex; gap: 4px; margin-top: 8px; }
+  .lang-chip {
+    font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+    background: var(--surface-2); color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    font-family: ui-monospace, 'SF Mono', monospace;
+  }
+
+  /* ============ STAT CARD ============ */
+  .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .stat-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .stat-icon { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; }
+  .stat-icon.primary { background: var(--primary-soft); color: var(--primary-soft-fg); }
+  .stat-icon.success { background: var(--success-soft); color: var(--success-fg); }
+  .stat-icon.warning { background: var(--warning-soft); color: var(--warning-fg); }
+  .stat-icon.info { background: var(--info-soft); color: var(--info-fg); }
+  .stat-icon svg { width: 14px; height: 14px; }
+  .stat-value { font-size: 24px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.1; font-feature-settings: 'tnum'; }
+  .stat-trend { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; margin-top: 6px; }
+  .trend-up { color: var(--success-fg); }
+  .trend-down { color: var(--error-fg); }
+  .stat-sub { color: var(--text-subtle); margin-left: 6px; font-weight: 400; }
+
+  /* ============ INFO CARD ============ */
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .info-icon-wrap {
+    width: 36px; height: 36px; border-radius: 9px;
+    flex-shrink: 0;
+    display: grid; place-items: center;
+  }
+  .info-icon-wrap svg { width: 18px; height: 18px; }
+  .info-card.primary .info-icon-wrap { background: var(--primary-soft); color: var(--primary-soft-fg); }
+  .info-card.success .info-icon-wrap { background: var(--success-soft); color: var(--success-fg); }
+  .info-card.warning .info-icon-wrap { background: var(--warning-soft); color: var(--warning-fg); }
+  .info-card.info .info-icon-wrap { background: var(--info-soft); color: var(--info-fg); }
+  .info-content { flex: 1; }
+  .info-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .info-text { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+  .info-action { font-size: 12px; color: var(--primary); font-weight: 500; margin-top: 8px; cursor: pointer; }
+
+  /* ============ EMPTY STATE ============ */
+  .empty-card {
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+  }
+  .empty-icon-wrap {
+    width: 56px; height: 56px; margin: 0 auto 16px;
+    background: var(--surface-2); border-radius: 14px;
+    display: grid; place-items: center;
+    color: var(--text-subtle);
+  }
+  .empty-icon-wrap svg { width: 26px; height: 26px; }
+  .empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .empty-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; max-width: 280px; margin: 0 auto 16px; }
+  .empty-cta {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--primary); color: var(--primary-fg);
+    padding: 8px 14px; font-size: 13px; font-weight: 500;
+    border-radius: 8px; border: none; cursor: pointer;
+  }
+  .empty-cta svg { width: 14px; height: 14px; }
+
+  @media (max-width: 900px) {
+    .comparison { grid-template-columns: 1fr; }
+    .pane { padding: 24px; }
+    .video-grid, .stat-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / cards.html</div>
+    <h1>Cards</h1>
+    <p>Video, stat, info, and empty state cards — the core surfaces for content listing and dashboards.</p>
+  </header>
+
+  <div class="comparison">
+    <!-- LIGHT -->
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Video Cards</div>
+        <div class="video-grid">
+          <article class="video-card">
+            <div class="video-poster poster-1">
+              <span class="video-status processing"><span class="status-dot"></span>Processing</span>
+              <span class="video-duration">42:18</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Introduction to Classical Arabic Poetry — Mu'allaqat Series</div>
+              <div class="video-meta"><span>Lecture 04</span><span class="video-meta-dot"></span><span>2 days ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">EN</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-2">
+              <span class="video-status done"><span class="status-dot"></span>Done</span>
+              <span class="video-duration">1:24:05</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Theology Foundations: A Survey of Major Schools</div>
+              <div class="video-meta"><span>Module 12</span><span class="video-meta-dot"></span><span>1 week ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">EN</span><span class="lang-chip">FR</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-3">
+              <span class="video-duration">28:42</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Calligraphy Workshop: The Diwani Script</div>
+              <div class="video-meta"><span>Workshop</span><span class="video-meta-dot"></span><span>3 weeks ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-4">
+              <span class="video-status failed"><span class="status-dot"></span>Failed</span>
+              <span class="video-duration">52:30</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Philosophy of Language in the Andalusian Tradition</div>
+              <div class="video-meta"><span>Seminar</span><span class="video-meta-dot"></span><span>retry needed</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">ES</span></div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Stat Cards</div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Total videos</span>
+              <span class="stat-icon primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
+            </div>
+            <div class="stat-value">1,284</div>
+            <div class="stat-trend trend-up">▲ 12.4%<span class="stat-sub">vs last month</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Hours processed</span>
+              <span class="stat-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            </div>
+            <div class="stat-value">8,621</div>
+            <div class="stat-trend trend-up">▲ 8.1%<span class="stat-sub">vs last month</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Active jobs</span>
+              <span class="stat-icon warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg></span>
+            </div>
+            <div class="stat-value">23</div>
+            <div class="stat-trend trend-down">▼ 4.2%<span class="stat-sub">queue shorter</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Storage used</span>
+              <span class="stat-icon info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
+            </div>
+            <div class="stat-value">412 GB<span class="stat-sub" style="font-size:13px">/ 1 TB</span></div>
+            <div class="stat-trend trend-up">▲ 24 GB<span class="stat-sub">this week</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Info Cards</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="info-card primary">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">New transcription model available</div>
+              <div class="info-text">The v3 Arabic dialect model has rolled out with a 14% accuracy improvement on Levantine and Egyptian content.</div>
+              <div class="info-action">Review changes →</div>
+            </div>
+          </div>
+          <div class="info-card success">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">Backup completed successfully</div>
+              <div class="info-text">412 GB of media archived to cold storage. Last incremental sync 14 minutes ago.</div>
+            </div>
+          </div>
+          <div class="info-card warning">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">Storage approaching limit</div>
+              <div class="info-text">You've used 82% of your allocated storage. Consider archiving old jobs or upgrading your plan.</div>
+              <div class="info-action">Manage storage →</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Empty State</div>
+        <div class="empty-card">
+          <div class="empty-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+          <div class="empty-title">No videos uploaded yet</div>
+          <div class="empty-desc">Upload your first video and we'll automatically transcribe and translate it across your enabled languages.</div>
+          <button class="empty-cta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Upload video</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DARK -->
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+
+      <div class="section">
+        <div class="section-title">Video Cards</div>
+        <div class="video-grid">
+          <article class="video-card">
+            <div class="video-poster poster-1">
+              <span class="video-status processing"><span class="status-dot"></span>Processing</span>
+              <span class="video-duration">42:18</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Introduction to Classical Arabic Poetry — Mu'allaqat Series</div>
+              <div class="video-meta"><span>Lecture 04</span><span class="video-meta-dot"></span><span>2 days ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">EN</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-2">
+              <span class="video-status done"><span class="status-dot"></span>Done</span>
+              <span class="video-duration">1:24:05</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Theology Foundations: A Survey of Major Schools</div>
+              <div class="video-meta"><span>Module 12</span><span class="video-meta-dot"></span><span>1 week ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">EN</span><span class="lang-chip">FR</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-3">
+              <span class="video-duration">28:42</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Calligraphy Workshop: The Diwani Script</div>
+              <div class="video-meta"><span>Workshop</span><span class="video-meta-dot"></span><span>3 weeks ago</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span></div>
+            </div>
+          </article>
+          <article class="video-card">
+            <div class="video-poster poster-4">
+              <span class="video-status failed"><span class="status-dot"></span>Failed</span>
+              <span class="video-duration">52:30</span>
+              <div class="play-overlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+            </div>
+            <div class="video-body">
+              <div class="video-title">Philosophy of Language in the Andalusian Tradition</div>
+              <div class="video-meta"><span>Seminar</span><span class="video-meta-dot"></span><span>retry needed</span></div>
+              <div class="video-langs"><span class="lang-chip">AR</span><span class="lang-chip">ES</span></div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Stat Cards</div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Total videos</span>
+              <span class="stat-icon primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
+            </div>
+            <div class="stat-value">1,284</div>
+            <div class="stat-trend trend-up">▲ 12.4%<span class="stat-sub">vs last month</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Hours processed</span>
+              <span class="stat-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            </div>
+            <div class="stat-value">8,621</div>
+            <div class="stat-trend trend-up">▲ 8.1%<span class="stat-sub">vs last month</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Active jobs</span>
+              <span class="stat-icon warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg></span>
+            </div>
+            <div class="stat-value">23</div>
+            <div class="stat-trend trend-down">▼ 4.2%<span class="stat-sub">queue shorter</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-label">Storage used</span>
+              <span class="stat-icon info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
+            </div>
+            <div class="stat-value">412 GB<span class="stat-sub" style="font-size:13px">/ 1 TB</span></div>
+            <div class="stat-trend trend-up">▲ 24 GB<span class="stat-sub">this week</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Info Cards</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="info-card primary">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">New transcription model available</div>
+              <div class="info-text">The v3 Arabic dialect model has rolled out with a 14% accuracy improvement on Levantine and Egyptian content.</div>
+              <div class="info-action">Review changes →</div>
+            </div>
+          </div>
+          <div class="info-card success">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">Backup completed successfully</div>
+              <div class="info-text">412 GB of media archived to cold storage. Last incremental sync 14 minutes ago.</div>
+            </div>
+          </div>
+          <div class="info-card warning">
+            <div class="info-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div class="info-content">
+              <div class="info-title">Storage approaching limit</div>
+              <div class="info-text">You've used 82% of your allocated storage. Consider archiving old jobs or upgrading your plan.</div>
+              <div class="info-action">Manage storage →</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Empty State</div>
+        <div class="empty-card">
+          <div class="empty-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+          <div class="empty-title">No videos uploaded yet</div>
+          <div class="empty-desc">Upload your first video and we'll automatically transcribe and translate it across your enabled languages.</div>
+          <button class="empty-cta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Upload video</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

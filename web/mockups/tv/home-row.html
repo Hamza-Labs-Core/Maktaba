@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba TV — Home (Epic 14)</title>
+<style>
+  :root {
+    --bg: #07080c;
+    --bg-2: #0e1118;
+    --panel: #161922;
+    --border: rgba(255,255,255,0.08);
+    --text: #f3f5fb;
+    --text-dim: #b6bcce;
+    --text-muted: #6f7691;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --focus-ring: #3ddc97;
+    --shadow: 0 30px 80px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --bg-2: #ebedf3;
+    --panel: #ffffff;
+    --border: rgba(0,0,0,0.08);
+    --text: #1a1d26;
+    --text-dim: #4a5066;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --focus-ring: #1aa56c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+    background: #000;
+    color: var(--text);
+    font-size: 16px;
+    padding: 24px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #5a6079; margin-bottom: 18px; text-align: center;
+  }
+  .tv-frame {
+    width: 1920px;
+    height: 1080px;
+    margin: 0 auto;
+    background: var(--bg);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: var(--shadow);
+  }
+  /* Top status bar — always-visible, minimal */
+  .top-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 60px;
+    padding: 0 80px;
+    display: flex; align-items: center; gap: 32px;
+    z-index: 5;
+    background: linear-gradient(180deg, rgba(0,0,0,0.6), transparent);
+    color: rgba(255,255,255,0.7);
+    font-size: 16px;
+  }
+  .brand-row { display: flex; align-items: center; gap: 12px; }
+  .brand-logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 18px;
+  }
+  .brand-name { font-weight: 600; font-size: 18px; color: #fff; }
+
+  .nav-tabs { display: flex; gap: 28px; margin-left: 40px; }
+  .nav-tab {
+    font-size: 17px; font-weight: 500;
+    color: rgba(255,255,255,0.55);
+    padding: 8px 4px;
+    position: relative;
+  }
+  .nav-tab.active {
+    color: #fff; font-weight: 600;
+  }
+  .nav-tab.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px; background: var(--accent); border-radius: 2px;
+  }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 22px; }
+  .top-right .ico { width: 24px; height: 24px; opacity: 0.85; }
+  .clock { font-size: 18px; font-family: ui-monospace, monospace; color: #fff; }
+  .avatar-tv {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 600; font-size: 14px;
+  }
+
+  /* Hero banner */
+  .hero {
+    position: absolute; inset: 0;
+    height: 600px;
+    background-image:
+      linear-gradient(180deg, transparent 30%, var(--bg) 92%),
+      linear-gradient(90deg, var(--bg) 0%, transparent 60%),
+      linear-gradient(135deg, #1a3a5c 0%, #2d4f7c 50%, #6b3a8a 100%);
+  }
+  .hero::before {
+    content: '';
+    position: absolute; right: 80px; top: 100px; bottom: 200px; width: 700px;
+    background:
+      radial-gradient(ellipse at center, rgba(99, 102, 241, 0.4), transparent 70%);
+    border-radius: 24px;
+    opacity: 0.6;
+  }
+  .hero-content {
+    position: absolute; left: 80px; top: 180px; max-width: 800px;
+    z-index: 2;
+  }
+  .hero-tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 20px;
+    background: rgba(61, 220, 151, 0.15);
+    border: 1px solid rgba(61, 220, 151, 0.4);
+    color: var(--accent);
+    font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 18px;
+  }
+  .hero-title {
+    font-size: 64px; font-weight: 800; line-height: 1.05;
+    letter-spacing: -1.5px;
+    margin-bottom: 14px;
+    text-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  }
+  .hero-meta {
+    display: flex; align-items: center; gap: 18px;
+    font-size: 18px; color: var(--text-dim); margin-bottom: 18px;
+  }
+  .hero-meta .pill {
+    background: rgba(255,255,255,0.12);
+    padding: 4px 12px; border-radius: 6px;
+    font-size: 14px; font-weight: 600;
+  }
+  .hero-desc {
+    font-size: 20px; line-height: 1.5; color: var(--text-dim);
+    margin-bottom: 30px;
+    max-width: 680px;
+  }
+  .hero-actions { display: flex; gap: 16px; align-items: center; }
+  .tv-btn {
+    height: 64px;
+    padding: 0 32px;
+    border-radius: 14px;
+    border: 0; cursor: pointer;
+    font-size: 18px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 12px;
+    transition: transform 0.15s;
+  }
+  .tv-btn.primary {
+    background: #fff; color: #000;
+    box-shadow: 0 0 0 4px transparent;
+  }
+  .tv-btn.primary.focused {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 28px rgba(61, 220, 151, 0.5);
+  }
+  .tv-btn.secondary {
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    backdrop-filter: blur(20px);
+  }
+  .tv-btn.secondary:hover { background: rgba(255,255,255,0.25); }
+
+  /* Resume strip on hero */
+  .hero-progress {
+    position: absolute; left: 80px; bottom: 60px;
+    width: 600px;
+  }
+  .hero-progress-label {
+    font-size: 14px; color: var(--text-dim); margin-bottom: 8px;
+    display: flex; justify-content: space-between;
+  }
+  .hero-progress-bar {
+    height: 6px; background: rgba(255,255,255,0.15);
+    border-radius: 3px; overflow: hidden;
+  }
+  .hero-progress-fill {
+    height: 100%; background: var(--accent); width: 23%;
+  }
+
+  /* Rows of cards */
+  .rows-container {
+    position: absolute;
+    top: 600px;
+    left: 0; right: 0; bottom: 0;
+    padding: 32px 0 60px 80px;
+    overflow: hidden;
+  }
+  .row { margin-bottom: 30px; }
+  .row-title {
+    font-size: 22px; font-weight: 700;
+    margin-bottom: 16px;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .row-title-en { color: var(--text); }
+  .row-title-ar {
+    color: var(--text-dim); font-weight: 500; font-size: 18px;
+  }
+  .row-cards {
+    display: flex; gap: 20px;
+    /* extends past viewport */
+  }
+  .card {
+    flex-shrink: 0;
+    width: 320px; height: 200px;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+  }
+  .card.focused {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px var(--focus-ring), 0 0 32px rgba(61, 220, 151, 0.6);
+    z-index: 10;
+  }
+  .card .thumb {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, #1e3a5f, #2d4f7c);
+  }
+  .thumb-1 { background: linear-gradient(135deg, #1e3a5f, #2d4f7c); }
+  .thumb-2 { background: linear-gradient(135deg, #3d2e5c, #5e3d8a); }
+  .thumb-3 { background: linear-gradient(135deg, #4a2e1f, #7a4d33); }
+  .thumb-4 { background: linear-gradient(135deg, #1f4a3d, #2e7a5e); }
+  .thumb-5 { background: linear-gradient(135deg, #5c2e3d, #8a3d5e); }
+  .thumb-6 { background: linear-gradient(135deg, #2e3d5c, #3d5c8a); }
+  .thumb-7 { background: linear-gradient(135deg, #5c4a2e, #8a7a3d); }
+  .thumb-8 { background: linear-gradient(135deg, #2e5c4a, #3d8a7a); }
+
+  .card .gradient-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.85));
+  }
+  .card-info {
+    position: absolute; left: 18px; right: 18px; bottom: 14px;
+    z-index: 2;
+  }
+  .card-title {
+    font-size: 16px; font-weight: 600; margin-bottom: 4px;
+    color: #fff;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card-meta {
+    font-size: 13px; color: rgba(255,255,255,0.7);
+    display: flex; gap: 8px;
+  }
+  .card-progress {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 4px; background: rgba(0,0,0,0.6);
+  }
+  .card-progress-fill { height: 100%; background: var(--accent); }
+  .card-lang-flag {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    color: #fff; padding: 4px 10px; border-radius: 4px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .card-duration {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    color: #fff; padding: 4px 10px; border-radius: 4px;
+    font-size: 13px; font-family: ui-monospace, monospace;
+  }
+  .card-rtl .card-info { direction: rtl; text-align: right; }
+
+  /* Focus indicator badge for documentation */
+  .focus-label {
+    position: absolute; left: 50%; top: -36px;
+    transform: translateX(-50%);
+    background: var(--accent); color: #000;
+    padding: 4px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.5px; text-transform: uppercase;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(61, 220, 151, 0.5);
+  }
+
+  /* Safe area indicator */
+  .safe-area-marker {
+    position: absolute; inset: 60px;
+    border: 1px dashed rgba(255,255,255,0.06);
+    pointer-events: none;
+    border-radius: 8px;
+    z-index: 1;
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 14 · STORY 14.01 · TV HOME (1920 × 1080) — D-PAD FOCUS ON HERO PLAY BUTTON</div>
+
+<div class="tv-frame">
+  <div class="safe-area-marker"></div>
+
+  <!-- Top status bar -->
+  <div class="top-bar">
+    <div class="brand-row">
+      <div class="brand-logo">م</div>
+      <div class="brand-name">Maktaba</div>
+    </div>
+    <div class="nav-tabs">
+      <div class="nav-tab active">Home</div>
+      <div class="nav-tab">Library</div>
+      <div class="nav-tab">Search</div>
+      <div class="nav-tab">Settings</div>
+    </div>
+    <div class="top-right">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <span class="clock">7:24 PM</span>
+      <div class="avatar-tv">M</div>
+    </div>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-content">
+      <div class="hero-tag">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279L12 19.012l-7.416 4.401 1.48-8.279L0 9.306l8.332-1.151z"/></svg>
+        Featured
+      </div>
+      <div class="hero-title">دروس في النحو العربي</div>
+      <div class="hero-meta">
+        <span class="pill">AR · EN sub</span>
+        <span>Sheikh Yasir Qadhi</span>
+        <span>·</span>
+        <span>2026</span>
+        <span>·</span>
+        <span>12 Episodes</span>
+        <span>·</span>
+        <span style="color: var(--accent);">★ 4.9</span>
+      </div>
+      <div class="hero-desc">
+        A comprehensive series on classical Arabic grammar covering syntax, morphology, and rhetoric. Each episode includes interactive transcripts and chapter markers.
+      </div>
+      <div class="hero-actions">
+        <button class="tv-btn primary focused">
+          <span class="focus-label">D-PAD FOCUS</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Resume Episode 4
+        </button>
+        <button class="tv-btn secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          More Info
+        </button>
+        <button class="tv-btn secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          My List
+        </button>
+      </div>
+    </div>
+
+    <div class="hero-progress">
+      <div class="hero-progress-label">
+        <span>Episode 4 · 23 minutes left</span>
+        <span style="font-family: ui-monospace, monospace;">23%</span>
+      </div>
+      <div class="hero-progress-bar"><div class="hero-progress-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Card rows -->
+  <div class="rows-container">
+    <!-- Continue Watching -->
+    <div class="row">
+      <div class="row-title">
+        <span class="row-title-en">Continue Watching</span>
+        <span class="row-title-ar">متابعة المشاهدة</span>
+      </div>
+      <div class="row-cards">
+        <div class="card">
+          <div class="thumb thumb-1"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">42:18</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">دروس النحو · Ep 3</div>
+            <div class="card-meta">23m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 67%;"></div></div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-2"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">1:24:56</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Arabic Calligraphy</div>
+            <div class="card-meta">1h 5m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 23%;"></div></div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-3"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">38:42</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">تاريخ الأندلس</div>
+            <div class="card-meta">3m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 91%;"></div></div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-4"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">52:11</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Golden Age of Islam</div>
+            <div class="card-meta">28m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 45%;"></div></div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-5"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">28:09</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">صحيح البخاري</div>
+            <div class="card-meta">25m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 12%;"></div></div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-6"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">19:33</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Quranic Recitation</div>
+            <div class="card-meta">4m left</div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" style="width: 78%;"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recently Added -->
+    <div class="row">
+      <div class="row-title">
+        <span class="row-title-en">Recently Added</span>
+        <span class="row-title-ar">أضيف حديثا</span>
+      </div>
+      <div class="row-cards">
+        <div class="card">
+          <div class="thumb thumb-7"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">1:12:30</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">محاضرة في الفقه</div>
+            <div class="card-meta">Today</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-8"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">22:45</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Ottoman Architecture</div>
+            <div class="card-meta">Today</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-1"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">45:00</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">دروس التفسير</div>
+            <div class="card-meta">Yesterday</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-4"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">1:05:22</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Mediterranean Trade</div>
+            <div class="card-meta">2 days ago</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-5"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">33:18</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">السيرة النبوية</div>
+            <div class="card-meta">3 days ago</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb thumb-6"></div>
+          <div class="card-lang-flag">EN</div>
+          <div class="card-duration">17:42</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">Calligraphy Pt. 4</div>
+            <div class="card-meta">3 days ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Arabic content -->
+    <div class="row">
+      <div class="row-title">
+        <span class="row-title-en">Arabic Content</span>
+        <span class="row-title-ar">المحتوى العربي</span>
+      </div>
+      <div class="row-cards">
+        <div class="card card-rtl">
+          <div class="thumb thumb-3"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">1:08:00</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">دروس في علم الحديث</div>
+            <div class="card-meta">12 حلقة</div>
+          </div>
+        </div>
+        <div class="card card-rtl">
+          <div class="thumb thumb-1"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">38:15</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">السيرة النبوية</div>
+            <div class="card-meta">8 حلقات</div>
+          </div>
+        </div>
+        <div class="card card-rtl">
+          <div class="thumb thumb-5"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">52:30</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">شرح الفقه المالكي</div>
+            <div class="card-meta">24 حلقة</div>
+          </div>
+        </div>
+        <div class="card card-rtl">
+          <div class="thumb thumb-7"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">42:00</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">تاريخ الخلافة</div>
+            <div class="card-meta">15 حلقة</div>
+          </div>
+        </div>
+        <div class="card card-rtl">
+          <div class="thumb thumb-2"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">28:45</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">الأدب العربي</div>
+            <div class="card-meta">18 حلقة</div>
+          </div>
+        </div>
+        <div class="card card-rtl">
+          <div class="thumb thumb-8"></div>
+          <div class="card-lang-flag">AR</div>
+          <div class="card-duration">33:12</div>
+          <div class="gradient-overlay"></div>
+          <div class="card-info">
+            <div class="card-title">العقيدة الإسلامية</div>
+            <div class="card-meta">10 حلقات</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

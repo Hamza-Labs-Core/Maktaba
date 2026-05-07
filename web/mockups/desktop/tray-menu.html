@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Desktop — System Tray Menu (Epic 13)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2130;
+    --border: #262b3a;
+    --text: #e6e8ef;
+    --text-dim: #8b91a7;
+    --text-muted: #5a6079;
+    --accent: #3ddc97;
+    --accent-2: #2ab87a;
+    --warn: #f5a524;
+    --danger: #ef4444;
+    --menu-bg: rgba(28, 32, 44, 0.92);
+    --hover: rgba(255,255,255,0.08);
+    --desktop-bg: #050608;
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --panel-2: #f0f2f7;
+    --border: #e1e4ec;
+    --text: #1a1d26;
+    --text-dim: #5a6079;
+    --text-muted: #8b91a7;
+    --accent: #1aa56c;
+    --accent-2: #138a58;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --menu-bg: rgba(255, 255, 255, 0.92);
+    --hover: rgba(0,0,0,0.05);
+    --desktop-bg: #cdd1de;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: #050608;
+    color: var(--text);
+    font-size: 13px;
+    padding: 32px;
+    min-height: 100vh;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: #1d2130; color: #e6e8ef; border: 1px solid #262b3a;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: #5a6079; margin-bottom: 24px; text-align: center;
+  }
+  .desktop-frame {
+    width: 1440px; margin: 0 auto;
+    background: var(--desktop-bg);
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(61, 220, 151, 0.08), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.08), transparent 50%),
+      linear-gradient(135deg, #0a0c14 0%, #14182b 100%);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    position: relative;
+    height: 900px;
+  }
+  /* macOS top menu bar */
+  .menubar {
+    height: 28px; padding: 0 18px;
+    background: rgba(0,0,0,0.4); backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    display: flex; align-items: center; gap: 18px;
+    color: #e6e8ef; font-size: 12px; font-weight: 500;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .menubar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .tray-icon-host {
+    position: relative; padding: 2px 4px; border-radius: 4px;
+    background: rgba(61, 220, 151, 0.12);
+    border: 1px solid rgba(61, 220, 151, 0.4);
+  }
+  .tray-icon-host::after {
+    content: ''; position: absolute; top: -2px; right: -2px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--warn); border: 2px solid #0a0c14;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.7; }
+  }
+  .tray-icon-mark {
+    width: 16px; height: 16px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 11px;
+    vertical-align: middle;
+  }
+
+  /* The dropdown menu */
+  .tray-menu {
+    position: absolute; top: 36px; right: 80px;
+    width: 360px;
+    background: var(--menu-bg);
+    backdrop-filter: blur(40px) saturate(1.4);
+    -webkit-backdrop-filter: blur(40px) saturate(1.4);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow:
+      0 20px 60px rgba(0,0,0,0.5),
+      0 0 0 0.5px rgba(255,255,255,0.06);
+  }
+  .menu-arrow {
+    position: absolute; top: -6px; right: 8px;
+    width: 12px; height: 12px;
+    background: var(--menu-bg);
+    transform: rotate(45deg);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    border-left: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* Menu header — server status block */
+  .menu-header {
+    padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(61, 220, 151, 0.05), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  }
+  .server-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .server-status-text {
+    font-weight: 600; font-size: 13px; color: var(--text);
+  }
+  .server-host {
+    font-size: 11px; color: var(--text-dim); font-family: ui-monospace, monospace;
+    margin-left: auto;
+    background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;
+  }
+  .stats-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  }
+  .stat {
+    text-align: center; padding: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+  }
+  .stat-num {
+    font-size: 18px; font-weight: 600; color: var(--text);
+  }
+  .stat-num.accent { color: var(--accent); }
+  .stat-num.warn { color: var(--warn); }
+  .stat-label {
+    font-size: 10px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+
+  /* Processing section */
+  .processing {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .processing-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .processing-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-muted); font-weight: 600;
+  }
+  .processing-count {
+    font-size: 11px; color: var(--warn); font-weight: 600;
+    margin-left: auto;
+  }
+  .job {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0;
+  }
+  .job-icon {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: rgba(245, 165, 36, 0.12);
+    color: var(--warn);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .job-info { flex: 1; min-width: 0; }
+  .job-title {
+    font-size: 12px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .job-stage { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  .job-pct { font-size: 11px; color: var(--text-dim); font-family: ui-monospace, monospace; }
+  .mini-bar {
+    height: 3px; background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden; margin-top: 6px;
+  }
+  .mini-bar-fill {
+    height: 100%; background: var(--warn);
+    transition: width 0.3s;
+  }
+  .mini-bar-fill.done { background: var(--accent); }
+
+  /* Quick actions section */
+  .actions {
+    padding: 6px;
+  }
+  .menu-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    color: var(--text); font-size: 13px;
+  }
+  .menu-item:hover {
+    background: rgba(61, 220, 151, 0.15);
+  }
+  .menu-item.danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+  .menu-icon {
+    width: 16px; height: 16px; color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .menu-item:hover .menu-icon { color: var(--text); }
+  .menu-shortcut {
+    margin-left: auto; font-size: 11px; color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+  }
+  .menu-divider {
+    height: 1px; background: var(--border);
+    margin: 4px 0;
+  }
+  .menu-section-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-muted); padding: 6px 12px 2px;
+  }
+  .footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .quit-btn {
+    color: var(--danger); cursor: pointer;
+    font-weight: 500;
+  }
+  .quit-btn:hover { text-decoration: underline; }
+
+  /* Background desktop preview */
+  .desktop-preview {
+    position: absolute; top: 28px; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.18); font-size: 16px; font-weight: 300;
+    pointer-events: none;
+  }
+  .annotation {
+    position: absolute; top: 36px; right: 460px;
+    background: rgba(255,255,255,0.04);
+    border: 1px dashed rgba(255,255,255,0.18);
+    padding: 10px 14px; border-radius: 8px;
+    color: var(--text-dim); font-size: 11px;
+    line-height: 1.6; max-width: 240px;
+  }
+  .annotation strong { color: var(--accent); }
+  .arrow-line {
+    position: absolute; top: 50px; right: 442px;
+    width: 60px; height: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.4), transparent);
+  }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="label">EPIC 13 · STORY 13.02 · SYSTEM TRAY DROPDOWN</div>
+
+<div class="desktop-frame">
+  <!-- macOS top menubar -->
+  <div class="menubar">
+    <span style="font-weight: 700;"></span>
+    <span style="font-weight: 600;">Maktaba</span>
+    <span>File</span>
+    <span>Edit</span>
+    <span>Library</span>
+    <span>Playback</span>
+    <span>Window</span>
+    <span>Help</span>
+    <div class="right">
+      <span>📶</span>
+      <span>🔋 84%</span>
+      <span>🔍</span>
+      <span>🔔</span>
+      <div class="tray-icon-host">
+        <span class="tray-icon-mark">م</span>
+      </div>
+      <span style="font-family: ui-monospace, monospace; font-size: 11px;">Tue 7:24 PM</span>
+    </div>
+  </div>
+
+  <div class="desktop-preview">— desktop background —</div>
+
+  <div class="annotation">
+    <strong>Pulsing dot</strong> indicates background activity.<br>
+    Click the icon to open this menu — same shortcut: <span style="font-family: ui-monospace, monospace;">⌃⌥M</span>
+  </div>
+  <div class="arrow-line"></div>
+
+  <!-- The tray menu dropdown -->
+  <div class="tray-menu">
+    <div class="menu-arrow"></div>
+
+    <!-- Server status header -->
+    <div class="menu-header">
+      <div class="header-row">
+        <div class="server-dot"></div>
+        <div class="server-status-text">Server running</div>
+        <div class="server-host">localhost:8080</div>
+      </div>
+      <div class="stats-row">
+        <div class="stat">
+          <div class="stat-num accent">2</div>
+          <div class="stat-label">Active streams</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num warn">3</div>
+          <div class="stat-label">Processing</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">847</div>
+          <div class="stat-label">Library</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Processing jobs -->
+    <div class="processing">
+      <div class="processing-header">
+        <div class="processing-title">Processing</div>
+        <div class="processing-count">3 jobs · ETA 12 min</div>
+      </div>
+
+      <div class="job">
+        <div class="job-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
+        <div class="job-info">
+          <div class="job-title">دروس النحو — جزء ٣.mp4</div>
+          <div class="job-stage">Transcribing audio (whisper-large-v3)</div>
+          <div class="mini-bar"><div class="mini-bar-fill" style="width: 78%;"></div></div>
+        </div>
+        <div class="job-pct">78%</div>
+      </div>
+
+      <div class="job">
+        <div class="job-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </div>
+        <div class="job-info">
+          <div class="job-title">Ottoman Architecture Lecture.mkv</div>
+          <div class="job-stage">Transcoding — H.264 → AV1</div>
+          <div class="mini-bar"><div class="mini-bar-fill" style="width: 42%;"></div></div>
+        </div>
+        <div class="job-pct">42%</div>
+      </div>
+
+      <div class="job">
+        <div class="job-icon" style="background: rgba(61, 220, 151, 0.12); color: var(--accent);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="job-info">
+          <div class="job-title">Calligraphy Tutorial.mp4</div>
+          <div class="job-stage">Generating chapters with AI · Done</div>
+          <div class="mini-bar"><div class="mini-bar-fill done" style="width: 100%;"></div></div>
+        </div>
+        <div class="job-pct" style="color: var(--accent);">100%</div>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="actions">
+      <div class="menu-section-label">Library</div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Open Maktaba
+        <span class="menu-shortcut">⌃⌥M</span>
+      </div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Video…
+        <span class="menu-shortcut">⌘O</span>
+      </div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search Library…
+        <span class="menu-shortcut">⌘K</span>
+      </div>
+
+      <div class="menu-divider"></div>
+
+      <div class="menu-section-label">Pipeline</div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        Pause All Processing
+      </div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        View Job Queue (3)
+      </div>
+
+      <div class="menu-divider"></div>
+
+      <div class="menu-section-label">Server</div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        Copy Stream URL
+      </div>
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Connected Devices (2)
+      </div>
+
+      <div class="menu-divider"></div>
+
+      <div class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings…
+        <span class="menu-shortcut">⌘,</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Maktaba v1.0.0-beta · 312 GB used</span>
+      <span class="quit-btn">Quit</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

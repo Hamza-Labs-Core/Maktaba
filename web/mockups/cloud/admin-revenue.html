@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Cloud Admin — Revenue</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --gold: #fbbf24;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --gold: #d97706;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; min-height: 100vh; }
+  .theme-switch { position: fixed; top: 14px; right: 14px; z-index: 1000; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  a { color: var(--primary); text-decoration: none; }
+
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  .side { background: var(--panel); border-right: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; }
+  .side .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--error)); color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .brand-name { font-size: 14px; font-weight: 700; }
+  .brand-name small { display: block; font-size: 10px; color: var(--text-muted); font-weight: 500; }
+  .side-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 14px 10px 6px; font-weight: 600; }
+  .side-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; font-size: 13px; color: var(--text-dim); cursor: pointer; margin-bottom: 1px; }
+  .side-item:hover { background: var(--panel-2); color: var(--text); }
+  .side-item.active { background: var(--panel-2); color: var(--text); font-weight: 500; }
+  .side-item.active svg { color: var(--accent); }
+  .side-badge { margin-left: auto; font-size: 10px; padding: 0 6px; height: 16px; border-radius: 999px; background: var(--error); color: #fff; display: inline-flex; align-items: center; font-weight: 600; }
+  .side-foot { margin-top: auto; padding: 12px 10px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); }
+
+  .main { padding: 20px 28px 60px; max-width: 1500px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .crumbs { font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+  .crumbs strong { color: var(--text); }
+  .av-admin { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--error)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 11px; }
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .h-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .btn { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Hero KPI row */
+  .hero-kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  .kpi-big {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px;
+    position: relative; overflow: hidden;
+  }
+  .kpi-big.featured {
+    background: linear-gradient(135deg, rgba(52,211,153,0.1), var(--panel));
+    border-color: rgba(52,211,153,0.3);
+  }
+  .kpi-big .l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
+  .kpi-big .v { font-size: 32px; font-weight: 800; line-height: 1; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .kpi-big .v.green { color: var(--success); }
+  .kpi-big .v.warn { color: var(--warn); }
+  .kpi-big .trend { font-size: 12px; margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+  .kpi-big .trend.up { color: var(--success); }
+  .kpi-big .trend.down { color: var(--error); }
+  .kpi-big .sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  .mini-spark { position: absolute; right: 18px; bottom: 18px; opacity: 0.6; }
+
+  /* Cards */
+  .grid { display: grid; gap: 16px; margin-bottom: 16px; }
+  .grid-2 { grid-template-columns: 2fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card-title { font-size: 13px; font-weight: 600; }
+  .card-meta { font-size: 11px; color: var(--text-muted); }
+  .card-tabs { display: flex; gap: 4px; }
+  .card-tab { padding: 4px 10px; font-size: 11px; border-radius: 5px; color: var(--text-muted); cursor: pointer; }
+  .card-tab.active { background: var(--panel-2); color: var(--text); }
+
+  /* MRR chart */
+  .chart-area { height: 240px; position: relative; }
+  .chart-svg { width: 100%; height: 100%; }
+  .chart-axis { font-size: 10px; fill: var(--text-muted); font-family: ui-monospace, monospace; }
+  .chart-grid line { stroke: var(--border); stroke-width: 1; }
+  .legend-row { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+  .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+  /* Donut */
+  .donut-wrap { display: flex; align-items: center; gap: 18px; }
+  .donut { position: relative; width: 130px; height: 130px; flex-shrink: 0; }
+  .donut svg { transform: rotate(-90deg); }
+  .donut .cnt { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .donut .cnt strong { font-size: 22px; font-weight: 800; }
+  .donut .cnt small { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .donut-legend { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .dl-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+  .dl-item .l { display: flex; align-items: center; gap: 7px; }
+  .dl-item .v { font-family: ui-monospace, monospace; font-weight: 600; }
+
+  /* Cohort table (retention) */
+  .cohort {
+    width: 100%; border-collapse: separate; border-spacing: 2px;
+  }
+  .cohort th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
+    padding: 4px 8px; text-align: center;
+  }
+  .cohort td {
+    padding: 8px 6px; text-align: center; font-size: 11px;
+    font-family: ui-monospace, monospace; border-radius: 4px;
+    color: var(--text);
+  }
+  .cohort td.cell { color: #fff; font-weight: 600; }
+  .cohort td.label { font-weight: 500; color: var(--text-dim); text-align: left; padding-left: 10px; font-family: -apple-system, "Inter", sans-serif; }
+
+  /* Stripe payment table */
+  .pay-table { width: 100%; border-collapse: collapse; }
+  .pay-table th { text-align: left; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+  .pay-table td { padding: 10px 12px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .pay-table tr:last-child td { border-bottom: 0; }
+  .pay-table .status {
+    display: inline-flex; align-items: center; gap: 4px; font-weight: 500;
+    font-size: 11px;
+  }
+  .pay-table .status.paid { color: var(--success); }
+  .pay-table .status.failed { color: var(--error); }
+  .pay-table .status.refunded { color: var(--text-muted); }
+  .pay-table .status.pending { color: var(--warn); }
+  .pay-table .amt { font-family: ui-monospace, monospace; font-weight: 600; }
+  .stripe-id { font-family: ui-monospace, monospace; color: var(--text-muted); font-size: 11px; }
+  .card-brand-mini {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  }
+  .card-brand-mini .brand {
+    width: 26px; height: 18px; border-radius: 3px;
+    background: linear-gradient(135deg, #1a1f71, #2563eb);
+    color: #fff; font-weight: 800; font-size: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    letter-spacing: 0.3px;
+  }
+  .card-brand-mini .brand.mc { background: linear-gradient(135deg, #eb001b, #f79e1b); }
+  .card-brand-mini .brand.amex { background: linear-gradient(135deg, #006fcf, #4cb5e6); }
+
+  /* Failed payments alert card */
+  .failed-card { background: linear-gradient(180deg, rgba(248,113,113,0.08), var(--panel)); border-color: rgba(248,113,113,0.3); }
+
+  /* Plan switch chart */
+  .plan-flow { display: grid; grid-template-columns: 1fr 80px 1fr; gap: 16px; align-items: center; }
+  .plan-flow .col { display: flex; flex-direction: column; gap: 8px; }
+  .plan-flow .src, .plan-flow .dst {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .plan-flow .arrow { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-dim); font-size: 10px; }
+
+  /* ==== ALL STATES ==== */
+  .all-states { padding: 60px 28px 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.error .ico-t { background: rgba(248,113,113,0.15); color: var(--error); }
+  .toast.warn .ico-t { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: var(--shadow); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.warn { background: rgba(251,191,36,0.12); color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .di-icon.info { background: rgba(91,158,255,0.12); color: var(--primary); border: 1px solid rgba(91,158,255,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; font-family: inherit; }
+  .d-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="layout">
+  <aside class="side">
+    <div class="brand"><div class="brand-mark">M</div><div class="brand-name">Maktaba<small>Cloud Admin</small></div></div>
+    <div class="side-section">Overview</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><a href="admin-dashboard.html" style="color: inherit;">Dashboard</a></div>
+    <div class="side-item active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>Revenue</div>
+    <div class="side-section">Customers</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><a href="admin-users.html" style="color: inherit;">Users</a></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg><a href="admin-servers.html" style="color: inherit;">Servers</a></div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2"/></svg>Subscriptions</div>
+    <div class="side-section">Operations</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Relay traffic</div>
+    <div class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Support tickets<span class="side-badge" style="background: var(--warn);">3</span></div>
+    <div class="side-foot">Build <strong style="color: var(--text-dim);">cloud-1.4.2</strong></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">Maktaba <span style="opacity: 0.4;">/</span> Admin <span style="opacity: 0.4;">/</span> <strong>Revenue</strong></div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <select style="padding: 5px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; font-family: inherit;">
+          <option>Last 30 days</option>
+          <option selected>Last 90 days</option>
+          <option>This year (YTD)</option>
+        </select>
+        <button class="btn">Open Stripe →</button>
+        <button class="btn primary">Export CSV</button>
+        <div class="av-admin">AD</div>
+      </div>
+    </div>
+
+    <div class="header">
+      <div>
+        <h1>Revenue</h1>
+        <div class="h-sub">MRR, churn, plan distribution, payments · last 90 days</div>
+      </div>
+    </div>
+
+    <!-- Hero KPIs -->
+    <div class="hero-kpis">
+      <div class="kpi-big featured">
+        <div class="l">Monthly recurring revenue</div>
+        <div class="v green">$48,210</div>
+        <div class="trend up">▲ 6.2% MoM · +$2,840 net new MRR</div>
+        <div class="sub">Run rate: $578k ARR</div>
+        <svg class="mini-spark" width="120" height="36" viewBox="0 0 120 36">
+          <path stroke="var(--success)" stroke-width="2" fill="none" d="M0,30 L15,24 L30,28 L45,18 L60,20 L75,12 L90,14 L105,6 L120,8"/>
+        </svg>
+      </div>
+      <div class="kpi-big">
+        <div class="l">Churn rate (30d)</div>
+        <div class="v warn">2.4%</div>
+        <div class="trend down">▲ 0.3% vs prev 30d</div>
+        <div class="sub">98 cancellations · 14 reactivations</div>
+      </div>
+      <div class="kpi-big">
+        <div class="l">ARPU</div>
+        <div class="v">$5.94</div>
+        <div class="trend up">▲ $0.12</div>
+        <div class="sub">avg per paying customer</div>
+      </div>
+      <div class="kpi-big">
+        <div class="l">Failed payments (24h)</div>
+        <div class="v" style="color: var(--error);">14</div>
+        <div class="trend down">▲ 8 vs avg</div>
+        <div class="sub">$74.86 at risk · auto-retry pending</div>
+      </div>
+    </div>
+
+    <!-- Row: MRR chart + plan donut -->
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-h">
+          <div>
+            <div class="card-title">Net MRR movement · last 90 days</div>
+            <span class="card-meta" style="margin-top: 2px; display: block;">New + Expansion − Contraction − Churn</span>
+          </div>
+          <div class="card-tabs">
+            <span class="card-tab">Stack</span>
+            <span class="card-tab active">Net</span>
+            <span class="card-tab">Detail</span>
+          </div>
+        </div>
+        <div class="chart-area">
+          <svg class="chart-svg" viewBox="0 0 800 240" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="rev-grad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#34d399" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g class="chart-grid">
+              <line x1="0" y1="40" x2="800" y2="40"/>
+              <line x1="0" y1="100" x2="800" y2="100"/>
+              <line x1="0" y1="160" x2="800" y2="160"/>
+              <line x1="0" y1="200" x2="800" y2="200"/>
+            </g>
+            <text class="chart-axis" x="0" y="42">$50k</text>
+            <text class="chart-axis" x="0" y="102">$40k</text>
+            <text class="chart-axis" x="0" y="162">$30k</text>
+            <text class="chart-axis" x="0" y="202">$25k</text>
+
+            <!-- New MRR bars (stacked underneath line) -->
+            <g>
+              <rect x="40" y="180" width="22" height="20" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="100" y="172" width="22" height="28" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="160" y="170" width="22" height="30" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="220" y="166" width="22" height="34" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="280" y="160" width="22" height="40" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="340" y="156" width="22" height="44" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="400" y="152" width="22" height="48" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="460" y="148" width="22" height="52" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="520" y="142" width="22" height="58" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="580" y="138" width="22" height="62" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="640" y="135" width="22" height="65" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="700" y="130" width="22" height="70" fill="#34d399" opacity="0.35" rx="2"/>
+              <rect x="755" y="128" width="22" height="72" fill="#34d399" opacity="0.35" rx="2"/>
+            </g>
+
+            <!-- MRR line -->
+            <path fill="url(#rev-grad)" d="M40,150 L100,140 L160,130 L220,134 L280,118 L340,108 L400,112 L460,96 L520,92 L580,78 L640,82 L700,68 L760,52 L760,240 L40,240 Z"/>
+            <path stroke="#34d399" stroke-width="2.5" fill="none" d="M40,150 L100,140 L160,130 L220,134 L280,118 L340,108 L400,112 L460,96 L520,92 L580,78 L640,82 L700,68 L760,52"/>
+
+            <!-- Churn negative bars -->
+            <g>
+              <rect x="100" y="200" width="22" height="8" fill="#f87171" opacity="0.4" rx="2"/>
+              <rect x="220" y="200" width="22" height="6" fill="#f87171" opacity="0.4" rx="2"/>
+              <rect x="400" y="200" width="22" height="10" fill="#f87171" opacity="0.4" rx="2"/>
+              <rect x="640" y="200" width="22" height="6" fill="#f87171" opacity="0.4" rx="2"/>
+            </g>
+
+            <text class="chart-axis" x="40" y="232">Feb 7</text>
+            <text class="chart-axis" x="220" y="232">Mar 1</text>
+            <text class="chart-axis" x="400" y="232">Mar 22</text>
+            <text class="chart-axis" x="580" y="232">Apr 14</text>
+            <text class="chart-axis" x="720" y="232">May 6</text>
+          </svg>
+        </div>
+        <div class="legend-row">
+          <span><span class="legend-dot" style="background: var(--success);"></span>MRR · today $48,210</span>
+          <span><span class="legend-dot" style="background: rgba(52,211,153,0.4);"></span>New MRR (daily)</span>
+          <span><span class="legend-dot" style="background: rgba(248,113,113,0.4);"></span>Churned MRR</span>
+          <span style="margin-left: auto; color: var(--text-muted);">Net new $14,228 · 90d</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <div class="card-title">Plan distribution · revenue</div>
+          <span class="card-meta">$48,210 MRR</span>
+        </div>
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg width="130" height="130" viewBox="0 0 130 130">
+              <circle cx="65" cy="65" r="50" fill="none" stroke="var(--panel-3)" stroke-width="14"/>
+              <circle cx="65" cy="65" r="50" fill="none" stroke="#5b9eff" stroke-width="14"
+                stroke-dasharray="118 314" stroke-dashoffset="0"/>
+              <circle cx="65" cy="65" r="50" fill="none" stroke="#7c5cff" stroke-width="14"
+                stroke-dasharray="155 314" stroke-dashoffset="-118"/>
+              <circle cx="65" cy="65" r="50" fill="none" stroke="#fbbf24" stroke-width="14"
+                stroke-dasharray="40 314" stroke-dashoffset="-273"/>
+            </svg>
+            <div class="cnt">
+              <strong>$48k</strong>
+              <small>MRR</small>
+            </div>
+          </div>
+          <div class="donut-legend">
+            <div class="dl-item">
+              <div class="l"><span class="legend-dot" style="background: var(--primary);"></span>Pro · 3,624 users</div>
+              <div><span class="v">$18,066</span><span style="color: var(--text-muted); font-size: 11px;"> 37%</span></div>
+            </div>
+            <div class="dl-item">
+              <div class="l"><span class="legend-dot" style="background: var(--accent);"></span>Family · 1,191</div>
+              <div><span class="v">$23,802</span><span style="color: var(--text-muted); font-size: 11px;"> 49%</span></div>
+            </div>
+            <div class="dl-item">
+              <div class="l"><span class="legend-dot" style="background: var(--gold);"></span>Yearly upfront</div>
+              <div><span class="v">$6,142</span><span style="color: var(--text-muted); font-size: 11px;"> 13%</span></div>
+            </div>
+            <div class="dl-item">
+              <div class="l"><span class="legend-dot" style="background: var(--text-muted);"></span>Trial credit</div>
+              <div><span class="v">$200</span><span style="color: var(--text-muted); font-size: 11px;"> 1%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row: cohort + plan flow -->
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-h">
+          <div class="card-title">Cohort retention · paying customers</div>
+          <span class="card-meta">% retained after N months</span>
+        </div>
+        <table class="cohort">
+          <thead>
+            <tr>
+              <th style="text-align: left; padding-left: 10px;">Signup month</th>
+              <th>Users</th>
+              <th>M0</th>
+              <th>M1</th>
+              <th>M2</th>
+              <th>M3</th>
+              <th>M6</th>
+              <th>M9</th>
+              <th>M12</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="label">May 2025</td>
+              <td style="color: var(--text-dim);">218</td>
+              <td class="cell" style="background: rgba(52,211,153,0.85);">100%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.7);">94%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.6);">88%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.55);">82%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.45);">74%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.4);">68%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.35);">62%</td>
+            </tr>
+            <tr>
+              <td class="label">Aug 2025</td>
+              <td style="color: var(--text-dim);">312</td>
+              <td class="cell" style="background: rgba(52,211,153,0.85);">100%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.72);">95%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.6);">87%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.55);">81%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.45);">73%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.4);">67%</td>
+              <td style="color: var(--text-muted);">—</td>
+            </tr>
+            <tr>
+              <td class="label">Nov 2025</td>
+              <td style="color: var(--text-dim);">418</td>
+              <td class="cell" style="background: rgba(52,211,153,0.85);">100%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.78);">96%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.65);">89%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.55);">81%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.42);">71%</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+            </tr>
+            <tr>
+              <td class="label">Feb 2026</td>
+              <td style="color: var(--text-dim);">524</td>
+              <td class="cell" style="background: rgba(52,211,153,0.85);">100%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.78);">96%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.65);">90%</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+            </tr>
+            <tr>
+              <td class="label">Apr 2026</td>
+              <td style="color: var(--text-dim);">624</td>
+              <td class="cell" style="background: rgba(52,211,153,0.85);">100%</td>
+              <td class="cell" style="background: rgba(52,211,153,0.8);">97%</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+              <td style="color: var(--text-muted);">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <div class="card-title">Plan switch flow · 30d</div>
+          <span class="card-meta">+$1,840 net</span>
+        </div>
+        <div class="plan-flow">
+          <div class="col">
+            <div class="src"><span style="color: var(--text-dim);">Free</span><span style="font-family: ui-monospace, monospace;">7,294</span></div>
+            <div class="src" style="border-color: var(--primary);"><span style="color: var(--primary);">Pro</span><span style="font-family: ui-monospace, monospace;">3,624</span></div>
+            <div class="src" style="border-color: var(--accent);"><span style="color: var(--accent);">Family</span><span style="font-family: ui-monospace, monospace;">1,191</span></div>
+            <div class="src" style="border-color: var(--gold);"><span style="color: var(--gold);">Trial</span><span style="font-family: ui-monospace, monospace;">378</span></div>
+          </div>
+          <div class="arrow">
+            <svg width="60" height="160" viewBox="0 0 60 160">
+              <path d="M0,30 Q30,80 60,40" stroke="var(--success)" stroke-width="2" fill="none"/>
+              <path d="M0,80 Q30,90 60,80" stroke="var(--accent)" stroke-width="2" fill="none"/>
+              <path d="M0,130 L60,30" stroke="var(--primary)" stroke-width="1.5" stroke-dasharray="3 3" fill="none"/>
+              <text x="30" y="55" fill="var(--text-dim)" font-size="9" text-anchor="middle">↑128</text>
+              <text x="30" y="105" fill="var(--text-dim)" font-size="9" text-anchor="middle">↑42</text>
+              <text x="30" y="20" fill="var(--text-dim)" font-size="9" text-anchor="middle">flow</text>
+            </svg>
+          </div>
+          <div class="col">
+            <div class="dst" style="border-color: var(--primary);"><span style="color: var(--primary);">→ Pro</span><span style="font-family: ui-monospace, monospace; color: var(--success);">+128 ($639/mo)</span></div>
+            <div class="dst" style="border-color: var(--accent);"><span style="color: var(--accent);">→ Family</span><span style="font-family: ui-monospace, monospace; color: var(--success);">+42 ($420/mo)</span></div>
+            <div class="dst"><span style="color: var(--text-dim);">→ Free (downgrade)</span><span style="font-family: ui-monospace, monospace; color: var(--error);">−14</span></div>
+            <div class="dst"><span style="color: var(--text-dim);">→ Canceled</span><span style="font-family: ui-monospace, monospace; color: var(--error);">−98 ($538/mo)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Failed payments + Stripe history -->
+    <div class="grid grid-2">
+      <div class="card failed-card">
+        <div class="card-h">
+          <div>
+            <div class="card-title" style="color: var(--error);">Failed payments · last 24h</div>
+            <span class="card-meta" style="display: block; margin-top: 2px;">14 failed · $74.86 at risk · 9 retries scheduled</span>
+          </div>
+          <button class="btn">Retry all</button>
+        </div>
+        <table class="pay-table">
+          <thead><tr><th>User</th><th>Amount</th><th>Reason</th><th>Next retry</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>karim.elsayed@example.com</td>
+              <td class="amt">$4.99</td>
+              <td><span style="color: var(--error); font-size: 11px;">insufficient_funds</span></td>
+              <td>in 3 days</td>
+            </tr>
+            <tr>
+              <td>nb.azhar@example.com</td>
+              <td class="amt">$9.99</td>
+              <td><span style="color: var(--error); font-size: 11px;">card_expired</span></td>
+              <td>contact user</td>
+            </tr>
+            <tr>
+              <td>walid.r@example.com</td>
+              <td class="amt">$4.99</td>
+              <td><span style="color: var(--error); font-size: 11px;">do_not_honor</span></td>
+              <td>in 24h</td>
+            </tr>
+            <tr>
+              <td>p.albrecht@example.com</td>
+              <td class="amt">$9.99</td>
+              <td><span style="color: var(--error); font-size: 11px;">authentication_required</span></td>
+              <td>3DS sent</td>
+            </tr>
+            <tr>
+              <td>z.qureshi@example.com</td>
+              <td class="amt">$4.99</td>
+              <td><span style="color: var(--error); font-size: 11px;">stolen_card</span></td>
+              <td><span style="color: var(--error);">blocked</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <div class="card-title">Recent Stripe payments</div>
+          <span class="card-meta"><a href="#">Open dashboard →</a></span>
+        </div>
+        <table class="pay-table">
+          <thead><tr><th>User</th><th>Card</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>sara.k@example.com<div class="stripe-id">pi_3PqLxK...</div></td>
+              <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 4242</div></td>
+              <td class="amt">$9.99</td>
+              <td><span class="status paid">● Paid</span></td>
+            </tr>
+            <tr>
+              <td>omar.farouk@example.com<div class="stripe-id">pi_3PqMtA...</div></td>
+              <td><div class="card-brand-mini"><span class="brand mc">MC</span>•• 8821</div></td>
+              <td class="amt">$4.99</td>
+              <td><span class="status paid">● Paid</span></td>
+            </tr>
+            <tr>
+              <td>yusuf.q@example.com<div class="stripe-id">pi_3PqK8L...</div></td>
+              <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 0987</div></td>
+              <td class="amt">$9.99</td>
+              <td><span class="status paid">● Paid</span></td>
+            </tr>
+            <tr>
+              <td>karim.elsayed@example.com<div class="stripe-id">pi_3PqJ4G...</div></td>
+              <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 4242</div></td>
+              <td class="amt">$4.99</td>
+              <td><span class="status failed">● Failed</span></td>
+            </tr>
+            <tr>
+              <td>fhassan@example.com<div class="stripe-id">pi_3PqHzX...</div></td>
+              <td><div class="card-brand-mini"><span class="brand amex">AMEX</span>•• 3401</div></td>
+              <td class="amt">$119.88</td>
+              <td><span class="status paid">● Paid · yearly</span></td>
+            </tr>
+            <tr>
+              <td>jdoe@example.com<div class="stripe-id">pi_3PqGfV...</div></td>
+              <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 1199</div></td>
+              <td class="amt">$4.99</td>
+              <td><span class="status refunded">● Refunded</span></td>
+            </tr>
+            <tr>
+              <td>p.albrecht@example.com<div class="stripe-id">pi_3PqFmW...</div></td>
+              <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 6612</div></td>
+              <td class="amt">$9.99</td>
+              <td><span class="status pending">● 3DS pending</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · revenue</h2>
+    <div class="desc">Stripe sync alerts, refunds, dunning &amp; chargebacks</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Stripe sync error <span class="stag error">CRITICAL</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <div>
+            <strong>Stripe sync stalled · 22 events queued</strong>
+            <span>Last successful webhook 14 min ago. Revenue numbers may be stale. Check dashboard for backlog.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Chargeback received <span class="stag warn">DISPUTE</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>Chargeback · $9.99 · sara.k@example.com</strong>
+            <span>"product_not_received" · 7 days to respond · evidence required by May 13</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Refund issued · toast <span class="stag success">DONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="body">
+            <strong>Refund issued · $9.99</strong>
+            <span>To Visa •••• 4242 · arrives in 5–10 business days</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Dunning email scheduled <span class="stag info">EMAIL</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>
+          <div>
+            <strong>Dunning sequence · 3 emails queued</strong>
+            <span>Day 1, 3, 7 · 14 customers · auto-pause subscription on day 14 of dunning</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">High churn alert <span class="stag warn">CHURN</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/></svg>
+          <div>
+            <strong>Churn 2.4% (vs 1.8% baseline)</strong>
+            <span>Mostly Pro monthly · top reason "no remote streaming usage" — investigate onboarding.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Confirm · bulk refund <span class="stag warn">BULK</span></div>
+      <div class="ss-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/></svg>
+            </div>
+            <h3>Refund 5 customers?</h3>
+            <p>Total refund <strong style="color: var(--text);">$24.95</strong>. Reason "outage_apr_30" attached to each refund. Customers receive an email.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Issue 5 refunds</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · MRR milestone <span class="stag success">MILESTONE</span></div>
+      <div class="ss-preview">
+        <div class="toast success">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="body">
+            <strong>$50K MRR milestone</strong>
+            <span>Hit at 14:08 UTC · congrats team 🎉</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Tax reminder <span class="stag info">TAX</span></div>
+      <div class="ss-preview">
+        <div class="alert info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>Q2 sales-tax filing due May 31</strong>
+            <span>Stripe Tax has 14 jurisdictions ready · download report and forward to accountant.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Anomaly detected <span class="stag warn">ANOMALY</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div>
+            <strong>Failed-payment spike</strong>
+            <span>3.1% in last hour vs 0.8% baseline · 14 failures · same BIN range. Possible card-issuer outage.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

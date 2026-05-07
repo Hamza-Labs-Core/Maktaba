@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maktaba — Processing Queue</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --surface: #131826;
+        --surface-2: #1c2333;
+        --surface-3: #262f43;
+        --border: #2a334a;
+        --border-strong: #3a4663;
+        --text: #e8edf5;
+        --text-muted: #8a96b0;
+        --text-dim: #5d6883;
+        --primary: #5b9eff;
+        --primary-hover: #7aafff;
+        --primary-dim: rgba(91, 158, 255, 0.15);
+        --accent: #7c5cff;
+        --success: #34d399;
+        --success-dim: rgba(52, 211, 153, 0.14);
+        --warning: #fbbf24;
+        --warning-dim: rgba(251, 191, 36, 0.14);
+        --danger: #f87171;
+        --danger-dim: rgba(248, 113, 113, 0.14);
+        --info: #60a5fa;
+        --info-dim: rgba(96, 165, 250, 0.14);
+        --radius-sm: 6px;
+        --radius: 10px;
+        --radius-lg: 14px;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      [data-theme='light'] {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --surface-3: #eef2f7;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --text-muted: #475569;
+        --text-dim: #94a3b8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
+          system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+      }
+      .header-right {
+        margin-inline-start: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--text-muted);
+      }
+      .icon-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f97316, #ec4899);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .container {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .page-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: -0.01em;
+        font-weight: 700;
+      }
+      .sub {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-top: 2px;
+      }
+      .live-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--success);
+        margin-inline-end: 6px;
+        box-shadow: 0 0 0 0 var(--success);
+        animation: live 1.6s ease-out infinite;
+      }
+      @keyframes live {
+        0% {
+          box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+        }
+        100% {
+          box-shadow: 0 0 0 8px rgba(52, 211, 153, 0);
+        }
+      }
+      .head-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .btn {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 10px;
+        background: var(--primary);
+        color: white;
+        font-size: 13px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn:hover {
+        background: var(--primary-hover);
+      }
+      .btn-ghost {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        border-color: var(--border-strong);
+      }
+      .btn-danger {
+        background: var(--danger-dim);
+        color: var(--danger);
+        border: 1px solid rgba(248, 113, 113, 0.3);
+      }
+
+      /* Stat cards */
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+      @media (max-width: 900px) {
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      .stat {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px 18px;
+        position: relative;
+        overflow: hidden;
+      }
+      .stat .ico {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 12px;
+      }
+      .stat.queued .ico {
+        color: var(--info);
+        background: var(--info-dim);
+      }
+      .stat.running .ico {
+        color: var(--primary);
+        background: var(--primary-dim);
+      }
+      .stat.paused .ico {
+        color: var(--warning);
+        background: var(--warning-dim);
+      }
+      .stat.failed .ico {
+        color: var(--danger);
+        background: var(--danger-dim);
+      }
+      .stat .num {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat .lbl {
+        color: var(--text-muted);
+        font-size: 12.5px;
+        margin-top: 2px;
+      }
+      .stat .delta {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        margin-top: 8px;
+        color: var(--success);
+      }
+      .stat .delta.neg {
+        color: var(--danger);
+      }
+      .stat::after {
+        content: '';
+        position: absolute;
+        inset-inline-end: -20px;
+        bottom: -20px;
+        width: 100px;
+        height: 100px;
+        background: radial-gradient(circle, currentColor, transparent 70%);
+        opacity: 0.06;
+        pointer-events: none;
+      }
+
+      /* Toolbar */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .seg button {
+        padding: 6px 12px;
+        border-radius: 6px;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .seg button.active {
+        background: var(--surface-3);
+        color: var(--text);
+      }
+      .toolbar .spacer {
+        flex: 1;
+      }
+      .select {
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 12.5px;
+      }
+
+      /* Job rows */
+      .jobs {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .job {
+        padding: 16px 18px;
+        border-top: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 84px 1fr;
+        gap: 14px;
+      }
+      .job:first-child {
+        border-top: 0;
+      }
+      .job .thumb {
+        width: 84px;
+        height: 56px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #1e3a8a, #312e81);
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .job .thumb .lang {
+        position: absolute;
+        inset-inline-start: 4px;
+        top: 4px;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        font-size: 9px;
+        text-transform: uppercase;
+        font-weight: 700;
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+      .job .row1 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+      .job .title {
+        font-weight: 600;
+        font-size: 14px;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .job .submeta {
+        color: var(--text-muted);
+        font-size: 11.5px;
+        margin-bottom: 12px;
+      }
+      .job .submeta .dot {
+        display: inline-block;
+        width: 3px;
+        height: 3px;
+        background: currentColor;
+        opacity: 0.5;
+        border-radius: 50%;
+        margin: 0 6px;
+        vertical-align: middle;
+      }
+
+      /* Status badges */
+      .b {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .b .pulse {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      .b.running {
+        color: var(--primary);
+        background: var(--primary-dim);
+      }
+      .b.queued {
+        color: var(--info);
+        background: var(--info-dim);
+      }
+      .b.queued .pulse {
+        animation: none;
+      }
+      .b.paused {
+        color: var(--warning);
+        background: var(--warning-dim);
+      }
+      .b.paused .pulse {
+        animation: none;
+      }
+      .b.failed {
+        color: var(--danger);
+        background: var(--danger-dim);
+      }
+      .b.failed .pulse {
+        animation: none;
+      }
+      .b.done {
+        color: var(--success);
+        background: var(--success-dim);
+      }
+      .b.done .pulse {
+        animation: none;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      .actions {
+        display: inline-flex;
+        gap: 4px;
+        margin-inline-start: auto;
+      }
+      .actions button {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        color: var(--text-muted);
+      }
+      .actions button:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .actions button.danger:hover {
+        color: var(--danger);
+      }
+
+      /* Progress bar */
+      .progress {
+        height: 6px;
+        background: var(--surface-2);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-bottom: 12px;
+        position: relative;
+      }
+      .progress > div {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+        border-radius: 999px;
+        transition: width 0.5s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      .progress > div::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.3),
+          transparent
+        );
+        animation: scan 1.6s linear infinite;
+      }
+      @keyframes scan {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(100%);
+        }
+      }
+      .progress.paused > div::after,
+      .progress.failed > div::after,
+      .progress.done > div::after {
+        display: none;
+      }
+      .progress.failed > div {
+        background: var(--danger);
+      }
+      .progress.paused > div {
+        background: var(--warning);
+      }
+      .progress.done > div {
+        background: var(--success);
+      }
+
+      .progress-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+      }
+      .progress-row .pct {
+        color: var(--text);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .progress-row .spacer {
+        flex: 1;
+      }
+      .progress-row .eta {
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Pipeline stages */
+      .pipe {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0;
+        position: relative;
+      }
+      .stg {
+        text-align: center;
+        position: relative;
+        padding-top: 26px;
+      }
+      .stg::before {
+        content: '';
+        position: absolute;
+        top: 9px;
+        inset-inline-start: 50%;
+        inset-inline-end: -50%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+      .stg:last-child::before {
+        display: none;
+      }
+      .stg .dot {
+        position: absolute;
+        top: 0;
+        inset-inline-start: 50%;
+        transform: translateX(-50%);
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid var(--border);
+        display: grid;
+        place-items: center;
+        z-index: 1;
+        color: var(--text-dim);
+      }
+      .stg.done .dot {
+        background: var(--success);
+        border-color: var(--success);
+        color: #0a0e1a;
+      }
+      .stg.done::before {
+        background: var(--success);
+      }
+      .stg.active .dot {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+        box-shadow: 0 0 0 4px var(--primary-dim);
+      }
+      .stg.active .dot::after {
+        content: '';
+        position: absolute;
+        inset: -5px;
+        border: 2px solid var(--primary);
+        border-radius: 50%;
+        opacity: 0.4;
+        animation: ring 1.4s ease-out infinite;
+      }
+      .stg.failed .dot {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: white;
+      }
+      .stg.failed::before {
+        background: var(--danger);
+      }
+      @keyframes ring {
+        0% {
+          transform: scale(0.85);
+          opacity: 0.6;
+        }
+        100% {
+          transform: scale(1.5);
+          opacity: 0;
+        }
+      }
+      .stg .lbl {
+        font-size: 10.5px;
+        color: var(--text-muted);
+        margin-top: 6px;
+        font-weight: 600;
+      }
+      .stg.done .lbl,
+      .stg.active .lbl {
+        color: var(--text);
+      }
+      .stg .sub {
+        font-size: 10px;
+        color: var(--text-dim);
+        margin-top: 1px;
+      }
+
+      /* Workers panel */
+      .workers {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      @media (max-width: 1000px) {
+        .workers {
+          grid-template-columns: 1fr;
+        }
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .panel-head {
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .panel-head h3 {
+        margin: 0;
+        font-size: 12.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .panel-head .spacer {
+        flex: 1;
+      }
+      .worker {
+        display: grid;
+        grid-template-columns: 32px 1fr auto auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 18px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .worker:first-child {
+        border-top: 0;
+      }
+      .worker .ico {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        display: grid;
+        place-items: center;
+        color: var(--text-muted);
+      }
+      .worker .name {
+        font-weight: 600;
+      }
+      .worker .meta {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .worker .load {
+        width: 100px;
+        height: 6px;
+        background: var(--surface-2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .worker .load > div {
+        height: 100%;
+        background: var(--primary);
+      }
+      .worker .pct {
+        color: var(--text);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        min-width: 36px;
+        text-align: end;
+      }
+
+      /* Throughput "chart" */
+      .chart {
+        padding: 16px 18px 18px;
+      }
+      .bars {
+        display: flex;
+        align-items: end;
+        gap: 4px;
+        height: 80px;
+      }
+      .bars > div {
+        flex: 1;
+        background: linear-gradient(180deg, var(--primary), var(--accent));
+        border-radius: 3px 3px 0 0;
+        min-height: 4px;
+        opacity: 0.85;
+      }
+      .chart-foot {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+
+      /* Failed inline note */
+      .err {
+        background: var(--danger-dim);
+        border: 1px solid rgba(248, 113, 113, 0.25);
+        color: var(--danger);
+        font-size: 12px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .err .retry {
+        margin-inline-start: auto;
+        background: rgba(248, 113, 113, 0.2);
+        color: var(--danger);
+        border: 1px solid rgba(248, 113, 113, 0.4);
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <a class="brand"><span class="brand-mark">M</span><span>Maktaba</span></a>
+      <div class="header-right">
+        <button class="icon-btn" onclick="document.documentElement.dir = document.documentElement.dir==='rtl'?'ltr':'rtl'" title="Direction">
+          <i data-lucide="languages" width="18" height="18"></i>
+        </button>
+        <button class="icon-btn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='light'?'dark':'light'" title="Theme">
+          <i data-lucide="sun-moon" width="18" height="18"></i>
+        </button>
+        <div class="avatar">MD</div>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="page-head">
+        <div>
+          <h1>Processing Queue</h1>
+          <div class="sub"><span class="live-dot"></span>Live • last updated 3s ago</div>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-ghost"><i data-lucide="refresh-cw" width="14" height="14"></i> Refresh</button>
+          <button class="btn btn-ghost"><i data-lucide="pause" width="14" height="14"></i> Pause all</button>
+          <button class="btn"><i data-lucide="plus" width="14" height="14"></i> Enqueue</button>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stats">
+        <div class="stat queued">
+          <div class="ico"><i data-lucide="hourglass" width="18" height="18"></i></div>
+          <div class="num" id="numQueued">142</div>
+          <div class="lbl">Queued</div>
+          <div class="delta neg"><i data-lucide="arrow-up" width="11" height="11"></i> +12 in last hour</div>
+        </div>
+        <div class="stat running">
+          <div class="ico"><i data-lucide="loader-2" width="18" height="18"></i></div>
+          <div class="num">8</div>
+          <div class="lbl">Running</div>
+          <div class="delta"><i data-lucide="zap" width="11" height="11"></i> 4.2 jobs/min</div>
+        </div>
+        <div class="stat paused">
+          <div class="ico"><i data-lucide="pause" width="18" height="18"></i></div>
+          <div class="num">3</div>
+          <div class="lbl">Paused</div>
+          <div class="delta"><i data-lucide="minus" width="11" height="11"></i> no change</div>
+        </div>
+        <div class="stat failed">
+          <div class="ico"><i data-lucide="alert-triangle" width="18" height="18"></i></div>
+          <div class="num">5</div>
+          <div class="lbl">Failed (24h)</div>
+          <div class="delta neg"><i data-lucide="arrow-up" width="11" height="11"></i> +2 since yesterday</div>
+        </div>
+      </div>
+
+      <!-- Workers / throughput -->
+      <div class="workers">
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="server" width="14" height="14" style="color: var(--primary)"></i>
+            <h3>Workers</h3>
+            <div class="spacer"></div>
+            <span style="font-size: 12px; color: var(--text-muted)">3 active • 1 idle</span>
+          </div>
+          <div class="worker">
+            <div class="ico"><i data-lucide="cpu" width="14" height="14"></i></div>
+            <div>
+              <div class="name">gpu-node-01</div>
+              <div class="meta">RTX 4090 • Whisper-large-v3 • uptime 4d 12h</div>
+            </div>
+            <div class="load"><div style="width: 86%"></div></div>
+            <div class="pct">86%</div>
+          </div>
+          <div class="worker">
+            <div class="ico"><i data-lucide="cpu" width="14" height="14"></i></div>
+            <div>
+              <div class="name">gpu-node-02</div>
+              <div class="meta">RTX 4090 • Whisper-large-v3 • uptime 4d 12h</div>
+            </div>
+            <div class="load"><div style="width: 72%"></div></div>
+            <div class="pct">72%</div>
+          </div>
+          <div class="worker">
+            <div class="ico"><i data-lucide="cpu" width="14" height="14"></i></div>
+            <div>
+              <div class="name">gpu-node-03</div>
+              <div class="meta">RTX A6000 • Whisper-large-v3 • uptime 18h</div>
+            </div>
+            <div class="load"><div style="width: 91%"></div></div>
+            <div class="pct">91%</div>
+          </div>
+          <div class="worker">
+            <div class="ico" style="color: var(--text-dim)"><i data-lucide="cpu" width="14" height="14"></i></div>
+            <div>
+              <div class="name" style="color: var(--text-muted)">cpu-node-04</div>
+              <div class="meta">Intel Xeon • idle</div>
+            </div>
+            <div class="load"><div style="width: 0%"></div></div>
+            <div class="pct" style="color: var(--text-dim)">0%</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="trending-up" width="14" height="14" style="color: var(--primary)"></i>
+            <h3>Throughput · last hour</h3>
+          </div>
+          <div class="chart">
+            <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em">
+              247 <span style="font-size: 12px; color: var(--text-muted); font-weight: 500">videos / hour</span>
+            </div>
+            <div style="font-size: 11px; color: var(--success); margin-bottom: 12px">
+              <i data-lucide="arrow-up" width="11" height="11"></i> 18% vs prior hour
+            </div>
+            <div class="bars" id="bars"></div>
+            <div class="chart-foot"><span>−60m</span><span>−30m</span><span>now</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="seg">
+          <button class="active">All <span style="color: var(--text-dim); margin-inline-start: 4px">158</span></button>
+          <button>Running <span style="color: var(--text-dim); margin-inline-start: 4px">8</span></button>
+          <button>Queued <span style="color: var(--text-dim); margin-inline-start: 4px">142</span></button>
+          <button>Paused <span style="color: var(--text-dim); margin-inline-start: 4px">3</span></button>
+          <button>Failed <span style="color: var(--text-dim); margin-inline-start: 4px">5</span></button>
+        </div>
+        <div class="spacer"></div>
+        <select class="select">
+          <option>Priority — high to low</option>
+          <option>Recently enqueued</option>
+          <option>Longest running</option>
+          <option>Most progress</option>
+        </select>
+      </div>
+
+      <!-- Jobs list -->
+      <div class="jobs">
+        <!-- Job 1 — running, subtitle stage -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #1e3a8a, #312e81)">
+            <span class="lang">AR</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b running"><span class="pulse"></span>Running</span>
+              <span class="title">Tafsir of Surat Al-Baqarah — Lesson 1: The Opening</span>
+              <div class="actions">
+                <button title="Pause"><i data-lucide="pause" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button title="Logs"><i data-lucide="terminal" width="14" height="14"></i></button>
+                <button class="danger" title="Cancel"><i data-lucide="x" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Tafsir Lectures<span class="dot"></span>1.41 GB<span class="dot"></span>1080p<span class="dot"></span>worker gpu-node-03<span class="dot"></span>priority high</div>
+            <div class="progress-row">
+              <span class="pct">64%</span>
+              <span>Stage 4 of 5 — generating subtitle alignments</span>
+              <span class="spacer"></span>
+              <span class="eta">ETA 4m 12s</span>
+            </div>
+            <div class="progress"><div style="width: 64%"></div></div>
+            <div class="pipe">
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Scan</div><div class="sub">38s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Extract</div><div class="sub">2m 04s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Transcribe</div><div class="sub">12m 18s</div></div>
+              <div class="stg active"><div class="dot"></div><div class="lbl">Subtitle</div><div class="sub">running…</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Index</div><div class="sub">queued</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Job 2 — running, transcribe stage -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #831843, #9d174d)">
+            <span class="lang">EN</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b running"><span class="pulse"></span>Running</span>
+              <span class="title">Q&A: Modern Issues in Family Law</span>
+              <div class="actions">
+                <button title="Pause"><i data-lucide="pause" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button title="Logs"><i data-lucide="terminal" width="14" height="14"></i></button>
+                <button class="danger" title="Cancel"><i data-lucide="x" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Q&A Sessions<span class="dot"></span>2.1 GB<span class="dot"></span>720p<span class="dot"></span>worker gpu-node-01<span class="dot"></span>priority normal</div>
+            <div class="progress-row">
+              <span class="pct">22%</span>
+              <span>Stage 3 of 5 — transcribing chunk 14 / 64</span>
+              <span class="spacer"></span>
+              <span class="eta">ETA 18m 42s</span>
+            </div>
+            <div class="progress"><div style="width: 22%"></div></div>
+            <div class="pipe">
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Scan</div><div class="sub">52s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Extract</div><div class="sub">3m 12s</div></div>
+              <div class="stg active"><div class="dot"></div><div class="lbl">Transcribe</div><div class="sub">running…</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Subtitle</div><div class="sub">queued</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Index</div><div class="sub">queued</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Job 3 — paused -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #155e75, #0e7490)">
+            <span class="lang">AR</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b paused"><span class="pulse"></span>Paused</span>
+              <span class="title">Friday Khutbah — Patience in Hardship</span>
+              <div class="actions">
+                <button title="Resume"><i data-lucide="play" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button title="Logs"><i data-lucide="terminal" width="14" height="14"></i></button>
+                <button class="danger" title="Cancel"><i data-lucide="x" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Khutbahs<span class="dot"></span>540 MB<span class="dot"></span>720p<span class="dot"></span>paused by user<span class="dot"></span>14m ago</div>
+            <div class="progress-row">
+              <span class="pct">38%</span>
+              <span>Stage 3 of 5 — paused mid-transcribe</span>
+              <span class="spacer"></span>
+              <span class="eta">paused</span>
+            </div>
+            <div class="progress paused"><div style="width: 38%"></div></div>
+            <div class="pipe">
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Scan</div><div class="sub">21s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Extract</div><div class="sub">1m 04s</div></div>
+              <div class="stg active" style="--primary: var(--warning)"><div class="dot" style="background: var(--warning); border-color: var(--warning); color: #0a0e1a"><i data-lucide="pause" width="11" height="11"></i></div><div class="lbl">Transcribe</div><div class="sub">paused</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Subtitle</div><div class="sub">queued</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Index</div><div class="sub">queued</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Job 4 — failed -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #7f1d1d, #991b1b)">
+            <span class="lang">EN</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b failed"><span class="pulse"></span>Failed</span>
+              <span class="title">Conference Keynote: Education Reform 2025</span>
+              <div class="actions">
+                <button title="Retry"><i data-lucide="rotate-ccw" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button title="Logs"><i data-lucide="terminal" width="14" height="14"></i></button>
+                <button class="danger" title="Discard"><i data-lucide="trash-2" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Conferences<span class="dot"></span>3.4 GB<span class="dot"></span>1080p<span class="dot"></span>worker gpu-node-02<span class="dot"></span>failed 27m ago</div>
+            <div class="progress-row">
+              <span class="pct">12%</span>
+              <span>Stage 2 of 5 — failed during audio extraction</span>
+              <span class="spacer"></span>
+              <span class="eta">attempt 2 of 3</span>
+            </div>
+            <div class="progress failed"><div style="width: 12%"></div></div>
+            <div class="pipe">
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Scan</div><div class="sub">29s</div></div>
+              <div class="stg failed"><div class="dot"><i data-lucide="x" width="11" height="11"></i></div><div class="lbl">Extract</div><div class="sub">failed</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Transcribe</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Subtitle</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Index</div><div class="sub">—</div></div>
+            </div>
+            <div class="err">
+              <i data-lucide="alert-circle" width="14" height="14"></i>
+              <span><b>FFmpegError:</b> Invalid data found when processing input — corrupt MOOV atom at offset 0x4a8c</span>
+              <button class="retry">Retry</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Job 5 — queued -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #065f46, #047857)">
+            <span class="lang">AR</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b queued"><span class="pulse"></span>Queued</span>
+              <span class="title">Sirah Series — Episode 12: Battle of Badr</span>
+              <div class="actions">
+                <button title="Promote"><i data-lucide="arrow-up" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button class="danger" title="Cancel"><i data-lucide="x" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Sirah<span class="dot"></span>1.8 GB<span class="dot"></span>1080p<span class="dot"></span>position #4 in queue<span class="dot"></span>est. start 2m</div>
+            <div class="progress-row">
+              <span class="pct">0%</span>
+              <span>Awaiting worker</span>
+              <span class="spacer"></span>
+              <span class="eta">est. 24m</span>
+            </div>
+            <div class="progress"><div style="width: 0%"></div></div>
+            <div class="pipe">
+              <div class="stg"><div class="dot"></div><div class="lbl">Scan</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Extract</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Transcribe</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Subtitle</div><div class="sub">—</div></div>
+              <div class="stg"><div class="dot"></div><div class="lbl">Index</div><div class="sub">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Job 6 — running, finishing -->
+        <div class="job">
+          <div class="thumb" style="background: linear-gradient(135deg, #14532d, #166534)">
+            <span class="lang">AR</span>
+          </div>
+          <div>
+            <div class="row1">
+              <span class="b running"><span class="pulse"></span>Running</span>
+              <span class="title">Sirah Series — The Hijrah</span>
+              <div class="actions">
+                <button title="Pause"><i data-lucide="pause" width="14" height="14"></i></button>
+                <button title="Open"><i data-lucide="external-link" width="14" height="14"></i></button>
+                <button title="Logs"><i data-lucide="terminal" width="14" height="14"></i></button>
+                <button class="danger" title="Cancel"><i data-lucide="x" width="14" height="14"></i></button>
+              </div>
+            </div>
+            <div class="submeta">Sirah<span class="dot"></span>1.6 GB<span class="dot"></span>1080p<span class="dot"></span>worker gpu-node-02<span class="dot"></span>priority normal</div>
+            <div class="progress-row">
+              <span class="pct">94%</span>
+              <span>Stage 5 of 5 — building search index (chunk 187 / 198)</span>
+              <span class="spacer"></span>
+              <span class="eta">ETA 22s</span>
+            </div>
+            <div class="progress"><div style="width: 94%"></div></div>
+            <div class="pipe">
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Scan</div><div class="sub">31s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Extract</div><div class="sub">2m 18s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Transcribe</div><div class="sub">14m 02s</div></div>
+              <div class="stg done"><div class="dot"><i data-lucide="check" width="11" height="11"></i></div><div class="lbl">Subtitle</div><div class="sub">3m 41s</div></div>
+              <div class="stg active"><div class="dot"></div><div class="lbl">Index</div><div class="sub">running…</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons();
+
+      // Generate throughput bar chart (60 minutes)
+      const bars = document.getElementById('bars');
+      for (let i = 0; i < 30; i++) {
+        const h = 24 + Math.round(Math.sin(i / 4) * 15 + Math.random() * 30 + i * 0.5);
+        const div = document.createElement('div');
+        div.style.height = h + '%';
+        bars.appendChild(div);
+      }
+
+      // Soft animation: nudge "queued" count occasionally to feel live
+      let q = 142;
+      setInterval(() => {
+        q += Math.random() > 0.5 ? 1 : -1;
+        q = Math.max(135, Math.min(150, q));
+        document.getElementById('numQueued').textContent = q;
+      }, 4000);
+    </script>
+  </body>
+</html>

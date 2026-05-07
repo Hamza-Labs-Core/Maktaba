@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maktaba — Video Detail</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --surface: #131826;
+        --surface-2: #1c2333;
+        --surface-3: #262f43;
+        --border: #2a334a;
+        --border-strong: #3a4663;
+        --text: #e8edf5;
+        --text-muted: #8a96b0;
+        --text-dim: #5d6883;
+        --primary: #5b9eff;
+        --primary-hover: #7aafff;
+        --primary-dim: rgba(91, 158, 255, 0.15);
+        --accent: #7c5cff;
+        --success: #34d399;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --info: #60a5fa;
+        --radius-sm: 6px;
+        --radius: 10px;
+        --radius-lg: 14px;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      [data-theme='light'] {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --surface-3: #eef2f7;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --text-muted: #475569;
+        --text-dim: #94a3b8;
+        --primary-dim: rgba(91, 158, 255, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
+          system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+      }
+      .header-actions {
+        margin-inline-start: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--text-muted);
+      }
+      .icon-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f97316, #ec4899);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 20px 24px 64px;
+      }
+
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-dim);
+        margin-bottom: 16px;
+      }
+      .crumbs a {
+        color: var(--text-muted);
+      }
+      .crumbs a:hover {
+        color: var(--text);
+      }
+      .crumbs svg {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* Hero */
+      .hero {
+        display: grid;
+        grid-template-columns: 460px 1fr;
+        gap: 28px;
+        margin-bottom: 32px;
+      }
+      .poster {
+        position: relative;
+        aspect-ratio: 16/9;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background: linear-gradient(135deg, #1e3a8a, #312e81);
+        box-shadow: var(--shadow);
+      }
+      .poster::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.18), transparent 65%);
+      }
+      .poster .play-fab {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+      .play-fab .play {
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.95);
+        color: #0a0e1a;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+        transition: transform 0.18s;
+      }
+      .poster:hover .play {
+        transform: scale(1.06);
+      }
+      .poster .duration-pill {
+        position: absolute;
+        inset-inline-end: 12px;
+        bottom: 12px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        backdrop-filter: blur(6px);
+      }
+
+      .info h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        font-weight: 700;
+      }
+      .subtitle {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-bottom: 14px;
+      }
+      .hero-meta {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+      }
+      .pill.lang {
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: var(--primary);
+        border-color: var(--primary);
+        background: var(--primary-dim);
+      }
+      .description {
+        color: var(--text-muted);
+        margin-bottom: 18px;
+        max-width: 64ch;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .btn {
+        height: 38px;
+        padding: 0 16px;
+        border-radius: 10px;
+        background: var(--primary);
+        color: white;
+        font-weight: 600;
+        font-size: 13px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn:hover {
+        background: var(--primary-hover);
+      }
+      .btn-ghost {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        border-color: var(--border-strong);
+      }
+      .btn.icon {
+        width: 38px;
+        padding: 0;
+        justify-content: center;
+      }
+      .tags {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 11.5px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .tag:hover {
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+      .tag.collection {
+        color: var(--accent);
+        border-color: rgba(124, 92, 255, 0.4);
+        background: rgba(124, 92, 255, 0.1);
+      }
+
+      /* Section grid */
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .grid.full {
+        grid-template-columns: 1fr;
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-head h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text);
+      }
+      .panel-head .count {
+        background: var(--surface-3);
+        color: var(--text-muted);
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .panel-head .spacer {
+        flex: 1;
+      }
+      .panel-body {
+        padding: 4px 0;
+      }
+
+      /* Metadata table */
+      .meta-table {
+        width: 100%;
+      }
+      .meta-row {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        padding: 10px 18px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .meta-row:first-child {
+        border-top: none;
+      }
+      .meta-row .k {
+        color: var(--text-muted);
+      }
+      .meta-row .v {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      .meta-row .v code {
+        background: var(--surface-2);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: var(--primary);
+      }
+
+      /* Track lists */
+      .track {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 18px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .track:first-child {
+        border-top: none;
+      }
+      .track .ico {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        display: grid;
+        place-items: center;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+      .track .main {
+        flex: 1;
+        min-width: 0;
+      }
+      .track .name {
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .track .sub {
+        color: var(--text-muted);
+        font-size: 11.5px;
+      }
+      .badge {
+        font-size: 10.5px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .badge.default {
+        background: var(--primary-dim);
+        color: var(--primary);
+      }
+      .badge.forced {
+        background: rgba(251, 191, 36, 0.12);
+        color: var(--warning);
+      }
+      .badge.sdh {
+        background: rgba(52, 211, 153, 0.12);
+        color: var(--success);
+      }
+
+      /* Pipeline */
+      .pipeline {
+        padding: 24px 18px 18px;
+      }
+      .stages {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0;
+        position: relative;
+      }
+      .stage {
+        text-align: center;
+        position: relative;
+        padding-top: 38px;
+      }
+      .stage::before {
+        content: '';
+        position: absolute;
+        top: 14px;
+        inset-inline-start: 50%;
+        inset-inline-end: -50%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+      .stage:last-child::before {
+        display: none;
+      }
+      .stage .dot {
+        position: absolute;
+        top: 0;
+        inset-inline-start: 50%;
+        transform: translateX(-50%);
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid var(--border);
+        display: grid;
+        place-items: center;
+        z-index: 1;
+        color: var(--text-dim);
+      }
+      .stage.done .dot {
+        background: var(--success);
+        border-color: var(--success);
+        color: #0a0e1a;
+      }
+      .stage.done::before {
+        background: var(--success);
+      }
+      .stage.active .dot {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+        box-shadow: 0 0 0 4px var(--primary-dim);
+      }
+      .stage.active .dot::after {
+        content: '';
+        position: absolute;
+        inset: -6px;
+        border: 2px solid var(--primary);
+        border-radius: 50%;
+        opacity: 0.4;
+        animation: ring 1.4s ease-out infinite;
+      }
+      @keyframes ring {
+        0% {
+          transform: scale(0.85);
+          opacity: 0.6;
+        }
+        100% {
+          transform: scale(1.4);
+          opacity: 0;
+        }
+      }
+      .stage .label {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-top: 8px;
+      }
+      .stage.done .label,
+      .stage.active .label {
+        color: var(--text);
+      }
+      .stage .sublabel {
+        font-size: 10.5px;
+        color: var(--text-dim);
+        margin-top: 1px;
+      }
+      .progress-bar {
+        margin-top: 18px;
+        height: 6px;
+        background: var(--surface-2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .progress-bar > div {
+        height: 100%;
+        width: 64%;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+        border-radius: 999px;
+        transition: width 0.5s;
+      }
+      .pipeline-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 10px;
+      }
+
+      /* Chapters */
+      .chapter {
+        display: grid;
+        grid-template-columns: 60px 1fr auto;
+        gap: 14px;
+        align-items: center;
+        padding: 10px 18px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .chapter:first-child {
+        border-top: none;
+      }
+      .chapter:hover {
+        background: var(--surface-2);
+      }
+      .chapter .time {
+        font-variant-numeric: tabular-nums;
+        color: var(--primary);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .chapter .title {
+        font-weight: 500;
+      }
+      .chapter .duration {
+        color: var(--text-dim);
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (max-width: 900px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <a class="brand"><span class="brand-mark">M</span><span>Maktaba</span></a>
+      <div class="header-actions">
+        <button class="icon-btn" onclick="document.documentElement.dir = document.documentElement.dir==='rtl'?'ltr':'rtl'" title="Direction">
+          <i data-lucide="languages" width="18" height="18"></i>
+        </button>
+        <button class="icon-btn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='light'?'dark':'light'" title="Theme">
+          <i data-lucide="sun-moon" width="18" height="18"></i>
+        </button>
+        <div class="avatar">MD</div>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="crumbs">
+        <a><i data-lucide="library"></i> Library</a>
+        <i data-lucide="chevron-right"></i>
+        <a>Tafsir Lectures</a>
+        <i data-lucide="chevron-right"></i>
+        <span>Lesson 1</span>
+      </div>
+
+      <section class="hero">
+        <div class="poster">
+          <div class="play-fab">
+            <div class="play"><i data-lucide="play" width="32" height="32"></i></div>
+          </div>
+          <div class="duration-pill">1:24:18</div>
+        </div>
+        <div class="info">
+          <h1>Tafsir of Surat Al-Baqarah — Lesson 1: The Opening</h1>
+          <div class="subtitle">By Sheikh Muhammad Al-Fulani • Recorded 14 Mar 2024 • Added to library 22 Mar 2024</div>
+
+          <div class="hero-meta">
+            <span class="pill lang">AR</span>
+            <span class="pill"><i data-lucide="clock" width="12" height="12"></i> 1h 24m</span>
+            <span class="pill"><i data-lucide="monitor" width="12" height="12"></i> 1080p</span>
+            <span class="pill"><i data-lucide="hard-drive" width="12" height="12"></i> 1.4 GB</span>
+            <span class="pill"><i data-lucide="eye" width="12" height="12"></i> 2,431 views</span>
+          </div>
+
+          <p class="description">
+            Opening lecture in a 30-part Tafsir series covering the second chapter of the Quran. Introduces classical
+            commentary methodology and reviews the historical context of revelation.
+          </p>
+
+          <div class="actions">
+            <button class="btn">
+              <i data-lucide="play" width="16" height="16"></i> Play from start
+            </button>
+            <button class="btn btn-ghost">
+              <i data-lucide="rotate-ccw" width="16" height="16"></i> Resume at 32:14
+            </button>
+            <button class="btn btn-ghost icon" title="Add to favorites">
+              <i data-lucide="star" width="16" height="16"></i>
+            </button>
+            <button class="btn btn-ghost icon" title="Add to collection">
+              <i data-lucide="folder-plus" width="16" height="16"></i>
+            </button>
+            <button class="btn btn-ghost icon" title="Share">
+              <i data-lucide="share-2" width="16" height="16"></i>
+            </button>
+            <button class="btn btn-ghost icon" title="Download">
+              <i data-lucide="download" width="16" height="16"></i>
+            </button>
+            <button class="btn btn-ghost icon" title="More">
+              <i data-lucide="more-horizontal" width="16" height="16"></i>
+            </button>
+          </div>
+
+          <div class="tags">
+            <span class="tag collection"><i data-lucide="folder" width="11" height="11"></i> Tafsir Lectures</span>
+            <span class="tag collection"><i data-lucide="folder" width="11" height="11"></i> Series 2024</span>
+            <span class="tag">#quran</span>
+            <span class="tag">#baqarah</span>
+            <span class="tag">#commentary</span>
+            <span class="tag">#beginner</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid full" style="margin-bottom: 20px">
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="cpu" width="16" height="16" style="color: var(--primary)"></i>
+            <h3>Processing pipeline</h3>
+            <div class="spacer"></div>
+            <span style="color: var(--text-muted); font-size: 12px">Stage 4 of 5 • ETA 4m 12s</span>
+          </div>
+          <div class="pipeline">
+            <div class="stages">
+              <div class="stage done">
+                <div class="dot"><i data-lucide="check" width="14" height="14"></i></div>
+                <div class="label">Scan</div>
+                <div class="sublabel">38s</div>
+              </div>
+              <div class="stage done">
+                <div class="dot"><i data-lucide="check" width="14" height="14"></i></div>
+                <div class="label">Extract</div>
+                <div class="sublabel">2m 04s</div>
+              </div>
+              <div class="stage done">
+                <div class="dot"><i data-lucide="check" width="14" height="14"></i></div>
+                <div class="label">Transcribe</div>
+                <div class="sublabel">12m 18s</div>
+              </div>
+              <div class="stage active">
+                <div class="dot"><i data-lucide="captions" width="14" height="14"></i></div>
+                <div class="label">Subtitle</div>
+                <div class="sublabel">in progress…</div>
+              </div>
+              <div class="stage">
+                <div class="dot"><i data-lucide="search" width="13" height="13"></i></div>
+                <div class="label">Index</div>
+                <div class="sublabel">queued</div>
+              </div>
+            </div>
+            <div class="progress-bar"><div></div></div>
+            <div class="pipeline-foot">
+              <span>Started 22 Mar 2024 • 14:08 UTC</span>
+              <span>Worker: gpu-node-03 • Whisper-large-v3</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="info" width="16" height="16" style="color: var(--primary)"></i>
+            <h3>Metadata</h3>
+          </div>
+          <div class="panel-body meta-table">
+            <div class="meta-row"><div class="k">Duration</div><div class="v">01:24:18.412</div></div>
+            <div class="meta-row"><div class="k">Container</div><div class="v"><code>matroska,webm</code></div></div>
+            <div class="meta-row"><div class="k">Video codec</div><div class="v"><code>h264 / High@L4.0</code></div></div>
+            <div class="meta-row"><div class="k">Resolution</div><div class="v">1920 × 1080 (16:9)</div></div>
+            <div class="meta-row"><div class="k">Frame rate</div><div class="v">29.97 fps</div></div>
+            <div class="meta-row"><div class="k">Bitrate</div><div class="v">2,184 kb/s</div></div>
+            <div class="meta-row"><div class="k">File size</div><div class="v">1.41 GB</div></div>
+            <div class="meta-row"><div class="k">Source path</div><div class="v"><code>/library/tafsir/baqarah/L01.mkv</code></div></div>
+            <div class="meta-row"><div class="k">Imported</div><div class="v">22 Mar 2024 14:08 UTC</div></div>
+            <div class="meta-row"><div class="k">Hash (sha-256)</div><div class="v"><code style="font-size:10.5px">a3f8…c294</code></div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="audio-lines" width="16" height="16" style="color: var(--primary)"></i>
+            <h3>Audio tracks</h3>
+            <span class="count">2</span>
+          </div>
+          <div class="panel-body">
+            <div class="track">
+              <div class="ico"><i data-lucide="audio-lines" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">Arabic — Original</div>
+                <div class="sub">aac • 2.0 stereo • 192 kb/s • 48 kHz</div>
+              </div>
+              <span class="badge default">Default</span>
+            </div>
+            <div class="track">
+              <div class="ico"><i data-lucide="audio-lines" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">English — Dubbed</div>
+                <div class="sub">aac • 2.0 stereo • 160 kb/s • 44.1 kHz</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-head" style="border-top: 1px solid var(--border)">
+            <i data-lucide="captions" width="16" height="16" style="color: var(--primary)"></i>
+            <h3>Subtitle tracks</h3>
+            <span class="count">5</span>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost" style="height: 28px; font-size: 12px">
+              <i data-lucide="plus" width="13" height="13"></i> Add
+            </button>
+          </div>
+          <div class="panel-body">
+            <div class="track">
+              <div class="ico"><i data-lucide="captions" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">Arabic (Auto-generated)</div>
+                <div class="sub">vtt • Whisper-large-v3 • confidence 94%</div>
+              </div>
+              <span class="badge default">Default</span>
+            </div>
+            <div class="track">
+              <div class="ico"><i data-lucide="captions" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">English</div>
+                <div class="sub">vtt • Translated • reviewed by editor</div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="ico"><i data-lucide="captions" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">English (SDH)</div>
+                <div class="sub">vtt • includes sound descriptions</div>
+              </div>
+              <span class="badge sdh">SDH</span>
+            </div>
+            <div class="track">
+              <div class="ico"><i data-lucide="captions" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">Urdu</div>
+                <div class="sub">srt • community contributed</div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="ico"><i data-lucide="captions" width="16" height="16"></i></div>
+              <div class="main">
+                <div class="name">Arabic — Quranic verses overlay</div>
+                <div class="sub">ass • styled • forced display</div>
+              </div>
+              <span class="badge forced">Forced</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid full" style="margin-top: 20px">
+        <div class="panel">
+          <div class="panel-head">
+            <i data-lucide="bookmark" width="16" height="16" style="color: var(--primary)"></i>
+            <h3>Chapters</h3>
+            <span class="count">8</span>
+          </div>
+          <div class="panel-body">
+            <div class="chapter"><span class="time">00:00</span><span class="title">Opening du'a and introduction</span><span class="duration">3 min</span></div>
+            <div class="chapter"><span class="time">03:12</span><span class="title">Series overview — what we'll cover</span><span class="duration">7 min</span></div>
+            <div class="chapter"><span class="time">10:48</span><span class="title">Methodology of classical Tafsir</span><span class="duration">12 min</span></div>
+            <div class="chapter"><span class="time">22:31</span><span class="title">Why begin with Al-Baqarah</span><span class="duration">9 min</span></div>
+            <div class="chapter"><span class="time">31:52</span><span class="title">Verse 1 — The disjointed letters</span><span class="duration">14 min</span></div>
+            <div class="chapter"><span class="time">46:03</span><span class="title">Verse 2 — On guidance and certainty</span><span class="duration">18 min</span></div>
+            <div class="chapter"><span class="time">1:04:11</span><span class="title">Q&A from students</span><span class="duration">15 min</span></div>
+            <div class="chapter"><span class="time">1:19:24</span><span class="title">Closing remarks and next lesson</span><span class="duration">5 min</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maktaba — Library Browser</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --surface: #131826;
+        --surface-2: #1c2333;
+        --surface-3: #262f43;
+        --border: #2a334a;
+        --border-strong: #3a4663;
+        --text: #e8edf5;
+        --text-muted: #8a96b0;
+        --text-dim: #5d6883;
+        --primary: #5b9eff;
+        --primary-hover: #7aafff;
+        --primary-dim: rgba(91, 158, 255, 0.15);
+        --accent: #7c5cff;
+        --success: #34d399;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --info: #60a5fa;
+        --radius-sm: 6px;
+        --radius: 10px;
+        --radius-lg: 14px;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      [data-theme='light'] {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --surface-3: #eef2f7;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --text-muted: #475569;
+        --text-dim: #94a3b8;
+        --primary-dim: rgba(91, 158, 255, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Arabic',
+          system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+
+      /* === Layout === */
+      .app {
+        display: grid;
+        grid-template-rows: 56px 1fr;
+        height: 100vh;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+      }
+      .search-wrap {
+        flex: 1;
+        max-width: 560px;
+        margin-inline: auto;
+        position: relative;
+      }
+      .search-wrap svg {
+        position: absolute;
+        inset-inline-start: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-dim);
+      }
+      .search {
+        width: 100%;
+        height: 36px;
+        padding-inline: 38px 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--text);
+        font-size: 13px;
+        outline: none;
+      }
+      .search:focus {
+        border-color: var(--primary);
+        background: var(--bg);
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .icon-btn {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--text-muted);
+        transition: background 0.15s, color 0.15s;
+      }
+      .icon-btn:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f97316, #ec4899);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-weight: 600;
+        font-size: 12px;
+        margin-inline-start: 4px;
+      }
+
+      /* === Body === */
+      .body {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        overflow: hidden;
+      }
+      .sidebar {
+        border-inline-end: 1px solid var(--border);
+        background: var(--surface);
+        overflow-y: auto;
+        padding: 16px 0;
+      }
+      .nav-group {
+        padding: 4px 12px 16px;
+      }
+      .nav-title {
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: var(--text-dim);
+        font-weight: 600;
+        padding: 6px 8px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        color: var(--text-muted);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .nav-item:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .nav-item.active {
+        background: var(--primary-dim);
+        color: var(--primary);
+      }
+      .nav-item .count {
+        margin-inline-start: auto;
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .filter-section {
+        padding: 4px 8px;
+      }
+      .filter-section h4 {
+        margin: 12px 8px 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .chk {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        font-size: 12.5px;
+        color: var(--text-muted);
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .chk:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .chk input {
+        accent-color: var(--primary);
+      }
+      .chk .count {
+        margin-inline-start: auto;
+        color: var(--text-dim);
+      }
+
+      /* === Main === */
+      .main {
+        overflow-y: auto;
+        padding: 24px 28px 48px;
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-dim);
+        margin-bottom: 4px;
+      }
+      .crumbs svg {
+        width: 12px;
+        height: 12px;
+      }
+      .page-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .meta {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+        padding: 10px 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      .toolbar .spacer {
+        flex: 1;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .seg button {
+        padding: 5px 10px;
+        border-radius: 6px;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .seg button.active {
+        background: var(--surface-3);
+        color: var(--text);
+      }
+      .select {
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 12.5px;
+      }
+      .btn {
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+        background: var(--primary);
+        color: white;
+        font-size: 12.5px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn:hover {
+        background: var(--primary-hover);
+      }
+      .btn-ghost {
+        background: var(--surface-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      /* === Grid === */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        cursor: pointer;
+        transition:
+          transform 0.18s ease,
+          border-color 0.15s,
+          box-shadow 0.18s;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-strong);
+        box-shadow: var(--shadow);
+      }
+      .poster {
+        aspect-ratio: 16/10;
+        position: relative;
+        background: linear-gradient(135deg, #1e3a8a, #312e81);
+        overflow: hidden;
+      }
+      .poster::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 60% 40%, rgba(255, 255, 255, 0.12), transparent 60%);
+      }
+      .poster .duration {
+        position: absolute;
+        inset-inline-end: 8px;
+        bottom: 8px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        backdrop-filter: blur(4px);
+      }
+      .poster .lang {
+        position: absolute;
+        inset-inline-start: 8px;
+        top: 8px;
+        background: rgba(0, 0, 0, 0.55);
+        color: white;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 10.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        backdrop-filter: blur(4px);
+      }
+      .poster .play-overlay {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        opacity: 0;
+        transition: opacity 0.18s;
+        background: rgba(0, 0, 0, 0.35);
+      }
+      .card:hover .play-overlay {
+        opacity: 1;
+      }
+      .play-overlay .play {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.95);
+        color: #0a0e1a;
+        display: grid;
+        place-items: center;
+      }
+      .card-body {
+        padding: 10px 12px 12px;
+      }
+      .card-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        margin: 0 0 4px;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .card-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-muted);
+        font-size: 11.5px;
+        flex-wrap: wrap;
+      }
+      .card-meta .dot {
+        width: 3px;
+        height: 3px;
+        background: currentColor;
+        border-radius: 50%;
+        opacity: 0.5;
+      }
+
+      /* Status badges (overlay top-right of poster) */
+      .status {
+        position: absolute;
+        inset-inline-end: 8px;
+        top: 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(0, 0, 0, 0.65);
+        color: white;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 10.5px;
+        font-weight: 600;
+        backdrop-filter: blur(4px);
+      }
+      .status .pulse {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .status.processing {
+        color: var(--warning);
+      }
+      .status.ready {
+        color: var(--success);
+      }
+      .status.failed {
+        color: var(--danger);
+      }
+      .status.queued {
+        color: var(--info);
+      }
+      .status .pulse {
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      .status.ready .pulse {
+        animation: none;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      /* Loader */
+      .loader {
+        margin: 32px auto 0;
+        text-align: center;
+        color: var(--text-dim);
+        font-size: 12px;
+      }
+      .skeleton-grid {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      .skeleton {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .skeleton .poster {
+        background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+        background-size: 200% 100%;
+        animation: shimmer 1.4s linear infinite;
+      }
+      .skeleton .lines {
+        padding: 12px;
+      }
+      .skeleton .lines div {
+        height: 10px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+        background-size: 200% 100%;
+        animation: shimmer 1.4s linear infinite;
+        margin-bottom: 6px;
+      }
+      .skeleton .lines div:last-child {
+        width: 60%;
+      }
+      @keyframes shimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+
+      /* List view */
+      .list .card {
+        display: grid;
+        grid-template-columns: 200px 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 0;
+      }
+      .list .poster {
+        aspect-ratio: 16/10;
+        height: 110px;
+      }
+      .list .card-body {
+        padding: 12px 0;
+      }
+      .list .card-actions {
+        padding-inline-end: 16px;
+      }
+
+      .grid.list {
+        grid-template-columns: 1fr;
+      }
+
+      /* Responsive */
+      @media (max-width: 900px) {
+        .body {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <a class="brand">
+          <span class="brand-mark">M</span>
+          <span>Maktaba</span>
+        </a>
+        <div class="search-wrap">
+          <i data-lucide="search" width="16" height="16"></i>
+          <input class="search" placeholder="Search videos, transcripts, chapters…" />
+        </div>
+        <div class="header-actions">
+          <button class="icon-btn" title="Toggle direction" onclick="toggleDir()">
+            <i data-lucide="languages" width="18" height="18"></i>
+          </button>
+          <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()">
+            <i data-lucide="sun-moon" width="18" height="18"></i>
+          </button>
+          <button class="icon-btn" title="Notifications">
+            <i data-lucide="bell" width="18" height="18"></i>
+          </button>
+          <div class="avatar">MD</div>
+        </div>
+      </header>
+
+      <div class="body">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-title">Browse</div>
+            <div class="nav-item active">
+              <i data-lucide="library" width="16" height="16"></i><span>All Videos</span
+              ><span class="count">1,247</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="clock" width="16" height="16"></i><span>Recently Added</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="play-circle" width="16" height="16"></i><span>Continue Watching</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="star" width="16" height="16"></i><span>Favorites</span
+              ><span class="count">38</span>
+            </div>
+          </div>
+          <div class="nav-group">
+            <div class="nav-title">Libraries</div>
+            <div class="nav-item">
+              <i data-lucide="folder" width="16" height="16"></i><span>Tafsir Lectures</span
+              ><span class="count">412</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="folder" width="16" height="16"></i><span>Fiqh Series</span
+              ><span class="count">186</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="folder" width="16" height="16"></i><span>Documentaries</span
+              ><span class="count">94</span>
+            </div>
+            <div class="nav-item">
+              <i data-lucide="folder" width="16" height="16"></i><span>Conferences</span
+              ><span class="count">53</span>
+            </div>
+          </div>
+          <div class="nav-group">
+            <div class="nav-title">Filter</div>
+            <div class="filter-section">
+              <h4>Language</h4>
+              <label class="chk"
+                ><input type="checkbox" checked /> Arabic <span class="count">782</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" checked /> English <span class="count">341</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Urdu <span class="count">88</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Turkish <span class="count">36</span></label
+              >
+            </div>
+            <div class="filter-section">
+              <h4>Status</h4>
+              <label class="chk"
+                ><input type="checkbox" checked /> Ready <span class="count">1,089</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Processing <span class="count">86</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Failed <span class="count">5</span></label
+              >
+            </div>
+            <div class="filter-section">
+              <h4>Tags</h4>
+              <label class="chk"
+                ><input type="checkbox" /> Quran <span class="count">412</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Hadith <span class="count">198</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> History <span class="count">142</span></label
+              >
+              <label class="chk"
+                ><input type="checkbox" /> Biography <span class="count">73</span></label
+              >
+            </div>
+          </div>
+        </aside>
+
+        <main class="main">
+          <div class="crumbs">
+            <span>Library</span>
+            <i data-lucide="chevron-right"></i><span>All Videos</span>
+          </div>
+          <div class="page-head">
+            <div>
+              <h1>All Videos</h1>
+              <div class="meta">1,247 videos • 642 hours total</div>
+            </div>
+            <div style="display: flex; gap: 8px">
+              <button class="btn btn-ghost">
+                <i data-lucide="download" width="14" height="14"></i> Import
+              </button>
+              <button class="btn">
+                <i data-lucide="plus" width="14" height="14"></i> Add Video
+              </button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="seg" id="viewSeg">
+              <button class="active" data-view="grid">
+                <i data-lucide="layout-grid" width="14" height="14"></i> Grid
+              </button>
+              <button data-view="list">
+                <i data-lucide="list" width="14" height="14"></i> List
+              </button>
+            </div>
+            <span style="color: var(--text-dim); font-size: 12px">View</span>
+            <div class="spacer"></div>
+            <span style="color: var(--text-muted); font-size: 12px">Sort by</span>
+            <select class="select">
+              <option>Recently added</option>
+              <option>Title (A→Z)</option>
+              <option>Title (Z→A)</option>
+              <option>Duration (longest)</option>
+              <option>Duration (shortest)</option>
+              <option>Most watched</option>
+            </select>
+            <button class="btn btn-ghost">
+              <i data-lucide="sliders-horizontal" width="14" height="14"></i> Filters
+            </button>
+          </div>
+
+          <div class="grid" id="grid"></div>
+
+          <div class="skeleton-grid" id="skeletons" style="display: none">
+            <div class="skeleton">
+              <div class="poster"></div>
+              <div class="lines"><div></div><div></div></div>
+            </div>
+            <div class="skeleton">
+              <div class="poster"></div>
+              <div class="lines"><div></div><div></div></div>
+            </div>
+            <div class="skeleton">
+              <div class="poster"></div>
+              <div class="lines"><div></div><div></div></div>
+            </div>
+            <div class="skeleton">
+              <div class="poster"></div>
+              <div class="lines"><div></div><div></div></div>
+            </div>
+          </div>
+
+          <div class="loader" id="loader">— end of page • scroll to load more —</div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const SAMPLES = [
+        {
+          title: 'Tafsir of Surat Al-Baqarah — Lesson 1: The Opening',
+          duration: '1:24:18',
+          lang: 'ar',
+          status: 'ready',
+          collection: 'Tafsir Lectures',
+          views: '2.4k',
+          gradient: 'linear-gradient(135deg,#1e3a8a,#312e81)',
+        },
+        {
+          title: 'Introduction to Islamic Jurisprudence',
+          duration: '52:07',
+          lang: 'en',
+          status: 'ready',
+          collection: 'Fiqh Series',
+          views: '986',
+          gradient: 'linear-gradient(135deg,#7c2d12,#9a3412)',
+        },
+        {
+          title: 'The Life of the Prophet ﷺ — Episode 5',
+          duration: '47:32',
+          lang: 'ar',
+          status: 'processing',
+          progress: 64,
+          collection: 'Biography',
+          views: '12k',
+          gradient: 'linear-gradient(135deg,#065f46,#047857)',
+        },
+        {
+          title: 'Sahih al-Bukhari — Book of Faith Commentary',
+          duration: '1:08:55',
+          lang: 'ar',
+          status: 'ready',
+          collection: 'Hadith',
+          views: '4.1k',
+          gradient: 'linear-gradient(135deg,#581c87,#6b21a8)',
+        },
+        {
+          title: 'Al-Andalus: The Golden Age — Documentary',
+          duration: '58:21',
+          lang: 'en',
+          status: 'ready',
+          collection: 'Documentaries',
+          views: '8.7k',
+          gradient: 'linear-gradient(135deg,#9d174d,#be185d)',
+        },
+        {
+          title: 'Friday Khutbah — Patience in Hardship',
+          duration: '34:11',
+          lang: 'ar',
+          status: 'queued',
+          collection: 'Khutbahs',
+          views: '512',
+          gradient: 'linear-gradient(135deg,#155e75,#0e7490)',
+        },
+        {
+          title: 'Memorization Techniques for the Quran',
+          duration: '41:46',
+          lang: 'ur',
+          status: 'ready',
+          collection: 'Education',
+          views: '1.9k',
+          gradient: 'linear-gradient(135deg,#92400e,#b45309)',
+        },
+        {
+          title: 'The Companions — Abu Bakr (ra)',
+          duration: '1:12:09',
+          lang: 'ar',
+          status: 'ready',
+          collection: 'Biography',
+          views: '6.3k',
+          gradient: 'linear-gradient(135deg,#1e40af,#3730a3)',
+        },
+        {
+          title: 'Q&A: Modern Issues in Family Law',
+          duration: '1:48:33',
+          lang: 'en',
+          status: 'processing',
+          progress: 22,
+          collection: 'Q&A Sessions',
+          views: '732',
+          gradient: 'linear-gradient(135deg,#831843,#9d174d)',
+        },
+        {
+          title: 'Sirah Series — The Hijrah',
+          duration: '1:01:44',
+          lang: 'ar',
+          status: 'ready',
+          collection: 'Sirah',
+          views: '15k',
+          gradient: 'linear-gradient(135deg,#14532d,#166534)',
+        },
+        {
+          title: 'Conference Keynote: Education Reform 2025',
+          duration: '38:27',
+          lang: 'en',
+          status: 'failed',
+          collection: 'Conferences',
+          views: '—',
+          gradient: 'linear-gradient(135deg,#7f1d1d,#991b1b)',
+        },
+        {
+          title: 'Mukhtasar al-Quduri — Chapter on Prayer',
+          duration: '2:14:08',
+          lang: 'ar',
+          status: 'ready',
+          collection: 'Fiqh Series',
+          views: '3.2k',
+          gradient: 'linear-gradient(135deg,#0f766e,#0d9488)',
+        },
+      ];
+
+      function statusBadge(s, progress) {
+        const map = {
+          ready: { label: 'Ready', cls: 'ready' },
+          processing: { label: progress ? `Processing ${progress}%` : 'Processing', cls: 'processing' },
+          queued: { label: 'Queued', cls: 'queued' },
+          failed: { label: 'Failed', cls: 'failed' },
+        };
+        const m = map[s];
+        return `<span class="status ${m.cls}"><span class="pulse"></span>${m.label}</span>`;
+      }
+
+      function renderGrid() {
+        const root = document.getElementById('grid');
+        root.innerHTML = SAMPLES.map(
+          (v) => `
+          <article class="card">
+            <div class="poster" style="background:${v.gradient}">
+              <span class="lang">${v.lang}</span>
+              ${statusBadge(v.status, v.progress)}
+              <span class="duration">${v.duration}</span>
+              <div class="play-overlay"><div class="play"><i data-lucide="play" width="20" height="20"></i></div></div>
+            </div>
+            <div class="card-body">
+              <h3 class="card-title">${v.title}</h3>
+              <div class="card-meta">
+                <span>${v.collection}</span>
+                <span class="dot"></span>
+                <span>${v.views} views</span>
+              </div>
+            </div>
+          </article>
+        `,
+        ).join('');
+        lucide.createIcons();
+      }
+
+      document.getElementById('viewSeg').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-view]');
+        if (!btn) return;
+        document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const grid = document.getElementById('grid');
+        grid.classList.toggle('list', btn.dataset.view === 'list');
+      });
+
+      function toggleDir() {
+        const html = document.documentElement;
+        html.dir = html.dir === 'rtl' ? 'ltr' : 'rtl';
+      }
+      function toggleTheme() {
+        const html = document.documentElement;
+        html.dataset.theme = html.dataset.theme === 'light' ? 'dark' : 'light';
+      }
+
+      // Fake "infinite scroll"
+      const main = document.querySelector('.main');
+      let loadingMore = false;
+      main.addEventListener('scroll', () => {
+        if (loadingMore) return;
+        if (main.scrollTop + main.clientHeight >= main.scrollHeight - 200) {
+          loadingMore = true;
+          document.getElementById('skeletons').style.display = 'grid';
+          setTimeout(() => {
+            document.getElementById('skeletons').style.display = 'none';
+            loadingMore = false;
+          }, 1200);
+        }
+      });
+
+      renderGrid();
+      lucide.createIcons();
+    </script>
+  </body>
+</html>

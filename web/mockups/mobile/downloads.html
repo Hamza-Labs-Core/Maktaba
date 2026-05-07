@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba Mobile — Downloads</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --surface: #ffffff;
+    --surface-2: #f0f0f3;
+    --text: #0f1419;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    --tab-bg: rgba(255,255,255,0.92);
+    --danger: #dc2626;
+    --success: #16a34a;
+    --warn: #d97706;
+  }
+  [data-theme="dark"] {
+    --bg: #0b0d12;
+    --surface: #161922;
+    --surface-2: #1f2330;
+    --text: #f3f4f6;
+    --text-muted: #9ca3af;
+    --border: #2a2f3d;
+    --accent: #3b82f6;
+    --accent-fg: #ffffff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    --tab-bg: rgba(22,25,34,0.92);
+    --danger: #ef4444;
+    --success: #22c55e;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #2a2a2e;
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; padding: 24px 12px 60px; gap: 24px;
+  }
+  .page-title { color: #fff; font-size: 14px; opacity: 0.7; font-weight: 500; }
+  .theme-toggle {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(255,255,255,0.1); color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 8px 14px; border-radius: 999px; font-size: 12px;
+    cursor: pointer; z-index: 1000;
+  }
+  .phones { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; }
+  .phone {
+    width: 375px; height: 812px;
+    background: var(--bg); border-radius: 44px;
+    box-shadow: 0 0 0 12px #1a1a1d, 0 0 0 14px #2a2a2e, 0 24px 60px rgba(0,0,0,0.5);
+    overflow: hidden; position: relative; color: var(--text);
+    display: flex; flex-direction: column;
+  }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 130px; height: 28px; background: #1a1a1d;
+    border-radius: 0 0 18px 18px; z-index: 100;
+  }
+  .status-bar {
+    height: 44px; padding: 0 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 600; flex-shrink: 0;
+  }
+  .status-icons { display: flex; gap: 6px; align-items: center; }
+
+  .header {
+    padding: 8px 16px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .header h1 {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.5px;
+  }
+  .icon-btn {
+    width: 44px; height: 44px; border-radius: 22px;
+    background: var(--surface-2); border: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text); cursor: pointer;
+  }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  .storage-card {
+    margin: 0 16px 12px;
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .storage-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .storage-label {
+    font-size: 13px; color: var(--text-muted); font-weight: 500;
+  }
+  .storage-value {
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .storage-bar {
+    height: 8px; background: var(--surface-2);
+    border-radius: 4px; overflow: hidden;
+    display: flex;
+  }
+  .storage-seg {
+    height: 100%;
+  }
+  .seg-app { background: var(--accent); width: 28%; }
+  .seg-cache { background: var(--warn); width: 6%; }
+  .seg-other { background: var(--text-muted); width: 32%; }
+  .storage-legend {
+    display: flex; justify-content: space-between; gap: 12px;
+    margin-top: 10px;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 8px; height: 8px; border-radius: 4px;
+  }
+  .legend-dot.app { background: var(--accent); }
+  .legend-dot.cache { background: var(--warn); }
+  .legend-dot.other { background: var(--text-muted); }
+  .legend-dot.free { background: var(--surface-2); border: 1px solid var(--border); }
+
+  .filter-tabs {
+    padding: 0 16px 8px;
+    display: flex; gap: 6px;
+  }
+  .ftab {
+    padding: 8px 14px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text);
+    font-size: 13px; font-weight: 500;
+    border: none; cursor: pointer;
+  }
+  .ftab.active {
+    background: var(--text); color: var(--bg);
+  }
+  .ftab .count {
+    margin-left: 4px; font-weight: 700; opacity: 0.8;
+  }
+
+  .scroll-area { flex: 1; overflow-y: auto; padding-bottom: 8px; }
+
+  .section-label {
+    padding: 10px 16px 6px;
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-muted);
+  }
+
+  /* Download row */
+  .download-row {
+    margin: 6px 16px;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex; gap: 12px; align-items: center;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .dl-thumb {
+    width: 64px; height: 64px; border-radius: 8px;
+    background: linear-gradient(135deg, #4a5fc1, #2d3a8c);
+    flex-shrink: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dl-thumb.t2 { background: linear-gradient(135deg, #c14a8d, #8c2d5d); }
+  .dl-thumb.t3 { background: linear-gradient(135deg, #4ac195, #2d8c6c); }
+  .dl-thumb.t4 { background: linear-gradient(135deg, #c1924a, #8c662d); }
+  .dl-thumb.t5 { background: linear-gradient(135deg, #6b4ac1, #3d2d8c); }
+  .dl-thumb svg { width: 22px; height: 22px; color: rgba(255,255,255,0.9); }
+  .dl-info { flex: 1; min-width: 0; }
+  .dl-title {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dl-meta {
+    font-size: 11px; color: var(--text-muted); margin-top: 4px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .dl-meta-dot { width: 2px; height: 2px; border-radius: 1px; background: currentColor; }
+
+  .dl-progress {
+    margin-top: 8px;
+    height: 4px; background: var(--surface-2);
+    border-radius: 2px; overflow: hidden;
+  }
+  .dl-progress-fill {
+    height: 100%; background: var(--accent);
+    border-radius: 2px;
+  }
+  .dl-progress-fill.indeterminate {
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    background-size: 50% 100%; background-repeat: no-repeat;
+    animation: indet 1.5s linear infinite;
+    width: 100%;
+  }
+  @keyframes indet {
+    0% { background-position: -50% 0; }
+    100% { background-position: 150% 0; }
+  }
+
+  .dl-progress-row {
+    margin-top: 6px;
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .dl-progress-row .dl-pct {
+    color: var(--accent); font-weight: 600;
+  }
+
+  .dl-action {
+    width: 36px; height: 36px; border-radius: 18px;
+    background: var(--surface-2); border: none; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text); cursor: pointer;
+  }
+  .dl-action svg { width: 16px; height: 16px; }
+  .dl-action.pause { background: var(--accent); color: #fff; }
+  .dl-action.done { color: var(--success); background: rgba(34, 197, 94, 0.12); }
+
+  .badge-status {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .badge-downloading {
+    background: rgba(59, 130, 246, 0.15); color: var(--accent);
+  }
+  .badge-queued {
+    background: rgba(217, 119, 6, 0.15); color: var(--warn);
+  }
+  .badge-done {
+    background: rgba(34, 197, 94, 0.15); color: var(--success);
+  }
+
+  /* Swipe action visualization */
+  .swipe-row {
+    position: relative;
+    margin: 6px 16px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--danger);
+    box-shadow: var(--shadow);
+  }
+  .swipe-actions {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    display: flex; align-items: stretch;
+    z-index: 1;
+  }
+  .swipe-btn {
+    width: 80px;
+    background: var(--danger); color: #fff;
+    border: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; font-size: 11px; font-weight: 600;
+    cursor: pointer;
+  }
+  .swipe-btn svg { width: 20px; height: 20px; }
+  .swipe-btn.archive { background: var(--text-muted); }
+  .swipe-content {
+    background: var(--surface);
+    padding: 12px;
+    display: flex; gap: 12px; align-items: center;
+    transform: translateX(-160px);
+    transition: transform 0.2s;
+    position: relative;
+    z-index: 2;
+  }
+
+  .home-indicator {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    width: 134px; height: 5px; background: var(--text);
+    opacity: 0.4; border-radius: 3px;
+  }
+
+  .bottom-nav {
+    height: 84px; background: var(--tab-bg);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex; padding: 8px 0 24px; flex-shrink: 0;
+  }
+  .tab {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    color: var(--text-muted); background: none; border: none;
+    cursor: pointer; min-height: 52px;
+  }
+  .tab.active { color: var(--accent); }
+  .tab svg { width: 24px; height: 24px; }
+  .tab-label { font-size: 10px; font-weight: 500; }
+
+  .swipe-hint {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 10px; color: var(--text-muted);
+    background: var(--surface);
+    padding: 4px 8px; border-radius: 999px;
+    z-index: 3; opacity: 0.85;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="document.querySelectorAll('[data-theme]').forEach(el => el.dataset.theme = el.dataset.theme === 'light' ? 'dark' : 'light')">Toggle theme</button>
+  <div class="page-title">Mobile · Downloads (Light + Dark)</div>
+  <div class="phones">
+
+    <!-- LIGHT -->
+    <div class="phone" data-theme="light">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span>9:41</span>
+        <div class="status-icons">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="18" height="10" rx="2"/></svg>
+        </div>
+      </div>
+      <div class="header">
+        <h1>Downloads</h1>
+        <button class="icon-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51"/></svg>
+        </button>
+      </div>
+
+      <div class="storage-card">
+        <div class="storage-row">
+          <span class="storage-label">Storage on iPhone</span>
+          <span class="storage-value">42.6 GB / 64 GB</span>
+        </div>
+        <div class="storage-bar">
+          <div class="storage-seg seg-app"></div>
+          <div class="storage-seg seg-cache"></div>
+          <div class="storage-seg seg-other"></div>
+        </div>
+        <div class="storage-legend">
+          <span class="legend-item"><span class="legend-dot app"></span>Maktaba 17.8 GB</span>
+          <span class="legend-item"><span class="legend-dot cache"></span>Cache 3.9 GB</span>
+          <span class="legend-item"><span class="legend-dot other"></span>Other 20.9 GB</span>
+          <span class="legend-item"><span class="legend-dot free"></span>Free 21.4 GB</span>
+        </div>
+      </div>
+
+      <div class="filter-tabs">
+        <button class="ftab active">All <span class="count">12</span></button>
+        <button class="ftab">Active <span class="count">2</span></button>
+        <button class="ftab">Done <span class="count">10</span></button>
+      </div>
+
+      <div class="scroll-area">
+        <div class="section-label">Downloading · 2</div>
+
+        <div class="download-row">
+          <div class="dl-thumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Cordoba: A City of Light</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-downloading">Downloading</span>
+              <span>HD · 2.1 GB</span>
+            </div>
+            <div class="dl-progress"><div class="dl-progress-fill" style="width: 64%"></div></div>
+            <div class="dl-progress-row">
+              <span><span class="dl-pct">64%</span> · 1.34 GB of 2.1 GB</span>
+              <span>3.2 MB/s · 4 min left</span>
+            </div>
+          </div>
+          <button class="dl-action pause" aria-label="Pause">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+          </button>
+        </div>
+
+        <div class="download-row">
+          <div class="dl-thumb t2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">The Andalusian Library — Audio AR</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-queued">Queued</span>
+              <span>Waiting on Wi-Fi</span>
+            </div>
+            <div class="dl-progress"><div class="dl-progress-fill indeterminate"></div></div>
+            <div class="dl-progress-row">
+              <span>0 of 412 MB</span>
+              <span>—</span>
+            </div>
+          </div>
+          <button class="dl-action" aria-label="Cancel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="section-label">Downloaded · 10</div>
+
+        <!-- Swipe revealed -->
+        <div class="swipe-row">
+          <div class="swipe-actions">
+            <button class="swipe-btn archive" aria-label="Archive">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg>
+              Archive
+            </button>
+            <button class="swipe-btn" aria-label="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+              Delete
+            </button>
+          </div>
+          <div class="swipe-content">
+            <div class="dl-thumb t3">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+            </div>
+            <div class="dl-info">
+              <div class="dl-title">Algebra Before Al-Khwarizmi</div>
+              <div class="dl-meta">
+                <span class="badge-status badge-done">Ready</span>
+                <span>1.6 GB · Expires in 28 days</span>
+              </div>
+            </div>
+          </div>
+          <span class="swipe-hint">← swipe</span>
+        </div>
+
+        <div class="download-row">
+          <div class="dl-thumb t4">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Astrolabes & Navigation</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>980 MB · 2 audio tracks</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+
+        <div class="download-row">
+          <div class="dl-thumb t5">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Ibn Sina: A Persian Polymath</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>2.4 GB · HD</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+
+        <div class="download-row">
+          <div class="dl-thumb">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">The House of Wisdom</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>1.2 GB · SD</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="bottom-nav">
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+          <span class="tab-label">Library</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <span class="tab-label">Search</span>
+        </button>
+        <button class="tab active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span class="tab-label">Downloads</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51"/></svg>
+          <span class="tab-label">Settings</span>
+        </button>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+
+    <!-- DARK -->
+    <div class="phone" data-theme="dark">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span>9:41</span>
+        <div class="status-icons">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="18" height="10" rx="2"/></svg>
+        </div>
+      </div>
+      <div class="header">
+        <h1>Downloads</h1>
+        <button class="icon-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51"/></svg>
+        </button>
+      </div>
+      <div class="storage-card">
+        <div class="storage-row">
+          <span class="storage-label">Storage on iPhone</span>
+          <span class="storage-value">42.6 GB / 64 GB</span>
+        </div>
+        <div class="storage-bar">
+          <div class="storage-seg seg-app"></div>
+          <div class="storage-seg seg-cache"></div>
+          <div class="storage-seg seg-other"></div>
+        </div>
+        <div class="storage-legend">
+          <span class="legend-item"><span class="legend-dot app"></span>Maktaba 17.8 GB</span>
+          <span class="legend-item"><span class="legend-dot cache"></span>Cache 3.9 GB</span>
+          <span class="legend-item"><span class="legend-dot other"></span>Other 20.9 GB</span>
+          <span class="legend-item"><span class="legend-dot free"></span>Free 21.4 GB</span>
+        </div>
+      </div>
+      <div class="filter-tabs">
+        <button class="ftab active">All <span class="count">12</span></button>
+        <button class="ftab">Active <span class="count">2</span></button>
+        <button class="ftab">Done <span class="count">10</span></button>
+      </div>
+      <div class="scroll-area">
+        <div class="section-label">Downloading · 2</div>
+        <div class="download-row">
+          <div class="dl-thumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Cordoba: A City of Light</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-downloading">Downloading</span>
+              <span>HD · 2.1 GB</span>
+            </div>
+            <div class="dl-progress"><div class="dl-progress-fill" style="width: 64%"></div></div>
+            <div class="dl-progress-row">
+              <span><span class="dl-pct">64%</span> · 1.34 GB of 2.1 GB</span>
+              <span>3.2 MB/s · 4 min left</span>
+            </div>
+          </div>
+          <button class="dl-action pause" aria-label="Pause">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+          </button>
+        </div>
+        <div class="download-row">
+          <div class="dl-thumb t2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">The Andalusian Library — Audio AR</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-queued">Queued</span>
+              <span>Waiting on Wi-Fi</span>
+            </div>
+            <div class="dl-progress"><div class="dl-progress-fill indeterminate"></div></div>
+            <div class="dl-progress-row">
+              <span>0 of 412 MB</span>
+              <span>—</span>
+            </div>
+          </div>
+          <button class="dl-action" aria-label="Cancel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="section-label">Downloaded · 10</div>
+        <div class="swipe-row">
+          <div class="swipe-actions">
+            <button class="swipe-btn archive" aria-label="Archive">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg>
+              Archive
+            </button>
+            <button class="swipe-btn" aria-label="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+              Delete
+            </button>
+          </div>
+          <div class="swipe-content">
+            <div class="dl-thumb t3">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+            </div>
+            <div class="dl-info">
+              <div class="dl-title">Algebra Before Al-Khwarizmi</div>
+              <div class="dl-meta">
+                <span class="badge-status badge-done">Ready</span>
+                <span>1.6 GB · Expires in 28 days</span>
+              </div>
+            </div>
+          </div>
+          <span class="swipe-hint">← swipe</span>
+        </div>
+        <div class="download-row">
+          <div class="dl-thumb t4">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Astrolabes & Navigation</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>980 MB · 2 audio tracks</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+        <div class="download-row">
+          <div class="dl-thumb t5">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">Ibn Sina: A Persian Polymath</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>2.4 GB · HD</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+        <div class="download-row">
+          <div class="dl-thumb">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13l4 4L19 7l-1.4-1.4L9 14.2l-2.6-2.6z"/></svg>
+          </div>
+          <div class="dl-info">
+            <div class="dl-title">The House of Wisdom</div>
+            <div class="dl-meta">
+              <span class="badge-status badge-done">Ready</span>
+              <span>1.2 GB · SD</span>
+            </div>
+          </div>
+          <button class="dl-action done" aria-label="Play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="bottom-nav">
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+          <span class="tab-label">Library</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <span class="tab-label">Search</span>
+        </button>
+        <button class="tab active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span class="tab-label">Downloads</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51"/></svg>
+          <span class="tab-label">Settings</span>
+        </button>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+
+  </div>
+</body>
+</html>

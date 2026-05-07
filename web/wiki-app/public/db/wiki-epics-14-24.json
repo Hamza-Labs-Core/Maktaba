@@ -1,0 +1,535 @@
+{
+  "$schema": "https://maktaba.local/wiki-db.schema.json",
+  "version": "1.0.0",
+  "generated_at": "2026-05-06",
+  "scope": "epics-14-24",
+  "notes": "Structured wiki database for epics 14-24. Linear issues are recorded as null where no Linear board is set up for the project; populate with the canonical issue ID (e.g., MAK-1407) once linked. Migration slot numbers reflect each plan's claim; canonical assignments live in shared/db/migrations/MANIFEST.md and may shift during slot reconciliation (see docs/wiki/migrations.md §5).",
+  "entries": [
+    {
+      "id": "epic-14",
+      "type": "epic",
+      "title": "TV Apps",
+      "epic": 14,
+      "content": "Native tvOS (Swift / SwiftUI / AVPlayer) and Android TV (Kotlin / Compose for TV / ExoPlayer) apps consuming the same GraphQL schema as every other client. 10-foot UI, D-pad navigation, voice search, HDR pass-through, Continue Watching + Recommendations rows.",
+      "tags": ["tv", "tvos", "android-tv", "10-foot-ui", "hdr", "qr-pairing", "recommendations"],
+      "related": ["epic-15", "epic-17", "epic-10", "epic-7", "epic-8", "epic-5"],
+      "file_paths": [
+        "docs/wiki/epics/epic-14-tv-apps.md",
+        "specs/epics/14-tv-apps/README.md",
+        "web/mockups/tv/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /api/auth/pair",
+        "POST /api/auth/pair/claim",
+        "GET /api/auth/pair/{code}",
+        "GET /api/me/playback-state?in_progress=true",
+        "POST /api/search",
+        "GET /api/search/suggest",
+        "GET /api/recommendations?surface=tv-home",
+        "DELETE /api/recommendations/rows/{reason_kind}",
+        "DELETE /api/recommendations/items/{video_id}",
+        "POST /api/recommendations/refresh"
+      ],
+      "db_tables": [
+        "playback_state",
+        "recommendation_dismissals",
+        "media_features"
+      ],
+      "migrations": ["0046", "0047"]
+    },
+    {
+      "id": "story-14-01",
+      "type": "story",
+      "title": "tvOS app (Swift / SwiftUI)",
+      "epic": 14,
+      "content": "tvOS 17+ SwiftUI app with AVPlayer HLS+HDR playback, Top Shelf extension, Apollo iOS GraphQL client, QR pairing as issuer, Apple TV Remote support.",
+      "tags": ["tvos", "swiftui", "apollo-ios", "top-shelf", "avplayer"],
+      "related": ["epic-14", "story-15-05", "story-17-01", "story-17-08"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-01-tvos.md",
+        "specs/epics/14-tv-apps/plan-14-01-tvos.md",
+        "apps/tvos/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": ["POST /api/auth/pair", "GET /api/auth/pair/{code}", "POST /api/auth/refresh", "POST /api/me/playback-state"],
+      "db_tables": [],
+      "migrations": []
+    },
+    {
+      "id": "story-14-02",
+      "type": "story",
+      "title": "Android TV app",
+      "epic": 14,
+      "content": "Android TV 9+ Compose for TV app, ExoPlayer HLS+HDR, Recommendations Channel via WorkManager + PreviewChannel API, Apollo Kotlin client.",
+      "tags": ["android-tv", "compose-for-tv", "exoplayer", "leanback", "apollo-kotlin"],
+      "related": ["epic-14", "story-15-05", "story-17-01"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-02-android-tv.md",
+        "specs/epics/14-tv-apps/plan-14-02-android-tv.md",
+        "apps/androidtv/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": ["POST /api/auth/pair", "POST /api/auth/refresh"],
+      "db_tables": [],
+      "migrations": []
+    },
+    {
+      "id": "story-14-03",
+      "type": "story",
+      "title": "10-foot UI design",
+      "epic": 14,
+      "content": "TV-specific type scale (28-96pt), focus rings, D-pad geometry primitives, safe-area insets, FocusableCardStyle.",
+      "tags": ["ui", "10-foot-ui", "focus-engine", "tokens"],
+      "related": ["epic-14", "story-17-01", "story-17-02"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-03-10-foot-ui.md",
+        "specs/epics/14-tv-apps/plan-14-03-10-foot-ui.md",
+        "design/tokens/tokens.json",
+        "design/docs/10-foot.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": [],
+      "migrations": []
+    },
+    {
+      "id": "story-14-04",
+      "type": "story",
+      "title": "Voice search integration",
+      "epic": 14,
+      "content": "Siri App Intents + SFSpeechRecognizer (tvOS); Google Assistant action + RecognizerIntent (Android TV); did-you-mean suggestions.",
+      "tags": ["voice", "siri", "google-assistant", "search"],
+      "related": ["epic-14", "epic-5"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-04-voice-search.md",
+        "specs/epics/14-tv-apps/plan-14-04-voice-search.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": ["POST /api/search", "GET /api/search/suggest"],
+      "db_tables": [],
+      "migrations": []
+    },
+    {
+      "id": "story-14-05",
+      "type": "story",
+      "title": "Continue Watching row",
+      "epic": 14,
+      "content": "Home screen first row populated from playback_state (5-95% watched), recency-sorted, cross-device sync via WS playback.changed events.",
+      "tags": ["continue-watching", "playback-state", "websocket"],
+      "related": ["epic-14", "epic-7"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-05-continue-watching.md",
+        "specs/epics/14-tv-apps/plan-14-05-continue-watching.md",
+        "shared/db/queries/playback_state.sql"
+      ],
+      "linear_issue": null,
+      "api_endpoints": ["GET /api/me/playback-state?in_progress=true"],
+      "db_tables": ["playback_state"],
+      "migrations": ["0046"]
+    },
+    {
+      "id": "story-14-06",
+      "type": "story",
+      "title": "Recommendations UI",
+      "epic": 14,
+      "content": "Up to 5 rows x <=20 items with localized titles + reasons; Not interested dismissal; cached 24h server-side.",
+      "tags": ["recommendations", "ui"],
+      "related": ["epic-14", "story-14-07"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-06-recommendations-ui.md",
+        "specs/epics/14-tv-apps/plan-14-06-recommendations-ui.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "GET /api/recommendations?surface=tv-home",
+        "DELETE /api/recommendations/rows/{reason_kind}",
+        "DELETE /api/recommendations/items/{video_id}"
+      ],
+      "db_tables": [],
+      "migrations": []
+    },
+    {
+      "id": "story-14-07",
+      "type": "story",
+      "title": "API: recommendations endpoint",
+      "epic": 14,
+      "content": "Nightly batch recommender: semantic similarity over media_features embeddings + speaker heuristic (>=3 watches) + library affinity + cold-start; 60s in-process LRU cache.",
+      "tags": ["recommendations", "api", "embeddings"],
+      "related": ["epic-14", "epic-5", "epic-9"],
+      "file_paths": [
+        "specs/epics/14-tv-apps/story-14-07-recommendations-api.md",
+        "specs/epics/14-tv-apps/plan-14-07-recommendations-api.md",
+        "api/internal/recommender/compose_tv.go",
+        "shared/db/queries/recommendations.sql"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "GET /api/recommendations",
+        "DELETE /api/recommendations/rows/{reason_kind}",
+        "DELETE /api/recommendations/items/{video_id}",
+        "POST /api/recommendations/refresh"
+      ],
+      "db_tables": ["recommendation_dismissals"],
+      "migrations": ["0047"]
+    },
+
+    {
+      "id": "epic-15",
+      "type": "epic",
+      "title": "Discovery & Networking",
+      "epic": 15,
+      "content": "mDNS LAN discovery, opt-in cloud relay (QUIC + SPKI pinning), server-to-server federation (X25519 + Ed25519 + SAS), UPnP/DLNA compatibility, QR pairing. All cross-instance features ship off and require explicit user action.",
+      "tags": ["mdns", "relay", "federation", "dlna", "qr-pairing", "tofu", "spki"],
+      "related": ["epic-14", "epic-10", "epic-16", "epic-23"],
+      "file_paths": [
+        "docs/wiki/epics/epic-15-discovery.md",
+        "specs/epics/15-discovery/README.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /api/auth/pair",
+        "POST /api/auth/pair/claim",
+        "DELETE /api/auth/pair/{code}",
+        "GET /api/auth/pair",
+        "GET /api/system/cert-rotation",
+        "POST /api/federation/init",
+        "POST /api/federation/pair",
+        "POST /api/federation/{partner_id}/confirm",
+        "POST /api/federation/{partner_id}/token",
+        "GET /api/federation",
+        "PATCH /api/federation/{partner_id}",
+        "DELETE /api/federation/{partner_id}"
+      ],
+      "db_tables": [
+        "server_identity",
+        "relay_settings",
+        "relay_usage",
+        "dlna_settings",
+        "pairing_codes",
+        "federation_pending",
+        "federation_partners"
+      ],
+      "migrations": ["0050", "0051", "0052", "0053", "0054"]
+    },
+
+    {
+      "id": "epic-16",
+      "type": "epic",
+      "title": "Subscriptions & Monetization (Optional)",
+      "epic": 16,
+      "content": "Optional premium tier (home / pro) gated by Ed25519-signed license key; free tier remains fully functional. Stripe Customer Portal for billing; opt-in telemetry; per-tier feature flags with cohorts.",
+      "tags": ["subscriptions", "license", "ed25519", "stripe", "feature-flags", "telemetry", "tier"],
+      "related": ["epic-10", "epic-15", "epic-21", "epic-23"],
+      "file_paths": [
+        "docs/wiki/epics/epic-16-subscriptions.md",
+        "specs/epics/16-subscriptions/README.md",
+        "web/mockups/admin/subscriptions.html"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /api/billing/portal-session",
+        "POST /api/billing/webhook",
+        "POST /api/billing/cancel",
+        "POST /api/admin/license",
+        "DELETE /api/admin/license",
+        "GET /api/admin/license",
+        "POST /api/telemetry",
+        "POST /api/telemetry/web-vitals",
+        "DELETE /api/telemetry/devices/{pseudonym}",
+        "GET /api/me/flags",
+        "POST /api/admin/flags/overrides",
+        "PATCH /api/admin/flags/overrides/{id}",
+        "DELETE /api/admin/flags/overrides/{id}",
+        "GET /api/admin/flags",
+        "POST /api/admin/cohorts/{cohort}/users",
+        "DELETE /api/admin/cohorts/{cohort}/users/{user_id}",
+        "POST /api/me/cohorts"
+      ],
+      "db_tables": [
+        "tier_grace",
+        "billing_customers",
+        "billing_subscriptions",
+        "billing_invoices",
+        "billing_webhook_events",
+        "licenses",
+        "license_revocations",
+        "telemetry_events",
+        "telemetry_web_vitals",
+        "feature_flag_overrides",
+        "beta_cohorts"
+      ],
+      "migrations": ["0060", "0061", "0062", "0063", "0064", "0065"]
+    },
+
+    {
+      "id": "epic-17",
+      "type": "epic",
+      "title": "UX Design System",
+      "epic": 17,
+      "content": "Design tokens as single source of truth; Style Dictionary build pipeline emits CSS / Swift / Kotlin / JSON; React + Storybook component library with Chromatic visual regression; RTL-first (Arabic baseline); respect OS preferences (dark mode, reduced motion, high contrast).",
+      "tags": ["ux", "design-tokens", "rtl", "storybook", "components", "style-dictionary"],
+      "related": ["epic-11", "epic-12", "epic-13", "epic-14"],
+      "file_paths": [
+        "docs/wiki/epics/epic-17-ux-design-system.md",
+        "specs/epics/17-ux-design-system/README.md",
+        "design/tokens/tokens.json",
+        "design/storybook/",
+        "web/mockups/components/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": [],
+      "migrations": []
+    },
+
+    {
+      "id": "epic-18",
+      "type": "epic",
+      "title": "Performance",
+      "epic": 18,
+      "content": "Per-endpoint p50/p95/p99 budgets in shared/perf_budgets.yaml; warm/cold cache tags; single-flight on cold paths; embed deadline 200ms with FTS-only fallback; cache hit-rate floors; soak test detecting <1 MiB/h leak.",
+      "tags": ["performance", "latency-budget", "cache", "single-flight", "metrics"],
+      "related": ["epic-19", "epic-20", "epic-21"],
+      "file_paths": [
+        "docs/wiki/epics/epic-18-performance.md",
+        "specs/epics/18-performance/README.md",
+        "shared/perf_budgets.yaml",
+        "tests/perf/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "GET /api/libraries",
+        "GET /api/videos/{id}",
+        "POST /api/search",
+        "GET /stream/{id}/master.m3u8",
+        "GET /stream/{id}/{rend}/{seg}.ts",
+        "POST /admin/cache/{name}/flush"
+      ],
+      "db_tables": ["videos", "segments", "transcript_units", "processing_jobs"],
+      "migrations": []
+    },
+
+    {
+      "id": "epic-19",
+      "type": "epic",
+      "title": "Scalability",
+      "epic": 19,
+      "content": "Single-host capacity floor (50k videos / 1M segments / 30 TB on Mac mini M2); stateless API with NOTIFY+events fan-out; sticky-session streaming; SKIP LOCKED pipeline coordination; Postgres replica with lag-aware routing; bounded-memory cold scan; concurrency caps; multi-tenant readiness via flag flip.",
+      "tags": ["scalability", "scale-axis", "sticky-session", "skip-locked", "advisory-lock", "multi-tenant", "sentinel"],
+      "related": ["epic-18", "epic-24", "epic-7", "epic-6", "epic-23"],
+      "file_paths": [
+        "docs/wiki/epics/epic-19-scalability.md",
+        "specs/epics/19-scalability/README.md",
+        "tests/capacity/"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /healthz",
+        "/ws?last_event_id=<id>",
+        "OpenSession (gRPC)",
+        "/api/system/health",
+        "POST /admin/cache/hash/{hash}/evict",
+        "POST /admin/multi_user/enable",
+        "PATCH /admin/caps/{library_id}"
+      ],
+      "db_tables": [
+        "events",
+        "streaming_replicas",
+        "streaming_sessions",
+        "processing_jobs",
+        "library_budgets",
+        "library_acl"
+      ],
+      "migrations": []
+    },
+
+    {
+      "id": "epic-20",
+      "type": "epic",
+      "title": "Testing",
+      "epic": 20,
+      "content": "Three-tier pyramid (unit / integration / e2e) with Go build tags / pytest marks / TS suffixes; per-tier runtime budgets (60s / 8m / 12m); fixture corpus; coverage floors; contract drift fails CI; perf regression CI; flake auto-quarantine.",
+      "tags": ["testing", "pyramid", "fixture", "contract", "flake", "perf-ci"],
+      "related": ["epic-18", "epic-22"],
+      "file_paths": [
+        "docs/wiki/epics/epic-20-testing.md",
+        "specs/epics/20-testing/README.md",
+        "shared/fixtures/",
+        "shared/testtier/",
+        "tools/coverage/floors.yaml",
+        "tools/flakes/registry.json"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": [],
+      "migrations": []
+    },
+
+    {
+      "id": "epic-21",
+      "type": "epic",
+      "title": "Observability",
+      "epic": 21,
+      "content": "Structured JSON logs with required base fields; per-service /metrics with strict cardinality (no per-row labels); OTel distributed tracing with W3C traceparent + composite head sampler; /healthz + /readyz + /api/system/health; UUIDv7 error_id with rate-limited webhook; append-only partitioned audit_log; queue/job visibility; default-off outbound telemetry with redaction.",
+      "tags": ["observability", "logging", "metrics", "tracing", "audit-log", "redaction", "telemetry"],
+      "related": ["epic-23", "epic-16", "epic-22"],
+      "file_paths": [
+        "docs/wiki/epics/epic-21-observability.md",
+        "specs/epics/21-observability/README.md",
+        "shared/log/",
+        "shared/metrics/",
+        "shared/tracing/",
+        "shared/audit/",
+        "shared/redact/list.yaml"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /admin/log/level",
+        "/metrics",
+        "/healthz",
+        "/readyz",
+        "/api/system/health",
+        "GET /api/libraries/{id}/audit",
+        "GET /api/security/audit",
+        "GET /api/queue/stats",
+        "GET /api/jobs/{id}",
+        "WS /ws/jobs",
+        "POST /api/telemetry/web-vitals"
+      ],
+      "db_tables": ["audit_log"],
+      "migrations": ["0045"]
+    },
+
+    {
+      "id": "epic-22",
+      "type": "epic",
+      "title": "DevOps and Delivery",
+      "epic": 22,
+      "content": "Six-gate CI (lint/unit/integration/e2e/perf-ci/build-artifacts); reproducible builds via -trimpath, uv lock, pnpm lock, ko, cosign, minisign; four multi-arch container images + Caddy reverse proxy; Goose migrations with linter; SemVer tagging + CHANGELOG gate; doctor pre-flight + drain-mode rolling restart + version-jump guard; multi-platform packaging (Homebrew, deb/rpm, Capacitor mobile, Tauri desktop, native TV).",
+      "tags": ["devops", "ci", "reproducible-build", "container", "migrations", "release", "packaging"],
+      "related": ["epic-20", "epic-23", "epic-24"],
+      "file_paths": [
+        "docs/wiki/epics/epic-22-devops.md",
+        "specs/epics/22-devops/README.md",
+        ".github/workflows/",
+        "deploy/compose/",
+        "Makefile",
+        "VERSION",
+        "CHANGELOG.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": ["GET /api/system/version", "GET /admin/drain"],
+      "db_tables": [],
+      "migrations": []
+    },
+
+    {
+      "id": "epic-23",
+      "type": "epic",
+      "title": "Security",
+      "epic": 23,
+      "content": "Argon2id password hashing + RS256 JWT (15 min access, 30d refresh) + JWKS rotation (90d / 30d overlap); ACL via library_acl with JWT lib claim canonical for streaming; Caddy TLS 1.2+ + HSTS + inter-service mTLS via in-process CA; secrets precedence _FILE > env > config + log redaction; input validation including paths.canonical_under_roots; rate limits + failed-login lockout; SBOM + CVE scan gate; coordinated disclosure.",
+      "tags": ["security", "auth", "jwt", "tls", "mtls", "acl", "rate-limit", "secrets", "sbom"],
+      "related": ["epic-10", "epic-15", "epic-21", "epic-22", "epic-24"],
+      "file_paths": [
+        "docs/wiki/epics/epic-23-security.md",
+        "docs/wiki/security.md",
+        "specs/epics/23-security/README.md"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "GET /.well-known/jwks.json",
+        "GET /api/settings",
+        "PUT /api/settings/<key>",
+        "POST /api/users/{id}/unlock",
+        "GET /api/system/version"
+      ],
+      "db_tables": [
+        "signing_keys",
+        "library_acl",
+        "failed_login_attempts",
+        "rate_limit_bucket"
+      ],
+      "migrations": ["0040"]
+    },
+
+    {
+      "id": "epic-24",
+      "type": "epic",
+      "title": "Data Integrity",
+      "epic": 24,
+      "content": "Atomic sidecar writes (temp + fsync + atomic rename); idempotent + resumable jobs with key (content_hash, stage, backend, model, config_hash); FK/unique/CHECK constraints + soft-delete partial unique; SKIP LOCKED + advisory locks + ChromaDB single-writer; daily pg_dump backups with verify; four DR scenarios with RTO/RPO; weekly integrity doctor; identity stability via BLAKE3 sample hash + superseded_by; forward-back compat via schema_version + cache key major prefix.",
+      "tags": ["data-integrity", "atomic-write", "idempotency", "advisory-lock", "backup", "disaster-recovery", "content-hash", "schema-version"],
+      "related": ["epic-1", "epic-6", "epic-19", "epic-21", "epic-22"],
+      "file_paths": [
+        "docs/wiki/epics/epic-24-data-integrity.md",
+        "specs/epics/24-data-integrity/README.md",
+        "pipeline/src/maktaba_pipeline/media/atomic_write.py"
+      ],
+      "linear_issue": null,
+      "api_endpoints": [
+        "POST /api/admin/backup/snapshot",
+        "POST /api/admin/recovery/<scenario>",
+        "WS /api/ws/recovery/<id>",
+        "GET /api/admin/integrity/reports",
+        "POST /api/watch-progress",
+        "POST /api/ws/recovery"
+      ],
+      "db_tables": [
+        "processing_jobs",
+        "advisory_locks",
+        "backups",
+        "recovery_events",
+        "videos",
+        "integrity_reports"
+      ],
+      "migrations": ["0050", "0051", "0052", "0053", "0054", "0060", "0061"]
+    },
+
+    {
+      "id": "wiki-security",
+      "type": "wiki-page",
+      "title": "Security architecture summary",
+      "epic": null,
+      "content": "Cross-cutting summary: auth flow (web cookie, native JWT pair, sentinel admin token, QR pairing), JWT lifecycle (RS256 mint/rotate/JWKS/verify with kid), signed URLs, rate limits + lockout, input validation, TLS + HSTS + mTLS + TOFU, secrets precedence + redaction, supply chain, ACL roles. Cross-references Epic 10 + Epic 23 + Epic 15 + Epic 21.",
+      "tags": ["security", "auth", "summary"],
+      "related": ["epic-23", "epic-10", "epic-15", "epic-21", "epic-22"],
+      "file_paths": ["docs/wiki/security.md"],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": ["signing_keys", "library_acl", "audit_log", "failed_login_attempts", "rate_limit_bucket"],
+      "migrations": ["0040", "0045"]
+    },
+
+    {
+      "id": "wiki-migrations",
+      "type": "wiki-page",
+      "title": "Migration catalog",
+      "epic": null,
+      "content": "Wiki view of shared/db/migrations/MANIFEST.md (canonical slots 0001-0028) plus per-epic claims for epics 07-24, reservation discipline, foundation tables crossing multiple epics, and known slot collisions awaiting reconciliation.",
+      "tags": ["migrations", "schema", "manifest"],
+      "related": ["epic-22", "epic-19", "epic-24"],
+      "file_paths": ["docs/wiki/migrations.md", "shared/db/migrations/MANIFEST.md"],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": [],
+      "migrations": []
+    },
+
+    {
+      "id": "wiki-glossary",
+      "type": "wiki-page",
+      "title": "Project glossary",
+      "epic": null,
+      "content": "Project-specific terminology used across specs/, plans, mockups, and code. Curated from epic READMEs, plans, stories. Each entry includes definition + where used.",
+      "tags": ["glossary", "terminology"],
+      "related": [],
+      "file_paths": ["docs/wiki/glossary.md"],
+      "linear_issue": null,
+      "api_endpoints": [],
+      "db_tables": [],
+      "migrations": []
+    }
+  ]
+}

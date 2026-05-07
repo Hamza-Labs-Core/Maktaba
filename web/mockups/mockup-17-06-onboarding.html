@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Onboarding (Mockup 17.06)</title>
+<style>
+  :root[data-theme="dark"] {
+    --bg: #0a0e1a;
+    --bg-grad: radial-gradient(ellipse at top, #1a1638 0%, #0a0e1a 60%);
+    --surface: #131826;
+    --elevated: #1a2033;
+    --border: #232a3d;
+    --border-strong: #303855;
+    --text: #e8eaf0;
+    --text-muted: #8b94a8;
+    --text-faint: #5b6478;
+    --accent: #6366f1;
+    --accent-hover: #7c7ff5;
+    --accent-soft: rgba(99, 102, 241, 0.15);
+    --gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+  }
+
+  /* Wizard shell */
+  .wizard {
+    width: 100%;
+    max-width: 720px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(99, 102, 241, 0.08);
+  }
+
+  /* Header — brand + progress */
+  .wiz-header {
+    padding: 22px 32px 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .brand-mark {
+    width: 30px; height: 30px;
+    background: var(--gradient);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: white;
+    font-weight: 800;
+    font-size: 14px;
+  }
+  .brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  .step-indicator {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Progress dots */
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 4px;
+    margin-top: 4px;
+  }
+  .step-pill {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .step-pill .marker {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+    display: grid; place-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: all 0.25s;
+  }
+  .step-pill .label {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.2s;
+  }
+  .step-pill.done .marker {
+    background: var(--success);
+    border-color: var(--success);
+    color: var(--bg);
+  }
+  .step-pill.done .label { color: var(--text); }
+  .step-pill.active .marker {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  .step-pill.active .label { color: var(--text); font-weight: 600; }
+  .connector {
+    height: 2px;
+    flex-shrink: 0;
+    width: 24px;
+    background: var(--border-strong);
+    border-radius: 1px;
+    transition: background 0.25s;
+    margin: 0 4px;
+  }
+  .connector.done { background: var(--success); }
+
+  /* Body */
+  .wiz-body {
+    padding: 28px 32px 24px;
+    min-height: 360px;
+    position: relative;
+  }
+  .step { display: none; animation: fade 0.3s ease; }
+  .step.active { display: block; }
+  @keyframes fade {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin-bottom: 4px;
+  }
+  .lead {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 24px;
+    max-width: 540px;
+  }
+
+  /* Welcome */
+  .welcome-hero {
+    text-align: center;
+    padding: 14px 0 22px;
+  }
+  .welcome-icon {
+    width: 96px; height: 96px;
+    background: var(--gradient);
+    border-radius: 24px;
+    display: grid; place-items: center;
+    margin: 0 auto 22px;
+    box-shadow: 0 14px 50px rgba(99, 102, 241, 0.45);
+    transform: rotate(-4deg);
+  }
+  .welcome-icon svg { color: white; }
+  .welcome-h {
+    font-size: 28px;
+    margin-bottom: 8px;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 22px;
+  }
+  .feat {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .feat .ico {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid; place-items: center;
+    margin: 0 auto 8px;
+  }
+  .feat .t { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .feat .d { font-size: 11px; color: var(--text-muted); }
+
+  /* Field */
+  .field { margin-bottom: 16px; }
+  .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .field-help {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .input-row {
+    display: flex; gap: 8px;
+  }
+  .input {
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .input.path-input {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+  }
+  .browse-btn {
+    flex-shrink: 0;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .browse-btn:hover { background: var(--border); }
+
+  /* Library preview */
+  .preview {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .preview-icon {
+    width: 40px; height: 40px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 10px;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .preview-meta { flex: 1; }
+  .preview-meta .tt {
+    font-size: 13px; font-weight: 500; margin-bottom: 2px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .preview-meta .dt {
+    font-size: 12px; color: var(--text-muted);
+    display: flex; gap: 12px;
+  }
+  .preview-meta .dt strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Engine cards */
+  .engine-grid {
+    display: grid;
+    gap: 10px;
+  }
+  .engine-card {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: center;
+    transition: all 0.15s;
+  }
+  .engine-card:hover {
+    border-color: var(--border-strong);
+  }
+  .engine-card.selected {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), transparent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .engine-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .engine-radio {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.15s;
+  }
+  .engine-card.selected .engine-radio {
+    border-color: var(--accent);
+  }
+  .engine-card.selected .engine-radio::after {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .engine-info .name {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 4px;
+  }
+  .engine-info .name .nt { font-size: 14px; font-weight: 600; }
+  .engine-info .desc {
+    font-size: 12px; color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pill-best { background: var(--accent-soft); color: var(--accent); }
+  .pill-ok { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+  .pill-warn { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+  .pill-na { background: var(--border); color: var(--text-muted); }
+  .engine-perf {
+    text-align: end;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .engine-perf .speed {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Scan progress */
+  .scan-card {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    text-align: center;
+  }
+  .scan-icon {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid; place-items: center;
+    margin: 0 auto 14px;
+    position: relative;
+  }
+  .scan-icon::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    animation: spin 1.4s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scan-h {
+    font-size: 16px; font-weight: 600; margin-bottom: 4px;
+  }
+  .scan-meta {
+    font-size: 13px; color: var(--text-muted); margin-bottom: 14px;
+  }
+  .scan-bar {
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .scan-fill {
+    height: 100%;
+    width: 64%;
+    background: var(--gradient);
+    border-radius: 4px;
+    transition: width 0.5s;
+  }
+  .scan-stats {
+    display: flex; justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .scan-stats strong { color: var(--text); }
+
+  /* Done */
+  .done-hero {
+    text-align: center;
+    padding: 4px 0 18px;
+  }
+  .done-check {
+    width: 84px; height: 84px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    display: grid; place-items: center;
+    box-shadow: 0 14px 50px rgba(16, 185, 129, 0.45);
+  }
+  .done-h {
+    font-size: 24px; font-weight: 800;
+    margin-bottom: 6px;
+    letter-spacing: -0.015em;
+  }
+  .done-summary {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 18px 0 14px;
+    text-align: start;
+  }
+  .summary-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .ico {
+    color: var(--success);
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+  }
+  .summary-row .lbl { color: var(--text-muted); }
+  .summary-row .val { font-weight: 500; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+
+  /* Footer */
+  .wiz-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 32px;
+    background: var(--elevated);
+    border-top: 1px solid var(--border);
+    gap: 8px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: var(--surface);
+    border-color: var(--border-strong);
+  }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-ghost { color: var(--text-muted); }
+  .btn-ghost:hover { color: var(--text); background: var(--surface); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Theme picker */
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .theme-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    background: var(--elevated);
+    transition: all 0.15s;
+  }
+  .theme-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .theme-preview {
+    height: 50px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    display: flex;
+    overflow: hidden;
+  }
+  .theme-light { background: linear-gradient(135deg, #f7f8fb, #e4e7ee); }
+  .theme-dark  { background: linear-gradient(135deg, #131826, #1a2033); }
+  .theme-system{ background: linear-gradient(135deg, #f7f8fb 50%, #131826 50%); }
+  .theme-card .name { font-size: 12px; font-weight: 600; }
+  .theme-card .sub { font-size: 11px; color: var(--text-muted); }
+
+  .lang-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .lang-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    background: var(--elevated);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.15s;
+  }
+  .lang-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .lang-flag {
+    width: 24px; height: 18px;
+    border-radius: 3px;
+    background-size: cover;
+    flex-shrink: 0;
+  }
+  .lang-flag.en { background: linear-gradient(180deg, #012169 33%, #fff 33%, #fff 66%, #C8102E 66%); }
+  .lang-flag.ar { background: linear-gradient(180deg, #007A3D 33%, #fff 33%, #fff 66%, #000 66%); }
+  .lang-name { font-size: 13px; font-weight: 600; }
+  .lang-sub { font-size: 11px; color: var(--text-muted); }
+
+  @media (max-width: 600px) {
+    .feature-grid, .theme-grid, .lang-grid { grid-template-columns: 1fr; }
+    .step-pill .label { display: none; }
+    .wiz-header, .wiz-body, .wiz-footer { padding-inline: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wizard">
+
+  <!-- Header -->
+  <div class="wiz-header">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div class="brand-name">Maktaba</div>
+      <div class="step-indicator">Step <span id="cur">2</span> of 5</div>
+    </div>
+    <div class="progress">
+      <div class="step-pill done"><div class="marker">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg>
+      </div><span class="label">Welcome</span></div>
+      <div class="connector done"></div>
+      <div class="step-pill active"><div class="marker">2</div><span class="label">Library</span></div>
+      <div class="connector"></div>
+      <div class="step-pill"><div class="marker">3</div><span class="label">STT engine</span></div>
+      <div class="connector"></div>
+      <div class="step-pill"><div class="marker">4</div><span class="label">First scan</span></div>
+      <div class="connector"></div>
+      <div class="step-pill"><div class="marker">5</div><span class="label">Done</span></div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="wiz-body">
+
+    <!-- Step 1: Welcome -->
+    <section class="step" data-step="1">
+      <div class="welcome-hero">
+        <div class="welcome-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2 7v10a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2z"/>
+            <polygon points="10,9 16,12 10,15" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <h1 class="welcome-h">Welcome to Maktaba</h1>
+        <p class="lead" style="margin: 0 auto 6px;">Your self-hosted video library with searchable transcripts. Let's get you set up — this takes about 90 seconds.</p>
+      </div>
+      <div class="feature-grid">
+        <div class="feat">
+          <div class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          <div class="t">Full-text search</div>
+          <div class="d">Find any spoken phrase across your entire library.</div>
+        </div>
+        <div class="feat">
+          <div class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10v4M7 8v8M11 4v16M15 8v8M19 10v4"/></svg></div>
+          <div class="t">Local-first STT</div>
+          <div class="d">Transcribe on-device with whisper-mlx — no cloud needed.</div>
+        </div>
+        <div class="feat">
+          <div class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M8 16h6"/></svg></div>
+          <div class="t">Watch anywhere</div>
+          <div class="d">Stream with subtitles to any browser, on any device.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Add library (active) -->
+    <section class="step active" data-step="2">
+      <h1>Add your first library</h1>
+      <p class="lead">Point Maktaba at a folder of videos. You can add more libraries later from Settings.</p>
+
+      <div class="field">
+        <label class="field-label" for="libname">Library name</label>
+        <input class="input" id="libname" type="text" value="Films" placeholder="e.g. Films, Lectures, Conferences">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="libpath">Folder path</label>
+        <div class="input-row">
+          <input class="input path-input" id="libpath" type="text" value="/Users/mahmoud/Movies/Library" placeholder="/path/to/videos">
+          <button class="browse-btn">Browse…</button>
+        </div>
+        <div class="field-help">No writable directory? <a href="#" style="color:var(--accent); text-decoration:none;">Create $HOME/Maktaba/Library for me</a></div>
+      </div>
+
+      <!-- Preview after path is chosen -->
+      <div class="preview">
+        <div class="preview-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="preview-meta">
+          <div class="tt">/Users/mahmoud/Movies/Library</div>
+          <div class="dt">
+            <span><strong>847</strong> video files detected</span>
+            <span><strong>4.2 TB</strong> total</span>
+            <span style="color: var(--success);">writable</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: STT engine -->
+    <section class="step" data-step="3">
+      <h1>Choose your STT engine</h1>
+      <p class="lead">We auto-detected your hardware. You can change this anytime in Settings.</p>
+
+      <div class="engine-grid">
+        <div class="engine-card selected">
+          <div class="engine-radio"></div>
+          <div class="engine-info">
+            <div class="name">
+              <span class="nt">whisper-mlx</span>
+              <span class="pill pill-best">Recommended</span>
+              <span class="pill pill-ok">Detected</span>
+            </div>
+            <div class="desc">Apple Silicon GPU acceleration · large-v3 model · runs entirely on-device</div>
+          </div>
+          <div class="engine-perf">
+            <div class="speed">4.2×</div>
+            <div>realtime</div>
+          </div>
+        </div>
+
+        <div class="engine-card">
+          <div class="engine-radio"></div>
+          <div class="engine-info">
+            <div class="name">
+              <span class="nt">whisper-cpu</span>
+              <span class="pill pill-warn">Slow on CPU</span>
+            </div>
+            <div class="desc">Pure CPU fallback · medium model · works everywhere</div>
+          </div>
+          <div class="engine-perf">
+            <div class="speed">0.4×</div>
+            <div>realtime</div>
+          </div>
+        </div>
+
+        <div class="engine-card disabled">
+          <div class="engine-radio"></div>
+          <div class="engine-info">
+            <div class="name">
+              <span class="nt">whisper-cuda</span>
+              <span class="pill pill-na">No GPU detected</span>
+            </div>
+            <div class="desc">NVIDIA GPU acceleration · large-v3 model · requires CUDA toolkit</div>
+          </div>
+          <div class="engine-perf">
+            <div class="speed">—</div>
+            <div>unavailable</div>
+          </div>
+        </div>
+
+        <div class="engine-card">
+          <div class="engine-radio"></div>
+          <div class="engine-info">
+            <div class="name">
+              <span class="nt">openai-api</span>
+              <span class="pill pill-warn">Pay-per-use</span>
+            </div>
+            <div class="desc">Cloud transcription via OpenAI · whisper-1 · API key required</div>
+          </div>
+          <div class="engine-perf">
+            <div class="speed">~10×</div>
+            <div>realtime</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 4: First scan -->
+    <section class="step" data-step="4">
+      <h1>Starting your first scan</h1>
+      <p class="lead">Maktaba is indexing your library and queuing transcription jobs. You can browse the UI as it works.</p>
+
+      <div class="scan-card">
+        <div class="scan-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </div>
+        <div class="scan-h">Indexing /Users/mahmoud/Movies/Library</div>
+        <div class="scan-meta">Reading metadata, generating posters, queueing transcription…</div>
+        <div class="scan-bar"><div class="scan-fill"></div></div>
+        <div class="scan-stats">
+          <span><strong>542</strong> / 847 videos</span>
+          <span>~ <strong>2 min</strong> remaining</span>
+          <span><strong>64%</strong></span>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 20px; display: flex; gap: 8px; align-items: flex-start;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent); flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <div style="font-size: 12px; color: var(--text-muted);">
+          Indexing happens in the background. Transcription will continue after this wizard closes — you don't need to wait.
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 5: Done -->
+    <section class="step" data-step="5">
+      <div class="done-hero">
+        <div class="done-check">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg>
+        </div>
+        <h1 class="done-h">You're all set!</h1>
+        <p class="lead" style="margin: 0 auto;">Your library is indexed and Maktaba is ready to use.</p>
+      </div>
+
+      <div class="done-summary">
+        <div class="summary-row">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+          <span class="lbl">Library</span>
+          <span class="val">Films · 847 videos</span>
+        </div>
+        <div class="summary-row">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+          <span class="lbl">STT engine</span>
+          <span class="val">whisper-mlx · large-v3</span>
+        </div>
+        <div class="summary-row">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>
+          <span class="lbl">Language &amp; theme</span>
+          <span class="val">English · System</span>
+        </div>
+        <div class="summary-row">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--warning);"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          <span class="lbl">Transcription queue</span>
+          <span class="val">847 jobs · ~9h remaining</span>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 18px;">
+        <h3 style="font-size: 13px; margin-bottom: 8px;">Pick your appearance</h3>
+        <div class="theme-grid">
+          <div class="theme-card">
+            <div class="theme-preview theme-light"></div>
+            <div class="name">Light</div>
+            <div class="sub">Clean &amp; bright</div>
+          </div>
+          <div class="theme-card selected">
+            <div class="theme-preview theme-dark"></div>
+            <div class="name">Dark</div>
+            <div class="sub">Easy on the eyes</div>
+          </div>
+          <div class="theme-card">
+            <div class="theme-preview theme-system"></div>
+            <div class="name">System</div>
+            <div class="sub">Follows OS</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 18px;">
+        <h3 style="font-size: 13px; margin-bottom: 8px;">Interface language</h3>
+        <div class="lang-grid">
+          <div class="lang-card selected">
+            <div class="lang-flag en"></div>
+            <div>
+              <div class="lang-name">English</div>
+              <div class="lang-sub">LTR</div>
+            </div>
+          </div>
+          <div class="lang-card">
+            <div class="lang-flag ar"></div>
+            <div>
+              <div class="lang-name">العربية</div>
+              <div class="lang-sub">RTL</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="wiz-footer">
+    <button class="btn btn-ghost" id="backBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back
+    </button>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-ghost" id="skipBtn">Skip</button>
+      <button class="btn btn-primary" id="nextBtn">
+        Next
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let current = 2;
+  const total = 5;
+  const stepEls = document.querySelectorAll('.step');
+  const pills = document.querySelectorAll('.step-pill');
+  const conns = document.querySelectorAll('.connector');
+  const indicator = document.getElementById('cur');
+  const back = document.getElementById('backBtn');
+  const next = document.getElementById('nextBtn');
+  const skip = document.getElementById('skipBtn');
+
+  function render() {
+    stepEls.forEach(s => s.classList.toggle('active', +s.dataset.step === current));
+    pills.forEach((p, i) => {
+      p.classList.toggle('active', i + 1 === current);
+      p.classList.toggle('done', i + 1 < current);
+      const m = p.querySelector('.marker');
+      if (i + 1 < current) {
+        m.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg>';
+      } else {
+        m.textContent = i + 1;
+      }
+    });
+    conns.forEach((c, i) => c.classList.toggle('done', i + 1 < current));
+    indicator.textContent = current;
+    back.disabled = current === 1;
+    skip.style.display = current === 1 ? 'none' : '';
+    next.innerHTML = current === total
+      ? 'Open my library <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>'
+      : current === 4
+        ? 'Continue <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>'
+        : 'Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>';
+  }
+  back.addEventListener('click', () => { if (current > 1) { current--; render(); } });
+  next.addEventListener('click', () => { if (current < total) { current++; render(); } });
+  skip.addEventListener('click', () => { if (current < total) { current++; render(); } });
+  // Engine card selection
+  document.querySelectorAll('.engine-card:not(.disabled)').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.engine-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+  // Theme + lang selection
+  document.querySelectorAll('.theme-grid .theme-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.theme-grid .theme-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+  document.querySelectorAll('.lang-grid .lang-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.lang-grid .lang-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+  render();
+</script>
+</body>
+</html>

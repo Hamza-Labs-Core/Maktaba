@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maktaba.example/wiki-schema.json",
+  "title": "Maktaba Wiki Database",
+  "description": "Machine-readable wiki of the Maktaba project: epics, stories, plans, diagrams, reviews, mockups, API endpoints, DB entities.",
+  "type": "object",
+  "required": [
+    "version",
+    "project",
+    "entries"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "project": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "generated_from": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identifier; cross-references use this."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "epic",
+            "story",
+            "plan",
+            "diagram",
+            "review",
+            "mockup",
+            "endpoint",
+            "entity",
+            "feature"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "epic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "engine": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "description": "Markdown body or short description."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Other entry ids related to this one."
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Map of role -> repo-relative file path(s)."
+        },
+        "linear": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Linear issue id if known (HLB-XXX); null if unset."
+        },
+        "api_endpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Endpoints in 'METHOD /path' form mentioned by this entry."
+        },
+        "db_tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "DB tables mentioned by this entry."
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

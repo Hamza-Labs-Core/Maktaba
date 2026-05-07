@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba — Duplicate Detection (Epic 09)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161922; --panel-2: #1d2130; --border: #262b3a;
+    --text: #e6e8ef; --text-dim: #8b91a7; --text-muted: #5a6079;
+    --accent: #3ddc97; --accent-2: #2ab87a; --warn: #f5a524; --error: #ef4444;
+    --info: #38bdf8;
+    --shadow: 0 12px 32px rgba(0,0,0,0.4);
+  }
+  [data-theme="light"] {
+    --bg: #f5f6fa; --panel: #ffffff; --panel-2: #f0f2f7; --border: #e1e4ec;
+    --text: #1a1d26; --text-dim: #5a6079; --text-muted: #8b91a7;
+    --accent: #1aa56c; --accent-2: #138a58; --warn: #d97706; --error: #dc2626;
+    --info: #0284c7;
+    --shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    min-height: 100vh; padding: 32px;
+  }
+  .theme-switch {
+    position: fixed; top: 16px; right: 16px; z-index: 1000;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  }
+  .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 16px;
+  }
+  .container { max-width: 1280px; margin: 0 auto; }
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .subtitle { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  .summary {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .stat-value.warn { color: var(--warn); }
+  .stat-value.success { color: var(--accent); }
+  .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  .toolbar {
+    display: flex; gap: 8px; margin-bottom: 16px; align-items: center;
+  }
+  .filter-pill {
+    padding: 6px 12px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 999px; font-size: 12px; cursor: pointer; color: var(--text-dim);
+  }
+  .filter-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .toolbar-right { margin-left: auto; display: flex; gap: 8px; }
+  .btn-sm {
+    padding: 6px 12px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--text);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-sm:hover { border-color: var(--text-dim); }
+
+  .group {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+  }
+  .group-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel-2);
+  }
+  .match-badge {
+    padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: var(--error); color: #fff;
+  }
+  .match-badge.high { background: var(--warn); color: #000; }
+  .match-badge.med { background: var(--info); color: #fff; }
+  .group-title { font-weight: 600; flex: 1; }
+  .group-meta { color: var(--text-dim); font-size: 12px; }
+  .group-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+    background: var(--border);
+  }
+  .file-card {
+    background: var(--panel); padding: 18px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .file-card.keep { background: linear-gradient(180deg, rgba(61,220,151,0.06), transparent); }
+  .file-card.discard { background: linear-gradient(180deg, rgba(239,68,68,0.04), transparent); }
+  .file-thumb {
+    aspect-ratio: 16/9; background: linear-gradient(135deg, #1e3a5f, #2d4f7c);
+    border-radius: 8px; position: relative; overflow: hidden;
+  }
+  .file-thumb.t2 { background: linear-gradient(135deg, #3d2e5c, #5e3d8a); }
+  .file-thumb.t3 { background: linear-gradient(135deg, #4a2e1f, #7a4d33); }
+  .file-thumb.t4 { background: linear-gradient(135deg, #1f4a3d, #2e7a5e); }
+  .duration {
+    position: absolute; bottom: 6px; right: 8px;
+    background: rgba(0,0,0,0.7); color: #fff;
+    padding: 2px 6px; border-radius: 4px; font-size: 10px;
+    font-family: ui-monospace, monospace;
+  }
+  .recommend-tag {
+    position: absolute; top: 6px; left: 8px;
+    padding: 2px 8px; font-size: 10px; font-weight: 700;
+    border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .recommend-tag.keep { background: var(--accent); color: #fff; }
+  .recommend-tag.discard { background: var(--error); color: #fff; }
+
+  .file-name {
+    font-size: 13px; font-weight: 500;
+    word-break: break-all;
+  }
+  .file-path {
+    font-family: ui-monospace, monospace; font-size: 11px;
+    color: var(--text-muted);
+  }
+  .file-attrs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
+    font-size: 11px;
+    padding: 10px 12px; background: var(--panel-2); border-radius: 8px;
+  }
+  .attr-row { display: flex; justify-content: space-between; }
+  .attr-key { color: var(--text-muted); }
+  .attr-val { color: var(--text); font-family: ui-monospace, monospace; }
+  .attr-val.win { color: var(--accent); font-weight: 600; }
+  .file-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .file-actions .btn {
+    flex: 1; padding: 8px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .btn-keep { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-merge { background: var(--panel-2); color: var(--text); }
+  .btn-delete { background: var(--panel-2); color: var(--error); border-color: rgba(239,68,68,0.3); }
+  .btn-delete:hover { background: rgba(239,68,68,0.08); }
+
+  .reason-bar {
+    display: flex; gap: 16px; padding: 10px 18px;
+    background: var(--panel-2); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim);
+    align-items: center;
+  }
+  .reason-bar strong { color: var(--text); }
+  .reason-tag {
+    padding: 2px 8px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 4px; font-family: ui-monospace, monospace;
+  }
+
+  .bulk-bar {
+    position: sticky; bottom: 16px; margin-top: 16px;
+    padding: 14px 20px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: var(--shadow);
+  }
+  .bulk-info { color: var(--text-dim); font-size: 12px; }
+  .bulk-info strong { color: var(--text); }
+  .bulk-actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn-primary {
+    background: var(--accent); border: 0; color: #fff; padding: 9px 14px;
+    border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--accent-2); }
+
+  /* ======== ALL STATES SECTION ======== */
+  .all-states { max-width: 1320px; margin: 80px auto 0; padding: 60px 0 80px; border-top: 2px dashed var(--border); }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .state-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .state-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .state-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-2); color: var(--text-dim); letter-spacing: 0.5px; }
+  .state-label .stag.error { background: rgba(239,68,68,0.15); color: var(--error); }
+  .state-label .stag.success { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .state-label .stag.warn { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .state-preview { padding: 24px 20px; background: var(--bg); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.4); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico { background: rgba(61,220,151,0.15); color: var(--accent); }
+  .toast.error .ico { background: rgba(239,68,68,0.15); color: var(--error); }
+  .toast.warn .ico { background: rgba(245,165,36,0.15); color: var(--warn); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+  .dialog-x { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .dialog-x-body { padding: 20px; text-align: center; }
+  .di-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  .di-icon.error { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+  .di-icon.success { background: rgba(61,220,151,0.12); color: var(--accent); border: 1px solid rgba(61,220,151,0.3); }
+  .di-icon.warn { background: rgba(245,165,36,0.12); color: var(--warn); border: 1px solid rgba(245,165,36,0.3); }
+  .di-icon.info { background: rgba(56,189,248,0.12); color: var(--info); border: 1px solid rgba(56,189,248,0.3); }
+  .dialog-x h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .dialog-x p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .di-actions { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); display: flex; gap: 8px; }
+  .d-btn { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500; }
+  .d-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .d-btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+  .dropdown { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 220px; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .dd-item { padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dd-item:hover { background: var(--panel-2); }
+  .dd-item.danger { color: var(--error); }
+  .dd-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .dd-shortcut { margin-left: auto; font-size: 10px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+  .empty-state { text-align: center; padding: 24px; }
+  .em-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-muted); margin: 0 auto 12px; }
+  .empty-state h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 12px; color: var(--text-dim); max-width: 240px; margin: 0 auto; line-height: 1.5; }
+  .skeleton-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { height: 10px; background: var(--panel-2); border-radius: 4px; }
+  .sk-line.short { width: 60%; }
+  .sk-line.tall { height: 60px; }
+  .sk-line.shimmer { background: linear-gradient(90deg, var(--panel-2), var(--border), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .tooltip { position: relative; background: #000; color: #fff; padding: 7px 11px; border-radius: 7px; font-size: 11px; max-width: 240px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tooltip::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #000; }
+  .undo-bar { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; font-size: 12px; }
+  .undo-bar .undo-prog { width: 60px; height: 3px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
+  .undo-bar .undo-prog div { height: 100%; background: var(--accent); width: 70%; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="label">EPIC 09 · STORY 09.04 · DUPLICATE DETECTION</div>
+
+  <div class="header">
+    <div>
+      <h1>Duplicate detection</h1>
+      <div class="subtitle">Last scanned 4 minutes ago using perceptual hash + audio fingerprint</div>
+    </div>
+    <button class="btn-sm">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Re-scan now
+    </button>
+  </div>
+
+  <div class="summary">
+    <div class="stat">
+      <div class="stat-label">Groups found</div>
+      <div class="stat-value">12</div>
+      <div class="stat-sub">across 847 videos</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Duplicate files</div>
+      <div class="stat-value warn">31</div>
+      <div class="stat-sub">19 to be removed</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Reclaimable</div>
+      <div class="stat-value success">14.2 GB</div>
+      <div class="stat-sub">~4.5% of library</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Already resolved</div>
+      <div class="stat-value">8</div>
+      <div class="stat-sub">5 merged · 3 ignored</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <span class="filter-pill active">All groups · 12</span>
+    <span class="filter-pill">Exact match · 4</span>
+    <span class="filter-pill">High similarity · 6</span>
+    <span class="filter-pill">Different bitrate · 2</span>
+    <div class="toolbar-right">
+      <button class="btn-sm">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+        Sort: Largest savings
+      </button>
+      <button class="btn-sm">Settings</button>
+    </div>
+  </div>
+
+  <!-- Group 1: Exact match -->
+  <div class="group">
+    <div class="group-header">
+      <span class="match-badge">EXACT — 100%</span>
+      <span class="group-title">Sheikh Yasir — Lecture on Surah Al-Baqarah</span>
+      <span class="group-meta">2 files · saves 1.8 GB · same SHA-256</span>
+    </div>
+    <div class="group-body">
+      <div class="file-card keep">
+        <div class="file-thumb">
+          <span class="recommend-tag keep">Keep</span>
+          <span class="duration">42:18</span>
+        </div>
+        <div>
+          <div class="file-name">lecture-al-baqarah-2024-06-15.mp4</div>
+          <div class="file-path">/Movies/Family-Lectures/2024/06/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val">1.82 GB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val">1920×1080</span></div>
+          <div class="attr-row"><span class="attr-key">Bitrate</span><span class="attr-val">5.8 Mbps</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">Jun 15, 2024</span></div>
+          <div class="attr-row"><span class="attr-key">Codec</span><span class="attr-val">h.264</span></div>
+          <div class="attr-row"><span class="attr-key">Watch state</span><span class="attr-val win">67% watched</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Keep this
+          </button>
+          <button class="btn btn-merge">Merge metadata</button>
+        </div>
+      </div>
+      <div class="file-card discard">
+        <div class="file-thumb">
+          <span class="recommend-tag discard">Delete</span>
+          <span class="duration">42:18</span>
+        </div>
+        <div>
+          <div class="file-name">VID_20240615_192234.mp4</div>
+          <div class="file-path">/Volumes/External SSD/Recordings/2024/raw-takes/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val">1.82 GB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val">1920×1080</span></div>
+          <div class="attr-row"><span class="attr-key">Bitrate</span><span class="attr-val">5.8 Mbps</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">Jun 15, 2024</span></div>
+          <div class="attr-row"><span class="attr-key">Codec</span><span class="attr-val">h.264</span></div>
+          <div class="attr-row"><span class="attr-key">Watch state</span><span class="attr-val">never opened</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">Keep instead</button>
+          <button class="btn btn-delete">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            Move to trash
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="reason-bar">
+      <strong>Why grouped:</strong>
+      <span class="reason-tag">Same SHA-256</span>
+      <span class="reason-tag">Same duration ±0s</span>
+      <span class="reason-tag">pHash distance: 0</span>
+    </div>
+  </div>
+
+  <!-- Group 2: High similarity (different bitrate) -->
+  <div class="group">
+    <div class="group-header">
+      <span class="match-badge high">SIMILAR — 94%</span>
+      <span class="group-title">دروس في النحو العربي — الحلقة 4</span>
+      <span class="group-meta">2 files · saves 380 MB · same content, different encode</span>
+    </div>
+    <div class="group-body">
+      <div class="file-card keep">
+        <div class="file-thumb t2">
+          <span class="recommend-tag keep">Keep — higher quality</span>
+          <span class="duration">38:42</span>
+        </div>
+        <div>
+          <div class="file-name">durus-nahw-04-1080p.mp4</div>
+          <div class="file-path">/Movies/Family-Lectures/Series/Nahw/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val win">680 MB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val win">1920×1080</span></div>
+          <div class="attr-row"><span class="attr-key">Bitrate</span><span class="attr-val win">2.4 Mbps</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">May 02, 2024</span></div>
+          <div class="attr-row"><span class="attr-key">Codec</span><span class="attr-val">h.265</span></div>
+          <div class="attr-row"><span class="attr-key">Audio</span><span class="attr-val">AAC 192k</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Keep this
+          </button>
+          <button class="btn btn-merge">Merge metadata</button>
+        </div>
+      </div>
+      <div class="file-card discard">
+        <div class="file-thumb t2">
+          <span class="recommend-tag discard">Delete — lower quality</span>
+          <span class="duration">38:42</span>
+        </div>
+        <div>
+          <div class="file-name">durus-nahw-04-720p.mp4</div>
+          <div class="file-path">/Movies/Old-Imports/2023-archive/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val">300 MB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val">1280×720</span></div>
+          <div class="attr-row"><span class="attr-key">Bitrate</span><span class="attr-val">1.0 Mbps</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">Mar 11, 2023</span></div>
+          <div class="attr-row"><span class="attr-key">Codec</span><span class="attr-val">h.264</span></div>
+          <div class="attr-row"><span class="attr-key">Audio</span><span class="attr-val">AAC 96k</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">Keep instead</button>
+          <button class="btn btn-delete">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            Move to trash
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="reason-bar">
+      <strong>Why grouped:</strong>
+      <span class="reason-tag">pHash distance: 4</span>
+      <span class="reason-tag">Audio fingerprint: 99% match</span>
+      <span class="reason-tag">Same duration</span>
+    </div>
+  </div>
+
+  <!-- Group 3: 3-way -->
+  <div class="group">
+    <div class="group-header">
+      <span class="match-badge med">SIMILAR — 88%</span>
+      <span class="group-title">Ottoman Architecture — Episode 2</span>
+      <span class="group-meta">3 files · saves 4.1 GB · trim mismatch</span>
+    </div>
+    <div class="group-body">
+      <div class="file-card">
+        <div class="file-thumb t3">
+          <span class="duration">22:45</span>
+        </div>
+        <div>
+          <div class="file-name">ottoman-arch-ep02-final.mp4</div>
+          <div class="file-path">/Documentaries/Ottoman/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val">2.1 GB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val">1920×1080</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">Jan 22, 2025</span></div>
+          <div class="attr-row"><span class="attr-key">Watch state</span><span class="attr-val win">Completed</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">Keep this</button>
+          <button class="btn btn-delete">Move to trash</button>
+        </div>
+      </div>
+      <div class="file-card discard">
+        <div class="file-thumb t3">
+          <span class="recommend-tag discard">Trim — has 90s intro</span>
+          <span class="duration">24:15</span>
+        </div>
+        <div>
+          <div class="file-name">ottoman_arch_episode_two_uncut.mp4</div>
+          <div class="file-path">/Volumes/External SSD/raw-imports/</div>
+        </div>
+        <div class="file-attrs">
+          <div class="attr-row"><span class="attr-key">Size</span><span class="attr-val">2.4 GB</span></div>
+          <div class="attr-row"><span class="attr-key">Resolution</span><span class="attr-val">1920×1080</span></div>
+          <div class="attr-row"><span class="attr-key">Modified</span><span class="attr-val">Jan 18, 2025</span></div>
+          <div class="attr-row"><span class="attr-key">Watch state</span><span class="attr-val">never opened</span></div>
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-keep">Keep instead</button>
+          <button class="btn btn-delete">Move to trash</button>
+        </div>
+      </div>
+    </div>
+    <div class="reason-bar">
+      <strong>Why grouped:</strong>
+      <span class="reason-tag">pHash distance: 12</span>
+      <span class="reason-tag">Audio match after offset 90s</span>
+      <span class="reason-tag">Duration differs by 1:30</span>
+    </div>
+  </div>
+
+  <div class="bulk-bar">
+    <input type="checkbox" checked style="accent-color: var(--accent);" />
+    <div class="bulk-info">
+      <strong>Apply Maktaba's recommendations:</strong> Keep highest-quality file in each group, move 19 duplicates to trash
+    </div>
+    <div class="bulk-actions">
+      <button class="btn-sm">Review all individually</button>
+      <button class="btn-primary">
+        Apply & save 14.2 GB
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · duplicates</h2>
+    <div class="desc">Every dialog, toast, dropdown, and overlay state for duplicate management</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="state-card">
+      <div class="state-label">Confirm · move to trash <span class="stag warn">DESTRUCTIVE</span></div>
+      <div class="state-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon warn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            </div>
+            <h3>Move 1 file to trash?</h3>
+            <p><strong style="color: var(--text);">VID_20240615_192234.mp4</strong> (1.82 GB) will be moved to your system trash. You can restore it for 30 days.</p>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Move to trash</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Confirm · permanently delete <span class="stag error">IRREVERSIBLE</span></div>
+      <div class="state-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon error">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>
+            </div>
+            <h3>Permanently delete 19 files?</h3>
+            <p>This <strong>cannot be undone</strong>. The files will be removed from disk immediately, freeing 14.2 GB. Type <code style="font-family: ui-monospace, monospace; color: var(--text);">delete</code> to confirm.</p>
+            <input style="margin-top: 12px; width: 140px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; text-align: center;" placeholder="delete" />
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn danger">Delete forever</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Confirm · merge metadata <span class="stag">CONFIRM</span></div>
+      <div class="state-preview">
+        <div class="dialog-x">
+          <div class="dialog-x-body">
+            <div class="di-icon info">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+            </div>
+            <h3>Merge metadata from duplicate?</h3>
+            <p>Watch progress, favorites, and bookmarks from both files will be combined onto the file you keep.</p>
+            <div style="margin-top: 12px; padding: 8px 12px; background: var(--panel-2); border-radius: 6px; font-size: 11px; color: var(--text-dim); text-align: left;">
+              ✓ Watch state: 67% (kept)<br>
+              ✓ Favorites: ★ (added)<br>
+              ✓ Notes: 2 timestamps merged
+            </div>
+          </div>
+          <div class="di-actions">
+            <button class="d-btn">Cancel</button>
+            <button class="d-btn primary">Merge</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Toast · 19 duplicates removed <span class="stag success">SUCCESS</span></div>
+      <div class="state-preview">
+        <div class="undo-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span style="flex: 1;"><strong style="color: var(--text);">Saved 14.2 GB</strong> · 19 files moved to trash</span>
+          <a style="color: var(--accent); cursor: pointer; font-weight: 500;">Undo</a>
+          <span class="undo-prog"><div></div></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Toast · scan failed <span class="stag error">ERROR</span></div>
+      <div class="state-preview">
+        <div class="toast error">
+          <div class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div>
+          <div class="body">
+            <strong>Duplicate scan failed</strong>
+            <span>Couldn't read /Volumes/External SSD — disk unmounted</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Toast · file in use <span class="stag warn">WARNING</span></div>
+      <div class="state-preview">
+        <div class="toast warn">
+          <div class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg></div>
+          <div class="body">
+            <strong>1 file couldn't be deleted</strong>
+            <span>Currently being streamed by Apple TV — try again later</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Dropdown · file context menu <span class="stag">CONTEXT</span></div>
+      <div class="state-preview">
+        <div class="dropdown">
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            Preview video
+            <span class="dd-shortcut">Space</span>
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Reveal in Finder
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+            Compare in detail
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Mark as not duplicate
+          </div>
+          <div class="dd-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Whitelist this group
+          </div>
+          <div class="dd-sep"></div>
+          <div class="dd-item danger">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/></svg>
+            Move to trash
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Inline progress · scanning <span class="stag">PROGRESS</span></div>
+      <div class="state-preview">
+        <div style="width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px;">
+            <div style="width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.7s linear infinite;"></div>
+            <strong style="flex: 1; color: var(--text);">Computing perceptual hashes…</strong>
+            <span style="color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;">42%</span>
+          </div>
+          <div style="height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; margin-bottom: 6px;">
+            <div style="height: 100%; background: var(--accent); width: 42%;"></div>
+          </div>
+          <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; font-family: ui-monospace, monospace;">
+            <span>355 / 847 videos</span>
+            <span>~ 4m remaining</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Skeleton · loading groups <span class="stag">PROGRESS</span></div>
+      <div class="state-preview">
+        <div class="skeleton-card">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="sk-line shimmer" style="width: 60px; height: 18px; flex: none;"></div>
+            <div class="sk-line shimmer" style="flex: 1;"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div class="sk-line tall shimmer"></div>
+            <div class="sk-line tall shimmer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Empty · no duplicates found <span class="stag">EMPTY</span></div>
+      <div class="state-preview">
+        <div class="empty-state">
+          <div class="em-icon" style="background: rgba(61,220,151,0.08); border-color: rgba(61,220,151,0.2); color: var(--accent);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <h4>Your library is clean</h4>
+          <p>No duplicates detected across 847 videos · last scan 4 minutes ago.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Empty · scan never run <span class="stag">EMPTY</span></div>
+      <div class="state-preview">
+        <div class="empty-state">
+          <div class="em-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <h4>Run your first scan</h4>
+          <p>Maktaba will compare every video using perceptual hash and audio fingerprints.</p>
+          <button style="margin-top: 12px; padding: 8px 14px; background: var(--accent); border: 0; color: #fff; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer;">Start scan</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <div class="state-label">Tooltip · what is pHash <span class="stag">HOVER</span></div>
+      <div class="state-preview" style="padding-top: 70px;">
+        <div class="tooltip">Perceptual hash — fingerprints visual content so re-encoded files (different bitrate, codec) still match. Distance ≤ 5 = likely the same video.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

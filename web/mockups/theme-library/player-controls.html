@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maktaba — Player Controls</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #1a1a1a; color: #fff; min-height: 100vh; }
+
+  [data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text: #18181b; --text-muted: #71717a; --text-subtle: #a1a1aa;
+    --primary: #4f46e5; --primary-fg: #fff; --primary-soft: #eef2ff; --primary-soft-fg: #4338ca;
+    --player-bg: linear-gradient(135deg, #312e81 0%, #6d28d9 50%, #be185d 100%);
+    --player-controls: rgba(15, 23, 42, 0.7);
+    --player-control-fg: #ffffff;
+    --player-track: rgba(255, 255, 255, 0.25);
+    --player-buffered: rgba(255, 255, 255, 0.45);
+    --player-played: #818cf8;
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.08);
+  }
+  [data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-muted: #a1a1aa; --text-subtle: #71717a;
+    --primary: #818cf8; --primary-fg: #18181b; --primary-soft: #1e1b4b; --primary-soft-fg: #c7d2fe;
+    --player-bg: linear-gradient(135deg, #1e1b4b 0%, #581c87 50%, #831843 100%);
+    --player-controls: rgba(0, 0, 0, 0.7);
+    --player-control-fg: #ffffff;
+    --player-track: rgba(255, 255, 255, 0.2);
+    --player-buffered: rgba(255, 255, 255, 0.4);
+    --player-played: #a5b4fc;
+    --shadow: 0 1px 3px 0 rgba(0,0,0,0.4);
+  }
+
+  .page-header { padding: 32px 48px; background: #0a0a0a; border-bottom: 1px solid #27272a; }
+  .page-header h1 { font-size: 24px; font-weight: 600; color: #fafafa; letter-spacing: -0.02em; }
+  .page-header p { color: #a1a1aa; margin-top: 4px; font-size: 14px; }
+  .page-header .breadcrumb { color: #71717a; font-size: 12px; margin-bottom: 8px; font-family: ui-monospace, 'SF Mono', monospace; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 96px); }
+  .pane { padding: 40px; overflow: auto; background: var(--bg); color: var(--text); }
+  .theme-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .theme-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ============ FULL PLAYER ============ */
+  .player {
+    aspect-ratio: 16/9;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    background: var(--player-bg);
+    box-shadow: var(--shadow);
+  }
+  .player::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 30% 40%, rgba(255,255,255,0.06), transparent 50%),
+      radial-gradient(circle at 70% 60%, rgba(0,0,0,0.2), transparent 50%);
+  }
+  .player-title {
+    position: absolute; top: 16px; left: 16px; right: 16px;
+    color: #fff; font-weight: 600; font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    z-index: 2;
+  }
+  .player-title .lecture-num {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+    display: block; margin-bottom: 2px;
+  }
+
+  .center-play {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+    z-index: 2; transition: transform .15s, background .15s;
+  }
+  .center-play:hover { background: rgba(255,255,255,0.22); transform: translate(-50%, -50%) scale(1.05); }
+  .center-play svg { width: 24px; height: 24px; margin-left: 3px; }
+
+  .controls {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 14px 16px;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    z-index: 2;
+  }
+
+  /* ============ SEEKBAR ============ */
+  .seekbar-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px;
+  }
+  .time {
+    color: rgba(255,255,255,0.85); font-size: 11px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    min-width: 38px;
+  }
+  .time.right { text-align: right; }
+
+  .seekbar {
+    flex: 1; position: relative; height: 16px; cursor: pointer;
+    display: flex; align-items: center;
+  }
+  .seekbar-track {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    height: 4px; border-radius: 999px;
+    background: var(--player-track);
+    overflow: visible;
+    transition: height .15s;
+  }
+  .seekbar:hover .seekbar-track { height: 6px; }
+  .seekbar-buffered {
+    position: absolute; left: 0; top: 0; height: 100%;
+    background: var(--player-buffered);
+    border-radius: 999px;
+  }
+  .seekbar-played {
+    position: absolute; left: 0; top: 0; height: 100%;
+    background: var(--player-played);
+    border-radius: 999px;
+  }
+  .seekbar-thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    background: var(--player-played); border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.25);
+    transition: transform .12s;
+  }
+  .seekbar:hover .seekbar-thumb { transform: translate(-50%, -50%) scale(1.15); }
+
+  /* Chapter markers */
+  .chapter-marker {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 2px; height: 12px;
+    background: rgba(255,255,255,0.85);
+    border-radius: 1px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .chapter-tooltip {
+    position: absolute; bottom: 18px; transform: translateX(-50%);
+    background: rgba(0,0,0,0.92); color: #fff;
+    font-size: 10.5px; font-weight: 500;
+    padding: 4px 8px; border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0; transition: opacity .15s;
+    pointer-events: none;
+  }
+  .chapter-marker:hover + .chapter-tooltip,
+  .seekbar:hover .chapter-tooltip { opacity: 1; }
+  .seekbar:hover .chapter-tooltip.visible { opacity: 1; }
+
+  /* Hover preview */
+  .hover-preview {
+    position: absolute; bottom: 22px; left: 42%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.92);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+  .hover-preview-thumb {
+    width: 120px; height: 68px;
+    background: linear-gradient(135deg, #6d28d9, #ec4899);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    position: relative;
+  }
+  .hover-preview-thumb::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, rgba(255,255,255,0.1), transparent 60%); border-radius: 4px; }
+  .hover-preview-time {
+    text-align: center; font-size: 11px; font-family: ui-monospace, 'SF Mono', monospace;
+    color: #fff; font-variant-numeric: tabular-nums;
+  }
+
+  /* ============ CONTROL ROW ============ */
+  .control-row { display: flex; align-items: center; gap: 4px; }
+  .control-row .spacer { flex: 1; }
+  .ctrl-btn {
+    width: 34px; height: 34px;
+    background: transparent; border: none;
+    color: var(--player-control-fg); cursor: pointer;
+    border-radius: 7px;
+    display: grid; place-items: center;
+    transition: background .15s;
+  }
+  .ctrl-btn:hover { background: rgba(255,255,255,0.15); }
+  .ctrl-btn svg { width: 18px; height: 18px; }
+  .ctrl-btn.play svg { width: 22px; height: 22px; }
+
+  /* Volume */
+  .volume-group {
+    display: flex; align-items: center; gap: 4px;
+    padding: 0 4px; height: 34px;
+    border-radius: 7px;
+    transition: background .15s, padding-right .2s;
+  }
+  .volume-group:hover { background: rgba(255,255,255,0.1); }
+  .volume-slider {
+    width: 0; overflow: hidden;
+    transition: width .2s;
+    display: flex; align-items: center;
+  }
+  .volume-group:hover .volume-slider { width: 70px; padding-right: 8px; padding-left: 4px; }
+  .volume-track {
+    width: 100%; height: 3px; background: rgba(255,255,255,0.3);
+    border-radius: 999px; position: relative;
+  }
+  .volume-fill { position: absolute; left: 0; top: 0; height: 100%; width: 75%; background: #fff; border-radius: 999px; }
+  .volume-thumb {
+    position: absolute; top: 50%; left: 75%; transform: translate(-50%, -50%);
+    width: 10px; height: 10px; background: #fff; border-radius: 50%;
+  }
+
+  /* Menu pills (subtitles, quality, speed) */
+  .menu-pill {
+    height: 28px; padding: 0 9px;
+    background: transparent; border: 1px solid rgba(255,255,255,0.25);
+    color: #fff; font: inherit; font-size: 11px; font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background .15s;
+  }
+  .menu-pill:hover { background: rgba(255,255,255,0.15); }
+  .menu-pill.active {
+    background: rgba(129, 140, 248, 0.3);
+    border-color: rgba(165, 180, 252, 0.5);
+    color: #fff;
+  }
+  .menu-pill svg { width: 12px; height: 12px; opacity: 0.8; }
+
+  /* Popup menus */
+  .popup {
+    position: absolute; bottom: 50px; right: 16px;
+    background: rgba(20, 20, 24, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 4px;
+    box-shadow: 0 16px 32px -8px rgba(0,0,0,0.5);
+    min-width: 180px;
+    z-index: 3;
+  }
+  .popup-section { padding: 4px; }
+  .popup-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    padding: 6px 8px 4px;
+  }
+  .popup-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    color: #fff; font-size: 12px; cursor: pointer;
+    transition: background .15s;
+  }
+  .popup-item:hover { background: rgba(255,255,255,0.08); }
+  .popup-item.active { background: rgba(129, 140, 248, 0.25); }
+  .popup-item .check { width: 14px; flex-shrink: 0; }
+  .popup-item .check svg { width: 12px; height: 12px; opacity: 0; color: var(--player-played); }
+  .popup-item.active .check svg { opacity: 1; }
+  .popup-item .lang-code {
+    margin-left: auto; font-size: 9px; padding: 1px 5px;
+    background: rgba(255,255,255,0.1); border-radius: 3px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    letter-spacing: 0.04em;
+  }
+  .popup-item .quality-tag {
+    margin-left: auto; font-size: 9px; padding: 1px 5px;
+    border: 1px solid rgba(255,255,255,0.3); border-radius: 3px;
+    color: rgba(255,255,255,0.7);
+  }
+
+  /* ============ ISOLATED CONTROL DEMOS ============ */
+  .control-demo {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .control-demo-label { font-size: 11px; color: var(--text-subtle); font-family: ui-monospace, 'SF Mono', monospace; margin-bottom: 10px; }
+  .control-demo .ctrl-btn { color: var(--text); }
+  .control-demo .ctrl-btn:hover { background: var(--surface-2); }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+  .demo-seekbar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 16px;
+  }
+  .demo-seekbar .seekbar-row .time { color: var(--text-muted); }
+  .demo-seekbar .seekbar-track { background: var(--surface-2); }
+  .demo-seekbar .seekbar-buffered { background: var(--border-strong); }
+  .demo-seekbar .seekbar-played { background: var(--primary); }
+  .demo-seekbar .seekbar-thumb { background: var(--primary); box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
+  .demo-seekbar .chapter-marker { background: var(--text-muted); }
+
+  /* Big play */
+  .big-play {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--primary); color: var(--primary-fg);
+    border: none; cursor: pointer; display: grid; place-items: center;
+    box-shadow: 0 8px 16px -4px rgba(79, 70, 229, 0.4);
+  }
+  .big-play svg { width: 22px; height: 22px; margin-left: 2px; }
+
+  @media (max-width: 1100px) { .comparison { grid-template-columns: 1fr; } .pane { padding: 24px; } .grid-3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="breadcrumb">theme-library / player-controls.html</div>
+    <h1>Player Controls</h1>
+    <p>Full-bleed video player with seekbar (buffered/played), chapter markers, volume, time display, and menus for subtitles, quality, and speed.</p>
+  </header>
+
+  <div class="comparison" id="comparison">
+    <section class="pane" data-theme="light">
+      <div class="theme-label">Light</div>
+
+      <div class="section">
+        <div class="section-title">Full Player — In Context</div>
+        <div class="player">
+          <div class="player-title">
+            <span class="lecture-num">Lecture 04 · Mu'allaqat Series</span>
+            Imru' al-Qais — The Opening of the Mu'allaqa
+          </div>
+          <button class="center-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+
+          <div class="controls">
+            <div class="seekbar-row">
+              <span class="time">14:22</span>
+              <div class="seekbar">
+                <div class="seekbar-track">
+                  <div class="seekbar-buffered" style="width: 48%"></div>
+                  <div class="seekbar-played" style="width: 34%"></div>
+                </div>
+                <div class="chapter-marker" style="left: 12%"></div>
+                <div class="chapter-marker" style="left: 28%"></div>
+                <div class="chapter-marker" style="left: 50%"></div>
+                <div class="chapter-marker" style="left: 72%"></div>
+                <div class="seekbar-thumb" style="left: 34%"></div>
+                <div class="hover-preview">
+                  <div class="hover-preview-thumb"></div>
+                  <div class="hover-preview-time">14:22 · "On meter"</div>
+                </div>
+              </div>
+              <span class="time right">42:18</span>
+            </div>
+
+            <div class="control-row">
+              <button class="ctrl-btn" title="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg></button>
+              <button class="ctrl-btn play" title="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg></button>
+              <button class="ctrl-btn" title="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+
+              <div class="volume-group">
+                <button class="ctrl-btn" title="Volume"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+                <div class="volume-slider"><div class="volume-track"><div class="volume-fill"></div><div class="volume-thumb"></div></div></div>
+              </div>
+
+              <div class="spacer"></div>
+
+              <button class="menu-pill active">CC<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="menu-pill">1×<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="menu-pill">1080p<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="ctrl-btn" title="Picture-in-Picture"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 9V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h7"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
+              <button class="ctrl-btn" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Player + Subtitles Menu Open</div>
+        <div class="player">
+          <div class="player-title">
+            <span class="lecture-num">Module 12 · Theology Foundations</span>
+            A Survey of the Major Schools
+          </div>
+          <div class="controls">
+            <div class="seekbar-row">
+              <span class="time">52:14</span>
+              <div class="seekbar">
+                <div class="seekbar-track">
+                  <div class="seekbar-buffered" style="width: 70%"></div>
+                  <div class="seekbar-played" style="width: 62%"></div>
+                </div>
+                <div class="chapter-marker" style="left: 14%"></div>
+                <div class="chapter-marker" style="left: 35%"></div>
+                <div class="chapter-marker" style="left: 58%"></div>
+                <div class="chapter-marker" style="left: 80%"></div>
+                <div class="seekbar-thumb" style="left: 62%"></div>
+              </div>
+              <span class="time right">1:24:05</span>
+            </div>
+            <div class="control-row">
+              <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
+              <button class="ctrl-btn play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+              <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 6v12l8.5-6L13 6zM4 6v12l8.5-6L4 6z"/></svg></button>
+              <div class="volume-group">
+                <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+              </div>
+              <div class="spacer"></div>
+              <button class="menu-pill active">CC<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="menu-pill">1×<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="menu-pill">1080p<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+              <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg></button>
+            </div>
+          </div>
+          <div class="popup" style="right: 16px; bottom: 56px;">
+            <div class="popup-section">
+              <div class="popup-section-label">Subtitles</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Off</div>
+              <div class="popup-item active"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Arabic<span class="lang-code">AR</span></div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>English<span class="lang-code">EN</span></div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>French<span class="lang-code">FR</span></div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Spanish<span class="lang-code">ES</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Quality & Speed Menus</div>
+        <div class="grid-3" style="grid-template-columns: 1fr 1fr;">
+          <div class="popup" style="position: static; min-width: 0;">
+            <div class="popup-section">
+              <div class="popup-section-label">Playback speed</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>0.5×</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>0.75×</div>
+              <div class="popup-item active"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Normal (1×)</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>1.25×</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>1.5×</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>1.75×</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>2×</div>
+            </div>
+          </div>
+          <div class="popup" style="position: static; min-width: 0;">
+            <div class="popup-section">
+              <div class="popup-section-label">Quality</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>Auto<span class="quality-tag">1080p</span></div>
+              <div class="popup-item active"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>1080p<span class="quality-tag">HD</span></div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>720p<span class="quality-tag">HD</span></div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>480p</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>360p</div>
+              <div class="popup-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>240p</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Seekbar — Light Surface</div>
+        <div class="demo-seekbar">
+          <div class="seekbar-row">
+            <span class="time">14:22</span>
+            <div class="seekbar">
+              <div class="seekbar-track">
+                <div class="seekbar-buffered" style="width: 48%"></div>
+                <div class="seekbar-played" style="width: 34%"></div>
+              </div>
+              <div class="chapter-marker" style="left: 12%"></div>
+              <div class="chapter-marker" style="left: 28%"></div>
+              <div class="chapter-marker" style="left: 50%"></div>
+              <div class="chapter-marker" style="left: 72%"></div>
+              <div class="seekbar-thumb" style="left: 34%"></div>
+            </div>
+            <span class="time right">42:18</span>
+          </div>
+          <div style="display: flex; gap: 4px; margin-top: 12px; align-items: center; font-size: 11px; color: var(--text-subtle);">
+            <span style="display: inline-block; width: 10px; height: 4px; background: var(--primary); border-radius: 2px;"></span>Played
+            <span style="display: inline-block; width: 10px; height: 4px; background: var(--border-strong); border-radius: 2px; margin-left: 12px;"></span>Buffered
+            <span style="display: inline-block; width: 10px; height: 4px; background: var(--surface-2); border-radius: 2px; margin-left: 12px;"></span>Remaining
+            <span style="display: inline-block; width: 2px; height: 10px; background: var(--text-muted); border-radius: 1px; margin-left: 12px;"></span>Chapter marker
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Isolated Buttons</div>
+        <div class="grid-3">
+          <div class="control-demo">
+            <div class="control-demo-label">play / pause</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="big-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+              <button class="big-play" style="background: var(--surface-2); color: var(--text); box-shadow: none;"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg></button>
+              <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+              <button class="ctrl-btn"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg></button>
+            </div>
+          </div>
+          <div class="control-demo">
+            <div class="control-demo-label">skip / step</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <button class="ctrl-btn" title="−10s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>
+              <button class="ctrl-btn" title="−10s"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
+              <button class="ctrl-btn" title="+10s"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 6v12l8.5-6L13 6zM4 6v12l8.5-6L4 6z"/></svg></button>
+              <button class="ctrl-btn" title="+10s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.13-9.36L23 10"/></svg></button>
+            </div>
+          </div>
+          <div class="control-demo">
+            <div class="control-demo-label">view modes</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <button class="ctrl-btn" title="PiP"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 9V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h7"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
+              <button class="ctrl-btn" title="Theater"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/></svg></button>
+              <button class="ctrl-btn" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg></button>
+              <button class="ctrl-btn" title="Cast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/><line x1="2" y1="20" x2="2.01" y2="20"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" data-theme="dark">
+      <div class="theme-label">Dark</div>
+      <div id="dark-mount"></div>
+    </section>
+  </div>
+
+<script>
+  const lightPane = document.querySelector('.pane[data-theme="light"]');
+  const darkMount = document.getElementById('dark-mount');
+  const clone = lightPane.cloneNode(true);
+  clone.querySelector('.theme-label')?.remove();
+  while (clone.firstChild) darkMount.appendChild(clone.firstChild);
+</script>
+</body>
+</html>

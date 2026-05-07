@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wiki-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "web/wiki-app", "--", "--port", "5180", "--strictPort", "false"],
+      "port": 5180,
+      "autoPort": true
+    }
+  ]
+}

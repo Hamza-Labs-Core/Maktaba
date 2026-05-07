@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Maktaba Server — Run with Docker</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --panel: #131826; --panel-2: #1c2333; --panel-3: #262f43;
+    --border: #2a334a; --border-strong: #3a4663;
+    --text: #e8edf5; --text-dim: #8a96b0; --text-muted: #5d6883;
+    --primary: #5b9eff; --primary-hover: #7aafff; --primary-dim: rgba(91,158,255,0.15);
+    --accent: #7c5cff; --success: #34d399; --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 12px 40px rgba(0,0,0,0.5);
+
+    --term-bg: #0d1117; --term-text: #c9d1d9;
+    --code-bg: #1117210; --code-keyword: #ff7b72; --code-string: #a5d6ff;
+    --code-comment: #8b949e; --code-fn: #d2a8ff; --code-num: #79c0ff;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --panel-3: #eef2f7;
+    --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-dim: #475569; --text-muted: #94a3b8;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-dim: rgba(37,99,235,0.1);
+    --accent: #6d28d9; --success: #059669; --warn: #d97706; --error: #dc2626;
+    --shadow: 0 8px 24px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; min-height: 100vh; padding: 32px 24px; }
+  .theme-switch { position: fixed; top: 16px; right: 16px; z-index: 1000; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  a { color: var(--primary); text-decoration: none; }
+  .container { max-width: 1280px; margin: 0 auto; }
+
+  .top-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; }
+  .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; text-align: center; }
+  .hero { text-align: center; margin-bottom: 36px; }
+  .hero h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.4px; margin-bottom: 10px; }
+  .hero p { font-size: 15px; color: var(--text-dim); max-width: 600px; margin: 0 auto; }
+
+  .badges { display: flex; gap: 8px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .badge { font-size: 11px; padding: 5px 10px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); display: inline-flex; gap: 6px; align-items: center; font-family: ui-monospace, monospace; }
+  .badge .k { color: var(--text-muted); }
+  .badge .v { color: var(--primary); }
+  .badge.green .v { color: var(--success); }
+
+  /* Section blocks */
+  .stepblock { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; overflow: hidden; }
+  .sb-h { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+  .sb-num { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .sb-h h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .sb-h p { font-size: 12px; color: var(--text-dim); }
+  .sb-body { padding: 20px 24px; }
+
+  .btn { padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-family: inherit; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* Code block */
+  .code-block {
+    background: #0d1117; border: 1px solid #21262d;
+    border-radius: 10px; overflow: hidden;
+    font-family: "SF Mono", ui-monospace, "Cascadia Code", monospace;
+  }
+  .code-h {
+    padding: 8px 14px; background: #161b22;
+    border-bottom: 1px solid #21262d;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px;
+  }
+  .code-h .file {
+    color: #c9d1d9;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .code-h .file svg { color: #8b949e; }
+  .code-copy {
+    padding: 5px 12px; border: 1px solid #30363d;
+    background: #21262d; color: #c9d1d9;
+    border-radius: 6px; cursor: pointer; font-size: 11px;
+    display: inline-flex; gap: 5px; align-items: center;
+    font-family: inherit;
+  }
+  .code-copy:hover { background: #30363d; }
+
+  pre { padding: 16px 18px; color: #c9d1d9; font-size: 12.5px; line-height: 1.65; overflow-x: auto; }
+  .kw { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .com { color: #8b949e; }
+  .fn { color: #d2a8ff; }
+  .num { color: #79c0ff; }
+  .var { color: #ffa657; }
+
+  /* Env table */
+  .env-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .env-table th { text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+  .env-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 12.5px; }
+  .env-table tr:last-child td { border-bottom: 0; }
+  .env-table .key { font-family: ui-monospace, monospace; color: var(--primary); white-space: nowrap; font-size: 12px; }
+  .env-table .req { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: rgba(248,113,113,0.15); color: var(--error); margin-left: 6px; font-weight: 600; }
+  .env-table .opt { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: var(--panel-2); color: var(--text-muted); margin-left: 6px; font-weight: 600; border: 1px solid var(--border); }
+  .env-table .desc { color: var(--text-dim); }
+  .env-table .desc small { display: block; color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px; margin-top: 2px; }
+  .env-table .default { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-muted); }
+
+  /* Volume mount cards */
+  .vol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .vol-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .vol-card .pre { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; }
+  .vol-card h4 { font-size: 13px; font-weight: 600; margin: 4px 0 8px; }
+  .vol-mount {
+    display: flex; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px;
+    font-family: ui-monospace, monospace; font-size: 11.5px;
+    margin-bottom: 8px;
+  }
+  .vol-host { color: var(--accent); flex: 1; }
+  .vol-arrow { color: var(--text-muted); }
+  .vol-cnt { color: var(--primary); flex: 1; text-align: right; }
+  .vol-card .desc { font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+
+  /* Terminal */
+  .term {
+    background: var(--term-bg);
+    border: 1px solid #21262d; border-radius: 10px; overflow: hidden;
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .term-h {
+    height: 30px; background: #161b22;
+    display: flex; align-items: center; padding: 0 12px; gap: 6px;
+    border-bottom: 1px solid #21262d;
+  }
+  .term-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .term-dot.r { background: #ff5f56; } .term-dot.y { background: #ffbd2e; } .term-dot.g { background: #27c93f; }
+  .term-h .ttl { flex: 1; text-align: center; font-size: 11px; color: #8b949e; }
+  .term-body { padding: 14px 18px; font-size: 12.5px; color: #c9d1d9; line-height: 1.6; }
+  .term-cmd { color: #c9d1d9; }
+  .term-cmd::before { content: '$ '; color: #58a6ff; font-weight: 600; }
+  .term-out { color: #c9d1d9; }
+  .term-out.dim { color: #8b949e; }
+  .term-out.green { color: #4ade80; }
+  .term-out.yellow { color: #ffd633; }
+  .term-out.red { color: #ff7b72; }
+  .term-out.purple { color: #d2a8ff; }
+  .term-row { display: flex; gap: 8px; }
+  .term-row.boxed {
+    background: rgba(255,255,255,0.03); border: 1px solid #21262d;
+    border-radius: 6px; padding: 8px 12px; margin: 4px 0;
+    font-size: 12px;
+  }
+  .term-prog {
+    display: inline-block; height: 10px; background: #21262d; border-radius: 5px;
+    overflow: hidden; vertical-align: middle; margin: 0 8px;
+  }
+  .term-prog > div { height: 100%; background: #4ade80; }
+
+  .platform-tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel-2); border-radius: 8px; margin-bottom: 14px; }
+  .pl-tab { padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--text-dim); }
+  .pl-tab.active { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+
+  /* Compose flow viz */
+  .compose-flow {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+    display: flex; gap: 12px; align-items: stretch;
+    margin-top: 14px;
+  }
+  .cf-box {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; text-align: center;
+  }
+  .cf-box .label { font-size: 9px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; font-weight: 600; }
+  .cf-box .name { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 600; margin: 6px 0; color: var(--primary); }
+  .cf-box .stat { font-size: 10px; color: var(--success); }
+  .cf-arrow { display: flex; align-items: center; color: var(--text-muted); font-size: 16px; }
+
+  /* All states common */
+  .all-states { padding: 60px 0 80px; border-top: 2px dashed var(--border); margin-top: 60px; }
+  .all-states .heading { text-align: center; margin-bottom: 40px; }
+  .all-states h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .all-states .desc { font-size: 13px; color: var(--text-dim); }
+  .states-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .ss-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ss-label { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .ss-label .stag { padding: 1px 7px; border-radius: 4px; font-size: 9px; background: var(--panel-3); color: var(--text-dim); letter-spacing: 0.5px; }
+  .ss-label .stag.error { background: rgba(248,113,113,0.15); color: var(--error); }
+  .ss-label .stag.success { background: rgba(52,211,153,0.15); color: var(--success); }
+  .ss-label .stag.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .ss-preview { padding: 24px 20px; background: var(--bg); min-height: 200px; display: flex; align-items: center; justify-content: center; }
+
+  .alert { width: 100%; max-width: 380px; padding: 12px 14px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert.warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); color: var(--warn); }
+  .alert.error { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+  .alert.info { background: rgba(91,158,255,0.08); border: 1px solid rgba(91,158,255,0.3); color: var(--primary); }
+  .alert.success { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+  .alert strong { display: block; font-size: 12px; margin-bottom: 2px; }
+  .alert span { color: var(--text-dim); font-size: 11px; line-height: 1.4; display: block; }
+
+  .toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: var(--shadow); width: 100%; max-width: 320px; font-size: 12px; }
+  .toast .ico-t { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .toast.success .ico-t { background: rgba(52,211,153,0.15); color: var(--success); }
+  .toast.info .ico-t { background: rgba(91,158,255,0.15); color: var(--primary); }
+  .toast .body { flex: 1; }
+  .toast .body strong { display: block; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .toast .body span { color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+  .toast .x { color: var(--text-muted); cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="theme-switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">Toggle theme</button>
+
+<div class="container">
+  <div class="top-nav">
+    <div class="logo"><div class="logo-mark">M</div>Maktaba <span style="color: var(--text-dim); font-weight: 400;">Server · Docker</span></div>
+    <a class="btn">Switch to macOS / Windows / NAS →</a>
+  </div>
+
+  <div class="label">SERVER INSTALL · DOCKER &amp; DOCKER COMPOSE</div>
+  <div class="hero">
+    <h1>Run Maktaba in Docker</h1>
+    <p>Self-host on Linux, macOS, Windows, or any Docker-compatible OS. Uses ~600 MB RAM idle, supports CUDA &amp; ROCm GPU passthrough, and runs as an unprivileged user.</p>
+    <div class="badges">
+      <span class="badge"><span class="k">image:</span><span class="v">ghcr.io/maktaba/server</span></span>
+      <span class="badge green"><span class="k">tag:</span><span class="v">v1.0.0</span></span>
+      <span class="badge"><span class="k">size:</span><span class="v">218 MB</span></span>
+      <span class="badge"><span class="k">arch:</span><span class="v">linux/amd64, linux/arm64</span></span>
+      <span class="badge green"><span class="k">latest pull:</span><span class="v">14k this week</span></span>
+    </div>
+  </div>
+
+  <!-- Step 1: docker-compose.yml -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">1</div>
+      <div>
+        <h2>Step 1 · Save this docker-compose.yml</h2>
+        <p>Pre-configured with sensible defaults · edit volume paths to match your setup</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="code-block">
+        <div class="code-h">
+          <div class="file">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            docker-compose.yml
+          </div>
+          <button class="code-copy">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </button>
+        </div>
+<pre><span class="com"># Maktaba media server · docker-compose.yml</span>
+<span class="com"># Quickstart: docker compose up -d</span>
+
+<span class="kw">services</span>:
+  <span class="fn">maktaba</span>:
+    <span class="kw">image</span>: <span class="str">ghcr.io/maktaba/server:v1.0.0</span>
+    <span class="kw">container_name</span>: <span class="str">maktaba</span>
+    <span class="kw">restart</span>: <span class="str">unless-stopped</span>
+    <span class="kw">user</span>: <span class="str">"1000:1000"</span>           <span class="com"># run as your UID:GID</span>
+
+    <span class="kw">ports</span>:
+      - <span class="str">"8000:8000"</span>             <span class="com"># web UI &amp; HTTP API</span>
+      - <span class="str">"8443:8443"</span>             <span class="com"># HTTPS (optional)</span>
+
+    <span class="kw">volumes</span>:
+      - <span class="str">./config:/config</span>         <span class="com"># settings, db, secrets</span>
+      - <span class="str">./cache:/cache</span>           <span class="com"># transcoded segments, thumbnails</span>
+      - <span class="str">/path/to/media:/media:ro</span> <span class="com"># your library (read-only)</span>
+
+    <span class="kw">environment</span>:
+      <span class="kw">MAKTABA_PUBLIC_URL</span>: <span class="str">"http://maktaba.local:8000"</span>
+      <span class="kw">MAKTABA_TZ</span>: <span class="str">"America/New_York"</span>
+      <span class="kw">MAKTABA_TRANSCRIPTION_ENGINE</span>: <span class="str">"whisper-cpu"</span>
+      <span class="kw">MAKTABA_LOG_LEVEL</span>: <span class="str">"info"</span>
+      <span class="com"># MAKTABA_CLOUD_TOKEN: "tok_..."  # paste from cloud.maktaba.app</span>
+
+    <span class="kw">healthcheck</span>:
+      <span class="kw">test</span>: [<span class="str">"CMD"</span>, <span class="str">"curl"</span>, <span class="str">"-f"</span>, <span class="str">"http://localhost:8000/health"</span>]
+      <span class="kw">interval</span>: <span class="num">30</span>s
+      <span class="kw">timeout</span>: <span class="num">5</span>s
+      <span class="kw">retries</span>: <span class="num">3</span>
+      <span class="kw">start_period</span>: <span class="num">40</span>s
+
+    <span class="com"># GPU acceleration (uncomment for NVIDIA hosts):</span>
+    <span class="com"># deploy:</span>
+    <span class="com">#   resources:</span>
+    <span class="com">#     reservations:</span>
+    <span class="com">#       devices:</span>
+    <span class="com">#         - driver: nvidia</span>
+    <span class="com">#           count: 1</span>
+    <span class="com">#           capabilities: [gpu]</span>
+</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: env vars -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">2</div>
+      <div>
+        <h2>Step 2 · Environment variables</h2>
+        <p>Required and optional vars — set in compose's environment block or a .env file</p>
+      </div>
+    </div>
+    <div class="sb-body" style="padding: 0;">
+      <table class="env-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Default</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="key">MAKTABA_PUBLIC_URL</span><span class="req">REQUIRED</span></td>
+            <td class="desc">External URL the server is reachable at. Used for QR pairing &amp; deep links.<small>e.g. http://192.168.1.100:8000 or https://maktaba.home.lan</small></td>
+            <td class="default">—</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_TZ</span><span class="opt">opt</span></td>
+            <td class="desc">IANA time zone for scheduling &amp; log timestamps.</td>
+            <td class="default">UTC</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_TRANSCRIPTION_ENGINE</span><span class="opt">opt</span></td>
+            <td class="desc">Whisper engine variant.<small>whisper-cpu · whisper-cuda · whisper-rocm · whisper-mlx (mac)</small></td>
+            <td class="default">whisper-cpu</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_WHISPER_MODEL</span><span class="opt">opt</span></td>
+            <td class="desc">Whisper model size — affects accuracy and VRAM/CPU.<small>tiny · base · small · medium · large-v3</small></td>
+            <td class="default">small</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_LOG_LEVEL</span><span class="opt">opt</span></td>
+            <td class="desc">Log verbosity. <code style="font-family: ui-monospace, monospace;">debug</code> floods logs — keep on info in production.</td>
+            <td class="default">info</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_CLOUD_TOKEN</span><span class="opt">opt</span></td>
+            <td class="desc">Pair with cloud.maktaba.app for remote access. Generate in your Cloud account.<small>Paste from "Settings → Server link → Pair another"</small></td>
+            <td class="default">—</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_DB_PATH</span><span class="opt">opt</span></td>
+            <td class="desc">SQLite database location inside the container.</td>
+            <td class="default">/config/maktaba.db</td>
+          </tr>
+          <tr>
+            <td><span class="key">MAKTABA_TRANSCODE_HW_ACCEL</span><span class="opt">opt</span></td>
+            <td class="desc">FFmpeg hwaccel — match your GPU.<small>vaapi · qsv · cuda · videotoolbox · none</small></td>
+            <td class="default">none</td>
+          </tr>
+          <tr>
+            <td><span class="key">PUID / PGID</span><span class="opt">opt</span></td>
+            <td class="desc">Override container user/group IDs (linuxserver-style).<small>Useful if you can't change the compose <code style="font-family: ui-monospace, monospace;">user:</code> field.</small></td>
+            <td class="default">1000 / 1000</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Step 3: volume mounts -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">3</div>
+      <div>
+        <h2>Step 3 · Configure volume mounts</h2>
+        <p>Three mounts: persistent config, transient cache, your media library</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="vol-grid">
+        <div class="vol-card">
+          <div class="pre">PERSISTENT</div>
+          <h4>./config → /config</h4>
+          <div class="vol-mount">
+            <span class="vol-host">/srv/maktaba/config</span>
+            <span class="vol-arrow">→</span>
+            <span class="vol-cnt">/config</span>
+          </div>
+          <div class="desc">SQLite database, secrets, settings JSON, server identity certificate. Back this up. Survives image upgrades.</div>
+        </div>
+        <div class="vol-card">
+          <div class="pre">TRANSIENT</div>
+          <h4>./cache → /cache</h4>
+          <div class="vol-mount">
+            <span class="vol-host">/srv/maktaba/cache</span>
+            <span class="vol-arrow">→</span>
+            <span class="vol-cnt">/cache</span>
+          </div>
+          <div class="desc">Transcoded HLS segments, thumbnails, ML model checkpoints. Safe to delete — Maktaba regenerates.</div>
+        </div>
+        <div class="vol-card">
+          <div class="pre">READ-ONLY · MEDIA</div>
+          <h4>/path/to/videos → /media</h4>
+          <div class="vol-mount">
+            <span class="vol-host">/mnt/library</span>
+            <span class="vol-arrow">→</span>
+            <span class="vol-cnt">/media:ro</span>
+          </div>
+          <div class="desc">Your existing video library. Mount read-only — Maktaba never modifies your originals. Multiple <code style="font-family: ui-monospace, monospace; font-size: 11px;">/media-N</code> mounts supported.</div>
+        </div>
+        <div class="vol-card">
+          <div class="pre">OPTIONAL · MODELS</div>
+          <h4>./models → /models</h4>
+          <div class="vol-mount">
+            <span class="vol-host">/srv/maktaba/models</span>
+            <span class="vol-arrow">→</span>
+            <span class="vol-cnt">/models</span>
+          </div>
+          <div class="desc">Pre-downloaded Whisper checkpoints. Skip to let Maktaba download on first scan (~1.5 GB for medium).</div>
+        </div>
+      </div>
+
+      <!-- Service flow -->
+      <div class="compose-flow">
+        <div class="cf-box">
+          <div class="label">CONTAINER</div>
+          <div class="name">maktaba</div>
+          <div class="stat">● Running</div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; font-family: ui-monospace, monospace;">218 MB image · 612 MB RAM</div>
+        </div>
+        <div class="cf-arrow">→</div>
+        <div class="cf-box">
+          <div class="label">PORT EXPOSED</div>
+          <div class="name">:8000</div>
+          <div class="stat">● Listening</div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; font-family: ui-monospace, monospace;">HTTP · /web · /api</div>
+        </div>
+        <div class="cf-arrow">→</div>
+        <div class="cf-box">
+          <div class="label">YOUR LAN</div>
+          <div class="name">maktaba.local</div>
+          <div class="stat">● Discoverable</div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; font-family: ui-monospace, monospace;">mDNS broadcast</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: docker compose up -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">4</div>
+      <div>
+        <h2>Step 4 · Start it · "docker compose up"</h2>
+        <p>First run pulls the image (~218 MB), creates volumes, starts the server</p>
+      </div>
+    </div>
+    <div class="sb-body">
+      <div class="platform-tabs">
+        <div class="pl-tab active">Linux / macOS</div>
+        <div class="pl-tab">Windows (PowerShell)</div>
+        <div class="pl-tab">Podman</div>
+      </div>
+
+      <div class="term">
+        <div class="term-h">
+          <span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span>
+          <span class="ttl">~/maktaba — bash</span>
+        </div>
+        <div class="term-body">
+          <div class="term-cmd">cd ~/maktaba</div>
+          <div class="term-cmd">docker compose up -d</div>
+          <div class="term-out dim">[+] Running 4/4</div>
+          <div class="term-out green">  ✔ Network maktaba_default        Created                                  0.1s</div>
+          <div class="term-out green">  ✔ Volume "maktaba_config"        Created                                  0.0s</div>
+          <div class="term-out green">  ✔ Volume "maktaba_cache"         Created                                  0.0s</div>
+          <div class="term-out green">  ✔ Container maktaba              Started                                  0.6s</div>
+          <br>
+          <div class="term-cmd">docker compose pull</div>
+          <div class="term-out dim">[+] Pulling image ghcr.io/maktaba/server:v1.0.0</div>
+          <div class="term-out dim">v1.0.0: Pulling from maktaba/server</div>
+          <div class="term-out green">5cc84ad9b80a: Pull complete <span class="term-prog" style="width: 80px;"><div style="width:100%;"></div></span> 12.4 MB / 12.4 MB</div>
+          <div class="term-out green">9c3a1d31e8a2: Pull complete <span class="term-prog" style="width: 80px;"><div style="width:100%;"></div></span> 84.2 MB / 84.2 MB</div>
+          <div class="term-out green">f8d4b7c2e1a3: Pull complete <span class="term-prog" style="width: 80px;"><div style="width:100%;"></div></span> 121.1 MB / 121.1 MB</div>
+          <div class="term-out green">Status: Image is up to date for ghcr.io/maktaba/server:v1.0.0</div>
+          <br>
+          <div class="term-cmd">docker compose ps</div>
+          <div class="term-row boxed" style="display: block;">
+            <div style="display: grid; grid-template-columns: 1.5fr 2fr 1fr 1fr; gap: 8px; color: #8b949e; font-size: 11px; padding-bottom: 4px; border-bottom: 1px solid #21262d;">
+              <span>NAME</span><span>IMAGE</span><span>STATUS</span><span>PORTS</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1.5fr 2fr 1fr 1fr; gap: 8px; padding-top: 6px; font-size: 11.5px;">
+              <span style="color: #d2a8ff;">maktaba</span>
+              <span style="color: #a5d6ff;">ghcr.io/maktaba/server:v1.0.0</span>
+              <span style="color: #4ade80;">Up 14 seconds (healthy)</span>
+              <span style="color: #c9d1d9;">0.0.0.0:8000→8000/tcp</span>
+            </div>
+          </div>
+          <br>
+          <div class="term-cmd">docker compose logs -f --tail=20</div>
+          <div class="term-out yellow">maktaba  | 2026-05-06T14:08:22Z INFO  Maktaba Server v1.0.0 starting</div>
+          <div class="term-out dim">maktaba  | 2026-05-06T14:08:22Z DEBUG Loaded config from /config/settings.json</div>
+          <div class="term-out dim">maktaba  | 2026-05-06T14:08:22Z DEBUG SQLite connected at /config/maktaba.db</div>
+          <div class="term-out yellow">maktaba  | 2026-05-06T14:08:23Z INFO  Library scan started · 1 path · /media</div>
+          <div class="term-out dim">maktaba  | 2026-05-06T14:08:23Z DEBUG ffmpeg version: 6.1.1 · libvpx, libx264, libsvtav1</div>
+          <div class="term-out purple">maktaba  | 2026-05-06T14:08:24Z INFO  Whisper engine: whisper-cpu (small)</div>
+          <div class="term-out yellow">maktaba  | 2026-05-06T14:08:24Z INFO  HTTP listening on :8000</div>
+          <div class="term-out yellow">maktaba  | 2026-05-06T14:08:24Z INFO  mDNS broadcasting maktaba.local</div>
+          <div class="term-out green">maktaba  | 2026-05-06T14:08:25Z INFO  ✓ Server ready · open http://localhost:8000/setup</div>
+          <div class="term-out dim">maktaba  | 2026-05-06T14:08:25Z DEBUG Health check OK · uptime 3s</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px; display: flex; gap: 14px; align-items: stretch;">
+        <div style="flex: 1; background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.3); border-radius: 10px; padding: 14px;">
+          <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <div>
+              <strong style="color: var(--success); display: block; font-size: 13px; margin-bottom: 2px;">Server is up &amp; reachable</strong>
+              <div style="font-size: 12px; color: var(--text-dim);">Open <a href="setup-wizard-server.html"><code style="font-family: ui-monospace, monospace; background: var(--panel); padding: 1px 6px; border-radius: 4px;">http://localhost:8000/setup</code></a> in your browser to run the setup wizard.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other commands -->
+  <div class="stepblock">
+    <div class="sb-h">
+      <div class="sb-num">5</div>
+      <div>
+        <h2>Common operations</h2>
+        <p>Update, view logs, back up, stop · everything else is in <code style="font-family: ui-monospace, monospace;">docker compose</code></p>
+      </div>
+    </div>
+    <div class="sb-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+      <div class="code-block">
+        <div class="code-h"><div class="file">Update to latest</div></div>
+<pre>docker compose pull
+docker compose up -d
+<span class="com"># pulls new image, recreates container,</span>
+<span class="com"># keeps your config + cache</span></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-h"><div class="file">Tail logs</div></div>
+<pre>docker compose logs -f maktaba
+<span class="com"># Ctrl+C to stop tailing</span>
+
+docker compose logs --since 1h \
+  | grep ERROR</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-h"><div class="file">Backup config</div></div>
+<pre>docker compose stop
+tar czf maktaba-backup-$(date +%F).tar.gz \
+  config/
+docker compose start</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-h"><div class="file">Stop &amp; remove</div></div>
+<pre><span class="com"># stop, keep volumes</span>
+docker compose down
+
+<span class="com"># nuke everything, including data</span>
+docker compose down -v
+rm -rf config cache</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL UI STATES -->
+<div class="all-states">
+  <div class="heading">
+    <h2>All UI states · Docker install</h2>
+    <div class="desc">Common errors, GPU detection, healthcheck failures</div>
+  </div>
+
+  <div class="states-grid">
+
+    <div class="ss-card">
+      <div class="ss-label">Port already in use <span class="stag error">CONFLICT</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <div>
+            <strong>Port 8000 already in use</strong>
+            <span>Another service is bound to :8000. Change to "8080:8000" in compose, or stop the conflicting service.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Permission denied on volume <span class="stag error">PERMS</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          <div>
+            <strong>EACCES /config: permission denied</strong>
+            <span>Container UID 1000 cannot write to ./config. Run "sudo chown -R 1000:1000 config cache" or set PUID/PGID to your user.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">GPU detected <span class="stag success">CUDA</span></div>
+      <div class="ss-preview">
+        <div class="alert success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div>
+            <strong>NVIDIA GPU detected · driver 545.23</strong>
+            <span>nvidia-container-toolkit is installed. Uncomment the deploy.resources block in compose to use GPU acceleration.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Healthcheck failing <span class="stag warn">HEALTH</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>Healthcheck failing 3/3</strong>
+            <span>Container is up but /health returns 500. Check logs: "docker compose logs maktaba | tail -50". Common cause: corrupt SQLite db.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Image pull rate-limited <span class="stag warn">RATE LIMIT</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div>
+            <strong>Pull throttled · Docker Hub anonymous limit</strong>
+            <span>You've hit 100 pulls/6h. Switch to ghcr.io (image is mirrored there with no rate limit) or sign in: "docker login".</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Wrong arch warning <span class="stag warn">ARCH</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div>
+            <strong>Image arch is amd64 — host is arm64</strong>
+            <span>Maktaba supports linux/arm64 natively. Add "platform: linux/arm64" to compose, or it'll run via emulation (~3× slower).</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Compose v1 deprecated <span class="stag warn">DEPRECATED</span></div>
+      <div class="ss-preview">
+        <div class="alert warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+          <div>
+            <strong>"docker-compose" is v1 (deprecated)</strong>
+            <span>Switch to v2 — built into Docker as "docker compose" (no hyphen). Maktaba's compose file uses v2 syntax (no top-level version).</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Toast · code copied <span class="stag info">CLIPBOARD</span></div>
+      <div class="ss-preview">
+        <div class="toast info">
+          <div class="ico-t"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/></svg></div>
+          <div class="body">
+            <strong>docker-compose.yml copied</strong>
+            <span>Paste into a file and run "docker compose up -d"</span>
+          </div>
+          <span class="x">×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-card">
+      <div class="ss-label">Network unreachable <span class="stag error">NETWORK</span></div>
+      <div class="ss-preview">
+        <div class="alert error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          <div>
+            <strong>ghcr.io not reachable</strong>
+            <span>DNS or firewall blocking. Test: "curl -I https://ghcr.io". If behind a proxy, set HTTP_PROXY/HTTPS_PROXY in your Docker daemon.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

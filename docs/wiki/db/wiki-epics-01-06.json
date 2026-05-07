@@ -1,0 +1,2247 @@
+{
+  "version": "1.0",
+  "generated_from": "specs/epics/01-scanner..06-job-queue (origin/initial-specs)",
+  "generated_at": "2026-05-06",
+  "schema": {
+    "object_types": [
+      "epic",
+      "story",
+      "db_table",
+      "api_endpoint",
+      "grpc_rpc",
+      "notify_channel"
+    ],
+    "id_format": "{type}-{epic-num}-{seq}; e.g. story-01-01, table-videos, channel-jobs.new",
+    "linear_note": "Linear IDs (HLB-N) sourced from docs/wiki/linear-map.md (HLB-5 = first story in Epic 01, sequential through HLB-224 = 23.06)."
+  },
+  "epics": [
+    {
+      "id": "epic-01",
+      "type": "epic",
+      "title": "Scanner",
+      "phase": "Pipeline",
+      "milestone": "M0 — Foundation",
+      "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/library/",
+      "summary": "Detect every video file under a library's roots, assign a stable identity (content_hash via BLAKE3 head+tail+size), and create videos rows in DISCOVERED state. Cope with renames, moves, copies, partial downloads, lying network filesystems, and 200 GB drag-and-drops.",
+      "wiki_page": "docs/wiki/epics/epic-01-scanner.md",
+      "readme": "specs/epics/01-scanner/README.md",
+      "tags": [
+        "scanner",
+        "filesystem",
+        "blake3",
+        "discovery",
+        "fsm"
+      ],
+      "story_ids": [
+        "story-01-01",
+        "story-01-02",
+        "story-01-03",
+        "story-01-04",
+        "story-01-05",
+        "story-01-06"
+      ],
+      "db_tables": [
+        "libraries",
+        "videos",
+        "library_scan_state"
+      ],
+      "api_endpoints": [
+        "POST /api/libraries/{id}/scan",
+        "DELETE /api/libraries/{id}/scan"
+      ],
+      "grpc_rpcs": [],
+      "notify_channels": [
+        "videos.new",
+        "videos.state_changed"
+      ],
+      "depends_on": [
+        "epic-06"
+      ],
+      "depended_on_by": [
+        "epic-02",
+        "epic-03",
+        "epic-04",
+        "epic-05",
+        "epic-09"
+      ],
+      "linear_range": "HLB-5..HLB-10"
+    },
+    {
+      "id": "epic-02",
+      "type": "epic",
+      "title": "Audio Extraction",
+      "phase": "Pipeline",
+      "milestone": "M1 — Audio",
+      "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/media/",
+      "summary": "Probe a video, pick the right audio track, extract mono 16 kHz s16le PCM, and feed it into the transcriber without an intermediate WAV when the backend can consume a stream. Record the chosen track in audio_tracks.",
+      "wiki_page": "docs/wiki/epics/epic-02-audio-extraction.md",
+      "readme": "specs/epics/02-audio-extraction/README.md",
+      "tags": [
+        "ffmpeg",
+        "ffprobe",
+        "audio",
+        "pcm",
+        "track-selection"
+      ],
+      "story_ids": [
+        "story-02-01",
+        "story-02-02",
+        "story-02-03",
+        "story-02-04"
+      ],
+      "db_tables": [
+        "media_info",
+        "audio_tracks",
+        "track_selection_decisions"
+      ],
+      "api_endpoints": [
+        "GET /api/videos/{id}/tracks",
+        "PUT /api/videos/{id}/tracks/override",
+        "POST /api/diagnostics/extract-args"
+      ],
+      "grpc_rpcs": [
+        "MediaService.Probe"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "epic-01",
+        "epic-06"
+      ],
+      "depended_on_by": [
+        "epic-03",
+        "epic-04",
+        "epic-07"
+      ],
+      "linear_range": "HLB-11..HLB-14"
+    },
+    {
+      "id": "epic-03",
+      "type": "epic",
+      "title": "Transcription",
+      "phase": "Pipeline",
+      "milestone": "M2 — Transcription",
+      "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/stt/",
+      "summary": "Convert extracted audio into transcript_segments with second-accurate timestamps. Multiple swappable STT backends (mlx-whisper, faster-whisper, openai). Per-segment durable commits, exact pause/resume, bidi-correct Arabic. The long-running stage and primary consumer of the job queue.",
+      "wiki_page": "docs/wiki/epics/epic-03-transcription.md",
+      "readme": "specs/epics/03-transcription/README.md",
+      "tags": [
+        "stt",
+        "whisper",
+        "mlx",
+        "openai",
+        "transcription",
+        "diarization",
+        "arabic"
+      ],
+      "story_ids": [
+        "story-03-01",
+        "story-03-02",
+        "story-03-03",
+        "story-03-04",
+        "story-03-05",
+        "story-03-06",
+        "story-03-07",
+        "story-03-08",
+        "story-03-09"
+      ],
+      "db_tables": [
+        "transcripts",
+        "transcript_segments",
+        "transcript_words",
+        "stt_usage"
+      ],
+      "api_endpoints": [
+        "POST /api/jobs/{id}/pause",
+        "POST /api/jobs/{id}/resume",
+        "GET /api/system/health",
+        "GET /api/transcripts/{id}/backends"
+      ],
+      "grpc_rpcs": [
+        "Transcriber.Transcribe"
+      ],
+      "notify_channels": [
+        "segments.committed"
+      ],
+      "depends_on": [
+        "epic-01",
+        "epic-02",
+        "epic-06"
+      ],
+      "depended_on_by": [
+        "epic-04",
+        "epic-05",
+        "epic-07",
+        "epic-09"
+      ],
+      "linear_range": "HLB-15..HLB-23"
+    },
+    {
+      "id": "epic-04",
+      "type": "epic",
+      "title": "Subtitles",
+      "phase": "Pipeline",
+      "milestone": "M3 — Outputs",
+      "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/media/subtitles/",
+      "summary": "Generate well-formed SRT and VTT sidecars from finalized transcripts. Auto-discover external subtitle files. Lazily extract embedded subtitle tracks from MKVs. Streaming Service can render live VTT directly from transcript_segments.",
+      "wiki_page": "docs/wiki/epics/epic-04-subtitles.md",
+      "readme": "specs/epics/04-subtitles/README.md",
+      "tags": [
+        "subtitles",
+        "srt",
+        "vtt",
+        "ffmpeg",
+        "rtl",
+        "grapheme-clusters"
+      ],
+      "story_ids": [
+        "story-04-01",
+        "story-04-02",
+        "story-04-03",
+        "story-04-04",
+        "story-04-05"
+      ],
+      "db_tables": [
+        "subtitle_files",
+        "transcript_segments_v"
+      ],
+      "api_endpoints": [],
+      "grpc_rpcs": [
+        "Pipeline.ExtractEmbeddedSubtitle"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "epic-01",
+        "epic-02",
+        "epic-03"
+      ],
+      "depended_on_by": [
+        "epic-07",
+        "epic-08"
+      ],
+      "linear_range": "HLB-24..HLB-28"
+    },
+    {
+      "id": "epic-05",
+      "type": "epic",
+      "title": "Search & Indexing",
+      "phase": "Pipeline",
+      "milestone": "M3 — Outputs",
+      "owner": "Pipeline writes both indexes; API service reads (proxies semantic queries via gRPC Embed)",
+      "summary": "Make every transcribed second searchable in two complementary ways — exact-phrase / proximity (Postgres tsvector or SQLite FTS5) and semantic (ChromaDB) — and fuse them into one ranked result set with language filters, deep-linkable timestamps, and Arabic-correct snippet highlighting.",
+      "wiki_page": "docs/wiki/epics/epic-05-search-indexing.md",
+      "readme": "specs/epics/05-search-indexing/README.md",
+      "tags": [
+        "search",
+        "fts",
+        "chromadb",
+        "embeddings",
+        "rrf",
+        "chapters",
+        "arabic"
+      ],
+      "story_ids": [
+        "story-05-01",
+        "story-05-02",
+        "story-05-03",
+        "story-05-04",
+        "story-05-05",
+        "story-05-06",
+        "story-05-07"
+      ],
+      "db_tables": [
+        "transcript_units",
+        "transcripts_fts",
+        "search_suggestion_terms",
+        "chapters",
+        "vector_index_dead_letter"
+      ],
+      "api_endpoints": [
+        "GET /v1/search",
+        "GET /api/search/suggest"
+      ],
+      "grpc_rpcs": [
+        "Embed",
+        "Search",
+        "Suggest"
+      ],
+      "notify_channels": [
+        "transcript_units_appended"
+      ],
+      "depends_on": [
+        "epic-03"
+      ],
+      "depended_on_by": [
+        "epic-07",
+        "epic-08"
+      ],
+      "linear_range": "HLB-29..HLB-35"
+    },
+    {
+      "id": "epic-06",
+      "type": "epic",
+      "title": "Job Queue",
+      "phase": "Pipeline",
+      "milestone": "M0 — Foundation",
+      "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/pipeline/runner.py + db/jobs.py",
+      "summary": "Durable, atomic, pause-aware job queue. Single Postgres table (processing_jobs); no broker, no Celery, no Redis. All claim, heartbeat, retry, pause, resume, cancel, and reaper logic lives here. Every other pipeline epic depends on this.",
+      "wiki_page": "docs/wiki/epics/epic-06-job-queue.md",
+      "readme": "specs/epics/06-job-queue/README.md",
+      "tags": [
+        "queue",
+        "postgres",
+        "listen-notify",
+        "skip-locked",
+        "reaper",
+        "graceful-shutdown"
+      ],
+      "story_ids": [
+        "story-06-01",
+        "story-06-02",
+        "story-06-03",
+        "story-06-04",
+        "story-06-05",
+        "story-06-06",
+        "story-06-07",
+        "story-06-08",
+        "story-06-09",
+        "story-06-10"
+      ],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "api_endpoints": [],
+      "grpc_rpcs": [],
+      "notify_channels": [
+        "jobs.new",
+        "jobs.flag_set",
+        "jobs.progress",
+        "jobs.heartbeat",
+        "jobs.reaped",
+        "jobs.force_pause"
+      ],
+      "depends_on": [
+        "epic-01"
+      ],
+      "depended_on_by": [
+        "epic-01",
+        "epic-02",
+        "epic-03",
+        "epic-04",
+        "epic-05",
+        "epic-07"
+      ],
+      "linear_range": "HLB-36..HLB-45"
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-01-01",
+      "type": "story",
+      "story_number": "1.1",
+      "epic": "epic-01",
+      "title": "Bootstrap a library and walk its roots",
+      "priority": "Core",
+      "linear_issue": "HLB-5",
+      "story_file": "specs/epics/01-scanner/story-01-01-file-discovery.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-01-file-discovery.md",
+      "tags": [
+        "scanner",
+        "discovery",
+        "library",
+        "filesystem"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio",
+        "specs/diagrams/data-flow.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/libraries/{id}/scan",
+        "DELETE /api/libraries/{id}/scan"
+      ],
+      "db_tables": [
+        "videos",
+        "libraries"
+      ],
+      "notify_channels": [
+        "videos.new"
+      ],
+      "depends_on": [
+        "story-06-01",
+        "story-06-02",
+        "story-06-03"
+      ]
+    },
+    {
+      "id": "story-01-02",
+      "type": "story",
+      "story_number": "1.2",
+      "epic": "epic-01",
+      "title": "Content-addressable identity (BLAKE3)",
+      "priority": "Core",
+      "linear_issue": "HLB-6",
+      "story_file": "specs/epics/01-scanner/story-01-02-content-identity.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-02-content-identity.md",
+      "tags": [
+        "scanner",
+        "blake3",
+        "hash",
+        "content-identity"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/duplicates.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/entity-relationship.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "videos"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-01-01"
+      ]
+    },
+    {
+      "id": "story-01-03",
+      "type": "story",
+      "story_number": "1.3",
+      "epic": "epic-01",
+      "title": "Watch for live filesystem changes",
+      "priority": "Core",
+      "linear_issue": "HLB-7",
+      "story_file": "specs/epics/01-scanner/story-01-03-filesystem-watcher.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-03-filesystem-watcher.md",
+      "tags": [
+        "scanner",
+        "watcher",
+        "watchdog",
+        "fsnotify",
+        "debounce"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/data-flow.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "videos"
+      ],
+      "notify_channels": [
+        "videos.new"
+      ],
+      "depends_on": [
+        "story-01-01"
+      ]
+    },
+    {
+      "id": "story-01-04",
+      "type": "story",
+      "story_number": "1.4",
+      "epic": "epic-01",
+      "title": "Manual control surface",
+      "priority": "Core",
+      "linear_issue": "HLB-8",
+      "story_file": "specs/epics/01-scanner/story-01-04-manual-control.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-04-manual-control.md",
+      "tags": [
+        "scanner",
+        "cli",
+        "rest",
+        "scan-state"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html",
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/libraries/{id}/scan",
+        "DELETE /api/libraries/{id}/scan"
+      ],
+      "db_tables": [
+        "library_scan_state"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-01-01"
+      ]
+    },
+    {
+      "id": "story-01-05",
+      "type": "story",
+      "story_number": "1.5",
+      "epic": "epic-01",
+      "title": "Schema & ownership decisions",
+      "priority": "Gate",
+      "linear_issue": "HLB-9",
+      "story_file": "specs/epics/01-scanner/story-01-05-schema-decisions.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-05-schema-decisions.md",
+      "tags": [
+        "scanner",
+        "schema",
+        "migration",
+        "ownership"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/entity-relationship.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "videos",
+        "libraries"
+      ],
+      "notify_channels": [],
+      "depends_on": []
+    },
+    {
+      "id": "story-01-06",
+      "type": "story",
+      "story_number": "1.6",
+      "epic": "epic-01",
+      "title": "Video state machine",
+      "priority": "Gate",
+      "linear_issue": "HLB-10",
+      "story_file": "specs/epics/01-scanner/story-01-06-video-state-machine.md",
+      "plan_file": "specs/epics/01-scanner/plan-01-06-video-state-machine.md",
+      "tags": [
+        "scanner",
+        "fsm",
+        "state-machine",
+        "stages"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio",
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "videos"
+      ],
+      "notify_channels": [
+        "videos.state_changed"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "story-02-01",
+      "type": "story",
+      "story_number": "2.1",
+      "epic": "epic-02",
+      "title": "Probe the audio tracks",
+      "priority": "Core",
+      "linear_issue": "HLB-11",
+      "story_file": "specs/epics/02-audio-extraction/story-02-01-audio-probe.md",
+      "plan_file": "specs/epics/02-audio-extraction/plan-02-01-audio-probe.md",
+      "extra_plan_files": [
+        "specs/epics/02-audio-extraction/plan-02-01-ffprobe-binding.md"
+      ],
+      "tags": [
+        "audio",
+        "ffprobe",
+        "probe",
+        "track-detection"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "media_info",
+        "audio_tracks"
+      ],
+      "grpc_rpcs": [
+        "MediaService.Probe"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-01-01",
+        "story-01-02",
+        "story-06-01",
+        "story-06-02",
+        "story-06-03"
+      ]
+    },
+    {
+      "id": "story-02-02",
+      "type": "story",
+      "story_number": "2.2",
+      "epic": "epic-02",
+      "title": "Track selection",
+      "priority": "Core",
+      "linear_issue": "HLB-12",
+      "story_file": "specs/epics/02-audio-extraction/story-02-02-track-selection.md",
+      "plan_file": "specs/epics/02-audio-extraction/plan-02-02-track-selection.md",
+      "tags": [
+        "audio",
+        "track-selection",
+        "language-priority",
+        "override"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [
+        "GET /api/videos/{id}/tracks",
+        "PUT /api/videos/{id}/tracks/override"
+      ],
+      "db_tables": [
+        "track_selection_decisions"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-02-01"
+      ]
+    },
+    {
+      "id": "story-02-03",
+      "type": "story",
+      "story_number": "2.3",
+      "epic": "epic-02",
+      "title": "Stream extraction (no intermediate WAV by default)",
+      "priority": "Core",
+      "linear_issue": "HLB-13",
+      "story_file": "specs/epics/02-audio-extraction/story-02-03-stream-extraction.md",
+      "plan_file": "specs/epics/02-audio-extraction/plan-02-03-stream-extraction.md",
+      "tags": [
+        "audio",
+        "ffmpeg",
+        "pcm",
+        "streaming",
+        "asyncio"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/data-flow.drawio",
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/diagnostics/extract-args"
+      ],
+      "db_tables": [],
+      "notify_channels": [],
+      "depends_on": [
+        "story-02-01",
+        "story-02-02"
+      ]
+    },
+    {
+      "id": "story-02-04",
+      "type": "story",
+      "story_number": "2.4",
+      "epic": "epic-02",
+      "title": "Audio resource accounting",
+      "priority": "Polish",
+      "linear_issue": "HLB-14",
+      "story_file": "specs/epics/02-audio-extraction/story-02-04-resource-accounting.md",
+      "plan_file": "specs/epics/02-audio-extraction/plan-02-04-resource-accounting.md",
+      "tags": [
+        "audio",
+        "resource-cap",
+        "concurrency",
+        "throttle"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [],
+      "api_endpoints": [],
+      "db_tables": [],
+      "notify_channels": [],
+      "depends_on": [
+        "story-02-03"
+      ]
+    },
+    {
+      "id": "story-03-01",
+      "type": "story",
+      "story_number": "3.1",
+      "epic": "epic-03",
+      "title": "STT backend protocol",
+      "priority": "Gate",
+      "linear_issue": "HLB-15",
+      "story_file": "specs/epics/03-transcription/story-03-01-backend-protocol.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-01-backend-protocol.md",
+      "tags": [
+        "stt",
+        "protocol",
+        "backend",
+        "interface"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcripts",
+        "transcript_segments"
+      ],
+      "notify_channels": [],
+      "depends_on": []
+    },
+    {
+      "id": "story-03-02",
+      "type": "story",
+      "story_number": "3.2",
+      "epic": "epic-03",
+      "title": "Whisper MLX backend (default on Apple Silicon)",
+      "priority": "Core",
+      "linear_issue": "HLB-16",
+      "story_file": "specs/epics/03-transcription/story-03-02-whisper-mlx-backend.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-02-whisper-mlx-backend.md",
+      "tags": [
+        "stt",
+        "mlx",
+        "whisper",
+        "apple-silicon",
+        "arabic"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcripts",
+        "transcript_segments"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-01"
+      ]
+    },
+    {
+      "id": "story-03-03",
+      "type": "story",
+      "story_number": "3.3",
+      "epic": "epic-03",
+      "title": "Faster-Whisper (CUDA / CPU) backend",
+      "priority": "Core",
+      "linear_issue": "HLB-17",
+      "story_file": "specs/epics/03-transcription/story-03-03-faster-whisper-backend.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-03-faster-whisper-backend.md",
+      "tags": [
+        "stt",
+        "faster-whisper",
+        "cuda",
+        "cpu",
+        "ctranslate2"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcripts",
+        "transcript_segments"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-01"
+      ]
+    },
+    {
+      "id": "story-03-04",
+      "type": "story",
+      "story_number": "3.4",
+      "epic": "epic-03",
+      "title": "OpenAI API backend",
+      "priority": "Core",
+      "linear_issue": "HLB-18",
+      "story_file": "specs/epics/03-transcription/story-03-04-openai-api-backend.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-04-openai-api-backend.md",
+      "tags": [
+        "stt",
+        "openai",
+        "api",
+        "budget",
+        "chunking"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "stt_usage",
+        "transcripts",
+        "transcript_segments"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-01"
+      ]
+    },
+    {
+      "id": "story-03-05",
+      "type": "story",
+      "story_number": "3.5",
+      "epic": "epic-03",
+      "title": "Backend registry, transcript history & per-library selection",
+      "priority": "Gate",
+      "linear_issue": "HLB-19",
+      "story_file": "specs/epics/03-transcription/story-03-05-backend-registry.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-05-backend-registry.md",
+      "tags": [
+        "stt",
+        "registry",
+        "is_active",
+        "history",
+        "per-library"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [
+        "GET /api/system/health",
+        "GET /api/transcripts/{id}/backends"
+      ],
+      "db_tables": [
+        "transcripts"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-02",
+        "story-03-03",
+        "story-03-04"
+      ]
+    },
+    {
+      "id": "story-03-06",
+      "type": "story",
+      "story_number": "3.6",
+      "epic": "epic-03",
+      "title": "Real-time per-segment durable commit",
+      "priority": "Gate",
+      "linear_issue": "HLB-20",
+      "story_file": "specs/epics/03-transcription/story-03-06-segment-commit.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-06-segment-commit.md",
+      "tags": [
+        "stt",
+        "commit",
+        "atomic",
+        "ewma",
+        "reorder-buffer"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-05-processing-queue.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio",
+        "specs/diagrams/data-flow.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_segments",
+        "transcript_words"
+      ],
+      "notify_channels": [
+        "segments.committed"
+      ],
+      "depends_on": [
+        "story-03-05",
+        "story-06-01"
+      ]
+    },
+    {
+      "id": "story-03-07",
+      "type": "story",
+      "story_number": "3.7",
+      "epic": "epic-03",
+      "title": "Pause and resume to the exact second",
+      "priority": "Core",
+      "linear_issue": "HLB-21",
+      "story_file": "specs/epics/03-transcription/story-03-07-pause-resume.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-07-pause-resume.md",
+      "tags": [
+        "stt",
+        "pause",
+        "resume",
+        "checkpoint"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/jobs/{id}/pause",
+        "POST /api/jobs/{id}/resume"
+      ],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-06",
+        "story-06-04"
+      ]
+    },
+    {
+      "id": "story-03-08",
+      "type": "story",
+      "story_number": "3.8",
+      "epic": "epic-03",
+      "title": "Crash recovery & graceful shutdown",
+      "priority": "Core",
+      "linear_issue": "HLB-22",
+      "story_file": "specs/epics/03-transcription/story-03-08-crash-recovery.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-08-crash-recovery.md",
+      "tags": [
+        "stt",
+        "crash-recovery",
+        "shutdown",
+        "reaper"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/jobs/{id}/pause?force=true"
+      ],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-07",
+        "story-06-06",
+        "story-06-08"
+      ]
+    },
+    {
+      "id": "story-03-09",
+      "type": "story",
+      "story_number": "3.9",
+      "epic": "epic-03",
+      "title": "Diarization (opt-in, off by default)",
+      "priority": "Polish",
+      "linear_issue": "HLB-23",
+      "story_file": "specs/epics/03-transcription/story-03-09-diarization.md",
+      "plan_file": "specs/epics/03-transcription/plan-03-09-diarization.md",
+      "tags": [
+        "stt",
+        "diarization",
+        "pyannote",
+        "speakers"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/speaker-manager.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/transcription-pipeline.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_segments"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-06"
+      ]
+    },
+    {
+      "id": "story-04-01",
+      "type": "story",
+      "story_number": "4.1",
+      "epic": "epic-04",
+      "title": "Generate SRT and VTT from transcript_segments",
+      "priority": "Core",
+      "linear_issue": "HLB-24",
+      "story_file": "specs/epics/04-subtitles/story-04-01-generate-from-segments.md",
+      "plan_file": "specs/epics/04-subtitles/plan-04-01-generate-from-segments.md",
+      "tags": [
+        "subtitles",
+        "srt",
+        "vtt",
+        "generate",
+        "atomic-replace"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "subtitle_files",
+        "transcript_segments_v"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-05",
+        "story-03-06"
+      ]
+    },
+    {
+      "id": "story-04-02",
+      "type": "story",
+      "story_number": "4.2",
+      "epic": "epic-04",
+      "title": "SRT/VTT formatting & line wrapping",
+      "priority": "Core",
+      "linear_issue": "HLB-25",
+      "story_file": "specs/epics/04-subtitles/story-04-02-formatting-wrapping.md",
+      "plan_file": "specs/epics/04-subtitles/plan-04-02-formatting-wrapping.md",
+      "tags": [
+        "subtitles",
+        "wrapping",
+        "grapheme",
+        "rtl",
+        "html-escape"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [],
+      "notify_channels": [],
+      "depends_on": [
+        "story-04-01"
+      ]
+    },
+    {
+      "id": "story-04-03",
+      "type": "story",
+      "story_number": "4.3",
+      "epic": "epic-04",
+      "title": "External subtitle auto-discovery",
+      "priority": "Core",
+      "linear_issue": "HLB-26",
+      "story_file": "specs/epics/04-subtitles/story-04-03-external-discovery.md",
+      "plan_file": "specs/epics/04-subtitles/plan-04-03-external-discovery.md",
+      "tags": [
+        "subtitles",
+        "discovery",
+        "external",
+        "scan"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/library-config.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/pipeline-stories.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "subtitle_files"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-01-01"
+      ]
+    },
+    {
+      "id": "story-04-04",
+      "type": "story",
+      "story_number": "4.4",
+      "epic": "epic-04",
+      "title": "Embedded subtitle extraction (with is_embedded schema)",
+      "priority": "Core",
+      "linear_issue": "HLB-27",
+      "story_file": "specs/epics/04-subtitles/story-04-04-embedded-extraction.md",
+      "plan_file": "specs/epics/04-subtitles/plan-04-04-embedded-extraction.md",
+      "tags": [
+        "subtitles",
+        "embedded",
+        "ffmpeg",
+        "mkv",
+        "lazy"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/streaming-flow.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "subtitle_files"
+      ],
+      "grpc_rpcs": [
+        "Pipeline.ExtractEmbeddedSubtitle"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-02-03"
+      ]
+    },
+    {
+      "id": "story-04-05",
+      "type": "story",
+      "story_number": "4.5",
+      "epic": "epic-04",
+      "title": "Live VTT serving (read-side, contract only)",
+      "priority": "Gate",
+      "linear_issue": "HLB-28",
+      "story_file": "specs/epics/04-subtitles/story-04-05-live-vtt-contract.md",
+      "plan_file": "specs/epics/04-subtitles/plan-04-05-live-vtt-contract.md",
+      "tags": [
+        "subtitles",
+        "live-vtt",
+        "view",
+        "streaming-contract"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-03-video-player.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/streaming-flow.drawio",
+        "specs/diagrams/data-flow.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_segments_v"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-06"
+      ]
+    },
+    {
+      "id": "story-05-01",
+      "type": "story",
+      "story_number": "5.1",
+      "epic": "epic-05",
+      "title": "Search-unit chunking & schema",
+      "priority": "Gate",
+      "linear_issue": "HLB-29",
+      "story_file": "specs/epics/05-search-indexing/story-05-01-unit-chunking.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-01-unit-chunking.md",
+      "tags": [
+        "search",
+        "schema",
+        "chunking",
+        "unit"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio",
+        "specs/diagrams/entity-relationship.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_units"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-03-05"
+      ]
+    },
+    {
+      "id": "story-05-02",
+      "type": "story",
+      "story_number": "5.2",
+      "epic": "epic-05",
+      "title": "FTS5 / tsvector exact-phrase index",
+      "priority": "Core",
+      "linear_issue": "HLB-30",
+      "story_file": "specs/epics/05-search-indexing/story-05-02-fts-tsvector.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md",
+      "tags": [
+        "search",
+        "fts",
+        "tsvector",
+        "fts5",
+        "arabic",
+        "diacritic"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-04-search-interface.html",
+        "web/mockups/mobile/search.html",
+        "web/mockups/tv/search-tv.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcripts_fts",
+        "transcript_units"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-05-01"
+      ]
+    },
+    {
+      "id": "story-05-03",
+      "type": "story",
+      "story_number": "5.3",
+      "epic": "epic-05",
+      "title": "ChromaDB vector index",
+      "priority": "Core",
+      "linear_issue": "HLB-31",
+      "story_file": "specs/epics/05-search-indexing/story-05-03-chroma-vector.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-03-chroma-vector.md",
+      "tags": [
+        "search",
+        "chroma",
+        "embedding",
+        "multilingual-e5",
+        "hnsw"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-04-search-interface.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "vector_index_dead_letter"
+      ],
+      "grpc_rpcs": [
+        "Embed"
+      ],
+      "notify_channels": [
+        "transcript_units_appended"
+      ],
+      "depends_on": [
+        "story-05-01"
+      ]
+    },
+    {
+      "id": "story-05-04",
+      "type": "story",
+      "story_number": "5.4",
+      "epic": "epic-05",
+      "title": "Hybrid retrieval with Reciprocal Rank Fusion",
+      "priority": "Core",
+      "linear_issue": "HLB-32",
+      "story_file": "specs/epics/05-search-indexing/story-05-04-hybrid-rrf.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-04-hybrid-rrf.md",
+      "tags": [
+        "search",
+        "hybrid",
+        "rrf",
+        "fusion",
+        "ranking"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-04-search-interface.html",
+        "web/mockups/mobile/search.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio"
+      ],
+      "api_endpoints": [
+        "GET /v1/search"
+      ],
+      "db_tables": [
+        "transcript_units",
+        "transcript_segments"
+      ],
+      "grpc_rpcs": [
+        "Search"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-05-02",
+        "story-05-03"
+      ]
+    },
+    {
+      "id": "story-05-05",
+      "type": "story",
+      "story_number": "5.5",
+      "epic": "epic-05",
+      "title": "Incremental indexing",
+      "priority": "Core",
+      "linear_issue": "HLB-33",
+      "story_file": "specs/epics/05-search-indexing/story-05-05-incremental-indexing.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-05-incremental-indexing.md",
+      "tags": [
+        "search",
+        "incremental",
+        "live-indexer",
+        "debounce"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio",
+        "specs/diagrams/data-flow.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_units",
+        "vector_index_dead_letter"
+      ],
+      "notify_channels": [
+        "segments.committed"
+      ],
+      "depends_on": [
+        "story-03-06",
+        "story-05-01",
+        "story-05-02",
+        "story-05-03"
+      ]
+    },
+    {
+      "id": "story-05-06",
+      "type": "story",
+      "story_number": "5.6",
+      "epic": "epic-05",
+      "title": "Search query suggestions",
+      "priority": "Polish",
+      "linear_issue": "HLB-34",
+      "story_file": "specs/epics/05-search-indexing/story-05-06-query-suggestions.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-06-query-suggestions.md",
+      "tags": [
+        "search",
+        "suggestions",
+        "autocomplete",
+        "ngrams",
+        "pg_trgm"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-04-search-interface.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio"
+      ],
+      "api_endpoints": [
+        "GET /api/search/suggest"
+      ],
+      "db_tables": [
+        "search_suggestion_terms"
+      ],
+      "grpc_rpcs": [
+        "Suggest"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-05-02"
+      ]
+    },
+    {
+      "id": "story-05-07",
+      "type": "story",
+      "story_number": "5.7",
+      "epic": "epic-05",
+      "title": "Chapter inference from transcripts",
+      "priority": "Polish",
+      "linear_issue": "HLB-35",
+      "story_file": "specs/epics/05-search-indexing/story-05-07-chapter-inference.md",
+      "plan_file": "specs/epics/05-search-indexing/plan-05-07-chapter-inference.md",
+      "tags": [
+        "search",
+        "chapters",
+        "inference",
+        "cosine",
+        "smoothing"
+      ],
+      "related_mockups": [
+        "web/mockups/mockup-11-02-video-detail.html",
+        "web/mockups/mockup-11-03-video-player.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/search-architecture.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "chapters"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-05-03"
+      ]
+    },
+    {
+      "id": "story-06-01",
+      "type": "story",
+      "story_number": "6.1",
+      "epic": "epic-06",
+      "title": "Schema, migration, indexes",
+      "priority": "Gate",
+      "linear_issue": "HLB-36",
+      "story_file": "specs/epics/06-job-queue/story-06-01-schema-indexes.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-01-schema-indexes.md",
+      "tags": [
+        "queue",
+        "schema",
+        "indexes",
+        "migration"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio",
+        "specs/diagrams/entity-relationship.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [
+        "jobs.new"
+      ],
+      "depends_on": [
+        "story-01-06"
+      ]
+    },
+    {
+      "id": "story-06-02",
+      "type": "story",
+      "story_number": "6.2",
+      "epic": "epic-06",
+      "title": "Claim loop",
+      "priority": "Gate",
+      "linear_issue": "HLB-37",
+      "story_file": "specs/epics/06-job-queue/story-06-02-claim-loop.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-02-claim-loop.md",
+      "tags": [
+        "queue",
+        "claim",
+        "skip-locked",
+        "claim-loop"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html",
+        "web/mockups/mockup-11-05-processing-queue.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [
+        "jobs.new"
+      ],
+      "depends_on": [
+        "story-06-01"
+      ]
+    },
+    {
+      "id": "story-06-03",
+      "type": "story",
+      "story_number": "6.3",
+      "epic": "epic-06",
+      "title": "Heartbeat & progress (with jobs.* channels)",
+      "priority": "Gate",
+      "linear_issue": "HLB-38",
+      "story_file": "specs/epics/06-job-queue/story-06-03-heartbeat-progress.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-03-heartbeat-progress.md",
+      "tags": [
+        "queue",
+        "heartbeat",
+        "progress",
+        "websocket"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html",
+        "web/mockups/mockup-11-05-processing-queue.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [
+        "jobs.heartbeat",
+        "jobs.progress"
+      ],
+      "depends_on": [
+        "story-06-02"
+      ]
+    },
+    {
+      "id": "story-06-04",
+      "type": "story",
+      "story_number": "6.4",
+      "epic": "epic-06",
+      "title": "Pause, resume, cancel via request flags",
+      "priority": "Core",
+      "linear_issue": "HLB-39",
+      "story_file": "specs/epics/06-job-queue/story-06-04-pause-resume-cancel.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-04-pause-resume-cancel.md",
+      "tags": [
+        "queue",
+        "pause",
+        "resume",
+        "cancel",
+        "flags"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/job-pipeline.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [
+        "POST /api/jobs/{id}/pause",
+        "POST /api/jobs/{id}/resume",
+        "POST /api/jobs/{id}/cancel"
+      ],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [
+        "jobs.flag_set",
+        "jobs.force_pause"
+      ],
+      "depends_on": [
+        "story-06-02"
+      ]
+    },
+    {
+      "id": "story-06-05",
+      "type": "story",
+      "story_number": "6.5",
+      "epic": "epic-06",
+      "title": "Backoff and retry",
+      "priority": "Core",
+      "linear_issue": "HLB-40",
+      "story_file": "specs/epics/06-job-queue/story-06-05-backoff-retry.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-05-backoff-retry.md",
+      "tags": [
+        "queue",
+        "retry",
+        "backoff",
+        "jitter"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/log-viewer.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-06-02"
+      ]
+    },
+    {
+      "id": "story-06-06",
+      "type": "story",
+      "story_number": "6.6",
+      "epic": "epic-06",
+      "title": "Reaper for crashed claims (heartbeat math fixed)",
+      "priority": "Core",
+      "linear_issue": "HLB-41",
+      "story_file": "specs/epics/06-job-queue/story-06-06-reaper.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-06-reaper.md",
+      "tags": [
+        "queue",
+        "reaper",
+        "crash-recovery",
+        "heartbeat"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/log-viewer.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [
+        "jobs.reaped"
+      ],
+      "depends_on": [
+        "story-06-03"
+      ]
+    },
+    {
+      "id": "story-06-07",
+      "type": "story",
+      "story_number": "6.7",
+      "epic": "epic-06",
+      "title": "Concurrency model & per-host caps",
+      "priority": "Core",
+      "linear_issue": "HLB-42",
+      "story_file": "specs/epics/06-job-queue/story-06-07-concurrency-caps.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-07-concurrency-caps.md",
+      "tags": [
+        "queue",
+        "concurrency",
+        "semaphore",
+        "gpu",
+        "caps"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/admin-dashboard.html"
+      ],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-06-02"
+      ]
+    },
+    {
+      "id": "story-06-08",
+      "type": "story",
+      "story_number": "6.8",
+      "epic": "epic-06",
+      "title": "Graceful shutdown semantics",
+      "priority": "Core",
+      "linear_issue": "HLB-43",
+      "story_file": "specs/epics/06-job-queue/story-06-08-graceful-shutdown.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-08-graceful-shutdown.md",
+      "tags": [
+        "queue",
+        "shutdown",
+        "sigterm",
+        "cooperative"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-06-04",
+        "story-06-06"
+      ]
+    },
+    {
+      "id": "story-06-09",
+      "type": "story",
+      "story_number": "6.9",
+      "epic": "epic-06",
+      "title": "Observability hooks",
+      "priority": "Core",
+      "linear_issue": "HLB-44",
+      "story_file": "specs/epics/06-job-queue/story-06-09-observability.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-09-observability.md",
+      "tags": [
+        "queue",
+        "observability",
+        "metrics",
+        "prometheus",
+        "logs"
+      ],
+      "related_mockups": [
+        "web/mockups/admin/admin-dashboard.html",
+        "web/mockups/admin/log-viewer.html"
+      ],
+      "related_diagrams": [],
+      "api_endpoints": [
+        "GET /api/queue/stats"
+      ],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-06-03"
+      ]
+    },
+    {
+      "id": "story-06-10",
+      "type": "story",
+      "story_number": "6.10",
+      "epic": "epic-06",
+      "title": "Single source of truth for resume",
+      "priority": "Gate",
+      "linear_issue": "HLB-45",
+      "story_file": "specs/epics/06-job-queue/story-06-10-resume-invariant.md",
+      "plan_file": "specs/epics/06-job-queue/plan-06-10-resume-invariant.md",
+      "tags": [
+        "queue",
+        "invariant",
+        "resume",
+        "checkpoint",
+        "lint"
+      ],
+      "related_mockups": [],
+      "related_diagrams": [
+        "specs/diagrams/job-lifecycle.drawio"
+      ],
+      "api_endpoints": [],
+      "db_tables": [
+        "processing_jobs"
+      ],
+      "notify_channels": [],
+      "depends_on": [
+        "story-06-01",
+        "story-03-06"
+      ]
+    }
+  ],
+  "db_tables": [
+    {
+      "id": "table-libraries",
+      "type": "db_table",
+      "title": "libraries",
+      "epic": "epic-01",
+      "owned_by_stories": [
+        "story-01-01",
+        "story-01-05"
+      ],
+      "purpose": "One row per user-defined library. Holds roots, settings (disabled, follow_symlinks, language), and timestamps.",
+      "tags": [
+        "scanner",
+        "config"
+      ]
+    },
+    {
+      "id": "table-videos",
+      "type": "db_table",
+      "title": "videos",
+      "epic": "epic-01",
+      "owned_by_stories": [
+        "story-01-01",
+        "story-01-02",
+        "story-01-05",
+        "story-01-06"
+      ],
+      "purpose": "One row per discovered file. Carries content_hash, path, filename, size_bytes, mtime, state (FSM owned by Story 1.6). UNIQUE (library_id, content_hash).",
+      "tags": [
+        "scanner",
+        "core-entity"
+      ]
+    },
+    {
+      "id": "table-library_scan_state",
+      "type": "db_table",
+      "title": "library_scan_state",
+      "epic": "epic-01",
+      "owned_by_stories": [
+        "story-01-04"
+      ],
+      "purpose": "Per-library scan progress: sweep IDs, visited / inserted / updated / skipped / marked-missing counters, timestamps.",
+      "tags": [
+        "scanner",
+        "progress"
+      ]
+    },
+    {
+      "id": "table-media_info",
+      "type": "db_table",
+      "title": "media_info",
+      "epic": "epic-02",
+      "owned_by_stories": [
+        "story-02-01"
+      ],
+      "purpose": "Per-video container, video codec, resolution, fps, bitrate, has_subtitles, raw ffprobe JSONB. Probe cache.",
+      "tags": [
+        "audio",
+        "ffprobe",
+        "metadata"
+      ]
+    },
+    {
+      "id": "table-audio_tracks",
+      "type": "db_table",
+      "title": "audio_tracks",
+      "epic": "epic-02",
+      "owned_by_stories": [
+        "story-02-01"
+      ],
+      "purpose": "One row per audio stream — index, codec, channels, sample rate, language (ISO 639-3), title, is_default, disposition, detected_language.",
+      "tags": [
+        "audio",
+        "tracks"
+      ]
+    },
+    {
+      "id": "table-track_selection_decisions",
+      "type": "db_table",
+      "title": "track_selection_decisions",
+      "epic": "epic-02",
+      "owned_by_stories": [
+        "story-02-02"
+      ],
+      "purpose": "Audit trail of selected track(s), decision rule, rejected tracks with rationale.",
+      "tags": [
+        "audio",
+        "audit"
+      ]
+    },
+    {
+      "id": "table-transcripts",
+      "type": "db_table",
+      "title": "transcripts",
+      "epic": "epic-03",
+      "owned_by_stories": [
+        "story-03-01",
+        "story-03-05"
+      ],
+      "purpose": "One row per transcription pass. is_active partial-UNIQUE marks the live one; history rows kept for reprocessing. Tracks backend, model, parameters, progress.",
+      "tags": [
+        "transcription",
+        "is_active"
+      ]
+    },
+    {
+      "id": "table-transcript_segments",
+      "type": "db_table",
+      "title": "transcript_segments",
+      "epic": "epic-03",
+      "owned_by_stories": [
+        "story-03-01",
+        "story-03-06"
+      ],
+      "purpose": "Per-segment STT output: text, confidence, start_sec, end_sec, optional speaker, optional word-level data. Sequence enforced monotonically.",
+      "tags": [
+        "transcription",
+        "segments"
+      ]
+    },
+    {
+      "id": "table-transcript_words",
+      "type": "db_table",
+      "title": "transcript_words",
+      "epic": "epic-03",
+      "owned_by_stories": [
+        "story-03-06"
+      ],
+      "purpose": "Optional word-level timestamps and confidences (when the backend supplies them).",
+      "tags": [
+        "transcription",
+        "words"
+      ]
+    },
+    {
+      "id": "table-stt_usage",
+      "type": "db_table",
+      "title": "stt_usage",
+      "epic": "epic-03",
+      "owned_by_stories": [
+        "story-03-04"
+      ],
+      "purpose": "OpenAI-API ledger: per-library monthly USD spend, enforces max_usd_per_month cap before claim.",
+      "tags": [
+        "transcription",
+        "billing",
+        "openai"
+      ]
+    },
+    {
+      "id": "table-subtitle_files",
+      "type": "db_table",
+      "title": "subtitle_files",
+      "epic": "epic-04",
+      "owned_by_stories": [
+        "story-04-01",
+        "story-04-03",
+        "story-04-04"
+      ],
+      "purpose": "One row per discovered or generated subtitle file. format (srt/vtt), language, path, is_external, is_embedded.",
+      "tags": [
+        "subtitles"
+      ]
+    },
+    {
+      "id": "view-transcript_segments_v",
+      "type": "db_table",
+      "title": "transcript_segments_v",
+      "epic": "epic-04",
+      "owned_by_stories": [
+        "story-04-01",
+        "story-04-05"
+      ],
+      "purpose": "SQL view filtered by transcripts.is_active = true. Read source for SRT/VTT generation and live VTT.",
+      "tags": [
+        "subtitles",
+        "view"
+      ]
+    },
+    {
+      "id": "table-transcript_units",
+      "type": "db_table",
+      "title": "transcript_units",
+      "epic": "epic-05",
+      "owned_by_stories": [
+        "story-05-01"
+      ],
+      "purpose": "Search units chunked from segments (~200 char target / 400 hard cap). Single source of truth for FTS and vector indexes. Has GENERATED tsvector column.",
+      "tags": [
+        "search",
+        "unit",
+        "tsvector"
+      ]
+    },
+    {
+      "id": "view-transcripts_fts",
+      "type": "db_table",
+      "title": "transcripts_fts",
+      "epic": "epic-05",
+      "owned_by_stories": [
+        "story-05-02"
+      ],
+      "purpose": "Postgres VIEW over transcript_units (or SQLite FTS5 virtual table) for exact-phrase retrieval.",
+      "tags": [
+        "search",
+        "fts",
+        "view"
+      ]
+    },
+    {
+      "id": "table-search_suggestion_terms",
+      "type": "db_table",
+      "title": "search_suggestion_terms",
+      "epic": "epic-05",
+      "owned_by_stories": [
+        "story-05-06"
+      ],
+      "purpose": "Pre-computed 2-/3-/4-grams per library with frequencies. Backs autocomplete.",
+      "tags": [
+        "search",
+        "suggestions",
+        "ngrams"
+      ]
+    },
+    {
+      "id": "table-chapters",
+      "type": "db_table",
+      "title": "chapters",
+      "epic": "epic-05",
+      "owned_by_stories": [
+        "story-05-07"
+      ],
+      "purpose": "Inferred chapter boundaries with start/end seconds and language tag. Drives HLS DATERANGE + chapter sidebar.",
+      "tags": [
+        "search",
+        "chapters"
+      ]
+    },
+    {
+      "id": "table-vector_index_dead_letter",
+      "type": "db_table",
+      "title": "vector_index_dead_letter",
+      "epic": "epic-05",
+      "owned_by_stories": [
+        "story-05-05"
+      ],
+      "purpose": "Retry queue for failed Chroma writes during the post-transcribe index stage.",
+      "tags": [
+        "search",
+        "chroma",
+        "dead-letter"
+      ]
+    },
+    {
+      "id": "table-processing_jobs",
+      "type": "db_table",
+      "title": "processing_jobs",
+      "epic": "epic-06",
+      "owned_by_stories": [
+        "story-06-01",
+        "story-06-02",
+        "story-06-03",
+        "story-06-04",
+        "story-06-05",
+        "story-06-06",
+        "story-06-10"
+      ],
+      "purpose": "Single durable queue table for every pipeline stage. Fields include id, video_id, stage, state, priority, not_before, claimed_by, claimed_at, attempts, max_attempts, last_heartbeat_at, last_segment_end_sec (canonical resume), pause_requested, cancel_requested, error JSON. Indexed for claim, lookup, reaper, flag-poll.",
+      "tags": [
+        "queue",
+        "core-entity"
+      ]
+    }
+  ],
+  "api_endpoints": [
+    {
+      "id": "ep-libraries-scan-post",
+      "type": "api_endpoint",
+      "method": "POST",
+      "path": "/api/libraries/{id}/scan",
+      "epic": "epic-01",
+      "owned_by_story": "story-01-04"
+    },
+    {
+      "id": "ep-libraries-scan-delete",
+      "type": "api_endpoint",
+      "method": "DELETE",
+      "path": "/api/libraries/{id}/scan",
+      "epic": "epic-01",
+      "owned_by_story": "story-01-04"
+    },
+    {
+      "id": "ep-videos-tracks-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/api/videos/{id}/tracks",
+      "epic": "epic-02",
+      "owned_by_story": "story-02-02"
+    },
+    {
+      "id": "ep-videos-tracks-override-put",
+      "type": "api_endpoint",
+      "method": "PUT",
+      "path": "/api/videos/{id}/tracks/override",
+      "epic": "epic-02",
+      "owned_by_story": "story-02-02"
+    },
+    {
+      "id": "ep-diagnostics-extract-args-post",
+      "type": "api_endpoint",
+      "method": "POST",
+      "path": "/api/diagnostics/extract-args",
+      "epic": "epic-02",
+      "owned_by_story": "story-02-03"
+    },
+    {
+      "id": "ep-jobs-pause-post",
+      "type": "api_endpoint",
+      "method": "POST",
+      "path": "/api/jobs/{id}/pause",
+      "epic": "epic-06",
+      "owned_by_story": "story-06-04"
+    },
+    {
+      "id": "ep-jobs-resume-post",
+      "type": "api_endpoint",
+      "method": "POST",
+      "path": "/api/jobs/{id}/resume",
+      "epic": "epic-06",
+      "owned_by_story": "story-06-04"
+    },
+    {
+      "id": "ep-jobs-cancel-post",
+      "type": "api_endpoint",
+      "method": "POST",
+      "path": "/api/jobs/{id}/cancel",
+      "epic": "epic-06",
+      "owned_by_story": "story-06-04"
+    },
+    {
+      "id": "ep-system-health-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/api/system/health",
+      "epic": "epic-03",
+      "owned_by_story": "story-03-05"
+    },
+    {
+      "id": "ep-transcripts-backends-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/api/transcripts/{id}/backends",
+      "epic": "epic-03",
+      "owned_by_story": "story-03-05"
+    },
+    {
+      "id": "ep-search-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/v1/search",
+      "epic": "epic-05",
+      "owned_by_story": "story-05-04"
+    },
+    {
+      "id": "ep-search-suggest-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/api/search/suggest",
+      "epic": "epic-05",
+      "owned_by_story": "story-05-06"
+    },
+    {
+      "id": "ep-queue-stats-get",
+      "type": "api_endpoint",
+      "method": "GET",
+      "path": "/api/queue/stats",
+      "epic": "epic-06",
+      "owned_by_story": "story-06-09"
+    }
+  ],
+  "grpc_rpcs": [
+    {
+      "id": "grpc-mediaservice-probe",
+      "type": "grpc_rpc",
+      "service": "MediaService",
+      "rpc": "Probe",
+      "epic": "epic-02",
+      "owned_by_story": "story-02-01",
+      "purpose": "Exposes Go FFprobe binding to Python pipeline; returns container, duration, video stream, audio tracks, subtitles, chapters."
+    },
+    {
+      "id": "grpc-transcriber-transcribe",
+      "type": "grpc_rpc",
+      "service": "Transcriber",
+      "rpc": "Transcribe",
+      "epic": "epic-03",
+      "owned_by_story": "story-03-06",
+      "purpose": "Run a transcription job; per-segment durable commits via in-process commit_segment() PL/pgSQL."
+    },
+    {
+      "id": "grpc-pipeline-extract-embedded",
+      "type": "grpc_rpc",
+      "service": "Pipeline",
+      "rpc": "ExtractEmbeddedSubtitle",
+      "epic": "epic-04",
+      "owned_by_story": "story-04-04",
+      "purpose": "Lazy on-demand extraction of embedded text-based subtitle stream from MKV."
+    },
+    {
+      "id": "grpc-embed",
+      "type": "grpc_rpc",
+      "service": "Pipeline",
+      "rpc": "Embed",
+      "epic": "epic-05",
+      "owned_by_story": "story-05-03",
+      "purpose": "Query-time embedding via intfloat/multilingual-e5-large."
+    },
+    {
+      "id": "grpc-search",
+      "type": "grpc_rpc",
+      "service": "Pipeline",
+      "rpc": "Search",
+      "epic": "epic-05",
+      "owned_by_story": "story-05-04",
+      "purpose": "Hybrid search orchestration with RRF fusion and unit→segment resolution."
+    },
+    {
+      "id": "grpc-suggest",
+      "type": "grpc_rpc",
+      "service": "Pipeline",
+      "rpc": "Suggest",
+      "epic": "epic-05",
+      "owned_by_story": "story-05-06",
+      "purpose": "Autocomplete suggestions."
+    }
+  ],
+  "notify_channels": [
+    {
+      "id": "channel-videos-new",
+      "type": "notify_channel",
+      "channel": "videos.new",
+      "epic": "epic-01",
+      "producer": "scanner (AFTER INSERT trigger)",
+      "consumer": "API → WebSocket /ws/library/{id}",
+      "owned_by_story": "story-01-01"
+    },
+    {
+      "id": "channel-videos-state-changed",
+      "type": "notify_channel",
+      "channel": "videos.state_changed",
+      "epic": "epic-01",
+      "producer": "reprocess + FSM transitions",
+      "consumer": "API",
+      "owned_by_story": "story-01-06"
+    },
+    {
+      "id": "channel-jobs-new",
+      "type": "notify_channel",
+      "channel": "jobs.new",
+      "epic": "epic-06",
+      "producer": "enqueue",
+      "consumer": "claim loop",
+      "owned_by_story": "story-06-01"
+    },
+    {
+      "id": "channel-jobs-flag-set",
+      "type": "notify_channel",
+      "channel": "jobs.flag_set",
+      "epic": "epic-06",
+      "producer": "API control",
+      "consumer": "worker",
+      "owned_by_story": "story-06-04"
+    },
+    {
+      "id": "channel-jobs-progress",
+      "type": "notify_channel",
+      "channel": "jobs.progress",
+      "epic": "epic-06",
+      "producer": "tick_progress",
+      "consumer": "API → WS",
+      "owned_by_story": "story-06-03"
+    },
+    {
+      "id": "channel-jobs-heartbeat",
+      "type": "notify_channel",
+      "channel": "jobs.heartbeat",
+      "epic": "epic-06",
+      "producer": "tick_heartbeat",
+      "consumer": "reaper",
+      "owned_by_story": "story-06-03"
+    },
+    {
+      "id": "channel-jobs-reaped",
+      "type": "notify_channel",
+      "channel": "jobs.reaped",
+      "epic": "epic-06",
+      "producer": "reaper UPDATE",
+      "consumer": "API → WS",
+      "owned_by_story": "story-06-06"
+    },
+    {
+      "id": "channel-jobs-force-pause",
+      "type": "notify_channel",
+      "channel": "jobs.force_pause",
+      "epic": "epic-06",
+      "producer": "API force-pause",
+      "consumer": "worker abort listener",
+      "owned_by_story": "story-06-04"
+    },
+    {
+      "id": "channel-segments-committed",
+      "type": "notify_channel",
+      "channel": "segments.committed",
+      "epic": "epic-03",
+      "producer": "AFTER INSERT trigger on transcript_segments",
+      "consumer": "Epic 5 indexer + API → WS",
+      "owned_by_story": "story-03-06"
+    },
+    {
+      "id": "channel-transcript-units-appended",
+      "type": "notify_channel",
+      "channel": "transcript_units_appended",
+      "epic": "epic-05",
+      "producer": "live indexer (FTS write)",
+      "consumer": "Chroma indexer",
+      "owned_by_story": "story-05-03"
+    }
+  ]
+}

@@ -2536,6 +2536,406 @@ There is no Kubernetes requirement at any scale; Compose + a small
 
 ---
 
+## 13. Cloud Relay Architecture
+
+> **See:** [Epic 25 — Maktaba Cloud: Relay, Accounts &
+> Subscriptions](epics/25-cloud-relay/README.md) for the full story
+> set.
+
+§§ 1–12 describe the **self-hosted** half of Maktaba: the API,
+streaming, pipeline, web/mobile/TV clients, and the database that ties
+them together. They are sufficient for a user on their own LAN.
+
+§ 13 describes the **hosted** half — **Maktaba Cloud**, run by
+HamzaLabs as a paid SaaS — that turns a self-hosted server into a
+remotely-reachable, multi-screen, push-aware product. It is the
+difference between Plex-on-LAN and Plex-with-Cloud-Relay. Self-hosted
+features never depend on the cloud; cloud features always layer on
+top of a working self-hosted server.
+
+### 13.1 What the cloud is, and what it isn't
+
+The cloud has **five jobs**:
+
+1. **Identity** — one user account that follows the user across
+   every client. Email + password, Google, Apple.
+2. **Linking** — bind one or more self-hosted servers to a cloud
+   account via short-lived **claim tokens**.
+3. **Reachability** — accept inbound HTTPS at
+   `{username}.maktaba.app`, multiplex onto a persistent outbound
+   WSS tunnel from the server, demultiplex on the server side
+   into a normal local HTTP request. No port-forward, no DDNS, no
+   static IP needed by the user.
+4. **Push** — the cloud holds APNs / FCM credentials and device
+   tokens; servers POST `{user_id, payload}`; the cloud fans out.
+   Servers never see device tokens; APNs/FCM keys never leave
+   the cloud.
+5. **Billing** — Stripe-hosted checkout / customer portal; cloud
+   is the system-of-record for entitlements (free / pro /
+   family); signed entitlement blobs are pushed to servers.
+
+The cloud explicitly **does not** do:
+
+- Store user media. The relay is a TLS-passthrough proxy; bytes
+  flow through but are never persisted.
+- Transcribe / index / analyze content. That all stays on the
+  user's box.
+- Replace any of the §§ 1–12 services. The local API still
+  implements library CRUD, search, streaming. The cloud only
+  brokers identity, reachability, push, and billing.
+
+### 13.2 Top-level architecture
+
+```
+   ┌──────────── Client surface (Web · iOS · Android · Desktop · TV) ───────────┐
+   │                                                                              │
+   │  Direct LAN path (preferred):                                                │
+   │    https://<lan-ip>:8080  ────► local API / Streaming                        │
+   │                                                                              │
+   │  Relay path (off-LAN fallback):                                              │
+   │    https://{user}.maktaba.app  ────► Cloud edge ────► Tunnel ────► local API │
+   └──────────────────────────────────────────────────────────────────────────────┘
+
+                              Maktaba Cloud (HamzaLabs)
+   ┌────────────────────────────────────────────────────────────────────────────┐
+   │  Cloudflare edge ─► Hetzner LB ─► maktaba-cloud (Go, --role=api|relay|worker)│
+   │     │                                  │                                    │
+   │     │ TLS terminate                    │ persistent WSS tunnels             │
+   │     │ HTTP/2                           │ (one per linked server)            │
+   │     ▼                                  ▼                                    │
+   │   Postgres (managed)              ┌────────────────┐                        │
+   │     · users                       │ Tunnel registry│ (in-memory, per-pod)   │
+   │     · servers                     └────────────────┘                        │
+   │     · subscriptions                                                         │
+   │     · bandwidth_daily                                                       │
+   │     · push_outbox                                                           │
+   │     · audit                                                                 │
+   │                                                                             │
+   │   Redis (sliding-window counters, rate limits, dedup)                       │
+   │                                                                             │
+   │   External: Stripe (billing), APNs / FCM (push), Postmark (email)           │
+   └────────────────────────────────────────────────────────────────────────────┘
+
+                                Self-hosted server (the user's box)
+   ┌────────────────────────────────────────────────────────────────────────────┐
+   │   maktaba-cloudlink ◄───WSS───► cloud relay                                 │
+   │           │                                                                 │
+   │           │ loopback HTTP                                                   │
+   │           ▼                                                                 │
+   │   maktaba-api  · maktaba-streaming  · maktaba-pipeline   (§§ 1–12)          │
+   └────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 13.3 Process model & deployment
+
+The cloud is a **single Go binary** (`maktaba-cloud`) built once and
+run with one of three roles:
+
+- **`--role=api`** — public REST/JSON endpoints (auth, accounts,
+  servers, billing, push ingest, admin). Fronted by Cloudflare for
+  TLS + DDoS at `api.maktaba.app`, `app.maktaba.app`,
+  `admin.maktaba.app`.
+- **`--role=relay`** — accepts WSS tunnels from servers and HTTPS
+  from clients on `*.maktaba.app`. TLS terminates at Hetzner LB
+  (Cloudflare-bypass for cost on streaming bandwidth).
+- **`--role=worker`** — non-request work: Stripe webhook
+  application, push outbox drainer (APNs + FCM), bandwidth
+  rollups, ACME renewals, abuse scoring.
+
+All three connect to the same Postgres + Redis. A typical
+deployment is 2× api / 2× relay / 1× worker on Hetzner CCX23,
+auto-scaled by CPU. Failover is server-driven: a relay pod crash
+disconnects its tunnels; servers reconnect to whichever pod the
+LB sends them to. **Tunnel state is node-local; never replicated.**
+
+### 13.4 The wire: HTTP-over-WSS tunnel
+
+The relay does not implement WireGuard or any L3 VPN. It tunnels
+HTTP requests as in-band frames on a single WSS connection per
+server.
+
+```
+  ┌──────────────────────────── Frame format ────────────────────────────┐
+  │  4-byte big-endian length │ 1-byte type │ payload                     │
+  │                                                                       │
+  │  Types:                                                               │
+  │    0x01 REQ_HEAD       method, path, headers (cloud → server)         │
+  │    0x02 REQ_BODY       request body chunk                             │
+  │    0x03 REQ_END        end-of-request                                 │
+  │    0x04 RESP_HEAD      status, headers (server → cloud)               │
+  │    0x05 RESP_BODY      response body chunk                            │
+  │    0x06 RESP_END       end-of-response                                │
+  │    0x10 PING / 0x11 PONG          25 s heartbeat, 10 s deadline       │
+  │    0x12 WINDOW_UPDATE  per-stream backpressure                        │
+  │    0x20 REVOKE         cloud → server (sever the link)                │
+  │    0x21 ENT_REFRESH    cloud → server (push fresh entitlement)        │
+  │    0x30 WS_HEAD        client-side WS upgrade pass-through             │
+  │    0x40 META_ENDPOINTS server → cloud (LAN candidates etc.)           │
+  └───────────────────────────────────────────────────────────────────────┘
+```
+
+Each in-flight HTTP request is a `stream_id` (uint32, odd =
+cloud-initiated). The cloud has bounded write buffers and per-stream
+windows (64 KiB). Backpressure flows symmetrically; one slow client
+or server never starves another. PINGs every 25 s, deadline 10 s,
+idle close at 90 s.
+
+The tunnel protocol is **deliberately not gRPC**: WebSockets traverse
+hotel / corp / airplane wifi reliably; HTTP/2 streaming over an
+arbitrary proxy does not. We wear the cost of a tiny custom protocol
+to win deployability.
+
+### 13.5 LAN-first, relay-as-fallback
+
+Clients always **prefer LAN**. On launch and on connectivity-change
+events, each client (web/iOS/Android/Tauri/TV) asks the cloud for the
+server's known endpoints (LAN IPs from mDNS, user-set static IPs,
+relay URL). It races a 1-second probe against the LAN candidates and
+pins the winner for 5 minutes. Only if all LAN probes fail does it
+fall back to the relay path.
+
+This matters for both UX (~80 ms relay latency vs ~3 ms LAN) and
+HamzaLabs's economics: every byte we *don't* relay is a byte we don't
+pay Hetzner for. Detailed protocol in story 25.10.
+
+### 13.6 Identity & sessions
+
+OAuth 2.1 over the cloud's own auth surface:
+
+- **Email + password** (argon2id hash, m=64MB t=3 p=1) with email
+  verification, lockout (10 fails / 15 min), reset, refresh-token
+  rotation with replay detection.
+- **Google OIDC** with PKCE; account-merge prompt on email
+  collision.
+- **Apple Sign-In** (mandatory per App Store rules) with private
+  email-relay handling and the first-call-only profile data
+  caveat.
+- **Sessions:** 1h RS256 JWT access tokens with `kid` rotation,
+  30-day rotated refresh tokens stored HttpOnly + SameSite=Lax.
+  Mobile uses ASWebAuthenticationSession / Custom Tabs (no
+  embedded webviews).
+
+All auth surfaces are timing-safe and email-enumeration-safe.
+
+### 13.7 Server linking: the claim-token flow
+
+Server-side: generate a 96-bit token, base32-encoded as
+`K3F9-MZ7P`, post a `{token_hash, server_pubkey}` to
+`/api/servers/claim/init` (10-min TTL).
+
+User-side, signed in to the cloud: enter the token →
+`POST /api/servers/claim` with `{token, server_pubkey}`. Cloud
+verifies pubkey matches, redeems the claim row, issues a
+long-lived bcrypt-hashed `server_token`, and returns
+`{server_id, server_token, cloud_endpoint, entitlement}` in one
+transaction. The server stores the token (encrypted at rest with
+the local data key from Epic 10.14) and immediately opens its
+tunnel.
+
+Re-claim, rotation, and revocation are all single-action; brute
+force is rate-limited per IP and tracked in `cloud_abuse_events`.
+
+### 13.8 Subdomains & TLS at the edge
+
+Each linked server gets a stable
+`{username}.maktaba.app` subdomain. Validation:
+`^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$`, citext-unique, not in
+the 200-word reserved list. Username changes are limited to once
+per 90 days; the old subdomain enters a 30-day 301-redirect grace
+before returning to the pool.
+
+DNS is **wildcard-based** (one `*.maktaba.app` record). No
+per-subdomain provisioning is needed; routing is in the relay.
+
+TLS uses a **single Let's Encrypt wildcard cert** for
+`*.maktaba.app`, issued via DNS-01 against the Cloudflare API,
+rotated automatically every 30 days, persisted encrypted-at-rest
+in Postgres, and reloaded into the LB and relay processes on
+SIGHUP. ZeroSSL is configured as a hot-swappable backup CA.
+
+### 13.9 Push: APNs + FCM with provider-cost amortization
+
+Servers POST a fixed-shape `{user_id, kind, ref_id, data,
+dedupe_key, ttl_seconds}` to the cloud. The cloud:
+
+1. Authenticates the server's bearer; refuses cross-user pushes.
+2. Looks up the user's registered devices in `cloud_devices` (tokens
+   stored AES-GCM-sealed; never returned in any API).
+3. Localizes copy via `cloud_push_templates(kind, locale)` —
+   templates accept named placeholders only (no string-passthrough).
+4. Writes outbox rows; a worker drains them through APNs (HTTP/2 +
+   ES256-signed JWT) and FCM (HTTP v1 + service-account OAuth).
+
+Permanent failures (`BadDeviceToken`, FCM 404) auto-revoke the
+device row. Throttling and outbox durability shield against APNs/FCM
+flaps. Web push (Chromium) flows through FCM; Safari web push is
+out of v1.
+
+### 13.10 Billing & entitlements
+
+The cloud is the system-of-record for billing state; Stripe is the
+processor. Three plans for v1 (final list in story 25.15):
+
+| Plan      | Price          | Relay GB / mo | Concurrent streams | Servers |
+|-----------|----------------|---------------|--------------------|---------|
+| Free      | $0             | 0             | 0                  | 1       |
+| Pro       | $9.99 / mo     | 100           | 2                  | 2       |
+| Family    | $24.99 / mo    | 500           | 5                  | 5       |
+| Pro Y / Family Y | 17% off  | same          | same               | same    |
+
+**Free tier ships zero relay** — the gate to remote streaming is
+the paid tier. Push and status are cheap; bandwidth is what costs
+money.
+
+Entitlements travel from cloud to server as **Ed25519-signed JCS
+JSON** (24 h TTL, daily rotation, 7-day offline grace) — the same
+shape as Epic 16 license-validation, except the cloud signs
+automatically on tunnel handshake instead of the user pasting a
+key. The local server gates cloud-only features against the
+cached entitlement; **never against a live cloud call**. Local
+features remain functional indefinitely offline.
+
+Bandwidth is metered cloud-side — server-supplied counters are
+not authoritative for billing. Counters live in Redis (per
+`server_id × utc-day`), flushed to Postgres every 60 s, rolled up
+monthly into invoice rows. Concurrent-stream limits are enforced
+at stream-open in the relay, against a 60-s LRU tier cache
+invalidated by `LISTEN tier_changed` from the Stripe webhook
+handler.
+
+### 13.11 Trust boundaries & threat model
+
+- **TLS posture:** TLS terminates at the cloud edge. Inside the
+  tunnel, traffic is plaintext (the WS itself is TLS). The cloud
+  is in the trust boundary by design — it must inspect the
+  `Host` header to route. Users who want true E2E run LAN.
+- **Stolen claim token:** 8 chars × 10-min TTL × pubkey-binding
+  × per-IP rate limit. Replay returns 409 `claim_already_used`.
+- **Stolen server bearer:** bcrypt-hashed at rest; rotated on
+  demand from the local UI; `last_used_at` tracking surfaces
+  anomalies; admin force-revoke (story 25.20) closes a tunnel
+  in < 1 s.
+- **Refresh-token replay:** rotation single-use; replay revokes
+  every session for the user and writes
+  `cloud_abuse_events kind=refresh_token_replay`.
+- **Cross-user push:** server bearer is bound to a single
+  `user_id`; mismatch is 403 + abuse event.
+- **Subdomain enumeration:** wildcard DNS, reserved-list filter,
+  abuse score on rapid signups.
+- **Open-proxy via relay:** Host header must match a claimed
+  subdomain; non-Maktaba paths trip `relay_host_abuse`; abuse
+  scoring → auto-suspend at threshold 50.
+- **Stripe webhook replay:** `cloud_webhook_events.stripe_event_id`
+  PK = idempotency. Signature verification happens before the DB
+  hit.
+- **Cert key compromise:** sealed in Postgres with KMS-managed
+  data key; rotation runbook in story 25.23.
+- **Compromised admin account:** SSO-restricted to
+  `@hamzalabs.com`, ≤ 5-min `acr` freshness for sensitive
+  actions, audit on every admin action.
+
+### 13.12 Observability
+
+The cloud's `/metrics` endpoint exposes Prometheus counters &
+gauges aligned with the stories:
+
+- HTTP: `http_requests_total{role,route,code}`,
+  `http_request_duration_seconds`.
+- Tunnel: `tunnels_open`, `tunnel_handshakes_total{result}`,
+  `tunnel_messages_total{direction,type}`,
+  `tunnel_bytes_total{direction, server_id}` (high-cardinality;
+  separate scrape).
+- Relay: `streams_in_flight`, `relay_proxy_requests_total{code}`.
+- Push: `apns_sent_total{result}`,
+  `fcm_sent_total{result}`,
+  `push_outbox_lag_seconds`.
+- Billing: `stripe_webhook_total{event,result}`.
+- Abuse: `abuse_events_total{kind,severity}`.
+
+Logs are structured JSON (`slog`) with `request_id`, `user_id`,
+`server_id` correlation; sampled to 10% on `2xx` after one week,
+full fidelity on `4xx`/`5xx`.
+
+### 13.13 Cost model
+
+Per active paying user, monthly:
+
+| Line                                   | Pro tier  | Family tier |
+|----------------------------------------|-----------|-------------|
+| Hetzner CCX23 share (relay node)       | $0.40     | $0.80       |
+| Postgres (managed share)               | $0.05     | $0.05       |
+| Cloudflare (free-tier bandwidth)       | $0        | $0          |
+| Hetzner egress @ €1.20/TB              | $0.12     | $0.60       |
+| APNs / FCM                             | $0        | $0          |
+| Stripe fees (2.9% + 30¢)               | $0.59     | $1.06       |
+| **Total cost per user / month**        | **$1.16** | **$2.51**   |
+| **List price**                         | **$9.99** | **$24.99**  |
+| **Gross margin**                       | **88%**   | **90%**     |
+
+Numbers above are sizing assumptions; the [admin revenue dashboard
+(25.21)](epics/25-cloud-relay/story-25-21-admin-revenue.md) reports
+real numbers monthly. Margins are healthy *because* the cloud
+deliberately doesn't store media.
+
+### 13.14 Server distribution & installation
+
+Getting the self-hosted half installed everywhere is the other
+half of the job. The same `maktaba-api`, `maktaba-streaming`,
+`maktaba-pipeline` binaries from §§ 1–12 ship through:
+
+- **macOS:** signed + notarized DMG (drag-to-Applications),
+  Homebrew cask, LaunchAgent auto-start, menu-bar item, Sparkle 2
+  auto-update.
+- **Windows:** EV-signed MSI + NSIS fallback, Windows Service,
+  WPF tray, firewall rule auto-config, Windows Service Recovery,
+  per-user install fallback for non-admins.
+- **Linux:** `.deb` + `.rpm` repos, Snap, Flatpak, AppImage —
+  all sharing one systemd unit, one `maktaba` system user, the
+  same hardening (`ProtectSystem=strict`,
+  `NoNewPrivileges=true`, `LimitNOFILE=65536`).
+- **Docker:** the canonical artifact —
+  `ghcr.io/hamza-labs-core/maktaba` multi-arch (amd64 + arm64),
+  cosign-signed, < 1.5 GB compressed, with a reference
+  `docker-compose.yml` that brings Postgres alongside.
+- **NAS:** Synology SPK, QNAP QPKG, TrueNAS Helm app, Unraid
+  Community-Apps template — vendor glue around the Docker image,
+  with vendor-correct UID/GID so library shares are readable
+  without `chown`.
+- **ARM:** dedicated profiles for Raspberry Pi 4 / 5, Jetson
+  Orin, RK3588 boards — CPU Whisper at small models, SD-card
+  warnings, optional CUDA path for Jetson.
+- **VPS:** one-click DigitalOcean Marketplace app, Hetzner Cloud
+  app, Railway template, plus a generic `curl | bash` installer
+  for any Linux VPS (Lightsail, Linode, OVH).
+
+All paths share **one auto-update mechanism**: a signed
+`releases.maktaba.app/manifest.json` plus a `stable | beta`
+channel. Each platform plugs into the manifest with its native
+update path (Sparkle, MSI delta, apt/dnf, Watchtower-pull, vendor
+package manager). Updates verify SHA-256 + signature, take a
+pre-update DB snapshot, and roll back automatically if the
+post-update health check fails.
+
+A bilingual (en + ar), resumable **first-run wizard** detects
+hardware (CPU, RAM, GPU, storage), picks a profile (`pi-default`,
+`mac-mini`, `pc-desktop`, `nas-bay`, `vps-small`,
+`vps-large`), guides the user through library selection and
+transcription engine choice, and offers (but never forces) the
+cloud-link flow. The wizard is the bridge between "I just
+installed it" and "I'm watching from anywhere".
+
+A **cross-platform uninstaller** has one universal contract: it
+always removes binaries, auto-start entries, firewall rules, and
+service registrations; it always prompts before removing
+data/config/logs; and it never touches the user's library files.
+Reinstall always picks up where uninstall left off, unless the
+user explicitly chose "wipe and start over".
+
+The full list of distribution stories is in [Epic 25 stories
+25.27–25.36](epics/25-cloud-relay/README.md).
+
+---
+
 ## Appendix A — End-to-end data flow (single video)
 
 ```
