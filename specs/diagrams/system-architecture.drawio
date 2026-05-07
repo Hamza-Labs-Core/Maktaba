@@ -1,0 +1,163 @@
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="system-architecture" name="System Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1570" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Maktaba — System Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Three backend services + clients, sharing one Postgres and one media volume" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="g_clients" value="Client Surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="1120" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="webClient" value="Web (PWA)&#10;React + Vite + Tailwind&#10;Vidstack player&#10;Epic 11" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="mobileClient" value="Mobile (iOS / Android)&#10;Capacitor over PWA&#10;Native player handoff&#10;Epic 12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="430" y="156" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="desktopClient" value="Desktop (mac / Win / Linux)&#10;Tauri 2 wrapper · ~10 MB&#10;Epic 13" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="800" y="156" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="tvClient" value="TV (tvOS / Android TV)&#10;Swift+SwiftUI / Kotlin+Compose&#10;AVPlayer / ExoPlayer · Epic 14" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="286" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="discoveryClient" value="Discovery / Pairing&#10;mDNS + QR code&#10;Universal links · Epic 15" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="430" y="286" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="designSys" value="Design System / UX&#10;Tokens · components&#10;motion · RTL · Epic 17" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3730A3;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="800" y="286" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="g_edge" value="Edge / Reverse Proxy — Caddy (TLS, HSTS, /api, /stream, /)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="1120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="caddyNode" value="Caddy / nginx&#10;TLS termination · HTTP/2 · routing&#10;Epic 22 (deployment) · Epic 23 (TLS/HSTS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="370" y="488" width="460" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="apiSvc" value="&lt;b&gt;API Service (Go 1.23+)&lt;/b&gt;&#10;chi · gqlgen · sqlc · pgx&#10;&#10;• REST /api/* · GraphQL · WS&#10;• Auth · libraries · search&#10;• Job orchestration · settings&#10;• Watch progress · collections&#10;&#10;Epics 7, 9, 10, 16" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="360" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="streamSvc" value="&lt;b&gt;Streaming Service (Go 1.23+)&lt;/b&gt;&#10;FFmpeg subprocess pool&#10;&#10;• HLS / DASH origin&#10;• Direct play (range)&#10;• On-the-fly transcode + remux&#10;• Subtitle mux · sprites · posters&#10;• Per-host transcode cap&#10;&#10;Epic 8" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="420" y="560" width="360" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="pipelineSvc" value="&lt;b&gt;Pipeline Service (Python 3.12+)&lt;/b&gt;&#10;asyncio · grpc.aio · asyncpg&#10;&#10;• Whisper STT (MLX / faster / API)&#10;• Embeddings (multilingual-e5)&#10;• ChromaDB indexer · diarization&#10;• Filesystem watchdog&#10;• Worker pool (queue claim)&#10;&#10;Epics 1–6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="800" y="560" width="360" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="apiPort" value="REST / GraphQL / WS&#10;:8080" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1E40AF;fontSize=10;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="120" y="510" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="streamPort" value="HLS / DASH / range&#10;:8081 (signed JWT)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#166534;fontSize=10;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="500" y="510" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pipelinePort" value="gRPC :50051&#10;(internal only)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="880" y="510" width="200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="postgres" value="&lt;b&gt;PostgreSQL 16&lt;/b&gt; (or SQLite dev)&#10;Metadata · jobs · FTS (tsvector)&#10;LISTEN / NOTIFY pub/sub bus&#10;processing_jobs · audit_log · events" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=11;align=center;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="360" y="860" width="480" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="mediaVol" value="&lt;b&gt;Media Volume (read-only)&lt;/b&gt;&#10;NAS / local FS · 30 TB&#10;.maktaba/ sidecars (.srt, .vtt, json)" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fontSize=11;fillColor=#F3F4F6;strokeColor=#4B5563;align=center;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="990" width="353" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="cacheVol" value="&lt;b&gt;Streaming Cache (LRU)&lt;/b&gt;&#10;hls/{session} · remux/ · posters/&#10;sprites/ · thumbs/ · default 50 GiB" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fontSize=11;fillColor=#F3F4F6;strokeColor=#4B5563;align=center;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="423" y="990" width="353" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="chroma" value="&lt;b&gt;ChromaDB&lt;/b&gt; (on-disk)&#10;Persistent client (DuckDB+Parquet)&#10;One collection per library&#10;HF model cache" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=11;align=center;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="806" y="990" width="353" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="g_nfr" value="Cross-Cutting / Non-Functional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1120" width="1120" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrPerf" value="Performance &amp;amp; Cache&#10;Epic 18" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1156" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrScale" value="Scalability &amp;amp; Capacity&#10;Epic 19" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="335" y="1156" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrTest" value="Testing Pyramid&#10;Epic 20" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="610" y="1156" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrObs" value="Observability&#10;logs · metrics · traces · Epic 21" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="885" y="1156" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrDevops" value="DevOps &amp;amp; Delivery&#10;CI · migrations · packaging · Epic 22" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1236" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrSec" value="Security Hardening&#10;CORS · TLS · rate-limit · Epic 23" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="335" y="1236" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="nfrInteg" value="Data Integrity / DR&#10;backups · DR · idempotency · Epic 24" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="610" y="1236" width="265" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;━━ HTTPS (REST + GraphQL + WS)   ─ ─ HLS / DASH / range (signed JWT)&#10;══ gRPC (internal)   ··· Postgres LISTEN/NOTIFY &amp;amp; SELECT FOR UPDATE&#10;Color: blue = API · green = Streaming · red = Pipeline · yellow = Postgres · pink = Chroma" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1340" width="1120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="epicsLegend" value="Backend epic mapping&#10;• API Service: 7 (server) · 9 (libraries) · 10 (auth) · 16 (subscriptions)&#10;• Streaming Service: 8 (HLS/DASH/direct play, sessions, caps)&#10;• Pipeline Service: 1 (scanner) · 2 (audio) · 3 (STT) · 4 (subs) · 5 (search/index) · 6 (queue)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1440" width="1120" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_web_caddy" value="HTTPS / WSS" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="webClient" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mobileClient_caddy" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="mobileClient" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_desktopClient_caddy" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="desktopClient" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tvClient_caddy" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="tvClient" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_discoveryClient_caddy" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="discoveryClient" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_designSys_caddy" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="designSys" target="caddyNode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_caddy_apiport" value="/api/* /graphql /ws/*" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="caddyNode" target="apiPort">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_caddy_streamport" value="/stream/* HLS · DASH · 206" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="caddyNode" target="streamPort">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_apiport_api" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2" edge="1" parent="1" source="apiPort" target="apiSvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_streamport_stream" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#166534;strokeWidth=2" edge="1" parent="1" source="streamPort" target="streamSvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pipelineport_pipeline" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2" edge="1" parent="1" source="pipelinePort" target="pipelineSvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_pipeline" value="gRPC: Embed · Transcribe" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeColor=#7C3AED;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="apiSvc" target="pipelineSvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_stream" value="gRPC: Open/CloseSession" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeColor=#7C3AED;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="apiSvc" target="streamSvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_pg" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2" edge="1" parent="1" source="apiSvc" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stream_pg" value="LISTEN/NOTIFY" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="streamSvc" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pipeline_pg" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2" edge="1" parent="1" source="pipelineSvc" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pipeline_chroma" value="upsert / query" style="endArrow=classic;html=1;rounded=0;strokeColor=#9D174D;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="pipelineSvc" target="chroma">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stream_media" value="read media" style="endArrow=classic;html=1;rounded=0;strokeColor=#4B5563;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="streamSvc" target="mediaVol">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pipeline_media" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#4B5563;strokeWidth=2" edge="1" parent="1" source="pipelineSvc" target="mediaVol">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stream_cache" value="cache write/read" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeColor=#4B5563;strokeWidth=2;fontColor=#000000;" edge="1" parent="1" source="streamSvc" target="cacheVol">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

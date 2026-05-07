@@ -1,0 +1,184 @@
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="auth-flow" name="Auth Flow">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1330" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Maktaba — Auth Flow (Epic 10)" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Login → access token + refresh token; access token verified per request; refresh rotates" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="a_client" value="Client (PWA / native)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="211" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a_caddy" value="Caddy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="267" y="130" width="211" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a_api" value="API Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="494" y="130" width="211" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a_pg" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="721" y="130" width="211" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a_stream" value="Streaming Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;fontStyle=1;align=center;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="948" y="130" width="211" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ll_a_client" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="180" as="sourcePoint" />
+            <mxPoint x="145" y="1270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ll_a_caddy" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="372" y="180" as="sourcePoint" />
+            <mxPoint x="372" y="1270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ll_a_api" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="180" as="sourcePoint" />
+            <mxPoint x="599" y="1270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ll_a_pg" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="826" y="180" as="sourcePoint" />
+            <mxPoint x="826" y="1270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ll_a_stream" value="" style="endArrow=none;dashed=1;html=1;strokeColor=#94A3B8;strokeWidth=1" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1053" y="180" as="sourcePoint" />
+            <mxPoint x="1053" y="1270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_0" value="Login: POST /auth/login (email, password)" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="220" as="sourcePoint" />
+            <mxPoint x="372" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_1" value="Forward /api/auth/login" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="372" y="270" as="sourcePoint" />
+            <mxPoint x="599" y="270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_2" value="SELECT user · verify Argon2id" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="320" as="sourcePoint" />
+            <mxPoint x="826" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_3" value="user row + password_hash" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="826" y="370" as="sourcePoint" />
+            <mxPoint x="599" y="370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_4" value="Issue access (15m JWT) + refresh (7d, rotating)" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;fontSize=10;fontColor=#166534;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="420" as="sourcePoint" />
+            <mxPoint x="372" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_5" value="Set-Cookie refresh; body access" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;fontSize=10;fontColor=#166534;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="372" y="470" as="sourcePoint" />
+            <mxPoint x="145" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_6" value="GET /api/libraries (Bearer access)" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="520" as="sourcePoint" />
+            <mxPoint x="599" y="520" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_7" value="Validate JWT signature + claims (self)" style="endArrow=classic;html=1;rounded=1;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=left;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="570" as="sourcePoint" />
+            <mxPoint x="679" y="590" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="679" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_8" value="SELECT libraries · audit_log" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="630" as="sourcePoint" />
+            <mxPoint x="826" y="630" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_9" value="rows" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="826" y="680" as="sourcePoint" />
+            <mxPoint x="599" y="680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_10" value="200 + JSON" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="730" as="sourcePoint" />
+            <mxPoint x="145" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_11" value="GET /stream/...?t=signed_jwt" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;fontSize=10;fontColor=#166534;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="780" as="sourcePoint" />
+            <mxPoint x="1053" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_12" value="Verify JWT (HS256) · check session row" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1053" y="830" as="sourcePoint" />
+            <mxPoint x="826" y="830" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_13" value="session row" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="826" y="880" as="sourcePoint" />
+            <mxPoint x="1053" y="880" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_14" value="HLS / DASH segments (206)" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;fontSize=10;fontColor=#166534;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1053" y="930" as="sourcePoint" />
+            <mxPoint x="145" y="930" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_15" value="[15m later] access expired → 401" style="endArrow=classic;html=1;rounded=0;strokeColor=#991B1B;strokeWidth=2;fontSize=10;fontColor=#991B1B;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="980" as="sourcePoint" />
+            <mxPoint x="145" y="980" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_16" value="POST /auth/refresh (cookie)" style="endArrow=classic;html=1;rounded=0;strokeColor=#1E40AF;strokeWidth=2;fontSize=10;fontColor=#1E40AF;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="1030" as="sourcePoint" />
+            <mxPoint x="599" y="1030" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_17" value="Verify refresh, rotate, store new hash" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="1080" as="sourcePoint" />
+            <mxPoint x="826" y="1080" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_18" value="ok" style="endArrow=classic;html=1;rounded=0;strokeColor=#854D0E;strokeWidth=2;fontSize=10;fontColor=#854D0E;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="826" y="1130" as="sourcePoint" />
+            <mxPoint x="599" y="1130" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m_19" value="New access + new refresh (Set-Cookie)" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;fontSize=10;fontColor=#166534;verticalAlign=bottom;align=center;curved=0" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="599" y="1180" as="sourcePoint" />
+            <mxPoint x="145" y="1180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,64 @@
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="security-architecture" name="Security Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1262" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Maktaba — Security Architecture (Epic 23)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Defence in depth: TLS edge → AuthN/AuthZ → input validation → store-level RBAC → audit" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="l_edge" value="&lt;b&gt;1. Edge &amp; Transport&lt;/b&gt;&#10;• TLS 1.3 (Caddy)&#10;• HSTS · CSP · CORS allowlist&#10;• Rate-limit /auth/* and /search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_authn" value="&lt;b&gt;2. Authentication&lt;/b&gt;&#10;• Argon2id password hashing&#10;• Short-lived JWT access (15m)&#10;• Rotating refresh (httpOnly Secure cookie)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="244" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_authz" value="&lt;b&gt;3. Authorisation&lt;/b&gt;&#10;• RBAC scopes per library&#10;• Resource ownership checks (videos, jobs)&#10;• Subscription gating (optional, Epic 16)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="368" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_input" value="&lt;b&gt;4. Input Validation&lt;/b&gt;&#10;• JSON schema · gqlgen typed inputs&#10;• File path canonicalisation (no traversal)&#10;• Strict allowlist on filter params" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="492" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_data" value="&lt;b&gt;5. Data Layer Hardening&lt;/b&gt;&#10;• Parametrised SQL (sqlc, asyncpg)&#10;• Row-level access in queries&#10;• Backups + restore drill (Epic 24)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#854D0E;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="616" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_secret" value="&lt;b&gt;6. Secrets &amp; Keys&lt;/b&gt;&#10;• Env-only secrets · 12-factor&#10;• Signing keys rotated (JWT)&#10;• No secrets in git/logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_audit" value="&lt;b&gt;7. Audit &amp; Detection&lt;/b&gt;&#10;• audit_log table for sensitive ops&#10;• WAF-style anomaly logs (auth failures)&#10;• Alerting on dead-letter spikes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="864" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l_supply" value="&lt;b&gt;8. Supply Chain&lt;/b&gt;&#10;• Pinned dependencies + lockfiles&#10;• SCA/SAST in CI&#10;• Container provenance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=12;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="988" width="1120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="e_0" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_edge" target="l_authn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_1" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_authn" target="l_authz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_authz" target="l_input">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_input" target="l_data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_4" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_data" target="l_secret">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_secret" target="l_audit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="l_audit" target="l_supply">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;Defence-in-depth — each downstream layer assumes the upstream may have been bypassed.&#10;Sensitive flows (auth, billing, admin) write to audit_log inside the same TX." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1132" width="1120" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

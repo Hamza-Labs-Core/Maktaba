@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maktaba"
+version = "0.1.0"
+description = "Batch video transcription, subtitling, and intelligent search."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click",
+    "ffmpeg-python",
+    "mlx-whisper; sys_platform == 'darwin'",
+    "openai-whisper",
+    "chromadb",
+]
+
+[project.scripts]
+maktaba = "maktaba.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["maktaba"]
