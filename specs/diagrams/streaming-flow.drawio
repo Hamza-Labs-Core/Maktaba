@@ -1,0 +1,76 @@
+<mxfile host="app.diagrams.net" agent="Maktaba Architecture" version="24.0.0">
+  <diagram id="streaming-flow" name="Streaming Flow">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1140" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Maktaba — Streaming Flow (Epic 08)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2A44" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Client requests playback → API opens session → Streaming serves HLS/DASH or direct play" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="&lt;b&gt;Client requests playback&lt;/b&gt;&#10;GET /api/videos/{id}/play" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#3730A3;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="120" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="&lt;b&gt;API: pick best profile&lt;/b&gt;&#10;Match client capabilities → direct play / remux / transcode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="230" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s1_s2" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="&lt;b&gt;API → Streaming gRPC OpenSession&lt;/b&gt;&#10;session row, signed JWT, playlist URL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="340" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_s3" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_dp" value="&lt;b&gt;Direct play (range)&lt;/b&gt;&#10;HTTP 206 byte ranges from media volume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="450" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_s4_dp" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s3" target="s4_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_hls" value="&lt;b&gt;HLS/DASH origin&lt;/b&gt;&#10;On-the-fly transcode + remux pool · segments cached" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#166534;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="560" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;Player plays&lt;/b&gt;&#10;Vidstack / AVPlayer / ExoPlayer · seek triggers new requests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="670" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s4_hls_s5" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s4_hls" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="&lt;b&gt;Periodic watch progress&lt;/b&gt;&#10;PUT /api/watch_progress (debounced)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1E40AF;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="780" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_s6" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="&lt;b&gt;Close session&lt;/b&gt;&#10;client end-of-playback or timeout → CloseSession gRPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="240" y="890" width="720" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s6_s7" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#475569;strokeWidth=2" edge="1" parent="1" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_s4dp" value="if compatible" style="endArrow=classic;html=1;rounded=0;strokeColor=#166534;strokeWidth=2;dashed=1;fontColor=#000000;" edge="1" parent="1" source="s3" target="s4_dp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g_caps" value="Per-host caps &amp; cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="840" y="250" width="320" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="cap_n" value="&lt;b&gt;Transcode pool&lt;/b&gt;&#10;FFmpeg subprocess pool · config-defined ceiling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="860" y="290" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cache_n" value="&lt;b&gt;LRU streaming cache&lt;/b&gt;&#10;hls/{session}/ · remux/ · sprites/&#10;default 50 GiB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="860" y="370" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="evict_n" value="&lt;b&gt;Cache eviction&lt;/b&gt;&#10;LRU + Postgres EvictHashCache hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="860" y="460" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;Solid arrows: primary path · Dashed arrows: alt branch (direct play)&#10;Right column: capacity / cache controls" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1020" width="1120" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
