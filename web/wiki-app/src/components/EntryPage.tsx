@@ -12,6 +12,9 @@ import {
 import { TagChip } from './TagChip';
 import { Breadcrumb, type Crumb } from './Breadcrumb';
 import { RelatedCard } from './RelatedCard';
+import { MockupViewer } from './MockupViewer';
+import { DiagramViewer } from './DiagramViewer';
+import { collectDiagramPaths, collectMockupPaths } from '@/lib/asset-paths';
 
 interface Props {
   bundle: WikiBundle;
@@ -63,6 +66,9 @@ export function EntryPage({ bundle, id }: Props) {
   const stories = entry.type === 'epic' ? bundle.epicStories.get(entry.id) || [] : [];
   const plans = entry.type === 'epic' ? bundle.epicPlans.get(entry.id) || [] : [];
 
+  const mockupPaths = collectMockupPaths(entry.files);
+  const diagramPaths = collectDiagramPaths(entry.files);
+
   // Related (filter out plans/stories already shown above for epics)
   const related = (entry.related || [])
     .filter((rid) => bundle.byId.has(rid) && rid !== entry.id)
@@ -113,6 +119,26 @@ export function EntryPage({ bundle, id }: Props) {
         // Markdown is rendered & escaped inside renderMarkdown.
         dangerouslySetInnerHTML={{ __html: html }}
       />
+
+      {mockupPaths.length > 0 && (
+        <Panel title={mockupPaths.length === 1 ? 'View mockup' : `Mockups (${mockupPaths.length})`}>
+          <div className="flex flex-col gap-3">
+            {mockupPaths.map((p, i) => (
+              <MockupViewer key={p} path={p} defaultOpen={i === 0} />
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {diagramPaths.length > 0 && (
+        <Panel title={diagramPaths.length === 1 ? 'Diagram' : `Diagrams (${diagramPaths.length})`}>
+          <div className="flex flex-col gap-3">
+            {diagramPaths.map((p, i) => (
+              <DiagramViewer key={p} path={p} defaultOpen={i === 0} />
+            ))}
+          </div>
+        </Panel>
+      )}
 
       {entry.linear && (
         <Panel title="Linear">
