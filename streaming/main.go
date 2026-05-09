@@ -7,8 +7,14 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
 func main() {
-	fmt.Fprintln(os.Stdout, "maktaba-streaming: stub (Story 08 will replace this)")
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Fprintln(os.Stdout, version.String())
+		return
+	}
+	fmt.Fprintf(os.Stdout, "maktaba-streaming %s: stub (Story 08 will replace this)\n", version.String())
 }

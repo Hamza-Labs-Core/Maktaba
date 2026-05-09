@@ -8,8 +8,14 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
 
 func main() {
-	fmt.Fprintln(os.Stdout, "maktaba-api: stub (Story 07 will replace this)")
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Fprintln(os.Stdout, version.String())
+		return
+	}
+	fmt.Fprintf(os.Stdout, "maktaba-api %s: stub (Story 07 will replace this)\n", version.String())
 }
