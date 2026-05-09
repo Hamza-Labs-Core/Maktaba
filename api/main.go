@@ -3,13 +3,15 @@
 // Story 22.1 created the binary as a stub; Story 22.2 wired the
 // `--version` flag and reproducibility envelope; Story 22.3 added the
 // `serve` subcommand so compose has a long-lived process to attach a
-// healthcheck to; Story 22.4 added the `migrate` subcommand. Story
-// 07.x replaces the serve path with the real HTTP server.
+// healthcheck to; Story 22.4 added the `migrate` subcommand; Story
+// 21.1 wired the structured logger. Story 07.x replaces the serve path
+// with the real HTTP server.
 package main
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,12 +19,16 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "--version":
+			// Plain stdout — `--version` is parsed by tooling, not
+			// humans. Initialising the logger first would emit a startup
+			// line and break that contract.
 			fmt.Fprintln(os.Stdout, version.String())
 			return
 		case "migrate":
@@ -42,7 +48,34 @@ func main() {
 			return
 		}
 	}
-	fmt.Fprintf(os.Stdout, "maktaba-api %s: stub (Story 07 will replace this)\n", version.String())
+
+	logger := initLogger()
+	logger.Info("starting maktaba-api",
+		"commit", version.Commit,
+		"build_date", version.BuildDate,
+		"event", "startup",
+	)
+	logger.Info("stub server: pass `serve` to launch the placeholder HTTP server, or `migrate` to apply migrations")
+}
+
+// initLogger configures the global structured logger from environment.
+// Idempotent: subsequent calls return the cached instance.
+func initLogger() *slog.Logger {
+	return mlog.Init(mlog.Options{
+		Service: "api",
+		Env:     env(),
+		Version: version.Version,
+	})
+}
+
+// env returns the deployment environment (prod/dev/test). Defaults to
+// "dev" when MAKTABA_ENV is unset, so a developer running `go run .`
+// gets human-readable text logs.
+func env() string {
+	if v := os.Getenv("MAKTABA_ENV"); v != "" {
+		return v
+	}
+	return "dev"
 }
 
 func printUsage(w *os.File) {
@@ -62,6 +95,8 @@ Commands:
 // container has a long-lived PID 1 with a /healthz endpoint for
 // Story 21.4-shaped healthchecks. The real router lands with Epic 07.
 func runServe() error {
+	logger := initLogger()
+
 	addr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -88,12 +123,13 @@ func runServe() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		fmt.Fprintf(os.Stdout, "maktaba-api %s: listening on %s (stub)\n", version.String(), addr)
+		logger.Info("listening", "addr", addr, "event", "http_listen")
 		errCh <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
+		logger.Info("shutting down", "event", "http_shutdown")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)

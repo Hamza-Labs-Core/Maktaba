@@ -1,3 +1,8 @@
+# golangci-lint v1.62 config for the Maktaba streaming server.
+# Story 22.1 sets a sensible default; Story 21.1 added the forbidigo
+# rule that bans bare `fmt.Print(ln)?` and the Go `print(ln)?` builtins
+# in production code so server output goes through the structured logger.
+
 run:
   timeout: 5m
 
@@ -14,3 +19,16 @@ linters:
     - goimports
     - misspell
     - revive
+    - forbidigo
+
+linters-settings:
+  forbidigo:
+    forbid:
+      - p: '^fmt\.Print(ln|f)?$'
+        msg: 'use the shared/log/go logger instead of fmt.Print*; pipe operator output through fmt.Fprint* against an explicit writer.'
+      - p: '^print$'
+        msg: 'use the shared/log/go logger instead of the print builtin.'
+      - p: '^println$'
+        msg: 'use the shared/log/go logger instead of the println builtin.'
+    analyze-types: false
+    exclude-godoc-examples: true

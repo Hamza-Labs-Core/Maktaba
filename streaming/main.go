@@ -1,19 +1,22 @@
 // Package main is the entry point for the Maktaba streaming server.
 //
 // Stub created by Story 22.1; Story 22.3 added the `serve` subcommand
-// so compose has a long-lived process to attach a healthcheck to.
-// Story 08.x replaces the serve path with the real streaming server.
+// so compose has a long-lived process to attach a healthcheck to;
+// Story 21.1 wired the structured logger. Story 08.x replaces the
+// serve path with the real streaming server.
 package main
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
@@ -31,7 +34,31 @@ func main() {
 			return
 		}
 	}
-	fmt.Fprintf(os.Stdout, "maktaba-streaming %s: stub (Story 08 will replace this)\n", version.String())
+
+	logger := initLogger()
+	logger.Info("starting maktaba-streaming",
+		"commit", version.Commit,
+		"build_date", version.BuildDate,
+		"event", "startup",
+	)
+	logger.Info("stub server: pass `serve` to launch the placeholder HTTP server")
+}
+
+// initLogger configures the global structured logger from environment.
+// Idempotent: subsequent calls return the cached instance.
+func initLogger() *slog.Logger {
+	return mlog.Init(mlog.Options{
+		Service: "streaming",
+		Env:     env(),
+		Version: version.Version,
+	})
+}
+
+func env() string {
+	if v := os.Getenv("MAKTABA_ENV"); v != "" {
+		return v
+	}
+	return "dev"
 }
 
 // runServe stands up a placeholder HTTP server so the compose
@@ -39,6 +66,8 @@ func main() {
 // Story 21.4-shaped healthchecks. The real HLS pipeline lands with
 // Epic 08.
 func runServe() error {
+	logger := initLogger()
+
 	addr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if addr == "" {
 		addr = ":8081"
@@ -65,12 +94,13 @@ func runServe() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		fmt.Fprintf(os.Stdout, "maktaba-streaming %s: listening on %s (stub)\n", version.String(), addr)
+		logger.Info("listening", "addr", addr, "event", "http_listen")
 		errCh <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
+		logger.Info("shutting down", "event", "http_shutdown")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)

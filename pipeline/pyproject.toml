@@ -4,7 +4,9 @@ version = "0.0.1"
 description = "Maktaba transcription/indexing pipeline."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "structlog>=24.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -34,7 +36,15 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM"]
+# Story 21.1: T201 (print) and T203 (pprint) ban bare prints in
+# production code so output flows through the structured logger.
+select = ["E", "F", "I", "B", "UP", "SIM", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ad-hoc scripts and notebooks are exempt from the print ban — they are
+# not production code paths. None today; placeholder for when scripts/
+# arrives.
+"scripts/**" = ["T20"]
 
 [tool.mypy]
 strict = true
