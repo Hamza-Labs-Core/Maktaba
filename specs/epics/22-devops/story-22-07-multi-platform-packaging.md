@@ -39,3 +39,8 @@ Beyond compose, native packages for the user's platform.
   shipping a broken Pipeline.
 - EC3. Auto-update for desktop on Linux AppImage — uses the
   AppImage updater; the user can disable.
+
+## Deferred from P0
+
+- Renovate/Dependabot must rewrite GitHub Actions from semver tags
+  to commit SHA pins (deferred from 22.2).

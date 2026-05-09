@@ -36,3 +36,10 @@ auditable.
   vendor tree finds it; build fails until rebuilt.
 - EC3. Air-gapped builds — `make build-airgap` produces a tarball
   including all deps; CI smoke runs an air-gapped path.
+
+## Deferred from P0
+
+- Container image signing with cosign/minisign deferred from 22.2.
+- SBOM generation (CycloneDX) is currently a stub in `tools/sbom.sh`
+  — needs real `cyclonedx-gomod` / `cyclonedx-py` / `cyclonedx-npm`
+  tooling and a CI gate.

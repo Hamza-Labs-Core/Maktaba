@@ -36,3 +36,12 @@ on Mac and Linux without local dependencies beyond Docker.
   documented and tested.
 - EC3. Rootless Docker — compose works rootless; user-namespace
   remapping for the media volume is documented.
+
+## Deferred from P0
+
+- Now that Story 21.4 landed health probes on admin ports, the ghost
+  healthcheck binary in `tools/healthcheck/` can be replaced with
+  `curl` to the admin `/healthz` endpoint in non-distroless images,
+  or kept for distroless.
+- Image size guard (`tools/image-size-guard.sh`) needs CI integration
+  after images are built.
