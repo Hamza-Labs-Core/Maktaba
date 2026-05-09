@@ -50,3 +50,8 @@ select = ["E", "F", "I", "B", "UP", "SIM", "T20"]
 strict = true
 python_version = "3.12"
 files = ["src/maktaba_pipeline", "tests"]
+# The shared test-tier plugin lives outside this package's source
+# tree (Story 20.1 — common across future Python services). Point
+# mypy at it so `import maktaba_testtier` resolves the same way it
+# does at runtime via tests/conftest.py.
+mypy_path = "../shared/testtier/py"

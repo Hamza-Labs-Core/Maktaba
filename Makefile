@@ -8,12 +8,23 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming shared/log/go shared/health/go
+GO_MODULES := api streaming shared/log/go shared/health/go shared/testtier/go tools/test-budget
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
 MIGRATION_LINT_DIR := tools/migration-lint
 MIGRATION_LINT_BASE_REF ?= origin/main
+
+# Story 20.1 budgets — single source of truth, mirrored across
+# shared/testtier/{go,py} so the soft caps + tier totals stay in
+# sync. The integration / e2e / perf-ci numbers are wall-clock
+# bounds for the whole tier; the unit tier is per-Go-package
+# (enforced inside tools/test-budget.sh via `go test -json`).
+UNIT_PACKAGE_BUDGET     ?= 30s
+UNIT_PER_TEST_SOFT_CAP  ?= 100ms
+INTEGRATION_TIER_BUDGET ?= 2m
+E2E_TIER_BUDGET         ?= 5m
+PERF_CI_TIER_BUDGET     ?= 2m
 
 ARTIFACT_DIR ?= artifacts
 GOOS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
@@ -121,18 +132,41 @@ lint-web:  ## eslint + tsc --noEmit + prettier --check.
 	pnpm -C $(WEB_DIR) run format:check
 
 # ---------------------------------------------------------------------------
-# Unit tests (gate 2)
+# Test pyramid (Story 20.1)
+# ---------------------------------------------------------------------------
+#
+# Three runtime tiers (unit / integration / e2e) plus the dedicated
+# perf-ci tier. Tier separation is by:
+#
+#   Go     — `go test -short` for unit; `//go:build integration` for
+#            integration. The shared helper `WithSoftCap` from
+#            shared/testtier/go enforces AC4 per-test soft caps.
+#   Python — `@pytest.mark.unit` / `@pytest.mark.integration` /
+#            `@pytest.mark.e2e`. The `maktaba_testtier` plugin loaded
+#            via pipeline/tests/conftest.py enforces AC1 (no sockets
+#            in unit tests) and AC4 (per-test soft cap).
+#   TS     — `*.unit.spec.ts`, `*.int.spec.ts`, `*.e2e.spec.ts`.
+#            Configs live at shared/testtier/ts; activated by Epic 11.
+#
+# Per-tier wall-clock budgets are enforced by tools/test-budget.sh
+# and surface as `::error::` annotations in CI on breach.
+
+.PHONY: test
+test: test-unit test-integration test-e2e  ## Run every tier (unit + integration + e2e).
+
+# ---------------------------------------------------------------------------
+# Unit tests (gate 2; Story 20.1 unit tier)
 # ---------------------------------------------------------------------------
 
 .PHONY: test-unit
-test-unit: test-unit-go test-unit-py test-unit-web  ## Unit tier (Epic 20.1).
+test-unit: test-unit-go test-unit-py test-unit-web  ## Unit tier (Story 20.1).
 
 .PHONY: test-unit-go
 test-unit-go:
-	@for mod in $(GO_MODULES); do \
-		echo "==> go test -short ./... ($$mod)"; \
-		(cd $$mod && go test -short -race -count=1 ./...); \
-	done
+	@GO_MODULES="$(GO_MODULES)" \
+		UNIT_PACKAGE_BUDGET="$(UNIT_PACKAGE_BUDGET)" \
+		UNIT_PER_TEST_SOFT_CAP="$(UNIT_PER_TEST_SOFT_CAP)" \
+		bash tools/test-budget.sh unit
 
 .PHONY: test-unit-py
 test-unit-py:
@@ -143,16 +177,25 @@ test-unit-web:
 	pnpm -C $(WEB_DIR) run test:unit
 
 # ---------------------------------------------------------------------------
-# Integration tests (gate 3) — needs Postgres + Chroma reachable.
+# Integration tests (gate 3; Story 20.1 integration tier)
+# Needs Postgres + Chroma reachable.
 # ---------------------------------------------------------------------------
 
 .PHONY: test-integration
-test-integration:  ## Integration tier (Epic 20.4).
+test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
+	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
+		$(MAKE) --no-print-directory test-integration-inner
+
+.PHONY: test-integration-inner
+test-integration-inner:
 	@for mod in $(GO_MODULES); do \
 		echo "==> go test -tags=integration ./... ($$mod)"; \
 		(cd $$mod && go test -tags=integration -count=1 ./...); \
 	done
-	cd $(PIPELINE_DIR) && uv run pytest -m integration
+	@# pytest exits 5 when no tests match the marker — that's the
+	@# normal state until Story 20.4 lands real integration tests.
+	@cd $(PIPELINE_DIR) && uv run pytest -m integration; rc=$$?; \
+		[ $$rc -eq 0 ] || [ $$rc -eq 5 ] || exit $$rc
 
 .PHONY: migrate
 migrate:  ## Apply database migrations against $$DATABASE_URL.
@@ -173,15 +216,28 @@ migrate-status:  ## Show applied vs. pending migrations against $$DATABASE_URL.
 # ---------------------------------------------------------------------------
 
 .PHONY: test-e2e
-test-e2e:  ## E2E tier (Epic 20.5). Assumes the compose stack is up.
-	cd $(PIPELINE_DIR) && uv run pytest -m e2e
+test-e2e:  ## E2E tier (Story 20.1, Epic 20.5). Assumes the compose stack is up.
+	@bash tools/test-budget.sh wall e2e $(E2E_TIER_BUDGET) -- \
+		$(MAKE) --no-print-directory test-e2e-inner
+
+.PHONY: test-e2e-inner
+test-e2e-inner:
+	@# pytest exits 5 when no tests match the marker — that's the
+	@# normal state until Story 20.5 lands real e2e tests.
+	@cd $(PIPELINE_DIR) && uv run pytest -m e2e; rc=$$?; \
+		[ $$rc -eq 0 ] || [ $$rc -eq 5 ] || exit $$rc
 
 # ---------------------------------------------------------------------------
-# Perf-CI (gate 5) — reduced perf suite.
+# Perf-CI (gate 5; Story 20.1 perf-ci tier) — reduced perf suite.
 # ---------------------------------------------------------------------------
 
 .PHONY: perf-ci
-perf-ci:  ## Reduced perf suite (Epic 20.7).
+perf-ci:  ## Reduced perf suite (Story 20.1, Epic 20.7).
+	@bash tools/test-budget.sh wall perf-ci $(PERF_CI_TIER_BUDGET) -- \
+		$(MAKE) --no-print-directory perf-ci-inner
+
+.PHONY: perf-ci-inner
+perf-ci-inner:
 	@echo "perf-ci stub: Epic 20.7 will replace this with the real reduced perf suite."
 
 # ---------------------------------------------------------------------------
