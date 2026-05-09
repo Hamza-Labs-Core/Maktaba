@@ -43,18 +43,18 @@ The previously-used `job.pending`, `job.progress`, `job.heartbeat`,
 
 ## Stories
 
-| # | Title | File |
-|---|-------|------|
-| 6.1 | Schema, migration, indexes | [story-06-01-schema-indexes.md](story-06-01-schema-indexes.md) |
-| 6.2 | Claim loop | [story-06-02-claim-loop.md](story-06-02-claim-loop.md) |
-| 6.3 | Heartbeat & progress (with `jobs.*` channels) | [story-06-03-heartbeat-progress.md](story-06-03-heartbeat-progress.md) |
-| 6.4 | Pause, resume, cancel via request flags | [story-06-04-pause-resume-cancel.md](story-06-04-pause-resume-cancel.md) |
-| 6.5 | Backoff and retry | [story-06-05-backoff-retry.md](story-06-05-backoff-retry.md) |
-| 6.6 | Reaper for crashed claims (heartbeat math fixed) | [story-06-06-reaper.md](story-06-06-reaper.md) |
-| 6.7 | Concurrency model & per-host caps | [story-06-07-concurrency-caps.md](story-06-07-concurrency-caps.md) |
-| 6.8 | Graceful shutdown semantics | [story-06-08-graceful-shutdown.md](story-06-08-graceful-shutdown.md) |
-| 6.9 | Observability hooks | [story-06-09-observability.md](story-06-09-observability.md) |
-| 6.10 | Single source of truth for resume | [story-06-10-resume-invariant.md](story-06-10-resume-invariant.md) |
+| # | Status | Title | File |
+|---|--------|-------|------|
+| 6.1 | ✅ landed | Schema, migration, indexes | [story-06-01-schema-indexes.md](story-06-01-schema-indexes.md) |
+| 6.2 | | Claim loop | [story-06-02-claim-loop.md](story-06-02-claim-loop.md) |
+| 6.3 | | Heartbeat & progress (with `jobs.*` channels) | [story-06-03-heartbeat-progress.md](story-06-03-heartbeat-progress.md) |
+| 6.4 | | Pause, resume, cancel via request flags | [story-06-04-pause-resume-cancel.md](story-06-04-pause-resume-cancel.md) |
+| 6.5 | | Backoff and retry | [story-06-05-backoff-retry.md](story-06-05-backoff-retry.md) |
+| 6.6 | | Reaper for crashed claims (heartbeat math fixed) | [story-06-06-reaper.md](story-06-06-reaper.md) |
+| 6.7 | | Concurrency model & per-host caps | [story-06-07-concurrency-caps.md](story-06-07-concurrency-caps.md) |
+| 6.8 | | Graceful shutdown semantics | [story-06-08-graceful-shutdown.md](story-06-08-graceful-shutdown.md) |
+| 6.9 | | Observability hooks | [story-06-09-observability.md](story-06-09-observability.md) |
+| 6.10 | | Single source of truth for resume | [story-06-10-resume-invariant.md](story-06-10-resume-invariant.md) |
 
 ## Resolved cross-doc issues
 
