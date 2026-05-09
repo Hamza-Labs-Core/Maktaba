@@ -74,13 +74,24 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      # DATABASE_URL drives the migrate subcommand AND the readiness
+      # probe's DB check (Story 21.4 — buildChecks reads $DATABASE_URL).
+      DATABASE_URL: postgres://${MAKTABA_PG_USER:-maktaba}:${MAKTABA_PG_PASSWORD:-maktaba}@postgres:5432/${MAKTABA_PG_DB:-maktaba}?sslmode=disable
       MAKTABA_DATABASE_URL: postgres://${MAKTABA_PG_USER:-maktaba}:${MAKTABA_PG_PASSWORD:-maktaba}@postgres:5432/${MAKTABA_PG_DB:-maktaba}?sslmode=disable
       MAKTABA_HTTP_ADDR: ":8080"
-      HEALTHCHECK_URL: http://127.0.0.1:8080/healthz
+      MAKTABA_ADMIN_ADDR: ":9100"
+      # Aggregator fan-out: /api/system/health probes these per the
+      # plan's name=URL pair format.
+      MAKTABA_HEALTH_PEERS: streaming=http://streaming:9101/readyz
+      HEALTHCHECK_URL: http://127.0.0.1:9100/healthz
     command: ["serve"]
     volumes:
       - media:/var/maktaba/media:ro
     healthcheck:
+      # Probes /healthz on the admin port (Story 21.4); the binary is
+      # baked in because distroless has no curl. Liveness only — see
+      # AC1: never blocks on dependencies, so the orchestrator only
+      # restarts a *hung* process, never a process whose DB is down.
       test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 10s
       timeout: 3s
@@ -100,7 +111,12 @@ services:
     environment:
       MAKTABA_API_URL: http://api:8080
       MAKTABA_HTTP_ADDR: ":8081"
-      HEALTHCHECK_URL: http://127.0.0.1:8081/healthz
+      MAKTABA_ADMIN_ADDR: ":9101"
+      # Probe the API's admin port from streaming's readiness so we
+      # can detect the api↔streaming network partition described in
+      # the story's gRPC-peer requirement (AC2).
+      MAKTABA_GRPC_PEERS: api=api:9100
+      HEALTHCHECK_URL: http://127.0.0.1:9101/healthz
     command: ["serve"]
     volumes:
       - media:/var/maktaba/media:ro

@@ -72,9 +72,12 @@ COPY --from=builder /out/maktaba-api /usr/local/bin/maktaba-api
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
 COPY --from=builder /src/shared/db/migrations /var/maktaba/migrations
 
-ENV HEALTHCHECK_URL=http://127.0.0.1:8080/healthz \
+ENV HEALTHCHECK_URL=http://127.0.0.1:9100/healthz \
     MAKTABA_MIGRATIONS_DIR=/var/maktaba/migrations
 
-EXPOSE 8080
+# 8080 = public API port; 9100 = admin port (Story 21.4 — /healthz,
+# /readyz, future /metrics). Both are EXPOSE-only; the runtime addr
+# comes from $MAKTABA_HTTP_ADDR / $MAKTABA_ADMIN_ADDR.
+EXPOSE 8080 9100
 USER nonroot
 ENTRYPOINT ["/usr/local/bin/maktaba-api"]

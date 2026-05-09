@@ -62,8 +62,9 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 COPY --from=builder /out/maktaba-streaming /usr/local/bin/maktaba-streaming
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
 
-ENV HEALTHCHECK_URL=http://127.0.0.1:8081/healthz
+ENV HEALTHCHECK_URL=http://127.0.0.1:9101/healthz
 
-EXPOSE 8081
+# 8081 = public streaming port; 9101 = admin port (Story 21.4).
+EXPOSE 8081 9101
 USER nonroot
 ENTRYPOINT ["/usr/local/bin/maktaba-streaming"]

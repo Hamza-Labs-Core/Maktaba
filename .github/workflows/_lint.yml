@@ -77,6 +77,13 @@ jobs:
           working-directory: streaming
           args: --timeout=5m
 
+      - name: golangci-lint (shared/health/go)
+        uses: golangci/golangci-lint-action@v6.1.1
+        with:
+          version: v1.62.2
+          working-directory: shared/health/go
+          args: --timeout=5m
+
       - name: gofmt + go vet
         run: make lint-go
 

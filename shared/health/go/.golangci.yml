@@ -1,0 +1,33 @@
+# Mirrors api/.golangci.yml — Story 21.4 keeps the same forbidigo set
+# everywhere so the shared/health/go module is held to the same bar as
+# the services that import it.
+
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - forbidigo
+
+linters-settings:
+  forbidigo:
+    forbid:
+      - p: '^fmt\.Print(ln|f)?$'
+        msg: 'use the shared/log/go logger instead of fmt.Print*; pipe operator output through fmt.Fprint* against an explicit writer.'
+      - p: '^print$'
+        msg: 'use the shared/log/go logger instead of the print builtin.'
+      - p: '^println$'
+        msg: 'use the shared/log/go logger instead of the println builtin.'
+    analyze-types: false
+    exclude-godoc-examples: true

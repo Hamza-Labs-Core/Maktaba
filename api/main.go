@@ -4,21 +4,28 @@
 // `--version` flag and reproducibility envelope; Story 22.3 added the
 // `serve` subcommand so compose has a long-lived process to attach a
 // healthcheck to; Story 22.4 added the `migrate` subcommand; Story
-// 21.1 wired the structured logger. Story 07.x replaces the serve path
-// with the real HTTP server.
+// 21.1 wired the structured logger; Story 21.4 split serve into a
+// public mux (port 8080, /api/system/health aggregator) and an admin
+// mux (port 9100, /healthz + /readyz). Story 07.x replaces the public
+// mux's placeholder route with the real HTTP server.
 package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
@@ -91,40 +98,70 @@ Commands:
   help       Show this help`)
 }
 
-// runServe stands up a placeholder HTTP server so the compose
-// container has a long-lived PID 1 with a /healthz endpoint for
-// Story 21.4-shaped healthchecks. The real router lands with Epic 07.
+// runServe stands up two HTTP servers:
+//
+//   - The "public" server on $MAKTABA_HTTP_ADDR (default :8080) carries
+//     the API's user-facing routes — currently only the
+//     /api/system/health aggregator until Epic 07 lands the real
+//     router.
+//   - The "admin" server on $MAKTABA_ADMIN_ADDR (default :9100) carries
+//     the orchestrator's probes — /healthz and /readyz. Plan §0:
+//     bound to the admin port so a misbehaving public-port handler
+//     can't take readiness down with it, and so the probes are
+//     trivially firewallable.
+//
+// Both servers share a graceful-shutdown context so SIGINT / SIGTERM
+// drains them together with a 10 s budget.
 func runServe() error {
 	logger := initLogger()
 
-	addr := os.Getenv("MAKTABA_HTTP_ADDR")
-	if addr == "" {
-		addr = ":8080"
+	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
+	if publicAddr == "" {
+		publicAddr = ":8080"
+	}
+	adminAddr := os.Getenv("MAKTABA_ADMIN_ADDR")
+	if adminAddr == "" {
+		adminAddr = ":9100"
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","service":"api","version":%q}`+"\n", version.Version)
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"status":"ok"}`)
-	})
+	// Build the readiness checks. The DB check only runs when
+	// $DATABASE_URL is set so `serve` still works in the stub-stage
+	// integration tests that don't bring up Postgres. Once Story 19.x
+	// owns config, this block moves into the config-driven wiring.
+	checks := buildChecks(logger)
 
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+	warm := warmPeriod()
+	adminMux := health.AdminMux("api", checks, warm)
+
+	publicMux := http.NewServeMux()
+	publicMux.Handle("/api/system/health", system.NewAggregator(buildAggregatorServices()))
+	// Forward /healthz on the public port too — convenient for compose
+	// stacks that haven't been told about the admin port yet. Liveness
+	// is cheap; exposing it twice costs nothing.
+	publicMux.Handle("/healthz", health.NewLive("api"))
+
+	publicSrv := &http.Server{
+		Addr:              publicAddr,
+		Handler:           publicMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	adminSrv := &http.Server{
+		Addr:              adminAddr,
+		Handler:           adminMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
-		logger.Info("listening", "addr", addr, "event", "http_listen")
-		errCh <- srv.ListenAndServe()
+		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
+		errCh <- publicSrv.ListenAndServe()
+	}()
+	go func() {
+		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")
+		errCh <- adminSrv.ListenAndServe()
 	}()
 
 	select {
@@ -132,11 +169,116 @@ func runServe() error {
 		logger.Info("shutting down", "event", "http_shutdown")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		errPublic := publicSrv.Shutdown(shutdownCtx)
+		errAdmin := adminSrv.Shutdown(shutdownCtx)
+		return errors.Join(errPublic, errAdmin)
 	case err := <-errCh:
+		// Whichever server failed first — collect it, then ask the
+		// other to shut down cleanly so we don't leak a goroutine.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = publicSrv.Shutdown(shutdownCtx)
+		_ = adminSrv.Shutdown(shutdownCtx)
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
 		return nil
 	}
+}
+
+// buildChecks assembles the readiness check set from the runtime
+// environment. The list is deliberately bounded — every check costs a
+// real round-trip every time the orchestrator polls, so we keep it to
+// the dependencies that, if absent, mean the API genuinely cannot
+// serve traffic.
+//
+// EC3 in the story: SQLite mode skips Postgres-specific checks. The
+// stub serve path treats $DATABASE_URL as the on/off switch; Story
+// 19.x owns the config driver-detection.
+func buildChecks(logger *slog.Logger) []health.Check {
+	checks := []health.Check{}
+
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			logger.Warn("readiness: skipping db check, sql.Open failed",
+				"err", err, "event", "readiness_check_skipped")
+		} else {
+			// 1 conn cap: readiness must not contend with the API's
+			// real query pool. PingContext below the cap is enough to
+			// satisfy AC2's "≥ 1 healthy conn".
+			db.SetMaxOpenConns(1)
+			checks = append(checks, &health.DBPing{DB: db})
+		}
+	}
+
+	if peers := os.Getenv("MAKTABA_GRPC_PEERS"); peers != "" {
+		// Comma-separated `name=host:port` pairs. Plan §3 sketches a
+		// gRPC connectivity check; until the gRPC clients are wired
+		// in (Story 09 et seq.) we use the lighter TCPDial check —
+		// "can we open a socket to the peer" is a strict subset of
+		// "can we serve gRPC against it" and false negatives there
+		// would have to be a regression elsewhere.
+		for _, pair := range strings.Split(peers, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			name, addr, ok := strings.Cut(pair, "=")
+			if !ok {
+				addr = pair
+				name = "peer"
+			}
+			checks = append(checks, &health.TCPDial{N: strings.TrimSpace(name), Addr: strings.TrimSpace(addr)})
+		}
+	}
+
+	return checks
+}
+
+// buildAggregatorServices reads the aggregator's fan-out target list
+// from $MAKTABA_HEALTH_PEERS. Format: comma-separated `name=URL`
+// pairs, e.g.
+//
+//	MAKTABA_HEALTH_PEERS="streaming=http://streaming:9101/readyz,pipeline=http://pipeline:9102/readyz"
+//
+// Empty list = no fan-out; the aggregator endpoint still responds with
+// status=ok and an empty services map, which is the right answer for
+// a single-binary dev run.
+func buildAggregatorServices() []system.Service {
+	raw := os.Getenv("MAKTABA_HEALTH_PEERS")
+	if raw == "" {
+		return nil
+	}
+	out := []system.Service{}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, url, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		out = append(out, system.Service{
+			Name: strings.TrimSpace(name),
+			URL:  strings.TrimSpace(url),
+		})
+	}
+	return out
+}
+
+// warmPeriod is plan TC3's cold-start window. Defaults to 30 s; the
+// integration tests override it to 0 via $MAKTABA_HEALTH_WARM=0 so
+// they don't have to sleep.
+func warmPeriod() time.Duration {
+	v := os.Getenv("MAKTABA_HEALTH_WARM")
+	if v == "" {
+		return 30 * time.Second
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 30 * time.Second
+	}
+	return d
 }

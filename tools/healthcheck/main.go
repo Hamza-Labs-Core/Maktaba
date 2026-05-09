@@ -1,11 +1,12 @@
 // Tiny health probe baked into the api and streaming images so compose
 // healthchecks don't depend on curl / wget being present in the
-// distroless final stage. Probes Story 21.4's `/healthz` endpoint when
-// it lands; until then it accepts any 2xx from the configured URL.
+// distroless final stage. As of Story 21.4 the admin port (api 9100,
+// streaming 9101) carries /healthz and /readyz; this probe defaults to
+// the API admin port and accepts any 2xx response.
 //
 // Configuration:
 //
-//	HEALTHCHECK_URL  defaults to http://127.0.0.1:8080/healthz
+//	HEALTHCHECK_URL  defaults to http://127.0.0.1:9100/healthz
 //	HEALTHCHECK_TIMEOUT  Go duration string (default "2s")
 //
 // Exit 0 on a 2xx response; non-zero otherwise. Compose's CMD form
@@ -23,7 +24,7 @@ import (
 func main() {
 	url := os.Getenv("HEALTHCHECK_URL")
 	if url == "" {
-		url = "http://127.0.0.1:8080/healthz"
+		url = "http://127.0.0.1:9100/healthz"
 	}
 	timeout := 2 * time.Second
 	if v := os.Getenv("HEALTHCHECK_TIMEOUT"); v != "" {
