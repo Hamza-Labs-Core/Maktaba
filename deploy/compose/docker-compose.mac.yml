@@ -1,0 +1,58 @@
+# Mac overlay for the Maktaba compose stack (Story 22.3 plan §2.4; AC3).
+#
+# Selected via:
+#   docker compose -f deploy/compose/docker-compose.yml \
+#                  -f deploy/compose/docker-compose.mac.yml up -d
+# or `make compose-mac`.
+#
+# What this overlay does:
+#   1. Bind-mounts host FFmpeg from /opt/homebrew (Apple Silicon) into
+#      the pipeline container so STT decode uses the
+#      hardware-accelerated copy. Without the bind, the pipeline image
+#      falls back to its bundled apt-installed ffmpeg.
+#   2. Switches MAKTABA_STT_BACKEND to whisper_mlx so the pipeline uses
+#      the Apple Neural Engine via MLX. Docker Desktop on Apple Silicon
+#      surfaces ANE through Rosetta + the virtualization framework.
+#   3. Re-binds the media volume as a host directory with `:cached`
+#      consistency (Story 22.3 EC1) so reads from /Movies/Maktaba have
+#      reasonable latency on macOS's filesystem layer.
+#
+# Edge cases:
+#   - If /opt/homebrew/bin/ffmpeg does not exist on the host, the bind
+#     fails to start the container; `maktaba-pipeline doctor` reports
+#     `mac_mlx: ffmpeg not found` and the operator falls back by
+#     dropping the overlay. Documented in EC1 of the plan.
+#   - Intel Macs use /usr/local/bin/ffmpeg; the bind paths below must
+#     be edited locally for Intel, or set MAKTABA_HOMEBREW_PREFIX.
+
+services:
+  pipeline:
+    environment:
+      MAKTABA_STT_BACKEND: whisper_mlx
+      MAKTABA_FFMPEG_PATH: /usr/local/bin/ffmpeg
+    volumes:
+      # Apple Silicon homebrew paths. Override MAKTABA_HOMEBREW_PREFIX
+      # to /usr/local for Intel Macs.
+      - ${MAKTABA_HOMEBREW_PREFIX:-/opt/homebrew}/bin/ffmpeg:/usr/local/bin/ffmpeg:ro
+      - ${MAKTABA_HOMEBREW_PREFIX:-/opt/homebrew}/bin/ffprobe:/usr/local/bin/ffprobe:ro
+      - type: bind
+        source: ${MAKTABA_MEDIA_ROOT:-${HOME}/Movies/Maktaba}
+        target: /var/maktaba/media
+        consistency: cached
+        read_only: true
+
+  streaming:
+    volumes:
+      - type: bind
+        source: ${MAKTABA_MEDIA_ROOT:-${HOME}/Movies/Maktaba}
+        target: /var/maktaba/media
+        consistency: cached
+        read_only: true
+
+  api:
+    volumes:
+      - type: bind
+        source: ${MAKTABA_MEDIA_ROOT:-${HOME}/Movies/Maktaba}
+        target: /var/maktaba/media
+        consistency: cached
+        read_only: true

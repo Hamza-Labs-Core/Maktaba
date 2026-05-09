@@ -1,0 +1,21 @@
+# Inner Caddy serving the SPA bundle inside the maktaba-web image. The
+# outer compose Caddy (deploy/docker/caddy/Caddyfile) terminates TLS
+# and reverse-proxies / to this listener, so this file only needs to
+# serve files + apply the SPA fallback to index.html.
+
+:80 {
+    root * /usr/share/caddy
+    encode zstd gzip
+
+    # Don't cache the entry document; it's the index that points at
+    # hashed bundle filenames.
+    @html path /index.html /
+    header @html Cache-Control "no-cache, no-store, must-revalidate"
+
+    # Long cache for hashed assets (Vite emits content-hashed names).
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+
+    try_files {path} /index.html
+    file_server
+}

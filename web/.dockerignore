@@ -1,0 +1,8 @@
+node_modules
+dist
+.next
+.cache
+coverage
+wiki-app/node_modules
+wiki-app/dist
+mockups

@@ -1,0 +1,33 @@
+# Default .dockerignore for builds rooted at the repo root. Each
+# service's Dockerfile only COPYs the directories it needs, but
+# excluding heavy/uninteresting trees here keeps `docker build`'s
+# initial context-tar small (Mac users feel this most).
+
+.git
+.github
+.claude
+.vscode
+.idea
+
+# Build artifacts the images do not want.
+api/bin
+streaming/bin
+web/dist
+web/wiki-app/dist
+web/wiki-app/node_modules
+web/node_modules
+artifacts
+
+# Test caches.
+**/.pytest_cache
+**/__pycache__
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/coverage.out
+**/coverage.html
+
+# Editor swap files.
+**/*.swp
+**/*~
+.DS_Store

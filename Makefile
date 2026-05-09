@@ -276,6 +276,58 @@ lockfile-check:  ## Fail if uv.lock / pnpm-lock.yaml / go.mod drift from sources
 		(cd $$mod && go mod verify); \
 	done
 
+# ---------------------------------------------------------------------------
+# Compose stack (Story 22.3)
+# ---------------------------------------------------------------------------
+#
+# `make compose-up` brings up the canonical stack; `make compose-mac`
+# layers the Mac overlay on top (FFmpeg bind + MLX). Build args mirror
+# the reproducibility envelope so an image built from `make compose-up`
+# matches the one CI publishes for the same commit.
+
+COMPOSE_FILE := deploy/compose/docker-compose.yml
+COMPOSE_MAC_FILE := deploy/compose/docker-compose.mac.yml
+COMPOSE_IMAGES := api streaming pipeline web
+COMPOSE_REGISTRY ?= ghcr.io/maktaba
+COMPOSE_VERSION ?= $(VERSION)
+
+# Compose reads these from the environment via the file's
+# ${MAKTABA_VERSION}/${MAKTABA_COMMIT}/${SOURCE_DATE_EPOCH} interpolation.
+export MAKTABA_VERSION ?= $(VERSION)
+export MAKTABA_COMMIT  ?= $(COMMIT)
+
+.PHONY: compose-up
+compose-up:  ## Bring up the full compose stack and wait for healthy.
+	docker compose -f $(COMPOSE_FILE) up -d --wait
+
+.PHONY: compose-down
+compose-down:  ## Tear the compose stack down (preserves volumes).
+	docker compose -f $(COMPOSE_FILE) down
+
+.PHONY: compose-down-volumes
+compose-down-volumes:  ## Tear down + drop named volumes (destructive).
+	docker compose -f $(COMPOSE_FILE) down -v
+
+.PHONY: compose-logs
+compose-logs:  ## Tail logs from the compose stack.
+	docker compose -f $(COMPOSE_FILE) logs -f
+
+.PHONY: compose-build
+compose-build:  ## Build the four service images locally via compose.
+	docker compose -f $(COMPOSE_FILE) build
+
+.PHONY: compose-mac
+compose-mac:  ## Bring up compose with the Mac (FFmpeg + MLX) overlay.
+	docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_MAC_FILE) up -d --wait
+
+.PHONY: compose-mac-down
+compose-mac-down:  ## Tear down the Mac-overlay compose stack.
+	docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_MAC_FILE) down
+
+.PHONY: image-size-guard
+image-size-guard:  ## Fail if any image exceeds the AC4 size cap.
+	bash tools/image-size-guard.sh
+
 .PHONY: clean
 clean:
 	rm -rf api/bin streaming/bin $(WEB_DIR)/dist $(ARTIFACT_DIR)

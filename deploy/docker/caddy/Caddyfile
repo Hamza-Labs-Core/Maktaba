@@ -1,0 +1,53 @@
+# Maktaba reverse-proxy / TLS terminator (Story 22.3 plan §2.3).
+#
+# Routes inside the compose network:
+#   /api/*  /graphql  /ws*   -> api:8080
+#   /stream/*              -> streaming:8081
+#   /                      -> web:80 (inner Caddy serving the SPA)
+#
+# Localhost path: Caddy's internal CA issues a self-signed cert; users
+# may need to trust Caddy's local CA on first run (`caddy trust`).
+# Hosted path: setting MAKTABA_HOSTNAME to a public DNS name flips
+# Caddy into Let's Encrypt mode automatically.
+#
+# HSTS header is set here per the architecture; Story 23.3 owns the
+# actual policy values and may tighten the max-age / preload bits.
+
+{$MAKTABA_HOSTNAME:localhost} {
+    encode zstd gzip
+
+    @api path /api/* /graphql /ws*
+    handle @api {
+        reverse_proxy api:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    @stream path /stream/*
+    handle @stream {
+        reverse_proxy streaming:8081 {
+            # `flush_interval -1` disables Caddy's response buffering so
+            # HLS segments leave the proxy immediately. Without this the
+            # client sees stalls equal to Caddy's buffer fill time.
+            flush_interval -1
+            transport http {
+                versions h2c h1
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
+
+    header {
+        # Story 23.3 owns the final HSTS policy; this default keeps the
+        # directive present so deploys pre-23.3 already advertise HSTS.
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+    }
+}
