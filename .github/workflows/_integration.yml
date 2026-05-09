@@ -1,0 +1,91 @@
+# Reusable integration gate (Story 22.1, gate 3; Epic 20.4).
+#
+# Service container digests are pinned (Story 22.7-supply-chain-style)
+# and bumped via Renovate. Don't bump tags by hand — open a Renovate PR.
+
+name: Integration
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      chroma:
+        image: ghcr.io/chroma-core/chroma:0.5.5
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+      CHROMA_URL: http://localhost:8000
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-go@v5.2.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+
+      - uses: actions/setup-python@v5.4.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v5.2.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --all-extras
+
+      - name: Wait for services
+        # Service containers report healthy via Docker's healthcheck, but
+        # Postgres' `pg_isready` returns success before the DB accepts
+        # connections from non-loopback. Belt-and-braces: poll once.
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1 \
+               && curl -fsS http://localhost:8000/api/v1/heartbeat >/dev/null 2>&1; then
+              echo "services ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Services not ready after 60s"
+          exit 1
+
+      - name: Run migrations
+        run: make migrate
+
+      - name: Run integration tier
+        run: make test-integration

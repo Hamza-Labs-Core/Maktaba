@@ -1,0 +1,5 @@
+dist
+node_modules
+mockups
+wiki-app
+pnpm-lock.yaml

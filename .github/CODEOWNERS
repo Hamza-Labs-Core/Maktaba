@@ -1,0 +1,29 @@
+# CODEOWNERS — reviewer routing for Maktaba.
+#
+# `require_code_owner_reviews = true` in deploy/github/branch-protection.tf
+# means every PR must be approved by an owner of every changed file's
+# pattern. Keep this file alphabetized within each section.
+
+# Default: anything unrouted falls to the core maintainers.
+*                                       @Hamza-Labs-Core/maintainers
+
+# CI + devops
+/.github/                               @Hamza-Labs-Core/devops
+/Makefile                               @Hamza-Labs-Core/devops
+/deploy/                                @Hamza-Labs-Core/devops
+
+# Service code
+/api/                                   @Hamza-Labs-Core/backend
+/streaming/                             @Hamza-Labs-Core/backend
+/pipeline/                              @Hamza-Labs-Core/pipeline
+
+# Frontend
+/web/                                   @Hamza-Labs-Core/frontend
+
+# Shared schemas
+/shared/api/                            @Hamza-Labs-Core/backend @Hamza-Labs-Core/frontend
+/shared/db/migrations/                  @Hamza-Labs-Core/backend @Hamza-Labs-Core/data
+
+# Specs and docs
+/specs/                                 @Hamza-Labs-Core/maintainers
+/docs/                                  @Hamza-Labs-Core/maintainers

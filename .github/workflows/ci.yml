@@ -1,0 +1,159 @@
+# Maktaba CI — single merge gate (Story 22.1).
+#
+# Six gates fan out from `changes`; the `ci-success` rollup is the only
+# job branch protection requires. Adding a new gate means wiring it into
+# `ci-success.needs:` — branch protection config never has to change.
+#
+# Third-party Actions are pinned to a full semver tag here; Renovate
+# rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
+# story lands, treat the tags below as the source of truth and keep
+# them in lock-step with the reusable workflows.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+concurrency:
+  # Cancel in-progress runs for the same PR; never cancel main pushes.
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    # Path filter — short-circuits the heavy gates for docs-only PRs (EC3).
+    runs-on: ubuntu-22.04
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          filters: |
+            docs_only:
+              - 'specs/**'
+              - 'docs/**'
+              - '**/*.md'
+              - '!Makefile'
+              - '!.github/**'
+
+  lint:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_lint.yml
+
+  unit:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_unit.yml
+
+  integration:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_integration.yml
+
+  e2e:
+    needs: [changes, integration]
+    # Fork PRs have no secrets, so e2e (which may need them) is skipped
+    # with a maintainer-rerun comment. EC2 in story-22-01.
+    if: >-
+      needs.changes.outputs.docs_only != 'true'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+    uses: ./.github/workflows/_e2e.yml
+
+  perf-ci:
+    needs: [changes, integration]
+    if: >-
+      needs.changes.outputs.docs_only != 'true'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+    uses: ./.github/workflows/_perf-ci.yml
+
+  build-artifacts:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_build-artifacts.yml
+
+  pr-body-check:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_pr-body-check.yml
+
+  fork-rerun-comment:
+    # EC2: bot comment on fork PRs telling maintainers how to rerun
+    # the gated jobs once they've reviewed the diff.
+    needs: [changes]
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.fork == true
+      && needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            const marker = "<!-- maktaba:fork-rerun-needed -->";
+            const body = `${marker}
+            **Fork PR detected** — \`e2e\` and \`perf-ci\` were skipped because secrets are unavailable to forked workflows.
+
+            A maintainer must rerun those gates from a same-repo branch before merging. See \`docs/ci.md\`.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            if (comments.some(c => c.body && c.body.includes(marker))) return;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+  ci-success:
+    # The single status check pinned by branch protection. All gates
+    # report into this one job; a green ci-success means the merge
+    # gate is satisfied.
+    needs:
+      - changes
+      - lint
+      - unit
+      - integration
+      - e2e
+      - perf-ci
+      - build-artifacts
+      - pr-body-check
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify all gates
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "Gate results:"
+          echo "$RESULTS"
+          # Fail if any required gate failed or was cancelled. Skipped
+          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
+          fail=0
+          for gate in lint unit integration e2e perf-ci build-artifacts pr-body-check; do
+            result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
+            echo "  $gate: $result"
+            case "$result" in
+              success|skipped) ;;
+              *) fail=1 ;;
+            esac
+          done
+          if [ $fail -ne 0 ]; then
+            echo "::error::One or more required gates failed or were cancelled."
+            exit 1
+          fi
+          echo "All gates passed (or skipped intentionally)."

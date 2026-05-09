@@ -1,0 +1,29 @@
+# Compose stack used by the e2e CI gate (Story 22.1).
+#
+# Stub: only Postgres + Chroma for now. Service stories add api,
+# streaming, and any other components they need.
+
+services:
+  postgres:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_PASSWORD: maktaba
+      POSTGRES_DB: maktaba
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maktaba"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:0.5.5
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

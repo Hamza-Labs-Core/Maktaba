@@ -1,0 +1,43 @@
+# Reusable perf-ci gate (Story 22.1, gate 5; Epic 20.7).
+#
+# Reduced perf suite — single fixture, sub-2-minute. The full perf
+# regression suite runs on a nightly schedule (out of scope for this
+# story).
+
+name: Perf-CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  perf-ci:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-go@v5.2.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+
+      - uses: actions/setup-python@v5.4.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v5.2.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --all-extras
+
+      - name: Run reduced perf suite
+        run: make perf-ci

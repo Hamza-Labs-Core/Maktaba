@@ -82,6 +82,8 @@ ipython_config.py
 
 # pyenv
 .python-version
+# CI needs to know which Python to install (Story 22.1).
+!pipeline/.python-version
 
 # pipenv
 Pipfile.lock

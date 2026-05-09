@@ -1,0 +1,55 @@
+# Reusable e2e gate (Story 22.1, gate 4; Epic 20.5).
+#
+# Drives the full compose stack defined in deploy/compose/docker-compose.yml.
+# Compose logs upload as an artifact even on success so flakes can be
+# diagnosed (Epic 20.8 quarantine policy).
+
+name: E2E
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.4.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v5.2.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --all-extras
+
+      - name: Bring up compose stack
+        run: docker compose -f deploy/compose/docker-compose.yml up -d --wait
+
+      - name: Run e2e tier
+        run: make test-e2e
+
+      - name: Capture compose logs
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml logs > compose.log || true
+
+      - name: Upload compose logs
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: compose-logs
+          path: compose.log
+          retention-days: 7
+
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml down -v || true

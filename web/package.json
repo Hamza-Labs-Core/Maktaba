@@ -1,0 +1,26 @@
+{
+  "name": "maktaba-web",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Maktaba web frontend (stub created by Story 22.1; Epic 11 replaces it).",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "echo 'web stub: no unit tests yet (Epic 11 will add vitest)' && exit 0",
+    "build": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true});require('node:fs').writeFileSync('dist/index.html','<!doctype html><title>maktaba stub</title>')\""
+  },
+  "devDependencies": {
+    "eslint": "9.18.0",
+    "prettier": "3.4.2",
+    "typescript": "5.7.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

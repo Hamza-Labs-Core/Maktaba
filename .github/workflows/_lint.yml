@@ -1,0 +1,82 @@
+# Reusable lint gate (Story 22.1, gate 1).
+# Runs golangci-lint, gofmt, go vet, ruff, mypy --strict, eslint, tsc,
+# and prettier --check. Everything routes through `make lint` so local
+# and CI behaviour stays identical (Story 22.8 parity requirement).
+
+name: Lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.2.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5.2.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4.0.0
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --all-extras
+
+      - name: golangci-lint (api)
+        uses: golangci/golangci-lint-action@v6.1.1
+        with:
+          version: v1.62.2
+          working-directory: api
+          args: --timeout=5m
+
+      - name: golangci-lint (streaming)
+        uses: golangci/golangci-lint-action@v6.1.1
+        with:
+          version: v1.62.2
+          working-directory: streaming
+          args: --timeout=5m
+
+      - name: gofmt + go vet
+        run: make lint-go
+
+      - name: ruff + mypy
+        run: make lint-py
+
+      - name: tsc + eslint + prettier
+        run: make lint-web

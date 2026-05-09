@@ -1,0 +1,37 @@
+# actions/labeler@v5 config (Story 22.1).
+#
+# `docs-only` is the visible counterpart to the `paths-filter` check in
+# ci.yml — it shows up as a PR label so reviewers know at a glance that
+# heavy gates were skipped (EC3 in story-22-01).
+
+docs-only:
+  - changed-files:
+      - all-globs-to-all-files:
+          - 'specs/**/*'
+          - 'docs/**/*'
+          - '**/*.md'
+          - '!Makefile'
+          - '!.github/**'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - 'Makefile'
+          - 'deploy/github/**'
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**'
+          - 'streaming/**'
+
+pipeline:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'pipeline/**'
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'web/**'
