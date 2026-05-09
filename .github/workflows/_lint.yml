@@ -17,6 +17,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          # The migration-lint append-only check needs origin/main as a
+          # comparison ref. fetch-depth=0 keeps the checkout cheap-ish
+          # while still letting `git diff origin/main...HEAD` work.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5.2.0
@@ -80,3 +85,6 @@ jobs:
 
       - name: tsc + eslint + prettier
         run: make lint-web
+
+      - name: migration-lint (append-only + idempotency + parity)
+        run: make lint-migrations

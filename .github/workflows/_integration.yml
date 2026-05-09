@@ -84,7 +84,13 @@ jobs:
           echo "::error::Services not ready after 60s"
           exit 1
 
-      - name: Run migrations
+      - name: Run migrations (first run — applies pending)
+        run: make migrate
+
+      - name: Run migrations again (idempotency smoke-check, AC3/TC2)
+        # A clean second `migrate up` proves the migrations are
+        # idempotent — Story 22.4 AC3. Goose treats already-applied
+        # versions as no-ops, so this exits 0 with no DDL emitted.
         run: make migrate
 
       - name: Run integration tier

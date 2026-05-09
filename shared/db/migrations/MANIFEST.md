@@ -21,7 +21,8 @@ land at the next free integer (no gaps, no reservations).
 
 | Slot | Filename | Owning plan | Depends on | Summary |
 |------|----------|-------------|------------|---------|
-| `0001` | `0001_init_libraries_and_videos.sql` | [plan-01-05](../../specs/epics/01-scanner/plan-01-05-schema-decisions.md) | — | `libraries` + `videos` base tables (architecture §8.1). |
+| `0000` | `0000_schema_version.sql` | [plan-22-04](../../specs/epics/22-devops/plan-22-04-database-migrations.md) | — | `maktaba_schema_version` smoke-test table that proves the goose runner is wired and the dir is reachable. |
+| `0001` | `0001_init_libraries_and_videos.sql` | [plan-01-05](../../specs/epics/01-scanner/plan-01-05-schema-decisions.md) | 0000 | `libraries` + `videos` base tables (architecture §8.1). |
 | `0002` | `0002_processing_jobs.sql` | [plan-06-01](../../specs/epics/06-job-queue/plan-06-01-schema-indexes.md) | 0001 | Canonical `processing_jobs` table + CHECK constraints + partial indexes (architecture §7.1). |
 | `0003` | `0003_videos_content_hash.sql` | [plan-01-02](../../specs/epics/01-scanner/plan-01-02-content-identity.md) | 0001 | Add `videos.content_hash` + `UNIQUE (library_id, content_hash)` (architecture §3.1). |
 | `0004` | `0004_video_states_and_stages.sql` | [plan-01-06](../../specs/epics/01-scanner/plan-01-06-video-state-machine.md) | 0001, 0002 | 12-state `videos.state` CHECK + stages enum (story-01-06). |

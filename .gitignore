@@ -140,6 +140,13 @@ cython_debug/
 .DS_Store
 Thumbs.db
 
+# Go build artifacts
+api/api
+api/bin/
+streaming/streaming
+streaming/bin/
+tools/migration-lint/migration-lint
+
 # Claude Code runtime metadata
 .claude/scheduled_tasks.lock
 .claude/

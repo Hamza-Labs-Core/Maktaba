@@ -11,6 +11,9 @@ SHELL := /bin/bash
 GO_MODULES := api streaming
 PIPELINE_DIR := pipeline
 WEB_DIR := web
+MIGRATIONS_DIR := shared/db/migrations
+MIGRATION_LINT_DIR := tools/migration-lint
+MIGRATION_LINT_BASE_REF ?= origin/main
 
 ARTIFACT_DIR ?= artifacts
 GOOS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
@@ -82,7 +85,17 @@ help:  ## Show this help.
 # ---------------------------------------------------------------------------
 
 .PHONY: lint
-lint: lint-go lint-py lint-web  ## Run every linter (CI gate 1).
+lint: lint-go lint-py lint-web lint-migrations  ## Run every linter (CI gate 1).
+
+.PHONY: lint-migrations
+lint-migrations:  ## Migration conventions: append-only + idempotency + SQLite parity.
+	@echo "==> migration-lint vet/test"
+	cd $(MIGRATION_LINT_DIR) && go vet ./...
+	cd $(MIGRATION_LINT_DIR) && go test ./...
+	@echo "==> migration-lint $(MIGRATIONS_DIR) (base=$(MIGRATION_LINT_BASE_REF))"
+	cd $(MIGRATION_LINT_DIR) && go run . \
+		--dir $(CURDIR)/$(MIGRATIONS_DIR) \
+		--base-ref $(MIGRATION_LINT_BASE_REF)
 
 .PHONY: lint-go
 lint-go:  ## gofmt + go vet + golangci-lint over every Go module.
@@ -146,8 +159,14 @@ migrate:  ## Apply database migrations against $$DATABASE_URL.
 	@if [ -z "$${DATABASE_URL:-}" ]; then \
 		echo "DATABASE_URL is required"; exit 1; \
 	fi
-	@echo "Story 24.x owns the migration runner; this is a stub."
-	@echo "DATABASE_URL=$$DATABASE_URL"
+	cd api && go run . migrate up --dir $(CURDIR)/$(MIGRATIONS_DIR)
+
+.PHONY: migrate-status
+migrate-status:  ## Show applied vs. pending migrations against $$DATABASE_URL.
+	@if [ -z "$${DATABASE_URL:-}" ]; then \
+		echo "DATABASE_URL is required"; exit 1; \
+	fi
+	cd api && go run . migrate status --dir $(CURDIR)/$(MIGRATIONS_DIR)
 
 # ---------------------------------------------------------------------------
 # E2E tests (gate 4) — drives the compose stack.
