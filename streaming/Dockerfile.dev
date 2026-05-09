@@ -1,0 +1,15 @@
+# Dev image for the streaming service (Story 22.8). Mirrors api/Dockerfile.dev.
+
+FROM golang:1.23-alpine
+
+ENV CGO_ENABLED=0 \
+    GO111MODULE=on \
+    GOFLAGS=-mod=mod
+
+RUN apk add --no-cache bash git ca-certificates curl \
+ && go install github.com/air-verse/air@v1.61.7
+
+WORKDIR /src/streaming
+EXPOSE 8081
+
+CMD ["air", "-c", "/src/streaming/.air.toml"]

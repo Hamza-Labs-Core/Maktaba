@@ -1,0 +1,19 @@
+# Dev image for the api service (Story 22.8).
+#
+# Source is bind-mounted at runtime — nothing is COPY'd in here. The
+# image just provides the toolchain (Go) plus `air` for live reload.
+# The production multi-stage Dockerfile is owned by Story 22.3.
+
+FROM golang:1.23-alpine
+
+ENV CGO_ENABLED=0 \
+    GO111MODULE=on \
+    GOFLAGS=-mod=mod
+
+RUN apk add --no-cache bash git ca-certificates curl \
+ && go install github.com/air-verse/air@v1.61.7
+
+WORKDIR /src/api
+EXPOSE 8080
+
+CMD ["air", "-c", "/src/api/.air.toml"]

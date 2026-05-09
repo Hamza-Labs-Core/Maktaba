@@ -20,10 +20,12 @@ Batch video transcription, subtitling, and intelligent search.
 ## Quickstart
 
 ```sh
-make lint            # gofmt, golangci-lint, ruff, mypy, eslint, tsc, prettier
-make test-unit       # unit tier across api, streaming, pipeline, web
-make test-integration # needs DATABASE_URL + CHROMA_URL services up
-make build           # cross-compile every artifact for the current host
+make prereqs         # verify your host has docker, go, uv, pnpm, node
+make dev             # bring up the live-reload stack (postgres, chroma, api, streaming, pipeline, web)
+make test            # unit tier — no network, no sudo
+make help            # list every target, grouped by section
 ```
 
-CI runs the same `make` targets — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+That's the full day-1 loop. CI runs the **same** `make` targets you
+run locally — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the canonical
+dev workflow, troubleshooting, and pre-commit setup.

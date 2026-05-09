@@ -1,0 +1,22 @@
+# Dev image for the web frontend (Story 22.8).
+#
+# Source is bind-mounted; the image just provides node + pnpm + a
+# globally-installed `vite` so the bound source can run a dev server
+# without `vite` having to live in web/package.json yet (Epic 11 will
+# add it as a real dep). The `vite` global keeps this story from
+# touching pnpm-lock.yaml — Story 22.2's lockfile-check would scream.
+
+FROM node:20-alpine
+
+ENV PNPM_HOME=/usr/local/share/pnpm \
+    PATH=/usr/local/share/pnpm:/usr/local/share/pnpm/global/5/node_modules/.bin:$PATH
+
+RUN apk add --no-cache bash \
+ && corepack enable \
+ && pnpm config set store-dir /root/.local/share/pnpm/store \
+ && pnpm add -g vite@5.4.10
+
+WORKDIR /src/web
+EXPOSE 5173
+
+CMD ["sh", "/src/web/dev-entrypoint.sh"]

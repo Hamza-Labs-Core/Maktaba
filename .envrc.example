@@ -1,0 +1,21 @@
+# direnv template (Story 22.8). Copy to `.envrc` and `direnv allow`:
+#
+#     cp .envrc.example .envrc
+#     direnv allow
+#
+# direnv will then export everything from `.env` into your shell whenever
+# you cd into the repo, so `go run`, `uv run`, etc. pick up the same vars
+# the dev compose stack uses. `.envrc` is gitignored.
+
+if [ -f .env ]; then
+  dotenv .env
+fi
+
+# Pin tool versions for shells that respect ASDF/mise. Comment out if
+# you manage versions yourself.
+# use_node 20
+# use_python 3.12
+# use_go 1.23
+
+# Add ./tools to PATH so check-prereqs.sh and friends are one word away.
+PATH_add tools

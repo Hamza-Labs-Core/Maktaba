@@ -1,0 +1,71 @@
+# Pre-commit hooks (Story 22.8 AC4).
+#
+# Runs the same quick checks the CI lint gate runs, but only on staged
+# files so the local commit experience stays sub-second on a normal
+# diff. CI's `make lint` is the safety net (Story 22.1 AC); a commit
+# pushed with `git commit --no-verify` will still fail in CI.
+#
+# Install once after cloning:
+#
+#     pre-commit install
+#
+# Run against the whole tree on demand:
+#
+#     pre-commit run --all-files
+
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # Go: gofmt + go vet. golangci-lint runs in CI (too slow for pre-commit).
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet-mod
+      - id: go-mod-tidy
+
+  # Python: ruff (lint + format). mypy stays in CI — too slow per-commit.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: '^pipeline/'
+      - id: ruff-format
+        files: '^pipeline/'
+
+  # Web: prettier (formatting only). eslint stays in CI.
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: '^web/'
+        additional_dependencies:
+          - prettier@3.4.2
+
+  # Local hook: migration lint enforces append-only + idempotency on any
+  # staged file under shared/db/migrations. Mirrors `make lint-migrations`.
+  - repo: local
+    hooks:
+      - id: migration-lint
+        name: migration-lint (append-only + idempotent)
+        entry: bash -c 'cd tools/migration-lint && go run . --dir "$PWD/../../shared/db/migrations" --base-ref origin/main 2>/dev/null || cd tools/migration-lint && go run . --dir "$PWD/../../shared/db/migrations"'
+        language: system
+        files: '^shared/db/migrations/'
+        pass_filenames: false

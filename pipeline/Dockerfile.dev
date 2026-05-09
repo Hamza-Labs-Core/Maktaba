@@ -1,0 +1,20 @@
+# Dev image for the pipeline service (Story 22.8).
+#
+# Source is bind-mounted at runtime; the image just provides Python +
+# uv + watchdog (`watchmedo`). uv resolves project deps the first time
+# `dev-watch.sh` runs and caches them on the named `uv-cache` volume.
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash curl ca-certificates git \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir uv==0.4.30 watchdog==5.0.3
+
+WORKDIR /src/pipeline
+
+CMD ["bash", "/src/pipeline/dev-watch.sh"]

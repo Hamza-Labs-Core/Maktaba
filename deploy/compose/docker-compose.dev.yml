@@ -1,0 +1,129 @@
+# Dev overlay (Story 22.8). Layered on top of docker-compose.yml:
+#
+#   docker compose \
+#     -f deploy/compose/docker-compose.yml \
+#     -f deploy/compose/docker-compose.dev.yml \
+#     up
+#
+# What it changes vs the canonical Story 22.3 stack:
+#   - Bind-mounts each service's source tree into its container.
+#   - Swaps the production image for a `Dockerfile.dev` that bundles a
+#     live-reload supervisor (`air` for Go, `watchmedo` for Python,
+#     `vite` for the web).
+#   - Exposes service ports directly on the host so devs can curl
+#     localhost without going through Caddy.
+#   - Disables the production `/usr/local/bin/healthcheck` probe on
+#     api/streaming/web — the dev images don't bundle that binary, and
+#     air's rebuild loop would flap a strict probe anyway.
+#   - Hides Caddy behind the `with-caddy` profile. Devs hit services
+#     directly; pass `--profile with-caddy` to test the proxy path.
+#
+# `:cached` mount option keeps Docker Desktop on macOS responsive; it's
+# a no-op on Linux, so the file is portable.
+#
+# Live reload only fires for files inside the bound source dirs, so
+# editing files anywhere under `api/`, `streaming/`, `pipeline/`, or
+# `web/` triggers a rebuild within the matching container.
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: api/Dockerfile.dev
+    image: maktaba/api:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../api:/src/api:cached
+      - ../../shared:/src/shared:cached
+      - go-build-cache:/root/.cache/go-build
+      - go-mod-cache:/go/pkg/mod
+    working_dir: /src/api
+    environment:
+      MAKTABA_LOG_LEVEL: debug
+      MAKTABA_AUTO_MIGRATE: "true"
+      DATABASE_URL: postgres://maktaba:maktaba@postgres:5432/maktaba?sslmode=disable
+    command: ["air", "-c", "/src/api/.air.toml"]
+    healthcheck:
+      disable: true
+    ports:
+      - "8080:8080"
+
+  streaming:
+    build:
+      context: ../..
+      dockerfile: streaming/Dockerfile.dev
+    image: maktaba/streaming:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../streaming:/src/streaming:cached
+      - ../../shared:/src/shared:cached
+      - go-build-cache:/root/.cache/go-build
+      - go-mod-cache:/go/pkg/mod
+    working_dir: /src/streaming
+    environment:
+      MAKTABA_LOG_LEVEL: debug
+    command: ["air", "-c", "/src/streaming/.air.toml"]
+    healthcheck:
+      disable: true
+    ports:
+      - "8081:8081"
+
+  pipeline:
+    build:
+      context: ../..
+      dockerfile: pipeline/Dockerfile.dev
+    image: maktaba/pipeline:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    volumes:
+      - ../../pipeline:/src/pipeline:cached
+      - uv-cache:/root/.cache/uv
+    working_dir: /src/pipeline
+    environment:
+      MAKTABA_LOG_LEVEL: debug
+      UV_LINK_MODE: copy
+      DATABASE_URL: postgres://maktaba:maktaba@postgres:5432/maktaba?sslmode=disable
+      CHROMA_URL: http://chroma:8000
+    command: ["bash", "/src/pipeline/dev-watch.sh"]
+    # Pipeline keeps the canonical `python -m maktaba_pipeline doctor`
+    # healthcheck inherited from docker-compose.yml — watchmedo restarts
+    # python in place, so the long-lived process keeps responding.
+
+  web:
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile.dev
+    image: maktaba/web:dev
+    volumes:
+      - ../../web:/src/web:cached
+      - pnpm-store:/root/.local/share/pnpm/store
+      - web-node-modules:/src/web/node_modules
+    working_dir: /src/web
+    environment:
+      VITE_HMR_HOST: localhost
+    command: ["sh", "/src/web/dev-entrypoint.sh"]
+    healthcheck:
+      disable: true
+    ports:
+      - "5173:5173"
+
+  # Caddy is part of the canonical stack (Story 22.3) but its production
+  # depends_on requires service_healthy on api/streaming/web — none of
+  # which expose the production /healthz in dev. Hide it behind a
+  # profile so `make dev` doesn't block waiting for it.
+  caddy:
+    profiles: ["with-caddy"]
+
+volumes:
+  go-build-cache:
+  go-mod-cache:
+  uv-cache:
+  pnpm-store:
+  web-node-modules:

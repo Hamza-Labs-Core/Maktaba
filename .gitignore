@@ -147,6 +147,17 @@ streaming/streaming
 streaming/bin/
 tools/migration-lint/migration-lint
 
+# Live-reload tmp dirs (air) — Story 22.8
+api/tmp/
+streaming/tmp/
+
+# direnv (Story 22.8). `.envrc.example` is checked in; the real file is local.
+.envrc
+
+# Web (Vite/Node) — Story 22.8
+web/dist/
+web/node_modules/
+
 # Claude Code runtime metadata
 .claude/scheduled_tasks.lock
 .claude/

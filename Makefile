@@ -88,8 +88,59 @@ export SOURCE_DATE_EPOCH
 
 .PHONY: help
 help:  ## Show this help.
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
+	@awk 'BEGIN{FS = ":[^=]*## "} \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
+		/^[a-zA-Z][a-zA-Z0-9_-]*:[^=]*## / { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' \
+		$(MAKEFILE_LIST)
+
+# ---------------------------------------------------------------------------
+# Local dev workflow (Story 22.8) — same `make` targets CI runs.
+# ---------------------------------------------------------------------------
+
+##@ Local development
+
+DEV_COMPOSE := docker compose \
+	-f deploy/compose/docker-compose.yml \
+	-f deploy/compose/docker-compose.dev.yml
+
+.PHONY: prereqs
+prereqs:  ## Verify host has docker, go, uv, pnpm, git (and report versions).
+	@bash tools/check-prereqs.sh
+
+.PHONY: dev
+dev:  ## Bring up the live-reload stack (postgres, chroma, api, streaming, pipeline, web).
+	$(DEV_COMPOSE) up --build -d
+	@echo ""
+	@echo "Maktaba dev stack is up:"
+	@echo "  api      : http://localhost:8080"
+	@echo "  streaming: http://localhost:8081"
+	@echo "  web      : http://localhost:5173"
+	@echo "  postgres : postgres://maktaba:maktaba@localhost:5432/maktaba"
+	@echo "  chroma   : http://localhost:8000"
+	@echo ""
+	@echo "Tail logs with: make dev-logs"
+
+.PHONY: dev-down
+dev-down:  ## Stop the dev stack but keep volumes (caches, postgres data).
+	$(DEV_COMPOSE) down
+
+.PHONY: dev-clean
+dev-clean:  ## Stop the dev stack and remove volumes (resets caches + db).
+	$(DEV_COMPOSE) down -v
+
+.PHONY: dev-logs
+dev-logs:  ## Tail logs from every dev service.
+	$(DEV_COMPOSE) logs -f --tail=50
+
+.PHONY: dev-build
+dev-build:  ## Rebuild dev images (after changing a Dockerfile.dev).
+	$(DEV_COMPOSE) build
+
+.PHONY: dev-ps
+dev-ps:  ## Show status of dev stack services.
+	$(DEV_COMPOSE) ps
+
+##@ Quality gates
 
 # ---------------------------------------------------------------------------
 # Lint (gate 1)
@@ -157,6 +208,11 @@ test: test-unit test-integration test-e2e  ## Run every tier (unit + integration
 # ---------------------------------------------------------------------------
 # Unit tests (gate 2; Story 20.1 unit tier)
 # ---------------------------------------------------------------------------
+
+##@ Tests
+
+.PHONY: test
+test: test-unit  ## Default test target: the unit tier (no network, no sudo).
 
 .PHONY: test-unit
 test-unit: test-unit-go test-unit-py test-unit-web  ## Unit tier (Story 20.1).
@@ -244,6 +300,8 @@ perf-ci-inner:
 # Build (gate 6) — Story 22.2 reproducibility envelope
 # ---------------------------------------------------------------------------
 
+##@ Build
+
 .PHONY: build
 build: build-go build-web  ## Build every artifact for $$GOOS/$$GOARCH (reproducible).
 
@@ -316,9 +374,22 @@ verify-reproducibility:  ## Build twice, diff sha256 sums (TC1).
 sbom:  ## Generate CycloneDX SBOMs for every component (stub).
 	@bash tools/sbom.sh
 
+##@ Formatting
+
+.PHONY: format
+format:  ## Auto-format every language (in-place).
+	@for mod in $(GO_MODULES); do \
+		echo "==> gofmt -w $$mod"; \
+		gofmt -w $$mod; \
+	done
+	cd $(PIPELINE_DIR) && uv run ruff format .
+	pnpm -C $(WEB_DIR) run format:write
+
 # ---------------------------------------------------------------------------
 # Lockfile drift gates (Story 22.2 TC3)
 # ---------------------------------------------------------------------------
+
+##@ Misc
 
 .PHONY: lockfile-check
 lockfile-check:  ## Fail if uv.lock / pnpm-lock.yaml / go.mod drift from sources.
