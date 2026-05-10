@@ -37,21 +37,11 @@ land at the next free integer (no gaps, no reservations).
 | `0013` | `0013_segment_commit_function.sql` | [plan-03-06](../../specs/epics/03-transcription/plan-03-06-segment-commit.md) | 0002, 0012 | `commit_segment(...)` PL/pgSQL function + `AFTER INSERT` NOTIFY trigger. |
 | `0014` | `0014_transcript_segments_speaker_index.sql` | [plan-03-09](../../specs/epics/03-transcription/plan-03-09-diarization.md) | 0012 | Index on `transcript_segments(transcript_id, speaker)` for diarization. |
 | `0015` | `0015_subtitle_files.sql` | [plan-04-03](../../specs/epics/04-subtitles/plan-04-03-external-discovery.md) | 0001, 0012 | Canonical `subtitle_files` table with `is_embedded`, `is_external`, partial unique index, NOTIFY trigger. |
-| `0016` | `0016_transcript_segments_view.sql` | [plan-04-05](../../specs/epics/04-subtitles/plan-04-05-live-vtt-contract.md) | 0012 | `transcript_segments_v` view for live-VTT rendering. |
-| `0017` | `0017_transcript_units.sql` | [plan-05-01](../../specs/epics/05-search-indexing/plan-05-01-unit-chunking.md) | 0012 | `transcript_units` table (search chunks). |
-| `0018` | `0018_transcript_units_notify.sql` | [plan-05-03](../../specs/epics/05-search-indexing/plan-05-03-chroma-vector.md) | 0017 | `pg_notify('transcript_units.committed', …)` trigger. |
-| `0019` | `0019_fts_tsvector_arabic_config.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0017 | Arabic-aware text-search configuration + `maktaba_normalize` function. |
-| `0020` | `0020_transcripts_fts_virtual_table.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0017 | SQLite FTS5 virtual table (architecture §8.3). |
-| `0021` | `0021_transcript_units_tsv_column.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0017, 0019 | Generated `transcript_units.tsv` column. |
-| `0022` | `0022_transcripts_fts_triggers_with_normalize.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0020 | SQLite FTS5 sync triggers using `maktaba_normalize`. |
-| `0023` | `0023_transcript_units_tsv_indexes.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0021 | GIN index on `transcript_units.tsv`. |
-| `0024` | `0024_transcripts_fts_view_postgres.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0021 | Compatibility view (Postgres) for clients expecting `transcripts_fts`. |
-| `0025` | `0025_incremental_indexing.sql` | [plan-05-05](../../specs/epics/05-search-indexing/plan-05-05-incremental-indexing.md) | 0017 | `transcripts.last_indexed_segment_seq`, `transcript_units.indexed_at_in_chroma`, `vector_index_dead_letter`. |
-| `0026` | `0026_chapters.sql` | [plan-05-07](../../specs/epics/05-search-indexing/plan-05-07-chapter-inference.md) | 0001 | `chapters` table (architecture §8.1; supports `source` discriminator). |
-| `0027` | `0027_search_suggestion_terms.sql` | [plan-05-06](../../specs/epics/05-search-indexing/plan-05-06-query-suggestions.md) | 0017 | `search_suggestion_terms` table (typeahead corpus). |
+| `0016` | `0016_transcript_segments_fts.sql` | [plan-05-02](../../specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md) | 0012 | Generated `transcript_segments.search_tsv` (Postgres) + GIN index, with SQLite FTS5 virtual-table mirror. Uses `maktaba_search` text-search configuration (`unaccent`-aware, mixed-language safe). |
 | `0028` | `0028_jobs_progress_notify.sql` | [plan-06-03](../../specs/epics/06-job-queue/plan-06-03-heartbeat-progress.md) | 0002, 0013 | `pg_notify('jobs.progress', …)` trigger. |
 | `0029` | `0029_users.sql` | [plan-10-01](../../specs/epics/10-auth-security/plan-10-01-user-store.md) | — | `users` table (Epic 10 README §"users") + sentinel admin row for single-user mode. |
 | `0030` | `0030_library_acl.sql` | [plan-10-13](../../specs/epics/10-auth-security/plan-10-13-permission-model.md) | 0001, 0029 | `library_acl` table (Story 10.13 — per-user library read scope). |
+| `0031` | `0031_search_history.sql` | [plan-05-06](../../specs/epics/05-search-indexing/plan-05-06-query-suggestions.md) | 0029 | `search_history` table — typeahead/recents corpus keyed on `query_norm`. |
 
 ---
 
