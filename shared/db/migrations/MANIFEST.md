@@ -53,6 +53,13 @@ land at the next free integer (no gaps, no reservations).
 | `0040` | `0040_devices.sql` | [plan-07-22](../../specs/epics/07-api-server/plan-07-22-devices-register.md) | 0029 | `devices` (push notification token registry; soft-revocation). |
 | `0041` | `0041_user_recs.sql` | [plan-07-21](../../specs/epics/07-api-server/plan-07-21-recommendations.md) | 0001, 0029 | `user_recs` (For-You rail; nightly Pipeline aggregation). |
 | `0042` | `0042_app_settings.sql` | [plan-07-15](../../specs/epics/07-api-server/plan-07-15-settings-system.md) | 0029 | `app_settings` + `settings_changed` NOTIFY trigger. |
+| `0043` | `0043_library_roots.sql` | [plan-09-16](../../specs/epics/09-library-management/plan-09-16-multi-root-overlap.md) | 0001 | `library_roots` canonical normalized store + back-fill from transitional `libraries.roots TEXT[]`. |
+| `0044` | `0044_library_sweeps.sql` | [plan-09-03](../../specs/epics/09-library-management/plan-09-03-periodic-sweep.md) | 0001 | `library_sweeps` telemetry rows (one per periodic sweep run). |
+| `0045` | `0045_media_features.sql` | [plan-09-10](../../specs/epics/09-library-management/plan-09-10-content-type-classifier.md) | 0001 | `media_features` (probe-stage feature blob) + `videos.content_type` column + index. |
+| `0046` | `0046_library_topics.sql` | [plan-09-09](../../specs/epics/09-library-management/plan-09-09-topic-tag.md) | 0001 | `library_topics` (k-means centroids) + `video_topics` (per-video topic assignment). |
+| `0047` | `0047_library_stats_cache.sql` | [plan-09-07](../../specs/epics/09-library-management/plan-09-07-library-stats.md) | 0001 | `library_stats_cache` (denormalized counts; backs <50 ms `/stats`). |
+| `0048` | `0048_speakers_voiceprint.sql` | [plan-09-11](../../specs/epics/09-library-management/plan-09-11-speakers.md) | 0001, 0035 | `speakers.library_id` + `speakers.voiceprint` + `speakers.unknown_index` (per-library voiceprint matching). |
+| `0049` | `0049_chapter_infer_stage.sql` | [plan-09-18](../../specs/epics/09-library-management/plan-09-18-chapter-inference.md) | 0002 | Extend `processing_jobs.stage` CHECK with `topic_recluster`, `topic_assign`, `categorize`, `chapter_infer`. |
 
 ---
 
