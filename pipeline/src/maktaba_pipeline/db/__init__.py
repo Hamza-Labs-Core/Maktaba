@@ -20,12 +20,14 @@ from __future__ import annotations
 from .jobs import (
     LIVE_STATES,
     TERMINAL_STATES,
+    DBConn,
     EnqueueResult,
     Job,
     JobState,
     Stage,
     enqueue,
 )
+from .jobs_claim import claim_one, claim_one_pg, claim_one_sqlite
 from .pubsub import (
     JOBS_FLAG_SET,
     JOBS_FORCE_PAUSE,
@@ -49,11 +51,15 @@ __all__ = [
     "LIVE_STATES",
     "TERMINAL_STATES",
     "VIDEOS_NEW",
+    "DBConn",
     "EnqueueResult",
     "Job",
     "JobState",
     "PubsubBus",
     "Stage",
+    "claim_one",
+    "claim_one_pg",
+    "claim_one_sqlite",
     "enqueue",
     "get_bus",
     "reset_bus",

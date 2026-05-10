@@ -46,7 +46,7 @@ The previously-used `job.pending`, `job.progress`, `job.heartbeat`,
 | # | Status | Title | File |
 |---|--------|-------|------|
 | 6.1 | ✅ landed | Schema, migration, indexes | [story-06-01-schema-indexes.md](story-06-01-schema-indexes.md) |
-| 6.2 | | Claim loop | [story-06-02-claim-loop.md](story-06-02-claim-loop.md) |
+| 6.2 | ✅ landed | Claim loop | [story-06-02-claim-loop.md](story-06-02-claim-loop.md) |
 | 6.3 | | Heartbeat & progress (with `jobs.*` channels) | [story-06-03-heartbeat-progress.md](story-06-03-heartbeat-progress.md) |
 | 6.4 | | Pause, resume, cancel via request flags | [story-06-04-pause-resume-cancel.md](story-06-04-pause-resume-cancel.md) |
 | 6.5 | | Backoff and retry | [story-06-05-backoff-retry.md](story-06-05-backoff-retry.md) |
