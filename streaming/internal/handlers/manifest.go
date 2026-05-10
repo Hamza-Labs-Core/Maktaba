@@ -1,0 +1,188 @@
+package handlers
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
+)
+
+func chiURLParam(r *http.Request, name string) string { return chi.URLParam(r, name) }
+
+// SessionStreamReader exposes the subset of the session store the
+// HTTP-side handlers need. Test fakes implement it directly.
+type SessionStreamReader interface {
+	Get(ctx context.Context, id uuid.UUID) (*session.Row, bool, error)
+	Touch(ctx context.Context, id uuid.UUID, at time.Time) error
+}
+
+// HLSDirResolver maps a session id to its on-disk HLS folder. Backed
+// by the cache layout in production.
+type HLSDirResolver interface {
+	HLSDir(sessionID string) string
+}
+
+// ManifestHandler serves Story 8.5/8.6 — master.m3u8, the per-rendition
+// index.m3u8, manifest.mpd, and the segments under each.
+type ManifestHandler struct {
+	Sessions SessionStreamReader
+	Layout   HLSDirResolver
+	Now      func() time.Time
+}
+
+// ServeMaster handles GET /stream/{session_id}/manifest.{m3u8,mpd}.
+func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
+	sub := auth.SubjectFromContext(r.Context())
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		httpx.Write(w, http.StatusBadRequest, "bad-session-id", "session id not a UUID", err.Error())
+		return
+	}
+	row, ok, err := h.Sessions.Get(r.Context(), id)
+	if err != nil || !ok {
+		httpx.Write(w, http.StatusNotFound, "session-not-found", "session not found", "")
+		return
+	}
+
+	// Path determines which manifest to look at.
+	wantDASH := strings.HasSuffix(r.URL.Path, ".mpd")
+	wantHLS := strings.HasSuffix(r.URL.Path, ".m3u8")
+	if (wantDASH && row.Format != session.FormatDASH) || (wantHLS && row.Format != session.FormatHLS) {
+		httpx.Write(w, http.StatusConflict, "format-mismatch",
+			"session format mismatch",
+			fmt.Sprintf("session.format=%s url=%s", row.Format, r.URL.Path))
+		return
+	}
+
+	dir := h.Layout.HLSDir(sub)
+	var path string
+	switch {
+	case wantDASH:
+		path = filepath.Join(dir, "manifest.mpd")
+	default:
+		path = filepath.Join(dir, "master.m3u8")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			httpx.Write(w, http.StatusNotFound, "manifest-not-found",
+				"manifest not yet on disk",
+				"the FFmpeg subprocess hasn't written the master playlist; client should retry")
+			return
+		}
+		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", manifestContentType(wantDASH))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// ServeRenditionIndex handles /stream/{session_id}/{rendition}/index.m3u8.
+func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Request) {
+	sub := auth.SubjectFromContext(r.Context())
+	rendition := chiURLParam(r, "rendition")
+	if rendition == "" {
+		httpx.Write(w, http.StatusBadRequest, "missing-rendition", "rendition path missing", "")
+		return
+	}
+	dir := filepath.Join(h.Layout.HLSDir(sub), rendition)
+	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8"))
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts and
+// updates the session heartbeat (Story 8.9 AC-2).
+func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
+	sub := auth.SubjectFromContext(r.Context())
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		httpx.Write(w, http.StatusBadRequest, "bad-session-id", "session id not a UUID", err.Error())
+		return
+	}
+	rendition := chiURLParam(r, "rendition")
+	segment := chiURLParam(r, "segment")
+	if rendition == "" || segment == "" {
+		httpx.Write(w, http.StatusBadRequest, "missing-segment", "segment path incomplete", "")
+		return
+	}
+
+	path := filepath.Join(h.Layout.HLSDir(sub), rendition, segment)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// AC-3: 404 if segment not yet on disk. Players will refetch
+		// the variant playlist and try again.
+		httpx.Write(w, http.StatusNotFound, "segment-not-found",
+			"segment not yet written by FFmpeg", err.Error())
+		return
+	}
+
+	now := time.Now().UTC()
+	if h.Now != nil {
+		now = h.Now()
+	}
+	_ = h.Sessions.Touch(r.Context(), id, now)
+
+	w.Header().Set("Content-Type", segmentContentType(segment))
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func manifestContentType(isDASH bool) string {
+	if isDASH {
+		return "application/dash+xml"
+	}
+	return "application/vnd.apple.mpegurl"
+}
+
+func segmentContentType(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".ts"):
+		return "video/MP2T"
+	case strings.HasSuffix(name, ".m4s"):
+		return "video/iso.segment"
+	case strings.HasSuffix(name, ".mp4"):
+		return "video/mp4"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// BuildMasterPlaylist composes the HLS master m3u8 from the ladder
+// (Story 8.5 §4.3 shape). Used both by the FFmpeg orchestrator (which
+// writes it to disk for serving) and by tests.
+func BuildMasterPlaylist(ladder []ffmpeg.Rendition) []byte {
+	var sb strings.Builder
+	sb.WriteString("#EXTM3U\n")
+	sb.WriteString("#EXT-X-VERSION:6\n")
+	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
+	for _, r := range ladder {
+		sb.WriteString(fmt.Sprintf(
+			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"avc1.4d4028,mp4a.40.2\"\n",
+			r.BitrateKbps*1000, r.Width, r.Height,
+		))
+		sb.WriteString(r.Name + "/index.m3u8\n")
+	}
+	return []byte(sb.String())
+}
