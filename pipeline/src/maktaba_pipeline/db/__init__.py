@@ -28,6 +28,18 @@ from .jobs import (
     enqueue,
 )
 from .jobs_claim import claim_one, claim_one_pg, claim_one_sqlite
+from .jobs_progress import ProgressTick, tick_heartbeat, tick_progress
+from .jobs_reaper import REAPER_ADVISORY_LOCK_KEY, ReapedRow, reap_once
+from .jobs_state import (
+    FailureOutcome,
+    StageError,
+    mark_cancelled,
+    mark_done,
+    mark_failed_or_retry,
+    mark_paused,
+    read_flags,
+    retry_failed,
+)
 from .pubsub import (
     JOBS_FLAG_SET,
     JOBS_FORCE_PAUSE,
@@ -49,18 +61,32 @@ __all__ = [
     "JOBS_PROGRESS",
     "JOBS_REAPED",
     "LIVE_STATES",
+    "REAPER_ADVISORY_LOCK_KEY",
     "TERMINAL_STATES",
     "VIDEOS_NEW",
     "DBConn",
     "EnqueueResult",
+    "FailureOutcome",
     "Job",
     "JobState",
+    "ProgressTick",
     "PubsubBus",
+    "ReapedRow",
     "Stage",
+    "StageError",
     "claim_one",
     "claim_one_pg",
     "claim_one_sqlite",
     "enqueue",
     "get_bus",
+    "mark_cancelled",
+    "mark_done",
+    "mark_failed_or_retry",
+    "mark_paused",
+    "read_flags",
+    "reap_once",
     "reset_bus",
+    "retry_failed",
+    "tick_heartbeat",
+    "tick_progress",
 ]

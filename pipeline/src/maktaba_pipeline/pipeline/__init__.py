@@ -18,7 +18,24 @@ keeps each story's responsibility narrow: the claim loop only
 
 from __future__ import annotations
 
+from .backoff import BASE_SEC, CAP_SEC, JITTER_FRAC, compute_backoff
+from .concurrency import (
+    DEFAULT_CONCURRENCY,
+    GPU_STAGES,
+    ConcurrencyManager,
+    Reservation,
+)
+from .control import ForcePauseListener, should_cancel, should_pause
+from .devices import DeviceID, enumerate_devices
+from .heartbeat import DEFAULT_HEARTBEAT_SEC, HeartbeatTask, heartbeat_for
+from .reaper import (
+    DEFAULT_REAPER_INTERVAL_SEC,
+    DEFAULT_STALE_CLAIM_SEC,
+    STALE_TO_HEARTBEAT_RATIO,
+    Reaper,
+)
 from .runner import ClaimLoop, WorkerConfig, install_signal_handlers
+from .shutdown import DEFAULT_SHUTDOWN_GRACE_SEC, ShutdownOrchestrator
 from .wakeup import (
     PgListenWakeup,
     PollOnlyWakeup,
@@ -27,11 +44,33 @@ from .wakeup import (
 )
 
 __all__ = [
+    "BASE_SEC",
+    "CAP_SEC",
+    "DEFAULT_CONCURRENCY",
+    "DEFAULT_HEARTBEAT_SEC",
+    "DEFAULT_REAPER_INTERVAL_SEC",
+    "DEFAULT_SHUTDOWN_GRACE_SEC",
+    "DEFAULT_STALE_CLAIM_SEC",
+    "GPU_STAGES",
+    "JITTER_FRAC",
+    "STALE_TO_HEARTBEAT_RATIO",
     "ClaimLoop",
+    "ConcurrencyManager",
+    "DeviceID",
+    "ForcePauseListener",
+    "HeartbeatTask",
     "PgListenWakeup",
     "PollOnlyWakeup",
     "PubsubWakeup",
+    "Reaper",
+    "Reservation",
+    "ShutdownOrchestrator",
     "WakeupSource",
     "WorkerConfig",
+    "compute_backoff",
+    "enumerate_devices",
+    "heartbeat_for",
     "install_signal_handlers",
+    "should_cancel",
+    "should_pause",
 ]
