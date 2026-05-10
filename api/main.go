@@ -9,7 +9,8 @@
 // mux (port 9100, /healthz + /readyz). Story 7.1 replaces the public
 // mux's placeholder route with the chi-based real router; Story 21.2
 // adds /metrics on the admin port; Story 21.3 wires opt-in OTel
-// tracing.
+// tracing. Stories 10.1/10.6/10.9/10.15 add the auth bootstrap
+// (`adduser`, `keys`, JWKS endpoint, security middleware stack).
 package main
 
 import (
@@ -26,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
@@ -56,6 +58,18 @@ func main() {
 		case "serve":
 			if err := runServe(); err != nil {
 				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "adduser":
+			if err := runAddUser(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "adduser: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "keys":
+			if err := runKeys(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "keys: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -98,6 +112,8 @@ Usage:
 Commands:
   serve      Run the HTTP server (chi router + admin port + /metrics)
   migrate    Run database migrations (see "migrate --help")
+  adduser    Seed the first admin user (Story 10.1 AC-4)
+  keys       Generate or rotate RS256 JWT keys (Story 10.6)
   --version  Print the binary's version
   help       Show this help`)
 }
@@ -154,6 +170,13 @@ func runServe() error {
 	}
 	adminMux.Handle("/metrics", mh)
 
+	// Auth bootstrap (Stories 10.6/10.9/10.15) — keys, admin-token,
+	// CORS, security headers. Tolerates fully-unset env (dev stub).
+	auth, err := initAuth(logger)
+	if err != nil {
+		return err
+	}
+
 	// Public router (chi). The aggregator + version routes live inside
 	// router.New; later stories mount business handlers here.
 	idemStore := idempotency.NewMemoryStore()
@@ -172,11 +195,12 @@ func runServe() error {
 	// cheap; exposing it twice costs nothing.
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/healthz", health.NewLive("api"))
+	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
 	publicMux.Handle("/", r)
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           publicMux,
+		Handler:           auth.applySecurity(publicMux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{
@@ -196,6 +220,26 @@ func runServe() error {
 	go func() {
 		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")
 		errCh <- adminSrv.ListenAndServe()
+	}()
+
+	// Reaper for the rotation overlap window (Story 10.6 AC-4): once
+	// `rotation_overlap_sec` has elapsed since the previous-key was
+	// added, drop it. 60s tick is much finer than the 24h overlap so
+	// the reaper is essentially free.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				if reaped := auth.keys.ReapExpired(now); reaped {
+					logger.Info("auth: reaped previous JWT key after overlap",
+						"event", "auth_keys_reaped")
+				}
+			}
+		}
 	}()
 
 	select {
