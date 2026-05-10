@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
@@ -47,6 +48,18 @@ func main() {
 		case "serve":
 			if err := runServe(); err != nil {
 				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "adduser":
+			if err := runAddUser(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "adduser: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "keys":
+			if err := runKeys(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "keys: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -94,6 +107,8 @@ Usage:
 Commands:
   serve      Run the HTTP server (stub: only /healthz until Story 07)
   migrate    Run database migrations (see "migrate --help")
+  adduser    Seed the first admin user (Story 10.1 AC-4)
+  keys       Generate or rotate RS256 JWT keys (Story 10.6)
   --version  Print the binary's version
   help       Show this help`)
 }
@@ -133,8 +148,14 @@ func runServe() error {
 	warm := warmPeriod()
 	adminMux := health.AdminMux("api", checks, warm)
 
+	auth, err := initAuth(logger)
+	if err != nil {
+		return err
+	}
+
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/api/system/health", system.NewAggregator(buildAggregatorServices()))
+	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
 	// Forward /healthz on the public port too — convenient for compose
 	// stacks that haven't been told about the admin port yet. Liveness
 	// is cheap; exposing it twice costs nothing.
@@ -142,7 +163,7 @@ func runServe() error {
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           publicMux,
+		Handler:           auth.applySecurity(publicMux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	adminSrv := &http.Server{
@@ -162,6 +183,26 @@ func runServe() error {
 	go func() {
 		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")
 		errCh <- adminSrv.ListenAndServe()
+	}()
+
+	// Reaper for the rotation overlap window (Story 10.6 AC-4): once
+	// `rotation_overlap_sec` has elapsed since the previous-key was
+	// added, drop it. 60s tick is much finer than the 24h overlap so
+	// the reaper is essentially free.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				if reaped := auth.keys.ReapExpired(now); reaped {
+					logger.Info("auth: reaped previous JWT key after overlap",
+						"event", "auth_keys_reaped")
+				}
+			}
+		}
 	}()
 
 	select {

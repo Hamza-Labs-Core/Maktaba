@@ -50,6 +50,8 @@ land at the next free integer (no gaps, no reservations).
 | `0026` | `0026_chapters.sql` | [plan-05-07](../../specs/epics/05-search-indexing/plan-05-07-chapter-inference.md) | 0001 | `chapters` table (architecture §8.1; supports `source` discriminator). |
 | `0027` | `0027_search_suggestion_terms.sql` | [plan-05-06](../../specs/epics/05-search-indexing/plan-05-06-query-suggestions.md) | 0017 | `search_suggestion_terms` table (typeahead corpus). |
 | `0028` | `0028_jobs_progress_notify.sql` | [plan-06-03](../../specs/epics/06-job-queue/plan-06-03-heartbeat-progress.md) | 0002, 0013 | `pg_notify('jobs.progress', …)` trigger. |
+| `0029` | `0029_users.sql` | [plan-10-01](../../specs/epics/10-auth-security/plan-10-01-user-store.md) | — | `users` table (Epic 10 README §"users") + sentinel admin row for single-user mode. |
+| `0030` | `0030_library_acl.sql` | [plan-10-13](../../specs/epics/10-auth-security/plan-10-13-permission-model.md) | 0001, 0029 | `library_acl` table (Story 10.13 — per-user library read scope). |
 
 ---
 
