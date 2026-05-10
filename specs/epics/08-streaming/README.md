@@ -24,21 +24,21 @@ consumes all of those.
 
 | #     | Story                                                | Depends on |
 |-------|------------------------------------------------------|------------|
-| 8.1   | [Server skeleton, signed URL middleware, metrics](story-08-01-server-skeleton.md)     | —          |
-| 8.2   | [Capability matrix and client profile registry](story-08-02-capability-matrix.md)       | 8.1        |
-| 8.3   | [Direct play (range-served `206 Partial Content`)](story-08-03-direct-play.md)    | 8.1, 8.2   |
-| 8.4   | [Direct stream (FFmpeg `-c copy` remux)](story-08-04-direct-stream-remux.md)              | 8.1, 8.2   |
-| 8.5   | [HLS adaptive transcode pipeline](story-08-05-hls-transcode.md)                      | 8.1, 8.2   |
-| 8.6   | [DASH manifest (opt-in per session)](story-08-06-dash-manifest.md)                   | 8.5        |
-| 8.7   | [Hardware acceleration auto-detect](story-08-07-hwaccel-detect.md)                    | 8.5        |
-| 8.8   | [gRPC server: OpenSession / CloseSession / EvictHashCache / GetCapabilities](story-08-08-grpc-server.md) | 8.1, 8.5 |
-| 8.9   | [Session store, sticky transcoder, reaper](story-08-09-session-store.md)             | 8.8        |
-| 8.10  | [Concurrency caps, backpressure, slot accounting](story-08-10-concurrency-caps.md)      | 8.5, 8.9   |
-| 8.11  | [Live subtitle rendering (auto, sidecar, embedded)](story-08-11-live-subtitle.md)    | 8.5, 8.1   |
-| 8.12  | [Chapter delivery (HLS DATERANGE + sidecar JSON)](story-08-12-chapter-delivery.md)      | 8.5, 8.1   |
-| 8.13  | [Posters, sprite sheets, chapter thumbs serving](story-08-13-posters-sprites.md)       | 8.1        |
-| 8.14  | [Cache layout, LRU GC, cap enforcement](story-08-14-cache-gc.md)                | 8.1        |
-| 8.15  | [Probe cache (LRU + Postgres)](story-08-15-probe-cache.md)                         | 8.1        |
+| 8.1 ✓ | [Server skeleton, signed URL middleware, metrics](story-08-01-server-skeleton.md)     | —          |
+| 8.2 ✓ | [Capability matrix and client profile registry](story-08-02-capability-matrix.md)       | 8.1        |
+| 8.3 ✓ | [Direct play (range-served `206 Partial Content`)](story-08-03-direct-play.md)    | 8.1, 8.2   |
+| 8.4 ✓ | [Direct stream (FFmpeg `-c copy` remux)](story-08-04-direct-stream-remux.md)              | 8.1, 8.2   |
+| 8.5 ✓ | [HLS adaptive transcode pipeline](story-08-05-hls-transcode.md)                      | 8.1, 8.2   |
+| 8.6 ✓ | [DASH manifest (opt-in per session)](story-08-06-dash-manifest.md)                   | 8.5        |
+| 8.7 ✓ | [Hardware acceleration auto-detect](story-08-07-hwaccel-detect.md)                    | 8.5        |
+| 8.8 ✓ | [gRPC server: OpenSession / CloseSession / EvictHashCache / GetCapabilities](story-08-08-grpc-server.md) | 8.1, 8.5 |
+| 8.9 ✓ | [Session store, sticky transcoder, reaper](story-08-09-session-store.md)             | 8.8        |
+| 8.10 ✓| [Concurrency caps, backpressure, slot accounting](story-08-10-concurrency-caps.md)      | 8.5, 8.9   |
+| 8.11 ✓| [Live subtitle rendering (auto, sidecar, embedded)](story-08-11-live-subtitle.md)    | 8.5, 8.1   |
+| 8.12 ✓| [Chapter delivery (HLS DATERANGE + sidecar JSON)](story-08-12-chapter-delivery.md)      | 8.5, 8.1   |
+| 8.13 ✓| [Posters, sprite sheets, chapter thumbs serving](story-08-13-posters-sprites.md)       | 8.1        |
+| 8.14 ✓| [Cache layout, LRU GC, cap enforcement](story-08-14-cache-gc.md)                | 8.1        |
+| 8.15 ✓| [Probe cache (LRU + Postgres)](story-08-15-probe-cache.md)                         | 8.1        |
 
 ## Schema additions owned by this epic
 

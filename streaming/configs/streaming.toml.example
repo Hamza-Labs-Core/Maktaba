@@ -1,0 +1,66 @@
+# streaming.toml — Maktaba Streaming Service configuration
+#
+# Each section is also reachable via environment variables (see
+# streaming/internal/config/config.go). Production deployments mount
+# this file or pass the env vars; v1 reads env-only.
+
+[server]
+# Public byte-pumping listener.
+addr            = "0.0.0.0:8081"
+# Read-header timeout (ms). Range-served large files are unbounded
+# on the body side.
+read_header_ms  = 5000
+# Total in-flight write timeout (0 = unlimited).
+write_ms        = 0
+# Graceful shutdown budget (ms).
+shutdown_ms     = 30000
+
+[admin]
+# /healthz + /readyz live here, separate from byte traffic so a hot
+# HLS handler can't starve liveness probes.
+addr            = "0.0.0.0:9101"
+metrics_addr    = "0.0.0.0:9091"
+
+[jwt]
+# JWKS endpoint exposed by the API (Story 10.6). Streaming verifies
+# every signed URL against this keyset.
+jwks_url               = "http://api.maktaba.local/.well-known/jwks.json"
+# Refresh interval (seconds). Failures keep the cached key.
+jwks_refresh_sec       = 300
+# Clock skew leeway (seconds) — covers ±60s API/Streaming clock drift.
+clock_skew_leeway_sec  = 60
+
+[cache]
+# Where remux/posters/sprites/thumbs/subs/probe live.
+root            = "/var/maktaba/cache/streaming"
+# Combined byte cap across all non-HLS tiers. HLS sessions are
+# excluded because they're purged on session close.
+max_gib         = 50
+# How often the LRU GC sweeper runs (seconds).
+gc_every_sec    = 300
+
+[ffmpeg]
+binary          = "ffmpeg"
+probe_binary    = "ffprobe"
+
+[hwaccel]
+# 'auto' | 'videotoolbox' | 'nvenc' | 'qsv' | 'software'
+prefer          = "auto"
+
+[transcode]
+# Concurrent transcodes per host. 0 = auto-derive (num_cores / 4, min 1).
+max_concurrent  = 0
+# Sessions waiting for a slot (state='queued') before we surface
+# RESOURCE_EXHAUSTED on OpenSession.
+queue_depth     = 4
+
+[database]
+# Postgres URL for streaming_sessions and the probe cache fallback.
+url             = "postgres://maktaba@localhost/maktaba?sslmode=disable"
+
+[tls]
+# TLS termination is off by default; sit behind nginx/Caddy in
+# multi-host installs. For single-host installs, set enabled=true.
+enabled         = false
+cert_file       = ""
+key_file        = ""
