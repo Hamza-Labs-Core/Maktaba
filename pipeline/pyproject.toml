@@ -8,9 +8,18 @@ dependencies = [
     "blake3>=1.0.8",
     "structlog>=24.0",
     "watchdog>=4.0.0",
+    "regex>=2024.5.15",
 ]
 
 [project.optional-dependencies]
+# Heavy ML deps are opt-in: unit tests exercise the search modules with
+# fake clients, so the pipeline package can install without ChromaDB or
+# torch when only the scanner/orchestrator are needed.
+search = [
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "numpy>=1.26",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
