@@ -1,0 +1,72 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Maktaba",
+  "version": "0.1.0",
+  "identifier": "dev.maktaba.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --filter maktaba-web dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --filter maktaba-web build",
+    "frontendDist": "../../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Maktaba",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Visible",
+        "fileDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' data: blob:; connect-src 'self' http://localhost:* ws://localhost:* https://*; media-src 'self' blob: data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline';"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "copyright": "© 2026 Hamza Labs",
+    "shortDescription": "Maktaba — your private video library",
+    "longDescription": "Maktaba indexes, transcribes, and streams your personal Islamic-content video collection. Self-hosted; no cloud lock-in.",
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "frameworks": [],
+      "exceptionDomain": ""
+    },
+    "windows": {
+      "wix": {
+        "language": ["en-US"]
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "REPLACE_WITH_PUBKEY",
+      "endpoints": [
+        "https://updates.maktaba.dev/{{target}}/{{arch}}/{{current_version}}"
+      ]
+    }
+  }
+}

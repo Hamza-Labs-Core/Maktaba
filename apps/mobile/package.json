@@ -1,0 +1,35 @@
+{
+  "name": "maktaba-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Capacitor 6 wrapper for iOS + Android. Reuses web/dist as the JS bundle; native shells live in ios/ and android/ (scaffolded by `npx cap add`).",
+  "type": "module",
+  "scripts": {
+    "build:web": "pnpm --filter maktaba-web build",
+    "sync": "cap sync",
+    "ios:open": "cap open ios",
+    "android:open": "cap open android",
+    "ios:run": "cap run ios",
+    "android:run": "cap run android",
+    "doctor": "cap doctor"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/network": "^6.0.3",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor/push-notifications": "^6.0.2",
+    "@capacitor/share": "^6.0.2",
+    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

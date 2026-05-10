@@ -9,8 +9,10 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules", "mockups", "wiki-app"]
+  "exclude": ["dist", "node_modules", "mockups", "wiki-app", "design-system"]
 }

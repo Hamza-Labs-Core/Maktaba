@@ -60,6 +60,8 @@ land at the next free integer (no gaps, no reservations).
 | `0047` | `0047_library_stats_cache.sql` | [plan-09-07](../../specs/epics/09-library-management/plan-09-07-library-stats.md) | 0001 | `library_stats_cache` (denormalized counts; backs <50 ms `/stats`). |
 | `0048` | `0048_speakers_voiceprint.sql` | [plan-09-11](../../specs/epics/09-library-management/plan-09-11-speakers.md) | 0001, 0035 | `speakers.library_id` + `speakers.voiceprint` + `speakers.unknown_index` (per-library voiceprint matching). |
 | `0049` | `0049_chapter_infer_stage.sql` | [plan-09-18](../../specs/epics/09-library-management/plan-09-18-chapter-inference.md) | 0002 | Extend `processing_jobs.stage` CHECK with `topic_recluster`, `topic_assign`, `categorize`, `chapter_infer`. |
+| `0050` | `0050_web_sessions.sql` | [plan-10-02](../../specs/epics/10-auth-security/plan-10-02-web-login.md) | 0029 | `web_sessions` (cookie-backed SPA session store with CSRF token + active/reaper indexes). |
+| `0051` | `0051_refresh_tokens.sql` | [plan-10-03](../../specs/epics/10-auth-security/plan-10-03-native-login.md) | 0029, 0040 | `refresh_tokens` (opaque token + argon2id hash, family rotation, device link). |
 
 ---
 
