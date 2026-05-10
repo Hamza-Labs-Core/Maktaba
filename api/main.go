@@ -6,8 +6,11 @@
 // healthcheck to; Story 22.4 added the `migrate` subcommand; Story
 // 21.1 wired the structured logger; Story 21.4 split serve into a
 // public mux (port 8080, /api/system/health aggregator) and an admin
-// mux (port 9100, /healthz + /readyz). Story 07.x replaces the public
-// mux's placeholder route with the real HTTP server.
+// mux (port 9100, /healthz + /readyz). Story 7.1 replaces the public
+// mux's placeholder route with the chi-based real router; Story 21.2
+// adds /metrics on the admin port; Story 21.3 wires opt-in OTel
+// tracing. Stories 10.1/10.6/10.9/10.15 add the auth bootstrap
+// (`adduser`, `keys`, JWKS endpoint, security middleware stack).
 package main
 
 import (
@@ -19,24 +22,31 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
+	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
+
+// shutdownGrace is the total budget for in-flight requests to drain
+// before the process exits. Story 7.1 AC-3: default 30 s, overridable
+// via $MAKTABA_SHUTDOWN_GRACE.
+const defaultShutdownGrace = 30 * time.Second
 
 func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "--version":
-			// Plain stdout — `--version` is parsed by tooling, not
-			// humans. Initialising the logger first would emit a startup
-			// line and break that contract.
 			fmt.Fprintln(os.Stdout, version.String())
 			return
 		case "migrate":
@@ -75,11 +85,9 @@ func main() {
 		"build_date", version.BuildDate,
 		"event", "startup",
 	)
-	logger.Info("stub server: pass `serve` to launch the placeholder HTTP server, or `migrate` to apply migrations")
+	logger.Info("stub server: pass `serve` to launch the API, or `migrate` to apply migrations")
 }
 
-// initLogger configures the global structured logger from environment.
-// Idempotent: subsequent calls return the cached instance.
 func initLogger() *slog.Logger {
 	return mlog.Init(mlog.Options{
 		Service: "api",
@@ -88,9 +96,6 @@ func initLogger() *slog.Logger {
 	})
 }
 
-// env returns the deployment environment (prod/dev/test). Defaults to
-// "dev" when MAKTABA_ENV is unset, so a developer running `go run .`
-// gets human-readable text logs.
 func env() string {
 	if v := os.Getenv("MAKTABA_ENV"); v != "" {
 		return v
@@ -105,7 +110,7 @@ Usage:
   maktaba-api <command> [flags]
 
 Commands:
-  serve      Run the HTTP server (stub: only /healthz until Story 07)
+  serve      Run the HTTP server (chi router + admin port + /metrics)
   migrate    Run database migrations (see "migrate --help")
   adduser    Seed the first admin user (Story 10.1 AC-4)
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
@@ -113,20 +118,19 @@ Commands:
   help       Show this help`)
 }
 
-// runServe stands up two HTTP servers:
+// runServe stands up three HTTP servers:
 //
-//   - The "public" server on $MAKTABA_HTTP_ADDR (default :8080) carries
-//     the API's user-facing routes — currently only the
-//     /api/system/health aggregator until Epic 07 lands the real
-//     router.
-//   - The "admin" server on $MAKTABA_ADMIN_ADDR (default :9100) carries
-//     the orchestrator's probes — /healthz and /readyz. Plan §0:
-//     bound to the admin port so a misbehaving public-port handler
-//     can't take readiness down with it, and so the probes are
-//     trivially firewallable.
+//   - Public on $MAKTABA_HTTP_ADDR (default :8080) carrying the API's
+//     user-facing routes (chi router; Story 7.1).
+//   - Admin on $MAKTABA_ADMIN_ADDR (default :9100) carrying the
+//     orchestrator's probes (/healthz + /readyz; Story 21.4) and
+//     /metrics (Story 21.2 — bound to the admin port so a misconfigured
+//     ingress can't expose it without explicit operator action).
+//   - When $MAKTABA_METRICS_PUBLIC_ADDR is set, /metrics also runs on
+//     that address with a bearer token. Off by default (Story 21.2 AC-4).
 //
-// Both servers share a graceful-shutdown context so SIGINT / SIGTERM
-// drains them together with a 10 s budget.
+// All three share a graceful-shutdown context so SIGINT / SIGTERM
+// drains them together.
 func runServe() error {
 	logger := initLogger()
 
@@ -139,32 +143,65 @@ func runServe() error {
 		adminAddr = ":9100"
 	}
 
-	// Build the readiness checks. The DB check only runs when
-	// $DATABASE_URL is set so `serve` still works in the stub-stage
-	// integration tests that don't bring up Postgres. Once Story 19.x
-	// owns config, this block moves into the config-driven wiring.
-	checks := buildChecks(logger)
+	// OTel tracing — opt-in. Empty endpoint = noop tracer (no outbound
+	// connections). Story 21.3 AC-4.
+	traceShutdown, err := tracing.Init(context.Background(), tracing.Config{
+		Service:      "api",
+		Env:          env(),
+		Version:      version.Version,
+		OTLPEndpoint: os.Getenv("MAKTABA_OTLP_ENDPOINT"),
+		SampleRatio:  0.01,
+	})
+	if err != nil {
+		logger.Warn("tracing init failed; continuing with noop tracer",
+			"err", err, "event", "tracing_init_failed")
+	}
 
+	checks := buildChecks(logger)
 	warm := warmPeriod()
 	adminMux := health.AdminMux("api", checks, warm)
 
+	// /metrics on admin port. The handler is bound by NewHandler with
+	// Public=false (no bearer required) because the admin port is
+	// already firewalled in production deploys.
+	mh, err := metrics.NewHandler(metrics.Config{Bind: adminAddr})
+	if err != nil {
+		return fmt.Errorf("metrics handler: %w", err)
+	}
+	adminMux.Handle("/metrics", mh)
+
+	// Auth bootstrap (Stories 10.6/10.9/10.15) — keys, admin-token,
+	// CORS, security headers. Tolerates fully-unset env (dev stub).
 	auth, err := initAuth(logger)
 	if err != nil {
 		return err
 	}
 
-	publicMux := http.NewServeMux()
-	publicMux.Handle("/api/system/health", system.NewAggregator(buildAggregatorServices()))
-	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
+	// Public router (chi). The aggregator + version routes live inside
+	// router.New; later stories mount business handlers here.
+	idemStore := idempotency.NewMemoryStore()
+	go runIdempotencySweep(idemStore)
+
+	r := router.New(router.Deps{
+		IdempotencyStore:   idemStore,
+		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
+		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
+		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
+		AggregatorServices: buildAggregatorServices(),
+	})
+
 	// Forward /healthz on the public port too — convenient for compose
-	// stacks that haven't been told about the admin port yet. Liveness
-	// is cheap; exposing it twice costs nothing.
+	// stacks that haven't been told about the admin port. Liveness is
+	// cheap; exposing it twice costs nothing.
+	publicMux := http.NewServeMux()
 	publicMux.Handle("/healthz", health.NewLive("api"))
+	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
+	publicMux.Handle("/", r)
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
 		Handler:           auth.applySecurity(publicMux),
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{
 		Addr:              adminAddr,
@@ -208,18 +245,22 @@ func runServe() error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutting down", "event", "http_shutdown")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace())
 		defer cancel()
 		errPublic := publicSrv.Shutdown(shutdownCtx)
 		errAdmin := adminSrv.Shutdown(shutdownCtx)
+		_ = traceShutdown(shutdownCtx)
+		// EC: a request that exceeds the grace is forcibly dropped via
+		// Close so the listener doesn't linger past the budget.
+		_ = publicSrv.Close()
+		_ = adminSrv.Close()
 		return errors.Join(errPublic, errAdmin)
 	case err := <-errCh:
-		// Whichever server failed first — collect it, then ask the
-		// other to shut down cleanly so we don't leak a goroutine.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = publicSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
+		_ = traceShutdown(shutdownCtx)
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
@@ -227,15 +268,47 @@ func runServe() error {
 	}
 }
 
+// runIdempotencySweep deletes idempotency-key entries older than 24 h
+// every 5 min. Story 7.1's TTL-bounded growth contract.
+func runIdempotencySweep(s *idempotency.MemoryStore) {
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for range t.C {
+		_, _ = s.SweepExpired(context.Background(), 24*time.Hour)
+	}
+}
+
+// shutdownGrace honours $MAKTABA_SHUTDOWN_GRACE (e.g. "30s"); falls
+// back to defaultShutdownGrace when unset or unparseable.
+func shutdownGrace() time.Duration {
+	v := os.Getenv("MAKTABA_SHUTDOWN_GRACE")
+	if v == "" {
+		return defaultShutdownGrace
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return defaultShutdownGrace
+	}
+	return d
+}
+
+func envIntDefault(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
 // buildChecks assembles the readiness check set from the runtime
 // environment. The list is deliberately bounded — every check costs a
 // real round-trip every time the orchestrator polls, so we keep it to
 // the dependencies that, if absent, mean the API genuinely cannot
 // serve traffic.
-//
-// EC3 in the story: SQLite mode skips Postgres-specific checks. The
-// stub serve path treats $DATABASE_URL as the on/off switch; Story
-// 19.x owns the config driver-detection.
 func buildChecks(logger *slog.Logger) []health.Check {
 	checks := []health.Check{}
 
@@ -245,21 +318,12 @@ func buildChecks(logger *slog.Logger) []health.Check {
 			logger.Warn("readiness: skipping db check, sql.Open failed",
 				"err", err, "event", "readiness_check_skipped")
 		} else {
-			// 1 conn cap: readiness must not contend with the API's
-			// real query pool. PingContext below the cap is enough to
-			// satisfy AC2's "≥ 1 healthy conn".
 			db.SetMaxOpenConns(1)
 			checks = append(checks, &health.DBPing{DB: db})
 		}
 	}
 
 	if peers := os.Getenv("MAKTABA_GRPC_PEERS"); peers != "" {
-		// Comma-separated `name=host:port` pairs. Plan §3 sketches a
-		// gRPC connectivity check; until the gRPC clients are wired
-		// in (Story 09 et seq.) we use the lighter TCPDial check —
-		// "can we open a socket to the peer" is a strict subset of
-		// "can we serve gRPC against it" and false negatives there
-		// would have to be a regression elsewhere.
 		for _, pair := range strings.Split(peers, ",") {
 			pair = strings.TrimSpace(pair)
 			if pair == "" {
@@ -277,15 +341,6 @@ func buildChecks(logger *slog.Logger) []health.Check {
 	return checks
 }
 
-// buildAggregatorServices reads the aggregator's fan-out target list
-// from $MAKTABA_HEALTH_PEERS. Format: comma-separated `name=URL`
-// pairs, e.g.
-//
-//	MAKTABA_HEALTH_PEERS="streaming=http://streaming:9101/readyz,pipeline=http://pipeline:9102/readyz"
-//
-// Empty list = no fan-out; the aggregator endpoint still responds with
-// status=ok and an empty services map, which is the right answer for
-// a single-binary dev run.
 func buildAggregatorServices() []system.Service {
 	raw := os.Getenv("MAKTABA_HEALTH_PEERS")
 	if raw == "" {
@@ -309,9 +364,6 @@ func buildAggregatorServices() []system.Service {
 	return out
 }
 
-// warmPeriod is plan TC3's cold-start window. Defaults to 30 s; the
-// integration tests override it to 0 via $MAKTABA_HEALTH_WARM=0 so
-// they don't have to sleep.
 func warmPeriod() time.Duration {
 	v := os.Getenv("MAKTABA_HEALTH_WARM")
 	if v == "" {
