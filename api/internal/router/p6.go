@@ -57,6 +57,8 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	libHandler := &libraries.Handler{DB: d.DB}
 	libHandler.Mount(r)
+	// Phase 8 / Story 9.17: surfaced library audit feed.
+	libHandler.MountAudit(r)
 
 	videoHandler := &videos.Handler{DB: d.DB}
 	videoHandler.Mount(r)
@@ -77,6 +79,8 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	colHandler := &collections.Handler{DB: d.DB}
 	colHandler.Mount(r)
+	// Phase 8 / Story 9.14: smart-collection ?freeze convert endpoint.
+	colHandler.MountSmart(r)
 
 	tagsHandler := &tags.Handler{DB: d.DB}
 	tagsHandler.Mount(r)
