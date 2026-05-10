@@ -28,14 +28,19 @@ be reused by the filesystem watcher in Story 1.3.
 
 from __future__ import annotations
 
+from .dryrun import DryRunStore
 from .service import (
     ExistingVideo,
     LibraryRecord,
     SaveCandidateParams,
     SaveCandidateResult,
+    ScanCancelled,
     ScanConfig,
+    ScanControl,
     ScanError,
+    ScanLibraryDeleted,
     Scanner,
+    ScanOptions,
     ScanResult,
     ScanStore,
 )
@@ -53,12 +58,17 @@ __all__ = [
     "DEFAULT_IGNORE_DIRNAMES",
     "DEFAULT_VIDEO_EXTENSIONS",
     "Candidate",
+    "DryRunStore",
     "ExistingVideo",
     "LibraryRecord",
     "SaveCandidateParams",
     "SaveCandidateResult",
+    "ScanCancelled",
     "ScanConfig",
+    "ScanControl",
     "ScanError",
+    "ScanLibraryDeleted",
+    "ScanOptions",
     "ScanResult",
     "ScanStore",
     "Scanner",

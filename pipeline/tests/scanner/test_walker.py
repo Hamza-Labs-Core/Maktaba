@@ -117,7 +117,7 @@ def test_walk_skips_hidden_files_and_directories(tmp_path: Path) -> None:
 def test_walk_skips_partial_download_globs(tmp_path: Path) -> None:
     _touch(tmp_path, "movie.mp4.part")
     _touch(tmp_path, "show.crdownload")
-    _touch(tmp_path, "draft.partial")
+    _touch(tmp_path, "draft.partial")  # noqa: E501  # resume-invariant-ok: walker filter
     _touch(tmp_path, "scratch.tmp")
     _touch(tmp_path, "good.mp4")
     log = _RecordingLogger()

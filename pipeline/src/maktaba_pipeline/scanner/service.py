@@ -33,7 +33,7 @@ import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from ..db.pubsub import VIDEOS_NEW, get_bus
@@ -52,12 +52,42 @@ __all__ = [
     "LibraryRecord",
     "SaveCandidateParams",
     "SaveCandidateResult",
+    "ScanCancelled",
     "ScanConfig",
+    "ScanControl",
     "ScanError",
+    "ScanLibraryDeleted",
+    "ScanOptions",
     "ScanResult",
     "ScanStore",
     "Scanner",
 ]
+
+
+class ScanCancelled(RuntimeError):
+    """Raised by :meth:`Scanner.run` when ``cancel_requested`` flips true.
+
+    The orchestrator catches nothing; callers (the API handler, the
+    CLI, integration tests) get a clean exception they can map to a
+    ``cancelling → idle`` transition. The :class:`ScanResult` collected
+    so far is attached for observability.
+    """
+
+    def __init__(self, result: ScanResult) -> None:
+        super().__init__(f"scan cancelled at files_walked={result.files_walked}")
+        self.result = result
+
+
+class ScanLibraryDeleted(RuntimeError):
+    """Raised when ``libraries.deleted_at`` flips during a scan.
+
+    Mirrors :class:`ScanCancelled` for the "library deleted mid-scan"
+    edge case from Story 1.4. Carries the partial :class:`ScanResult`.
+    """
+
+    def __init__(self, result: ScanResult) -> None:
+        super().__init__(f"library deleted; scan stopped at files_walked={result.files_walked}")
+        self.result = result
 
 
 @dataclass(slots=True, frozen=True)
@@ -152,6 +182,74 @@ class ScanStore(Protocol):
 
 
 @dataclass(slots=True, frozen=True)
+class ScanControl:
+    """Snapshot of one ``library_scan_state`` poll round-trip.
+
+    ``cancel_requested`` drives the orchestrator's exit path; the rest
+    is observability the API surfaces verbatim. ``library_deleted``
+    rides on the same poll because both ``cancel_requested`` and
+    ``deleted_at`` change asynchronously, and re-querying for the
+    deletion check would double the per-poll cost.
+    """
+
+    cancel_requested: bool
+    progress_pct: float
+    library_deleted: bool
+
+
+class ScanControlStore(Protocol):
+    """Optional capability layered on top of :class:`ScanStore`.
+
+    Stores that implement this protocol participate in cancellation
+    polling and progress write-back; stores that don't (like the
+    in-memory ``FakeScanStore`` in many tests) skip the poll entirely.
+
+    The orchestrator branches on ``isinstance``-style duck typing —
+    not on the dialect — so the same code path covers Postgres,
+    SQLite, and the dry-run store without explicit dispatch.
+    """
+
+    async def clear_scan_control(self, library_id: UUID) -> None:
+        """Reset ``cancel_requested`` and ``progress_pct`` at start of run.
+
+        Called once before the walk begins so a stale ``cancel_requested
+        = true`` from a previous cancelled run does not abort the next
+        attempt on its very first poll.
+        """
+
+    async def poll_scan_control(
+        self,
+        library_id: UUID,
+        files_walked: int,
+        files_inserted: int,
+    ) -> ScanControl:
+        """Single round-trip: write progress, read cancel + deletion flags."""
+
+    async def record_scan_error(
+        self,
+        library_id: UUID,
+        message: str,
+    ) -> None:
+        """Persist a ``last_error`` string visible to the GET handler."""
+
+
+@dataclass(slots=True, frozen=True)
+class ScanOptions:
+    """Per-run knobs distinct from the persistent :class:`ScanConfig`.
+
+    ``dry_run`` skips the cancel-control round-trip (a dry-run is a
+    read-only preview that must not fight a concurrent real scan over
+    the same ``library_scan_state`` row). ``cancel_poll_every`` is the
+    number of files between control polls — at the default 50 files
+    and a typical hash throughput of 100 files/s this lands the cancel
+    SLA well inside the story's 5 s requirement.
+    """
+
+    dry_run: bool = False
+    cancel_poll_every: int = 50
+
+
+@dataclass(slots=True, frozen=True)
 class ScanConfig:
     """Knobs for one :meth:`Scanner.run` invocation.
 
@@ -229,13 +327,27 @@ class Scanner:
         self._config = config or ScanConfig()
         self._log = log
 
-    async def run(self, library_id: UUID) -> ScanResult:
+    async def run(
+        self,
+        library_id: UUID,
+        options: ScanOptions | None = None,
+    ) -> ScanResult:
         """Run one bootstrap pass over ``library_id``.
 
-        Raises :class:`LookupError` if the library does not exist. Other
-        failures are aggregated into :attr:`ScanResult.errors` so a
-        single bad file never aborts the scan.
+        Raises :class:`LookupError` if the library does not exist,
+        :class:`ScanCancelled` if ``library_scan_state.cancel_requested``
+        flips during the walk, or :class:`ScanLibraryDeleted` if
+        ``libraries.deleted_at`` flips. Other per-file failures are
+        aggregated into :attr:`ScanResult.errors`.
+
+        Stores that implement the optional :class:`ScanControlStore`
+        protocol participate in cancellation polling and progress
+        write-back. Stores that do not (in-memory test fakes, the
+        :class:`DryRunStore`) skip the poll path entirely. ``options``
+        is also where callers turn off the poll explicitly via
+        ``ScanOptions(dry_run=True)``.
         """
+        opts = options or ScanOptions()
         started = _utcnow()
         lib = await self._store.get_library(library_id)
         if lib is None:
@@ -266,9 +378,56 @@ class Scanner:
             follow_symlinks=lib.follow_symlinks,
         )
 
-        for candidate in self._candidates(lib.roots, walk_cfg):
-            result.files_walked += 1
-            await self._process_candidate(lib, candidate, result)
+        control_store: ScanControlStore | None = (
+            cast(ScanControlStore, self._store)
+            if _has_scan_control(self._store)
+            else None
+        )
+        if control_store is not None and not opts.dry_run:
+            await control_store.clear_scan_control(lib.id)
+
+        poll_every = max(1, opts.cancel_poll_every)
+        files_since_poll = 0
+
+        try:
+            for candidate in self._candidates(lib.roots, walk_cfg):
+                result.files_walked += 1
+                await self._process_candidate(lib, candidate, result)
+
+                files_since_poll += 1
+                if (
+                    control_store is not None
+                    and not opts.dry_run
+                    and files_since_poll >= poll_every
+                ):
+                    files_since_poll = 0
+                    flags = await control_store.poll_scan_control(
+                        lib.id,
+                        result.files_walked,
+                        result.files_inserted,
+                    )
+                    if flags.cancel_requested:
+                        result.finished_at = _utcnow()
+                        await control_store.record_scan_error(lib.id, "cancelled")
+                        self._log.info(
+                            "scanner.cancelled",
+                            library_id=str(lib.id),
+                            files_walked=result.files_walked,
+                        )
+                        raise ScanCancelled(result)
+                    if flags.library_deleted:
+                        result.finished_at = _utcnow()
+                        await control_store.record_scan_error(
+                            lib.id, "library_deleted"
+                        )
+                        self._log.warning(
+                            "scanner.library_deleted",
+                            library_id=str(lib.id),
+                            files_walked=result.files_walked,
+                        )
+                        raise ScanLibraryDeleted(result)
+        except (ScanCancelled, ScanLibraryDeleted):
+            raise
 
         result.finished_at = _utcnow()
         self._log.info(
@@ -281,6 +440,7 @@ class Scanner:
             files_skipped=result.files_skipped,
             files_ignored=result.files_ignored,
             errors=len(result.errors),
+            dry_run=opts.dry_run,
         )
         return result
 
@@ -438,3 +598,11 @@ def _mtime_ns_to_db(mtime_ns: int) -> datetime:
 def _utcnow() -> datetime:
     """Wall-clock UTC, microsecond precision. Tests can monkeypatch."""
     return datetime.now(tz=UTC)
+
+
+def _has_scan_control(store: ScanStore) -> bool:
+    """Duck-type check for the optional :class:`ScanControlStore` protocol."""
+    return all(
+        callable(getattr(store, name, None))
+        for name in ("clear_scan_control", "poll_scan_control", "record_scan_error")
+    )

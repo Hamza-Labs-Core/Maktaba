@@ -49,7 +49,7 @@ DEFAULT_VIDEO_EXTENSIONS: frozenset[str] = frozenset(
 DEFAULT_IGNORE_BASENAMES: tuple[str, ...] = (
     "*.part",
     "*.crdownload",
-    "*.partial",
+    "*.partial",  # resume-invariant-ok: walker filters partial downloads, not a checkpoint
     "*.tmp",
 )
 
