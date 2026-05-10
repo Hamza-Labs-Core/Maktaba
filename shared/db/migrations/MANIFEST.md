@@ -42,6 +42,17 @@ land at the next free integer (no gaps, no reservations).
 | `0029` | `0029_users.sql` | [plan-10-01](../../specs/epics/10-auth-security/plan-10-01-user-store.md) | — | `users` table (Epic 10 README §"users") + sentinel admin row for single-user mode. |
 | `0030` | `0030_library_acl.sql` | [plan-10-13](../../specs/epics/10-auth-security/plan-10-13-permission-model.md) | 0001, 0029 | `library_acl` table (Story 10.13 — per-user library read scope). |
 | `0031` | `0031_search_history.sql` | [plan-05-06](../../specs/epics/05-search-indexing/plan-05-06-query-suggestions.md) | 0029 | `search_history` table — typeahead/recents corpus keyed on `query_norm`. |
+| `0032` | `0032_chapters.sql` | [plan-07-07](../../specs/epics/07-api-server/plan-07-07-subtitles-chapters-read.md) | 0001 | `chapters` table (per-video chapter list w/ `{embedded, inferred, manual}` source). |
+| `0033` | `0033_collections.sql` | [plan-07-14](../../specs/epics/07-api-server/plan-07-14-collections-tags-speakers.md) | 0001, 0029 | `collections` + `collection_items` (manual + smart). |
+| `0034` | `0034_tags.sql` | [plan-07-14](../../specs/epics/07-api-server/plan-07-14-collections-tags-speakers.md) | 0001 | `tags` + `video_tags` (case-fold + NFC name_norm uniqueness). |
+| `0035` | `0035_speakers.sql` | [plan-07-14](../../specs/epics/07-api-server/plan-07-14-collections-tags-speakers.md) | 0001, 0012 | `speakers` + `segment_speakers` (rename + merge). |
+| `0036` | `0036_audit_log.sql` | [plan-07-04](../../specs/epics/07-api-server/plan-07-04-video-crud.md) | 0029 | Append-only `audit_log` (purge, settings, speaker merge). |
+| `0037` | `0037_saved_searches.sql` | [plan-07-09](../../specs/epics/07-api-server/plan-07-09-saved-searches.md) | 0029 | `saved_searches` per-user (also feeds smart collections). |
+| `0038` | `0038_playback_state.sql` | [plan-07-11](../../specs/epics/07-api-server/plan-07-11-watch-progress-sync.md) | 0001, 0029 | `playback_state` (user_id, video_id) resume table + `(user_id, updated_at)` index for Continue Watching. |
+| `0039` | `0039_streaming_sessions.sql` | [plan-07-10](../../specs/epics/07-api-server/plan-07-10-streaming-session-lifecycle.md) | 0001, 0029 | `streaming_sessions` row per opened HLS/direct session. |
+| `0040` | `0040_devices.sql` | [plan-07-22](../../specs/epics/07-api-server/plan-07-22-devices-register.md) | 0029 | `devices` (push notification token registry; soft-revocation). |
+| `0041` | `0041_user_recs.sql` | [plan-07-21](../../specs/epics/07-api-server/plan-07-21-recommendations.md) | 0001, 0029 | `user_recs` (For-You rail; nightly Pipeline aggregation). |
+| `0042` | `0042_app_settings.sql` | [plan-07-15](../../specs/epics/07-api-server/plan-07-15-settings-system.md) | 0029 | `app_settings` + `settings_changed` NOTIFY trigger. |
 
 ---
 

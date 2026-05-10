@@ -190,6 +190,27 @@ func runServe() error {
 		AggregatorServices: buildAggregatorServices(),
 	})
 
+	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
+	// admin-port readiness check and the handler DB pool are
+	// independent — a starved readiness pool can't take down user
+	// traffic and vice versa. A missing DATABASE_URL leaves the P6
+	// surface unwired (the routes return 404 from chi as before).
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		appDB, dbErr := sql.Open("postgres", dsn)
+		if dbErr != nil {
+			logger.Warn("p6: sql.Open failed; handlers unwired",
+				"err", dbErr, "event", "p6_db_open_failed")
+		} else {
+			appDB.SetMaxOpenConns(envIntDefault("MAKTABA_DB_MAX_OPEN", 32))
+			appDB.SetMaxIdleConns(envIntDefault("MAKTABA_DB_MAX_IDLE", 8))
+			router.MountP6(r, router.P6Deps{DB: appDB})
+			logger.Info("p6: handlers mounted", "event", "p6_mounted")
+		}
+	} else {
+		logger.Info("p6: DATABASE_URL unset; handlers unwired",
+			"event", "p6_unwired")
+	}
+
 	// Forward /healthz on the public port too — convenient for compose
 	// stacks that haven't been told about the admin port. Liveness is
 	// cheap; exposing it twice costs nothing.
