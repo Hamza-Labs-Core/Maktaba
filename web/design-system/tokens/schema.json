@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maktaba.dev/design/tokens.schema.json",
+  "title": "Maktaba Design Tokens",
+  "type": "object",
+  "additionalProperties": true,
+  "$defs": {
+    "tokenGroup": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "$ref": "#/$defs/leafToken" },
+          { "$ref": "#/$defs/tokenGroup" }
+        ]
+      }
+    },
+    "leafToken": {
+      "type": "object",
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": ["string", "number", "boolean"]
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "patternProperties": {
+    "^[a-z][a-z0-9-]*$": {
+      "$ref": "#/$defs/tokenGroup"
+    }
+  }
+}

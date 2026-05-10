@@ -1,0 +1,19 @@
+{
+  "name": "@maktaba/design-system",
+  "version": "0.1.0",
+  "description": "Maktaba design tokens (Story 17.1) and component library skeleton (Story 17.2). Single source of truth in tokens/tokens.json; build emits CSS / TS / Swift / Kotlin / JSON outputs.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:tokens": "node build/build-tokens.mjs",
+    "test:tokens": "node build/build-tokens.test.mjs",
+    "build": "node build/build-tokens.mjs",
+    "test": "node build/build-tokens.test.mjs"
+  },
+  "files": [
+    "tokens",
+    "dist",
+    "components",
+    "storybook"
+  ]
+}

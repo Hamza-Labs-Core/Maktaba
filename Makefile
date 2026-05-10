@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming shared/log/go shared/health/go shared/testtier/go tools/test-budget
+GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/testtier/go tools/test-budget
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
@@ -334,8 +334,17 @@ build-go-streaming:
 			-o bin/$(BIN_SUBDIR)maktaba-streaming .
 
 .PHONY: build-web
-build-web:
+build-web: build-tokens
 	pnpm -C $(WEB_DIR) run build
+
+.PHONY: build-tokens
+build-tokens:  ## Story 17.1 — generate CSS/TS/Swift/Kotlin/JSON outputs from web/design-system/tokens/tokens.json.
+	@echo "==> building design tokens"
+	@node $(WEB_DIR)/design-system/build/build-tokens.mjs
+
+.PHONY: test-tokens
+test-tokens:  ## Story 17.1 — assert the design-tokens build pipeline is green.
+	@node $(WEB_DIR)/design-system/build/build-tokens.test.mjs
 
 .PHONY: build-all
 build-all:  ## Cross-compile Go binaries for every supported $(CROSS_PLATFORMS).

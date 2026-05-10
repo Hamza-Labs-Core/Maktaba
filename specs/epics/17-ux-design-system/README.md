@@ -14,8 +14,8 @@ LTR adapts to where required.
 
 | # | Story | Status |
 |---|-------|--------|
-| 17.1 | [Design tokens](story-17-01-design-tokens.md) | spec |
-| 17.2 | [Component library](story-17-02-component-library.md) | spec |
+| 17.1 | [Design tokens](story-17-01-design-tokens.md) | skeleton landed (slot P3) |
+| 17.2 | [Component library](story-17-02-component-library.md) | skeleton landed (slot P3) |
 | 17.3 | [Motion / animation guidelines](story-17-03-motion.md) | spec |
 | 17.4 | [Loading states & skeleton screens](story-17-04-loading-states.md) | spec |
 | 17.5 | [Error states & empty states](story-17-05-error-empty-states.md) | spec |
