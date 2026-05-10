@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.maktaba.pipeline</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/uv</string>
+    <string>--directory</string>
+    <string>/usr/local/libexec/maktaba/pipeline</string>
+    <string>run</string>
+    <string>maktaba-pipeline</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/maktaba/pipeline.log</string>
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/maktaba/pipeline.err.log</string>
+</dict>
+</plist>

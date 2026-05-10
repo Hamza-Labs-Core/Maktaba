@@ -1,0 +1,21 @@
+[Unit]
+Description=Maktaba streaming server
+After=network-online.target postgresql.service maktaba-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+ExecStart=/usr/bin/maktaba-streaming --config /etc/maktaba/streaming.yml
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/maktaba /var/cache/maktaba /var/log/maktaba
+
+[Install]
+WantedBy=multi-user.target
