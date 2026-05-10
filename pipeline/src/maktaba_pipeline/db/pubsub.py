@@ -26,6 +26,7 @@ __all__ = [
     "JOBS_NEW",
     "JOBS_PROGRESS",
     "JOBS_REAPED",
+    "VIDEOS_NEW",
     "PubsubBus",
     "get_bus",
     "reset_bus",
@@ -41,6 +42,10 @@ JOBS_PROGRESS = "jobs.progress"
 JOBS_HEARTBEAT = "jobs.heartbeat"
 JOBS_REAPED = "jobs.reaped"
 JOBS_FORCE_PAUSE = "jobs.force_pause"
+
+# Scanner channel — Story 1.1. Postgres fires this via the slot 0005
+# trigger; SQLite callers publish on the bus manually after commit.
+VIDEOS_NEW = "videos.new"
 
 
 class PubsubBus:
