@@ -1,0 +1,27 @@
+{
+  "name": "maktaba-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri 2 wrapper for macOS / Windows / Linux. Reuses web/dist as the JS bundle; native menu bar, tray, file dialog, and auto-update live in src-tauri/.",
+  "type": "module",
+  "scripts": {
+    "build:web": "pnpm --filter maktaba-web build",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "info": "tauri info"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.0.1",
+    "@tauri-apps/plugin-fs": "^2.0.3",
+    "@tauri-apps/plugin-shell": "^2.0.1",
+    "@tauri-apps/plugin-updater": "^2.0.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

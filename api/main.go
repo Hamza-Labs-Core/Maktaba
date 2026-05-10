@@ -205,6 +205,20 @@ func runServe() error {
 			appDB.SetMaxIdleConns(envIntDefault("MAKTABA_DB_MAX_IDLE", 8))
 			router.MountP6(r, router.P6Deps{DB: appDB})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
+
+			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
+			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
+			// as a reasonable proxy for "we're behind TLS"; operators
+			// can opt in/out explicitly with MAKTABA_COOKIES_SECURE.
+			p9 := router.MountP9(r, router.P9Deps{
+				DB:            appDB,
+				Keys:          auth.keys,
+				SecureCookies: cookiesSecure(),
+				AccessTTL:     accessTokenTTL(),
+			})
+			if p9 != nil {
+				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
+			}
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",
@@ -323,6 +337,34 @@ func envIntDefault(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// cookiesSecure reports whether the Set-Cookie response should include
+// the Secure attribute. Off by default (dev / non-TLS); set
+// MAKTABA_COOKIES_SECURE=1 in production OR enable MAKTABA_HSTS=1 (the
+// latter is the canonical "we're behind TLS" toggle).
+func cookiesSecure() bool {
+	if v := os.Getenv("MAKTABA_COOKIES_SECURE"); v == "1" || strings.EqualFold(v, "true") {
+		return true
+	}
+	if v := os.Getenv("MAKTABA_HSTS"); v == "1" || strings.EqualFold(v, "true") {
+		return true
+	}
+	return false
+}
+
+// accessTokenTTL honours MAKTABA_AUTH_ACCESS_TTL_SEC; falls back to the
+// canonical 15 min default when unset.
+func accessTokenTTL() time.Duration {
+	v := os.Getenv("MAKTABA_AUTH_ACCESS_TTL_SEC")
+	if v == "" {
+		return 15 * time.Minute
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 15 * time.Minute
+	}
+	return time.Duration(n) * time.Second
 }
 
 // buildChecks assembles the readiness check set from the runtime
