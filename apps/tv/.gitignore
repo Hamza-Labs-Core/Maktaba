@@ -1,0 +1,4 @@
+apps/tv/tvos/.build/
+apps/tv/tvos/Package.resolved
+apps/tv/android/.gradle/
+apps/tv/android/build/

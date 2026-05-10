@@ -1,0 +1,22 @@
+[Unit]
+Description=Maktaba pipeline workers
+After=network-online.target postgresql.service maktaba-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+WorkingDirectory=/usr/lib/maktaba/pipeline
+ExecStart=/usr/bin/uv run maktaba-pipeline
+Restart=on-failure
+RestartSec=10
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/maktaba /var/cache/maktaba /var/log/maktaba
+
+[Install]
+WantedBy=multi-user.target

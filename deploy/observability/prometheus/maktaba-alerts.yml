@@ -1,0 +1,43 @@
+# Maktaba alert rules — mirrors shared/metrics/go/dashboards.go::AlertManifest.
+groups:
+  - name: maktaba
+    rules:
+      - alert: ApiP95Breach
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="api"}[5m])) > 1.0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: API p95 above 1s for 5m
+          runbook: docs/runbooks/api-p95.md
+
+      - alert: ApiErrorRateHigh
+        expr: sum(rate(http_requests_total{job="api",code=~"5.."}[5m])) / sum(rate(http_requests_total{job="api"}[5m])) > 0.05
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: API 5xx rate > 5% for 5m
+          runbook: docs/runbooks/api-errors.md
+
+      - alert: PipelineQueueBacklog
+        expr: processing_jobs_queue_depth > 1000
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Pipeline queue > 1000 for 10m
+          runbook: docs/runbooks/pipeline-backlog.md
+
+      - alert: DBPoolSaturated
+        expr: db_pool_in_use / db_pool_max_open > 0.9
+        for: 3m
+        labels: { severity: page }
+        annotations:
+          summary: DB connection pool > 90% utilization for 3m
+          runbook: docs/runbooks/db-pool.md
+
+      - alert: DiskAlmostFull
+        expr: node_filesystem_avail_bytes{mountpoint="/var/lib/maktaba"} / node_filesystem_size_bytes{mountpoint="/var/lib/maktaba"} < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Maktaba data volume < 10% free for 10m
+          runbook: docs/runbooks/disk-space.md

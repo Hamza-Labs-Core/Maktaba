@@ -1,0 +1,27 @@
+[Unit]
+Description=Maktaba API server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+ExecStart=/usr/bin/maktaba-api --config /etc/maktaba/api.yml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Hardening (Story 23 — defence in depth)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/maktaba /var/log/maktaba
+
+[Install]
+WantedBy=multi-user.target

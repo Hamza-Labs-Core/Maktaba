@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.maktaba.api</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/maktaba-api</string>
+    <string>--config</string>
+    <string>/usr/local/etc/maktaba/api.yml</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/maktaba/api.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/maktaba/api.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>/usr/local/var/maktaba</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MAKTABA_DSN</key>
+    <string>postgres:///maktaba</string>
+  </dict>
+</dict>
+</plist>

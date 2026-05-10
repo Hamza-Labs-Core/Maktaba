@@ -1,0 +1,26 @@
+{
+  "version": "0.1.0",
+  "git_sha": "0000000000000000000000000000000000000000",
+  "built_at": "2026-05-10T00:00:00Z",
+  "schema_rev": 57,
+  "components": {
+    "api": {
+      "image": "ghcr.io/hamza-labs-core/maktaba-api:0.1.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "streaming": {
+      "image": "ghcr.io/hamza-labs-core/maktaba-streaming:0.1.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "pipeline": {
+      "image": "ghcr.io/hamza-labs-core/maktaba-pipeline:0.1.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "web": {
+      "image": "ghcr.io/hamza-labs-core/maktaba-web:0.1.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "rollback_to": "v0.0.0",
+  "rollback_schema_rev": 0
+}

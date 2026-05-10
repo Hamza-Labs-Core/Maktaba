@@ -64,6 +64,10 @@ land at the next free integer (no gaps, no reservations).
 | `0051` | `0051_transcript_segments_view.sql` | [plan-04-05](../../specs/epics/04-subtitles/plan-04-05-burn-in-vs-sidecar.md) | 0012 | `transcript_segments_v` read-only view joining segments + active transcripts for convenience. |
 | `0052` | `0052_web_sessions.sql` | [plan-10-02](../../specs/epics/10-auth-security/plan-10-02-web-login.md) | 0029 | `web_sessions` (cookie-backed SPA session store with CSRF token + active/reaper indexes). |
 | `0053` | `0053_refresh_tokens.sql` | [plan-10-03](../../specs/epics/10-auth-security/plan-10-03-native-login.md) | 0029, 0040 | `refresh_tokens` (opaque token + argon2id hash, family rotation, device link). |
+| `0054` | `0054_audit_log.sql` | [plan-21-06](../../specs/epics/21-observability/plan-21-06-audit-log.md) | 0029 | `audit_log` canonical table (sole owner; supersedes earlier ad-hoc creations). |
+| `0055` | `0055_pairing_tickets.sql` | plan-15-05 / plan-15-06 | 0029 | `pairing_tickets` (short-lived QR pairing codes for TV/desktop). |
+| `0056` | `0056_licenses.sql` | plan-16-04 | 0029 | `licenses` (active premium license snapshot — sole row enforces single active license). |
+| `0057` | `0057_integrity_checks.sql` | plan-24-07 | 0001 | `integrity_checks` (per-video hash + segment count snapshots for periodic verification). |
 
 ---
 

@@ -1,0 +1,144 @@
+# Canonical performance budgets for Maktaba — single source of truth.
+#
+# Owner: plan-18-01. Other 18.x plans (search, hot-path, throughput, etc.)
+# add their entries here, not in adjacent YAML files.
+#
+# Schema:
+#   version: int
+#   hardware_profiles: { id: human-label }
+#   endpoints: { id: BudgetEntry }
+#   throughputs: { id: ThroughputEntry }
+#   envelopes: { id: EnvelopeEntry }
+#
+# BudgetEntry fields:
+#   surface: rest | graphql | ws | hls
+#   method: GET | POST | ...
+#   path: e.g. "/api/libraries"
+#   profile: hardware profile id
+#   cache: warm | cold
+#   p50_ms / p95_ms / p99_ms: integer milliseconds (p99 ≥ p95 ≥ p50)
+#   ci_pr: true if the CI-on-PR subset should enforce this budget.
+#          PRs only run a fast subset; nightly runs the full set.
+
+version: 1
+
+hardware_profiles:
+  mac-m2-8gb: "Apple M2, 8 GB RAM (dev laptop baseline)"
+  linux-x86-16gb: "x86_64 server, 16 GB RAM (deploy reference)"
+
+endpoints:
+  libraries_list:
+    surface: rest
+    method: GET
+    path: /api/libraries
+    profile: linux-x86-16gb
+    cache: warm
+    p50_ms: 30
+    p95_ms: 80
+    p99_ms: 150
+    ci_pr: true
+
+  videos_by_id:
+    surface: rest
+    method: GET
+    path: /api/videos/{id}
+    profile: linux-x86-16gb
+    cache: warm
+    p50_ms: 25
+    p95_ms: 60
+    p99_ms: 120
+    ci_pr: true
+
+  search_warm:
+    surface: rest
+    method: POST
+    path: /api/search
+    profile: linux-x86-16gb
+    cache: warm
+    p50_ms: 250
+    p95_ms: 500
+    p99_ms: 800
+    ci_pr: true
+
+  search_cold:
+    surface: rest
+    method: POST
+    path: /api/search
+    profile: linux-x86-16gb
+    cache: cold
+    p95_ms: 1500
+    ci_pr: false
+
+  hls_manifest_warm:
+    surface: hls
+    method: GET
+    path: /streaming/manifest
+    profile: linux-x86-16gb
+    cache: warm
+    p50_ms: 50
+    p95_ms: 120
+    ci_pr: true
+
+  hls_segment_warm:
+    surface: hls
+    method: GET
+    path: /streaming/segment
+    profile: linux-x86-16gb
+    cache: warm
+    p50_ms: 40
+    p95_ms: 100
+    ci_pr: true
+
+  hls_segment_cold:
+    surface: hls
+    method: GET
+    path: /streaming/segment
+    profile: linux-x86-16gb
+    cache: cold
+    p50_ms: 2500
+    p95_ms: 6000
+    ci_pr: false
+
+  ws_job_progress:
+    surface: ws
+    path: /api/ws/jobs
+    profile: linux-x86-16gb
+    cache: warm
+    p95_ms: 250
+    ci_pr: true
+
+  web_first_frame_warm:
+    surface: rest
+    path: /web/first-frame
+    profile: linux-x86-16gb
+    cache: warm
+    p95_ms: 1500
+    ci_pr: false
+
+throughputs:
+  pipeline_scan_videos_per_sec:
+    profile: linux-x86-16gb
+    target: 50
+  pipeline_segment_commit_per_sec:
+    profile: linux-x86-16gb
+    target: 200
+  api_qps_libraries:
+    profile: linux-x86-16gb
+    target: 500
+  api_qps_videos_by_id:
+    profile: linux-x86-16gb
+    target: 1000
+
+envelopes:
+  api_resident_mb:
+    profile: linux-x86-16gb
+    p95_mb: 350
+  api_cpu_pct:
+    profile: linux-x86-16gb
+    p95_pct: 35
+  pipeline_resident_mb_idle:
+    profile: linux-x86-16gb
+    p95_mb: 250
+  pipeline_resident_mb_transcoding:
+    profile: linux-x86-16gb
+    p95_mb: 2500
