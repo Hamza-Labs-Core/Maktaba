@@ -96,8 +96,8 @@ func TestVerify_BadFormat(t *testing.T) {
 	cases := []string{
 		"",
 		"not-a-phc",
-		"$argon2i$v=19$m=64,t=1,p=1$YQ$Yg",          // wrong variant
-		"$argon2id$v=19$only-three-fields",          // missing parts
+		"$argon2i$v=19$m=64,t=1,p=1$YQ$Yg", // wrong variant
+		"$argon2id$v=19$only-three-fields", // missing parts
 		"$argon2id$v=19$m=64,t=1,p=1$not-base64!$Y", // malformed b64
 	}
 	for _, in := range cases {

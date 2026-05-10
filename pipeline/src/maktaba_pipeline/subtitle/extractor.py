@@ -30,6 +30,8 @@ from .formats import SubtitleFormat
 __all__ = [
     "EmbeddedSubtitle",
     "ExtractSubtitleError",
+    "SidecarSubtitle",
+    "discover_sidecars",
     "extract_embedded",
     "list_embedded",
     "parse_subtitle_streams",
@@ -220,3 +222,115 @@ async def extract_embedded(
 def filter_text_based(tracks: Iterable[EmbeddedSubtitle]) -> list[EmbeddedSubtitle]:
     """Drop image-based subtitle tracks from a list."""
     return [t for t in tracks if not t.image_based]
+
+
+# Subtitle file extensions we recognise as sidecars. ``.srt`` and ``.vtt``
+# are the text formats Maktaba already round-trips; ``.ass``/``.ssa`` are
+# read-only for now (the manager surface ignores them) but listed so the
+# discovery layer can report what's on disk without lying about the codec.
+_SIDECAR_EXTENSIONS: frozenset[str] = frozenset({".srt", ".vtt", ".ass", ".ssa", ".sub"})
+
+# ISO 639 codes the discovery layer recognises in filenames like
+# ``video.en.srt``. We accept 2- and 3-letter tokens — anything longer is
+# almost certainly not a language code (e.g. ``forced``, ``sdh``).
+_LANG_TOKEN_LEN: frozenset[int] = frozenset({2, 3})
+
+_FLAG_TOKENS: frozenset[str] = frozenset({"forced", "sdh", "cc", "hi"})
+
+
+@dataclass(slots=True, frozen=True)
+class SidecarSubtitle:
+    """One subtitle file living alongside a video.
+
+    ``language`` is the parsed language hint from the filename
+    (``video.en.srt`` → ``"en"``); ``"und"`` when no recognisable code
+    was present. ``is_forced`` / ``is_sdh`` reflect the ``forced`` and
+    ``sdh``/``cc``/``hi`` markers Plex-style naming conventions use.
+    """
+
+    path: Path
+    language: str
+    extension: str
+    is_forced: bool
+    is_sdh: bool
+
+
+def _parse_sidecar_name(video_stem: str, sibling: Path) -> SidecarSubtitle | None:
+    """Match ``sibling`` against ``video.<stem>[.lang][.flags]<ext>``.
+
+    Returns ``None`` when the file is not a sidecar for the given video
+    (different stem, or unrecognised extension).
+    """
+    ext = sibling.suffix.lower()
+    if ext not in _SIDECAR_EXTENSIONS:
+        return None
+    name = sibling.name
+    # Strip the extension; we'll dissect what's left of the basename.
+    if not name.lower().endswith(ext):
+        return None
+    base = name[: -len(ext)]
+
+    # The basename must start with the video's stem followed by either
+    # the end-of-string or a ``.`` separator. Case-sensitive match
+    # because POSIX paths can collide with macOS HFS-case-insensitive
+    # surfaces — using the raw stem keeps behaviour predictable.
+    if base == video_stem:
+        suffix = ""
+    elif base.startswith(video_stem + "."):
+        suffix = base[len(video_stem) + 1 :]
+    else:
+        return None
+
+    language = "und"
+    is_forced = False
+    is_sdh = False
+    if suffix:
+        for token in suffix.split("."):
+            lowered = token.lower()
+            if lowered in _FLAG_TOKENS:
+                if lowered == "forced":
+                    is_forced = True
+                else:
+                    is_sdh = True
+                continue
+            if len(lowered) in _LANG_TOKEN_LEN and lowered.isalpha() and language == "und":
+                language = lowered
+
+    return SidecarSubtitle(
+        path=sibling,
+        language=language,
+        extension=ext,
+        is_forced=is_forced,
+        is_sdh=is_sdh,
+    )
+
+
+def discover_sidecars(video_path: str | Path) -> list[SidecarSubtitle]:
+    """Return sidecar subtitle files that live next to ``video_path``.
+
+    Matches the naming patterns Plex / Jellyfin / mpv consume:
+
+    - ``video.srt`` — no language marker (``language == "und"``).
+    - ``video.en.srt`` / ``video.eng.vtt`` — ISO-639-1 or -3 language hint.
+    - ``video.en.forced.srt`` — forced subtitle marker.
+    - ``video.en.sdh.srt`` / ``video.en.cc.vtt`` / ``video.en.hi.srt``.
+
+    The function is read-only: it never opens the files, only inspects
+    their names. The directory must exist; otherwise an empty list is
+    returned (a missing video can't have sidecars).
+    """
+    path = Path(video_path)
+    parent = path.parent
+    if not parent.is_dir():
+        return []
+    stem = path.stem
+    out: list[SidecarSubtitle] = []
+    for sibling in sorted(parent.iterdir()):
+        if not sibling.is_file():
+            continue
+        if sibling.name == path.name:
+            continue
+        sidecar = _parse_sidecar_name(stem, sibling)
+        if sidecar is not None:
+            out.append(sidecar)
+    return out

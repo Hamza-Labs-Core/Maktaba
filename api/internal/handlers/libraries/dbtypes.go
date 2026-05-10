@@ -43,7 +43,7 @@ func (s *stringArray) Scan(src any) error {
 	return fmt.Errorf("stringArray.Scan: unsupported type %T", src)
 }
 
-// scanText understands both Postgres ``{a,b,c}`` and a JSON array
+// scanText understands both Postgres “{a,b,c}“ and a JSON array
 // emitted by the SQLite shim (which stores TEXT[] as a JSON string).
 func (s *stringArray) scanText(v string) error {
 	v = strings.TrimSpace(v)

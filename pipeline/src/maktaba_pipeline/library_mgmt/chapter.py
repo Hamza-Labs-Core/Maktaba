@@ -32,6 +32,7 @@ class _LabelResolver(Protocol):
 
     def __call__(self, texts: Sequence[str]) -> str: ...
 
+
 __all__ = [
     "DEFAULT_DROP_THRESHOLD",
     "DEFAULT_MIN_CHAPTER_SEC",
@@ -203,9 +204,7 @@ def _mean_window(segments: Sequence[Segment], lo: int, hi: int) -> list[float]:
     for k in range(lo, hi):
         emb = segments[k].embedding
         if len(emb) != dim:
-            raise ValueError(
-                f"embedding dim mismatch at index {k}: {len(emb)} vs {dim}"
-            )
+            raise ValueError(f"embedding dim mismatch at index {k}: {len(emb)} vs {dim}")
         for j, v in enumerate(emb):
             out[j] += v
     n = hi - lo

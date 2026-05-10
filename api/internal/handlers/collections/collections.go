@@ -9,9 +9,9 @@
 //	POST   /api/collections/{id}/items
 //	DELETE /api/collections/{id}/items/{video_id}
 //
-// Smart collections (``is_smart=true``) compute items live from the
-// ``smart_query`` JSON; this handler currently returns an empty
-// items list for the smart case with a ``warning`` field — Epic 9
+// Smart collections (“is_smart=true“) compute items live from the
+// “smart_query“ JSON; this handler currently returns an empty
+// items list for the smart case with a “warning“ field — Epic 9
 // Story 9.14 fills in the real evaluation.
 package collections
 
@@ -270,8 +270,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // CollectionItem is the items[] entry shape.
 type CollectionItem struct {
-	VideoID  string `json:"video_id"`
-	Position int    `json:"position"`
+	VideoID  string    `json:"video_id"`
+	Position int       `json:"position"`
 	AddedAt  time.Time `json:"added_at"`
 }
 

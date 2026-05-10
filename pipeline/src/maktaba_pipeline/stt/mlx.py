@@ -89,9 +89,7 @@ class WhisperMLXBackend:
 
         # Run the (synchronous) decoder in the default executor so the
         # event loop stays responsive for pause checks.
-        raw = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: fn(path, kwargs)
-        )
+        raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(path, kwargs))
 
         prev_text: list[str] = []
         for i, seg in enumerate(raw):

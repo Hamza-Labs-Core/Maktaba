@@ -1,9 +1,9 @@
-// Story 9.16 — canonical ``library_roots``-store maintenance + overlap
+// Story 9.16 — canonical “library_roots“-store maintenance + overlap
 // detection that consults the new normalized table when present.
 //
 // The Phase-3 :meth:`Handler.checkRootOverlap` consults the
-// transitional ``libraries.roots TEXT[]`` column. This file adds the
-// canonical path: ``library_roots`` rows live one-per-root, each with a
+// transitional “libraries.roots TEXT[]“ column. This file adds the
+// canonical path: “library_roots“ rows live one-per-root, each with a
 // canonical-path projection so a string-prefix overlap test runs as a
 // single index scan. We keep the legacy column write as a back-fill for
 // one release per the README's deprecation note.
@@ -23,15 +23,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// SyncLibraryRoots upserts one ``library_roots`` row per entry in
-// ``roots`` and deletes any row whose path is no longer present. Both
+// SyncLibraryRoots upserts one “library_roots“ row per entry in
+// “roots“ and deletes any row whose path is no longer present. Both
 // inserts and deletes happen in the same transaction so a concurrent
 // reader never sees a half-applied state.
 //
 // The canonical path is computed via :func:`canonicalPath`. The store
-// uses ``(library_id, path_canonical)`` as the uniqueness key so two
+// uses “(library_id, path_canonical)“ as the uniqueness key so two
 // distinct user inputs that resolve to the same canonical form (e.g.,
-// ``/mnt/media`` and ``/mnt/media/``) collapse to one row.
+// “/mnt/media“ and “/mnt/media/“) collapse to one row.
 func SyncLibraryRoots(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -89,7 +89,7 @@ func SyncLibraryRoots(
 }
 
 // canonicalPath canonicalises a user-supplied root path. We use
-// ``filepath.Clean`` plus a trailing-slash strip — the API lives in a
+// “filepath.Clean“ plus a trailing-slash strip — the API lives in a
 // pure Go process and cannot resolve symlinks reliably across the
 // container boundary, so symlink resolution is the Pipeline's job at
 // scan time. The same input must always produce the same output so
@@ -107,7 +107,7 @@ func canonicalPath(p string) string {
 }
 
 // CheckRootsOverlapV2 is the Story 9.16 overlap check that consults
-// ``library_roots`` first and falls back to the legacy ``roots`` column
+// “library_roots“ first and falls back to the legacy “roots“ column
 // for libraries that haven't been back-filled yet. Returns nil when
 // no overlap is found; otherwise a 422 with the offending pair in the
 // detail.

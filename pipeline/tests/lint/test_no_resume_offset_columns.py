@@ -15,9 +15,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-MIGRATIONS = (
-    pathlib.Path(__file__).resolve().parents[3] / "shared" / "db" / "migrations"
-)
+MIGRATIONS = pathlib.Path(__file__).resolve().parents[3] / "shared" / "db" / "migrations"
 
 
 _COLUMN_DECL = re.compile(

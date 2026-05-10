@@ -19,9 +19,7 @@ def _seg(start: float, end: float, vec: list[float], text: str = "") -> Segment:
 
 def _block(start: int, count: int, vec: list[float], step: float = 5.0) -> list[Segment]:
     """Helper: build ``count`` consecutive segments of length ``step``."""
-    return [
-        _seg(start + i * step, start + (i + 1) * step, vec) for i in range(count)
-    ]
+    return [_seg(start + i * step, start + (i + 1) * step, vec) for i in range(count)]
 
 
 @pytest.mark.unit
@@ -90,8 +88,7 @@ def test_title_falls_back_when_resolver_missing() -> None:
 def test_title_uses_resolver_when_available() -> None:
     segs = _block(0, 30, [1.0, 0.0], step=4.0)
     segs = [
-        Segment(s.start_sec, s.end_sec, s.embedding, text=f"text-{i}")
-        for i, s in enumerate(segs)
+        Segment(s.start_sec, s.end_sec, s.embedding, text=f"text-{i}") for i, s in enumerate(segs)
     ]
     chapters = infer_chapters(segs)
     out = title_for_chapter(

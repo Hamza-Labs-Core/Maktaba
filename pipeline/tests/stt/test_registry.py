@@ -62,9 +62,7 @@ def test_pick_backend_walks_chain_until_first_ready() -> None:
     registry.register(_FakeBackend("primary", ready=False))  # type: ignore[arg-type]
     registry.register(_FakeBackend("alt", ready=True))  # type: ignore[arg-type]
 
-    backend, trace = asyncio.run(
-        pick_backend(registry, primary="primary", fallback=["alt"])
-    )
+    backend, trace = asyncio.run(pick_backend(registry, primary="primary", fallback=["alt"]))
     assert backend.name == "alt"
     assert trace.attempted == ("primary", "alt")
     assert trace.chosen == "alt"

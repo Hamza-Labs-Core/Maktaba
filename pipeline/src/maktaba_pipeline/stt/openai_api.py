@@ -204,8 +204,7 @@ def compute_chunk_offsets(
         return [_Chunk(0, path, 0.0)]
     parts = math.ceil(size / chunk_bytes)
     return [
-        _Chunk(i, f"{path}.part{i:03d}", (i * chunk_bytes) / bytes_per_sec)
-        for i in range(parts)
+        _Chunk(i, f"{path}.part{i:03d}", (i * chunk_bytes) / bytes_per_sec) for i in range(parts)
     ]
 
 
@@ -261,7 +260,7 @@ def _default_transcribe_fn(api_key: str | None) -> _TranscribeFn:
                 "end": s["end"],
                 "text": s["text"],
             }
-            for s in resp.segments  # type: ignore[attr-defined]
+            for s in resp.segments
         ]
 
     return _call

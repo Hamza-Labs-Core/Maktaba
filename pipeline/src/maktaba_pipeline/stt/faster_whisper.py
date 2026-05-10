@@ -77,9 +77,7 @@ class FasterWhisperBackend:
             self.model, self.device, self._compute_type
         )
 
-        raw = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: fn(path, kwargs)
-        )
+        raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(path, kwargs))
 
         for i, seg in enumerate(raw):
             yield Segment(

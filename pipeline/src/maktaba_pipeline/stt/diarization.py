@@ -77,19 +77,23 @@ def assign_speakers(
         first = ordered[0]
         second = ordered[1]
         boundary = max(seg.start_sec, min(seg.end_sec, second.start_sec))
-        out.append(replace(
-            seg,
-            speaker=first.speaker,
-            end_sec=boundary,
-            metadata={**seg.metadata, "split_from": f"{seg.seq}.a"},
-        ))
-        out.append(replace(
-            seg,
-            speaker=second.speaker,
-            start_sec=boundary,
-            text="",
-            metadata={**seg.metadata, "split_from": f"{seg.seq}.b"},
-        ))
+        out.append(
+            replace(
+                seg,
+                speaker=first.speaker,
+                end_sec=boundary,
+                metadata={**seg.metadata, "split_from": f"{seg.seq}.a"},
+            )
+        )
+        out.append(
+            replace(
+                seg,
+                speaker=second.speaker,
+                start_sec=boundary,
+                text="",
+                metadata={**seg.metadata, "split_from": f"{seg.seq}.b"},
+            )
+        )
     return out
 
 

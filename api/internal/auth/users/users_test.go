@@ -57,10 +57,10 @@ func TestSentinelAdminID_Constant(t *testing.T) {
 
 func TestIsUniqueViolation(t *testing.T) {
 	cases := map[string]bool{
-		"":                                          false,
-		"some random error":                         false,
-		"pq: duplicate key value":                   true,
-		"UNIQUE constraint failed: users.username":  true,
+		"":                        false,
+		"some random error":       false,
+		"pq: duplicate key value": true,
+		"UNIQUE constraint failed: users.username": true,
 	}
 	for s, want := range cases {
 		var err error

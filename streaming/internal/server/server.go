@@ -30,17 +30,17 @@ import (
 // Deps bundles the dependencies the server needs. Production fills
 // these from main.go; tests inject fakes.
 type Deps struct {
-	Cfg       config.Config
-	JWKS      *auth.JWKSCache
-	Probe     *probe.Cache
-	Profiles  *capability.Registry
-	Sessions  session.Store
-	Layout    *cache.Layout
-	Files     handlers.FileOpener
-	Transcripts handlers.TranscriptStreamer
-	Chapters  handlers.ChapterReader
+	Cfg          config.Config
+	JWKS         *auth.JWKSCache
+	Probe        *probe.Cache
+	Profiles     *capability.Registry
+	Sessions     session.Store
+	Layout       *cache.Layout
+	Files        handlers.FileOpener
+	Transcripts  handlers.TranscriptStreamer
+	Chapters     handlers.ChapterReader
 	StaticAssets handlers.StaticAssetResolver
-	Now       func() time.Time
+	Now          func() time.Time
 }
 
 // New builds the chi router for the public byte-pumping mux.

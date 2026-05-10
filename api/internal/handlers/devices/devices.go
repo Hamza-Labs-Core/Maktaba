@@ -6,7 +6,7 @@
 //
 // Tokens are stored as opaque strings; the APNs/FCM bridge consumes
 // them via Notify (Story 18.x). On a failed delivery the bridge soft-
-// revokes by setting ``revoked_at`` rather than deleting the row.
+// revokes by setting “revoked_at“ rather than deleting the row.
 package devices
 
 import (

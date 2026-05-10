@@ -6,7 +6,7 @@
 //	DELETE /api/tags/{id}
 //
 // Tag uniqueness is name_norm = NFC-normalised + lowercased, so
-// ``Tafsir`` and ``tafsir`` collapse to one row. Display preserves
+// “Tafsir“ and “tafsir“ collapse to one row. Display preserves
 // the original casing.
 package tags
 
@@ -106,8 +106,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	common.WriteNoContent(w)
 }
 
-// PatchVideoTags implements the AC-3 delta semantic: ``add`` ∪ existing
-// minus ``remove``. Order-independent.
+// PatchVideoTags implements the AC-3 delta semantic: “add“ ∪ existing
+// minus “remove“. Order-independent.
 func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil || !p.IsAdmin {

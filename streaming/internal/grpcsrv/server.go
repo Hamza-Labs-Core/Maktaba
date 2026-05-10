@@ -99,9 +99,9 @@ type Server struct {
 	Sessions     session.Store
 	Allocator    *slots.Allocator
 	HWAccel      ffmpeg.HWAccel
-	Host         string                 // hostname, recorded in row.Host
+	Host         string // hostname, recorded in row.Host
 	Now          func() time.Time
-	SessionTTL   time.Duration          // expires_at = now + TTL (default 30 min)
+	SessionTTL   time.Duration // expires_at = now + TTL (default 30 min)
 	ResolveDirCB func(sessID string) string
 }
 

@@ -329,9 +329,15 @@ func TestDateRangeTagsForPlaylist(t *testing.T) {
 // StaticHandler tests
 type fakeResolver struct{ root string }
 
-func (f *fakeResolver) PosterPath(id string) string         { return filepath.Join(f.root, "posters", id+".jpg") }
-func (f *fakeResolver) SpritePath(id, ext string) string    { return filepath.Join(f.root, "sprites", id+ext) }
-func (f *fakeResolver) ThumbPath(video, name string) string { return filepath.Join(f.root, "thumbs", video, name) }
+func (f *fakeResolver) PosterPath(id string) string {
+	return filepath.Join(f.root, "posters", id+".jpg")
+}
+func (f *fakeResolver) SpritePath(id, ext string) string {
+	return filepath.Join(f.root, "sprites", id+ext)
+}
+func (f *fakeResolver) ThumbPath(video, name string) string {
+	return filepath.Join(f.root, "thumbs", video, name)
+}
 
 func TestStaticHandler_Poster(t *testing.T) {
 	dir := t.TempDir()

@@ -51,9 +51,7 @@ SETTINGS_CHANGED_EVENT = "library.settings_changed"
 
 #: STT backend whitelist (Epic 3). A PATCH with any other value returns
 #: 422 with the offending JSON pointer.
-ALLOWED_STT_BACKENDS: frozenset[str] = frozenset(
-    {"whisper-mlx", "faster-whisper", "openai-api"}
-)
+ALLOWED_STT_BACKENDS: frozenset[str] = frozenset({"whisper-mlx", "faster-whisper", "openai-api"})
 
 #: Recognised keys at the top level. Anything outside this set survives
 #: a round-trip but is flagged as a warning on PATCH so the UI can
@@ -85,9 +83,7 @@ _ISO639_1_RE = re.compile(r"^[a-z]{2}$")
 #: Recognised keys per nested object. Used to validate sub-blobs like
 #: ``stt`` and ``embedding``.
 _NESTED_KEYS: dict[str, frozenset[str]] = {
-    "stt": frozenset(
-        {"backend", "model", "profile", "initial_prompt", "max_usd_per_month"}
-    ),
+    "stt": frozenset({"backend", "model", "profile", "initial_prompt", "max_usd_per_month"}),
     "embedding": frozenset({"model", "device"}),
 }
 
@@ -168,16 +164,12 @@ def _validate_key(key: str, value: Any, result: ValidationResult) -> None:
         if value == "auto":
             return
         if not isinstance(value, str) or not _ISO639_1_RE.match(value):
-            result.errors.append(
-                ValidationError("language", "must be 'auto' or an ISO-639-1 code")
-            )
+            result.errors.append(ValidationError("language", "must be 'auto' or an ISO-639-1 code"))
         return
 
     if key == "default_subtitle_lang":
         if not isinstance(value, str) or not _ISO639_1_RE.match(value):
-            result.errors.append(
-                ValidationError(key, "must be an ISO-639-1 code")
-            )
+            result.errors.append(ValidationError(key, "must be an ISO-639-1 code"))
         return
 
     if key in ("multi_audio", "diarize", "chapter_inference", "auto_tag_topics"):
@@ -233,9 +225,7 @@ def _validate_nested(
     allowed = _NESTED_KEYS.get(key, frozenset())
     for nk, nv in value.items():
         if nk not in allowed:
-            result.warnings.append(
-                ValidationError(f"{key}/{nk}", f"unknown key {nk!r}")
-            )
+            result.warnings.append(ValidationError(f"{key}/{nk}", f"unknown key {nk!r}"))
             continue
         field_validator(nk, nv, result)
 
@@ -257,9 +247,7 @@ def _validate_stt_field(name: str, value: Any, result: ValidationResult) -> None
     elif name == "max_usd_per_month" and (
         isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0
     ):
-        result.errors.append(
-            ValidationError(f"stt/{name}", "must be a non-negative number")
-        )
+        result.errors.append(ValidationError(f"stt/{name}", "must be a non-negative number"))
 
 
 def _validate_embedding_field(name: str, value: Any, result: ValidationResult) -> None:
@@ -291,11 +279,7 @@ def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str
     """
     out: dict[str, Any] = deepcopy(dict(base))
     for k, v in override.items():
-        if (
-            isinstance(v, Mapping)
-            and k in out
-            and isinstance(out[k], Mapping)
-        ):
+        if isinstance(v, Mapping) and k in out and isinstance(out[k], Mapping):
             out[k] = deep_merge(out[k], v)
         else:
             out[k] = deepcopy(v)
