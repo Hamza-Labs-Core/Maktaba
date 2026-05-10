@@ -1,22 +1,22 @@
 // Story 9.7 — library stats backed by the denormalized
-// ``library_stats_cache`` row.
+// “library_stats_cache“ row.
 //
-// The Phase-3 ``Stats`` handler in libraries.go computed everything
-// from ``videos`` directly — fine for an empty dev DB but it would
+// The Phase-3 “Stats“ handler in libraries.go computed everything
+// from “videos“ directly — fine for an empty dev DB but it would
 // blow past the 50 ms SLA on a 50k-video library. This file adds the
 // cache-aware path:
 //
-//   1. Read the cache row in one round-trip.
-//   2. If the row is missing (a brand-new library, or the cache was
-//      truncated), recompute from source tables and upsert. Subsequent
-//      requests hit the cache.
-//   3. ``maktaba-api stats-rebuild`` (out of scope for this file) is
-//      what production uses to recompute periodically; this handler
-//      relies on the recompute-on-miss path to stay correct without
-//      it.
+//  1. Read the cache row in one round-trip.
+//  2. If the row is missing (a brand-new library, or the cache was
+//     truncated), recompute from source tables and upsert. Subsequent
+//     requests hit the cache.
+//  3. “maktaba-api stats-rebuild“ (out of scope for this file) is
+//     what production uses to recompute periodically; this handler
+//     relies on the recompute-on-miss path to stay correct without
+//     it.
 //
-// The recompute is one read of ``videos`` (state, language,
-// content_type, source size) and one read of ``processing_jobs`` for
+// The recompute is one read of “videos“ (state, language,
+// content_type, source size) and one read of “processing_jobs“ for
 // the jobs facet — every grouping is a single GROUP BY.
 package libraries
 
@@ -39,34 +39,34 @@ import (
 // superset of the Phase-3 StatsResponse: every field returned there is
 // also returned here, plus the new content-type / jobs / sweep facets.
 type CachedStatsResponse struct {
-	TotalVideos        int                `json:"total_videos"`
-	TotalDurationSec   int64              `json:"total_duration_sec"`
-	SourceSizeBytes    int64              `json:"source_size_bytes"`
-	DerivedSizeBytes   int64              `json:"derived_size_bytes"`
-	ByState            map[string]int     `json:"by_state"`
-	ByLanguage         map[string]int     `json:"by_language"`
-	ByContentType      map[string]int     `json:"by_content_type"`
-	Jobs               map[string]int     `json:"jobs"`
-	ProcessedPct       *float64           `json:"processed_pct"`
-	LastSweep          *SweepSummary      `json:"last_sweep"`
-	UpdatedAt          time.Time          `json:"updated_at"`
+	TotalVideos      int            `json:"total_videos"`
+	TotalDurationSec int64          `json:"total_duration_sec"`
+	SourceSizeBytes  int64          `json:"source_size_bytes"`
+	DerivedSizeBytes int64          `json:"derived_size_bytes"`
+	ByState          map[string]int `json:"by_state"`
+	ByLanguage       map[string]int `json:"by_language"`
+	ByContentType    map[string]int `json:"by_content_type"`
+	Jobs             map[string]int `json:"jobs"`
+	ProcessedPct     *float64       `json:"processed_pct"`
+	LastSweep        *SweepSummary  `json:"last_sweep"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
-// SweepSummary is the AC-1 ``last_sweep`` envelope.
+// SweepSummary is the AC-1 “last_sweep“ envelope.
 type SweepSummary struct {
-	StartedAt   time.Time `json:"started_at"`
+	StartedAt   time.Time  `json:"started_at"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
-	Scanned     int       `json:"scanned"`
-	NewVideos   int       `json:"new_videos"`
-	MovedVideos int       `json:"moved_videos"`
-	Removed     int       `json:"removed_videos"`
+	Scanned     int        `json:"scanned"`
+	NewVideos   int        `json:"new_videos"`
+	MovedVideos int        `json:"moved_videos"`
+	Removed     int        `json:"removed_videos"`
 }
 
-// StatsCached implements ``GET /api/libraries/{id}/stats`` with the
+// StatsCached implements “GET /api/libraries/{id}/stats“ with the
 // cache-first read path. It overrides the Phase-3 Stats handler when
 // wired via :func:`MountStatsCached` (default in production); the
 // no-cache path remains for environments where the
-// ``library_stats_cache`` table hasn't been migrated yet.
+// “library_stats_cache“ table hasn't been migrated yet.
 func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
@@ -104,15 +104,15 @@ func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
-// readCacheRow fetches the precomputed row for ``id``. Returns
+// readCacheRow fetches the precomputed row for “id“. Returns
 // (nil, nil) when the row doesn't exist (cache miss), distinguished
 // from a hard SQL error.
 func readCacheRow(ctx context.Context, db *sql.DB, id string) (*CachedStatsResponse, error) {
 	var (
-		total, dur, src, derived          int64
-		byState, byLang, byType, jobs     []byte
-		lastSweep                         []byte
-		updatedAt                         time.Time
+		total, dur, src, derived      int64
+		byState, byLang, byType, jobs []byte
+		lastSweep                     []byte
+		updatedAt                     time.Time
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT total_videos, total_duration_sec, source_size_bytes,
@@ -157,7 +157,7 @@ func readCacheRow(ctx context.Context, db *sql.DB, id string) (*CachedStatsRespo
 // recomputeStats does the source-table scan that backs the cache. The
 // queries are small (one row per state, one per language, one per type,
 // one per job-state) so this is the canonical "rebuild" implementation
-// that the operational ``stats-rebuild`` command also calls.
+// that the operational “stats-rebuild“ command also calls.
 func recomputeStats(ctx context.Context, db *sql.DB, id string) (*CachedStatsResponse, error) {
 	resp := &CachedStatsResponse{
 		ByState:       map[string]int{},

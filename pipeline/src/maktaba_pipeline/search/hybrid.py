@@ -101,11 +101,7 @@ def reciprocal_rank_fusion(
     fused = [
         HybridHit(
             segment_id=sid,
-            text=(
-                fts_hit_by_id[sid].text
-                if sid in fts_hit_by_id
-                else sem_hit_by_id[sid].text
-            ),
+            text=(fts_hit_by_id[sid].text if sid in fts_hit_by_id else sem_hit_by_id[sid].text),
             fts_rank=fts_rank_by_id.get(sid),
             semantic_rank=sem_rank_by_id.get(sid),
             score=score_by_id[sid],

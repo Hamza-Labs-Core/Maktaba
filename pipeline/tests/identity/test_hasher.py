@@ -249,8 +249,7 @@ def test_hash_io_budget_for_large_sparse_file(tmp_path: Path) -> None:
 
     assert len(digest) == 64
     assert counter.bytes_read <= 2 * HEAD_TAIL_BYTES, (
-        f"I/O budget violated: read {counter.bytes_read} bytes, "
-        f"max {2 * HEAD_TAIL_BYTES}"
+        f"I/O budget violated: read {counter.bytes_read} bytes, max {2 * HEAD_TAIL_BYTES}"
     )
     # And specifically: exactly 2 * HEAD_TAIL_BYTES (head + tail).
     assert counter.bytes_read == 2 * HEAD_TAIL_BYTES
@@ -331,9 +330,7 @@ def test_hash_reader_handles_short_reads() -> None:
     assert len(digest) == 64
 
     # Cross-check against the canonical formula.
-    expected = _hex_from_parts(
-        body[:512], body[len(body) - 512 :], _size_suffix(len(body))
-    )
+    expected = _hex_from_parts(body[:512], body[len(body) - 512 :], _size_suffix(len(body)))
     assert digest == expected
 
 

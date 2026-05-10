@@ -244,9 +244,7 @@ def test_sqlite_recreates_indexes_after_rebuild(sqlite_sql: str) -> None:
         "videos_detected_language_idx",
         "videos_missing_idx",
     ):
-        assert f"CREATE INDEX IF NOT EXISTS {idx}" in sqlite_sql, (
-            f"missing index re-create: {idx}"
-        )
+        assert f"CREATE INDEX IF NOT EXISTS {idx}" in sqlite_sql, f"missing index re-create: {idx}"
 
 
 @pytest.mark.unit

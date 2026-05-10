@@ -46,10 +46,10 @@ func (OSFileOpener) Open(path string) (FileReader, error) { return os.Open(path)
 
 // DirectHandler serves Story 8.3 — range-served direct play.
 type DirectHandler struct {
-	Probe        *probe.Cache
-	Profiles     *capability.Registry
-	Files        FileOpener
-	NowFn        func() time.Time
+	Probe    *probe.Cache
+	Profiles *capability.Registry
+	Files    FileOpener
+	NowFn    func() time.Time
 	// AllowAllProfiles, when true, skips the matrix decision and serves
 	// any video as direct. Used by the remux handler after the file has
 	// already been transcoded into a direct-playable container.

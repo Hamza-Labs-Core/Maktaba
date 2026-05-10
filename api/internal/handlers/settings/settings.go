@@ -6,9 +6,9 @@
 //	POST /api/settings/stt-test
 //
 // Effective config is the merge of file/env defaults + the
-// ``app_settings`` table. Secret-bearing keys are redacted in the
-// response with a sibling ``*_present`` boolean so the UI knows the
-// value exists without seeing it. Only keys in ``runtimeKeys`` may be
+// “app_settings“ table. Secret-bearing keys are redacted in the
+// response with a sibling “*_present“ boolean so the UI knows the
+// value exists without seeing it. Only keys in “runtimeKeys“ may be
 // PATCHed at runtime; everything else is 403.
 package settings
 
@@ -28,8 +28,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// PipelineSettingsClient is the gRPC backend for ``stt-backends`` and
-// ``stt-test`` (Pipeline Story 7.18).
+// PipelineSettingsClient is the gRPC backend for “stt-backends“ and
+// “stt-test“ (Pipeline Story 7.18).
 type PipelineSettingsClient interface {
 	ListBackends(ctx context.Context) ([]Backend, error)
 	STTTest(ctx context.Context, backend string, config map[string]any) (STTTestResult, error)
@@ -70,7 +70,7 @@ func (h *Handler) Mount(r chi.Router) {
 
 // secretKeyPattern detects keys that should be redacted from the
 // response. Matches anywhere in the dotted key path so
-// ``stt.openai.api_key`` is caught.
+// “stt.openai.api_key“ is caught.
 var secretKeyPattern = regexp.MustCompile(`(?i)(api_key|token|password|secret)`)
 
 // runtimeKeys is the allowlist for PATCH. Trying to PATCH anything else
@@ -92,7 +92,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, redacted)
 }
 
-// Patch applies updates to ``app_settings``. AC-3: non-runtime keys
+// Patch applies updates to “app_settings“. AC-3: non-runtime keys
 // return 403.
 func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
@@ -201,7 +201,7 @@ func (h *Handler) merged(ctx context.Context) map[string]any {
 }
 
 // redactSecrets replaces values for keys that match secretKeyPattern
-// with ``"<redacted>"`` and adds a sibling ``*_present: true``.
+// with “"<redacted>"“ and adds a sibling “*_present: true“.
 func redactSecrets(in map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range in {

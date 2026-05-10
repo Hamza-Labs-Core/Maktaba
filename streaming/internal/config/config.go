@@ -22,10 +22,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Addr             string
-	ReadHeaderMS     int
-	WriteMS          int
-	ShutdownMS       int
+	Addr         string
+	ReadHeaderMS int
+	WriteMS      int
+	ShutdownMS   int
 }
 
 type AdminConfig struct {
@@ -34,14 +34,14 @@ type AdminConfig struct {
 }
 
 type JWTConfig struct {
-	JWKSURL             string
-	JWKSRefreshSec      int
-	ClockSkewLeewaySec  int
+	JWKSURL            string
+	JWKSRefreshSec     int
+	ClockSkewLeewaySec int
 }
 
 type CacheConfig struct {
-	Root    string
-	MaxGiB  int
+	Root       string
+	MaxGiB     int
 	GCEverySec int
 }
 

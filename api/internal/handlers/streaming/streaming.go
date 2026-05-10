@@ -49,28 +49,28 @@ type URLSigner interface {
 // OpenSessionRequest is the AC-1 body shape; Streaming's gRPC stub
 // consumes the same fields. Optional fields default in Streaming.
 type OpenSessionRequest struct {
-	VideoID         string `json:"video_id"`
-	ClientProfile   string `json:"client_profile,omitempty"`
-	AudioTrack      *int   `json:"audio_track,omitempty"`
-	SubtitleTrack   string `json:"subtitle_track,omitempty"`
-	StartSec        float64 `json:"start_sec,omitempty"`
-	MaxBitrateKbps  int    `json:"max_bitrate_kbps,omitempty"`
-	Format          string `json:"format,omitempty"`
-	ForceSoftware   bool   `json:"force_software,omitempty"`
-	ForceTranscode  bool   `json:"force_transcode,omitempty"`
-	BurnSubs        bool   `json:"burn_subs,omitempty"`
-	AcceptQueue     bool   `json:"accept_queue,omitempty"`
+	VideoID        string  `json:"video_id"`
+	ClientProfile  string  `json:"client_profile,omitempty"`
+	AudioTrack     *int    `json:"audio_track,omitempty"`
+	SubtitleTrack  string  `json:"subtitle_track,omitempty"`
+	StartSec       float64 `json:"start_sec,omitempty"`
+	MaxBitrateKbps int     `json:"max_bitrate_kbps,omitempty"`
+	Format         string  `json:"format,omitempty"`
+	ForceSoftware  bool    `json:"force_software,omitempty"`
+	ForceTranscode bool    `json:"force_transcode,omitempty"`
+	BurnSubs       bool    `json:"burn_subs,omitempty"`
+	AcceptQueue    bool    `json:"accept_queue,omitempty"`
 }
 
 // OpenSessionResponse is the AC-1 envelope.
 type OpenSessionResponse struct {
-	SessionID        string         `json:"session_id"`
-	Mode             string         `json:"mode"` // direct, remux, transcode
-	ManifestURL      string         `json:"manifest_url,omitempty"`
-	DirectURL        string         `json:"direct_url,omitempty"`
-	ExpiresAt        time.Time      `json:"expires_at"`
-	Ladder           []Rendition    `json:"ladder,omitempty"`
-	CurrentRendition *Rendition     `json:"current_rendition,omitempty"`
+	SessionID        string      `json:"session_id"`
+	Mode             string      `json:"mode"` // direct, remux, transcode
+	ManifestURL      string      `json:"manifest_url,omitempty"`
+	DirectURL        string      `json:"direct_url,omitempty"`
+	ExpiresAt        time.Time   `json:"expires_at"`
+	Ladder           []Rendition `json:"ladder,omitempty"`
+	CurrentRendition *Rendition  `json:"current_rendition,omitempty"`
 }
 
 // Rendition is a single ABR ladder rung.
@@ -99,14 +99,14 @@ type Slots struct {
 // Handler bundles deps. Service is mandatory in production; tests can
 // inject a fake. NowFunc / TTL are testable.
 type Handler struct {
-	DB            *sql.DB
-	Service       SessionService
-	Signer        URLSigner
-	SessionTTL    time.Duration
-	NowFunc       func() time.Time
-	CapCache      *capCache
-	debounce      *sessionDebouncer
-	debounceOnce  sync.Once
+	DB           *sql.DB
+	Service      SessionService
+	Signer       URLSigner
+	SessionTTL   time.Duration
+	NowFunc      func() time.Time
+	CapCache     *capCache
+	debounce     *sessionDebouncer
+	debounceOnce sync.Once
 }
 
 // Mount wires the routes.

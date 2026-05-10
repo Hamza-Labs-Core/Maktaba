@@ -46,6 +46,7 @@ class _Seekable(Protocol):
 
     def seek(self, offset: int, whence: int = 0, /) -> int: ...
 
+
 __all__ = [
     "HEAD_TAIL_BYTES",
     "SIZE_SUFFIX_LEN",
@@ -199,9 +200,7 @@ def _read_exactly(reader: _Seekable, n: int) -> bytes:
     while remaining > 0:
         chunk = reader.read(remaining)
         if not chunk:
-            raise OSError(
-                f"identity: unexpected EOF after {n - remaining} of {n} bytes"
-            )
+            raise OSError(f"identity: unexpected EOF after {n - remaining} of {n} bytes")
         chunks.append(chunk)
         remaining -= len(chunk)
     if len(chunks) == 1:

@@ -38,9 +38,7 @@ async def test_audit_writer_rejects_non_library_category() -> None:
         pass
 
     writer = AuditWriter(insert)
-    bad = AuditEvent(
-        category="security", event=LibraryAuditEvent.SCAN_TRIGGERED, payload={}
-    )
+    bad = AuditEvent(category="security", event=LibraryAuditEvent.SCAN_TRIGGERED, payload={})
     with pytest.raises(ValueError):
         await writer.write(bad)
 

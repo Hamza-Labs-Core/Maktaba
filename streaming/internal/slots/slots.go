@@ -71,11 +71,11 @@ type Request struct {
 
 // Allocator owns the slot count + queue depth.
 type Allocator struct {
-	cfg     AllocatorConfig
-	mu      sync.Mutex
-	used    int
-	queued  int
-	holds   map[string]struct{}
+	cfg    AllocatorConfig
+	mu     sync.Mutex
+	used   int
+	queued int
+	holds  map[string]struct{}
 }
 
 // NewAllocator returns a slot allocator.

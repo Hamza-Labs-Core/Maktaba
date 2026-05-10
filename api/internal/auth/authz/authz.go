@@ -6,10 +6,10 @@
 // rule set:
 //
 //   - `*.read`     → caller must have the resource's library_id in
-//                    their `lib[]` (or be admin / single-user mode).
+//     their `lib[]` (or be admin / single-user mode).
 //   - `*.write`    → admin only, except for user-scoped resources
-//                    (playback_state, saved_searches) where the owner
-//                    is allowed.
+//     (playback_state, saved_searches) where the owner
+//     is allowed.
 //   - `library.*`  → admin only.
 //
 // The interface intentionally takes a string action; permission

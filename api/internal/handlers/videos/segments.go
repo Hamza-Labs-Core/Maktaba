@@ -16,14 +16,14 @@ import (
 
 // Segment is one transcript_segments row in the over-the-wire shape.
 type Segment struct {
-	ID         int64     `json:"id"`
-	Seq        int       `json:"seq"`
-	StartSec   float64   `json:"start_sec"`
-	EndSec     float64   `json:"end_sec"`
-	Text       string    `json:"text"`
-	Speaker    *string   `json:"speaker,omitempty"`
-	Words      []Word    `json:"words,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+	ID        int64     `json:"id"`
+	Seq       int       `json:"seq"`
+	StartSec  float64   `json:"start_sec"`
+	EndSec    float64   `json:"end_sec"`
+	Text      string    `json:"text"`
+	Speaker   *string   `json:"speaker,omitempty"`
+	Words     []Word    `json:"words,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // Word is the optional word-level breakdown (AC-3).

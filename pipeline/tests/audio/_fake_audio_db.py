@@ -314,11 +314,7 @@ class FakeAudioDB:
         if s.startswith("UPDATE transcripts SET is_active = false"):
             video_id, audio_track_id = args
             for tr in self.transcripts.values():
-                if (
-                    tr.video_id == video_id
-                    and tr.audio_track_id == audio_track_id
-                    and tr.is_active
-                ):
+                if tr.video_id == video_id and tr.audio_track_id == audio_track_id and tr.is_active:
                     tr.is_active = False
                     tr.superseded_at = self._now()
             return None

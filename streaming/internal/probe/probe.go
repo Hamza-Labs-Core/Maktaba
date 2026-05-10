@@ -18,23 +18,23 @@ import (
 // Pipeline's media_info row; we only carry the fields that drive the
 // matrix (Story 8.2) and the byte-pumping handlers (8.3–8.5).
 type Row struct {
-	VideoID        uuid.UUID
-	LibraryID      uuid.UUID
-	ContentHash    string // sha-256 of source bytes; key for evict
-	Path           string // absolute path on the read-only media volume
-	Container      string
-	VideoCodec     string
-	AudioCodec     string
-	HDR            string
-	Height         int
-	Width          int
-	DurationSec    float64
-	BitrateKbps    int
-	AudioChannels  int
-	MIMEType       string // for direct-play Content-Type
-	Size           int64
-	ModTime        time.Time
-	Probed         bool
+	VideoID       uuid.UUID
+	LibraryID     uuid.UUID
+	ContentHash   string // sha-256 of source bytes; key for evict
+	Path          string // absolute path on the read-only media volume
+	Container     string
+	VideoCodec    string
+	AudioCodec    string
+	HDR           string
+	Height        int
+	Width         int
+	DurationSec   float64
+	BitrateKbps   int
+	AudioChannels int
+	MIMEType      string // for direct-play Content-Type
+	Size          int64
+	ModTime       time.Time
+	Probed        bool
 }
 
 // Errors.

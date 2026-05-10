@@ -48,14 +48,14 @@ const (
 type CloseReason string
 
 const (
-	ReasonAPI                CloseReason = "api"
-	ReasonIdle               CloseReason = "idle"
-	ReasonCrash              CloseReason = "crash"
-	ReasonEvicted            CloseReason = "evicted"
-	ReasonUserStop           CloseReason = "user-stop"
-	ReasonAdminEvict         CloseReason = "admin-evict"
-	ReasonHWFailedSWFailed   CloseReason = "hw_failed_software_failed"
-	ReasonStoreInsertFailed  CloseReason = "store-insert-failed"
+	ReasonAPI               CloseReason = "api"
+	ReasonIdle              CloseReason = "idle"
+	ReasonCrash             CloseReason = "crash"
+	ReasonEvicted           CloseReason = "evicted"
+	ReasonUserStop          CloseReason = "user-stop"
+	ReasonAdminEvict        CloseReason = "admin-evict"
+	ReasonHWFailedSWFailed  CloseReason = "hw_failed_software_failed"
+	ReasonStoreInsertFailed CloseReason = "store-insert-failed"
 )
 
 // Row is the in-memory shape mirroring the streaming_sessions row.

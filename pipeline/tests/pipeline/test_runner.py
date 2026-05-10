@@ -127,11 +127,7 @@ class FakeDB:
             raise AssertionError(f"unexpected SQL: {sql!r}")
         worker_id, stages = args
         async with self._get_lock():
-            eligible = [
-                r
-                for r in self.rows
-                if r.state == "pending" and r.stage in list(stages)
-            ]
+            eligible = [r for r in self.rows if r.state == "pending" and r.stage in list(stages)]
             if not eligible:
                 return None
             eligible.sort(key=lambda r: (r.priority, r.id))
@@ -160,7 +156,8 @@ class _ManualWakeup:
             getter = asyncio.create_task(self._queue.get())
             stopper = asyncio.create_task(self._stop.wait())
             done, pending = await asyncio.wait(
-                {getter, stopper}, return_when=asyncio.FIRST_COMPLETED,
+                {getter, stopper},
+                return_when=asyncio.FIRST_COMPLETED,
             )
             for t in pending:
                 t.cancel()

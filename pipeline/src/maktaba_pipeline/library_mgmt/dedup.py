@@ -87,9 +87,7 @@ class PathOutOfRootError(ValueError):
         self.canonical = canonical
 
 
-def is_path_in_roots(
-    candidate: str, roots_canonical: Iterable[str]
-) -> bool:
+def is_path_in_roots(candidate: str, roots_canonical: Iterable[str]) -> bool:
     """True if a canonical candidate lives under (or equals) any root.
 
     Use this *after* :func:`roots.canonicalise` on both sides — the

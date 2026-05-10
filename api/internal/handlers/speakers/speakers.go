@@ -4,7 +4,7 @@
 //	PATCH /api/speakers/{id}        (rename)
 //	POST  /api/speakers/merge       (collapse two clusters)
 //
-// Merge is a single transaction (AC-4): rewrite ``segment_speakers``
+// Merge is a single transaction (AC-4): rewrite “segment_speakers“
 // rows then drop the duplicate row. Rename validates name uniqueness
 // per video.
 package speakers

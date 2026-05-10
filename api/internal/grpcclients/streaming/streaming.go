@@ -2,7 +2,7 @@
 // gRPC service (Story 7.18 AC-2). Same retry / breaker / context
 // propagation pattern as the pipeline client wrapper.
 //
-// The generated protobuf surface lives in ``shared/proto/streaming``
+// The generated protobuf surface lives in “shared/proto/streaming“
 // outside this module; we expose a Go-native interface so tests can
 // stub it.
 package streaming
@@ -16,17 +16,17 @@ import (
 
 // OpenSessionRequest mirrors the same proto on the Streaming side.
 type OpenSessionRequest struct {
-	UserID          string
-	VideoID         string
-	ClientProfile   string
-	AudioTrack      int
-	SubtitleTrack   string
-	StartSec        float64
-	MaxBitrateKbps  int
-	Format          string
-	BurnSubs        bool
-	ForceTranscode  bool
-	ForceSoftware   bool
+	UserID         string
+	VideoID        string
+	ClientProfile  string
+	AudioTrack     int
+	SubtitleTrack  string
+	StartSec       float64
+	MaxBitrateKbps int
+	Format         string
+	BurnSubs       bool
+	ForceTranscode bool
+	ForceSoftware  bool
 }
 
 // OpenSessionResponse mirrors the Streaming proto reply.
@@ -38,7 +38,7 @@ type OpenSessionResponse struct {
 	ExpiresAt   time.Time
 }
 
-// Capabilities is the AC-2 ``GetCapabilities`` return.
+// Capabilities is the AC-2 “GetCapabilities“ return.
 type Capabilities struct {
 	Codecs              []string
 	HWAccel             string

@@ -137,18 +137,24 @@ def test_openai_budget_cap_accepts_under_projection() -> None:
 
 
 def test_openai_budget_cap_zero_or_none_means_unlimited() -> None:
-    assert should_refuse_claim(
-        duration_sec=10_000,
-        cost_per_minute=0.006,
-        monthly_spent_usd=0.0,
-        monthly_cap_usd=None,
-    ) is False
-    assert should_refuse_claim(
-        duration_sec=10_000,
-        cost_per_minute=0.006,
-        monthly_spent_usd=0.0,
-        monthly_cap_usd=0,
-    ) is False
+    assert (
+        should_refuse_claim(
+            duration_sec=10_000,
+            cost_per_minute=0.006,
+            monthly_spent_usd=0.0,
+            monthly_cap_usd=None,
+        )
+        is False
+    )
+    assert (
+        should_refuse_claim(
+            duration_sec=10_000,
+            cost_per_minute=0.006,
+            monthly_spent_usd=0.0,
+            monthly_cap_usd=0,
+        )
+        is False
+    )
 
 
 def test_openai_health_reports_ready_when_transcribe_fn_is_set() -> None:

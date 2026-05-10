@@ -61,9 +61,7 @@ class _FakeCollection:
     ) -> dict[str, Any]:
         self.last_query = {
             "query_texts": list(query_texts) if query_texts is not None else None,
-            "query_embeddings": (
-                [list(e) for e in query_embeddings] if query_embeddings else None
-            ),
+            "query_embeddings": ([list(e) for e in query_embeddings] if query_embeddings else None),
             "n_results": n_results,
             "where": where,
         }

@@ -1,6 +1,6 @@
 // Package pipeline is the API's typed wrapper around the Pipeline
 // gRPC service (Story 7.18 AC-1). The generated protobuf client is
-// owned by ``shared/proto`` and lives outside this module so the API
+// owned by “shared/proto“ and lives outside this module so the API
 // can stub the interface in tests without a protobuf toolchain
 // dependency.
 //
@@ -13,7 +13,7 @@
 //   - A simple sliding-window circuit breaker (50 % failure in 30 s
 //     opens it for 10 s);
 //   - Context propagation: an inbound `X-Request-Id` is carried over
-//     to the receiving service via the ``maktaba-request-id`` metadata
+//     to the receiving service via the “maktaba-request-id“ metadata
 //     key.
 package pipeline
 
@@ -68,13 +68,13 @@ type Client interface {
 
 // Config bundles dial + retry knobs.
 type Config struct {
-	Addr             string
-	EmbedTimeout     time.Duration
+	Addr              string
+	EmbedTimeout      time.Duration
 	TranscribeTimeout time.Duration
-	MaxRetries       int
-	CircuitWindow    time.Duration
-	CircuitOpenTime  time.Duration
-	FailureThreshold float64
+	MaxRetries        int
+	CircuitWindow     time.Duration
+	CircuitOpenTime   time.Duration
+	FailureThreshold  float64
 }
 
 // DefaultConfig is the canonical knob set.
@@ -92,12 +92,12 @@ func DefaultConfig() Config {
 // Breaker is the sliding-window failure tracker. Exported so tests can
 // drive it directly without spinning up a gRPC stack.
 type Breaker struct {
-	mu          sync.Mutex
-	window      time.Duration
-	openFor     time.Duration
-	threshold   float64
-	openedAt    time.Time
-	history     []breakerEvent
+	mu        sync.Mutex
+	window    time.Duration
+	openFor   time.Duration
+	threshold float64
+	openedAt  time.Time
+	history   []breakerEvent
 }
 
 type breakerEvent struct {

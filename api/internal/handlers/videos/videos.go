@@ -42,24 +42,24 @@ import (
 // Detail joins audio_tracks / chapters / tags / latest transcript; the
 // list endpoint sets the join fields to nil.
 type Video struct {
-	ID              string          `json:"id"`
-	LibraryID       string          `json:"library_id"`
-	Path            string          `json:"path"`
-	Filename        string          `json:"filename"`
-	Title           *string         `json:"title,omitempty"`
-	Description     *string         `json:"description,omitempty"`
-	State           string          `json:"state"`
-	DetectedLang    *string         `json:"detected_language,omitempty"`
-	DurationSec     *float64        `json:"duration_sec,omitempty"`
-	SizeBytes       int64           `json:"size_bytes"`
-	ContentHash     string          `json:"content_hash"`
-	Metadata        json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	Playable        *bool           `json:"playable,omitempty"`
-	Tags            []string        `json:"tags,omitempty"`
-	LatestTrans     *string         `json:"latest_transcript_id,omitempty"`
-	PlaybackState   *PlaybackState  `json:"playback_state,omitempty"`
+	ID            string          `json:"id"`
+	LibraryID     string          `json:"library_id"`
+	Path          string          `json:"path"`
+	Filename      string          `json:"filename"`
+	Title         *string         `json:"title,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	State         string          `json:"state"`
+	DetectedLang  *string         `json:"detected_language,omitempty"`
+	DurationSec   *float64        `json:"duration_sec,omitempty"`
+	SizeBytes     int64           `json:"size_bytes"`
+	ContentHash   string          `json:"content_hash"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	Playable      *bool           `json:"playable,omitempty"`
+	Tags          []string        `json:"tags,omitempty"`
+	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
+	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
 }
 
 // PlaybackState is the embedded shape on detail.

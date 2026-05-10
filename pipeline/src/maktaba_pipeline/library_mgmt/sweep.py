@@ -215,7 +215,6 @@ class SweepRunner:
         _ = by_hash
         return report
 
-
     async def _mark_missing(
         self,
         catalog: list[_CatalogRow],

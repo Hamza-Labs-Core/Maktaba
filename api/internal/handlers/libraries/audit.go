@@ -3,9 +3,9 @@
 // Story 9.11 speaker merge — owned in their respective handlers).
 //
 // The vocabulary mirrors the Python side
-// (``maktaba_pipeline.library_mgmt.audit.LibraryAuditEvent``); a write
+// (“maktaba_pipeline.library_mgmt.audit.LibraryAuditEvent“); a write
 // emitted from a worker and a write emitted from the API both end up as
-// the same ``audit_log`` row with ``category='library'``.
+// the same “audit_log“ row with “category='library'“.
 package libraries
 
 import (
@@ -26,18 +26,18 @@ import (
 )
 
 // LibraryAuditEvent enumerates the closed event vocabulary for
-// ``category='library'``. Keep in sync with the Python sibling.
+// “category='library'“. Keep in sync with the Python sibling.
 const (
-	EventScanTriggered     = "scan-triggered"
-	EventSettingsChanged   = "settings-changed"
-	EventVideoPurged       = "video-purged"
-	EventLibraryDeleted    = "library-deleted"
-	EventSpeakerMerged     = "speaker-merged"
-	EventFilePurgeResults  = "file-purge-results"
-	EventDuplicateDetected = "duplicate-detected"
+	EventScanTriggered      = "scan-triggered"
+	EventSettingsChanged    = "settings-changed"
+	EventVideoPurged        = "video-purged"
+	EventLibraryDeleted     = "library-deleted"
+	EventSpeakerMerged      = "speaker-merged"
+	EventFilePurgeResults   = "file-purge-results"
+	EventDuplicateDetected  = "duplicate-detected"
 	EventRuntimeRootOverlap = "runtime-root-overlap"
-	EventPathOutOfRoot     = "path-out-of-root"
-	EventTopicRecluster    = "topic-recluster"
+	EventPathOutOfRoot      = "path-out-of-root"
+	EventTopicRecluster     = "topic-recluster"
 )
 
 // AuditPayloadMaxBytes mirrors the Python AC EC: payloads larger than
@@ -47,15 +47,15 @@ const AuditPayloadMaxBytes = 8 * 1024
 
 // AuditEntry is the AC-2 over-the-wire shape.
 type AuditEntry struct {
-	ID         int64           `json:"id"`
-	Event      string          `json:"event"`
-	ActorID    *string         `json:"actor_user_id,omitempty"`
-	TargetID   *string         `json:"target_id,omitempty"`
-	Payload    json.RawMessage `json:"payload"`
-	Timestamp  time.Time       `json:"ts"`
+	ID        int64           `json:"id"`
+	Event     string          `json:"event"`
+	ActorID   *string         `json:"actor_user_id,omitempty"`
+	TargetID  *string         `json:"target_id,omitempty"`
+	Payload   json.RawMessage `json:"payload"`
+	Timestamp time.Time       `json:"ts"`
 }
 
-// MountAudit registers ``GET /api/libraries/{id}/audit``. Wired
+// MountAudit registers “GET /api/libraries/{id}/audit“. Wired
 // separately from :meth:`Handler.Mount` so deployments without the
 // 0036/0044/0049 audit migrations applied can still serve the rest of
 // the surface.
@@ -139,7 +139,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 // WriteAudit is the canonical insert helper. It is used by
 // :meth:`Delete` (library deletion / purge), the settings PATCH path
 // (Story 9.1 NOTIFY pre-write), and the worker bridge for
-// pipeline-emitted events. Best-effort: a missing ``audit_log`` table
+// pipeline-emitted events. Best-effort: a missing “audit_log“ table
 // (e.g., a partial-migration test environment) silently swallows the
 // error so the destructive operation is never blocked.
 func WriteAudit(

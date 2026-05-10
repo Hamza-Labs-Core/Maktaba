@@ -61,10 +61,10 @@ type PatchRequest struct {
 // Handler bundles handler dependencies. DB is mandatory; PathChecker
 // is injectable so tests can stub the filesystem checks.
 type Handler struct {
-	DB           *sql.DB
-	PathChecker  PathChecker
-	JobEnqueuer  JobEnqueuer
-	NowFunc      func() time.Time
+	DB          *sql.DB
+	PathChecker PathChecker
+	JobEnqueuer JobEnqueuer
+	NowFunc     func() time.Time
 }
 
 // PathChecker validates that a library root is an absolute, existing,
@@ -74,7 +74,7 @@ type PathChecker interface {
 	Check(root string) error
 }
 
-// JobEnqueuer is the surface for ``POST /api/libraries/{id}/scan`` —
+// JobEnqueuer is the surface for “POST /api/libraries/{id}/scan“ —
 // scan-job insert + NOTIFY. Story 6.x owns the schema; this story only
 // fires the insert.
 type JobEnqueuer interface {
@@ -87,8 +87,8 @@ type OSPathChecker struct{}
 
 // Check returns nil if root is absolute, exists, is a directory, and is
 // readable by this process. Otherwise it returns a sentinel error whose
-// string matches the AC vocabulary: ``not-absolute``, ``not-found``,
-// ``not-readable``.
+// string matches the AC vocabulary: “not-absolute“, “not-found“,
+// “not-readable“.
 func (OSPathChecker) Check(root string) error {
 	if !filepath.IsAbs(root) {
 		return errPathNotAbsolute
@@ -133,7 +133,7 @@ func (h *Handler) Mount(r chi.Router) {
 
 // List returns every library the principal can read. For an admin /
 // single-user this is the full table; for a scoped user it's the
-// intersection with their ``lib[]`` claim.
+// intersection with their “lib[]“ claim.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -369,7 +369,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete implements AC-4: ?purge=false (default) cascades DB rows; ?purge=true
-// also requires ``?confirm=<name>`` and unlinks the on-disk files.
+// also requires “?confirm=<name>“ and unlinks the on-disk files.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil || !p.IsAdmin {
@@ -464,16 +464,16 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 
 // StatsResponse is the AC-6 shape: derived counts and groupings.
 type StatsResponse struct {
-	TotalVideos       int            `json:"total_videos"`
-	TotalDurationSec  float64        `json:"total_duration_sec"`
-	ByState           map[string]int `json:"by_state"`
-	ProcessedPct      float64        `json:"processed_pct"`
-	ByLanguage        map[string]int `json:"by_language"`
+	TotalVideos      int            `json:"total_videos"`
+	TotalDurationSec float64        `json:"total_duration_sec"`
+	ByState          map[string]int `json:"by_state"`
+	ProcessedPct     float64        `json:"processed_pct"`
+	ByLanguage       map[string]int `json:"by_language"`
 }
 
 // Stats implements AC-6 with a single SQL round-trip per group.
-// State counts use ``GROUP BY state``; language counts use ``GROUP BY
-// detected_language``. ``processed_pct`` is the share of videos whose
+// State counts use “GROUP BY state“; language counts use “GROUP BY
+// detected_language“. “processed_pct“ is the share of videos whose
 // state is in the terminal-success set.
 func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

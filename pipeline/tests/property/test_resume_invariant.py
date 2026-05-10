@@ -64,9 +64,7 @@ class _FakeDB:
         if seg.end_sec < 0:
             raise ValueError("segment end < 0")
         if seg.end_sec > self.job.total_duration_seconds:
-            raise ValueError(
-                f"segment end {seg.end_sec} > total {self.job.total_duration_seconds}"
-            )
+            raise ValueError(f"segment end {seg.end_sec} > total {self.job.total_duration_seconds}")
         self.segments.append(seg)
         self.job.last_segment_end_sec = seg.end_sec
 

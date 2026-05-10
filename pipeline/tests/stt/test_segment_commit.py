@@ -27,9 +27,7 @@ def test_pg_commit_advances_progress_with_audio_time() -> None:
     transcript_id = uuid4()
     job_id = _seed_job(db)
 
-    seg = Segment(
-        seq=0, start_sec=0.0, end_sec=60.0, text="hello", audio_sec=60.0, wall_sec=1.0
-    )
+    seg = Segment(seq=0, start_sec=0.0, end_sec=60.0, text="hello", audio_sec=60.0, wall_sec=1.0)
     result = asyncio.run(
         commit_segment(
             db, transcript_id=transcript_id, job_id=job_id, segment=seg, total_duration_sec=600.0

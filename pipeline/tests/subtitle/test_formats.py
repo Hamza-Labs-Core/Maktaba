@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from maktaba_pipeline.subtitle.formats import (
     MAX_TIMESTAMP_SEC,
     escape_srt_text,
     escape_vtt_text,
     format_srt_timestamp,
     format_vtt_timestamp,
+    wrap_cue,
 )
 
 # --- timestamp formatting ---------------------------------------------
@@ -74,3 +77,50 @@ def test_vtt_escape_amp_first() -> None:
     # ``escape_vtt_text`` must not double-escape entities.
     out = escape_vtt_text("&<>")
     assert out == "&amp;&lt;&gt;"
+
+
+# --- cue wrapping (Story 4.2) -----------------------------------------
+
+
+def test_wrap_cue_short_text_returns_single_cue_single_line() -> None:
+    assert wrap_cue("hello world") == ["hello world"]
+
+
+def test_wrap_cue_empty_returns_empty_list() -> None:
+    assert wrap_cue("") == []
+    assert wrap_cue("   ") == []
+
+
+def test_wrap_cue_wraps_to_two_lines_when_over_line_chars() -> None:
+    text = " ".join(["word"] * 20)  # 99 chars including separators
+    cues = wrap_cue(text, line_chars=40, max_lines=2)
+    assert len(cues) >= 1
+    # First cue has at most two lines.
+    assert cues[0].count("\n") <= 1
+    # No individual line exceeds the limit (since "word" fits).
+    for cue in cues:
+        for line in cue.split("\n"):
+            assert len(line) <= 40
+
+
+def test_wrap_cue_splits_into_multiple_cues_when_over_max_lines() -> None:
+    text = " ".join(["abcd"] * 30)  # forces overflow past 2-line limit
+    cues = wrap_cue(text, line_chars=10, max_lines=2)
+    assert len(cues) >= 2
+    for cue in cues:
+        assert cue.count("\n") <= 1
+
+
+def test_wrap_cue_long_token_overflows_rather_than_breaks_word() -> None:
+    # Mid-word breaks are silent and worse than overflow; the token
+    # stays intact and is allowed to exceed the line cap.
+    long_token = "a" * 120
+    cues = wrap_cue(long_token, line_chars=40, max_lines=2)
+    assert cues == [long_token]
+
+
+def test_wrap_cue_rejects_non_positive_limits() -> None:
+    with pytest.raises(ValueError):
+        wrap_cue("hi", line_chars=0)
+    with pytest.raises(ValueError):
+        wrap_cue("hi", max_lines=0)

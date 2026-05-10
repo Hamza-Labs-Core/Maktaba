@@ -4,7 +4,7 @@
 //
 // Rails: continue, next-up, for-you, library. Each rail is filtered
 // to videos the user can read; for-you is sourced from the
-// ``user_recs`` table populated by a nightly Pipeline job (the
+// “user_recs“ table populated by a nightly Pipeline job (the
 // Pipeline-side aggregation is owned by Epic 9).
 //
 // AC-3 caching is a small per-user in-memory LRU with a 60-s TTL.
