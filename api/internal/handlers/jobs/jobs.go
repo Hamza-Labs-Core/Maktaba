@@ -12,7 +12,7 @@
 //
 // All control endpoints set flags in one UPDATE and return immediately —
 // the worker observes them async (Pipeline §7.7). The state-transition
-// guard for ``retry`` rejects non-failed jobs with 409.
+// guard for “retry“ rejects non-failed jobs with 409.
 package jobs
 
 import (
@@ -33,21 +33,21 @@ import (
 // Job is the over-the-wire shape; minimal — handlers don't return rich
 // objects, mostly status flags so the UI can re-render.
 type Job struct {
-	ID                    string    `json:"id"`
-	VideoID               *string   `json:"video_id,omitempty"`
-	LibraryID             *string   `json:"library_id,omitempty"`
-	Stage                 string    `json:"stage"`
-	State                 string    `json:"state"`
-	Priority              int       `json:"priority"`
-	Attempts              int       `json:"attempts"`
-	PauseRequested        bool      `json:"pause_requested"`
-	CancelRequested       bool      `json:"cancel_requested"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID                    string     `json:"id"`
+	VideoID               *string    `json:"video_id,omitempty"`
+	LibraryID             *string    `json:"library_id,omitempty"`
+	Stage                 string     `json:"stage"`
+	State                 string     `json:"state"`
+	Priority              int        `json:"priority"`
+	Attempts              int        `json:"attempts"`
+	PauseRequested        bool       `json:"pause_requested"`
+	CancelRequested       bool       `json:"cancel_requested"`
+	CreatedAt             time.Time  `json:"created_at"`
 	NotBefore             *time.Time `json:"not_before,omitempty"`
-	ClaimedBy             *string   `json:"claimed_by,omitempty"`
+	ClaimedBy             *string    `json:"claimed_by,omitempty"`
 	LastHeartbeatAt       *time.Time `json:"last_heartbeat_at,omitempty"`
-	EstimatedRemainingSec *float64  `json:"estimated_remaining_sec,omitempty"`
-	Error                 *string   `json:"error,omitempty"`
+	EstimatedRemainingSec *float64   `json:"estimated_remaining_sec,omitempty"`
+	Error                 *string    `json:"error,omitempty"`
 }
 
 // Handler bundles deps.
@@ -89,7 +89,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 //
 //	?stage=...&state=...&limit=...
 //
-// Pagination is offset-free — last page returned when fewer than ``limit``
+// Pagination is offset-free — last page returned when fewer than “limit“
 // rows are emitted. The intended power tool is the cursor variant
 // owned by `paginate`, but the queue UI uses small windows so we keep
 // this surface simple.
@@ -141,7 +141,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
-// Pause sets pause_requested. With ``?force=true`` it shortcuts the
+// Pause sets pause_requested. With “?force=true“ it shortcuts the
 // state directly per AC-2.
 func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {

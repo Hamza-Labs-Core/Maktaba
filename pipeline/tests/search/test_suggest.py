@@ -90,7 +90,7 @@ def test_record_search_normalises_query() -> None:
         # query is preserved verbatim; query_norm is the cleaned form.
         _, args = db.executes[0]
         assert args[1] == "Café  "  # original `query`
-        assert args[2] == "cafe"     # normalised `query_norm`
+        assert args[2] == "cafe"  # normalised `query_norm`
 
     asyncio.run(run())
 

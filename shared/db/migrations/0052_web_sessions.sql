@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0050 (Story 10.2 / plan-10-02) — `web_sessions` table.
+-- Slot 0052 (Story 10.2 / plan-10-02) — `web_sessions` table.
 --
 -- Cookie-based session store for the web (SPA) surface. The cookie
 -- `mkt_sess` carries the row id; the CSRF double-submit token

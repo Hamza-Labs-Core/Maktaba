@@ -83,9 +83,7 @@ async def test_each_call_appends_one_jsonl_line() -> None:
     store = DryRunStore(library=library, writer=buf)
 
     for i in range(5):
-        await store.save_candidate(
-            _params(library.id, path=f"/a/v{i}.mp4", content_hash=f"h{i}")
-        )
+        await store.save_candidate(_params(library.id, path=f"/a/v{i}.mp4", content_hash=f"h{i}"))
 
     lines = buf.getvalue().splitlines()
     assert len(lines) == 5

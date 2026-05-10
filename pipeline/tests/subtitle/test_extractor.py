@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from maktaba_pipeline.subtitle.extractor import (
     EmbeddedSubtitle,
     build_extract_args,
+    discover_sidecars,
     filter_text_based,
     parse_subtitle_streams,
 )
@@ -114,3 +117,93 @@ def test_build_extract_args_srt_uses_srt_codec() -> None:
     )
     assert "srt" in args
     assert "webvtt" not in args
+
+
+# --- sidecar discovery (Story 4.3) ------------------------------------
+
+
+def test_discover_sidecars_missing_directory(tmp_path: Path) -> None:
+    # Pointing at a directory that doesn't exist returns no rows rather
+    # than raising — the index stage tolerates a missing video.
+    fake = tmp_path / "nope" / "video.mkv"
+    assert discover_sidecars(fake) == []
+
+
+def test_discover_sidecars_no_siblings(tmp_path: Path) -> None:
+    video = tmp_path / "Foo.mkv"
+    video.write_bytes(b"")
+    assert discover_sidecars(video) == []
+
+
+def test_discover_sidecars_bare_srt(tmp_path: Path) -> None:
+    video = tmp_path / "Lecture.mkv"
+    video.write_bytes(b"")
+    sidecar = tmp_path / "Lecture.srt"
+    sidecar.write_text("hi", encoding="utf-8")
+
+    out = discover_sidecars(video)
+
+    assert len(out) == 1
+    assert out[0].path == sidecar
+    assert out[0].language == "und"
+    assert out[0].extension == ".srt"
+    assert out[0].is_forced is False
+    assert out[0].is_sdh is False
+
+
+def test_discover_sidecars_language_code(tmp_path: Path) -> None:
+    video = tmp_path / "Lecture.mkv"
+    video.write_bytes(b"")
+    en = tmp_path / "Lecture.en.srt"
+    ara = tmp_path / "Lecture.ara.vtt"
+    en.write_text("", encoding="utf-8")
+    ara.write_text("", encoding="utf-8")
+
+    out = {row.language: row for row in discover_sidecars(video)}
+
+    assert set(out.keys()) == {"en", "ara"}
+    assert out["en"].extension == ".srt"
+    assert out["ara"].extension == ".vtt"
+
+
+def test_discover_sidecars_forced_and_sdh_flags(tmp_path: Path) -> None:
+    video = tmp_path / "Lecture.mkv"
+    video.write_bytes(b"")
+    forced = tmp_path / "Lecture.en.forced.srt"
+    sdh = tmp_path / "Lecture.en.sdh.vtt"
+    cc = tmp_path / "Lecture.en.cc.srt"
+    forced.write_text("", encoding="utf-8")
+    sdh.write_text("", encoding="utf-8")
+    cc.write_text("", encoding="utf-8")
+
+    by_path = {row.path: row for row in discover_sidecars(video)}
+
+    assert by_path[forced].is_forced is True
+    assert by_path[forced].is_sdh is False
+    assert by_path[sdh].is_sdh is True
+    assert by_path[cc].is_sdh is True
+
+
+def test_discover_sidecars_skips_unrelated_files(tmp_path: Path) -> None:
+    video = tmp_path / "Lecture.mkv"
+    other = tmp_path / "OtherShow.en.srt"
+    poster = tmp_path / "Lecture.jpg"
+    video.write_bytes(b"")
+    other.write_text("", encoding="utf-8")
+    poster.write_bytes(b"")
+
+    assert discover_sidecars(video) == []
+
+
+def test_discover_sidecars_returns_ass_and_ssa(tmp_path: Path) -> None:
+    video = tmp_path / "Lecture.mkv"
+    ass = tmp_path / "Lecture.en.ass"
+    ssa = tmp_path / "Lecture.en.ssa"
+    video.write_bytes(b"")
+    ass.write_text("", encoding="utf-8")
+    ssa.write_text("", encoding="utf-8")
+
+    out = discover_sidecars(video)
+
+    extensions = {row.extension for row in out}
+    assert extensions == {".ass", ".ssa"}

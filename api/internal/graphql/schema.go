@@ -1,6 +1,6 @@
 // Package graphql provides the GraphQL surface for the API (Story 7.17).
 //
-// The schema is shipped as a single ``.graphql`` SDL document
+// The schema is shipped as a single “.graphql“ SDL document
 // (Schema) and parsed at boot. The schema contents define the domain
 // types the resolvers fill in.
 //
@@ -9,10 +9,10 @@
 // review. Instead, this package exposes:
 //
 //   - Schema: the parsed SDL source as a string,
-//   - Handler: a thin HTTP handler that accepts ``POST /graphql``
+//   - Handler: a thin HTTP handler that accepts “POST /graphql“
 //     queries and dispatches to the registered resolver map. The
 //     implementation is intentionally a pass-through that returns
-//     ``schema-only`` 501 today; the resolver table is wired by
+//     “schema-only“ 501 today; the resolver table is wired by
 //     subsequent stories.
 //
 // The point of this package is to lock in the schema shape so a
@@ -348,7 +348,7 @@ type Subscription {
 
 // Handler is the GraphQL HTTP endpoint. The full resolver wiring lands
 // in a subsequent story that introduces gqlgen; today the handler
-// returns 501 with a clear ``schema-only`` extension so a client can
+// returns 501 with a clear “schema-only“ extension so a client can
 // detect when the resolvers are not yet wired.
 type Handler struct{}
 

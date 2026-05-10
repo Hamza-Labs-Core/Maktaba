@@ -20,19 +20,13 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PG_MIG = _REPO_ROOT / "shared" / "db" / "migrations" / "0003_videos_content_hash.sql"
-_SQLITE_MIG = (
-    _REPO_ROOT / "shared" / "db" / "migrations" / "0003_videos_content_hash.sqlite.sql"
-)
-_PG_INIT = (
-    _REPO_ROOT / "shared" / "db" / "migrations" / "0001_init_libraries_and_videos.sql"
-)
+_SQLITE_MIG = _REPO_ROOT / "shared" / "db" / "migrations" / "0003_videos_content_hash.sqlite.sql"
+_PG_INIT = _REPO_ROOT / "shared" / "db" / "migrations" / "0001_init_libraries_and_videos.sql"
 
 
 def _strip_comments(sql: str) -> str:
     """Drop ``-- …`` comment lines to keep regex matchers clean."""
-    return "\n".join(
-        line for line in sql.splitlines() if not line.lstrip().startswith("--")
-    )
+    return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
 
 
 @pytest.fixture(scope="module")
@@ -150,9 +144,7 @@ def test_pg_indexes_use_concurrently(pg_sql_no_comments: str) -> None:
         re.IGNORECASE,
     )
     bad = [m for m in matches if m.upper() != "CONCURRENTLY"]
-    assert bad == [], (
-        f"expected every CREATE INDEX to use CONCURRENTLY, found bare: {bad}"
-    )
+    assert bad == [], f"expected every CREATE INDEX to use CONCURRENTLY, found bare: {bad}"
 
 
 @pytest.mark.unit
@@ -288,9 +280,9 @@ def test_sqlite_no_jsonb_or_timestamptz_types(sqlite_sql_no_comments: str) -> No
 
 @pytest.mark.unit
 def test_slot_0003_listed_in_manifest() -> None:
-    manifest = (
-        _REPO_ROOT / "shared" / "db" / "migrations" / "MANIFEST.md"
-    ).read_text(encoding="utf-8")
+    manifest = (_REPO_ROOT / "shared" / "db" / "migrations" / "MANIFEST.md").read_text(
+        encoding="utf-8"
+    )
     # Pin the row shape: slot, filename, owning plan link, depends on,
     # one-liner. Tolerate whitespace; the column separators are pipes.
     assert re.search(

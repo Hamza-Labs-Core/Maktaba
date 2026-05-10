@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0051 (Story 10.3 / plan-10-03) — `refresh_tokens` table for the
+-- Slot 0053 (Story 10.3 / plan-10-03) — `refresh_tokens` table for the
 -- native (JWT + refresh) login flow.
 --
 -- Schema mirrors README.md §"refresh_tokens". Notes:

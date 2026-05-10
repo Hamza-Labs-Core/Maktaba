@@ -379,9 +379,7 @@ class Scanner:
         )
 
         control_store: ScanControlStore | None = (
-            cast(ScanControlStore, self._store)
-            if _has_scan_control(self._store)
-            else None
+            cast(ScanControlStore, self._store) if _has_scan_control(self._store) else None
         )
         if control_store is not None and not opts.dry_run:
             await control_store.clear_scan_control(lib.id)
@@ -417,9 +415,7 @@ class Scanner:
                         raise ScanCancelled(result)
                     if flags.library_deleted:
                         result.finished_at = _utcnow()
-                        await control_store.record_scan_error(
-                            lib.id, "library_deleted"
-                        )
+                        await control_store.record_scan_error(lib.id, "library_deleted")
                         self._log.warning(
                             "scanner.library_deleted",
                             library_id=str(lib.id),

@@ -185,10 +185,14 @@ async def claim_one(
     """
     if db.dialect == "postgres":
         return await claim_one_pg(
-            db, worker_id=worker_id, supported_stages=supported_stages,
+            db,
+            worker_id=worker_id,
+            supported_stages=supported_stages,
         )
     return await claim_one_sqlite(
-        db, worker_id=worker_id, supported_stages=supported_stages,
+        db,
+        worker_id=worker_id,
+        supported_stages=supported_stages,
     )
 
 

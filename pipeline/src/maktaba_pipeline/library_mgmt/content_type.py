@@ -94,9 +94,7 @@ class Features:
             silence_pct=float(d.get("silence_pct", 0.0)),
             music_speech_ratio=float(d.get("music_speech_ratio", 0.0)),
             mean_loudness_lufs=_optional_float(d.get("mean_loudness_lufs")),
-            diarization_turn_density=_optional_float(
-                d.get("diarization_turn_density")
-            ),
+            diarization_turn_density=_optional_float(d.get("diarization_turn_density")),
             segment_density=float(d.get("segment_density", 0.0)),
         )
 
@@ -175,9 +173,7 @@ def classify(features: Features) -> ClassifierResult:
     # dominate the long-tail; if the duration cleanly clears 60 min and
     # the speech pattern is sparse, we prefer film over lecture so the
     # 90-min fixture (Story 9.10 test case) classifies correctly.
-    is_filmlike = (
-        duration_min >= 60.0 and turn_density < 3.0 and features.silence_pct < 0.2
-    )
+    is_filmlike = duration_min >= 60.0 and turn_density < 3.0 and features.silence_pct < 0.2
     if is_filmlike:
         scores[ContentType.FILM] = 0.7 + min((duration_min - 60.0) / 120.0, 0.25)
 

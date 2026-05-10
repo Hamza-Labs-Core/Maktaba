@@ -210,9 +210,10 @@ async def run_ffprobe(
         raise ProbeError(f"ffprobe exit={proc.returncode}: {tail}")
 
     try:
-        return json.loads(stdout.decode("utf-8", "replace"))
+        parsed: dict[str, Any] = json.loads(stdout.decode("utf-8", "replace"))
     except json.JSONDecodeError as exc:
         raise ProbeError(f"ffprobe output is not JSON: {exc}") from exc
+    return parsed
 
 
 async def probe(path: str, *, binary: str = "ffprobe") -> ProbeResult:
@@ -222,6 +223,7 @@ async def probe(path: str, *, binary: str = "ffprobe") -> ProbeResult:
 
 
 # --- DB writes ----------------------------------------------------------
+
 
 class _ProbeDB(Protocol):
     """The connection shape :func:`commit_probe` needs.
@@ -321,6 +323,7 @@ async def commit_probe(
     state_row = await db.fetchrow(_SELECT_STATE_SQL, video_id)
     current_state = State(state_row["state"]) if state_row is not None else None
 
+    new_state: State | None
     if not result.audio:
         if current_state is None or current_state == State.DISCOVERED:
             await advance_after_stage(db, video_id, Trigger.PROBE, Outcome.OK, log=_log)
@@ -361,7 +364,9 @@ async def commit_probe(
 
 
 def _as_job_db(db: _ProbeDB) -> JobDBConn:
-    return db  # type: ignore[return-value]
+    # The job-queue helpers expect a connection that satisfies their own
+    # Protocol; the probe DB shape is a strict superset.
+    return db
 
 
 # --- helpers ------------------------------------------------------------

@@ -24,12 +24,15 @@ from __future__ import annotations
 from enum import StrEnum
 
 __all__ = [
+    "DEFAULT_CUE_LINE_CHARS",
+    "DEFAULT_CUE_MAX_LINES",
     "MAX_TIMESTAMP_SEC",
     "SubtitleFormat",
     "escape_srt_text",
     "escape_vtt_text",
     "format_srt_timestamp",
     "format_vtt_timestamp",
+    "wrap_cue",
 ]
 
 
@@ -94,8 +97,72 @@ def escape_vtt_text(text: str) -> str:
     """
     # Order matters: replace ``&`` first so it doesn't double-escape the
     # ampersands we introduce for ``<`` and ``>``.
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# Conventional readability ceiling for one subtitle line: ~80 latin
+# characters before the eye has to track too far. Two lines per cue is
+# the de-facto maximum players render without clipping. Story 4.2.
+DEFAULT_CUE_LINE_CHARS: int = 80
+DEFAULT_CUE_MAX_LINES: int = 2
+
+
+def wrap_cue(
+    text: str,
+    *,
+    line_chars: int = DEFAULT_CUE_LINE_CHARS,
+    max_lines: int = DEFAULT_CUE_MAX_LINES,
+) -> list[str]:
+    """Split ``text`` into a sequence of cues fit for display.
+
+    Each returned string is the body of one cue (already joined with
+    ``\\n`` between its lines, never exceeding ``max_lines``). Whitespace
+    inside a token is preserved, but the input is split on whitespace
+    boundaries; a single token longer than ``line_chars`` is allowed to
+    overflow rather than mid-word-break — players truncate, but breaking
+    a word silently is worse for comprehension.
+
+    The split is greedy: pack as many words as fit on the current line,
+    move to the next, and once ``max_lines`` is reached, emit the cue
+    and start a fresh one. Empty / whitespace-only input returns an
+    empty list (callers should drop the cue entirely).
+    """
+    if line_chars <= 0:
+        raise ValueError("line_chars must be positive")
+    if max_lines <= 0:
+        raise ValueError("max_lines must be positive")
+    tokens = text.split()
+    if not tokens:
+        return []
+
+    cues: list[str] = []
+    current_lines: list[str] = []
+    current_line = ""
+
+    def _flush_cue() -> None:
+        nonlocal current_line, current_lines
+        if current_line:
+            current_lines.append(current_line)
+        if current_lines:
+            cues.append("\n".join(current_lines))
+        current_lines = []
+        current_line = ""
+
+    for token in tokens:
+        # Try to append to the active line.
+        candidate = token if not current_line else f"{current_line} {token}"
+        if len(candidate) <= line_chars:
+            current_line = candidate
+            continue
+        # Token doesn't fit on the active line — wrap.
+        if current_line:
+            current_lines.append(current_line)
+            current_line = ""
+            if len(current_lines) >= max_lines:
+                # Cue is full; emit it and start a new one with this token.
+                _flush_cue()
+        # Place the token on a fresh line of the (possibly new) cue.
+        current_line = token
+
+    _flush_cue()
+    return cues

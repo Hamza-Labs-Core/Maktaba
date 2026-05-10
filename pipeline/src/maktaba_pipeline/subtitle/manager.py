@@ -47,9 +47,9 @@ class SubtitleSource(StrEnum):
     migration 0015.
     """
 
-    EMBEDDED = "embedded"   # extracted from container (ffmpeg)
+    EMBEDDED = "embedded"  # extracted from container (ffmpeg)
     GENERATED = "generated"  # rendered from transcript_segments
-    EXTERNAL = "external"    # sidecar .srt/.vtt discovered on disk
+    EXTERNAL = "external"  # sidecar .srt/.vtt discovered on disk
 
 
 @dataclass(slots=True, frozen=True)

@@ -19,14 +19,14 @@ import (
 )
 
 type fixture struct {
-	priv    *rsa.PrivateKey
-	jwks    *auth.JWKSCache
+	priv     *rsa.PrivateKey
+	jwks     *auth.JWKSCache
 	verifier *auth.Verifier
-	sess    uuid.UUID
-	video   uuid.UUID
-	user    uuid.UUID
-	libA    uuid.UUID
-	libB    uuid.UUID
+	sess     uuid.UUID
+	video    uuid.UUID
+	user     uuid.UUID
+	libA     uuid.UUID
+	libB     uuid.UUID
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -42,14 +42,14 @@ func newFixture(t *testing.T) *fixture {
 	jwks.Set(map[string]*rsa.PublicKey{"k1": &priv.PublicKey})
 	v := &auth.Verifier{JWKS: jwks, Leeway: time.Minute, Now: time.Now}
 	return &fixture{
-		priv:    priv,
-		jwks:    jwks,
+		priv:     priv,
+		jwks:     jwks,
 		verifier: v,
-		sess:    uuid.New(),
-		video:   uuid.New(),
-		user:    uuid.New(),
-		libA:    uuid.New(),
-		libB:    uuid.New(),
+		sess:     uuid.New(),
+		video:    uuid.New(),
+		user:     uuid.New(),
+		libA:     uuid.New(),
+		libB:     uuid.New(),
 	}
 }
 

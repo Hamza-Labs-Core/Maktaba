@@ -95,7 +95,7 @@ def install_shutdown_handlers(
         if fired["count"] == 1:
             ret = on_first()
             if asyncio.iscoroutine(ret):
-                loop.create_task(ret)  # type: ignore[arg-type]
+                loop.create_task(ret)
             return
         on_second()
 

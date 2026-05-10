@@ -183,9 +183,7 @@ class FakeDB:
             return await self._sqlite_update(worker_id, int(row_id))
         raise AssertionError(f"unexpected SQL in fake DB: {sql!r}")
 
-    async def _claim_pg(
-        self, worker_id: str, stages: list[str]
-    ) -> _FakeRow | None:
+    async def _claim_pg(self, worker_id: str, stages: list[str]) -> _FakeRow | None:
         async with self._lock():
             return self._do_claim(worker_id, stages)
 
@@ -195,18 +193,14 @@ class FakeDB:
             return None
         return _FakeRow({"id": eligible[0].id})
 
-    async def _sqlite_update(
-        self, worker_id: str, row_id: int
-    ) -> _FakeRow | None:
+    async def _sqlite_update(self, worker_id: str, row_id: int) -> _FakeRow | None:
         row = self.rows.get(row_id)
         if row is None or row.state not in {"pending", "paused"}:
             return None
         self._mark_claimed(row, worker_id)
         return _FakeRow(row.as_row())
 
-    def _do_claim(
-        self, worker_id: str, stages: list[str]
-    ) -> _FakeRow | None:
+    def _do_claim(self, worker_id: str, stages: list[str]) -> _FakeRow | None:
         eligible = self._eligible(stages)
         if not eligible:
             return None
@@ -258,7 +252,9 @@ def _reset_sqlite_lock() -> None:
 async def test_claim_returns_pending_row(db: FakeDB, video_id: UUID) -> None:
     db.add(video_id=video_id, stage=Stage.PROBE.value)
     job = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert job is not None
     assert job.state == JobState.CLAIMED
@@ -271,19 +267,21 @@ async def test_claim_returns_pending_row(db: FakeDB, video_id: UUID) -> None:
 @pytest.mark.asyncio
 async def test_claim_returns_none_when_empty(db: FakeDB) -> None:
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is None
 
 
 @pytest.mark.asyncio
-async def test_claim_returns_none_when_only_terminal(
-    db: FakeDB, video_id: UUID
-) -> None:
+async def test_claim_returns_none_when_only_terminal(db: FakeDB, video_id: UUID) -> None:
     for state in ("done", "failed", "cancelled"):
         db.add(video_id=uuid4(), stage=Stage.PROBE.value, state=state)
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is None
 
@@ -292,17 +290,25 @@ async def test_claim_returns_none_when_only_terminal(
 async def test_claim_respects_priority(db: FakeDB) -> None:
     high = db.add(video_id=uuid4(), stage=Stage.PROBE.value, priority=100)
     user_pressed = db.add(
-        video_id=uuid4(), stage=Stage.PROBE.value, priority=50,
+        video_id=uuid4(),
+        stage=Stage.PROBE.value,
+        priority=50,
     )
     bulk = db.add(video_id=uuid4(), stage=Stage.PROBE.value, priority=200)
     first = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     second = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     third = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert first is not None and first.id == user_pressed.id
     assert second is not None and second.id == high.id
@@ -314,10 +320,14 @@ async def test_claim_respects_id_tiebreak(db: FakeDB) -> None:
     earlier = db.add(video_id=uuid4(), stage=Stage.PROBE.value, priority=100)
     later = db.add(video_id=uuid4(), stage=Stage.PROBE.value, priority=100)
     first = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     second = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert first is not None and first.id == earlier.id
     assert second is not None and second.id == later.id
@@ -328,7 +338,9 @@ async def test_claim_skips_not_before_in_future(db: FakeDB) -> None:
     future = datetime.now(UTC) + timedelta(seconds=60)
     db.add(video_id=uuid4(), stage=Stage.PROBE.value, not_before=future)
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is None
 
@@ -338,7 +350,9 @@ async def test_claim_picks_up_not_before_in_past(db: FakeDB) -> None:
     past = datetime.now(UTC) - timedelta(seconds=1)
     row = db.add(video_id=uuid4(), stage=Stage.PROBE.value, not_before=past)
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is not None and res.id == row.id
 
@@ -357,7 +371,9 @@ async def test_claim_picks_paused_when_pause_requested_false(
         attempts=2,
     )
     job = await claim_one(
-        db, worker_id="w-resume", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w-resume",
+        supported_stages=(Stage.PROBE,),
     )
     assert job is not None and job.id == row.id
     assert job.state == JobState.CLAIMED
@@ -375,7 +391,9 @@ async def test_claim_skips_paused_when_pause_requested_true(
         pause_requested=True,
     )
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is None
 
@@ -392,7 +410,9 @@ async def test_claim_skips_pending_with_pause_requested(db: FakeDB) -> None:
         pause_requested=True,
     )
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is None
 
@@ -407,7 +427,9 @@ async def test_claim_skips_cancel_requested(db: FakeDB) -> None:
     )
     other = db.add(video_id=uuid4(), stage=Stage.PROBE.value, priority=100)
     res = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert res is not None and res.id == other.id
 
@@ -415,17 +437,23 @@ async def test_claim_skips_cancel_requested(db: FakeDB) -> None:
 @pytest.mark.asyncio
 async def test_claim_filters_by_stage(db: FakeDB) -> None:
     transcribe_row = db.add(
-        video_id=uuid4(), stage=Stage.TRANSCRIBE.value, priority=10,
+        video_id=uuid4(),
+        stage=Stage.TRANSCRIBE.value,
+        priority=10,
     )
     db.add(video_id=uuid4(), stage=Stage.INDEX.value, priority=5)
 
     miss = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.EXTRACT,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.EXTRACT,),
     )
     assert miss is None
 
     hit = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.TRANSCRIBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.TRANSCRIBE,),
     )
     assert hit is not None and hit.id == transcribe_row.id
 
@@ -434,14 +462,18 @@ async def test_claim_filters_by_stage(db: FakeDB) -> None:
 async def test_claim_increments_attempts(db: FakeDB) -> None:
     row = db.add(video_id=uuid4(), stage=Stage.PROBE.value)
     first = await claim_one(
-        db, worker_id="w1", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w1",
+        supported_stages=(Stage.PROBE,),
     )
     assert first is not None and first.attempts == 1
 
     # Reset to pending (simulating the reaper) and claim again.
     db.rows[row.id] = replace(db.rows[row.id], state="pending", claimed_by=None)
     second = await claim_one(
-        db, worker_id="w2", supported_stages=(Stage.PROBE,),
+        db,
+        worker_id="w2",
+        supported_stages=(Stage.PROBE,),
     )
     assert second is not None
     assert second.attempts == 2
@@ -476,7 +508,9 @@ async def test_claim_state_pause_truth_table(db: FakeDB) -> None:
     claimable_ids = set()
     while True:
         job = await claim_one(
-            db, worker_id="w1", supported_stages=(Stage.PROBE,),
+            db,
+            worker_id="w1",
+            supported_stages=(Stage.PROBE,),
         )
         if job is None:
             break
@@ -507,13 +541,17 @@ async def test_claim_atomic_under_contention_postgres() -> None:
         local: list[int] = []
         while True:
             job = await claim_one(
-                db, worker_id=name, supported_stages=(Stage.PROBE,),
+                db,
+                worker_id=name,
+                supported_stages=(Stage.PROBE,),
             )
             if job is None:
                 # One more tick in case another worker is mid-claim.
                 await asyncio.sleep(0)
                 job = await claim_one(
-                    db, worker_id=name, supported_stages=(Stage.PROBE,),
+                    db,
+                    worker_id=name,
+                    supported_stages=(Stage.PROBE,),
                 )
                 if job is None:
                     break
@@ -546,12 +584,16 @@ async def test_claim_atomic_under_contention_sqlite() -> None:
         local: list[int] = []
         while True:
             job = await claim_one(
-                db, worker_id=name, supported_stages=(Stage.PROBE,),
+                db,
+                worker_id=name,
+                supported_stages=(Stage.PROBE,),
             )
             if job is None:
                 await asyncio.sleep(0)
                 job = await claim_one(
-                    db, worker_id=name, supported_stages=(Stage.PROBE,),
+                    db,
+                    worker_id=name,
+                    supported_stages=(Stage.PROBE,),
                 )
                 if job is None:
                     break
@@ -571,7 +613,9 @@ async def test_sqlite_dialect_dispatches_to_sqlite_path(
     db = FakeDB(dialect="sqlite")
     row = db.add(video_id=video_id, stage=Stage.TRANSCRIBE.value)
     job = await claim_one(
-        db, worker_id="w-sqlite", supported_stages=(Stage.TRANSCRIBE,),
+        db,
+        worker_id="w-sqlite",
+        supported_stages=(Stage.TRANSCRIBE,),
     )
     assert job is not None and job.id == row.id
     assert job.state == JobState.CLAIMED

@@ -31,16 +31,16 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// Event is the AC-3 envelope: ``{type, at, ...payload}``.
+// Event is the AC-3 envelope: “{type, at, ...payload}“.
 type Event struct {
 	Type    string         `json:"type"`
 	At      time.Time      `json:"at"`
 	Payload map[string]any `json:"payload,omitempty"`
 }
 
-// Hub fan-outs events to subscribers keyed by ``channel``. Each
+// Hub fan-outs events to subscribers keyed by “channel“. Each
 // subscriber has a bounded channel — once full, the connection is
-// closed with 1011 ``slow-consumer`` per AC-4.
+// closed with 1011 “slow-consumer“ per AC-4.
 type Hub struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[*Subscriber]struct{}
@@ -59,7 +59,7 @@ func NewHub() *Hub {
 }
 
 // Subscribe registers a new subscriber on the channel. The caller must
-// drain ``s.C`` quickly; once 1000 events queue up the hub closes the
+// drain “s.C“ quickly; once 1000 events queue up the hub closes the
 // subscription.
 func (h *Hub) Subscribe(channel string) *Subscriber {
 	s := &Subscriber{

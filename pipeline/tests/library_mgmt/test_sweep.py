@@ -42,6 +42,7 @@ class _FakeStore(SweepStore):
 def _make_walker(*entries: tuple[str, int, int]):
     def walker(root: str) -> list[tuple[str, int, int]]:
         return [e for e in entries if e[0].startswith(root)]
+
     return walker
 
 

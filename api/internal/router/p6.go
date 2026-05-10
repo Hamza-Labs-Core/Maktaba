@@ -14,6 +14,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
+	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
+	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/devices"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/jobs"
@@ -26,9 +29,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
-	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
-	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only

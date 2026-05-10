@@ -2,16 +2,16 @@
 // "freeze" conversion path.
 //
 // The Phase-3 :meth:`Handler.GetItems` returned an empty items list for
-// smart collections with a ``warning`` field. This file replaces the
-// stub with a real evaluation: the JSONB ``smart_query`` is the same
+// smart collections with a “warning“ field. This file replaces the
+// stub with a real evaluation: the JSONB “smart_query“ is the same
 // shape as Epic 7 Story 7.9's saved-search filter, so we share one
 // resolver — items returned by GET /collections/{id}/items must equal
 // items returned by /search with the same query (AC-1).
 //
-// The conversion path (AC-3 ``POST /convert?freeze=true``) runs the
-// resolver once, materialises the result into ``collection_items`` in
-// rank order, flips ``is_smart`` to false, and stashes the original
-// query in ``frozen_from_query`` for the audit trail.
+// The conversion path (AC-3 “POST /convert?freeze=true“) runs the
+// resolver once, materialises the result into “collection_items“ in
+// rank order, flips “is_smart“ to false, and stashes the original
+// query in “frozen_from_query“ for the audit trail.
 package collections
 
 import (
@@ -29,7 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// SmartFilter is the parsed shape of the ``smart_query`` JSON. We
+// SmartFilter is the parsed shape of the “smart_query“ JSON. We
 // support a small but meaningful subset in v1: language, content_type,
 // state, and tag membership. Anything more sophisticated (text search,
 // date ranges, complex booleans) lands by extending this struct rather
@@ -53,7 +53,7 @@ func (h *Handler) MountSmart(r chi.Router) {
 
 // LiveItems is the AC-2 evaluator: pure read, no caching, returns
 // items in rank order with cursor pagination. Wired by
-// :meth:`Handler.GetItems` for ``is_smart=true`` rows.
+// :meth:`Handler.GetItems` for “is_smart=true“ rows.
 func (h *Handler) LiveItems(
 	ctx context.Context,
 	c Collection,
@@ -86,7 +86,7 @@ func (h *Handler) LiveItems(
 }
 
 // Freeze implements AC-3: materialise the smart query's current items
-// into ``collection_items`` and flip ``is_smart=false``.
+// into “collection_items“ and flip “is_smart=false“.
 func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil || !p.IsAdmin {
@@ -173,8 +173,8 @@ func parseSmartQuery(raw json.RawMessage, libraryID string) (SmartFilter, error)
 // buildSmartSQL returns a parameterised query + args. The SQL is
 // deliberately simple — every filter is a closed vocabulary so the
 // query plan is predictable. Pagination uses an integer cursor over
-// row index (synthetic ``ROW_NUMBER``-equivalent computed via
-// ``ORDER BY id``); a real implementation would use the same cursor
+// row index (synthetic “ROW_NUMBER“-equivalent computed via
+// “ORDER BY id“); a real implementation would use the same cursor
 // primitive as Story 7.2, but the smart-query API doesn't promise a
 // stable cursor across catalog changes.
 func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
@@ -226,7 +226,7 @@ func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
 }
 
 // CompactPositions implements Story 9.13 AC-3 compaction: renumber
-// ``collection_items.position`` to 10, 20, 30 … per collection. The
+// “collection_items.position“ to 10, 20, 30 … per collection. The
 // statement is a single window-function update so it stays cheap on a
 // 100k-item table; readers continue to see consistent ordering.
 func CompactPositions(ctx context.Context, db *sql.DB, collectionID string) error {

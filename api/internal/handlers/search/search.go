@@ -50,13 +50,13 @@ type Filters struct {
 	Date        *RangeStr `json:"date,omitempty"`
 }
 
-// RangeF is a numeric ``{gte, lte}`` range.
+// RangeF is a numeric “{gte, lte}“ range.
 type RangeF struct {
 	Gte *float64 `json:"gte,omitempty"`
 	Lte *float64 `json:"lte,omitempty"`
 }
 
-// RangeStr is a date range (RFC3339 strings) with ``{gte, lte}``.
+// RangeStr is a date range (RFC3339 strings) with “{gte, lte}“.
 type RangeStr struct {
 	Gte string `json:"gte,omitempty"`
 	Lte string `json:"lte,omitempty"`
@@ -83,11 +83,11 @@ type Hit struct {
 
 // Response is the AC-1 envelope.
 type Response struct {
-	Hits    []Hit       `json:"hits"`
-	Total   int         `json:"total"`
-	TookMs  ResponseT   `json:"took_ms"`
-	Mode    string      `json:"mode"`
-	Filters Filters     `json:"filters"`
+	Hits    []Hit     `json:"hits"`
+	Total   int       `json:"total"`
+	TookMs  ResponseT `json:"took_ms"`
+	Mode    string    `json:"mode"`
+	Filters Filters   `json:"filters"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -214,7 +214,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 // runFTS issues a single FTS query against transcript_segments using
-// ``search_tsv @@ plainto_tsquery`` (Postgres) — SQLite stays as a LIKE
+// “search_tsv @@ plainto_tsquery“ (Postgres) — SQLite stays as a LIKE
 // fallback when run under the test driver. Filters are pushed into the
 // SQL.
 func (h *Handler) runFTS(ctx context.Context, q string, limit int, f Filters) ([]Hit, error) {
@@ -345,7 +345,7 @@ func (h *Handler) Suggest(w http.ResponseWriter, r *http.Request) {
 }
 
 // normaliseSuggestQuery applies a simple lowercase + diacritic-strip so
-// the prefix LIKE matches the ``query_norm`` column.
+// the prefix LIKE matches the “query_norm“ column.
 func normaliseSuggestQuery(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -497,7 +497,7 @@ func RRFuse(a, b []Hit, k int) []Hit {
 	return out
 }
 
-// highlightSnippet wraps each occurrence of q in s with ``<mark>...</mark>``
+// highlightSnippet wraps each occurrence of q in s with “<mark>...</mark>“
 // and trims to maxLen with an ellipsis around the first match. Search
 // is case-insensitive.
 func highlightSnippet(s, q string, maxLen int) string {
@@ -549,4 +549,3 @@ func highlightSnippet(s, q string, maxLen int) string {
 	}
 	return prefix + out.String() + suffix
 }
-

@@ -32,10 +32,10 @@ type Detector struct {
 	Bin Binary
 
 	// Hooks let tests substitute the runtime probes without faking exec.
-	Encoders     func(ctx context.Context, ffmpeg string) ([]string, error)
-	NVIDIASmiOK  func(ctx context.Context) bool
-	QuickSyncOK  func(ctx context.Context) bool
-	GOOS         string // tests pin to "linux" / "darwin"
+	Encoders    func(ctx context.Context, ffmpeg string) ([]string, error)
+	NVIDIASmiOK func(ctx context.Context) bool
+	QuickSyncOK func(ctx context.Context) bool
+	GOOS        string // tests pin to "linux" / "darwin"
 }
 
 // Default returns a Detector with default probes wired.

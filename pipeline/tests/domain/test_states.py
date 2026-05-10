@@ -154,9 +154,7 @@ def test_is_stage_trigger() -> None:
         (State.MISSING, Trigger.SCAN, "rediscovered", State.DISCOVERED),
     ],
 )
-def test_lookup_explicit_edges(
-    frm: State, trig: Trigger, out: str, to: State
-) -> None:
+def test_lookup_explicit_edges(frm: State, trig: Trigger, out: str, to: State) -> None:
     assert lookup(frm, trig, out) == to
 
 
@@ -294,9 +292,7 @@ def test_library_replaced_rejected_from_non_eligible(src: State) -> None:
         (State.PROBED, Trigger.PROBE, "ok"),
     ],
 )
-def test_lookup_rejects_invalid_triples(
-    frm: State, trig: Trigger, out: str
-) -> None:
+def test_lookup_rejects_invalid_triples(frm: State, trig: Trigger, out: str) -> None:
     assert lookup(frm, trig, out) is None
 
 
@@ -337,16 +333,12 @@ def test_allowed_targets_for_terminal_bad_is_empty() -> None:
 def test_allowed_targets_missing_only_re_enters_discovered() -> None:
     # MISSING has one explicit outbound edge (→ DISCOVERED) plus one
     # broadcast self-loop on filesystem/deleted.
-    assert allowed_targets[State.MISSING] == frozenset(
-        {State.DISCOVERED, State.MISSING}
-    )
+    assert allowed_targets[State.MISSING] == frozenset({State.DISCOVERED, State.MISSING})
 
 
 @pytest.mark.unit
 def test_terminal_drop_states_match_constant() -> None:
-    assert frozenset(
-        {State.SUPERSEDED, State.CORRUPTED, State.FAILED}
-    ) == TERMINAL_DROP_STATES
+    assert frozenset({State.SUPERSEDED, State.CORRUPTED, State.FAILED}) == TERMINAL_DROP_STATES
 
 
 # -----------------------------------------------------------------
@@ -356,9 +348,7 @@ def test_terminal_drop_states_match_constant() -> None:
 
 @pytest.mark.unit
 def test_illegal_state_transition_carries_triple() -> None:
-    err = IllegalStateTransition(
-        "abc", State.DISCOVERED, Trigger.TRANSCRIBE, "ok"
-    )
+    err = IllegalStateTransition("abc", State.DISCOVERED, Trigger.TRANSCRIBE, "ok")
     assert err.from_ is State.DISCOVERED
     assert err.trigger is Trigger.TRANSCRIBE
     assert err.outcome == "ok"

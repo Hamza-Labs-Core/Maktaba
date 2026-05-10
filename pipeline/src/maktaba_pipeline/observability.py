@@ -215,9 +215,7 @@ class Histogram:
     def observe(self, value: float, **labels: str) -> None:
         key = self._key(labels)
         with self._lock:
-            counts = self._bucket_counts.setdefault(
-                key, [0.0] * (len(self.buckets) + 1)
-            )
+            counts = self._bucket_counts.setdefault(key, [0.0] * (len(self.buckets) + 1))
             for i, bound in enumerate(self.buckets):
                 if value <= bound:
                     counts[i] += 1
@@ -338,9 +336,7 @@ class MetricRegistry:
         """
         self.job_attempts_total.inc(stage=stage, outcome=outcome)
         if duration_sec is not None:
-            self.job_duration_seconds.observe(
-                duration_sec, stage=stage, outcome=outcome
-            )
+            self.job_duration_seconds.observe(duration_sec, stage=stage, outcome=outcome)
 
     def record_progress(self, *, stage: str, realtime_factor: float) -> None:
         self.job_realtime_factor.observe(realtime_factor, stage=stage)
@@ -397,8 +393,7 @@ def _format_labels(label_names: tuple[str, ...], values: tuple[str, ...]) -> str
     if not label_names:
         return ""
     pairs = ",".join(
-        f'{name}="{_escape(val)}"'
-        for name, val in zip(label_names, values, strict=True)
+        f'{name}="{_escape(val)}"' for name, val in zip(label_names, values, strict=True)
     )
     return "{" + pairs + "}"
 
@@ -468,9 +463,7 @@ def _le_label(label_names: tuple[str, ...], values: tuple[str, ...], le: str) ->
 # ---------------------------------------------------------------------------
 
 
-_REQUIRED_LOG_KEYS: frozenset[str] = frozenset(
-    {"job_id", "video_id", "stage", "state", "attempts"}
-)
+_REQUIRED_LOG_KEYS: frozenset[str] = frozenset({"job_id", "video_id", "stage", "state", "attempts"})
 
 
 def log_event(event: str, **fields: Any) -> None:

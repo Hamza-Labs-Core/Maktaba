@@ -14,7 +14,7 @@ def test_segments_to_cues_drops_empty_text() -> None:
     rows = [
         {"start_sec": 0.0, "end_sec": 1.0, "text": "Hello"},
         {"start_sec": 1.0, "end_sec": 2.0, "text": "   "},  # whitespace → drop
-        {"start_sec": 2.0, "end_sec": 3.0, "text": ""},     # empty → drop
+        {"start_sec": 2.0, "end_sec": 3.0, "text": ""},  # empty → drop
         {"start_sec": 3.0, "end_sec": 4.0, "text": "World", "speaker": "Bob"},
     ]
     cues = segments_to_cues(rows)

@@ -14,29 +14,29 @@ import (
 // "tvos", etc.); we look it up here. Unknown profiles fall back to
 // "generic" (HLS H.264 + AAC, max 720p) per AC-3.
 type Profile struct {
-	Name              string
-	Containers        []string // e.g. "mp4", "mkv", "webm", "mov", "ts"
-	VideoCodecs       []string // e.g. "h264", "h265", "vp9", "av1"
-	AudioCodecs       []string // e.g. "aac", "ac3", "eac3", "mp3", "opus", "flac"
-	HDR               []string // e.g. "sdr", "hdr10", "dolby-vision", "hlg"
-	MaxHeight         int      // 1080, 720, 2160…
-	MaxBitrateKbps    int      // 0 = unlimited
-	MaxAudioChannels  int      // 2, 6, 8…
-	SupportsHLS       bool
-	SupportsDASH      bool
-	HardwareDecoded   bool
+	Name             string
+	Containers       []string // e.g. "mp4", "mkv", "webm", "mov", "ts"
+	VideoCodecs      []string // e.g. "h264", "h265", "vp9", "av1"
+	AudioCodecs      []string // e.g. "aac", "ac3", "eac3", "mp3", "opus", "flac"
+	HDR              []string // e.g. "sdr", "hdr10", "dolby-vision", "hlg"
+	MaxHeight        int      // 1080, 720, 2160…
+	MaxBitrateKbps   int      // 0 = unlimited
+	MaxAudioChannels int      // 2, 6, 8…
+	SupportsHLS      bool
+	SupportsDASH     bool
+	HardwareDecoded  bool
 }
 
 // Source is what a probe row looks like to the matrix. We keep it
 // shallow so the probe package owns the wire shape.
 type Source struct {
-	Container        string
-	VideoCodec       string
-	AudioCodec       string
-	HDR              string
-	Height           int
-	BitrateKbps      int
-	AudioChannels    int
+	Container             string
+	VideoCodec            string
+	AudioCodec            string
+	HDR                   string
+	Height                int
+	BitrateKbps           int
+	AudioChannels         int
 	IsContainerOnlyChange bool // true if the codecs are direct-playable but the container needs a remux
 }
 
@@ -51,11 +51,11 @@ const (
 
 // Verdict bundles the Mode with any per-session overrides applied.
 type Verdict struct {
-	Mode             Mode
-	Reason           string
-	BitrateCapKbps   int
-	HeightCap        int
-	UsedFallback     bool
+	Mode           Mode
+	Reason         string
+	BitrateCapKbps int
+	HeightCap      int
+	UsedFallback   bool
 }
 
 // Override is a per-session forcing flag set on OpenSession.
