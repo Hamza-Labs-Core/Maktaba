@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "_doc": "Canonical video FSM source of truth. Owned by story-01-06. The Go package shared/states/go and the Python module pipeline.maktaba_pipeline.domain.states must remain in lockstep with this file; tests in both languages verify equality.",
+  "states": [
+    {"name": "DISCOVERED",      "db": "discovered",      "class": "open"},
+    {"name": "PROBED",          "db": "probed",          "class": "open"},
+    {"name": "AUDIO_EXTRACTED", "db": "audio_extracted", "class": "open"},
+    {"name": "TRANSCRIBED",     "db": "transcribed",     "class": "open"},
+    {"name": "INDEXED",         "db": "indexed",         "class": "open"},
+    {"name": "THUMBNAILED",     "db": "thumbnailed",     "class": "open"},
+    {"name": "READY",           "db": "ready",           "class": "terminal-good"},
+    {"name": "READY_NO_AUDIO",  "db": "ready_no_audio",  "class": "terminal-good"},
+    {"name": "MISSING",         "db": "missing",         "class": "sink"},
+    {"name": "SUPERSEDED",      "db": "superseded",      "class": "terminal-soft"},
+    {"name": "CORRUPTED",       "db": "corrupted",       "class": "terminal-bad"},
+    {"name": "FAILED",          "db": "failed",          "class": "terminal-bad"}
+  ],
+  "stages": [
+    "scan", "probe", "extract", "transcribe",
+    "subtitle_gen", "index", "thumbnail"
+  ],
+  "triggers": [
+    "scan", "probe", "extract", "transcribe",
+    "subtitle_gen", "index", "thumbnail",
+    "filesystem", "library", "integrity"
+  ],
+  "transitions": [
+    {"from": "DISCOVERED",      "trigger": "probe",        "outcome": "ok",            "to": "PROBED"},
+    {"from": "PROBED",          "trigger": "extract",      "outcome": "ok",            "to": "AUDIO_EXTRACTED"},
+    {"from": "PROBED",          "trigger": "probe",        "outcome": "no_audio",      "to": "READY_NO_AUDIO"},
+    {"from": "AUDIO_EXTRACTED", "trigger": "transcribe",   "outcome": "ok",            "to": "TRANSCRIBED"},
+    {"from": "TRANSCRIBED",     "trigger": "subtitle_gen", "outcome": "partial",       "to": "TRANSCRIBED"},
+    {"from": "TRANSCRIBED",     "trigger": "index",        "outcome": "partial",       "to": "TRANSCRIBED"},
+    {"from": "TRANSCRIBED",     "trigger": "subtitle_gen", "outcome": "ok",            "to": "INDEXED"},
+    {"from": "TRANSCRIBED",     "trigger": "index",        "outcome": "ok",            "to": "INDEXED"},
+    {"from": "INDEXED",         "trigger": "thumbnail",    "outcome": "ok",            "to": "THUMBNAILED"},
+    {"from": "THUMBNAILED",     "trigger": "scan",         "outcome": "all_gates_ok",  "to": "READY"},
+    {"from": "MISSING",         "trigger": "scan",         "outcome": "rediscovered",  "to": "DISCOVERED"}
+  ],
+  "broadcast_transitions": [
+    {"source_class_in": ["open", "terminal-good", "sink"],          "trigger": "filesystem", "outcome": "deleted",   "to": "MISSING"},
+    {"source_class_in": ["open", "terminal-good"],                  "trigger": "*",          "outcome": "exhausted", "to": "FAILED"},
+    {"source_class_in": ["open", "terminal-good"],                  "trigger": "integrity",  "outcome": "fail",      "to": "CORRUPTED"},
+    {"source_class_in": ["open", "terminal-good", "terminal-soft"], "trigger": "library",    "outcome": "replaced",  "to": "SUPERSEDED"}
+  ],
+  "terminal_drop_states": ["SUPERSEDED", "CORRUPTED", "FAILED"]
+}
