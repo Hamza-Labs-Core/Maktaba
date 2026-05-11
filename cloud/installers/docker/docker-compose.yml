@@ -1,0 +1,32 @@
+# Reference compose for users who want the full Maktaba stack at home.
+# Pairs the server + Postgres + a config bind-mount. For relay-only
+# users, the Postgres section is optional — the server can run with
+# SQLite, see api/docs/deployment.md.
+version: "3.9"
+
+services:
+  maktaba-server:
+    image: ghcr.io/hamza-labs-core/maktaba-server:stable
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/etc/maktaba:ro
+      - maktaba-data:/var/lib/maktaba
+    environment:
+      MAKTABA_DB_URL: "postgres://maktaba@db:5432/maktaba?sslmode=disable"
+    depends_on:
+      - db
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_DB: maktaba
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - maktaba-pg:/var/lib/postgresql/data
+
+volumes:
+  maktaba-data:
+  maktaba-pg:

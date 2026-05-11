@@ -1,0 +1,22 @@
+#cloud-config
+# Minimal cloud-init that installs Docker and starts the Maktaba server.
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-plugin
+
+write_files:
+  - path: /opt/maktaba/docker-compose.yml
+    content: |
+      version: "3.9"
+      services:
+        server:
+          image: ghcr.io/hamza-labs-core/maktaba-server:${image_tag}
+          restart: unless-stopped
+          ports: ["80:8080"]
+          volumes:
+            - /var/lib/maktaba:/var/lib/maktaba
+
+runcmd:
+  - systemctl enable --now docker
+  - cd /opt/maktaba && docker compose up -d

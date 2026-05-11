@@ -1,0 +1,64 @@
+# Maktaba Cloud configuration template.
+#
+# Secrets must come from environment variables — placeholders here are
+# refused by the config validator at startup so the file can be checked
+# into source control safely.
+
+[server]
+listen_addr   = "0.0.0.0:8080"
+public_url    = "https://api.maktaba.app"
+read_timeout  = "30s"
+write_timeout = "60s"
+shutdown_grace = "20s"
+
+[database]
+url = "postgres://maktaba_cloud@localhost:5432/maktaba_cloud?sslmode=require"
+# Override via MAKTABA_CLOUD_DB_URL.
+max_open_conns    = 25
+max_idle_conns    = 5
+conn_max_lifetime = "30m"
+
+[redis]
+url = "redis://localhost:6379/0"
+
+[oauth.google]
+client_id     = ""
+# Secret via MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET.
+
+[oauth.apple]
+team_id   = ""
+key_id    = ""
+client_id = ""
+key_path  = ""
+
+[stripe]
+# Both come from env: MAKTABA_CLOUD_STRIPE_SECRET, MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET.
+publishable_key = ""
+
+[apns]
+team_id  = ""
+key_id   = ""
+key_path = ""
+bundle_id = "com.maktaba.app"
+
+[fcm]
+project_id           = ""
+service_account_path = ""
+
+[admin]
+allowed_email_domain = "hamzalabs.com"
+
+[entitlement]
+# Ed25519 key path; private key never touches client-readable mounts.
+private_key_path = "/etc/maktaba/cloud/entitlement.ed25519"
+
+[telemetry]
+log_format            = "json"
+log_level             = "info"
+sample_2xx_after_days = 7
+sample_2xx_rate       = 0.10
+
+[relay]
+# Public host used to construct per-server subdomains:
+#   <server-slug>.relay.maktaba.app
+public_host = "relay.maktaba.app"

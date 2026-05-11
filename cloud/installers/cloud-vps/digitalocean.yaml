@@ -1,0 +1,32 @@
+# DigitalOcean App Spec for one-click Maktaba server deploy
+# (story 25.33). Operators import this into doctl:
+#
+#   doctl apps create --spec cloud-vps/digitalocean.yaml
+#
+# After deploy, the user is told to visit the app's URL to run the
+# first-run wizard, which exchanges their 8-char claim code for a
+# server secret.
+name: maktaba-server
+region: fra1
+
+services:
+  - name: server
+    git:
+      branch: main
+      repo_clone_url: https://github.com/Hamza-Labs-Core/Maktaba.git
+    dockerfile_path: cloud/installers/docker/Dockerfile
+    instance_size_slug: basic-s
+    instance_count: 1
+    http_port: 8080
+    routes:
+      - path: /
+
+databases:
+  - name: db
+    engine: PG
+    production: false
+
+envs:
+  - key: MAKTABA_DB_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}

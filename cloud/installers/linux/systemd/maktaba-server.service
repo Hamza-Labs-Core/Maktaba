@@ -1,0 +1,20 @@
+[Unit]
+Description=Maktaba self-hosted media server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+ExecStart=/usr/bin/maktaba-server --config /etc/maktaba/server.toml
+Restart=on-failure
+RestartSec=10
+ProtectSystem=strict
+ReadWritePaths=/var/lib/maktaba
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
