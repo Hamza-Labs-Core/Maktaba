@@ -1,0 +1,31 @@
+name: maktaba-server
+arch: ${MAKTABA_ARCH}
+version: ${MAKTABA_VERSION}
+section: net
+priority: optional
+maintainer: Hamza Labs <releases@hamzalabs.com>
+description: |
+  Maktaba is a self-hosted media server for transcribed video libraries.
+  This package installs the on-prem server agent which connects to the
+  Maktaba cloud relay for remote access.
+vendor: Hamza Labs
+homepage: https://maktaba.app
+license: Apache-2.0
+
+contents:
+  - src: dist/maktaba-server-linux-${MAKTABA_ARCH}
+    dst: /usr/bin/maktaba-server
+    file_info:
+      mode: 0755
+  - src: systemd/maktaba-server.service
+    dst: /lib/systemd/system/maktaba-server.service
+  - src: configs/server.toml
+    dst: /etc/maktaba/server.toml
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+scripts:
+  postinstall: scripts/postinstall.sh
+  preremove:   scripts/preremove.sh
+  postremove:  scripts/postremove.sh

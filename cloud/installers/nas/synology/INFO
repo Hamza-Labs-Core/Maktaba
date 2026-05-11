@@ -1,0 +1,20 @@
+# Synology Package Center descriptor (story 25.31).
+# Built into a .spk by the synocommunity toolchain; the file format is
+# a tarball of this INFO file + scripts/ + ui/ + a payload.tgz.
+package="maktaba-server"
+displayname="Maktaba Server"
+version="0.1.0"
+description="Self-hosted media server with cloud-relay remote access."
+maintainer="Hamza Labs"
+arch="apollolake denverton geminilake apollolake amd64 armv7 armv8"
+firmware="7.0-40000"
+beta="0"
+support_url="https://maktaba.app/support"
+support_center="yes"
+startable="yes"
+ctl_stop="yes"
+ctl_uninstall="yes"
+silent_install="no"
+silent_upgrade="yes"
+silent_uninstall="no"
+checksum="REPLACED_AT_BUILD"
