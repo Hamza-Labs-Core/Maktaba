@@ -55,8 +55,6 @@ install_hint() {
       is_macos && echo "brew install jq" || echo "sudo apt install jq" ;;
     golangci-lint)
       is_macos && echo "brew install golangci-lint" || echo "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" ;;
-    goose)
-      echo "go install github.com/pressly/goose/v3/cmd/goose@latest" ;;
     shellcheck)
       is_macos && echo "brew install shellcheck" || echo "sudo apt install shellcheck" ;;
     *)
@@ -107,7 +105,6 @@ check required "node"            node              "node --version"             
 check required "ffmpeg"          ffmpeg            "ffmpeg -version"             "6+"
 
 printf "\n${BOLD}Recommended${NC}\n"
-check recommended "goose"           goose             "goose --version"             ""
 check recommended "pre-commit"      pre-commit        "pre-commit --version"        ""
 check recommended "jq"              jq                "jq --version"                ""
 check recommended "golangci-lint"   golangci-lint     "golangci-lint --version"     ""
