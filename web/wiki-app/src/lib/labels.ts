@@ -10,6 +10,7 @@ export const TYPE_LABEL: Record<EntryType, string> = {
   endpoint: 'Endpoint',
   entity: 'Entity',
   feature: 'Feature',
+  phase: 'Phase',
 };
 
 export const TYPE_LABEL_PLURAL: Record<EntryType, string> = {
@@ -22,6 +23,7 @@ export const TYPE_LABEL_PLURAL: Record<EntryType, string> = {
   endpoint: 'API Endpoints',
   entity: 'Entities',
   feature: 'Features',
+  phase: 'Phases',
 };
 
 export const TYPE_CHIP_CLASS: Record<EntryType, string> = {
@@ -34,6 +36,7 @@ export const TYPE_CHIP_CLASS: Record<EntryType, string> = {
   endpoint: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   entity: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200',
   feature: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  phase: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200',
 };
 
 export const METHOD_CHIP_CLASS: Record<string, string> = {

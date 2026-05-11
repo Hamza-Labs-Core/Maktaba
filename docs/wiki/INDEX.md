@@ -1,18 +1,21 @@
 # Maktaba Wiki — Master Index
 
 > Comprehensive index of every artifact in the Maktaba project: 25 epics,
-> 272 stories, 237 plans, 14 diagrams,
-> 48 mockups, 130+ API endpoints, 47 DB entities.
+> 273 stories, 274 plans, 17 implementation phases, 14 diagrams,
+> 48 mockups, 130+ API endpoints, 32 DB entities.
+>
+> Status (2026-05-10): all 25 epics and 17 implementation phases delivered on `main`.
 
 ## Quick navigation
 
 | Catalog | File | Entries |
 |---|---|---|
-| Stories | [stories-map.md](stories-map.md) | 272 |
+| Stories | [stories-map.md](stories-map.md) | 273 |
+| Phases | [build-order.md](build-order.md) | 17 implementation phases |
 | Features | [features.md](features.md) | per epic |
 | DB entities | [entities.md](entities.md) | 32 |
 | API endpoints | [api-catalog.md](api-catalog.md) | 70 |
-| Machine-readable DB | [db/wiki.json](db/wiki.json) | 666 entries |
+| Machine-readable DB | [db/wiki.json](db/wiki.json) | 761 entries |
 | JSON schema | [db/wiki-schema.json](db/wiki-schema.json) | — |
 
 ## Epic table
@@ -43,7 +46,32 @@
 | 22 | [DevOps](../../specs/epics/22-devops/README.md) | 4 | Cross-cutting | 8 | 8 | 0 | A self-hoster gets running in one command and stays running |
 | 23 | [Security Hardening](../../specs/epics/23-security/README.md) | 4 | API + Streaming | 8 | 8 | 0 | Maktaba is safe to expose on a home LAN by default and safe to |
 | 24 | [Data Integrity](../../specs/epics/24-data-integrity/README.md) | 4 | Cross-cutting | 9 | 9 | 0 | A user's media library and the platform's derived state survive |
-| 25 | [Cloud Relay](../../specs/epics/25-cloud-relay/README.md) | 5 | Cloud (Go) + Distribution | 36 | — | 0 | Maktaba Cloud — hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing, plus native installers for macOS / Windows / Linux / NAS / ARM / VPS. |
+| 25 | [Cloud Relay](../../specs/epics/25-cloud-relay/README.md) | 5 | Cloud (Go) + Distribution | 36 | 36 | 0 | Maktaba Cloud — hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing, plus native installers for macOS / Windows / Linux / NAS / ARM / VPS. |
+
+## Implementation phases
+
+> The 17 chronological implementation phases that delivered the 25 epics on `main`.
+> See [build-order.md](build-order.md) for the spec-level dependency order.
+
+| Phase | Title | Epics covered |
+|------:|-------|---------------|
+| 1 | Pipeline foundations — Scanner | 01 |
+| 2 | Pipeline foundations — Audio + Transcription start | 02, 03 |
+| 3 | Pipeline foundations — Subtitles + Search | 04, 05 |
+| 4 | Job queue + Pipeline daemon wiring | 06 |
+| 5 | Subtitles + Search indexing closeout | 04, 05 |
+| 6 | API server | 07 |
+| 7 | Streaming service | 08 |
+| 8 | Library management | 09 |
+| 9 | Auth & security hardening | 10 |
+| 10 | Web UI | 11 |
+| 11 | Mobile + desktop shells | 12, 13 |
+| 12 | TV apps + discovery | 14, 15 |
+| 13 | Subscriptions + UX design system | 16, 17 |
+| 14 | Performance + scalability | 18, 19 |
+| 15 | Testing + observability | 20, 21 |
+| 16 | DevOps + security + data integrity | 22, 23, 24 |
+| 17 | Cloud Relay | 25 |
 
 ## Diagrams
 
@@ -64,15 +92,21 @@
 | System Architecture | [specs/diagrams/system-architecture.drawio](../../specs/diagrams/system-architecture.drawio) |
 | Transcription Pipeline | [specs/diagrams/transcription-pipeline.drawio](../../specs/diagrams/transcription-pipeline.drawio) |
 
-## Reviews
+## Reviews + audits
 
-| Review | File |
-|---|---|
-| REVIEW | [specs/REVIEW.md](../../specs/REVIEW.md) |
-| PLAN_REVIEW | [specs/PLAN_REVIEW.md](../../specs/PLAN_REVIEW.md) |
-| PLAN_REVIEW_07_13 | [specs/PLAN_REVIEW_07_13.md](../../specs/PLAN_REVIEW_07_13.md) |
-| PLAN_REVIEW_14_17 | [specs/PLAN_REVIEW_14_17.md](../../specs/PLAN_REVIEW_14_17.md) |
-| PLAN_REVIEW_18_24 | [specs/PLAN_REVIEW_18_24.md](../../specs/PLAN_REVIEW_18_24.md) |
+| Review | Scope | File |
+|---|---|---|
+| REVIEW | architecture.md + 4 epic docs | [specs/REVIEW.md](../../specs/REVIEW.md) |
+| PLAN_REVIEW | Epics 01–06 (Pipeline) | [specs/PLAN_REVIEW.md](../../specs/PLAN_REVIEW.md) |
+| PLAN_REVIEW_07_13 | Epics 07–13 (API, Streaming, Library, Auth, Web, Mobile, Desktop) | [specs/PLAN_REVIEW_07_13.md](../../specs/PLAN_REVIEW_07_13.md) |
+| PLAN_REVIEW_14_17 | Epics 14–17 (TV, Discovery, Subscriptions, UX Design) | [specs/PLAN_REVIEW_14_17.md](../../specs/PLAN_REVIEW_14_17.md) |
+| PLAN_REVIEW_18_24 | Epics 18–24 (NFR + cross-cutting) | [specs/PLAN_REVIEW_18_24.md](../../specs/PLAN_REVIEW_18_24.md) |
+| PLAN_REVIEW_25 | Epic 25 (Cloud Relay) | [specs/PLAN_REVIEW_25.md](../../specs/PLAN_REVIEW_25.md) |
+| FULL_IMPLEMENTATION_AUDIT | End-to-end audit of all 25 epics on `main` | [specs/FULL_IMPLEMENTATION_AUDIT.md](../../specs/FULL_IMPLEMENTATION_AUDIT.md) |
+| TEST_RESULTS | Full-suite test results snapshot | [specs/TEST_RESULTS.md](../../specs/TEST_RESULTS.md) |
+| P0_CERTIFICATION | Phase-0 (foundations) certification | [specs/P0_CERTIFICATION.md](../../specs/P0_CERTIFICATION.md) |
+| PHASE_VERIFICATION_P6_P7 | Phase 6 & 7 QA certification (API + Streaming) | [specs/PHASE_VERIFICATION_P6_P7.md](../../specs/PHASE_VERIFICATION_P6_P7.md) |
+| PHASE_17_IMPLEMENTATION | Phase 17 Cloud Relay implementation report | [specs/PHASE_17_IMPLEMENTATION.md](../../specs/PHASE_17_IMPLEMENTATION.md) |
 
 ## Cross-platform mockups
 

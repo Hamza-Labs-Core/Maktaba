@@ -9,7 +9,8 @@ export type EntryType =
   | 'mockup'
   | 'endpoint'
   | 'entity'
-  | 'feature';
+  | 'feature'
+  | 'phase';
 
 export interface WikiEntry {
   id: string;

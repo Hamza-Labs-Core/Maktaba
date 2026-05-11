@@ -55,6 +55,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 - [Epic 23 — Security](epics/epic-23-security.md)
 - [Epic 24 — Data Integrity](epics/epic-24-data-integrity.md)
 
+### Cloud (epic 25)
+
+- [Epic 25 — Cloud Relay](epics/epic-25-cloud-relay.md)
+
 ## Cross-cutting wiki pages
 
 - [Security architecture summary](security.md) — auth flow, JWT lifecycle, signed URLs, rate limits, input validation, TLS, secrets management. Cross-references Epic 10 + Epic 23.
@@ -72,6 +76,8 @@ The `db/` directory holds the JSON databases behind the wiki pages. A wiki app o
 - [`db/wiki-epics-07-13.json`](db/wiki-epics-07-13.json) — API and clients.
 - [`db/wiki-epics-14-24.json`](db/wiki-epics-14-24.json) — cross-cutting epics. Fields: `id`, `type`, `title`, `epic`, `content`, `tags`, `related`, `file_paths`, `linear_issue`, `api_endpoints`, `db_tables`, `migrations`.
 - [`db/generate_wiki.py`](db/generate_wiki.py) — generator script.
+
+The unified [`db/wiki.json`](db/wiki.json) is the canonical source of truth; the per-range JSON shards are historical and may lag behind. As of 2026-05-10 the unified file contains 761 entries: 25 epics, 273 stories, 274 plans, 14 diagrams, 8 reviews, 48 mockups, 70 endpoints, 32 entities, and 17 implementation-phase entries.
 
 ## Quick navigation by intent
 
