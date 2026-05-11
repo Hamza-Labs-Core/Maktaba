@@ -61,10 +61,39 @@ data flow, and rationale behind the language split.
 
 ---
 
+## Prerequisites
+
+Day-1 you need these on the host. `make prereqs` checks them and prints
+install commands for anything missing.
+
+| Tool | Version | macOS | Linux (Debian/Ubuntu) |
+|---|---|---|---|
+| **Go** | 1.23+ | `brew install go` | `sudo apt install golang-go` (or [go.dev/dl](https://go.dev/dl/)) |
+| **Python + uv** | 3.12+ | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **Node + pnpm** | Node 20+, pnpm 9+ | `brew install node && corepack enable && corepack prepare pnpm@latest --activate` | `sudo apt install nodejs npm && corepack enable && corepack prepare pnpm@latest --activate` |
+| **Docker + Compose v2** | Docker 24+, Compose v2.27+ | `brew install --cask docker` | `sudo apt install docker.io docker-compose-plugin` |
+| **FFmpeg** | 6+ | `brew install ffmpeg` | `sudo apt install ffmpeg` |
+| **PostgreSQL 16** | — | runs in Docker via `make dev` — **do not install on host** | runs in Docker via `make dev` — **do not install on host** |
+
+Recommended (sharper inner loop):
+
+| Tool | Install |
+|---|---|
+| **golangci-lint** | `brew install golangci-lint`  /  `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest` |
+| **goose** (DB migrations) | `go install github.com/pressly/goose/v3/cmd/goose@latest` |
+| **pre-commit** | `uv tool install pre-commit`  /  `pip install pre-commit` |
+| **jq, shellcheck** | `brew install jq shellcheck`  /  `sudo apt install jq shellcheck` |
+
+Postgres 16 and ChromaDB are managed by `deploy/compose/docker-compose.yml`
+and started by `make dev` — keep them in Docker; a host Postgres install
+will collide on port 5432 and skip the migrations we ship.
+
+---
+
 ## Quick start
 
 ```sh
-make prereqs        # verify docker, go, uv, pnpm, node are present
+make prereqs        # verify docker, go, uv, pnpm, node, ffmpeg are present (prints install commands for missing tools)
 make dev            # live-reload stack: postgres, chroma, api, streaming, pipeline, web
 make test           # unit tier — no network, no sudo
 make help           # list every target, grouped by section
@@ -147,7 +176,7 @@ See:
 - [`specs/FULL_IMPLEMENTATION_AUDIT.md`](specs/FULL_IMPLEMENTATION_AUDIT.md) — end-to-end audit of all 25 epics on `main`.
 - [`specs/TEST_RESULTS.md`](specs/TEST_RESULTS.md) — full-suite test results snapshot.
 - [`docs/testing.md`](docs/testing.md) — test pyramid, tier budgets, CI gates.
-- [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md) — generated wiki index.
+- [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md) — generated wiki index. **The wiki is served by the bundled wiki web app in [`web/wiki-app/`](web/wiki-app/), NOT by GitHub Wiki** — see [`docs/WIKI_SYNC.md`](docs/WIKI_SYNC.md) for why and how.
 - [`docs/wiki/build-order.md`](docs/wiki/build-order.md) — phase-by-phase implementation order.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — day-1 setup, day-N inner loop, troubleshooting.
 
