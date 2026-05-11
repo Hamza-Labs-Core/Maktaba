@@ -11,8 +11,12 @@ FROM node:20-alpine
 ENV PNPM_HOME=/usr/local/share/pnpm \
     PATH=/usr/local/share/pnpm:/usr/local/share/pnpm/global/5/node_modules/.bin:$PATH
 
+# Pin pnpm to match web/package.json's `packageManager` field. Without an
+# explicit `corepack prepare`, corepack falls back to its bundled latest
+# (currently pnpm 11.x), which requires Node 22+ and crashes on `node:sqlite`.
 RUN apk add --no-cache bash \
  && corepack enable \
+ && corepack prepare pnpm@9.15.4 --activate \
  && pnpm config set store-dir /root/.local/share/pnpm/store \
  && pnpm add -g vite@5.4.10
 
