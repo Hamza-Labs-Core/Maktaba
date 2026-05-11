@@ -97,12 +97,24 @@ services:
     environment:
       MAKTABA_LOG_LEVEL: debug
       UV_LINK_MODE: copy
-      DATABASE_URL: postgres://maktaba:maktaba@postgres:5432/maktaba?sslmode=disable
-      CHROMA_URL: http://chroma:8000
+      # `MAKTABA_DATABASE_URL` is what __main__.py reads as the default
+      # for --database-url (see _build_parser). The unprefixed
+      # `DATABASE_URL` used by api/streaming doesn't apply here — the
+      # pipeline code path is namespace-scoped.
+      MAKTABA_DATABASE_URL: postgres://maktaba:maktaba@postgres:5432/maktaba?sslmode=disable
+      MAKTABA_CHROMA_URL: http://chroma:8000
     command: ["bash", "/src/pipeline/dev-watch.sh"]
-    # Pipeline keeps the canonical `python -m maktaba_pipeline doctor`
-    # healthcheck inherited from docker-compose.yml — watchmedo restarts
-    # python in place, so the long-lived process keeps responding.
+    # Override the canonical healthcheck: dev's Dockerfile.dev doesn't
+    # put a venv on PATH (uv manages an in-image venv at runtime), so
+    # bare `python -m maktaba_pipeline doctor` resolves to system
+    # python where the module isn't installed. Routing through
+    # `uv run` activates the same venv that `dev-watch.sh` populates.
+    healthcheck:
+      test: ["CMD", "uv", "run", "--frozen", "python", "-m", "maktaba_pipeline", "doctor"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
 
   web:
     build:
