@@ -58,6 +58,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Compose merges depends_on across overlay files, so the base
+      # file's `api: service_healthy` requirement stays in effect unless
+      # we restate the key. In dev, api's healthcheck is disabled, so
+      # demote to service_started — streaming still won't boot before
+      # api exists, but it stops blocking on a healthcheck that can
+      # never report green.
+      api:
+        condition: service_started
     volumes:
       - ../../streaming:/src/streaming:cached
       - ../../shared:/src/shared:cached
