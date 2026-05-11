@@ -91,9 +91,10 @@ install_hint() {
       ;;
     golangci-lint)
       if [ "$os" = "Darwin" ]; then
-        printf "    ${DIM}install:${NC} brew install golangci-lint  (or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)\n"
+        printf "    ${DIM}install:${NC} brew install golangci-lint  (or: go install ... then ensure ~/go/bin is on PATH)\n"
       else
         printf "    ${DIM}install:${NC} go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest\n"
+        printf "    ${DIM}        ${NC} then ensure ~/go/bin is on PATH: export PATH=\$PATH:\$HOME/go/bin\n"
       fi
       ;;
     shellcheck)
@@ -105,6 +106,7 @@ install_hint() {
       ;;
     goose)
       printf "    ${DIM}install:${NC} go install github.com/pressly/goose/v3/cmd/goose@latest\n"
+      printf "    ${DIM}        ${NC} then ensure ~/go/bin is on PATH: export PATH=\$PATH:\$HOME/go/bin\n"
       ;;
   esac
 }
