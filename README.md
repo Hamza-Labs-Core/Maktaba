@@ -20,7 +20,7 @@ Batch video transcription, subtitling, and intelligent search.
 ## Quickstart
 
 ```sh
-make prereqs         # verify your host has docker, go, uv, pnpm, node
+make prereqs         # checks tools and prints install commands for anything missing
 make dev             # bring up the live-reload stack (postgres, chroma, api, streaming, pipeline, web)
 make test            # unit tier — no network, no sudo
 make help            # list every target, grouped by section
