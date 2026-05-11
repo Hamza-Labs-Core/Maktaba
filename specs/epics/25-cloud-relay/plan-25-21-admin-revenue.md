@@ -6,44 +6,52 @@
 
 | Concern | Decision |
 |---|---|
-| Data sources | Stripe API (cached daily), local `cloud_subscriptions`, `cloud_invoices`, `cloud_bandwidth_monthly`, `cloud_servers`. |
-| FX | Daily ECB rates pulled by a cron into `cloud_fx_rates`. |
-| Snapshot | `cloud_revenue_snapshots` daily row preserves history through Stripe retention. |
+| Data sources | Stripe API (cached daily), local `subscriptions`, `invoices`, `bandwidth_monthly`, `servers`. |
+| FX | Daily ECB rates pulled by a cron into `fx_rates`. |
+| Snapshot | `revenue_snapshots` daily row preserves history through Stripe retention. |
 | Endpoints | `GET /api/admin/revenue`, `/timeseries`, `/cost-per-user`, `/revenue/export?period=YYYY-MM`. |
-| Caching | Stripe pull cached 1h on `cloud_stripe_cache` table; UI page renders from local rollups, never live Stripe per-request. |
+| Caching | Stripe pull cached 1h on `stripe_cache` table; UI page renders from local rollups, never live Stripe per-request. |
 | Out of scope | Cohort retention curves (deferred). Forecast model (BI tool). |
 
-## 1. Migration `00060002_revenue.sql` (slot 0006 extension)
+## 1. Migration `00060002_revenue.sql` (slot 0006 sub-sequence)
+
+Sub-sequence file in slot 0006 (billing). The canonical CREATEs in
+`00060001_billing.sql` (plan-25-13) are not touched.
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_revenue_snapshots (
-    date              DATE PRIMARY KEY,
-    mrr_cents         BIGINT NOT NULL,
-    arr_cents         BIGINT NOT NULL,
-    customer_count    INT NOT NULL,
-    active_server_count INT NOT NULL,
+CREATE TABLE revenue_snapshots (
+    date                  DATE PRIMARY KEY,
+    mrr_cents             BIGINT NOT NULL,
+    arr_cents             BIGINT NOT NULL,
+    customer_count        INT NOT NULL,
+    active_server_count   INT NOT NULL,
     total_bandwidth_bytes BIGINT NOT NULL,
-    plan_mix          JSONB NOT NULL,         -- {"pro_monthly": n, ...}
-    fx_basis          TEXT NOT NULL DEFAULT 'usd-daily-ecb'
+    plan_mix              JSONB NOT NULL,         -- {"pro_monthly": n, "pro_yearly": n, "family_monthly": n, "family_yearly": n}
+    fx_basis              TEXT NOT NULL DEFAULT 'usd-daily-ecb'
 );
 
-CREATE TABLE cloud_fx_rates (
-    date    DATE NOT NULL,
-    currency TEXT NOT NULL,           -- 'eur','gbp', etc.
+CREATE TABLE fx_rates (
+    date         DATE NOT NULL,
+    currency     TEXT NOT NULL,           -- 'eur','gbp', etc.
     usd_per_unit NUMERIC(20,10) NOT NULL,
     PRIMARY KEY (date, currency)
 );
 
-CREATE TABLE cloud_stripe_cache (
-    key       TEXT PRIMARY KEY,
+CREATE TABLE stripe_cache (
+    key        TEXT PRIMARY KEY,
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload   JSONB NOT NULL
+    payload    JSONB NOT NULL
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_stripe_cache, cloud_fx_rates, cloud_revenue_snapshots;
+DROP TABLE IF EXISTS stripe_cache, fx_rates, revenue_snapshots;
 ```
+
+`plan_mix` keys remain `pro_monthly`/`pro_yearly`/`family_monthly`/
+`family_yearly` for backwards-compatible reporting — the source-of-
+truth canonical form is `(tier, interval)` pairs on `subscriptions`;
+the JSONB shape here is the reporting projection.
 
 ## 2. Daily Stripe sync (03:00 UTC)
 
@@ -57,7 +65,7 @@ func StripeSync(ctx context.Context, db *pgxpool.Pool) error {
     iter := subscription.List(&stripe.SubscriptionListParams{Limit: stripe.Int64(100)})
     for iter.Next() {
         sub := iter.Subscription()
-        _, _ = db.Exec(ctx, `INSERT INTO cloud_stripe_cache(key, payload) VALUES ($1, $2)
+        _, _ = db.Exec(ctx, `INSERT INTO stripe_cache(key, payload) VALUES ($1, $2)
             ON CONFLICT(key) DO UPDATE SET fetched_at=now(), payload=EXCLUDED.payload`,
             "sub:"+sub.ID, mustJSON(sub))
         applySubscriptionToLocal(db, sub)
@@ -77,20 +85,20 @@ func SnapshotRevenue(ctx context.Context, db *pgxpool.Pool, day time.Time) error
     db.QueryRow(ctx, `
         SELECT COALESCE(SUM(
             CASE
-              WHEN plan LIKE '%_yearly' THEN priceCents / 12
+              WHEN interval = 'yearly' THEN priceCents / 12
               ELSE priceCents
             END
         ), 0)
-        FROM cloud_subscriptions WHERE status='active'
+        FROM subscriptions WHERE status='active'
     `).Scan(&mrrCents)
     // active_server_count
     var serverCount int
-    db.QueryRow(ctx, `SELECT count(*) FROM cloud_servers WHERE last_seen_at >= now()-INTERVAL '24 hours' AND deleted_at IS NULL`).Scan(&serverCount)
+    db.QueryRow(ctx, `SELECT count(*) FROM servers WHERE last_seen_at >= now()-INTERVAL '24 hours' AND deleted_at IS NULL`).Scan(&serverCount)
     var totalBW int64
-    db.QueryRow(ctx, `SELECT COALESCE(SUM(bytes_in+bytes_out), 0) FROM cloud_bandwidth_daily WHERE date = $1`, day).Scan(&totalBW)
+    db.QueryRow(ctx, `SELECT COALESCE(SUM(bytes_in+bytes_out), 0) FROM bandwidth_samples WHERE date = $1`, day).Scan(&totalBW)
     planMix, _ := planMixJSON(ctx, db)
-    _, _ = db.Exec(ctx, `INSERT INTO cloud_revenue_snapshots(date, mrr_cents, arr_cents, customer_count, active_server_count, total_bandwidth_bytes, plan_mix)
-        VALUES($1,$2,$3,(SELECT count(*) FROM cloud_subscriptions WHERE status='active'),$4,$5,$6)
+    _, _ = db.Exec(ctx, `INSERT INTO revenue_snapshots(date, mrr_cents, arr_cents, customer_count, active_server_count, total_bandwidth_bytes, plan_mix)
+        VALUES($1,$2,$3,(SELECT count(*) FROM subscriptions WHERE status='active'),$4,$5,$6)
         ON CONFLICT(date) DO UPDATE SET mrr_cents=EXCLUDED.mrr_cents, arr_cents=EXCLUDED.arr_cents, customer_count=EXCLUDED.customer_count, active_server_count=EXCLUDED.active_server_count, total_bandwidth_bytes=EXCLUDED.total_bandwidth_bytes, plan_mix=EXCLUDED.plan_mix`,
         day, mrrCents, mrrCents*12, serverCount, totalBW, planMix)
     return nil
@@ -201,9 +209,9 @@ func revenueExportCSV(ctx context.Context, w io.Writer, db *pgxpool.Pool, period
       SELECT s.user_id, s.plan,
              COALESCE(m.bytes_out + m.bytes_in, 0)/1e9 AS gb,
              COALESCE(i.total_cents, 0)
-      FROM cloud_subscriptions s
-      LEFT JOIN cloud_bandwidth_monthly m ON m.user_id=s.user_id AND m.year_month=$1
-      LEFT JOIN cloud_invoices i ON i.user_id=s.user_id AND to_char(i.period_start, 'YYYY-MM')=$1
+      FROM subscriptions s
+      LEFT JOIN bandwidth_monthly m ON m.user_id=s.user_id AND m.year_month=$1
+      LEFT JOIN invoices i ON i.user_id=s.user_id AND to_char(i.period_start, 'YYYY-MM')=$1
       WHERE s.status='active'
     `, period)
     for rows.Next() { /* write row */ }
@@ -250,9 +258,9 @@ func revenueExportCSV(ctx context.Context, w io.Writer, db *pgxpool.Pool, period
 
 ## 11. Dependencies
 
-- 25.13 (`cloud_subscriptions`, `cloud_invoices`).
+- 25.13 (`subscriptions`, `invoices`).
 - 25.14 (webhook keeps state current).
-- 25.11 (`cloud_bandwidth_monthly`).
+- 25.11 (`bandwidth_monthly`).
 - 25.20 (admin auth + audit).
 
 ## 12. Acceptance checklist

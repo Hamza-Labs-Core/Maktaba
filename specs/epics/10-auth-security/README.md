@@ -35,6 +35,7 @@ Epic 7 endpoints depend on its `User`, `Session`, and JWT primitives.
 | 10.15 | [Transport security (TLS, HSTS, secure cookies, CORS)](story-10-15-transport-security.md) | —          |
 | 10.16 | [Audit log for security-sensitive actions](story-10-16-security-audit.md)             | 9.17       |
 | 10.17 | [Device pairing endpoint (`POST /api/auth/pair`)](story-10-17-auth-pair.md)            | 10.3, 10.6 |
+| 10.18 | [Ed25519 long-term server identity keys](story-10-18-ed25519-server-identity.md)       | 10.14      |
 
 ## Schema additions owned by this epic
 
@@ -158,4 +159,8 @@ offline authorization:
 ## Sequencing
 
 Land in order: 10.1 → 10.6 → 10.15 → 10.2/10.10 → 10.3/10.4 → 10.5 →
-10.7/10.8 → 10.9 → 10.11/10.12 → 10.13 → 10.14 → 10.16 → 10.17.
+10.7/10.8 → 10.9 → 10.11/10.12 → 10.13 → 10.14 → 10.16 → 10.17 →
+10.18. 10.18 (server-identity Ed25519) lands after 10.14 because it
+depends on the sealing helper, and before any consumer in Epic 15
+(federation), Epic 16 (license verification), or Epic 25 (cloud
+claim flow).

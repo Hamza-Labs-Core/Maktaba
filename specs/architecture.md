@@ -2719,9 +2719,12 @@ All auth surfaces are timing-safe and email-enumeration-safe.
 
 ### 13.7 Server linking: the claim-token flow
 
-Server-side: generate a 96-bit token, base32-encoded as
-`K3F9-MZ7P`, post a `{token_hash, server_pubkey}` to
-`/api/servers/claim/init` (10-min TTL).
+Server-side: generate a 40-bit token (5 random bytes, RFC-4648
+base32-encoded as 8 chars, displayed `K3F9-MZ7P`); post
+`{token_hash, server_pubkey}` to `/api/servers/claim/init`
+(10-min TTL, per-IP rate-limited, single-use). See
+[plan-25-06 §5](epics/25-cloud-relay/plan-25-06-server-claim-token.md)
+for the brute-force math.
 
 User-side, signed in to the cloud: enter the token →
 `POST /api/servers/claim` with `{token, server_pubkey}`. Cloud

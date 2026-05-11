@@ -6,33 +6,44 @@
 
 | Concern | Decision |
 |---|---|
-| Detectors | Live (request-time) + batch (cron) detectors writing `cloud_abuse_events`. |
+| Detectors | Live (request-time) + batch (cron) detectors writing `abuse_signals`. |
 | Scoring | Per-actor (user_id or server_id) decaying score over 90 days. |
 | Responses | Suspension, rate halving, hot-link mode. |
 | Endpoints | Internal `s.abuse.Record(ctx, kind, actor, severity)` + admin REST under `/api/admin/abuse-events`. |
 | Out of scope | CAPTCHA, geo-blocking. |
 
-## 1. Migration `00080002_abuse_events.sql` (slot 0008 extension)
+## 1. Migration `00090001_abuse.sql` (slot 0009 per README)
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_abuse_events (
-    id           BIGSERIAL PRIMARY KEY,
-    ts           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    kind         TEXT NOT NULL,
-    severity     INT NOT NULL,
-    user_id      UUID,
-    server_id    UUID,
-    ip_block     TEXT,
-    payload      JSONB NOT NULL,
-    resolved_at  TIMESTAMPTZ
+CREATE TABLE abuse_signals (
+    id             BIGSERIAL PRIMARY KEY,
+    occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    kind           TEXT NOT NULL,
+    severity       INT NOT NULL,
+    subject_kind   TEXT NOT NULL CHECK (subject_kind IN ('user','server','ip')),
+    subject        TEXT NOT NULL,
+    user_id        UUID,
+    server_id      UUID,
+    payload        JSONB NOT NULL,
+    resolved_at    TIMESTAMPTZ
 );
-CREATE INDEX cloud_abuse_events_kind_ts_idx ON cloud_abuse_events(kind, ts DESC);
-CREATE INDEX cloud_abuse_events_user_ts_idx ON cloud_abuse_events(user_id, ts DESC);
-CREATE INDEX cloud_abuse_events_open_idx ON cloud_abuse_events(resolved_at) WHERE resolved_at IS NULL;
+CREATE INDEX abuse_signals_kind_idx ON abuse_signals(kind, occurred_at DESC);
+CREATE INDEX abuse_signals_subject_idx ON abuse_signals(subject_kind, subject, occurred_at DESC);
+CREATE INDEX abuse_signals_user_idx ON abuse_signals(user_id, occurred_at DESC);
+CREATE INDEX abuse_signals_open_idx ON abuse_signals(resolved_at) WHERE resolved_at IS NULL;
+
+CREATE TABLE blocklist (
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('user','server','ip')),
+    subject      TEXT NOT NULL,
+    reason       TEXT,
+    blocked_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ,
+    PRIMARY KEY (subject_kind, subject)
+);
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_abuse_events;
+DROP TABLE IF EXISTS blocklist, abuse_signals;
 ```
 
 ## 2. Detector inventory
@@ -67,9 +78,9 @@ type Recorder struct {
 func (r *Recorder) Record(ctx context.Context, kind string, actor *Actor, severity int, payload map[string]any) {
     safe := sanitizePayload(payload)
     _, _ = r.db.Exec(ctx, `
-        INSERT INTO cloud_abuse_events(kind, severity, user_id, server_id, ip_block, payload)
-        VALUES($1,$2,$3,$4,$5,$6)
-    `, kind, severity, actor.UserID, actor.ServerID, actor.IPBlock, safe)
+        INSERT INTO abuse_signals(kind, severity, subject_kind, subject, user_id, server_id, payload)
+        VALUES($1,$2,$3,$4,$5,$6,$7)
+    `, kind, severity, actor.SubjectKind, actor.Subject, actor.UserID, actor.ServerID, safe)
 }
 
 func sanitizePayload(p map[string]any) []byte {
@@ -110,13 +121,13 @@ func DetectBandwidthAnomaly(ctx context.Context, db *pgxpool.Pool, rec *Recorder
     rows, _ := db.Query(ctx, `
         WITH last_hour AS (
             SELECT server_id, SUM(bytes_in + bytes_out) AS lh
-            FROM cloud_bandwidth_daily
+            FROM bandwidth_samples
             WHERE date = current_date
             GROUP BY server_id
         ),
         avg7 AS (
             SELECT server_id, AVG(bytes_in + bytes_out) AS mean
-            FROM cloud_bandwidth_daily
+            FROM bandwidth_samples
             WHERE date >= current_date - 7
             GROUP BY server_id
         )
@@ -136,10 +147,10 @@ func DetectBandwidthAnomaly(ctx context.Context, db *pgxpool.Pool, rec *Recorder
 func ScoreFor(ctx context.Context, db *pgxpool.Pool, actorRef string) (int, error) {
     var total float64
     err := db.QueryRow(ctx, `
-        SELECT COALESCE(SUM(severity * EXP(-LN(2) * EXTRACT(EPOCH FROM (now() - ts))/(7*86400))), 0)
-        FROM cloud_abuse_events
+        SELECT COALESCE(SUM(severity * EXP(-LN(2) * EXTRACT(EPOCH FROM (now() - occurred_at))/(7*86400))), 0)
+        FROM abuse_signals
         WHERE (user_id::text = $1 OR server_id::text = $1)
-          AND ts >= now() - INTERVAL '90 days'
+          AND occurred_at >= now() - INTERVAL '90 days'
     `, actorRef).Scan(&total)
     if err != nil { return 0, err }
     return int(math.Round(total)), nil
@@ -246,7 +257,7 @@ Resolve actions touch the response engine accordingly; audit all.
 
 ## 12. Acceptance checklist
 
-- [ ] Migration 00080002 applies.
+- [ ] Migration 00090001 (abuse) applies.
 - [ ] `Recorder.Record` used at all detection sites in 25.* stories.
 - [ ] Live + batch detectors implemented.
 - [ ] Scoring + thresholds + responses.

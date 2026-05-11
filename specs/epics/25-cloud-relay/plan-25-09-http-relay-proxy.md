@@ -7,7 +7,7 @@
 | Concern | Decision |
 |---|---|
 | Role | `maktaba-cloud --role=relay` (same binary as 25.8). Adds an HTTP/2 server on `:443` (TLS-terminated at LB; in-pod we get `:80`). |
-| Subdomain → server lookup | `cloud_subdomains` table (citext PK; populated by 25.22). LRU cache 60s TTL, invalidated by `LISTEN subdomain_changed` from cloud workers. |
+| Subdomain → server lookup | `subdomains` table (citext PK; populated by 25.22). LRU cache 60s TTL, invalidated by `LISTEN subdomain_changed` from cloud workers. |
 | Tunnel lookup | `Registry.Get(server_id)` from 25.8. |
 | Stream allocation | Reuse 25.8 tunnel's `NewClientStream`. |
 | WebSocket pass-through | New frame type `0x30 WS_HEAD`; bidirectional binary pump. |
@@ -74,7 +74,7 @@ func (h *HostRouter) Resolve(ctx context.Context, host string) (*hostRoute, erro
     if v, ok := h.cache.Get(strings.ToLower(name)); ok && time.Since(v.fetchedAt) < 60*time.Second {
         return v, nil
     }
-    row, err := h.repo.LookupByName(ctx, name)  // joins cloud_subdomains + cloud_servers + cloud_users
+    row, err := h.repo.LookupByName(ctx, name)  // joins subdomains + servers + users
     switch {
     case errors.Is(err, ErrNotFound):
         return nil, errUnknownHost

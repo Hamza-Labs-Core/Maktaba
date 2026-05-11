@@ -8,18 +8,22 @@
 |---|---|
 | ACME library | `github.com/go-acme/lego/v4`. |
 | Challenge | DNS-01 via Cloudflare API (token scoped `Zone.DNS:Edit` for `maktaba.app` and `maktaba.cloud` zones). |
-| Storage | Postgres `cloud_tls_certs` table; key sealed with KMS data key. |
+| Storage | Postgres `tls_certs` table; key sealed with KMS data key. |
 | Process | Issuance + rotation in `--role=worker` (cron-driven). |
 | Reload | LB and relay reload on `SIGHUP` after a fresh cert lands. |
 | Fallback CA | ZeroSSL; one-line flag swap. |
 | Ciphers | TLS 1.2 AEAD-only + TLS 1.3; HSTS preload. |
 | Out of scope | Per-user cert pinning. HTTP/3. RSA backup keypair (v2). |
 
-## 1. Migration `00070002_tls_certs.sql` (slot 0007 extension)
+## 1. Migration `00080002_tls_certs.sql` (slot 0008 sub-sequence)
+
+Sub-sequence file in slot 0008 (subdomains). Cert lifecycle ties to
+the subdomain table created in `00080001_subdomains.sql`
+(plan-25-22).
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_tls_certs (
+CREATE TABLE tls_certs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     host            TEXT NOT NULL,         -- '*.maktaba.app' | 'maktaba.app' | '*.maktaba.cloud'
     issuer          TEXT NOT NULL,         -- 'letsencrypt' | 'zerossl'
@@ -30,10 +34,10 @@ CREATE TABLE cloud_tls_certs (
     not_after       TIMESTAMPTZ NOT NULL,
     superseded_at   TIMESTAMPTZ
 );
-CREATE INDEX cloud_tls_certs_active_idx ON cloud_tls_certs(host, not_after) WHERE superseded_at IS NULL;
+CREATE INDEX tls_certs_active_idx ON tls_certs(host, not_after) WHERE superseded_at IS NULL;
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_tls_certs;
+DROP TABLE IF EXISTS tls_certs;
 ```
 
 ## 2. ACME orchestrator
@@ -153,12 +157,12 @@ Lego returns a `lego.Resource` we can feed to `golang.org/x/crypto/ocsp`; we sta
 
 ## 7. CT monitoring
 
-A weekly job hits `crt.sh` for `%.maktaba.app` and `%.maktaba.cloud`; diffs against our `cloud_tls_certs` issuer list; alerts on unknown certs.
+A weekly job hits `crt.sh` for `%.maktaba.app` and `%.maktaba.cloud`; diffs against our `tls_certs` issuer list; alerts on unknown certs.
 
 ```go
 func CTSentinel(ctx context.Context) {
     body, _ := http.Get("https://crt.sh/?q=%25.maktaba.app&output=json")
-    // diff against cloud_tls_certs.serial
+    // diff against tls_certs.serial
     // alert if unknown serial found
 }
 ```
@@ -216,7 +220,7 @@ func CTSentinel(ctx context.Context) {
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00070002 applies.
+- [ ] Migration 00080002 (tls_certs) applies.
 - [ ] ACME wildcard issuance against staging works.
 - [ ] Rotation cron at 6h; renewal at <30d remaining.
 - [ ] Fallback to ZeroSSL one-line flag.

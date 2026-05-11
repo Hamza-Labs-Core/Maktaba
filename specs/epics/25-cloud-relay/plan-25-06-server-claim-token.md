@@ -6,63 +6,73 @@
 
 | Concern | Decision |
 |---|---|
-| Token | 96 bits of random (12 bytes), base32-encoded with `Crockford`-style alphabet (`A-Z2-7`), 8 chars, hyphen-grouped: `K3F9-MZ7P`. Generated server-side (the user's box). Case-insensitive on redemption. |
-| Token-hash storage | `cloud_claim_tokens.token_hash = SHA-256(uppercased token)`. Plaintext never stored on cloud. |
-| Server pubkey | Ed25519 from Epic 10 Story 10.18 (server identity). Reused unchanged. |
-| Long-lived bearer | 32-byte random, returned once to server on redemption, hashed with bcrypt cost 10 in `cloud_server_tokens.token_hash_bcrypt`. |
+| Token | **40 bits** of random (5 bytes), base32-encoded with the standard RFC 4648 alphabet (`A-Z2-7`), 8 chars, hyphen-grouped: `K3F9-MZ7P`. Generated server-side (the user's box). Case-insensitive on redemption. The 40-bit choice is intentional — see §5 for the threat-model math (10-min TTL + per-IP rate limit + single-use); architecture §13.7's "96-bit" wording is shorthand for the rate-limited brute-force resistance, not the token entropy. |
+| Token-hash storage | `server_claims.token_hash = SHA-256(uppercased token)`. Plaintext never stored on cloud. |
+| Server pubkey | Ed25519 from Epic 10 Story 10.18 (server identity). Reused unchanged. The local server generates the keypair on first boot (plan-10-18 §3), seals the private half at rest via plan-10-14 sealing, and publishes the public half to this endpoint. |
+| Long-lived bearer | 32-byte random, returned once to server on redemption, hashed with bcrypt cost 10 in a server-side credential table. For tunnel-side lookups, see plan-25-08 §4 (HMAC-prefix lookup, not bcrypt-per-row). |
 | Tunnel endpoint | `wss://relay.maktaba.app/tunnel/v1/connect`. Set in claim response so server doesn't hardcode. |
 | Init endpoint TLS pin | Server pins Cloudflare R3 intermediate CA. |
+| `update_available` column | Added in `00040002_status_extras.sql` (plan-25-16 sub-migration), not here. |
 | Out of scope | The tunnel itself (25.7, 25.8). The entitlement *content* (25.26 defines shape; we just include the first signed blob). Subdomain (25.22 — left NULL here). |
 
-## 1. Migration `00020001` (slot 0002 per README)
+## 1. Migration `00040001_servers.sql` (slot 0004 per README)
 
-Filename: `cloud/migrations/00020001_servers_and_claims.sql`.
+Slot 0004 owns server-linking; see [cloud/migrations/README.md](../../../cloud/migrations/README.md).
+References `users(id)` from slot 0002 (plan-25-02).
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_servers (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    server_pubkey   BYTEA NOT NULL,       -- 32-byte Ed25519
-    version         TEXT NOT NULL DEFAULT 'unknown',
-    locale          TEXT NOT NULL DEFAULT 'en',
-    subdomain       CITEXT,               -- NULL until 25.22 assigns
-    claimed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at    TIMESTAMPTZ,
-    suspended_at    TIMESTAMPTZ,
-    deleted_at      TIMESTAMPTZ
+CREATE TABLE servers (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name                TEXT NOT NULL,
+    slug                TEXT NOT NULL UNIQUE,         -- subdomain prefix; populated lazily by 25.22
+    server_secret_hash  TEXT NOT NULL,                -- bcrypt of the long-lived bearer
+    plan                TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free','pro','family')),
+    version             TEXT,
+    public_key          BYTEA,                        -- 32-byte Ed25519, populated on first claim
+    direct_ip           INET,                         -- 25.10 populates
+    direct_port         INTEGER,
+    claimed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at        TIMESTAMPTZ,
+    suspended_at        TIMESTAMPTZ,
+    deleted_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX cloud_servers_user_idx ON cloud_servers(user_id) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX cloud_servers_pubkey_uq
-    ON cloud_servers(server_pubkey) WHERE deleted_at IS NULL;
+CREATE INDEX idx_servers_owner ON servers (owner_user_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_servers_pubkey ON servers (public_key) WHERE deleted_at IS NULL AND public_key IS NOT NULL;
 
-CREATE TABLE cloud_server_tokens (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    server_id         UUID NOT NULL REFERENCES cloud_servers(id) ON DELETE CASCADE,
-    token_hash_bcrypt TEXT NOT NULL,
-    granted_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at      TIMESTAMPTZ,
-    revoked_at        TIMESTAMPTZ,
-    rotated_from      UUID REFERENCES cloud_server_tokens(id)
+CREATE TABLE server_claims (
+    token_hash      BYTEA       PRIMARY KEY,           -- SHA-256(uppercased token)
+    code            TEXT        NOT NULL,              -- 8-char display form, for the user
+    user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    server_pubkey   BYTEA,                             -- bound during init; nullable on cold issue
+    server_version  TEXT,
+    server_locale   TEXT,
+    init_ip         INET,
+    expires_at      TIMESTAMPTZ NOT NULL,              -- 10 min TTL
+    used_at         TIMESTAMPTZ,
+    used_server_id  UUID        REFERENCES servers(id) ON DELETE SET NULL,
+    redemption_ip   INET,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX cloud_server_tokens_server_idx
-    ON cloud_server_tokens(server_id) WHERE revoked_at IS NULL;
+CREATE INDEX idx_server_claims_expires ON server_claims (expires_at);
+CREATE INDEX idx_server_claims_code ON server_claims (code);
 
-CREATE TABLE cloud_claim_tokens (
-    token_hash       BYTEA PRIMARY KEY,    -- SHA-256
-    server_pubkey    BYTEA NOT NULL,
-    server_version   TEXT,
-    server_locale    TEXT,
-    init_ip          INET,
-    expires_at       TIMESTAMPTZ NOT NULL,
-    redeemed_at      TIMESTAMPTZ,
-    redeemed_by      UUID REFERENCES cloud_users(id) ON DELETE SET NULL,
-    redemption_ip    INET
+CREATE TABLE server_health (
+    server_id           UUID PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+    online              BOOLEAN     NOT NULL DEFAULT FALSE,
+    last_heartbeat      TIMESTAMPTZ,
+    relay_latency_ms    INTEGER,
+    direct_latency_ms   INTEGER,
+    cpu_pct             REAL,
+    mem_pct             REAL,
+    storage_pct         REAL,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX cloud_claim_tokens_expires_idx ON cloud_claim_tokens(expires_at);
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_claim_tokens, cloud_server_tokens, cloud_servers;
+DROP TABLE IF EXISTS server_health, server_claims, servers;
 ```
 
 ## 2. Endpoints
@@ -86,7 +96,7 @@ Behavior:
 
 1. Rate-limit per IP (10/min — see 25.24).
 2. Reject if `token_hash` already present (`409 duplicate_init`).
-3. Insert `cloud_claim_tokens` with `expires_at = now() + 10m`, `init_ip = client_ip`.
+3. Insert `server_claims` with `expires_at = now() + 10m`, `init_ip = client_ip`.
 4. Respond `200 {claim_id: <uuid>, expires_at}`. `claim_id` is non-secret — purely for logging.
 
 No auth; only the rate limit and `token_hash` uniqueness protect this endpoint. Plaintext token never reaches the cloud at this step.
@@ -103,15 +113,15 @@ Behavior (in a single Postgres txn):
 
 1. Normalize token: strip hyphens, uppercase.
 2. Hash: `sha256.Sum256([]byte(normalized))`.
-3. `SELECT … FROM cloud_claim_tokens WHERE token_hash=$1 FOR UPDATE`.
+3. `SELECT … FROM server_claims WHERE token_hash=$1 FOR UPDATE`.
    - Not found → `404 claim_not_found`.
    - `redeemed_at IS NOT NULL` → `409 claim_already_used`.
    - `expires_at < now()` → `410 claim_expired`.
 4. Compare stored `server_pubkey` to request `server_pubkey`. Mismatch → `400 claim_pubkey_mismatch`.
-5. Per-user server cap: `SELECT count(*) FROM cloud_servers WHERE user_id=$1 AND deleted_at IS NULL` ≥ 5 → `409 server_limit_reached`.
-6. `INSERT INTO cloud_servers (user_id, server_pubkey, version, locale) RETURNING id`.
-7. Mint 32-byte random bearer; `bcrypt.GenerateFromPassword([]byte(bearer), 10)`. Insert `cloud_server_tokens`.
-8. `UPDATE cloud_claim_tokens SET redeemed_at=now(), redeemed_by=$user, redemption_ip=$ip`.
+5. Per-user server cap: `SELECT count(*) FROM servers WHERE user_id=$1 AND deleted_at IS NULL` ≥ 5 → `409 server_limit_reached`.
+6. `INSERT INTO servers (user_id, server_pubkey, version, locale) RETURNING id`.
+7. Mint 32-byte random bearer; `bcrypt.GenerateFromPassword([]byte(bearer), 10)`. Insert `servers`.
+8. `UPDATE server_claims SET redeemed_at=now(), redeemed_by=$user, redemption_ip=$ip`.
 9. Mint initial entitlement (25.26 helper) — payload `{tier=user.plan, features=…, expires_at=now()+24h}` signed Ed25519.
 10. Audit `server.claim` with `target_id=<server_id>`.
 11. Respond:
@@ -225,7 +235,7 @@ Brute force math: 40-bit space × 10-min window × 10/min/IP rate cap × 5 diffe
 | Re-claim after unlink | Old server row deleted; new claim creates new row + new bearer. | `TestReclaimAfterUnlink`. |
 | Clock skew ±60s | 10-min TTL absorbs comfortably. | Spec. |
 | Profanity in token | Alphabet `A-Z2-7` rarely produces English words; not filtered. | Doc. |
-| Subdomain not assigned at claim | `cloud_servers.subdomain` is NULL; 25.22 assigns later. | Migration. |
+| Subdomain not assigned at claim | `servers.subdomain` is NULL; 25.22 assigns later. | Migration. |
 | TLS chain rotation | Documented as requiring server-update. | Doc. |
 | Init replay | `token_hash` PK + `409 duplicate_init`. | `TestInitDuplicateHash`. |
 | Anonymous redemption brute-force | Rate limit + abuse score escalates. | `TestRateLimit`. |
@@ -241,7 +251,7 @@ Brute force math: 40-bit space × 10-min window × 10/min/IP rate cap × 5 diffe
 
 ## 9. Acceptance checklist
 
-- [ ] Migration 00020001 applies.
+- [ ] Migration 00040001 (servers) applies; references `users(id)` from slot 0002.
 - [ ] `claim/init` rejects duplicates, rate-limits.
 - [ ] `claim` returns `{server_id, server_token, cloud_endpoint, entitlement}` once.
 - [ ] Bearer bcrypt-stored; never returned again.

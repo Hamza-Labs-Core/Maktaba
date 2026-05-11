@@ -283,45 +283,67 @@ GET    /api/admin/abuse-events
 
 ## DB schema (cloud Postgres)
 
-| Table                       | Purpose |
-|-----------------------------|---------|
-| `cloud_users`               | id, email (citext, unique), password_hash, email_verified_at, locale, tz, created_at, deleted_at, suspended_at, stripe_customer_id |
-| `cloud_identities`          | (user_id, provider, provider_user_id, email_at_provider) — Google/Apple linkages |
-| `cloud_sessions`            | id, user_id, refresh_token_hash, ip, ua, created_at, last_used_at, expires_at, revoked_at |
-| `cloud_servers`             | id, user_id, claimed_at, server_pubkey (Ed25519), version, last_seen_at, suspended_at, subdomain |
-| `cloud_server_tokens`       | server_id, token_hash, granted_at, last_used_at — long-lived per-server bearer for tunnel auth |
-| `cloud_claim_tokens`        | token_hash, server_pubkey, expires_at, redeemed_at, redeemed_by_user_id |
-| `cloud_devices`             | id, user_id, platform (ios/android/web), token_sealed (AES-GCM), created_at, last_used_at, revoked_at |
-| `cloud_subscriptions`       | id, user_id, stripe_subscription_id, plan (free/pro/family), status, current_period_end, cancel_at, updated_at |
-| `cloud_invoices`            | stripe_invoice_id, user_id, total_cents, currency, status, period_start, period_end |
-| `cloud_bandwidth_daily`     | server_id, date, bytes_in, bytes_out — rolled up nightly |
-| `cloud_streams_active`      | server_id, user_id, opened_at, last_seen_at — gauge for concurrent-stream cap |
-| `cloud_subdomains`          | name (citext, PK), user_id, claimed_at, released_at, redirect_until |
-| `cloud_subdomain_reserved`  | name (PK) — admin, api, www, etc. |
-| `cloud_audit`               | id, ts, actor_user_id, action, target_type, target_id, ip, ua, payload_jsonb |
-| `cloud_abuse_events`        | id, ts, kind (rate-limit-trip / port-scan / hot-link / bot-signup / chargeback), severity, user_id, server_id, payload_jsonb, resolved_at |
-| `cloud_webhook_events`      | stripe_event_id (PK), processed_at, payload_jsonb — Stripe idempotency |
-| `cloud_push_outbox`         | id, server_id, user_id, payload_jsonb, created_at, dispatched_at, retries — durable push queue |
+The cloud Postgres is a *separate database* from the on-prem
+`api/migrations/`; the `cloud_` prefix used in spec prose maps to
+unprefixed table names in `cloud/migrations/` because the
+namespacing is already provided by the DB boundary. The canonical
+table names below match `cloud/migrations/`:
 
-All cloud tables prefixed `cloud_*` for clarity vs. local server schema.
+| Table                | Purpose |
+|----------------------|---------|
+| `users`              | id, email (unique), password_hash (nullable for OAuth-only), email_verified, locale, plan (free/pro/family), status, display_name, avatar_url, created_at, last_login_at |
+| `oauth_links`        | (user_id, provider, subject) — Google/Apple identity linkages; unique on `(provider, subject)` |
+| `sessions`           | id, user_id, refresh_token_hash, ip, user_agent, created_at, expires_at, revoked_at |
+| `email_verifications`| token_hash, user_id, purpose, expires_at, used_at — single-use verification + password-reset tokens |
+| `email_change_requests` | token_hash, user_id, new_email, expires_at, used_at — email change confirmation |
+| `account_deletions`  | user_id, requested_at, purge_after, cancelled_at — GDPR delete hold |
+| `servers`            | id, owner_user_id, name, slug (subdomain prefix), server_secret_hash, plan, version, public_key (Ed25519), last_seen_at, direct_ip, direct_port |
+| `server_claims`      | token_hash, code, user_id, expires_at, used_at, used_server_id — 8-char 10-min claim codes |
+| `server_health`      | server_id (PK), online, last_heartbeat, relay_latency_ms, cpu_pct, mem_pct, storage_pct |
+| `server_endpoints`   | server_id, kind (lan/relay/direct), candidates_sealed, observed_at — direct-connect probe state (25.10 sub-migration) |
+| `push_devices`       | id, user_id, platform (ios/android/web), token (sealed), app_version, last_seen_at — unique on (platform, token_hash) |
+| `push_dispatch_log`  | id, user_id, platform, topic, status, error, sent_at |
+| `subscriptions`      | user_id (PK), plan (free/pro/family), interval (monthly/yearly, nullable for free), stripe_customer_id, stripe_subscription_id, status, current_period_end, cancel_at_period_end, seats |
+| `stripe_events`      | event_id (PK), type, received_at, payload — webhook idempotency ledger |
+| `family_members`     | (owner_user_id, member_user_id) — family-plan seats; invitations |
+| `bandwidth_samples`  | server_id, bucket_start, bytes_in, bytes_out — 5-min samples, source of truth for billing |
+| `bandwidth_monthly`  | server_id, month (DATE), bytes_in, bytes_out, over_limit_at |
+| `subdomains`         | slug (PK), server_id, provisioned_at, cert_renewed_at |
+| `reserved_slugs`     | slug (PK), reason — operator/abuse reservations (`admin`, `api`, `www`, …) |
+| `audit_events`       | id, occurred_at, actor_user_id (nullable), is_admin, category, action, target_kind, target_id, ip, user_agent, reason, payload (JSONB), error_id — written by 25.20 (slot 0002 sub-migration) |
+| `abuse_signals`      | id, subject, subject_kind (user/server/ip), kind, severity, detail (JSONB), created_at |
+| `blocklist`          | (subject_kind, subject) PK, reason, blocked_at, expires_at |
+| `rate_overrides`     | (subject_kind, subject) PK, scope, limit_per_minute, reason, expires_at — 25.24 sub-migration |
+| `entitlement_keys`   | fingerprint (PK), public_key, created_at, revoked_at, active — private bytes never live in DB |
+| `entitlement_grants` | id, user_id, server_id, plan, issued_at, expires_at, fingerprint, revoked_at |
 
 ## Migrations claimed by this epic
 
 The cloud has its own migration sequence (separate database, separate
-goose dir at `cloud/migrations/`). Slots `0001`–`0010`:
+goose dir at `cloud/migrations/`). Files are named `00<slot><seq>_<topic>.sql`;
+the leading four digits are the slot, the next four are sequence
+within that slot. Canonical slot allocation (matches
+[`cloud/migrations/README.md`](../../../cloud/migrations/README.md)):
 
-| Slot | Story | Tables |
-|------|-------|--------|
-| `0001` | 25.1  | `cloud_users`, `cloud_identities`, `cloud_sessions` |
-| `0002` | 25.6  | `cloud_servers`, `cloud_server_tokens`, `cloud_claim_tokens` |
-| `0003` | 25.11 | `cloud_bandwidth_daily`, `cloud_streams_active` |
-| `0004` | 25.13 | `cloud_subscriptions`, `cloud_invoices`, `cloud_webhook_events` |
-| `0005` | 25.17 | `cloud_devices`, `cloud_push_outbox` |
-| `0006` | 25.20 | `cloud_audit` |
-| `0007` | 25.22 | `cloud_subdomains`, `cloud_subdomain_reserved` |
-| `0008` | 25.25 | `cloud_abuse_events` |
-| `0009` | 25.5  | indexes for GDPR-export queries |
-| `0010` | 25.26 | entitlement-signing key history (rotation) |
+| Slot | Story | File | Tables |
+|------|-------|------|--------|
+| `0001` | 25.1  | `00010001_system.sql`     | `cloud_system` (bootstrap settings) |
+| `0002` | 25.2–25.4 | `00020001_identity.sql` | `users`, `oauth_links`, `sessions`, `email_verifications` |
+| `0003` | 25.5  | `00030001_account.sql`    | `email_change_requests`, `account_deletions` |
+| `0004` | 25.6  | `00040001_servers.sql`    | `servers`, `server_claims`, `server_health` |
+| `0005` | 25.11 | `00050001_bandwidth.sql`  | `bandwidth_samples`, `bandwidth_monthly` |
+| `0006` | 25.13/25.14 | `00060001_billing.sql` | `subscriptions`, `stripe_events`, `family_members` |
+| `0007` | 25.17 | `00070001_push.sql`       | `push_devices`, `push_dispatch_log` |
+| `0008` | 25.22 | `00080001_subdomains.sql` | `subdomains`, `reserved_slugs` |
+| `0009` | 25.25 | `00090001_abuse.sql`      | `abuse_signals`, `blocklist` |
+| `0010` | 25.26 | `00100001_entitlement.sql`| `entitlement_keys`, `entitlement_grants` |
+
+Stories that ALTER existing tables instead of creating new ones add a
+sub-sequence file (`00<slot><seq>_<topic>.sql` with seq ≥ 0002) in the
+target slot. The admin console (25.20) extends slot 0002 with
+`audit_events` and trigram indexes; the rate limiter (25.24) extends
+slot 0009 with `rate_overrides`; direct-connect fallback (25.10)
+extends slot 0004 with `server_endpoints`.
 
 ## Threat model (summary)
 
@@ -332,7 +354,7 @@ goose dir at `cloud/migrations/`). Slots `0001`–`0010`:
 | Account takeover via OAuth email reuse  | Email collision triggers explicit merge prompt; never auto-link |
 | Relay used for arbitrary HTTP proxying  | `Host` header must match `{subdomain}.maktaba.app`; non-Maktaba paths 404; abuse score |
 | Bandwidth fraud (free user transfers TB)| Free tier hard-cap = 0 GB; Pro/Family caps + circuit breaker at 110% |
-| Stripe webhook replay                   | `cloud_webhook_events.stripe_event_id` PK = idempotency |
+| Stripe webhook replay                   | `stripe_events.event_id` PK = idempotency |
 | Push token leak                         | AES-GCM at rest with KMS-managed key; never returned in any response |
 | Subdomain enumeration / squatting       | Reserved-words list, abuse-score signals (10 sign-ups/min from same IP block → CAPTCHA) |
 | GDPR right-to-erasure failure           | Delete job traverses 9 tables, audited, idempotent, 30-day grace before final purge |
@@ -363,8 +385,9 @@ numbers monthly.
 - **Epic 10** Story 10.6 (signing keys), 10.18 (Ed25519 server identity) —
   the server identity used to authenticate to the cloud is the same
   long-term Ed25519 key.
-- **Epic 15** Story 15.2 (LAN discovery) — clients prefer LAN; cloud
-  relay is the fallback path.
+- **Epic 15** Story 15.1 (LAN mDNS discovery) — clients prefer LAN;
+  cloud relay is the fallback path. (Story 15.2's "global discovery"
+  v0 stub is superseded by 25.07–25.10.)
 - **Epic 16** all stories — entitlement-signing pattern reused;
   Stripe customer portal already chosen; cloud is the *server side* of
   the existing local-license check.

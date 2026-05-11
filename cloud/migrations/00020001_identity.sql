@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     display_name    TEXT,
     locale          TEXT         NOT NULL DEFAULT 'en',
     avatar_url      TEXT,
-    plan            TEXT         NOT NULL DEFAULT 'free',
+    plan            TEXT         NOT NULL DEFAULT 'free'
+                     CHECK (plan IN ('free','pro','family')),
     status          TEXT         NOT NULL DEFAULT 'active',
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),

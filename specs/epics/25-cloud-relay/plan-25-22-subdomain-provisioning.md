@@ -8,37 +8,39 @@
 |---|---|
 | Endpoints | `POST /api/servers/{id}/subdomain`, `PATCH /api/servers/{id}/subdomain`, `DELETE …` (release immediately into grace), `GET /api/subdomains/check?name=...`. |
 | Validation | Regex `^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$`, 3-32 chars, no double-hyphen, ASCII-only (defends against unicode confusables). |
-| Reservations | Static list bundled at build (`reserved_list.go`) + DB table `cloud_subdomain_reserved`. |
+| Reservations | Static list bundled at build (`reserved_list.go`) + DB table `reserved_slugs`. |
 | Profanity | Multi-language small list bundled. Accept some false negatives. |
 | Resolution | Wildcard `*.maktaba.app` DNS A record at Cloudflare; **no per-subdomain DNS calls**. The relay (25.9) does the routing. |
 | Grace | 30-day 301-redirect after release; 90-day per-user change cooldown. |
 | Out of scope | Custom domains (deferred). IDN (deferred). |
 
-## 1. Migration `00070001_subdomains.sql` (slot 0007)
+## 1. Migration `00080001_subdomains.sql` (slot 0008 per README)
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_subdomains (
-    name           CITEXT PRIMARY KEY,
-    user_id        UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    server_id      UUID NOT NULL REFERENCES cloud_servers(id) ON DELETE CASCADE,
-    claimed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    released_at    TIMESTAMPTZ,
-    redirect_until TIMESTAMPTZ,
-    redirect_to    CITEXT,
+CREATE EXTENSION IF NOT EXISTS citext;
+
+CREATE TABLE subdomains (
+    slug            CITEXT PRIMARY KEY,
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    server_id       UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    provisioned_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cert_renewed_at TIMESTAMPTZ,
+    released_at     TIMESTAMPTZ,
+    redirect_until  TIMESTAMPTZ,
+    redirect_to     CITEXT,
     last_changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX cloud_subdomains_user_idx ON cloud_subdomains(user_id);
-CREATE INDEX cloud_subdomains_active_idx ON cloud_subdomains(name)
-    WHERE released_at IS NULL;
+CREATE INDEX subdomains_user_idx ON subdomains(user_id);
+CREATE INDEX subdomains_active_idx ON subdomains(slug) WHERE released_at IS NULL;
 
-CREATE TABLE cloud_subdomain_reserved (
-    name CITEXT PRIMARY KEY,
-    reason TEXT
+CREATE TABLE reserved_slugs (
+    slug   CITEXT PRIMARY KEY,
+    reason TEXT NOT NULL
 );
 
--- Seed (truncated; full ~250 entries in code)
-INSERT INTO cloud_subdomain_reserved(name, reason) VALUES
+-- Seed (truncated; full ~250 entries in seed file shipped with this story)
+INSERT INTO reserved_slugs(slug, reason) VALUES
  ('admin','infrastructure'), ('api','infrastructure'), ('app','infrastructure'),
  ('auth','infrastructure'), ('billing','infrastructure'), ('cloud','infrastructure'),
  ('console','infrastructure'), ('contact','infrastructure'), ('dashboard','infrastructure'),
@@ -50,17 +52,17 @@ INSERT INTO cloud_subdomain_reserved(name, reason) VALUES
 
 CREATE OR REPLACE FUNCTION notify_subdomain_changed() RETURNS trigger AS $$
 BEGIN
-  PERFORM pg_notify('subdomain_changed', NEW.name::text);
+  PERFORM pg_notify('subdomain_changed', NEW.slug::text);
   RETURN NEW;
 END$$ LANGUAGE plpgsql;
-CREATE TRIGGER cloud_subdomains_notify
-    AFTER INSERT OR UPDATE ON cloud_subdomains
+CREATE TRIGGER subdomains_notify
+    AFTER INSERT OR UPDATE ON subdomains
     FOR EACH ROW EXECUTE FUNCTION notify_subdomain_changed();
 
 -- +goose Down
-DROP TRIGGER IF EXISTS cloud_subdomains_notify ON cloud_subdomains;
+DROP TRIGGER IF EXISTS subdomains_notify ON subdomains;
 DROP FUNCTION IF EXISTS notify_subdomain_changed();
-DROP TABLE IF EXISTS cloud_subdomain_reserved, cloud_subdomains;
+DROP TABLE IF EXISTS reserved_slugs, subdomains;
 ```
 
 ## 2. Validation
@@ -84,7 +86,7 @@ func asciiOnly(s string) bool {
 }
 ```
 
-Reservation check: combine `cloud_subdomain_reserved` and an additional in-memory profanity list.
+Reservation check: combine `reserved_slugs` and an additional in-memory profanity list.
 
 ## 3. Claim
 
@@ -109,17 +111,17 @@ func claim(s *Service) http.HandlerFunc {
         tx, _ := s.db.BeginTx(r.Context(), pgx.TxOptions{})
         defer tx.Rollback(r.Context())
         var existing cloudSubdomainRow
-        err := tx.QueryRow(r.Context(), `SELECT name, user_id, released_at, redirect_until FROM cloud_subdomains WHERE name=$1 FOR UPDATE`, name).Scan(&existing.Name, &existing.UserID, &existing.ReleasedAt, &existing.RedirectUntil)
+        err := tx.QueryRow(r.Context(), `SELECT name, user_id, released_at, redirect_until FROM subdomains WHERE name=$1 FOR UPDATE`, name).Scan(&existing.Name, &existing.UserID, &existing.ReleasedAt, &existing.RedirectUntil)
         if err == nil {
             if existing.ReleasedAt == nil || (existing.RedirectUntil != nil && existing.RedirectUntil.After(time.Now())) {
                 problem(w, 409, "taken", ""); return
             }
             // Past grace: replace
-            _, _ = tx.Exec(r.Context(), `DELETE FROM cloud_subdomains WHERE name=$1`, name)
+            _, _ = tx.Exec(r.Context(), `DELETE FROM subdomains WHERE name=$1`, name)
         }
-        _, err = tx.Exec(r.Context(), `INSERT INTO cloud_subdomains(name, user_id, server_id) VALUES ($1,$2,$3)`, name, userID, sid)
+        _, err = tx.Exec(r.Context(), `INSERT INTO subdomains(name, user_id, server_id) VALUES ($1,$2,$3)`, name, userID, sid)
         if err != nil { problem(w, 500, "internal", ""); return }
-        _, _ = tx.Exec(r.Context(), `UPDATE cloud_servers SET subdomain=$1 WHERE id=$2`, name, sid)
+        _, _ = tx.Exec(r.Context(), `UPDATE servers SET subdomain=$1 WHERE id=$2`, name, sid)
         tx.Commit(r.Context())
         s.audit(r.Context(), "subdomain.claim", name)
         writeJSON(w, 200, map[string]string{"name": name})
@@ -153,7 +155,7 @@ func change(s *Service) http.HandlerFunc {
 ```go
 func (r *Repo) ReleaseOnUnlink(ctx context.Context, serverID uuid.UUID) error {
     _, err := r.db.Exec(ctx, `
-        UPDATE cloud_subdomains
+        UPDATE subdomains
         SET released_at = now(), redirect_until = now() + INTERVAL '30 days', redirect_to = NULL
         WHERE server_id = $1 AND released_at IS NULL`, serverID)
     return err
@@ -231,13 +233,13 @@ One-time setup (not in code; runbook): create `*.maktaba.app A <lb-ip>` and `*.m
 
 ## 10. Dependencies
 
-- 25.1, 25.6 (`cloud_servers.subdomain`).
+- 25.1, 25.6 (`servers.subdomain`).
 - 25.9 (host lookup invalidation on `subdomain_changed`).
 - 25.16 (unlink calls `ReleaseOnUnlink`).
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00070001 applies with seed reservations.
+- [ ] Migration 00080001 applies with seed reservations.
 - [ ] Validator regex + ASCII-only + double-hyphen guard.
 - [ ] Per-user 5 limit.
 - [ ] 90-day change cooldown.

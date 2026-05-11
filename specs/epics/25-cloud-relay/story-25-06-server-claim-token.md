@@ -15,9 +15,12 @@ The protocol:
 
 1. **Generate (server side).** From the local admin UI ("Connect to
    Maktaba Cloud"), the local API service:
-   - Generates a 96-bit random token, base32-encoded as 8 chars
-     (e.g., `K3F9-MZ7P`). Token TTL is 10 minutes; collisions
-     are vanishingly improbable but checked.
+   - Generates a 40-bit random token (5 bytes), RFC-4648 base32-
+     encoded as 8 chars (e.g., `K3F9-MZ7P`). Token TTL is 10
+     minutes; the 40-bit entropy is paired with a per-IP rate
+     limit + single-use redemption (see plan-25-06 §5 brute-force
+     math). Collisions in the 10-min window are vanishingly
+     improbable but still checked on insert.
    - Computes its own Ed25519 fingerprint (Epic 10 Story 10.18)
      and includes it in the registration request.
    - `POST`s to `https://api.maktaba.app/api/servers/claim/init`

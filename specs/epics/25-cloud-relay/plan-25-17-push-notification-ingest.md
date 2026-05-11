@@ -7,39 +7,42 @@
 | Concern | Decision |
 |---|---|
 | Endpoints | `POST /api/push/dispatch` (server bearer), `POST /api/push/devices` (user JWT), `DELETE /api/push/devices/{id}` (user JWT). |
-| Auth for dispatch | `X-Server-Token` header — same bearer used for tunnel; bcrypt-verified against `cloud_server_tokens`. Cross-user pushes → 403 + abuse event. |
+| Auth for dispatch | `X-Server-Token` header — same bearer used for tunnel; bcrypt-verified against `servers`. Cross-user pushes → 403 + abuse event. |
 | Device token storage | AES-GCM-sealed with cloud's data key; never returned in any response. |
-| Templates | `cloud_push_templates(kind, locale, title_template, body_template)`; named-placeholder substitution only. |
-| Outbox | `cloud_push_outbox` rows for delivery durability; APNs (25.18) and FCM (25.19) drain. |
+| Templates | `push_templates(kind, locale, title_template, body_template)`; named-placeholder substitution only. |
+| Outbox | `push_outbox` rows for delivery durability; APNs (25.18) and FCM (25.19) drain. |
 | Dedup | `(user_id, dedupe_key)` uniqueness within `ttl_seconds`. |
-| Rate limit | Per-server: 1000/hour default; 10000 for trusted (overrides in `cloud_rate_limit_overrides`). |
+| Rate limit | Per-server: 1000/hour default; 10000 for trusted (overrides in `rate_overrides`, declared by plan-25-24 slot 0009 sub-migration). |
 | Out of scope | APNs/FCM dispatch (25.18/25.19). Web push (Safari). |
 
-## 1. Migration `00050001_push.sql` (slot 0005)
+## 1. Migration `00070001_push.sql` (slot 0007 per README)
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_devices (
+CREATE TABLE push_devices (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    platform        TEXT NOT NULL,        -- 'ios' | 'ipad' | 'tvos' | 'android' | 'androidtv' | 'web'
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform        TEXT NOT NULL CHECK (platform IN ('ios','ipad','tvos','android','androidtv','web')),
     app_bundle_id   TEXT,                  -- iOS / tvOS bundle distinguishing
     environment     TEXT NOT NULL DEFAULT 'production',  -- 'production' | 'sandbox'
     token_sealed    BYTEA NOT NULL,
+    token_hash      BYTEA NOT NULL,        -- SHA-256 of plaintext token; deterministic for upsert
     locale          TEXT,
     channel_id      TEXT,                  -- Android channel id
+    app_version     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_used_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at      TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX cloud_devices_unique_token_idx
-    ON cloud_devices(user_id, platform, token_sealed)
+CREATE UNIQUE INDEX push_devices_unique_token_idx
+    ON push_devices(user_id, platform, token_hash)
     WHERE revoked_at IS NULL;
+CREATE INDEX push_devices_user_idx ON push_devices(user_id);
 
-CREATE TABLE cloud_push_outbox (
+CREATE TABLE push_outbox (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    device_id     UUID NOT NULL REFERENCES cloud_devices(id) ON DELETE CASCADE,
-    server_id     UUID REFERENCES cloud_servers(id) ON DELETE SET NULL,
+    device_id     UUID NOT NULL REFERENCES push_devices(id) ON DELETE CASCADE,
+    server_id     UUID REFERENCES servers(id) ON DELETE SET NULL,
     user_id       UUID NOT NULL,
     kind          TEXT NOT NULL,
     dedupe_key    TEXT,
@@ -55,15 +58,16 @@ CREATE TABLE cloud_push_outbox (
     failed_at     TIMESTAMPTZ,
     fail_reason   TEXT,
     retries       INT NOT NULL DEFAULT 0,
-    in_flight_lock UUID                    -- claimed by a worker; expires after 60s
+    in_flight_lock UUID,                   -- claimed by a worker
+    locked_until  TIMESTAMPTZ              -- worker claim expiry; replaces the unowned `expired_locks` view
 );
-CREATE INDEX cloud_push_outbox_pending_idx
-    ON cloud_push_outbox(enqueued_at)
+CREATE INDEX push_outbox_pending_idx
+    ON push_outbox(enqueued_at)
     WHERE dispatched_at IS NULL AND failed_at IS NULL;
-CREATE INDEX cloud_push_outbox_user_dedupe_idx
-    ON cloud_push_outbox(user_id, dedupe_key, enqueued_at);
+CREATE INDEX push_outbox_user_dedupe_idx
+    ON push_outbox(user_id, dedupe_key, enqueued_at);
 
-CREATE TABLE cloud_push_templates (
+CREATE TABLE push_templates (
     kind            TEXT NOT NULL,
     locale          TEXT NOT NULL,
     title_template  TEXT NOT NULL,
@@ -71,8 +75,8 @@ CREATE TABLE cloud_push_templates (
     PRIMARY KEY (kind, locale)
 );
 
--- Seed templates
-INSERT INTO cloud_push_templates VALUES
+-- Seed templates (locale fallback chain: <locale> → 'en')
+INSERT INTO push_templates VALUES
  ('library.video_ready', 'en', '{library_name}', '{title} is ready to watch'),
  ('library.video_ready', 'ar', '{library_name}', '‎{title} جاهز للمشاهدة'),
  ('library.scan_complete', 'en', 'Maktaba', 'Library scan complete'),
@@ -87,7 +91,7 @@ INSERT INTO cloud_push_templates VALUES
  ('family.invite',      'ar', 'مكتبة',  'تمت إضافتك إلى خطة عائلية');
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_push_templates, cloud_push_outbox, cloud_devices;
+DROP TABLE IF EXISTS push_templates, push_outbox, push_devices;
 ```
 
 ## 2. Devices endpoints
@@ -236,10 +240,10 @@ func (d *Drainer) tick(ctx context.Context) {
     // Atomically claim up to 100 rows.
     workerID := uuid.New()
     rows, _ := d.db.Query(ctx, `
-        UPDATE cloud_push_outbox o
+        UPDATE push_outbox o
         SET in_flight_lock = $1
         WHERE o.id IN (
-          SELECT id FROM cloud_push_outbox
+          SELECT id FROM push_outbox
           WHERE dispatched_at IS NULL AND failed_at IS NULL
             AND not_after > now()
             AND (in_flight_lock IS NULL OR in_flight_lock IN (
@@ -247,7 +251,7 @@ func (d *Drainer) tick(ctx context.Context) {
               ))
           ORDER BY enqueued_at LIMIT 100
         )
-        RETURNING o.*, (SELECT platform FROM cloud_devices WHERE id=o.device_id), (SELECT token_sealed FROM cloud_devices WHERE id=o.device_id)
+        RETURNING o.*, (SELECT platform FROM push_devices WHERE id=o.device_id), (SELECT token_sealed FROM push_devices WHERE id=o.device_id)
     `, workerID)
     ...
     for rows.Next() {
@@ -316,7 +320,7 @@ After APNs/FCM resolve, set `dispatched_at` or `failed_at`. Permanent failures (
 
 ## 9. Acceptance checklist
 
-- [ ] Migration 00050001 applies; templates seeded.
+- [ ] Migration 00070001 applies; templates seeded.
 - [ ] All 3 endpoints implemented.
 - [ ] Cross-user push blocked with abuse event.
 - [ ] Tokens AES-GCM-sealed.

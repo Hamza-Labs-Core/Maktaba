@@ -60,9 +60,9 @@ Transaction:
 
 1. Validate ownership.
 2. Mark tunnel close: `tunnel := registry.Get(id); if tunnel != nil { tunnel.Send(FrameRevoke, …); tunnel.Close(4000) }`.
-3. `UPDATE cloud_servers SET deleted_at=now() WHERE id=$1` (soft delete preserves audit).
-4. `UPDATE cloud_server_tokens SET revoked_at=now() WHERE server_id=$1 AND revoked_at IS NULL`.
-5. `UPDATE cloud_subdomains SET released_at=now(), redirect_until=now()+30d WHERE server_id=$1`.
+3. `UPDATE servers SET deleted_at=now() WHERE id=$1` (soft delete preserves audit).
+4. Revoke the server's bearer in `servers.server_secret_hash` (write a fresh rotated hash that nothing knows).
+5. `UPDATE subdomains SET released_at=now(), redirect_until=now()+30d WHERE server_id=$1`.
 6. Audit `server.unlink`.
 7. `pg_notify('subdomain_changed', subdomain_name)` to evict relay cache.
 
@@ -109,23 +109,42 @@ The 25.8 registry's `OnConnect`/`OnDisconnect` observer publishes onto the bus. 
 
 ## 6. Release-version check
 
+This story adds an `update_available TEXT` column to `servers` in a
+slot-0004 sub-sequence migration `00040002_status_extras.sql`. Semver
+comparison is performed **server-side in Go** (no Postgres function);
+the cron picks each row in batches, compares versions in Go, and
+writes the result.
+
+```sql
+-- 00040002_status_extras.sql  (slot 0004 sub-sequence)
+-- +goose Up
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS update_available TEXT;
+-- +goose Down
+ALTER TABLE servers DROP COLUMN IF EXISTS update_available;
+```
+
 ```go
 // cloud/internal/jobs/check_releases.go
+//
+// Uses golang.org/x/mod/semver for canonical comparison; lexicographic
+// compare is unsafe for versions like "1.10" vs "1.9".
 func CheckReleases(ctx context.Context, db *pgxpool.Pool) error {
     body, _ := http.Get("https://releases.maktaba.app/manifest.json")
     var m Manifest; json.NewDecoder(body.Body).Decode(&m)
-    stable := m.Channels["stable"].Version
-    _, err := db.Exec(ctx, `
-        UPDATE cloud_servers SET update_available = CASE
-            WHEN semver_lt(version, $1) THEN $1
-            ELSE NULL
-        END WHERE deleted_at IS NULL
-    `, stable)
-    return err
+    stable := "v" + m.Channels["stable"].Version
+    rows, _ := db.Query(ctx, `SELECT id, version FROM servers WHERE deleted_at IS NULL`)
+    for rows.Next() {
+        var id uuid.UUID; var ver string
+        rows.Scan(&id, &ver)
+        var newVal interface{}
+        if semver.Compare("v"+ver, stable) < 0 {
+            newVal = m.Channels["stable"].Version
+        }
+        db.Exec(ctx, `UPDATE servers SET update_available=$1 WHERE id=$2`, newVal, id)
+    }
+    return rows.Err()
 }
 ```
-
-Semver compare lives as a Postgres function `semver_lt(text,text)` added in `00060001_admin_revenue.sql` (or stub via `CASE` on lexicographic compare with caveats — better to use Go-side per-row update).
 
 ## 7. UI
 

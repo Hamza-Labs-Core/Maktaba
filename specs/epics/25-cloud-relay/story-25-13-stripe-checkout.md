@@ -15,7 +15,7 @@ authority on what actually happened.
 Endpoints:
 
 - `POST /api/billing/checkout`
-  Body: `{plan: "pro_monthly"|"family_monthly"|"pro_yearly"|"family_yearly",
+  Body: `{tier: "pro"|"family", interval: "monthly"|"yearly",
   promo_code: <optional>, return_url: <optional>}`.
   Response: `{url: "https://checkout.stripe.com/c/pay/cs_..."}`.
 - `POST /api/billing/portal`
@@ -28,11 +28,12 @@ Endpoints:
 Behavior details:
 
 - **Idempotency.** Each call to `/checkout` sets
-  `Idempotency-Key: <sha256(user_id + plan + day-of-week)>` so
-  rapid double-clicks return the same session URL.
+  `Idempotency-Key: <sha256(user_id + tier + interval + day-of-week)>`
+  so rapid double-clicks return the same session URL.
 - **Customer creation.** First-time payers get a Stripe customer
   created with `email` and `metadata: {maktaba_user_id: <uuid>}`.
-  We persist `stripe_customer_id` on `cloud_users`.
+  We persist `stripe_customer_id` on the user's `subscriptions`
+  row (single source of truth; never denormalized onto `users`).
 - **Tax.** Stripe Tax is enabled; addresses collected in
   Checkout. We do not handle tax ourselves.
 - **Apple/Google IAP.** Out of scope. iOS app shows the
@@ -52,7 +53,7 @@ Behavior details:
 
 - **Given** an authenticated user with no subscription,
   **when** they `POST /api/billing/checkout` with
-  `{plan: "pro_monthly"}`,
+  `{tier: "pro", interval: "monthly"}`,
   **then** the response is `200 {url: "https://checkout.stripe.com/..."}`
   and a Stripe customer is created (or reused).
 - **Given** the user has a Stripe customer,
@@ -133,7 +134,8 @@ Behavior details:
   (`price_xxxxx` from Stripe dashboard).
 - `cloud/configs/cloud.example.toml` —
   `[stripe] secret_key=ENV, webhook_secret=ENV,
-  pro_monthly_price=price_..., ...`.
+  price_pro_monthly=price_..., price_pro_yearly=price_...,
+  price_family_monthly=price_..., price_family_yearly=price_...`.
 
 ## Open questions
 

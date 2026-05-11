@@ -7,40 +7,41 @@
 | Concern | Decision |
 |---|---|
 | Where counted | Inside the relay proxy (25.9) at the io.Reader/Writer boundary. Both directions counted as bytes pass `w.Write` (out) and request body read (in). Headers excluded. |
-| Hot store | Redis hash per `(server_id, utc_date)` with two fields `in` and `out`. Auto-expires 48h after the UTC day ends (to allow late flush). |
-| Cold store | Postgres `cloud_bandwidth_daily(server_id, date, bytes_in, bytes_out)` with `(server_id, date)` PK. Flushed every 60s. |
-| Stream gauge | Redis hash `streams:{server_id}` indexed by `stream_id`; cleaned by reaper at 90s inactivity. |
-| Monthly rollup | Cron `0 10 1 * *` (00:10 UTC on day 1): aggregate prior month into `cloud_bandwidth_monthly`. |
+| Hot store | Redis hash per `(server_id, utc_date)` with two fields `in` and `out`. Auto-expires 48h after the UTC day ends (to allow late flush). Also writes hourly key `bw:hourly:{sid}:{hour}` (24-key rolling window) consumed by abuse detection (25.25). |
+| Cold store | Postgres `bandwidth_samples(server_id, bucket_start, bytes_in, bytes_out)` with `(server_id, bucket_start)` PK (5-min granularity, source of truth for billing). Flushed every 60s. |
+| Stream gauge | Redis hash `streams:{server_id}` indexed by `stream_id`; cleaned by reaper at 90s inactivity. The active-stream Postgres mirror is best-effort only. |
+| Monthly rollup | Cron `0 10 1 * *` (00:10 UTC on day 1): aggregate prior month into `bandwidth_monthly`. |
 | Read API | `GET /api/me/usage`, `GET /api/servers/{id}/usage`, `GET /api/admin/usage`. |
 | Out of scope | Tier enforcement (25.12 consumes counters). Per-IP abuse counters (25.25). |
 
-## 1. Migration `00030001_bandwidth.sql` (slot 0003 per README)
+## 1. Migration `00050001_bandwidth.sql` (slot 0005 per README)
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_bandwidth_daily (
-    server_id    UUID NOT NULL REFERENCES cloud_servers(id) ON DELETE CASCADE,
-    date         DATE NOT NULL,
-    user_id      UUID NOT NULL,    -- denormalized for fast per-user queries; nullable post-purge
-    bytes_in     BIGINT NOT NULL DEFAULT 0,
-    bytes_out    BIGINT NOT NULL DEFAULT 0,
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (server_id, date)
+CREATE TABLE bandwidth_samples (
+    server_id     UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    bucket_start  TIMESTAMPTZ NOT NULL,                  -- 5-min UTC bucket
+    user_id       UUID,                                  -- denormalized for fast per-user queries; nullable post-purge
+    bytes_in      BIGINT NOT NULL DEFAULT 0,
+    bytes_out     BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (server_id, bucket_start)
 );
-CREATE INDEX cloud_bandwidth_daily_user_date_idx
-    ON cloud_bandwidth_daily(user_id, date DESC);
+CREATE INDEX bandwidth_samples_bucket_idx ON bandwidth_samples(bucket_start);
+CREATE INDEX bandwidth_samples_user_idx ON bandwidth_samples(user_id, bucket_start DESC);
 
-CREATE TABLE cloud_bandwidth_monthly (
-    user_id          UUID,
-    year_month       TEXT NOT NULL,     -- e.g. '2026-05'
+CREATE TABLE bandwidth_monthly (
+    server_id        UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    month            DATE NOT NULL,                       -- first-of-month UTC
     bytes_in         BIGINT NOT NULL DEFAULT 0,
     bytes_out        BIGINT NOT NULL DEFAULT 0,
     peak_concurrent_streams INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (user_id, year_month)
+    over_limit_at    TIMESTAMPTZ,
+    PRIMARY KEY (server_id, month)
 );
+CREATE INDEX bandwidth_monthly_month_idx ON bandwidth_monthly(month);
 
-CREATE TABLE cloud_streams_active (
-    server_id     UUID NOT NULL REFERENCES cloud_servers(id) ON DELETE CASCADE,
+CREATE TABLE streams_active (
+    server_id     UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
     user_id       UUID NOT NULL,
     stream_id     TEXT NOT NULL,        -- relay-allocated; opaque
     opened_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -48,11 +49,11 @@ CREATE TABLE cloud_streams_active (
     bytes_so_far  BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (server_id, stream_id)
 );
-CREATE INDEX cloud_streams_active_last_seen_idx ON cloud_streams_active(last_seen_at);
-CREATE INDEX cloud_streams_active_user_idx ON cloud_streams_active(user_id);
+CREATE INDEX streams_active_last_seen_idx ON streams_active(last_seen_at);
+CREATE INDEX streams_active_user_idx ON streams_active(user_id);
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_streams_active, cloud_bandwidth_monthly, cloud_bandwidth_daily;
+DROP TABLE IF EXISTS streams_active, bandwidth_monthly, bandwidth_samples;
 ```
 
 ## 2. Hot-path meter (relay)
@@ -87,7 +88,7 @@ func (b *bodyCounter) Add(n int64) {
 }
 
 func (b *bodyCounter) Flush(ctx context.Context, streamID string) {
-    // Update last_seen_at + bytes_so_far in cloud_streams_active.
+    // Update last_seen_at + bytes_so_far in streams_active.
     b.m.redis.HSet(ctx, "streams:"+b.serverID.String(), streamID, encodeStreamState(b.n.Load(), b.m.clock.Now()))
 }
 ```
@@ -164,11 +165,11 @@ func (j *FlushJob) tick(ctx context.Context) error {
         // Resolve user_id (cached LRU; falls through to DB).
         uid, _ := j.userResolver.Resolve(ctx, sid)
         _, _ = j.db.Exec(ctx, `
-            INSERT INTO cloud_bandwidth_daily(server_id, date, user_id, bytes_in, bytes_out, updated_at)
+            INSERT INTO bandwidth_samples(server_id, date, user_id, bytes_in, bytes_out, updated_at)
             VALUES ($1,$2,$3,$4,$5, now())
             ON CONFLICT (server_id, date) DO UPDATE
-              SET bytes_in = cloud_bandwidth_daily.bytes_in + EXCLUDED.bytes_in,
-                  bytes_out = cloud_bandwidth_daily.bytes_out + EXCLUDED.bytes_out,
+              SET bytes_in = bandwidth_samples.bytes_in + EXCLUDED.bytes_in,
+                  bytes_out = bandwidth_samples.bytes_out + EXCLUDED.bytes_out,
                   updated_at = now()
         `, sid, date, uid, bin, bout)
     }
@@ -206,12 +207,12 @@ func RollupMonth(ctx context.Context, db *pgxpool.Pool, ym string) error {
     // Acquire advisory lock to prevent dual runs (idempotency safety net).
     _, _ = db.Exec(ctx, `SELECT pg_advisory_xact_lock(8472613)`)
     _, err := db.Exec(ctx, `
-        INSERT INTO cloud_bandwidth_monthly (user_id, year_month, bytes_in, bytes_out, peak_concurrent_streams)
+        INSERT INTO bandwidth_monthly (user_id, year_month, bytes_in, bytes_out, peak_concurrent_streams)
         SELECT user_id, $1::TEXT,
                COALESCE(SUM(bytes_in), 0),
                COALESCE(SUM(bytes_out), 0),
                0   -- peak filled by separate query (see below)
-        FROM cloud_bandwidth_daily
+        FROM bandwidth_samples
         WHERE date >= ($1 || '-01')::DATE
           AND date < ($1 || '-01')::DATE + INTERVAL '1 month'
         GROUP BY user_id
@@ -245,12 +246,12 @@ Query (cache via 60s pgbouncer):
 
 ```sql
 SELECT date, SUM(bytes_in) AS bin, SUM(bytes_out) AS bout
-FROM cloud_bandwidth_daily
+FROM bandwidth_samples
 WHERE user_id = $1 AND date BETWEEN $2 AND $3
 GROUP BY date ORDER BY date;
 ```
 
-Index `cloud_bandwidth_daily(user_id, date DESC)` keeps p95 < 200ms.
+Index `bandwidth_samples(user_id, date DESC)` keeps p95 < 200ms.
 
 ## 8. Test plan
 
@@ -295,15 +296,15 @@ Index `cloud_bandwidth_daily(user_id, date DESC)` keeps p95 < 200ms.
 ## 10. Dependencies
 
 - 25.1 (foundation).
-- 25.6 (cloud_servers).
-- 25.8 (tunnel registry; cloud_streams_active uses server_id).
+- 25.6 (servers).
+- 25.8 (tunnel registry; streams_active uses server_id).
 - 25.9 (meter wired into proxy reader/writer).
 - 25.5 (GDPR data retention).
 - 25.21 (admin reporting consumes monthly rollups).
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00030001 applies.
+- [ ] Migration 00050001 (bandwidth) applies.
 - [ ] Meter wraps proxy body streams.
 - [ ] Redis flush every 60s; delta-subtract model.
 - [ ] Stale stream reaper at 30s; 90s window.

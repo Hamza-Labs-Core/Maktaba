@@ -6,30 +6,32 @@
 
 | Concern | Decision |
 |---|---|
-| Reuses | All of 25.3's `Provider` scaffolding, state-cookie, redirect validator, merge flow, `cloud_identities` table. |
+| Reuses | All of 25.3's `Provider` scaffolding, state-cookie, redirect validator, merge flow, `oauth_links` table. |
 | Differences | (a) client-secret JWT we mint with ES256 + `.p8`, (b) profile data only on first sign-in (`name`/`email` only in *first* response), (c) form_post mode (Apple POSTs the callback), (d) optional native iOS path with `authorizationCode`+`identityToken`, (e) Apple `notifications` webhook for revocation/email-disabled. |
 | Out of scope | App Store IAP (deferred to 25.13). macOS native bindings (web flow on desktop). |
 
-## 1. Migration `00020003_apple_oauth.sql`
+## 1. Migration `00020004_apple_oauth.sql` (slot 0002 sub-sequence)
 
 ```sql
 -- +goose Up
-ALTER TABLE cloud_identities
+ALTER TABLE oauth_links
     ADD COLUMN apple_relay_email BOOLEAN NOT NULL DEFAULT FALSE;
 
-CREATE TABLE cloud_apple_notifications (
-    id            BIGSERIAL PRIMARY KEY,
-    received_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    event         TEXT NOT NULL,    -- email-disabled | email-enabled | consent-revoked | account-delete
-    sub           TEXT NOT NULL,
-    payload       JSONB NOT NULL,
-    applied_at    TIMESTAMPTZ
+CREATE TABLE apple_notifications (
+    id              BIGSERIAL PRIMARY KEY,
+    received_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    event           TEXT NOT NULL,    -- email-disabled | email-enabled | consent-revoked | account-delete
+    sub             TEXT NOT NULL,
+    event_time_ms   BIGINT NOT NULL,
+    payload         JSONB NOT NULL,
+    applied_at      TIMESTAMPTZ,
+    UNIQUE (event, sub, event_time_ms)
 );
-CREATE INDEX cloud_apple_notifications_event_idx ON cloud_apple_notifications(event, applied_at);
+CREATE INDEX apple_notifications_event_idx ON apple_notifications(event, applied_at);
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_apple_notifications;
-ALTER TABLE cloud_identities DROP COLUMN IF EXISTS apple_relay_email;
+DROP TABLE IF EXISTS apple_notifications;
+ALTER TABLE oauth_links DROP COLUMN IF EXISTS apple_relay_email;
 ```
 
 ## 2. Endpoints
@@ -195,7 +197,7 @@ func appleNotifications(s *Service) http.HandlerFunc {
 }
 ```
 
-Idempotency: insert into `cloud_apple_notifications` with a unique key on `(event, sub, event_time_ms)`; second delivery is a no-op.
+Idempotency: insert into `apple_notifications` with a unique key on `(event, sub, event_time_ms)`; second delivery is a no-op.
 
 ## 8. Test plan
 
@@ -229,7 +231,7 @@ Idempotency: insert into `cloud_apple_notifications` with a unique key on `(even
 | `team_id` rotation | Config reload + JWT cache flush via SIGUSR1. | Doc. |
 | `.p8` swap | Symlink swap; SIGUSR1 reload; cached JWT invalidated. | Operational runbook. |
 | `consent-revoked` for unknown sub | Insert notification row; no user action. | `TestNotificationsUnknownSub`. |
-| Account-delete notification | Same as consent-revoked + soft-delete `cloud_users`? No — Apple deletion just disconnects identity; user keeps account, can re-link. | Spec wording. |
+| Account-delete notification | Same as consent-revoked + soft-delete `users`? No — Apple deletion just disconnects identity; user keeps account, can re-link. | Spec wording. |
 | Relay email later forwards disabled | Bounce flag (25.2) covers user-side messaging. | Cross-story. |
 | iOS native flow without identity token | 400 `bad_request`. | Unit. |
 | Test against Apple staging | Apple has no public staging; we use a mock + recorded fixtures. | Test harness. |
@@ -238,12 +240,12 @@ Idempotency: insert into `cloud_apple_notifications` with a unique key on `(even
 ## 10. Dependencies
 
 - 25.1 (config, audit).
-- 25.2 (sessions, `cloud_users`, dummy hash for OAuth-only).
-- 25.3 (`oauth.go` scaffolding, `cloud_identities`, merge flow, redirect validator).
+- 25.2 (sessions, `users`, dummy hash for OAuth-only).
+- 25.3 (`oauth.go` scaffolding, `oauth_links`, merge flow, redirect validator).
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00020003 applies; `apple_relay_email` flag + notifications table.
+- [ ] Migration 00020004 applies; `apple_relay_email` flag + notifications table.
 - [ ] ES256 JWT minter cached, ≤ 6-month TTL.
 - [ ] `/start`, `/callback`, `/native`, `/notifications` endpoints implemented.
 - [ ] First-call `user` payload captured.

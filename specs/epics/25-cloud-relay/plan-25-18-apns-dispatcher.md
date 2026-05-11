@@ -6,10 +6,10 @@
 
 | Concern | Decision |
 |---|---|
-| Where | `--role=worker`. Long-running drainer for `cloud_push_outbox` rows with iOS/iPadOS/tvOS device platforms. |
+| Where | `--role=worker`. Long-running drainer for `push_outbox` rows with iOS/iPadOS/tvOS device platforms. |
 | Lib | `github.com/sideshow/apns2` (mature; supports HTTP/2, persistent conn, JWT auth, sandbox+prod). |
 | JWT | ES256 signed with `.p8` private key; cached and rotated proactively (50 min). |
-| Topics | Bundle id selected from `cloud_devices.app_bundle_id` (or fallback config default per platform). |
+| Topics | Bundle id selected from `push_devices.app_bundle_id` (or fallback config default per platform). |
 | Concurrency | 200 in-flight per worker; HTTP/2 supports 100/conn so we maintain 2-3 conns. |
 | Out of scope | Template rendering (25.17 already produced title/body). Outbox claim (25.17 worker pattern). |
 
@@ -175,7 +175,7 @@ tvos_bundle   = "app.maktaba.cloud.tv"
 
 | Case | Behaviour | Pinned |
 |---|---|---|
-| Sandbox vs prod | tag in `cloud_devices.environment`. | `TestSandboxRouting`. |
+| Sandbox vs prod | tag in `push_devices.environment`. | `TestSandboxRouting`. |
 | collapse-id | mapped from `dedupe_key` (≤64B). | Implementation. |
 | Background pushes | `content-available=1` opt-in by kind (system.status). | Implementation. |
 | Critical alerts | Off by default; no entitlement. | Spec. |

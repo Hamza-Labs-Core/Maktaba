@@ -48,8 +48,20 @@ cloud/
     clock/
       clock.go           # injectable Now() for tests
   migrations/
-    00010001_users_sessions.sql        # placeholder; lands 25.2
-    ...0010 reserved per README.
+    00010001_system.sql                # bootstrap (this plan); cloud_system table
+    00020001_identity.sql              # lands 25.2 (users / sessions / oauth_links / email_verifications)
+    00030001_account.sql               # lands 25.5
+    00040001_servers.sql               # lands 25.6
+    00050001_bandwidth.sql             # lands 25.11
+    00060001_billing.sql               # lands 25.13/25.14
+    00070001_push.sql                  # lands 25.17
+    00080001_subdomains.sql            # lands 25.22
+    00090001_abuse.sql                 # lands 25.25
+    00100001_entitlement.sql           # lands 25.26
+    # Sub-sequence files (00<slot>0002+) are reserved for ALTERs:
+    # 00020002_audit.sql (25.20) extends slot 0002 with audit_events
+    # 00040002_server_endpoints.sql (25.10) extends slot 0004
+    # 00090002_rate_overrides.sql (25.24) extends slot 0009
   configs/
     cloud.example.toml
   go.mod / go.sum

@@ -9,7 +9,7 @@
 | Process role | `maktaba-cloud --role=relay`. Binds `:8081` for tunnels (TLS-passthrough at Hetzner LB; relay process speaks `ws://`); binds `:8082` for `/healthz`+`/metrics`. |
 | WSS server lib | `github.com/coder/websocket` (same as server side). |
 | Registry | In-memory `sync.Map[uuid.UUID]*Tunnel`. Node-local; **no replication**. |
-| Auth | `Authorization: Bearer <server_token>`; bcrypt-verified against `cloud_server_tokens.token_hash_bcrypt`. Bearer caches `(server_id, user_id)` in pod-local LRU (10k entries, 5min TTL) — cleared on `superseded` close so a rotation propagates fast. |
+| Auth | `Authorization: Bearer <server_token>`; bcrypt-verified against `servers.token_hash_bcrypt`. Bearer caches `(server_id, user_id)` in pod-local LRU (10k entries, 5min TTL) — cleared on `superseded` close so a rotation propagates fast. |
 | One-tunnel-per-server | Newer handshake wins; older closed `4003 superseded` within 1s. |
 | Heartbeats | PING from server every 25s; cloud responds PONG via writer. 90s no-frame idle → close `4002 idle_timeout`. |
 | Out of scope | The HTTP proxy from clients (25.9). Tunnel-to-pod stickiness via LB consistent hashing (operationally configured; not in code). |
@@ -217,8 +217,8 @@ func (r *Repo) VerifyBearer(ctx context.Context, bearer string) (uuid.UUID, uuid
     }
     rows, _ := r.db.Query(ctx, `
         SELECT cst.server_id, cs.user_id, cst.token_hash_bcrypt
-        FROM cloud_server_tokens cst
-        JOIN cloud_servers cs ON cs.id = cst.server_id
+        FROM servers cst
+        JOIN servers cs ON cs.id = cst.server_id
         WHERE cst.revoked_at IS NULL AND cs.deleted_at IS NULL AND cs.suspended_at IS NULL
         LIMIT 5000`)
     defer rows.Close()
@@ -237,7 +237,7 @@ func (r *Repo) VerifyBearer(ctx context.Context, bearer string) (uuid.UUID, uuid
 
 Brute-force defense: 5000 bearer cap is a hard ceiling; well beyond expected count. We pre-filter by table-scan cost; eventually replace with a per-pod cache miss path using a deterministic salted hash index (v2).
 
-Force-revoke: admin (25.20) `UPDATE cloud_server_tokens SET revoked_at=now() WHERE server_id=$1`. Registry `Get(serverID)` returns the live tunnel; admin issues `0x20 REVOKE` frame, then closes the connection.
+Force-revoke: admin (25.20) `UPDATE servers SET revoked_at=now() WHERE server_id=$1`. Registry `Get(serverID)` returns the live tunnel; admin issues `0x20 REVOKE` frame, then closes the connection.
 
 ## 5. Heartbeat fallback
 
@@ -324,7 +324,7 @@ Servers reconnect to whichever pod the LB sends them to.
 ## 10. Dependencies
 
 - 25.1 (foundation).
-- 25.6 (`cloud_server_tokens` table, bearer hash).
+- 25.6 (`servers` table, bearer hash).
 - 25.7 (server side; mock used for testing — and vice versa).
 - 25.20 (force-disconnect via registry).
 - 25.26 (signed ENT_REFRESH frames pushed at handshake).

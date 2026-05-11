@@ -118,7 +118,7 @@ func deepLinkFor(row OutboxJoinedRow) string {
 
 ## 5. Re-registration
 
-When a device that was previously revoked reactivates (story EC), `cloud_devices.UpsertDevice` (25.17) clears `revoked_at`. The next push for that device works.
+When a device that was previously revoked reactivates (story EC), `push_devices.UpsertDevice` (25.17) clears `revoked_at`. The next push for that device works.
 
 ## 6. Test plan
 

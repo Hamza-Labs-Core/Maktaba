@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS servers (
     name            TEXT        NOT NULL,
     slug            TEXT        NOT NULL UNIQUE,
     server_secret_hash TEXT     NOT NULL,
-    plan            TEXT        NOT NULL DEFAULT 'free',
+    plan            TEXT        NOT NULL DEFAULT 'free'
+                     CHECK (plan IN ('free','pro','family')),
     version         TEXT,
     public_key      BYTEA,
     last_seen_at    TIMESTAMPTZ,
