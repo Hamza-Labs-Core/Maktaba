@@ -8,15 +8,15 @@
 -- existing slot-0035 table is per-video; we extend it with library
 -- scope and a voiceprint blob without breaking the existing FK chain.
 --
-ALTER TABLE speakers ADD COLUMN library_id TEXT REFERENCES libraries(id) ON DELETE CASCADE;
+ALTER TABLE speakers ADD COLUMN IF NOT EXISTS library_id TEXT REFERENCES libraries(id) ON DELETE CASCADE;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE speakers ADD COLUMN voiceprint BLOB;
+ALTER TABLE speakers ADD COLUMN IF NOT EXISTS voiceprint BLOB;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE speakers ADD COLUMN unknown_index INTEGER;
+ALTER TABLE speakers ADD COLUMN IF NOT EXISTS unknown_index INTEGER;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS speakers_library_idx
 -- +goose Down
 -- +goose StatementBegin
 DROP INDEX IF EXISTS speakers_library_idx;
-ALTER TABLE speakers DROP COLUMN unknown_index;
-ALTER TABLE speakers DROP COLUMN voiceprint;
-ALTER TABLE speakers DROP COLUMN library_id;
+ALTER TABLE speakers DROP COLUMN IF EXISTS unknown_index;
+ALTER TABLE speakers DROP COLUMN IF EXISTS voiceprint;
+ALTER TABLE speakers DROP COLUMN IF EXISTS library_id;
 -- +goose StatementEnd

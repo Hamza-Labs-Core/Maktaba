@@ -1,32 +1,51 @@
-"""Stub PID 1 for the pipeline container (Story 22.3).
+"""Pipeline daemon entry point.
 
-The real CLI (`maktaba-pipeline run`, `maktaba-pipeline doctor`, ...)
-lands with Epic 03. Until then, `python -m maktaba_pipeline` parks in a
-sleep loop so compose has a long-lived container to attach a
-healthcheck to. `python -m maktaba_pipeline doctor` short-circuits to a
-zero-exit status so the compose healthcheck passes.
+``python -m maktaba_pipeline`` boots the worker loop:
+
+1. Parses CLI flags + env vars (``MAKTABA_DATABASE_URL``,
+   ``MAKTABA_PIPELINE_STAGES``, ``MAKTABA_PIPELINE_WORKER_ID``, …).
+2. Connects to the database via :class:`maktaba_pipeline.runtime.Database`.
+3. Starts the :class:`~maktaba_pipeline.pipeline.runner.ClaimLoop`
+   alongside the heartbeat ticker (per-job, scoped inside the
+   dispatch) and the periodic :class:`~maktaba_pipeline.pipeline.reaper.Reaper`.
+4. Optionally starts the in-process gRPC server when
+   ``MAKTABA_PIPELINE_GRPC_ADDR`` is set so the API can call
+   ``Embed`` / ``ListBackends`` / ``ExtractEmbeddedSubtitle`` over
+   the wire (architecture §9.9).
+5. Blocks until SIGTERM/SIGINT, then drains in-flight work and exits.
+
+``python -m maktaba_pipeline doctor`` short-circuits to a probe-only
+exit so the compose healthcheck has somewhere to land before the
+operator has a real DB on hand.
 """
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import os
-import signal
 import sys
-import time
 from typing import Any
 
 from . import __version__
+from .db.jobs import Stage
 from .log import init as init_log
+from .runtime import Database, RuntimeConfig, run
+
+_DEFAULT_STAGES = (
+    Stage.PROBE,
+    Stage.EXTRACT,
+    Stage.TRANSCRIBE,
+    Stage.SUBTITLE_GEN,
+    Stage.INDEX,
+    Stage.THUMBNAIL,
+)
 
 
 def _doctor(log: Any) -> int:
-    """Stub doctor probe — always healthy until Epic 03 wires real checks.
+    """Probe-only startup. Always returns 0 until Story 22.3 §2.7 fills in
+    the real DB / Chroma / ffmpeg / MLX checks."""
 
-    Story 22.3 plan §2.7 specifies the real probe set (DB reach, Chroma
-    reach, ffmpeg presence, MLX bind on Mac). Returning 0 here lets the
-    compose healthcheck succeed so the rest of the stack can be
-    exercised end-to-end before the pipeline service is real.
-    """
     log.info("doctor stub OK", version=__version__)
     return 0
 
@@ -39,34 +58,152 @@ def _bootstrap_log() -> Any:
     )
 
 
+def _parse_stages(value: str | None) -> tuple[Stage, ...]:
+    if not value:
+        return _DEFAULT_STAGES
+    out: list[Stage] = []
+    for token in value.split(","):
+        name = token.strip().lower()
+        if not name:
+            continue
+        try:
+            out.append(Stage(name))
+        except ValueError as exc:
+            raise SystemExit(
+                f"unknown stage {name!r}; valid: {', '.join(s.value for s in Stage)}",
+            ) from exc
+    if not out:
+        return _DEFAULT_STAGES
+    return tuple(out)
+
+
+def _build_runtime_config(args: argparse.Namespace) -> RuntimeConfig:
+    return RuntimeConfig(
+        database_url=args.database_url,
+        stages=_parse_stages(args.stages),
+        worker_id=args.worker_id,
+        heartbeat_sec=args.heartbeat_sec,
+        stale_claim_sec=args.heartbeat_sec * 18.0,
+        reaper_interval_sec=args.reaper_interval_sec,
+        claim_poll_sec=args.claim_poll_sec,
+        claim_poll_max_sec=args.claim_poll_max_sec,
+    )
+
+
+async def _serve(args: argparse.Namespace, log: Any) -> int:
+    cfg = _build_runtime_config(args)
+    log.info(
+        "pipeline_starting",
+        stages=[s.value for s in cfg.stages],
+        worker_id=cfg.worker_id,
+        database_url_scheme=cfg.database_url.split(":", 1)[0],
+    )
+    database = await Database.connect(cfg.database_url)
+
+    grpc_addr = args.grpc_addr
+    grpc_task: asyncio.Task[None] | None = None
+    grpc_server: Any = None
+    if grpc_addr:
+        try:
+            # Lazy import so callers without grpcio installed can still
+            # run the queue worker on its own.
+            from .grpc_server import serve_grpc
+
+            grpc_server, grpc_task = await serve_grpc(addr=grpc_addr)
+            log.info("pipeline_grpc_listening", addr=grpc_addr)
+        except Exception as exc:  # noqa: BLE001 — startup-only branch
+            log.warning("pipeline_grpc_disabled", reason=str(exc))
+
+    try:
+        return await run(cfg, db=database)
+    finally:
+        if grpc_server is not None:
+            await grpc_server.stop(grace=1.0)
+        if grpc_task is not None:
+            try:
+                await asyncio.wait_for(grpc_task, timeout=2.0)
+            except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+                grpc_task.cancel()
+        await database.close()
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="maktaba-pipeline",
+        description="Maktaba pipeline worker daemon (Stories 1–6, gated on Epic 7's enqueues).",
+    )
+    parser.add_argument("--version", "-V", action="store_true", help="Print version and exit.")
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_p = subparsers.add_parser("run", help="Run the worker loop (default).")
+    run_p.add_argument(
+        "--database-url",
+        default=os.getenv("MAKTABA_DATABASE_URL", "sqlite:///:memory:"),
+        help="Database URL (postgres://… or sqlite:///…). Default reads MAKTABA_DATABASE_URL.",
+    )
+    run_p.add_argument(
+        "--stages",
+        default=os.getenv("MAKTABA_PIPELINE_STAGES"),
+        help="Comma-separated stage filter (probe,extract,transcribe,subtitle_gen,index,…).",
+    )
+    run_p.add_argument(
+        "--worker-id",
+        default=os.getenv("MAKTABA_PIPELINE_WORKER_ID"),
+        help="Override the host/pid/uuid worker id used by the reaper.",
+    )
+    run_p.add_argument(
+        "--heartbeat-sec",
+        type=float,
+        default=float(os.getenv("MAKTABA_PIPELINE_HEARTBEAT_SEC", "5.0")),
+        help="Heartbeat cadence; stale_claim_sec = 18× this value.",
+    )
+    run_p.add_argument(
+        "--reaper-interval-sec",
+        type=float,
+        default=float(os.getenv("MAKTABA_PIPELINE_REAPER_INTERVAL_SEC", "30.0")),
+        help="Reaper sweep cadence.",
+    )
+    run_p.add_argument(
+        "--claim-poll-sec",
+        type=float,
+        default=float(os.getenv("MAKTABA_PIPELINE_CLAIM_POLL_SEC", "1.0")),
+        help="Safety-net claim-poll cadence (notify path normally wakes sooner).",
+    )
+    run_p.add_argument(
+        "--claim-poll-max-sec",
+        type=float,
+        default=float(os.getenv("MAKTABA_PIPELINE_CLAIM_POLL_MAX_SEC", "30.0")),
+        help="Exponential-backoff ceiling for the claim poll when the queue is empty.",
+    )
+    run_p.add_argument(
+        "--grpc-addr",
+        default=os.getenv("MAKTABA_PIPELINE_GRPC_ADDR"),
+        help="If set, bind the in-process gRPC server (architecture §9.9) on this host:port.",
+    )
+
+    subparsers.add_parser("doctor", help="Probe-only startup check.")
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if args and args[0] in {"--version", "-V"}:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if args.version:
         sys.stdout.write(f"{__version__}\n")
         sys.stdout.flush()
         return 0
 
     log = _bootstrap_log()
-    if args and args[0] == "doctor":
+
+    command = args.command or "run"
+    if command == "doctor":
         return _doctor(log)
+    if command == "run":
+        return asyncio.run(_serve(args, log))
 
-    log.info("pipeline stub started (Epic 03 will replace this)", version=__version__)
-    sys.stdout.flush()
-
-    # Park until SIGTERM/SIGINT. This keeps the compose container alive
-    # so it has somewhere for the healthcheck to land. The real CLI
-    # replaces this loop with the worker pool.
-    stop = False
-
-    def _shutdown(_signum: int, _frame: object) -> None:
-        nonlocal stop
-        stop = True
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
-    while not stop:
-        time.sleep(1)
-    return 0
+    parser.print_help()
+    return 2
 
 
 if __name__ == "__main__":

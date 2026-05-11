@@ -97,6 +97,6 @@ def test_pg_view_joins_active_transcripts(pg_view_sql: str) -> None:
 
 @pytest.mark.unit
 def test_sqlite_view_joins_active_transcripts(sqlite_view_sql: str) -> None:
-    assert "CREATE VIEW transcript_segments_v" in sqlite_view_sql
+    assert "CREATE VIEW IF NOT EXISTS transcript_segments_v" in sqlite_view_sql
     assert "JOIN transcripts t ON t.id = s.transcript_id" in sqlite_view_sql
     assert "t.is_active = 1" in sqlite_view_sql

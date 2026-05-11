@@ -181,7 +181,7 @@ def test_sqlite_rebuilds_videos_table(sqlite_sql_no_comments: str) -> None:
         sql,
         re.IGNORECASE,
     )
-    assert re.search(r"DROP\s+TABLE\s+videos", sql, re.IGNORECASE)
+    assert re.search(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?videos", sql, re.IGNORECASE)
     assert re.search(
         r"ALTER\s+TABLE\s+_videos_03_rebuild\s+RENAME\s+TO\s+videos",
         sql,

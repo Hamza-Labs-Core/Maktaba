@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -31,17 +32,17 @@ CREATE TABLE IF NOT EXISTS transcript_units (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS transcript_units_video_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS transcript_units_video_idx
     ON transcript_units (video_id);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS transcript_units_segment_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS transcript_units_segment_idx
     ON transcript_units (segment_id);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS transcript_units_time_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS transcript_units_time_idx
     ON transcript_units (transcript_id, start_sec);
 -- +goose StatementEnd
 

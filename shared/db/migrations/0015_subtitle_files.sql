@@ -67,8 +67,7 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TRIGGER IF EXISTS subtitle_files_notify_trg ON subtitle_files;
-CREATE TRIGGER subtitle_files_notify_trg
+CREATE OR REPLACE TRIGGER subtitle_files_notify_trg
     AFTER INSERT ON subtitle_files
     FOR EACH ROW EXECUTE FUNCTION subtitle_files_notify();
 -- +goose StatementEnd

@@ -16,6 +16,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import threading
+from collections.abc import Callable
 from typing import Any, Protocol
 
 
@@ -55,7 +56,7 @@ class MemoryIdempotencyStore:
         self._ttl = ttl_sec
         self._data: dict[str, IdempotencyRecord] = {}
         self._lock = threading.Lock()
-        self._now: callable = lambda: dt.datetime.now(dt.timezone.utc)
+        self._now: Callable[[], dt.datetime] = lambda: dt.datetime.now(dt.UTC)
 
     def lookup(self, key: IdempotencyKey) -> IdempotencyRecord | None:
         with self._lock:

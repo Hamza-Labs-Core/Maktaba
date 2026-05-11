@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS media_features (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE videos ADD COLUMN content_type TEXT;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS content_type TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -29,6 +29,6 @@ CREATE INDEX IF NOT EXISTS videos_content_type_idx
 -- +goose Down
 -- +goose StatementBegin
 DROP INDEX IF EXISTS videos_content_type_idx;
-ALTER TABLE videos DROP COLUMN content_type;
+ALTER TABLE videos DROP COLUMN IF EXISTS content_type;
 DROP TABLE IF EXISTS media_features;
 -- +goose StatementEnd

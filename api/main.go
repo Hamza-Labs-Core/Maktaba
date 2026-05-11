@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
+	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
@@ -203,7 +205,31 @@ func runServe() error {
 		} else {
 			appDB.SetMaxOpenConns(envIntDefault("MAKTABA_DB_MAX_OPEN", 32))
 			appDB.SetMaxIdleConns(envIntDefault("MAKTABA_DB_MAX_IDLE", 8))
-			router.MountP6(r, router.P6Deps{DB: appDB})
+
+			pipelineAddr := os.Getenv("MAKTABA_PIPELINE_ADDR")
+			streamingAddr := os.Getenv("MAKTABA_STREAMING_ADDR")
+			var pipelineClient grpcpipeline.Client
+			var streamingClient grpcstreaming.Client
+			if pipelineAddr != "" {
+				cfg := grpcpipeline.DefaultConfig()
+				cfg.Addr = pipelineAddr
+				pipelineClient = grpcpipeline.NewRealClient(cfg)
+				logger.Info("p6: pipeline gRPC client wired",
+					"addr", pipelineAddr, "event", "p6_pipeline_wired")
+			}
+			if streamingAddr != "" {
+				cfg := grpcstreaming.DefaultConfig()
+				cfg.Addr = streamingAddr
+				streamingClient = grpcstreaming.NewRealClient(cfg)
+				logger.Info("p6: streaming gRPC client wired",
+					"addr", streamingAddr, "event", "p6_streaming_wired")
+			}
+
+			router.MountP6(r, router.P6Deps{
+				DB:              appDB,
+				PipelineClient:  pipelineClient,
+				StreamingClient: streamingClient,
+			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
@@ -219,6 +245,13 @@ func runServe() error {
 			if p9 != nil {
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
 			}
+
+			// Phase 10 — subscriptions, pairing, security disclosure, perf
+			// admin. All four packages had a working Mount() but no caller
+			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
+			router.MountP10(r, router.P10Deps{DB: appDB})
+			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
+				"event", "p10_mounted")
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",

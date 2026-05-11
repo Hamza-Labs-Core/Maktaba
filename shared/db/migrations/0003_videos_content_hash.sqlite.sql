@@ -75,7 +75,7 @@ SELECT
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TABLE videos;
+DROP TABLE IF EXISTS videos;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

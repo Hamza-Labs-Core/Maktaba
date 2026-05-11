@@ -4,7 +4,7 @@ DROP VIEW IF EXISTS transcript_segments_v;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE VIEW transcript_segments_v AS
+CREATE VIEW IF NOT EXISTS transcript_segments_v AS
 SELECT  s.id            AS segment_id,
         s.transcript_id AS transcript_id,
         t.video_id      AS video_id,

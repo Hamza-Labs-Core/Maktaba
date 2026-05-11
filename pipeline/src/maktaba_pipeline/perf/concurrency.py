@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import AsyncIterator
 
 
 class ConcurrencyError(RuntimeError):
@@ -36,7 +37,7 @@ class Concurrency:
         return self._in_use
 
     @contextlib.asynccontextmanager
-    async def acquire(self):
+    async def acquire(self) -> AsyncIterator[None]:
         await self._sem.acquire()
         async with self._lock:
             self._in_use += 1
@@ -47,7 +48,7 @@ class Concurrency:
                 self._in_use -= 1
             self._sem.release()
 
-    def try_acquire(self) -> "_TokenHandle":
+    def try_acquire(self) -> _TokenHandle:
         """Non-async, non-blocking acquire. Raises ``ConcurrencyError`` if full."""
         if self._sem.locked() and self._in_use >= self._capacity:
             raise ConcurrencyError(f"{self.name} concurrency cap reached")
