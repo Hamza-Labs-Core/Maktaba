@@ -7,24 +7,29 @@
 | Concern | Decision |
 |---|---|
 | Cloud surface | `GET /api/servers/{server_id}/endpoints` — read-only; lists LAN candidates + relay URL + `preferred`. |
-| Server → cloud reporting | `0x40 META_ENDPOINTS` frame: server pushes LAN candidates at tunnel handshake and on local network-change. Cloud stores them encrypted in `cloud_server_endpoints`. |
+| Server → cloud reporting | `0x40 META_ENDPOINTS` frame: server pushes LAN candidates at tunnel handshake and on local network-change. Cloud stores them encrypted in `server_endpoints` (slot 0004 sub-migration). |
 | Client probe | Each platform implements the same algorithm: race 1s probes; pin winner 5min; invalidate on connectivity change. |
 | Storage | LAN IPs sealed at rest (AES-GCM with cloud data key); never returned to anyone but the owning user. |
 | Out of scope | WebRTC / STUN hole punching (v2). Custom user-supplied direct hostnames beyond manual override (v1.1). |
 
-## 1. Migration `00020002_server_endpoints.sql`
+## 1. Migration `00040002_server_endpoints.sql` (slot 0004 sub-sequence)
+
+Extends slot 0004 (server-linking, plan-25-06) with the encrypted
+endpoint catalogue. The seal helper (`AESGCMSeal`) is the same one
+plan-25-05 uses for export jobs; both load the data key from
+plan-25-01 secrets.
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_server_endpoints (
-    server_id     UUID PRIMARY KEY REFERENCES cloud_servers(id) ON DELETE CASCADE,
-    candidates_sealed BYTEA NOT NULL,           -- AES-GCM-sealed JSON
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    sources_count INT NOT NULL DEFAULT 0
+CREATE TABLE server_endpoints (
+    server_id           UUID PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+    candidates_sealed   BYTEA NOT NULL,           -- AES-GCM-sealed JSON
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sources_count       INT NOT NULL DEFAULT 0
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_server_endpoints;
+DROP TABLE IF EXISTS server_endpoints;
 ```
 
 JSON shape inside `candidates_sealed`:
@@ -46,7 +51,7 @@ func (c *Conn) PostMeta(ctx context.Context, endpoints []Endpoint) {
     c.writes <- frame.Make(FrameMetaEndpoints, payload)
 }
 
-// Watcher: subscribes to mDNS publisher (Epic 15.2) + config file for user-set
+// Watcher: subscribes to mDNS publisher (Epic 15.1) + config file for user-set
 // IPs; debounced 2s; emits on every change.
 ```
 
@@ -179,7 +184,7 @@ All four implement the same JSON contract and call the cloud `/endpoints` API.
 
 ## 6. Abuse signal: ID mismatch
 
-When a LAN probe returns 200 but its `X-Maktaba-Server-Id` differs from the expected one (e.g., DNS rebinding to attacker), the client fire-and-forgets `POST /api/abuse/report` (lightweight; rate-limited per IP+user) so the cloud can append `cloud_abuse_events kind=lan_probe_id_mismatch`. This story stubs the report endpoint; 25.25 owns full abuse pipeline.
+When a LAN probe returns 200 but its `X-Maktaba-Server-Id` differs from the expected one (e.g., DNS rebinding to attacker), the client fire-and-forgets `POST /api/abuse/report` (lightweight; rate-limited per IP+user) so the cloud can append `abuse_signals kind=lan_probe_id_mismatch`. This story stubs the report endpoint; 25.25 owns full abuse pipeline.
 
 ## 7. Test plan
 
@@ -217,7 +222,7 @@ When a LAN probe returns 200 but its `X-Maktaba-Server-Id` differs from the expe
 | CGNAT mobile | Probes fail; relay path used. | `TestProbeRaceTimeoutFallsBackToRelay`. |
 | Mixed-content browser block | Doc: HTTPS web client requires Caddy local CA or `localhost` only. | Doc. |
 | Network fingerprint (iOS) | Without location permission, always probe. | Doc. |
-| Server moves IP | mDNS → new META → next probe picks up. | Cross-story 15.2. |
+| Server moves IP | mDNS → new META → next probe picks up. | Cross-story 15.1. |
 | Probe blocks app startup | Decide before 1.5s; fallback to relay if undecided. | Client logic. |
 | Logging | Probe outcomes log locally only; cloud never sees them. | Spec. |
 | Privacy of another user's LAN IPs | 403 from cloud; client cannot enumerate. | `TestEndpointsForbidsOtherUser`. |
@@ -231,11 +236,11 @@ When a LAN probe returns 200 but its `X-Maktaba-Server-Id` differs from the expe
 - 25.1 (foundation).
 - 25.7/25.8 (META frame; tunnel handshake).
 - 25.5 (`PATCH /api/me` for manual override IP — actually owned by Settings page in 25.16; the API is fine).
-- Epic 15 Story 15.2 (LAN mDNS source).
+- Epic 15 Story 15.1 (LAN mDNS source).
 
 ## 10. Acceptance checklist
 
-- [ ] Migration 00020002 applies.
+- [ ] Migration 00040002 (server_endpoints) applies.
 - [ ] `META_ENDPOINTS` ingestion stores sealed bytes; only LAN-class IPs persisted.
 - [ ] `GET /api/servers/{id}/endpoints` enforces ownership.
 - [ ] `preferred` toggles based on candidate availability.

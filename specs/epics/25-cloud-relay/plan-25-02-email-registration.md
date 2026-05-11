@@ -8,65 +8,90 @@
 |---|---|
 | Password hash | argon2id, params `m=64*1024, t=3, p=1`, salt 16B, hash 32B; stored as encoded string. Use `github.com/alexedwards/argon2id`. |
 | Verification tokens | HMAC-SHA256(secret, `verify:<user_id>:<exp>`), `exp = 24h`; URL-safe base64. Stored only as `(user_id, exp)` server-side (HMAC verifies; no DB row needed). |
-| Password-reset tokens | Same shape, 1h TTL, **single-use** — stored as `cloud_password_resets(token_hash PK, user_id, exp, used_at)`. |
+| Password-reset tokens | Same shape, 1h TTL, **single-use** — stored as a row in `email_verifications` with `purpose='reset'` (declared in the slot-0002 migration below). |
 | Access tokens | RS256 JWT, 1h, claims `{sub, email, plan, kid}`. Keypair rotation handled in this story (`jwks` table). |
-| Refresh tokens | Opaque 32-byte random, base64url. Stored as `(token_hash, user_id, exp=30d, rotated_at, rotated_from)` in `cloud_sessions`. Rotation is single-use; replay triggers cascade revoke. |
+| Refresh tokens | Opaque 32-byte random, base64url. Stored as `(token_hash, user_id, exp=30d, rotated_at, rotated_from)` in `sessions`. Rotation is single-use; replay triggers cascade revoke. |
 | Lockout state | Per `(email_normalized, ip_block)` Redis counter (`fail:<email>:<bucket>`), TTL 15m. After 10, set `lock:<email>` TTL 30m. |
 | Email delivery | Postmark adapter (`internal/email/postmark.go`); swappable interface; templates `verify.html.tmpl`, `reset.html.tmpl` + plain-text. |
 | Out of scope | OAuth providers (25.3/25.4). TOTP/2FA (v2). Magic-link login (deferred). |
 
-## 1. Migration `00020001_email_auth.sql`
+## 1. Migration `00020001_identity.sql` (slot 0002 per README)
+
+This story owns the canonical identity tables in slot 0002. OAuth
+linkage rows (25.3 Google, 25.4 Apple) reuse the `oauth_links` table
+declared here without a new migration; their plans only carry handler
+code. `audit_events` is **not** declared here — it lands in slot
+0002 sub-sequence `00020002_audit.sql` owned by plan-25-20. Until
+that migration applies, audit-write helpers degrade to no-ops; see
+§10.
 
 ```sql
 -- +goose Up
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE cloud_users (
+CREATE TABLE users (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email               CITEXT NOT NULL,
-    display_name        TEXT NOT NULL,
+    display_name        TEXT,
     password_hash       TEXT,                  -- nullable: OAuth-only users
     email_verified_at   TIMESTAMPTZ,
+    email_verified      BOOLEAN NOT NULL DEFAULT FALSE,
     locale              TEXT NOT NULL DEFAULT 'en',
     timezone            TEXT NOT NULL DEFAULT 'UTC',
-    plan                TEXT NOT NULL DEFAULT 'free',
-    stripe_customer_id  TEXT,
+    avatar_url          TEXT,
+    plan                TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free','pro','family')),
+    status              TEXT NOT NULL DEFAULT 'active',
     suspended_at        TIMESTAMPTZ,
     deleted_at          TIMESTAMPTZ,
     email_bounced       BOOLEAN NOT NULL DEFAULT FALSE,
-    tos_version_accepted TEXT NOT NULL,
+    tos_version_accepted TEXT,                  -- nullable; set on register or first OAuth signin
     password_changed_at TIMESTAMPTZ,
+    last_login_at       TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX cloud_users_email_active_uq
-    ON cloud_users(email) WHERE deleted_at IS NULL;
-CREATE INDEX cloud_users_stripe_cust_idx ON cloud_users(stripe_customer_id);
+CREATE UNIQUE INDEX users_email_active_uq
+    ON users(email) WHERE deleted_at IS NULL;
 
-CREATE TABLE cloud_sessions (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    token_hash      BYTEA NOT NULL,           -- sha256 of opaque refresh
-    ip              INET,
-    ua              TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_used_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at      TIMESTAMPTZ NOT NULL,
-    revoked_at      TIMESTAMPTZ,
-    rotated_from    UUID REFERENCES cloud_sessions(id)
+CREATE TABLE oauth_links (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider    TEXT         NOT NULL,           -- 'google' | 'apple'
+    subject     TEXT         NOT NULL,           -- provider-side stable id
+    email       TEXT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (provider, subject)
 );
-CREATE UNIQUE INDEX cloud_sessions_token_uq ON cloud_sessions(token_hash);
-CREATE INDEX cloud_sessions_user_idx ON cloud_sessions(user_id) WHERE revoked_at IS NULL;
+CREATE INDEX idx_oauth_links_user ON oauth_links (user_id);
 
-CREATE TABLE cloud_password_resets (
+CREATE TABLE sessions (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    refresh_token_hash  BYTEA NOT NULL,           -- sha256 of opaque refresh
+    ip                  INET,
+    user_agent          TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at          TIMESTAMPTZ NOT NULL,
+    revoked_at          TIMESTAMPTZ,
+    rotated_from        UUID REFERENCES sessions(id)
+);
+CREATE UNIQUE INDEX sessions_token_uq ON sessions(refresh_token_hash);
+CREATE INDEX sessions_user_idx ON sessions(user_id) WHERE revoked_at IS NULL;
+
+CREATE TABLE email_verifications (
     token_hash  BYTEA PRIMARY KEY,
-    user_id     UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose     TEXT NOT NULL,                    -- 'verify' | 'reset'
     expires_at  TIMESTAMPTZ NOT NULL,
-    used_at     TIMESTAMPTZ
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE cloud_jwks (
+-- JWT signing keys (RS256). Renamed from cloud_jwks → jwt_keys to
+-- disambiguate from the Ed25519 entitlement keystore in plan-25-26.
+CREATE TABLE jwt_keys (
     kid         TEXT PRIMARY KEY,
     alg         TEXT NOT NULL DEFAULT 'RS256',
     public_pem  TEXT NOT NULL,
@@ -76,22 +101,13 @@ CREATE TABLE cloud_jwks (
     retired_at  TIMESTAMPTZ
 );
 
-CREATE TABLE cloud_audit (
-    id           BIGSERIAL PRIMARY KEY,
-    ts           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    actor_user_id UUID,
-    action       TEXT NOT NULL,
-    target_type  TEXT,
-    target_id    TEXT,
-    ip           INET,
-    ua           TEXT,
-    payload      JSONB
-);
-CREATE INDEX cloud_audit_ts_actor_idx ON cloud_audit(ts DESC, actor_user_id);
-
 -- +goose Down
-DROP TABLE IF EXISTS cloud_audit, cloud_jwks, cloud_password_resets, cloud_sessions, cloud_users CASCADE;
+DROP TABLE IF EXISTS jwt_keys, email_verifications, sessions, oauth_links, users CASCADE;
 ```
+
+`stripe_customer_id` is intentionally **not** stored on `users`; it
+lives on `subscriptions` (slot 0006, plan-25-13) as the single source
+of truth. Lookups by Stripe customer id join through that table.
 
 ## 2. Endpoints
 
@@ -296,17 +312,17 @@ func (j *JWKS) Active() *Key { return j.keys[j.activeKID] }
 func (j *JWKS) Public() ([]byte, error) { ... json.Marshal({keys:[...]}) ... }
 ```
 
-Rotation cron (every 90 days): generate new RSA-2048 keypair, insert into `cloud_jwks` with new `kid=k<seq>`, set as active, mark previous `rotated_at`. Previous remains in JWKS (so live tokens verify) until `retired_at` = active.created + 1h + 5min skew. A nightly job clears retired entries.
+Rotation cron (every 90 days): generate new RSA-2048 keypair, insert into `jwt_keys` with new `kid=k<seq>`, set as active, mark previous `rotated_at`. Previous remains in JWKS (so live tokens verify) until `retired_at` = active.created + 1h + 5min skew. A nightly job clears retired entries.
 
 `GET /.well-known/jwks.json` cached 5min at CF; returns active + previous keys.
 
 ## 10. Forgot/reset password
 
-`forgot-password`: always 200 (no enumeration). If user exists, mint token, insert into `cloud_password_resets`, send email.
+`forgot-password`: always 200 (no enumeration). If user exists, mint token, insert into `email_verifications` with `purpose='reset'`, send email.
 
 `reset-password`: validates HMAC + DB row not used + not expired; on success:
 1. Update `password_hash`, set `password_changed_at = now()`.
-2. Revoke *all* sessions (`UPDATE cloud_sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL`).
+2. Revoke *all* sessions (`UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL`).
 3. Mark reset row `used_at`.
 4. Send "your password was changed" notification email.
 5. Audit.
@@ -365,7 +381,7 @@ Rotation cron (every 90 days): generate new RSA-2048 keypair, insert into `cloud
 ## 13. Dependencies
 
 - 25.1 (cloud bootstrap, DB pool, audit table scaffolding, request_id).
-- Future: 25.3/25.4 share `cloud_users`, `cloud_sessions`, `cloud_jwks`, `IssueSession`.
+- Future: 25.3/25.4 share `users`, `sessions`, `jwt_keys`, `IssueSession`.
 
 ## 14. Acceptance checklist
 
@@ -376,5 +392,5 @@ Rotation cron (every 90 days): generate new RSA-2048 keypair, insert into `cloud
 - [ ] Lockout 10/15min → 30min cooldown.
 - [ ] Postmark adapter behind interface; templates in en + ar.
 - [ ] Email enumeration defenses pass tests in §11.
-- [ ] Migration 00020001 applies; reversible.
+- [ ] Migration 00020001 (identity) applies; reversible.
 - [ ] Audit rows for register/verify/login/reset/logout.

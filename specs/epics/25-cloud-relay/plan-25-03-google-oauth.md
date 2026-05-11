@@ -7,41 +7,32 @@
 | Concern | Decision |
 |---|---|
 | Library | `golang.org/x/oauth2` + `github.com/coreos/go-oidc/v3` for ID-token verification against Google's JWKS. |
-| State storage | HMAC-signed cookie (`__Host-oauth_state`), 10-min TTL, `SameSite=Lax`, `HttpOnly`, `Secure`. Payload = `{nonce, code_verifier, next, provider, exp}` Base64-JSON, signed with `cloud_jwks` active key. No DB row. |
+| State storage | HMAC-signed cookie (`__Host-oauth_state`), 10-min TTL, `SameSite=Lax`, `HttpOnly`, `Secure`. Payload = `{nonce, code_verifier, next, provider, exp}` Base64-JSON, signed with the active `jwt_keys` key. No DB row. |
 | PKCE | S256, 64-byte verifier. |
-| Token persistence | We do **not** store Google access/refresh tokens long-term. We extract `sub` + `email` + `email_verified` from the ID token, write `cloud_identities`, and discard the rest. |
-| Identity table | New: `cloud_identities(user_id, provider, provider_user_id, email_at_provider, linked_at, revoked_at)`. Unique on `(provider, provider_user_id)`. |
+| Token persistence | We do **not** store Google access/refresh tokens long-term. We extract `sub` + `email` + `email_verified` from the ID token, write `oauth_links`, and discard the rest. |
+| Identity table | Reuses `oauth_links` (declared in plan-25-02 slot 0002). This story only adds the optional merge-token table below. |
 | Out of scope | Apple (25.4 will reuse the same OAuth scaffolding). |
 
-## 1. Migration `00020002_oauth_identities.sql`
+## 1. Migration `00020003_oauth_merge_tokens.sql` (slot 0002 sub-sequence)
+
+`oauth_links` already lands in `00020001_identity.sql` (plan-25-02);
+this plan only adds the short-lived merge-token store used when an
+incoming OAuth identity collides on email with an existing
+password-only account.
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_identities (
-    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id            UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    provider           TEXT NOT NULL,            -- 'google' | 'apple'
-    provider_user_id   TEXT NOT NULL,            -- google 'sub' / apple 'sub'
-    email_at_provider  CITEXT,
-    linked_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at         TIMESTAMPTZ,
-    last_seen_at       TIMESTAMPTZ
-);
-CREATE UNIQUE INDEX cloud_identities_provider_sub_uq
-    ON cloud_identities(provider, provider_user_id);
-CREATE INDEX cloud_identities_user_idx ON cloud_identities(user_id);
-
-CREATE TABLE cloud_oauth_merge_tokens (
-    token_hash   BYTEA PRIMARY KEY,
-    user_id      UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    provider     TEXT NOT NULL,
+CREATE TABLE oauth_merge_tokens (
+    token_hash       BYTEA PRIMARY KEY,
+    user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider         TEXT NOT NULL,
     provider_user_id TEXT NOT NULL,
-    expires_at   TIMESTAMPTZ NOT NULL,
-    used_at      TIMESTAMPTZ
+    expires_at       TIMESTAMPTZ NOT NULL,
+    used_at          TIMESTAMPTZ
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_oauth_merge_tokens, cloud_identities;
+DROP TABLE IF EXISTS oauth_merge_tokens;
 ```
 
 ## 2. Endpoints
@@ -129,8 +120,8 @@ func (s *Service) ResolveIdentity(ctx context.Context, p string, c *Claims, req 
 On Path C, the callback redirects to `https://app.maktaba.app/oauth/merge?token=<merge>` (or mobile equivalent). The merge page collects the user's *existing password* and POSTs to `/api/auth/oauth/merge`. Server:
 
 1. Verify merge token (single-use, 10-min TTL).
-2. Verify password against `cloud_users.password_hash` (argon2id). Wrong → 401.
-3. Insert `cloud_identities` linking provider sub.
+2. Verify password against `users.password_hash` (argon2id). Wrong → 401.
+3. Insert `oauth_links` linking provider sub.
 4. Mark merge token `used_at`.
 5. Issue session.
 6. Audit `auth.identity_linked`.
@@ -228,10 +219,10 @@ func (g *Google) ExchangeCode(ctx context.Context, code, verifier string) (*Clai
 
 | Case | Behaviour | Pinned |
 |---|---|---|
-| Google `sub` stable across email change | Identity rows keep `email_at_provider`; we never overwrite `cloud_users.email`. | `TestIdentityEmailChangePersists`. |
+| Google `sub` stable across email change | Identity rows keep `email_at_provider`; we never overwrite `users.email`. | `TestIdentityEmailChangePersists`. |
 | Replay of authorization code | Google returns 400; we surface `oauth_provider_error`. | `TestCodeReplay`. |
 | Account merge requires re-auth | Merge endpoint requires password verify, never one-click. | `TestMergeFlowConfirmsWithPassword`. |
-| GDPR delete for OAuth-only user | Cascade deletes `cloud_identities`; audit keeps `provider=google, provider_user_id_hash=<sha256>` for 90d. | Story 25.5 plan, cross-tested here. |
+| GDPR delete for OAuth-only user | Cascade deletes `oauth_links`; audit keeps `provider=google, provider_user_id_hash=<sha256>` for 90d. | Story 25.5 plan, cross-tested here. |
 | Locale | We use Google's `locale`; user can override at `PATCH /api/me`. | Implementation note. |
 | Workspace `hd` claim | Allowed; no `hd` restriction in v1. | Spec. |
 | `name` is fragile | Default to "User" if missing. | Implementation note. |
@@ -241,11 +232,11 @@ func (g *Google) ExchangeCode(ctx context.Context, code, verifier string) (*Clai
 ## 9. Dependencies
 
 - 25.1 (router, slog, audit table).
-- 25.2 (`cloud_users`, `cloud_sessions`, `SessionIssuer`, JWKS for HMAC-signing state).
+- 25.2 (`users`, `sessions`, `SessionIssuer`, JWKS for HMAC-signing state).
 
 ## 10. Acceptance checklist
 
-- [ ] Migration 00020002 applies; `cloud_identities` + `cloud_oauth_merge_tokens` exist.
+- [ ] Migration 00020003 applies; `oauth_merge_tokens` exists; `oauth_links` from 00020001 is reused.
 - [ ] `/start` validates `next`, sets state cookie, redirects.
 - [ ] `/callback` runs all 4 paths (new / existing / merge / refuse).
 - [ ] PKCE S256 enforced.

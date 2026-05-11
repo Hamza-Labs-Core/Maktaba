@@ -8,34 +8,37 @@
 |---|---|
 | Library | `github.com/stripe/stripe-go/v76`. |
 | Endpoints | `POST /api/billing/checkout`, `POST /api/billing/portal`, `POST /api/billing/upgrade-preview`, `GET /api/billing/plans`, `GET /api/billing/subscription`. Webhook (25.14) is separate. |
-| Stripe customers | Created lazily on first checkout; `stripe_customer_id` persisted on `cloud_users` (column added in 25.2). Find-or-create under SELECT … FOR UPDATE row lock to prevent dual creation. |
-| Idempotency | `Idempotency-Key: sha256(user_id || plan || YYYY-MM-DD)` for checkout-session creation; portal not idempotent (multiple URLs is harmless). |
+| Stripe customers | Created lazily on first checkout. `stripe_customer_id` lives on the `subscriptions` table only (single source of truth); we **do not** denormalize it onto `users`. Find-or-create resolves via `SELECT stripe_customer_id FROM subscriptions WHERE user_id=$1 FOR UPDATE`. Missing-row case inserts a `subscriptions` row with `plan='free', status='inactive'` carrying the new customer id. |
+| Tier vocabulary | Canonical: `tier IN ('free','pro','family')` and `interval IN ('monthly','yearly')`. Stripe price IDs are matched on the `(tier, interval)` pair in config; nothing flattens this into a single string. Matches `architecture.md` §13.10. |
+| Idempotency | `Idempotency-Key: sha256(user_id || tier || interval || YYYY-MM-DD)` for checkout-session creation; portal not idempotent (multiple URLs is harmless). |
 | Apple IAP | Suppressed on iOS UA in v1 — returns `451 apple_iap_required`. Web/desktop/Android always succeed. |
 | Out of scope | Webhook processing (25.14). Family invites flow UI (deferred). |
 
-## 1. Migration `00040001_billing.sql` (slot 0004 per README)
+## 1. Migration `00060001_billing.sql` (slot 0006 per README)
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_subscriptions (
-    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id                UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    stripe_subscription_id TEXT NOT NULL UNIQUE,
-    stripe_customer_id     TEXT NOT NULL,
-    plan                   TEXT NOT NULL,        -- 'pro_monthly' | 'pro_yearly' | 'family_monthly' | 'family_yearly'
-    status                 TEXT NOT NULL,        -- 'active' | 'past_due' | 'canceled' | 'trialing'
-    current_period_start   TIMESTAMPTZ NOT NULL,
-    current_period_end     TIMESTAMPTZ NOT NULL,
+CREATE TABLE subscriptions (
+    user_id                UUID         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    tier                   TEXT         NOT NULL DEFAULT 'free' CHECK (tier IN ('free','pro','family')),
+    interval               TEXT         CHECK (interval IS NULL OR interval IN ('monthly','yearly')),
+    stripe_customer_id     TEXT         UNIQUE,                  -- single source of truth
+    stripe_subscription_id TEXT         UNIQUE,
+    status                 TEXT         NOT NULL DEFAULT 'inactive', -- 'active' | 'past_due' | 'canceled' | 'trialing' | 'inactive'
+    current_period_start   TIMESTAMPTZ,
+    current_period_end     TIMESTAMPTZ,
+    cancel_at_period_end   BOOLEAN      NOT NULL DEFAULT FALSE,
     cancel_at              TIMESTAMPTZ,
-    last_event_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata               JSONB
+    seats                  INTEGER      NOT NULL DEFAULT 1,
+    last_event_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    metadata               JSONB,
+    updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX cloud_subscriptions_active_user_uq
-    ON cloud_subscriptions(user_id) WHERE status IN ('active','past_due','trialing');
+CREATE INDEX subscriptions_status_idx ON subscriptions(status) WHERE status IN ('active','past_due','trialing');
 
-CREATE TABLE cloud_invoices (
+CREATE TABLE invoices (
     stripe_invoice_id   TEXT PRIMARY KEY,
-    user_id             UUID NOT NULL REFERENCES cloud_users(id) ON DELETE SET NULL,
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
     total_cents         BIGINT NOT NULL,
     currency            TEXT NOT NULL,
     status              TEXT NOT NULL,
@@ -46,24 +49,35 @@ CREATE TABLE cloud_invoices (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE cloud_family_members (
-    payer_user_id  UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
-    member_user_id UUID NOT NULL REFERENCES cloud_users(id) ON DELETE CASCADE,
+CREATE TABLE family_members (
+    payer_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    member_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     invited_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     accepted_at    TIMESTAMPTZ,
     PRIMARY KEY (payer_user_id, member_user_id)
 );
+CREATE INDEX family_members_member_idx ON family_members(member_user_id);
 
-CREATE TABLE cloud_webhook_events (
-    stripe_event_id   TEXT PRIMARY KEY,
+CREATE TABLE stripe_events (
+    event_id          TEXT PRIMARY KEY,
     received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     type              TEXT NOT NULL,
     processed_at      TIMESTAMPTZ,
     payload           JSONB NOT NULL
 );
 
+-- Webhook-secret rotation. plan-25-14 reads `Active(ctx)` against this
+-- table; at most two rows have `retired_at IS NULL` (current + last).
+CREATE TABLE stripe_secrets (
+    id            SERIAL PRIMARY KEY,
+    secret_sealed BYTEA NOT NULL,
+    active_from   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    retired_at    TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX stripe_secrets_one_active_idx ON stripe_secrets((1)) WHERE retired_at IS NULL;
+
 -- +goose Down
-DROP TABLE IF EXISTS cloud_webhook_events, cloud_family_members, cloud_invoices, cloud_subscriptions;
+DROP TABLE IF EXISTS stripe_secrets, stripe_events, family_members, invoices, subscriptions;
 ```
 
 (25.14 adds nothing — that story consumes this migration.)
@@ -72,47 +86,76 @@ DROP TABLE IF EXISTS cloud_webhook_events, cloud_family_members, cloud_invoices,
 
 ```go
 // cloud/internal/billing/plans.go
+const (
+    TierFree   = "free"
+    TierPro    = "pro"
+    TierFamily = "family"
+
+    IntervalMonthly = "monthly"
+    IntervalYearly  = "yearly"
+)
+
 type PlanInfo struct {
-    Key          billing.Plan
+    Tier          string  // 'free' | 'pro' | 'family'
+    Interval      string  // 'monthly' | 'yearly' (empty for free)
     StripePriceID string
     Display       string
     AmountCents   int
     Currency      string
-    Interval      string   // "month" | "year"
 }
 
 var Plans = []PlanInfo{
-    {Key: PlanProMonthly,    StripePriceID: cfg.PriceIDs.ProMonthly,   Display: "Pro",    AmountCents: 999,   Currency: "usd", Interval: "month"},
-    {Key: PlanProYearly,     StripePriceID: cfg.PriceIDs.ProYearly,    Display: "Pro",    AmountCents: 9900,  Currency: "usd", Interval: "year"},
-    {Key: PlanFamilyMonthly, StripePriceID: cfg.PriceIDs.FamilyMonthly, Display: "Family", AmountCents: 2499, Currency: "usd", Interval: "month"},
-    {Key: PlanFamilyYearly,  StripePriceID: cfg.PriceIDs.FamilyYearly,  Display: "Family", AmountCents: 24900,Currency: "usd", Interval: "year"},
+    {Tier: TierPro,    Interval: IntervalMonthly, StripePriceID: cfg.PriceIDs.ProMonthly,    Display: "Pro",    AmountCents: 999,   Currency: "usd"},
+    {Tier: TierPro,    Interval: IntervalYearly,  StripePriceID: cfg.PriceIDs.ProYearly,     Display: "Pro",    AmountCents: 9900,  Currency: "usd"},
+    {Tier: TierFamily, Interval: IntervalMonthly, StripePriceID: cfg.PriceIDs.FamilyMonthly, Display: "Family", AmountCents: 2499,  Currency: "usd"},
+    {Tier: TierFamily, Interval: IntervalYearly,  StripePriceID: cfg.PriceIDs.FamilyYearly,  Display: "Family", AmountCents: 24900, Currency: "usd"},
 }
 ```
 
-`GET /api/billing/plans` returns this list (price IDs stripped) for the marketing page.
+`GET /api/billing/plans` returns this list (price IDs stripped) for
+the marketing page. Checkout body is `{tier, interval}`; the handler
+rejects unknown combinations with `400 unknown_plan`.
 
 ## 3. Customer find-or-create
 
 ```go
 // cloud/internal/billing/customer.go
-func (s *Service) FindOrCreateCustomer(ctx context.Context, user *User) (string, error) {
-    if user.StripeCustomerID != "" { return user.StripeCustomerID, nil }
-    // Acquire row lock to avoid dual creation
+//
+// stripe_customer_id is owned by the `subscriptions` row. The first
+// checkout for a user inserts the row (tier='free', status='inactive')
+// carrying the customer id; subsequent state transitions UPDATE the
+// same row in place. There is exactly one row per user.
+func (s *Service) FindOrCreateCustomer(ctx context.Context, userID uuid.UUID, email string) (string, error) {
     tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
     if err != nil { return "", err }
     defer tx.Rollback(ctx)
-    var existing string
-    err = tx.QueryRow(ctx, `SELECT stripe_customer_id FROM cloud_users WHERE id=$1 FOR UPDATE`, user.ID).Scan(&existing)
-    if err != nil { return "", err }
-    if existing != "" { tx.Commit(ctx); return existing, nil }
+    var existing sql.NullString
+    err = tx.QueryRow(ctx,
+        `SELECT stripe_customer_id FROM subscriptions WHERE user_id=$1 FOR UPDATE`,
+        userID,
+    ).Scan(&existing)
+    switch {
+    case errors.Is(err, pgx.ErrNoRows):
+        // first checkout — fall through, will insert below
+    case err != nil:
+        return "", err
+    case existing.Valid && existing.String != "":
+        return existing.String, tx.Commit(ctx)
+    }
     cust, err := customer.New(&stripe.CustomerParams{
-        Email: stripe.String(user.Email),
-        Metadata: map[string]string{"maktaba_user_id": user.ID.String()},
+        Email: stripe.String(email),
+        Metadata: map[string]string{"maktaba_user_id": userID.String()},
     })
     if err != nil { return "", err }
-    if _, err := tx.Exec(ctx, `UPDATE cloud_users SET stripe_customer_id=$1 WHERE id=$2`, cust.ID, user.ID); err != nil {
-        return "", err
-    }
+    _, err = tx.Exec(ctx, `
+        INSERT INTO subscriptions (user_id, tier, status, stripe_customer_id)
+        VALUES ($1, 'free', 'inactive', $2)
+        ON CONFLICT (user_id) DO UPDATE
+           SET stripe_customer_id = EXCLUDED.stripe_customer_id,
+               updated_at = now()`,
+        userID, cust.ID,
+    )
+    if err != nil { return "", err }
     return cust.ID, tx.Commit(ctx)
 }
 ```
@@ -200,7 +243,7 @@ func portal(s *Service) http.HandlerFunc {
 ## 6. Upgrade preview
 
 ```go
-// POST /api/billing/upgrade-preview body={plan:"family_monthly"}
+// POST /api/billing/upgrade-preview body={tier:"family",interval:"monthly"}
 func upgradePreview(s *Service) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         var req struct{ Plan string }
@@ -294,13 +337,14 @@ func subscription(s *Service) http.HandlerFunc {
 
 ## 10. Dependencies
 
-- 25.1, 25.2 (`cloud_users.stripe_customer_id`).
-- 25.12 (consumes `cloud_subscriptions`).
+- 25.1, 25.2 (`users` table).
+- 25.12 (consumes `subscriptions`).
+- 25.14 (Stripe webhook updates the same `subscriptions` row in place; pairs with this story).
 - 25.14 (webhook does the actual state change after Stripe processes).
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00040001 applies.
+- [ ] Migration 00060001 (billing) applies.
 - [ ] `POST /api/billing/checkout` returns Stripe URL.
 - [ ] `POST /api/billing/portal` returns portal URL.
 - [ ] Customer find-or-create transactional + idempotent.

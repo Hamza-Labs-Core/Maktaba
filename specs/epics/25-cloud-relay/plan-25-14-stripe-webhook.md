@@ -8,7 +8,7 @@
 |---|---|
 | Endpoint | `POST /api/billing/webhook` — public, no JWT auth, **signature-verified** via Stripe's `webhook.ConstructEvent`. |
 | Where it runs | Both api role (for receipt) and worker role (for async processing). API role does signature check + idempotency insert + cheap state updates synchronously; expensive work goes to worker via outbox. |
-| Idempotency | `cloud_webhook_events.stripe_event_id PK` (table from 25.13) with `ON CONFLICT DO NOTHING`. Side effects share the txn. |
+| Idempotency | `stripe_events.stripe_event_id PK` (table from 25.13) with `ON CONFLICT DO NOTHING`. Side effects share the txn. |
 | Notify | After commit, `pg_notify('tier_changed', user_id)` invalidates LRU caches across pods (25.12). |
 | Reconciliation cron | Nightly: list active subs, compare with Stripe, fix drift. Bounded to 1000 calls/min. |
 | Out of scope | UI changes (25.15). |
@@ -41,7 +41,7 @@ func (s *Service) Webhook(secret string) http.HandlerFunc {
 }
 ```
 
-`s.secrets.Active(ctx)` returns up to 2 keys (current + previous) from a `cloud_stripe_secrets` table or config; rotation runbook documented in `docs/operations/stripe-webhook-secret-rotation.md`.
+`s.secrets.Active(ctx)` returns up to 2 keys (current + previous) from the `stripe_secrets` table (declared in plan-25-13's `00060001_billing.sql`); rotation runbook documented in `docs/operations/stripe-webhook-secret-rotation.md`.
 
 ## 2. Process event
 
@@ -53,7 +53,7 @@ func (s *Service) processEvent(ctx context.Context, ev *stripe.Event, raw []byte
     if err != nil { return err }
     defer tx.Rollback(ctx)
     res, err := tx.Exec(ctx, `
-        INSERT INTO cloud_webhook_events(stripe_event_id, type, payload, received_at)
+        INSERT INTO stripe_events(stripe_event_id, type, payload, received_at)
         VALUES ($1, $2, $3, now())
         ON CONFLICT (stripe_event_id) DO NOTHING
     `, ev.ID, ev.Type, cleaned)
@@ -85,11 +85,11 @@ func (s *Service) processEvent(ctx context.Context, ev *stripe.Event, raw []byte
         userID, _ = s.applyCustomerDeleted(ctx, tx, ev)
     default:
         // Unknown / ignored.
-        _, _ = tx.Exec(ctx, `UPDATE cloud_webhook_events SET processed_at = now() WHERE stripe_event_id=$1`, ev.ID)
+        _, _ = tx.Exec(ctx, `UPDATE stripe_events SET processed_at = now() WHERE stripe_event_id=$1`, ev.ID)
         return tx.Commit(ctx)
     }
 
-    if _, err := tx.Exec(ctx, `UPDATE cloud_webhook_events SET processed_at = now() WHERE stripe_event_id=$1`, ev.ID); err != nil {
+    if _, err := tx.Exec(ctx, `UPDATE stripe_events SET processed_at = now() WHERE stripe_event_id=$1`, ev.ID); err != nil {
         return err
     }
     if userID != uuid.Nil {
@@ -110,17 +110,17 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, ev *stripe.E
     customerID := sub.Customer.ID
     userID, err := s.repo.UserByCustomerID(ctx, tx, customerID)
     if err != nil { return uuid.Nil, err }
-    plan := planFromPriceID(sub.Items.Data[0].Price.ID)
+    plan := tierAndInterval(sub.Items.Data[0].Price.ID)
 
     // Out-of-order guard: only apply if event ts >= our last_event_at.
     eventTS := time.Unix(ev.Created, 0)
     var existingTS time.Time
-    _ = tx.QueryRow(ctx, `SELECT last_event_at FROM cloud_subscriptions WHERE stripe_subscription_id=$1`, sub.ID).Scan(&existingTS)
+    _ = tx.QueryRow(ctx, `SELECT last_event_at FROM subscriptions WHERE stripe_subscription_id=$1`, sub.ID).Scan(&existingTS)
     if !existingTS.IsZero() && eventTS.Before(existingTS) {
         return userID, nil
     }
     _, err = tx.Exec(ctx, `
-        INSERT INTO cloud_subscriptions
+        INSERT INTO subscriptions
             (user_id, stripe_subscription_id, stripe_customer_id, plan, status,
              current_period_start, current_period_end, cancel_at, last_event_at, metadata)
         VALUES ($1,$2,$3,$4,$5, to_timestamp($6), to_timestamp($7), to_timestamp(NULLIF($8,0)), $9, $10)
@@ -147,7 +147,7 @@ func (s *Service) applyInvoiceFailed(ctx context.Context, tx pgx.Tx, ev *stripe.
     json.Unmarshal(ev.Data.Raw, &inv)
     userID, _ := s.repo.UserByCustomerID(ctx, tx, inv.Customer.ID)
     _, err := tx.Exec(ctx, `
-        INSERT INTO cloud_invoices(stripe_invoice_id, user_id, total_cents, currency, status, period_start, period_end)
+        INSERT INTO invoices(stripe_invoice_id, user_id, total_cents, currency, status, period_start, period_end)
         VALUES ($1,$2,$3,$4,'failed', to_timestamp($5), to_timestamp($6))
         ON CONFLICT (stripe_invoice_id) DO UPDATE SET status='failed'
     `, inv.ID, userID, inv.AmountDue, inv.Currency, inv.PeriodStart, inv.PeriodEnd)
@@ -165,7 +165,7 @@ func (s *Service) applyDispute(ctx context.Context, tx pgx.Tx, ev *stripe.Event)
     var d stripe.Dispute
     json.Unmarshal(ev.Data.Raw, &d)
     userID, _ := s.repo.UserByChargeID(ctx, tx, d.Charge.ID)
-    _, err := tx.Exec(ctx, `UPDATE cloud_users SET suspended_at = now() WHERE id=$1`, userID)
+    _, err := tx.Exec(ctx, `UPDATE users SET suspended_at = now() WHERE id=$1`, userID)
     if err != nil { return userID, err }
     s.abuse.RecordTx(ctx, tx, "chargeback", &userID, 5)
     s.outbox.Enqueue(ctx, "support.dispute_alert", userID, d.ID)
@@ -194,15 +194,15 @@ func stripPCI(raw []byte) []byte {
 ```go
 // cloud/internal/jobs/reconcile_billing.go
 func Reconcile(ctx context.Context, db *pgxpool.Pool) error {
-    rows, _ := db.Query(ctx, `SELECT user_id, stripe_subscription_id FROM cloud_subscriptions WHERE status IN ('active','past_due')`)
+    rows, _ := db.Query(ctx, `SELECT user_id, stripe_subscription_id FROM subscriptions WHERE status IN ('active','past_due')`)
     for rows.Next() {
         var uid uuid.UUID; var sid string
         rows.Scan(&uid, &sid)
         sub, err := subscription.Get(sid, nil)
         if err != nil { continue }
-        plan := planFromPriceID(sub.Items.Data[0].Price.ID)
+        plan := tierAndInterval(sub.Items.Data[0].Price.ID)
         _, _ = db.Exec(ctx, `
-            UPDATE cloud_subscriptions
+            UPDATE subscriptions
             SET plan=$1, status=$2,
                 current_period_end=to_timestamp($3), cancel_at=to_timestamp(NULLIF($4,0)),
                 last_event_at=GREATEST(last_event_at, now())
@@ -223,7 +223,7 @@ Also: 7-day `past_due` downgrade cron:
 ```go
 func DowngradePastDue(ctx context.Context, db *pgxpool.Pool) error {
     _, err := db.Exec(ctx, `
-        UPDATE cloud_subscriptions
+        UPDATE subscriptions
         SET plan='canceled_pending', status='canceled', last_event_at=now()
         WHERE status='past_due'
           AND last_event_at <= now() - INTERVAL '7 days'
@@ -282,7 +282,7 @@ func DowngradePastDue(ctx context.Context, db *pgxpool.Pool) error {
 ## 9. Acceptance checklist
 
 - [ ] Webhook signature verified, two-secret rotation.
-- [ ] `cloud_webhook_events` idempotency.
+- [ ] `stripe_events` idempotency.
 - [ ] All event types in story table handled.
 - [ ] NOTIFY `tier_changed` after commit.
 - [ ] Dispute suspends user; outbox alerts.

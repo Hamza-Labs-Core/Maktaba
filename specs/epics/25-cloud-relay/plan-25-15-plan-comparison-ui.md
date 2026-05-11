@@ -68,7 +68,7 @@ export function Pricing() {
 }
 ```
 
-`PlanCard` props: `info, highlighted, badge?, cta, onCta?`. Anonymous version simply links CTA to `/auth/register?next=/upgrade?plan=pro_monthly`.
+`PlanCard` props: `info, highlighted, badge?, cta, onCta?`. Anonymous version simply links CTA to `/auth/register?next=/upgrade?tier=pro&interval=monthly`.
 
 ## 4. Upgrade page
 

@@ -13,25 +13,52 @@
 | Cross-pod registry RPC | `POST /internal/registry/has`, `POST /internal/registry/force-disconnect` between relay pods; mTLS in cluster network. |
 | Out of scope | Role hierarchy (admin vs support) — v1 single role. |
 
-## 1. Migration `00060001_admin_audit_revenue.sql` (slot 0006 per README adds `cloud_audit` indexes + admin tables)
+## 1. Migration `00020002_audit.sql` (slot 0002 sub-sequence — sole creator of `audit_events`)
+
+This plan is the **sole creator** of the cloud-side audit table.
+plan-25-02 does not CREATE it; any audit-write helper before this
+migration applies must be a no-op (mirror of the local server's
+`audit_log` shape so tooling can be shared per `PLAN_REVIEW_18_24
+§1.4`). The slot-0002 sub-sequence keeps audit colocated with
+identity (its primary referent), avoiding a separate slot.
+
+Trigram indexes on email + subdomain ship here too; they target the
+admin search UI introduced by this story.
 
 ```sql
 -- +goose Up
-ALTER TABLE cloud_audit
-    ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN reason TEXT;
+-- Mirror of api/migrations/0054_audit_log.sql shape (Epic 21 plan-21-06)
+-- so the same readers/redactors/CSV-exporters can serve both DBs.
+CREATE TABLE audit_events (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    occurred_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    category      TEXT         NOT NULL CHECK (category IN
+                       ('auth','library','admin','data','config','keys','device','security','integrity','subscription')),
+    action        TEXT         NOT NULL,
+    actor_user_id UUID,
+    actor_ip      INET,
+    actor_source  TEXT,                        -- 'web' | 'api' | 'system' | 'cron'
+    is_admin      BOOLEAN      NOT NULL DEFAULT FALSE,
+    target_kind   TEXT,
+    target_id     TEXT,
+    reason        TEXT,                        -- admin-action justification
+    payload       JSONB,
+    error_id      TEXT
+);
+CREATE INDEX audit_events_occurred_idx ON audit_events(occurred_at DESC);
+CREATE INDEX audit_events_actor_idx    ON audit_events(actor_user_id, occurred_at DESC);
+CREATE INDEX audit_events_action_idx   ON audit_events(action, occurred_at DESC);
+CREATE INDEX audit_events_admin_idx    ON audit_events(is_admin, occurred_at DESC) WHERE is_admin;
 
-CREATE INDEX cloud_audit_action_idx ON cloud_audit(action, ts DESC);
-
--- pg_trgm for fast partial-email search
+-- pg_trgm for fast partial-email search across the admin fleet console.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX cloud_users_email_trgm_idx ON cloud_users USING gin (email gin_trgm_ops);
-CREATE INDEX cloud_servers_subdomain_trgm_idx
-    ON cloud_servers USING gin (subdomain gin_trgm_ops) WHERE deleted_at IS NULL;
+CREATE INDEX users_email_trgm_idx ON users USING gin (email gin_trgm_ops);
+CREATE INDEX servers_slug_trgm_idx
+    ON servers USING gin (slug gin_trgm_ops) WHERE deleted_at IS NULL;
 
 -- +goose Down
-DROP INDEX IF EXISTS cloud_servers_subdomain_trgm_idx, cloud_users_email_trgm_idx, cloud_audit_action_idx;
-ALTER TABLE cloud_audit DROP COLUMN IF EXISTS is_admin, DROP COLUMN IF EXISTS reason;
+DROP INDEX IF EXISTS servers_slug_trgm_idx, users_email_trgm_idx;
+DROP TABLE IF EXISTS audit_events;
 ```
 
 ## 2. SSO
@@ -89,13 +116,15 @@ router.With(adminSession, adminACL).Group(func(r chi.Router) {
 ## 4. User detail
 
 ```sql
--- Single SELECT with multiple subqueries (cheap with trigram indexes)
-SELECT u.*, s.stripe_customer_id,
-       (SELECT json_agg(s2) FROM cloud_servers s2 WHERE s2.user_id=u.id) AS servers,
-       (SELECT json_agg(s3) FROM cloud_subscriptions s3 WHERE s3.user_id=u.id) AS subs,
-       (SELECT json_agg(a) FROM cloud_audit a WHERE a.actor_user_id=u.id ORDER BY a.ts DESC LIMIT 200) AS audit,
-       (SELECT json_agg(e) FROM cloud_abuse_events e WHERE e.user_id=u.id ORDER BY e.ts DESC LIMIT 50) AS abuse
-FROM cloud_users u WHERE u.id = $1
+-- Single SELECT with multiple subqueries (cheap with trigram indexes).
+-- stripe_customer_id lives on subscriptions (slot 0006); join through it.
+SELECT u.*,
+       (SELECT stripe_customer_id FROM subscriptions WHERE user_id = u.id) AS stripe_customer_id,
+       (SELECT json_agg(s2) FROM servers s2 WHERE s2.owner_user_id = u.id) AS servers,
+       (SELECT json_agg(s3) FROM subscriptions s3 WHERE s3.user_id = u.id) AS subs,
+       (SELECT json_agg(a) FROM audit_events a WHERE a.actor_user_id = u.id ORDER BY a.occurred_at DESC LIMIT 200) AS audit,
+       (SELECT json_agg(e) FROM abuse_signals e WHERE e.subject_kind = 'user' AND e.subject = u.id::text ORDER BY e.created_at DESC LIMIT 50) AS abuse
+FROM users u WHERE u.id = $1
 ```
 
 ## 5. Suspend user
@@ -108,7 +137,7 @@ func suspendUser(s *Service) http.HandlerFunc {
         if len(req.Reason) < 5 { problem(w, 400, "reason_required", ""); return }
         uid, _ := uuid.Parse(chi.URLParam(r, "id"))
         // 1. Mark suspended
-        _, _ = s.db.Exec(r.Context(), `UPDATE cloud_users SET suspended_at=now() WHERE id=$1`, uid)
+        _, _ = s.db.Exec(r.Context(), `UPDATE users SET suspended_at=now() WHERE id=$1`, uid)
         // 2. Revoke sessions
         s.repo.RevokeAllUserSessions(r.Context(), uid)
         // 3. Revoke server tunnels for each linked server
@@ -229,7 +258,7 @@ func auditExport(s *Service) http.HandlerFunc {
 
 ## 12. Acceptance checklist
 
-- [ ] Migration 00060001 applies; trigram indexes.
+- [ ] Migration 00020002 (audit) applies; `audit_events` + trigram indexes.
 - [ ] SSO @hamzalabs.com gating.
 - [ ] ACR freshness on sensitive actions.
 - [ ] User & server suspend / force-disconnect / reset-bearer flows.

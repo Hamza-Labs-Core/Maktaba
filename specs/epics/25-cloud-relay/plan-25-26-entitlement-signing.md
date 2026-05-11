@@ -14,27 +14,45 @@
 | Revocation | List of revoked `kid`s in JWKS endpoint; server checks daily. |
 | Out of scope | Mutual cloud authentication beyond the bundled trust anchor (v2). |
 
-## 1. Migration `00100001_entitlement_keys.sql` (slot 0010 per README)
+## 1. Migration `00100001_entitlement.sql` (slot 0010 per README)
+
+This keystore is **separate** from `jwt_keys` (slot 0002, RS256
+session tokens). They serve different purposes: `jwt_keys` signs
+access tokens consumed by the cloud's own routes; `entitlement_keys`
+signs Ed25519 entitlement blobs consumed by the on-prem server. Two
+keystores by design.
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_entitlement_keys (
-    kid              TEXT PRIMARY KEY,
+CREATE TABLE entitlement_keys (
+    fingerprint        TEXT PRIMARY KEY,           -- SHA-256 of public key bytes
+    public_key         BYTEA NOT NULL,             -- 32-byte Ed25519 public key
     private_pem_sealed BYTEA NOT NULL,
-    public_pem       TEXT NOT NULL,
-    issued_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    retired_at       TIMESTAMPTZ,
-    revoked_at       TIMESTAMPTZ
+    public_pem         TEXT NOT NULL,
+    issued_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    retired_at         TIMESTAMPTZ,
+    revoked_at         TIMESTAMPTZ,
+    active             BOOLEAN NOT NULL DEFAULT TRUE,
+    reason             TEXT                         -- populated when revoked
 );
+CREATE INDEX entitlement_keys_active_idx ON entitlement_keys(active) WHERE active;
 
-CREATE TABLE cloud_entitlement_revocations (
-    kid           TEXT PRIMARY KEY,
-    revoked_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    reason        TEXT
+CREATE TABLE entitlement_grants (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    server_id     UUID REFERENCES servers(id) ON DELETE SET NULL,
+    tier          TEXT NOT NULL CHECK (tier IN ('free','pro','family')),
+    interval      TEXT CHECK (interval IS NULL OR interval IN ('monthly','yearly')),
+    issued_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at    TIMESTAMPTZ NOT NULL,
+    fingerprint   TEXT NOT NULL REFERENCES entitlement_keys(fingerprint),
+    revoked_at    TIMESTAMPTZ
 );
+CREATE INDEX entitlement_grants_user_idx ON entitlement_grants(user_id);
+CREATE INDEX entitlement_grants_server_idx ON entitlement_grants(server_id);
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_entitlement_revocations, cloud_entitlement_keys;
+DROP TABLE IF EXISTS entitlement_grants, entitlement_keys;
 ```
 
 ## 2. Signer
@@ -50,7 +68,7 @@ type Signer struct {
 type Key struct{ KID string; Priv ed25519.PrivateKey }
 
 func (s *Signer) Sign(payload Payload) (string, error) {
-    payload.KID = s.active.Load().KID
+    payload.Fingerprint = s.active.Load().KID
     payload.V = 1
     body, _ := json.Marshal(payload)
     canon, _ := jcs.Transform(body)
@@ -67,19 +85,23 @@ JCS via `github.com/cyberphone/json-canonicalization`.
 
 ```go
 type Payload struct {
-    Iss       string                 `json:"iss"`           // "cloud.maktaba.app"
-    Sub       string                 `json:"sub"`           // server_id
-    UserID    string                 `json:"user_id"`
-    Tier      string                 `json:"tier"`
-    IssuedAt  time.Time              `json:"issued_at"`
-    ExpiresAt time.Time              `json:"expires_at"`
-    Features  map[string]any         `json:"features"`
-    KID       string                 `json:"kid"`
-    V         int                    `json:"v"`
+    Iss         string                 `json:"iss"`           // "cloud.maktaba.app"
+    Sub         string                 `json:"sub"`           // server_id
+    UserID      string                 `json:"user_id"`
+    Tier        string                 `json:"tier"`          // 'free' | 'pro' | 'family' (matches architecture.md §13.10)
+    Interval    string                 `json:"interval,omitempty"` // 'monthly' | 'yearly'; omitted for free
+    Suspended   bool                   `json:"suspended,omitempty"`
+    IssuedAt    time.Time              `json:"issued_at"`
+    ExpiresAt   time.Time              `json:"expires_at"`
+    Features    map[string]any         `json:"features"`
+    Fingerprint string                 `json:"kid"`           // pubkey fingerprint; named `kid` in wire form for OIDC familiarity
+    V           int                    `json:"v"`
 }
 ```
 
-For `tier=suspended`, set all features to disabled.
+When `Suspended=true`, set all `features` to disabled; the verifier
+on the server treats it the same as `tier=free` but also surfaces a
+"subscription action required" prompt to the user.
 
 ## 4. Key rotation
 
@@ -138,7 +160,7 @@ func (t *Tunnel) sendEntitlement(ctx context.Context, signer *Signer, repo *Repo
 
 ### 6.3 Daily cron
 
-`PushFreshEntitlements`: iterate `cloud_servers WHERE deleted_at IS NULL AND last_seen_at >= now()-INTERVAL '7 days'`; if registry has the tunnel, emit `ENT_REFRESH`.
+`PushFreshEntitlements`: iterate `servers WHERE deleted_at IS NULL AND last_seen_at >= now()-INTERVAL '7 days'`; if registry has the tunnel, emit `ENT_REFRESH`.
 
 ### 6.4 Pull
 
@@ -172,8 +194,7 @@ func FeatureEnabled(p *Payload, clock clock.Clock) bool {
     if now.After(p.ExpiresAt) && now.Sub(p.ExpiresAt) > 7*24*time.Hour {
         return false  // grace expired
     }
-    // Suspended tier => disabled.
-    if p.Tier == "suspended" { return false }
+    if p.Suspended { return false }
     return true
 }
 ```
@@ -182,7 +203,9 @@ The local server reads `Features.cloud_relay`, etc. for granular gating.
 
 ## 8. Revocation
 
-`POST /api/admin/entitlement-keys/{kid}/revoke` (admin only) inserts into `cloud_entitlement_revocations`. Servers fetch the JWKS daily and honor revocations.
+`POST /api/admin/entitlement-keys/{fingerprint}/revoke` (admin only)
+UPDATEs `entitlement_keys SET active=false, revoked_at=now(), reason=$1`.
+Servers fetch the JWKS daily and honor revocations.
 
 ## 9. Test plan
 
@@ -217,11 +240,11 @@ The local server reads `Features.cloud_relay`, etc. for granular gating.
 | Clock tampering | `now() < issued_at + 8d` defense. | `TestClockTampering`. |
 | Downscope | 24h window before next push reflects new tier. | Spec. |
 | Family member servers | Each member's tier in their own entitlement. | Spec. |
-| Suspended user | `tier=suspended` entitlement disables features. | `TestSuspendedPayload`. |
+| Suspended user | `suspended=true` entitlement disables features; tier still reflects last paid. | `TestSuspendedPayload`. |
 | Compromised key | Revoke + rotate. | Doc. |
 | Replay across servers | `Sub=server_id` binds. | `TestReplayAcrossServers`. |
 | JCS bugs | Pin lib version; vector cases. | Spec. |
-| Tier strings catalog | Shared with Epic 16. | Cross-epic. |
+| Tier strings catalog | `tier IN ('free','pro','family')` × `interval IN ('monthly','yearly')`. Single canonical vocab shared with `architecture.md` §13.10, plan-16-04, plan-25-12, plan-25-13. | Cross-epic. |
 
 ## 11. Dependencies
 

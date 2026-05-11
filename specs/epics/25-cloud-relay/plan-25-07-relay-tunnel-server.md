@@ -6,7 +6,7 @@
 
 | Concern | Decision |
 |---|---|
-| Where it lives | A **new** binary inside the existing local-server repo: `cmd/maktaba-cloudlink`. Separate systemd unit / compose service so a panic doesn't take down the local API. |
+| Where it lives | A **new** binary inside the existing local-server `api/` Go module: `api/cmd/maktaba-cloudlink/`. Lives under `api/go.mod` so it can `import "api/internal/auth/keys"` for sealing (plan-10-14) and `import "api/internal/auth/serverkeys"` for the Ed25519 identity (plan-10-18). Separate systemd unit / compose service so a panic doesn't take down the local API. **No top-level `go.mod`** exists in this repo; do not assume one. |
 | WSS client lib | `github.com/coder/websocket` (modern fork of nhooyr/websocket; well-maintained; supports compression off). |
 | Wire codec | Length-prefixed binary frames over WSS binary messages. One frame per WS message (canonical encoding). |
 | Concurrency model | One owner goroutine for the WS conn (read loop). One writer goroutine drained by a buffered channel (256 frames). One goroutine per active stream proxying to the local HTTP listener. |
@@ -17,10 +17,13 @@
 
 ## 1. Process layout
 
+Paths are relative to the repository root. All files live under the
+existing `api/` Go module (no new module).
+
 ```
-cmd/maktaba-cloudlink/
+api/cmd/maktaba-cloudlink/
   main.go                # flags, config, sd_notify, supervisor loop
-internal/cloudlink/
+api/internal/cloudlink/
   conn.go                # connect/handshake/reconnect
   frame.go               # frame codec (length, type, payload)
   multiplex.go           # stream_id → channel mapping
@@ -29,7 +32,17 @@ internal/cloudlink/
   entitlement.go         # cache write on ENT_REFRESH (25.26)
   meta.go                # META_ENDPOINTS reporter (25.10 hook)
   storage.go             # encrypted-at-rest token + entitlement
+  claim.go               # post {token_hash, server_pubkey} to /api/servers/claim/init (25.6)
 ```
+
+The cloudlink binary imports:
+
+- `api/internal/auth/keys` for `SealedBox` (plan-10-14 secret loader),
+- `api/internal/auth/serverkeys` for the long-lived Ed25519 server
+  identity (plan-10-18).
+
+Because everything lives under one module, no `replace` directives or
+shared module is needed; standard `internal/` visibility applies.
 
 The local API exposes a Unix socket `/run/maktaba/cloudlink.sock` for inter-process calls (push event ingest, entitlement read). Cloudlink subscribes here, never the other way around.
 

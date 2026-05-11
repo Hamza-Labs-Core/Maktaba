@@ -18,7 +18,9 @@ Blob shape:
   "iss": "cloud.maktaba.app",
   "sub": "<server_id>",
   "user_id": "<user_id>",
-  "tier": "pro_yearly",
+  "tier": "pro",
+  "interval": "yearly",
+  "suspended": false,
   "issued_at": "2026-05-06T00:00:00Z",
   "expires_at": "2026-05-07T00:00:00Z",
   "features": {
@@ -32,6 +34,12 @@ Blob shape:
   "v": 1
 }
 ```
+
+`tier` is `"free" | "pro" | "family"` (matches
+[`architecture.md` §13.10](../../architecture.md#1310-billing--entitlements)).
+`interval` is `"monthly" | "yearly"` and is omitted for `tier=free`.
+A suspended subscription is signalled by `suspended=true` (which
+zeroes out `features`) rather than a fifth tier value.
 
 The blob is canonicalized (RFC 8785 JCS), signed with the cloud's
 Ed25519 entitlement key, and the signature is embedded as
@@ -134,11 +142,14 @@ Key management:
   until expiry. Acceptable: 24h transition window.
 - **Family member servers.** Each family member has their
   own server, their own entitlement, all signed by the
-  same cloud key but with member-specific payloads
-  (`tier=family_member`).
-- **Suspended user.** Cloud sets a "denial" entitlement
-  with `tier=suspended` that disables all cloud-only
-  features and lets the local UI show a banner.
+  same cloud key. Members inherit the payer's tier
+  (`tier=family`, `interval=...`) — the family role is a
+  membership relationship in `family_members`, not a tier
+  value.
+- **Suspended user.** Cloud sets `suspended=true` on the
+  entitlement (tier still reflects the last paid plan).
+  The verifier zeros `features` and lets the local UI show
+  a "subscription action required" banner.
 - **Compromised cloud-private key.** Worst case;
   rotation procedure: mint a new key signed by the
   build-time bundled key; revoke the compromised `kid`

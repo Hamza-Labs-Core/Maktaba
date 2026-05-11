@@ -20,18 +20,20 @@
 # syntax=docker/dockerfile:1.6
 
 # --- Stage 1: Go build ---
+# There is no top-level go.mod; each module is built from its own
+# directory. cloudlink lives under api/ (see plan-25-07 §1).
 FROM golang:1.22-bookworm AS go-build
 WORKDIR /src
 COPY api/ ./api
 COPY streaming/ ./streaming
-COPY cmd/ ./cmd
+COPY cloud/ ./cloud
 COPY shared/ ./shared
+COPY tools/ ./tools
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /out/api          ./api/cmd/api
-RUN go build -trimpath -ldflags="-s -w" -o /out/streaming    ./streaming/cmd/streaming
-RUN go build -trimpath -ldflags="-s -w" -o /out/pipeline-launcher ./cmd/pipeline-launcher
-RUN go build -trimpath -ldflags="-s -w" -o /out/maktaba-cloudlink ./cmd/maktaba-cloudlink
-RUN go build -trimpath -ldflags="-s -w" -o /out/maktaba      ./cmd/maktaba
+RUN cd /src/api       && go build -trimpath -ldflags="-s -w" -o /out/api               ./cmd/api
+RUN cd /src/api       && go build -trimpath -ldflags="-s -w" -o /out/maktaba-cloudlink ./cmd/maktaba-cloudlink
+RUN cd /src/streaming && go build -trimpath -ldflags="-s -w" -o /out/streaming         ./cmd/streaming
+RUN cd /src/cloud     && go build -trimpath -ldflags="-s -w" -o /out/maktaba-cloud     ./cmd/maktaba-cloud
 
 # --- Stage 2: Python venv ---
 FROM python:3.12-slim-bookworm AS py-build
@@ -66,7 +68,7 @@ COPY --from=ffmpeg-fetch /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local
 RUN install -d -o 10001 -g 10001 /var/lib/maktaba /var/cache/maktaba /var/log/maktaba /etc/maktaba
 USER 10001
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/maktaba"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/api"]
 CMD ["serve"]
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:8080/healthz | grep -q ok
 ```

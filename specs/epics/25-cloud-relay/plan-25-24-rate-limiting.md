@@ -9,28 +9,31 @@
 | Algorithm | Sliding-window via Redis Lua: keys per (scope, actor, minute-bucket); on hit, INCR current minute, SUM windowed buckets, return remaining. |
 | Storage | Redis (Sentinel HA in prod). Failure mode: **fail-closed** (`503 dependency_down`). |
 | Middleware | `cloud/internal/ratelimit/middleware.go`; policies in `policies.go` map route → limit. |
-| Overrides | DB-backed `cloud_rate_limit_overrides(scope, actor, limit_per_window, window_secs, expires_at)`. |
+| Overrides | DB-backed `rate_overrides(scope, actor, limit_per_window, window_secs, expires_at)`. |
 | Stripe webhook | Bypass; signature-only auth. |
 | Headers | `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. |
 | Out of scope | CAPTCHA (deferred). |
 
-## 1. Migration `00080001_rate_overrides.sql` (slot 0008)
+## 1. Migration `00090002_rate_overrides.sql` (slot 0009 sub-sequence)
+
+Lives alongside abuse signals (slot 0009 is owned by plan-25-25);
+this is the sequence-2 file in the same slot.
 
 ```sql
 -- +goose Up
-CREATE TABLE cloud_rate_limit_overrides (
-    scope        TEXT NOT NULL,           -- 'push_per_server', 'auth_login_per_ip_email', ...
-    actor        TEXT NOT NULL,           -- hashed actor id, e.g. server_id, hash(ip)
+CREATE TABLE rate_overrides (
+    scope            TEXT NOT NULL,           -- 'push_per_server', 'auth_login_per_ip_email', ...
+    actor            TEXT NOT NULL,           -- hashed actor id, e.g. server_id, hash(ip)
     limit_per_window INTEGER NOT NULL,
-    window_secs  INTEGER NOT NULL,
-    reason       TEXT,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at   TIMESTAMPTZ,
+    window_secs      INTEGER NOT NULL,
+    reason           TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at       TIMESTAMPTZ,
     PRIMARY KEY (scope, actor)
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS cloud_rate_limit_overrides;
+DROP TABLE IF EXISTS rate_overrides;
 ```
 
 ## 2. Lua atomic INCR
@@ -125,7 +128,7 @@ func Limit(pol Policy, c *Client) func(http.Handler) http.Handler {
 }
 ```
 
-`EffectiveLimit`: reads `cloud_rate_limit_overrides` (LRU 60s). Lower-of (policy default, override).
+`EffectiveLimit`: reads `rate_overrides` (LRU 60s). Lower-of (policy default, override).
 
 ## 5. Per-route wiring
 
@@ -203,7 +206,7 @@ Relay path (25.9) uses `Limit(relayPerSubdomainPolicy, rl)` middleware.
 
 ## 11. Acceptance checklist
 
-- [ ] Migration 00080001 applies.
+- [ ] Migration 00090002 (rate_overrides) applies.
 - [ ] Redis Lua atomic INCR; sliding window.
 - [ ] Fail-closed on Redis down.
 - [ ] Headers always set.

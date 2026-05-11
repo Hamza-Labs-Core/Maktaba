@@ -6,7 +6,8 @@
 
 | Concern | Decision |
 |---|---|
-| Source of truth | `cloud_subscriptions` (Stripe webhook 25.14 writes here). Free is the implicit fallback if no row. |
+| Source of truth | `subscriptions` (slot 0006, plan-25-13; Stripe webhook 25.14 writes here). Free is the implicit fallback if no row. |
+| Tier vocabulary | `tier IN ('free','pro','family')` × `interval IN ('monthly','yearly')`. Matches `architecture.md` §13.10 and `subscriptions` schema. Suspension is `status='canceled'` plus `suspended_at` on the user, not a tier value. |
 | Hot cache | Per-pod LRU `user_id → TierState` with 60s TTL + capacity 50,000 entries. Invalidated by Postgres `LISTEN tier_changed`. |
 | Gate location | `TierGate.Acquire(ctx, userID, isStream) (release, error)` called inside relay proxy (25.9) before tunneling. |
 | Concurrent streams | `HLEN streams:{server_id}` (25.11) with caveat — counts per-server. Cross-server enforcement uses a second Redis key `streams:user:{user_id}`. |
@@ -17,34 +18,40 @@
 
 ```go
 // cloud/internal/billing/tier.go
-type Plan string
 const (
-    PlanFree         Plan = "free"
-    PlanProMonthly   Plan = "pro_monthly"
-    PlanProYearly    Plan = "pro_yearly"
-    PlanFamilyMonthly Plan = "family_monthly"
-    PlanFamilyYearly  Plan = "family_yearly"
-    PlanSuspended    Plan = "suspended"
+    TierFree   = "free"
+    TierPro    = "pro"
+    TierFamily = "family"
 )
 
 type TierState struct {
-    Plan                Plan
+    Tier                string         // 'free' | 'pro' | 'family'
+    Interval            string         // 'monthly' | 'yearly' (empty for free)
+    Suspended           bool           // payer's user.suspended_at IS NOT NULL
     ConcurrentStreams   int            // 0 / 2 / 5
     MonthlyGBCap        int            // 0 / 100 / 500
     ServersCap          int            // 1 / 2 / 5
     DailyAPIQuotaBytes  int64          // free=100MB, paid=∞
     CurrentPeriodEnd    time.Time
-    Status              string         // "active" | "past_due" | "canceled"
+    Status              string         // "active" | "past_due" | "canceled" | "inactive"
     ExpiresAt           time.Time      // cache field; not the same as period_end
 }
 
-var tierMatrix = map[Plan]TierState{
-    PlanFree:          {Plan: PlanFree,         ConcurrentStreams: 0,  MonthlyGBCap: 0,   ServersCap: 1, DailyAPIQuotaBytes: 100 * 1<<20},
-    PlanProMonthly:    {Plan: PlanProMonthly,    ConcurrentStreams: 2,  MonthlyGBCap: 100, ServersCap: 2, DailyAPIQuotaBytes: 0},
-    PlanProYearly:     {Plan: PlanProYearly,     ConcurrentStreams: 2,  MonthlyGBCap: 100, ServersCap: 2, DailyAPIQuotaBytes: 0},
-    PlanFamilyMonthly: {Plan: PlanFamilyMonthly, ConcurrentStreams: 5,  MonthlyGBCap: 500, ServersCap: 5, DailyAPIQuotaBytes: 0},
-    PlanFamilyYearly:  {Plan: PlanFamilyYearly,  ConcurrentStreams: 5,  MonthlyGBCap: 500, ServersCap: 5, DailyAPIQuotaBytes: 0},
-    PlanSuspended:     {Plan: PlanSuspended,    ConcurrentStreams: 0,  MonthlyGBCap: 0,   ServersCap: 0, DailyAPIQuotaBytes: 0},
+// Caps are interval-independent; the matrix is keyed by tier only.
+var tierMatrix = map[string]TierState{
+    TierFree:   {Tier: TierFree,   ConcurrentStreams: 0, MonthlyGBCap: 0,   ServersCap: 1, DailyAPIQuotaBytes: 100 * 1 << 20},
+    TierPro:    {Tier: TierPro,    ConcurrentStreams: 2, MonthlyGBCap: 100, ServersCap: 2, DailyAPIQuotaBytes: 0},
+    TierFamily: {Tier: TierFamily, ConcurrentStreams: 5, MonthlyGBCap: 500, ServersCap: 5, DailyAPIQuotaBytes: 0},
+}
+
+// suspended state collapses to a zero-cap version of the user's tier.
+func suspendedView(s TierState) TierState {
+    s.Suspended = true
+    s.ConcurrentStreams = 0
+    s.MonthlyGBCap = 0
+    s.ServersCap = 0
+    s.DailyAPIQuotaBytes = 0
+    return s
 }
 ```
 
@@ -68,12 +75,18 @@ func (r *TierResolver) Get(ctx context.Context, userID uuid.UUID) (TierState, er
     if c, ok := r.cache.Get(userID); ok && time.Since(c.fetched) < 60*time.Second {
         return c.state, nil
     }
-    plan, periodEnd, status, suspended, err := r.db.ReadSubscription(ctx, userID)
+    // Resolve family member → payer; payer's tier wins.
+    payerID, _ := r.db.PayerFor(ctx, userID) // returns userID if no family row
+    tier, interval, periodEnd, status, suspended, err := r.db.ReadSubscription(ctx, payerID)
     if err != nil { return TierState{}, err }
-    base := tierMatrix[plan]
-    if suspended { base = tierMatrix[PlanSuspended] }
+    base, ok := tierMatrix[tier]
+    if !ok { base = tierMatrix[TierFree] }
+    base.Interval = interval
     base.CurrentPeriodEnd = periodEnd
     base.Status = status
+    if suspended || status == "canceled" {
+        base = suspendedView(base)
+    }
     r.cache.Add(userID, &cachedTier{state: base, fetched: time.Now()})
     return base, nil
 }
@@ -85,7 +98,7 @@ func (r *TierResolver) onTierChanged(payload string) {
 }
 ```
 
-Family-plan membership: in v1 the *payer* is the user_id on the subscription; member accounts are looked up via `cloud_family_members(payer_id, member_user_id)` (lives in 25.13 migration). Resolver reads payer's `Plan` for any member: pseudocode `if member, lookup payer; substitute payer's plan`.
+Family-plan membership: in v1 the *payer* is the `user_id` on `subscriptions`; member accounts are looked up via `family_members(payer_user_id, member_user_id)` (declared in plan-25-13's slot 0006 migration). The `PayerFor(ctx, userID)` SQL is `SELECT COALESCE((SELECT payer_user_id FROM family_members WHERE member_user_id=$1 AND accepted_at IS NOT NULL), $1)`. Resolver always reads the payer's tier.
 
 ## 3. Tier gate
 
@@ -101,10 +114,10 @@ type TierGate struct {
 func (g *TierGate) Acquire(ctx context.Context, userID, serverID uuid.UUID, isStream, isAPI bool, reqBytes int) (Release, error) {
     state, err := g.resolver.Get(ctx, userID)
     if err != nil { return noopRelease, fmt.Errorf("tier_lookup: %w", err) }
-    if state.Plan == PlanSuspended { return noopRelease, errSuspended }
+    if state.Suspended { return noopRelease, errSuspended }
 
     // Free-tier API daily quota
-    if isAPI && state.Plan == PlanFree {
+    if isAPI && state.Tier == TierFree {
         used, _ := g.redis.IncrBy(ctx, fmt.Sprintf("api_quota:%s:%s", userID, today()), int64(reqBytes)).Result()
         if used > state.DailyAPIQuotaBytes {
             return noopRelease, errDailyQuotaExceeded
@@ -150,7 +163,7 @@ Errors map to HTTP:
 
 | error | HTTP | body |
 |---|---|---|
-| `errSuspended` | 503 | `server_suspended` (per 25.9) |
+| `errSuspended` | 503 | `account_suspended` |
 | `errQuotaExceeded` (free) | 402 | `{"used_gb": ..., "cap_gb": ..., "renewal_at": "..."}` |
 | `errQuotaExceeded` (110%) | 402 | same |
 | `errTooManyStreams` | 429 | `{"limit": 2, "current": 2}`; `Retry-After: 5` |
@@ -161,7 +174,7 @@ Errors map to HTTP:
 
 When `errCircuitBreaker` fires:
 
-1. `cloud_abuse_events` row `kind=tier_circuit_breaker, severity=4`.
+1. `abuse_signals` row `kind=tier_circuit_breaker, severity=4`.
 2. Notify user: email + push.
 3. Forcibly close all `streams:user:{user_id}` by emitting `RST_STREAM`-equivalent on each tunnel (call into 25.8 `Tunnel.CancelStream(streamID)`).
 4. Cache state updated to suspended-until-period-end.
@@ -180,7 +193,7 @@ Webhook 25.14 issues `pg_notify('tier_changed', user_id)` at COMMIT. The LRU cac
 
 | Test | Pins |
 |---|---|
-| `TestTierMatrixIsExhaustive` | Every Plan constant has a row. |
+| `TestTierMatrixIsExhaustive` | Every tier constant (`free`/`pro`/`family`) has a row. |
 | `TestProPlanAccepts2Streams` | Counter at 2 with new request → 429. |
 | `TestFreeStreamRejected402` | Free user → 402. |
 | `TestBandwidth105SoftWarn` | Quota 105% → warning email queued; stream accepted. |
@@ -219,7 +232,7 @@ Webhook 25.14 issues `pg_notify('tier_changed', user_id)` at COMMIT. The LRU cac
 ## 9. Dependencies
 
 - 25.1 (foundation, pgsub).
-- 25.6 (`cloud_servers` for server cap check, if surfaced).
+- 25.6 (`servers` for server cap check, if surfaced).
 - 25.9 (proxy is the call site).
 - 25.11 (Redis stream registration + monthly-to-date counter).
 - 25.13/25.14 (Stripe rows; notify channel).

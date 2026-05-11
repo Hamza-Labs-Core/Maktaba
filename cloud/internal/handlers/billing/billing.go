@@ -246,6 +246,12 @@ func (d *Deps) applyEvent(ctx context.Context, t string, raw json.RawMessage) er
 	return nil
 }
 
+// planFromPriceNick reads either the Stripe price's `lookup_key`
+// (preferred) or its `nickname` (fallback) and maps it to one of the
+// three canonical tier values: free / pro / family (architecture.md
+// §13.10). Interval (monthly/yearly) is tracked separately in the
+// `subscriptions.interval` column; the `plan` column only carries
+// the tier.
 func planFromPriceNick(items []struct {
 	Price struct {
 		Lookup string `json:"lookup_key"`
@@ -258,9 +264,9 @@ func planFromPriceNick(items []struct {
 			nick = it.Price.Nick
 		}
 		switch nick {
-		case "pro_monthly", "pro":
+		case "pro", "pro_monthly", "pro_yearly":
 			return billingpkg.PlanPro
-		case "family_monthly", "family":
+		case "family", "family_monthly", "family_yearly":
 			return billingpkg.PlanFamily
 		}
 	}
