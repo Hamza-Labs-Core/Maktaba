@@ -12,6 +12,9 @@
 | [PLAN_REVIEW_07_13.md](../../specs/PLAN_REVIEW_07_13.md) | Epics 07–13 (API, Streaming, Library, Auth, Web, Mobile, Desktop) | 105 plans | 22/22 | 39/39 | RESOLVED (2026-05-04) |
 | [PLAN_REVIEW_14_17.md](../../specs/PLAN_REVIEW_14_17.md) | Epics 14–17 (TV, Discovery, Subscriptions, UX Design) | 33 plans | 13/13 | 24/24 | RESOLVED |
 | [PLAN_REVIEW_18_24.md](../../specs/PLAN_REVIEW_18_24.md) | Epics 18–24 (NFR: Performance, Scalability, Testing, Observability, DevOps, Security, Data Integrity) | 57 plans | 24/24 | 61/61 | RESOLVED |
+| [PLAN_REVIEW_25.md](../../specs/PLAN_REVIEW_25.md) | Epic 25 (Cloud Relay) | 36 plans | 4/4 | 22/22 | RESOLVED (closed by Phase 17 merge) |
+| [FULL_IMPLEMENTATION_AUDIT.md](../../specs/FULL_IMPLEMENTATION_AUDIT.md) | End-to-end audit of all 25 epics on `main` | 25 epics, 272 ACs | 5/5 | 8/8 | RESOLVED by audit-blockers PR |
+| [TEST_RESULTS.md](../../specs/TEST_RESULTS.md) | Full-suite test results snapshot (2026-05-10) | every service | — | — | Go services green; pipeline 810/812 (2 known dev-extra) |
 
 Format: `raised/resolved` for each severity column.
 
@@ -124,11 +127,65 @@ Source: [specs/PLAN_REVIEW_14_17.md](../../specs/PLAN_REVIEW_14_17.md)
 
 Source: [specs/PLAN_REVIEW_18_24.md](../../specs/PLAN_REVIEW_18_24.md)
 
+## PLAN_REVIEW_25.md
+
+**Scope.** Epic 25 (Cloud Relay)
+**Plans reviewed.** 36
+**Status.** RESOLVED (closed by Phase 17 merge — PR #15 / commit `1d41a9c`)
+
+
+| Severity | Raised | Resolved | Remaining |
+|----------|-------:|---------:|----------:|
+| BLOCKED | 4 | 4 | 0 |
+| NEEDS_REVISION | 22 | 22 | 0 |
+| PASS (ship as-is) | 10 | — | — |
+
+**Summary.** Four BLOCKED plans gated the epic: a two-way migration-filename collision (§1.1), a missing-but-load-bearing Epic 10 Story 10.18 (§1.2, now resolved by `story-10-18-ed25519-server-identity.md`), and the server-side cloudlink Go module being unspecified (§1.3). All resolved in the Cloud Relay implementation branch before merge.
+
+
+Source: [specs/PLAN_REVIEW_25.md](../../specs/PLAN_REVIEW_25.md)
+
+## FULL_IMPLEMENTATION_AUDIT.md
+
+**Scope.** End-to-end audit of all 25 epics against the 272 story acceptance criteria on `main` post-PR #12.
+**Status.** RESOLVED by the audit-blockers cleanup PR (#19, commit `70c5529`)
+
+
+| Severity | Raised | Resolved | Remaining |
+|----------|-------:|---------:|----------:|
+| 🔴 Blocker | 5 | 5 | 0 |
+| 🟠 Major | 8 | 8 | 0 |
+| 🟡 Minor | 11 | most | a few by-design |
+
+**Summary.** Blockers found by the audit: (A.1) duplicate `audit_log` table creation across migrations 0036 and 0054, (A.2) pipeline service had no daemon entry point, (A.3) API gRPC clients to Pipeline / Streaming never instantiated, (A.4) orphan handler packages without router mounts, (A.5) tier vocabulary / schema drift. All addressed in the audit-blockers cleanup branch.
+
+
+Source: [specs/FULL_IMPLEMENTATION_AUDIT.md](../../specs/FULL_IMPLEMENTATION_AUDIT.md)
+
+## TEST_RESULTS.md (2026-05-10 snapshot)
+
+**Scope.** Full test suite executed across every service after pulling latest `main`.
+**Status.** Captured as a snapshot — not a review document.
+
+
+| Suite | Result | Notes |
+|---|---|---|
+| `api` / `streaming` / `cloud` / `shared` Go tests | PASS | all packages green |
+| `pipeline` pytest | 810/812 PASS | 2 perf failures due to missing `pyyaml` dev-extra |
+| `pipeline` ruff | 20 findings | UP017 / UP045 / I001 cleanups outstanding |
+| `pipeline` mypy --strict | 6 findings | `idempotency.py`, `concurrency.py`, `probe.py`, `budgets.py` |
+| `web` typecheck | PASS | `tsc --noEmit` clean |
+| migration-lint | 11 findings | unguarded DDL, missing `CONCURRENTLY` indexes |
+
+
+Source: [specs/TEST_RESULTS.md](../../specs/TEST_RESULTS.md)
+
 ---
 
 ## Remaining work
 
-- All 🔴 **blockers** raised across all five reviews are resolved.
-- All 🟠 **majors** raised across all five reviews are resolved.
+- All 🔴 **blockers** raised across all five plan reviews + the full audit are resolved.
+- All 🟠 **majors** raised across all five reviews + the full audit are resolved.
 - 🟡 **minors** noted as "by-design" or "out of scope for the review" remain in the original review files; the rest are addressed.
+- TEST_RESULTS.md captures a small set of tooling / lint findings still to clean up; none block functional behaviour.
 - No open audit findings block implementation work.

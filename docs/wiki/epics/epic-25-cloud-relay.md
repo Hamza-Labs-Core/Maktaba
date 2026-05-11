@@ -1,7 +1,7 @@
 # Epic 25 — Maktaba Cloud: Relay, Accounts & Subscriptions
 
-> **Status:** spec. **Source:** `specs/epics/25-cloud-relay/`.
-> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture).
+> **Status:** implemented on `main` (Phase 17, PR #15 / commit `1d41a9c`). **Source:** `specs/epics/25-cloud-relay/`.
+> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture) · [`cloud/` module](../../../cloud/) · [`specs/PHASE_17_IMPLEMENTATION.md`](../../../specs/PHASE_17_IMPLEMENTATION.md).
 
 ## Goal
 

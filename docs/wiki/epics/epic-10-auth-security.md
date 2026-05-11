@@ -28,6 +28,7 @@
 | 10.15 | [Transport security (TLS, HSTS, secure cookies, CORS)](../../../specs/epics/10-auth-security/story-10-15-transport-security.md) | [plan](../../../specs/epics/10-auth-security/plan-10-15-transport-security.md) | —             |
 | 10.16 | [Audit log for security-sensitive actions](../../../specs/epics/10-auth-security/story-10-16-security-audit.md) | [plan](../../../specs/epics/10-auth-security/plan-10-16-security-audit.md) | 9.17          |
 | 10.17 | [Device pairing endpoint (`POST /api/auth/pair`)](../../../specs/epics/10-auth-security/story-10-17-auth-pair.md) | [plan](../../../specs/epics/10-auth-security/plan-10-17-auth-pair.md) | 10.3, 10.6    |
+| 10.18 | [Ed25519 server identity keypair](../../../specs/epics/10-auth-security/story-10-18-ed25519-server-identity.md) | [plan](../../../specs/epics/10-auth-security/plan-10-18-ed25519-server-identity.md) | 25.7, 25.26   |
 
 ## DB tables owned
 
