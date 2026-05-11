@@ -81,7 +81,7 @@ INSERT INTO processing_jobs__new SELECT * FROM processing_jobs;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TABLE processing_jobs;
+DROP TABLE IF EXISTS processing_jobs;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

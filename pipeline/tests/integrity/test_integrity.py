@@ -15,7 +15,6 @@ from maktaba_pipeline.integrity import (
     verify_video,
 )
 
-
 # ---- atomic ----------------------------------------------------------------
 
 
@@ -65,7 +64,7 @@ def test_idempotency_miss_returns_none() -> None:
 
 def test_idempotency_ttl_expiry() -> None:
     s = MemoryIdempotencyStore(ttl_sec=1)
-    fake_now = dt.datetime(2026, 5, 10, 12, 0, 0, tzinfo=dt.timezone.utc)
+    fake_now = dt.datetime(2026, 5, 10, 12, 0, 0, tzinfo=dt.UTC)
     s._now = lambda: fake_now  # noqa: SLF001
     k = IdempotencyKey("j1", "op", "h")
     s.store(k, "v")
@@ -79,7 +78,7 @@ def test_idempotency_purge() -> None:
     s = MemoryIdempotencyStore()
     s.store(IdempotencyKey("j1", "op", "h1"), 1)
     s.store(IdempotencyKey("j2", "op", "h2"), 2)
-    purged = s.purge_older_than(dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1))
+    purged = s.purge_older_than(dt.datetime.now(dt.UTC) + dt.timedelta(hours=1))
     assert purged == 2
     assert s.size() == 0
 
@@ -90,7 +89,7 @@ def test_idempotency_purge() -> None:
 def test_backup_manifest_roundtrip() -> None:
     m = BackupManifest(
         snapshot_id="snap-1",
-        created_at=dt.datetime(2026, 5, 10, 12, 0, 0, tzinfo=dt.timezone.utc),
+        created_at=dt.datetime(2026, 5, 10, 12, 0, 0, tzinfo=dt.UTC),
         schema_rev=57,
         video_count=120,
         job_count=5,
@@ -108,7 +107,7 @@ def test_backup_planner_records_and_lists(tmp_path: pathlib.Path) -> None:
         p.record(
             BackupManifest(
                 snapshot_id=f"snap-{i}",
-                created_at=dt.datetime(2026, 5, 10, 12, i, 0, tzinfo=dt.timezone.utc),
+                created_at=dt.datetime(2026, 5, 10, 12, i, 0, tzinfo=dt.UTC),
                 schema_rev=57,
                 video_count=100 + i,
                 job_count=i,
@@ -124,7 +123,7 @@ def test_backup_planner_records_and_lists(tmp_path: pathlib.Path) -> None:
 def test_backup_planner_skips_corrupt(tmp_path: pathlib.Path) -> None:
     (tmp_path / "bad.json").write_text("not json")
     p = BackupPlanner(tmp_path)
-    p.record(BackupManifest("snap-ok", dt.datetime.now(dt.timezone.utc), 1, 0, 0))
+    p.record(BackupManifest("snap-ok", dt.datetime.now(dt.UTC), 1, 0, 0))
     snaps = p.list_snapshots()
     assert len(snaps) == 1
 

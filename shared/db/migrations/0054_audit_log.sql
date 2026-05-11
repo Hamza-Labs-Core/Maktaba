@@ -2,45 +2,59 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0054 (Story 21.6 / plan-21-06) — canonical `audit_log` table.
+-- Slot 0054 (Story 21.6 / plan-21-06) — canonical Epic-21 extension to
+-- the slot-0036 `audit_log` table.
 --
--- Earlier epics (09, 12, 19, 23, 24) all wrote to a presumed `audit_log`
--- without a single shape; PLAN_REVIEW_18_24 §1.4 flagged the drift.
--- This migration is the sole creator. Columns and category enum match
--- plan-21-06 plus the `device` category Epic 12 needs.
+-- Slot 0036 created the table with id BIGSERIAL, category, action,
+-- actor_user_id (UUID), target_id, payload, ts. This slot is purely
+-- additive: it adds the columns, CHECK constraint, and read-path
+-- indexes that Epic 21 (and the shared/log/go writer) need on top of
+-- 0036, without conflicting with the pre-existing schema or callers.
 --
-CREATE TABLE IF NOT EXISTS audit_log (
-    id            UUID         PRIMARY KEY,
-    occurred_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    category      TEXT         NOT NULL CHECK (category IN (
-                                'auth', 'library', 'admin', 'data',
-                                'config', 'keys', 'device', 'security',
-                                'integrity', 'subscription')),
-    action        TEXT         NOT NULL,
-    actor_user    UUID,
-    actor_ip      INET,
-    actor_source  TEXT,
-    target_kind   TEXT,
-    target_id     TEXT,
-    payload       JSONB        NOT NULL DEFAULT '{}'::jsonb,
-    error_id      TEXT
-);
+-- All operations are idempotent so the migration is safe to re-run on
+-- environments that have already applied it.
+--
+ALTER TABLE audit_log
+    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ NOT NULL DEFAULT now();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    ADD COLUMN IF NOT EXISTS actor_ip INET;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    ADD COLUMN IF NOT EXISTS actor_source TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    ADD COLUMN IF NOT EXISTS target_kind TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    ADD COLUMN IF NOT EXISTS error_id TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    DROP CONSTRAINT IF EXISTS audit_log_category_check;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log
+    ADD CONSTRAINT audit_log_category_check
+    CHECK (category IN (
+        'auth', 'library', 'admin', 'data', 'config',
+        'keys', 'device', 'security', 'integrity', 'subscription'))
+    NOT VALID;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_occurred_at
     ON audit_log (occurred_at DESC);
--- +goose StatementEnd
-
--- +goose StatementBegin
-CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_actor_user
-    ON audit_log (actor_user, occurred_at DESC)
-    WHERE actor_user IS NOT NULL;
--- +goose StatementEnd
-
--- +goose StatementBegin
-CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_category
-    ON audit_log (category, occurred_at DESC);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -52,8 +66,32 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_target
 -- +goose Down
 -- +goose StatementBegin
 DROP INDEX IF EXISTS audit_log_target;
-DROP INDEX IF EXISTS audit_log_category;
-DROP INDEX IF EXISTS audit_log_actor_user;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 DROP INDEX IF EXISTS audit_log_occurred_at;
-DROP TABLE IF EXISTS audit_log;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_category_check;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP COLUMN IF EXISTS error_id;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP COLUMN IF EXISTS target_kind;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP COLUMN IF EXISTS actor_source;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP COLUMN IF EXISTS actor_ip;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE audit_log DROP COLUMN IF EXISTS occurred_at;
 -- +goose StatementEnd

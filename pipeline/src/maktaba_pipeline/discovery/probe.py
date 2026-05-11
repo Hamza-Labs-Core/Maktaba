@@ -14,8 +14,7 @@ import json
 import socket
 import urllib.error
 import urllib.request
-from typing import Iterable
-
+from collections.abc import Iterable
 
 SERVICE_TYPE = "_maktaba._tcp"
 """DNS-SD service type Maktaba registers under."""
@@ -37,7 +36,7 @@ class ServiceAdvertisement:
         """Encode each TXT pair as ``key=value`` byte strings ≤ 255 bytes."""
         out: list[bytes] = []
         for k, v in self.txt.items():
-            line = f"{k}={v}".encode("utf-8")
+            line = f"{k}={v}".encode()
             if len(line) > 255:
                 raise ValueError(f"TXT record {k} exceeds 255 bytes")
             out.append(line)
@@ -78,9 +77,7 @@ class LANProbe:
 
         async def one(h: str) -> ProbeResult | None:
             async with sem:
-                return await asyncio.get_running_loop().run_in_executor(
-                    None, self._fetch, h
-                )
+                return await asyncio.get_running_loop().run_in_executor(None, self._fetch, h)
 
         results: list[ProbeResult] = []
         tasks = [asyncio.create_task(one(h)) for h in hosts]
@@ -126,6 +123,7 @@ def primary_iface_ip() -> str | None:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
-            return s.getsockname()[0]
+            addr: str = s.getsockname()[0]
+            return addr
     except OSError:
         return None

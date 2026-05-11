@@ -13,6 +13,7 @@ directly — every artifact that survives a crash goes through here.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import secrets
@@ -49,18 +50,14 @@ def atomic_write_bytes(target: pathlib.Path | str, data: bytes, mode: int = 0o64
                 f.flush()
                 os.fsync(f.fileno())
         except Exception:  # noqa: BLE001
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
             raise
         os.replace(tmp, target)
         _fsync_dir(target.parent)
     except OSError as e:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise AtomicWriteError(str(e)) from e
 
 

@@ -5,7 +5,6 @@ import pytest
 
 from maktaba_pipeline.perf import Concurrency, ThroughputProbe, load_budgets
 
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 BUDGETS = REPO_ROOT / "shared" / "perf_budgets.yaml"
 

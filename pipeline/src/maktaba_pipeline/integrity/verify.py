@@ -19,8 +19,6 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import pathlib
-from typing import Optional
-
 
 # Match the scanner's identity hash window (16 MiB) so verifier output
 # can be compared against the row hash in `videos.content_hash`.
@@ -57,10 +55,10 @@ def hash_file(path: pathlib.Path) -> str:
 def verify_video(
     *,
     path: pathlib.Path | str,
-    expected_size: Optional[int] = None,
-    expected_hash: Optional[str] = None,
-    segments_count: Optional[int] = None,
-    transcripts_ok: Optional[bool] = None,
+    expected_size: int | None = None,
+    expected_hash: str | None = None,
+    segments_count: int | None = None,
+    transcripts_ok: bool | None = None,
 ) -> IntegrityResult:
     """Run the integrity checks. Does not touch the DB."""
     p = pathlib.Path(path)

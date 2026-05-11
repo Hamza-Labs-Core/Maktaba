@@ -47,7 +47,7 @@ class BackupManifest:
         )
 
     @classmethod
-    def from_json(cls, text: str) -> "BackupManifest":
+    def from_json(cls, text: str) -> BackupManifest:
         data: dict[str, Any] = json.loads(text)
         return cls(
             snapshot_id=str(data["snapshot_id"]),

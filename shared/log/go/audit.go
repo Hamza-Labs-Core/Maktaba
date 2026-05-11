@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Story 21.6 — audit log writer. The canonical schema is in slot 0054.
@@ -58,7 +56,9 @@ type AuditWriter interface {
 	Write(ctx context.Context, ev AuditEvent) error
 }
 
-// PostgresAuditWriter writes to slot-0054's audit_log.
+// PostgresAuditWriter writes to the audit_log table created in slot
+// 0036 and extended in slot 0054. The id column is BIGSERIAL so the
+// writer omits it from the INSERT and lets the database assign it.
 type PostgresAuditWriter struct {
 	DB *sql.DB
 }
@@ -74,9 +74,6 @@ func (w *PostgresAuditWriter) Write(ctx context.Context, ev AuditEvent) error {
 	if ev.Action == "" {
 		return errors.New("audit: action required")
 	}
-	if ev.ID == "" {
-		ev.ID = uuid.NewString()
-	}
 	if ev.OccurredAt.IsZero() {
 		ev.OccurredAt = time.Now().UTC()
 	}
@@ -90,16 +87,19 @@ func (w *PostgresAuditWriter) Write(ctx context.Context, ev AuditEvent) error {
 	}
 	_, err = w.DB.ExecContext(ctx, `
 		INSERT INTO audit_log
-		    (id, occurred_at, category, action, actor_user, actor_ip,
-		     actor_source, target_kind, target_id, payload, error_id)
-		VALUES ($1,$2,$3,$4,
-		    NULLIF($5,'')::uuid,
-		    NULLIF($6,'')::inet,
-		    NULLIF($7,''),
-		    NULLIF($8,''), NULLIF($9,''), $10::jsonb, NULLIF($11,''))
-	`, ev.ID, ev.OccurredAt, ev.Category, ev.Action,
+		    (category, action, actor_user_id, actor_ip,
+		     actor_source, target_kind, target_id, payload, error_id,
+		     ts, occurred_at)
+		VALUES ($1,$2,
+		    NULLIF($3,'')::uuid,
+		    NULLIF($4,'')::inet,
+		    NULLIF($5,''),
+		    NULLIF($6,''), NULLIF($7,''), $8::jsonb, NULLIF($9,''),
+		    $10, $10)
+	`, ev.Category, ev.Action,
 		ev.ActorUser, ev.ActorIP, ev.ActorSource,
-		ev.TargetKind, ev.TargetID, string(pb), ev.ErrorID)
+		ev.TargetKind, ev.TargetID, string(pb), ev.ErrorID,
+		ev.OccurredAt)
 	if err != nil {
 		return fmt.Errorf("audit: insert: %w", err)
 	}
