@@ -9,9 +9,9 @@
 // pulled from `import.meta.env.VITE_API_BASE` so the dev proxy and the
 // production build both work without ifdefs.
 
-const BASE = (import.meta.env.VITE_API_BASE ?? '') as string;
+const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
-const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export interface Problem {
   type: string;
@@ -26,8 +26,8 @@ export class ApiError extends Error {
   status: number;
   problem: Problem;
   constructor(problem: Problem) {
-    super(problem.title + (problem.detail ? `: ${problem.detail}` : ''));
-    this.name = 'ApiError';
+    super(problem.title + (problem.detail ? `: ${problem.detail}` : ""));
+    this.name = "ApiError";
     this.status = problem.status;
     this.problem = problem;
   }
@@ -38,25 +38,25 @@ function csrfToken(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-interface RequestOptions extends Omit<RequestInit, 'body'> {
+interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
 }
 
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const method = (opts.method ?? 'GET').toUpperCase();
+  const method = (opts.method ?? "GET").toUpperCase();
   const headers = new Headers(opts.headers);
-  if (!headers.has('Accept')) {
-    headers.set('Accept', 'application/json');
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
   }
 
   let body: BodyInit | null = null;
   if (opts.body !== undefined && opts.body !== null) {
-    if (typeof opts.body === 'string' || opts.body instanceof FormData) {
+    if (typeof opts.body === "string" || opts.body instanceof FormData) {
       body = opts.body as BodyInit;
     } else {
       body = JSON.stringify(opts.body);
-      if (!headers.has('Content-Type')) {
-        headers.set('Content-Type', 'application/json');
+      if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
       }
     }
   }
@@ -64,7 +64,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (MUTATING.has(method)) {
     const tok = csrfToken();
     if (tok) {
-      headers.set('X-CSRF-Token', tok);
+      headers.set("X-CSRF-Token", tok);
     }
   }
 
@@ -73,7 +73,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     method,
     headers,
     body,
-    credentials: 'include',
+    credentials: "include",
   });
 
   if (res.status === 204) {
@@ -81,10 +81,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   }
 
   const text = await res.text();
-  const ct = res.headers.get('Content-Type') ?? '';
+  const ct = res.headers.get("Content-Type") ?? "";
 
   if (!res.ok) {
-    if (ct.includes('problem+json') || ct.includes('json')) {
+    if (ct.includes("problem+json") || ct.includes("json")) {
       try {
         throw new ApiError(JSON.parse(text) as Problem);
       } catch (e) {
@@ -93,14 +93,14 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
       }
     }
     throw new ApiError({
-      type: 'about:blank',
-      title: res.statusText || 'request failed',
+      type: "about:blank",
+      title: res.statusText || "request failed",
       status: res.status,
       detail: text.slice(0, 256),
     });
   }
 
-  if (ct.includes('json')) {
+  if (ct.includes("json")) {
     return JSON.parse(text) as T;
   }
   return text as unknown as T;
@@ -108,8 +108,8 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
-  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
-  put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

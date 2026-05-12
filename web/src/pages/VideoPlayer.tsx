@@ -4,10 +4,10 @@
 // manifest endpoint (`/api/videos/{id}/stream`). Story 11.3's full
 // implementation (HLS.js, sprite hover-scrubbing, sidecar subtitle
 // switching) ships later in Epic 11.
-import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
-import { useI18n } from '../lib/i18n';
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { api, ApiError } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 interface StreamManifest {
   manifest_url: string;
@@ -30,12 +30,17 @@ export function VideoPlayer() {
       .then(setManifest)
       .catch((e) => {
         if (e instanceof ApiError) setErr(e.problem.title);
-        else setErr(t('common.error'));
+        else setErr(t("common.error"));
       });
   }, [videoId, t]);
 
-  if (err) return <div className="mkt-alert" role="alert">{err}</div>;
-  if (!manifest) return <p>{t('common.loading')}</p>;
+  if (err)
+    return (
+      <div className="mkt-alert" role="alert">
+        {err}
+      </div>
+    );
+  if (!manifest) return <p>{t("common.loading")}</p>;
 
   return (
     <section className="mkt-player">
@@ -51,13 +56,7 @@ export function VideoPlayer() {
         preload="metadata"
       >
         {manifest.subtitles?.map((s) => (
-          <track
-            key={s.url}
-            kind="subtitles"
-            srcLang={s.language}
-            label={s.label}
-            src={s.url}
-          />
+          <track key={s.url} kind="subtitles" srcLang={s.language} label={s.label} src={s.url} />
         ))}
       </video>
     </section>

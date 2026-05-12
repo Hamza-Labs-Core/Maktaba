@@ -1,8 +1,8 @@
 // Story 11.2 — Video detail page.
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
-import { useI18n } from '../lib/i18n';
+import { useEffect, useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { api, ApiError } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 interface Video {
   id: string;
@@ -29,12 +29,17 @@ export function VideoDetail() {
       .then(setVideo)
       .catch((e) => {
         if (e instanceof ApiError) setErr(e.problem.title);
-        else setErr(t('common.error'));
+        else setErr(t("common.error"));
       });
   }, [videoId, t]);
 
-  if (err) return <div className="mkt-alert" role="alert">{err}</div>;
-  if (!video) return <p>{t('common.loading')}</p>;
+  if (err)
+    return (
+      <div className="mkt-alert" role="alert">
+        {err}
+      </div>
+    );
+  if (!video) return <p>{t("common.loading")}</p>;
 
   return (
     <section className="mkt-page mkt-video">
@@ -60,7 +65,9 @@ export function VideoDetail() {
         <section aria-labelledby="speakers-heading">
           <h2 id="speakers-heading">Speakers</h2>
           <ul className="mkt-speakers">
-            {video.speakers.map((sp) => <li key={sp.id}>{sp.name}</li>)}
+            {video.speakers.map((sp) => (
+              <li key={sp.id}>{sp.name}</li>
+            ))}
           </ul>
         </section>
       )}

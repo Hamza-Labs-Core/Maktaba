@@ -11,8 +11,8 @@
 //
 // `data-theme="dark"` swaps the CSS-variable values defined in
 // tokens.css. Components NEVER hard-code colors.
-const STORAGE_KEY = 'mkt:theme';
-export type Theme = 'light' | 'dark';
+const STORAGE_KEY = "mkt:theme";
+export type Theme = "light" | "dark";
 
 export function applyInitialTheme(): Theme {
   const t = resolveTheme();
@@ -21,14 +21,14 @@ export function applyInitialTheme(): Theme {
 }
 
 export function resolveTheme(): Theme {
-  if (typeof localStorage !== 'undefined') {
+  if (typeof localStorage !== "undefined") {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
+    if (stored === "light" || stored === "dark") return stored;
   }
-  if (typeof matchMedia !== 'undefined') {
-    if (matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  if (typeof matchMedia !== "undefined") {
+    if (matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
   }
-  return 'light';
+  return "light";
 }
 
 export function setTheme(t: Theme): void {

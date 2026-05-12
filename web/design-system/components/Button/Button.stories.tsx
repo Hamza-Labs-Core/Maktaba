@@ -21,7 +21,9 @@ type Story = StoryObj<typeof Button>;
 export const Primary: Story = { args: { variant: "primary", size: "md" } };
 export const Secondary: Story = { args: { variant: "secondary", size: "md" } };
 export const Ghost: Story = { args: { variant: "ghost", size: "md" } };
-export const Destructive: Story = { args: { variant: "destructive", size: "md", children: "Delete" } };
+export const Destructive: Story = {
+  args: { variant: "destructive", size: "md", children: "Delete" },
+};
 export const Link: Story = { args: { variant: "link", size: "md", children: "Read more" } };
 
 export const Small: Story = { args: { variant: "primary", size: "sm" } };
@@ -29,7 +31,9 @@ export const Large: Story = { args: { variant: "primary", size: "lg" } };
 
 export const Loading: Story = {
   args: { variant: "primary", loading: true, children: "Save" },
-  parameters: { docs: { description: { story: "Loading state preserves label width and disables click." } } },
+  parameters: {
+    docs: { description: { story: "Loading state preserves label width and disables click." } },
+  },
 };
 
 export const Disabled: Story = { args: { variant: "primary", disabled: true } };

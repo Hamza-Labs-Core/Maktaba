@@ -8,10 +8,7 @@
     "tokenGroup": {
       "type": "object",
       "additionalProperties": {
-        "anyOf": [
-          { "$ref": "#/$defs/leafToken" },
-          { "$ref": "#/$defs/tokenGroup" }
-        ]
+        "anyOf": [{ "$ref": "#/$defs/leafToken" }, { "$ref": "#/$defs/tokenGroup" }]
       }
     },
     "leafToken": {

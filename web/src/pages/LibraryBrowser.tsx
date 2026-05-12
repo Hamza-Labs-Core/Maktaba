@@ -4,13 +4,13 @@
 // scaffolds the layout, sort/filter controls, and empty/loading
 // states. Story-specific work (poster sprite, virtualisation, infinite
 // scroll) lands in later iterations of Epic 11.
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
-import { useI18n } from '../lib/i18n';
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { api, ApiError } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
-type View = 'grid' | 'list';
-type Sort = 'recent' | 'title' | 'duration';
+type View = "grid" | "list";
+type Sort = "recent" | "title" | "duration";
 
 interface Video {
   id: string;
@@ -28,8 +28,8 @@ interface VideoListResponse {
 export function LibraryBrowser() {
   const { libraryId } = useParams();
   const { t } = useI18n();
-  const [view, setView] = useState<View>('grid');
-  const [sort, setSort] = useState<Sort>('recent');
+  const [view, setView] = useState<View>("grid");
+  const [sort, setSort] = useState<Sort>("recent");
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -37,14 +37,14 @@ export function LibraryBrowser() {
     setVideos(null);
     setErr(null);
     const qs = new URLSearchParams();
-    qs.set('sort', sort);
-    if (libraryId) qs.set('library_id', libraryId);
+    qs.set("sort", sort);
+    if (libraryId) qs.set("library_id", libraryId);
     api
       .get<VideoListResponse>(`/api/videos?${qs.toString()}`)
       .then((res) => setVideos(res.items ?? []))
       .catch((e) => {
         if (e instanceof ApiError) setErr(e.problem.title);
-        else setErr(t('common.error'));
+        else setErr(t("common.error"));
         setVideos([]);
       });
   }, [libraryId, sort, t]);
@@ -52,13 +52,9 @@ export function LibraryBrowser() {
   return (
     <section className="mkt-page mkt-library">
       <header className="mkt-page__header">
-        <h1>{t('nav.library')}</h1>
+        <h1>{t("nav.library")}</h1>
         <div className="mkt-toolbar" role="toolbar">
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as Sort)}
-            aria-label="Sort"
-          >
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
             <option value="recent">Recent</option>
             <option value="title">Title</option>
             <option value="duration">Duration</option>
@@ -67,29 +63,33 @@ export function LibraryBrowser() {
             <button
               type="button"
               role="radio"
-              aria-checked={view === 'grid'}
-              onClick={() => setView('grid')}
+              aria-checked={view === "grid"}
+              onClick={() => setView("grid")}
             >
               Grid
             </button>
             <button
               type="button"
               role="radio"
-              aria-checked={view === 'list'}
-              onClick={() => setView('list')}
+              aria-checked={view === "list"}
+              onClick={() => setView("list")}
             >
               List
             </button>
           </div>
         </div>
       </header>
-      {videos === null && <p>{t('common.loading')}</p>}
-      {err && <div className="mkt-alert" role="alert">{err}</div>}
+      {videos === null && <p>{t("common.loading")}</p>}
+      {err && (
+        <div className="mkt-alert" role="alert">
+          {err}
+        </div>
+      )}
       {videos !== null && videos.length === 0 && !err && (
-        <p className="mkt-empty">{t('common.empty')}</p>
+        <p className="mkt-empty">{t("common.empty")}</p>
       )}
       {videos !== null && videos.length > 0 && (
-        <ul className={view === 'grid' ? 'mkt-grid' : 'mkt-list'}>
+        <ul className={view === "grid" ? "mkt-grid" : "mkt-list"}>
           {videos.map((v) => (
             <li key={v.id} className="mkt-card">
               <Link to={`/videos/${v.id}`}>
@@ -99,7 +99,7 @@ export function LibraryBrowser() {
                   aria-hidden
                 />
                 <div className="mkt-card__title">{v.title}</div>
-                {typeof v.duration_sec === 'number' && (
+                {typeof v.duration_sec === "number" && (
                   <div className="mkt-card__meta">{formatDuration(v.duration_sec)}</div>
                 )}
               </Link>
@@ -115,7 +115,7 @@ function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
-  const mm = m.toString().padStart(2, '0');
-  const ss = s.toString().padStart(2, '0');
+  const mm = m.toString().padStart(2, "0");
+  const ss = s.toString().padStart(2, "0");
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }

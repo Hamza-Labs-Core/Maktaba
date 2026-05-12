@@ -1,14 +1,14 @@
 {
   "color": {
     "semantic": {
-      "bg":     { "value": "#000000" },
-      "fg":     { "value": "#FFFFFF" },
-      "muted":  { "value": "#D4D4D8" },
+      "bg": { "value": "#000000" },
+      "fg": { "value": "#FFFFFF" },
+      "muted": { "value": "#D4D4D8" },
       "subtle": { "value": "#27272A" },
       "accent": { "value": "#7CC9FF" },
-      "error":  { "value": "#FF6B6B" },
-      "success":{ "value": "#7CFFA0" },
-      "warn":   { "value": "#FFD166" }
+      "error": { "value": "#FF6B6B" },
+      "success": { "value": "#7CFFA0" },
+      "warn": { "value": "#FFD166" }
     }
   }
 }

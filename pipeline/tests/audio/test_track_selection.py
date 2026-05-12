@@ -13,7 +13,7 @@ def _track(
     title: str | None = None,
     is_default: bool = False,
     channels: int | None = 2,
-    disposition: dict | None = None,
+    disposition: dict[str, object] | None = None,
 ) -> AudioTrack:
     return AudioTrack(
         index=index,

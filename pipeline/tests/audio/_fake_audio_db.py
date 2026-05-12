@@ -151,7 +151,10 @@ class FakeAudioDB:
     async def fetchrow(self, sql: str, *args: Any) -> _Row | None:
         s = " ".join(sql.split())
         async with self._lock():
-            return self._dispatch(s, args, many=False)
+            result = self._dispatch(s, args, many=False)
+        if result is None or isinstance(result, _Row):
+            return result
+        return None
 
     async def fetch(self, sql: str, *args: Any) -> list[_Row]:
         s = " ".join(sql.split())
@@ -252,11 +255,11 @@ class FakeAudioDB:
         # enqueue() — INSERT pending row
         if s.startswith("INSERT INTO processing_jobs"):
             video_id, stage, priority, payload, max_attempts = args
-            for row in self.processing_jobs.values():
+            for pj in self.processing_jobs.values():
                 if (
-                    row.video_id == video_id
-                    and row.stage == stage
-                    and row.state in {"pending", "claimed", "running", "resuming", "paused"}
+                    pj.video_id == video_id
+                    and pj.stage == stage
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
                 ):
                     return None  # ON CONFLICT DO NOTHING
             new_id = self._job_next_id
@@ -273,13 +276,13 @@ class FakeAudioDB:
         # enqueue() — fallback live SELECT
         if s.startswith("SELECT id FROM processing_jobs"):
             video_id, stage = args
-            for row in self.processing_jobs.values():
+            for pj in self.processing_jobs.values():
                 if (
-                    row.video_id == video_id
-                    and row.stage == stage
-                    and row.state in {"pending", "claimed", "running", "resuming", "paused"}
+                    pj.video_id == video_id
+                    and pj.stage == stage
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
                 ):
-                    return _Row({"id": row.id})
+                    return _Row({"id": pj.id})
             return None
 
         # commit_segment — Postgres function call
@@ -288,13 +291,13 @@ class FakeAudioDB:
 
         # commit_segment — SQLite path: SELECT prev end + factor
         if s.startswith("SELECT last_segment_end_sec, COALESCE(realtime_factor"):
-            row = self.processing_jobs.get(int(args[0]))
-            if row is None:
+            job = self.processing_jobs.get(int(args[0]))
+            if job is None:
                 return None
             return _Row(
                 {
-                    "last_segment_end_sec": row.last_segment_end_sec,
-                    "realtime_factor": row.realtime_factor or 0,
+                    "last_segment_end_sec": job.last_segment_end_sec,
+                    "realtime_factor": job.realtime_factor or 0,
                 }
             )
 

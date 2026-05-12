@@ -12,8 +12,8 @@ from ..audio._fake_audio_db import FakeAudioDB, _ProcessingJobRow
 
 
 def _seed_job(db: FakeAudioDB, *, total_duration: float = 600.0) -> int:
-    job_id = db._job_next_id  # type: ignore[attr-defined]
-    db._job_next_id += 1  # type: ignore[attr-defined]
+    job_id = db._job_next_id
+    db._job_next_id += 1
     db.processing_jobs[job_id] = _ProcessingJobRow(
         id=job_id,
         video_id=uuid4(),
@@ -86,7 +86,8 @@ def test_sqlite_commit_emits_segments_committed_notify() -> None:
         )
         # The bus delivers JSON strings; the callers parse them.
         text = await asyncio.wait_for(queue.get(), timeout=1.0)
-        return _json.loads(text)
+        result: dict[str, object] = _json.loads(text)
+        return result
 
     payload = asyncio.run(_drive())
     assert payload["seq"] == 0

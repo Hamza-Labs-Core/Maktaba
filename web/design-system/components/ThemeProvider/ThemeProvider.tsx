@@ -30,9 +30,7 @@ export function ThemeProvider({ theme = "system", children }: ThemeProviderProps
     }
   }, [theme]);
   return (
-    <ThemeContext.Provider value={{ theme, inProvider: true }}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, inProvider: true }}>{children}</ThemeContext.Provider>
   );
 }
 
