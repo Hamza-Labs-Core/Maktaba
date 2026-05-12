@@ -291,8 +291,12 @@ test-e2e:  ## E2E tier (Story 20.1, Epic 20.5). Assumes the compose stack is up.
 test-e2e-inner:
 	@# pytest exits 5 when no tests match the marker — that's the
 	@# normal state until Story 20.5 lands real e2e tests.
-	@cd $(PIPELINE_DIR) && uv run pytest -m e2e; rc=$$?; \
-		[ $$rc -eq 0 ] || [ $$rc -eq 5 ] || exit $$rc
+	@# Same `|| { ... }` form as test-integration-inner — required
+	@# because .SHELLFLAGS has `-e`, which kills the recipe on
+	@# pytest's non-zero exit before the rc check runs.
+	@cd $(PIPELINE_DIR) && uv run pytest -m e2e || { \
+		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
+	}
 
 # ---------------------------------------------------------------------------
 # Perf-CI (gate 5; Story 20.1 perf-ci tier) — reduced perf suite.
