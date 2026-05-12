@@ -196,7 +196,32 @@ func appendOnlyCheck(baseRef, dir string) ([]violation, error) {
 		switch status[0] {
 		case 'A':
 			// Added is fine.
-		case 'M', 'D', 'R', 'C':
+		case 'M':
+			// Modifications are usually a violation, except when the
+			// only diff is inside comments (prose, goose annotations
+			// stay verbatim). Comment-only edits don't change the SQL
+			// goose runs, so they're safe under the append-only rule.
+			same, err := sameAfterStrippingComments(baseRef, path)
+			if err != nil {
+				// If the comparison itself fails, fall back to strict
+				// behaviour so we don't silently allow real diffs.
+				violations = append(violations, violation{
+					File:    path,
+					Rule:    "append-only",
+					Message: fmt.Sprintf("file changed (status=M) since %s; couldn't verify comment-only diff (%v) — migrations are append-only", baseRef, err),
+				})
+				continue
+			}
+			if same {
+				// Comment-only edit; allow.
+				continue
+			}
+			violations = append(violations, violation{
+				File:    path,
+				Rule:    "append-only",
+				Message: fmt.Sprintf("file changed (status=M) since %s; migrations are append-only — add a follow-up slot instead of editing history", baseRef),
+			})
+		case 'D', 'R', 'C':
 			violations = append(violations, violation{
 				File:    path,
 				Rule:    "append-only",
@@ -205,6 +230,50 @@ func appendOnlyCheck(baseRef, dir string) ([]violation, error) {
 		}
 	}
 	return violations, nil
+}
+
+// sameAfterStrippingComments returns true when the path's content at
+// baseRef matches the content at HEAD with all `--`-prefixed comment
+// lines stripped. Lets the append-only rule allow comment-only edits
+// (prose tweaks, reworded headers) while still catching real SQL
+// changes after the migration has been applied to production DBs.
+//
+// Both versions come from `git show <ref>:<path>` so the comparison
+// doesn't depend on the linter's cwd (the Makefile runs it from
+// `tools/migration-lint/`, but git diff paths are repo-relative).
+func sameAfterStrippingComments(baseRef, path string) (bool, error) {
+	baseBody, err := gitShow(baseRef, path)
+	if err != nil {
+		return false, err
+	}
+	currentBody, err := gitShow("HEAD", path)
+	if err != nil {
+		return false, err
+	}
+	return normalizeForComparison(baseBody) == normalizeForComparison(currentBody), nil
+}
+
+// normalizeForComparison strips comments and collapses whitespace so a
+// comment-only edit (which `stripComments` reduces to a different
+// number of blank lines than the base) compares equal to the base.
+func normalizeForComparison(body []byte) string {
+	stripped := stripComments(body)
+	fields := strings.Fields(string(stripped))
+	return strings.Join(fields, " ")
+}
+
+func gitShow(ref, path string) ([]byte, error) {
+	cmd := exec.Command("git", "show", ref+":"+path)
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("git show %s:%s failed: %s",
+				ref, path, strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("git show %s:%s: %w", ref, path, err)
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
