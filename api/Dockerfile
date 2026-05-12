@@ -32,9 +32,16 @@ ENV CGO_ENABLED=0 \
     LANG=C.UTF-8
 
 # Cache deps separately from sources so an unrelated source edit does
-# not invalidate the module-download layer.
+# not invalidate the module-download layer. api/go.mod has `replace`
+# directives that point at ../shared/*/go modules; copy each shared
+# module's go.mod (only) so `go mod download` can resolve the
+# replace targets without pulling in the full shared/ source tree.
 COPY api/go.mod api/go.sum ./api/
 COPY tools/healthcheck/go.mod ./tools/healthcheck/
+COPY shared/health/go/go.mod  ./shared/health/go/
+COPY shared/log/go/go.mod     ./shared/log/go/
+COPY shared/metrics/go/go.mod ./shared/metrics/go/
+COPY shared/tracing/go/go.mod ./shared/tracing/go/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd api && go mod download

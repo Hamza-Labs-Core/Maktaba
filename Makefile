@@ -354,7 +354,7 @@ build-tokens:  ## Story 17.1 — generate CSS/TS/Swift/Kotlin/JSON outputs from 
 
 .PHONY: test-tokens
 test-tokens:  ## Story 17.1 — assert the design-tokens build pipeline is green.
-	@node $(WEB_DIR)/design-system/build/build-tokens.test.mjs
+	@node $(WEB_DIR)/design-system/build/verify-tokens.mjs
 
 .PHONY: build-all
 build-all:  ## Cross-compile Go binaries for every supported $(CROSS_PLATFORMS).
