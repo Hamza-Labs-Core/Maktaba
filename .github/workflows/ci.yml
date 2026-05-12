@@ -39,12 +39,24 @@ jobs:
         id: filter
         with:
           filters: |
+            # dorny/paths-filter's default quantifier is `any:` — the filter
+            # is true if at least one changed file matches at least one
+            # pattern. In that mode, `!Makefile` and `!.github/**` were
+            # being treated as standalone positive-by-complement predicates
+            # ("match anything that is NOT Makefile / NOT in .github/"),
+            # so nearly every non-docs file matched the filter and the
+            # heavy gates skipped.
+            #
+            # Switch to `every:` so the predicate is "every changed file is
+            # docs," and use brace expansion to express the docs-OR.
+            # Inside `every:`, negation patterns are exclusions in the
+            # intuitive sense — a file matches only if it (a) matches the
+            # positive pattern AND (b) doesn't match any negation pattern.
             docs_only:
-              - 'specs/**'
-              - 'docs/**'
-              - '**/*.md'
-              - '!Makefile'
-              - '!.github/**'
+              - every:
+                  - '{specs/**,docs/**,**/*.md}'
+                  - '!.github/**'
+                  - '!Makefile'
 
   lint:
     needs: [changes]
