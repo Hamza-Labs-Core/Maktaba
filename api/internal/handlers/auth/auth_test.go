@@ -9,9 +9,9 @@ import (
 
 func TestIsNativeClient(t *testing.T) {
 	cases := []struct {
-		name    string
-		hdr     http.Header
-		want    bool
+		name string
+		hdr  http.Header
+		want bool
 	}{
 		{"web (no headers)", http.Header{}, false},
 		{"client header", http.Header{HeaderClient: []string{"native"}}, true},

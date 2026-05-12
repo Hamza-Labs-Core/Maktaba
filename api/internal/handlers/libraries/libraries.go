@@ -288,7 +288,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx begin"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var cur Library
 	var rootsArr stringArray

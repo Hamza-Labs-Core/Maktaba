@@ -108,8 +108,8 @@ func (a *Allocator) QueueLength() int {
 func (a *Allocator) Decide(req Request) (Decision, string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	max := a.cfg.Effective()
-	if a.used < max {
+	limit := a.cfg.Effective()
+	if a.used < limit {
 		holdID := newHoldID()
 		a.holds[holdID] = struct{}{}
 		a.used++

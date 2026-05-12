@@ -84,7 +84,7 @@ func (c *JWKSCache) Lookup(kid string) *rsa.PublicKey {
 	k := c.keys[kid]
 	c.keysMu.RUnlock()
 	if k == nil {
-		go c.tryRefresh(context.Background())
+		go func() { _ = c.tryRefresh(context.Background()) }()
 	}
 	return k
 }

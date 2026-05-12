@@ -99,7 +99,7 @@ func New(deps Deps) http.Handler {
 		if deps.Chapters != nil {
 			ch := &handlers.ChapterHandler{
 				Reader: deps.Chapters,
-				Resolve: func(ctx context.Context, sid string) (string, error) {
+				Resolve: func(ctx context.Context, _ string) (string, error) {
 					return videoIDForSession(ctx, deps.Sessions)
 				},
 			}

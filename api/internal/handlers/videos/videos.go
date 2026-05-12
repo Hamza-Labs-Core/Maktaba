@@ -565,7 +565,7 @@ func (h *Handler) replaceTags(ctx context.Context, videoID string, tags []string
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM video_tags WHERE video_id = $1`, videoID); err != nil {
 		return err
 	}

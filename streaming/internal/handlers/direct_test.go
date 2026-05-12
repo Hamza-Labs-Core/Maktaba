@@ -306,4 +306,4 @@ func TestParseRange(t *testing.T) {
 	}
 }
 
-func _useCtx() { _ = context.Background() }
+var _ = context.Background

@@ -36,10 +36,10 @@ func (h *Handler) Mount(r chi.Router) {
 
 // Response is the public entitlement payload.
 type Response struct {
-	Tier      subscriptions.Tier              `json:"tier"`
-	LicenseID string                          `json:"license_id,omitempty"`
-	Seats     int                             `json:"seats,omitempty"`
-	Features  map[subscriptions.Feature]bool  `json:"features"`
+	Tier      subscriptions.Tier             `json:"tier"`
+	LicenseID string                         `json:"license_id,omitempty"`
+	Seats     int                            `json:"seats,omitempty"`
+	Features  map[subscriptions.Feature]bool `json:"features"`
 }
 
 // GetEntitlements is publicly readable (any authenticated principal).

@@ -20,7 +20,7 @@ import (
 func AssertNoTmpLeaks(out io.Writer, pattern string, exit int) int {
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		fmt.Fprintf(out, "tmp-leak sweep: glob %q failed: %v\n", pattern, err)
+		_, _ = fmt.Fprintf(out, "tmp-leak sweep: glob %q failed: %v\n", pattern, err)
 		if exit == 0 {
 			return 1
 		}
@@ -29,15 +29,15 @@ func AssertNoTmpLeaks(out io.Writer, pattern string, exit int) int {
 	if len(matches) == 0 {
 		return exit
 	}
-	fmt.Fprintf(out, "tmp-leak sweep: %d entries left under %q (Story 20.1 EC3):\n",
+	_, _ = fmt.Fprintf(out, "tmp-leak sweep: %d entries left under %q (Story 20.1 EC3):\n",
 		len(matches), pattern)
 	for _, m := range matches {
 		info, statErr := os.Stat(m)
 		if statErr != nil {
-			fmt.Fprintf(out, "  %s (stat err: %v)\n", m, statErr)
+			_, _ = fmt.Fprintf(out, "  %s (stat err: %v)\n", m, statErr)
 			continue
 		}
-		fmt.Fprintf(out, "  %s (mode=%s, size=%d)\n", m, info.Mode(), info.Size())
+		_, _ = fmt.Fprintf(out, "  %s (mode=%s, size=%d)\n", m, info.Mode(), info.Size())
 	}
 	if exit == 0 {
 		return 1

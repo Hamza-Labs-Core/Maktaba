@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 var (
@@ -28,8 +29,8 @@ func Reg() *prometheus.Registry {
 		// Wire in process / Go runtime collectors so /metrics exposes
 		// rss / open fds / goroutines without each service having to
 		// remember.
-		reg.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-		reg.MustRegister(prometheus.NewGoCollector())
+		reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+		reg.MustRegister(collectors.NewGoCollector())
 	})
 	return reg
 }

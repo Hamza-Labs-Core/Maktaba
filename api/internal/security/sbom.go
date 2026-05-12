@@ -29,9 +29,9 @@ type SBOM struct {
 
 // SBOMMeta is the metadata block.
 type SBOMMeta struct {
-	Timestamp string         `json:"timestamp"`
-	Tools     []SBOMTool     `json:"tools"`
-	Component *Component     `json:"component,omitempty"`
+	Timestamp string     `json:"timestamp"`
+	Tools     []SBOMTool `json:"tools"`
+	Component *Component `json:"component,omitempty"`
 }
 
 // SBOMTool identifies the SBOM generator.

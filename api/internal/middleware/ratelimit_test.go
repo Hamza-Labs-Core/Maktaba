@@ -29,7 +29,7 @@ func TestPerIPLimitBlocks(t *testing.T) {
 }
 
 func TestRetryAfterPresent(t *testing.T) {
-	h := PerIP(60)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	h := PerIP(60)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 
 	// Exhaust the bucket then check the next response carries Retry-After.
 	for i := 0; i < 80; i++ {

@@ -16,15 +16,15 @@ import (
 //   - Single global mutex; the hit-rate target leaves headroom for it.
 //   - No background reaper; entries past TTL expire on next access.
 type Cache[T any] struct {
-	mu       sync.Mutex
-	name     string
-	max      int
-	ttl      time.Duration
-	entries  map[string]*cacheEntry[T]
-	hits     uint64
-	misses   uint64
-	evicts   uint64
-	now      func() time.Time
+	mu      sync.Mutex
+	name    string
+	max     int
+	ttl     time.Duration
+	entries map[string]*cacheEntry[T]
+	hits    uint64
+	misses  uint64
+	evicts  uint64
+	now     func() time.Time
 }
 
 type cacheEntry[T any] struct {

@@ -140,7 +140,7 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(out, "test-budget: scan error: %v\n", err)
+		_, _ = fmt.Fprintf(out, "test-budget: scan error: %v\n", err)
 		return 2
 	}
 
@@ -160,25 +160,25 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(out, "test-budget [%s] %d packages, total %s, slowest %s\n",
+	_, _ = fmt.Fprintf(out, "test-budget [%s] %d packages, total %s, slowest %s\n",
 		cfg.tier, len(stats), total.Round(time.Millisecond),
 		describeSlowest(stats))
 
 	rc := 0
 	if len(overBudget) > 0 {
 		rc = 1
-		fmt.Fprintf(out, "::error::test-budget [%s] %d package(s) exceed per-package budget %s:\n",
+		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] %d package(s) exceed per-package budget %s:\n",
 			cfg.tier, len(overBudget), cfg.perPackageBudget)
 		for _, ps := range overBudget {
-			fmt.Fprintf(out, "  %s: %s\n", ps.pkg, ps.elapsed.Round(time.Millisecond))
+			_, _ = fmt.Fprintf(out, "  %s: %s\n", ps.pkg, ps.elapsed.Round(time.Millisecond))
 		}
 	}
 	if len(hardBreaches) > 0 {
 		rc = 1
-		fmt.Fprintf(out, "::error::test-budget [%s] %d hard soft-cap breach(es):\n",
+		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] %d hard soft-cap breach(es):\n",
 			cfg.tier, len(hardBreaches))
 		for _, b := range hardBreaches {
-			fmt.Fprintf(out, "  %s\n", b)
+			_, _ = fmt.Fprintf(out, "  %s\n", b)
 		}
 	}
 	return rc
@@ -195,11 +195,11 @@ func describeSlowest(stats []*pkgStat) string {
 
 func runWall(cfg *config, argv []string, out io.Writer) int {
 	if cfg.budget <= 0 {
-		fmt.Fprintln(out, "test-budget: --budget is required in wall mode")
+		_, _ = fmt.Fprintln(out, "test-budget: --budget is required in wall mode")
 		return 2
 	}
 	if len(argv) == 0 {
-		fmt.Fprintln(out, "test-budget: wall mode needs a command after --")
+		_, _ = fmt.Fprintln(out, "test-budget: wall mode needs a command after --")
 		return 2
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
@@ -211,7 +211,7 @@ func runWall(cfg *config, argv []string, out io.Writer) int {
 	err := cmd.Run()
 	elapsed := time.Since(start)
 
-	fmt.Fprintf(out, "test-budget [%s] wall=%s budget=%s\n",
+	_, _ = fmt.Fprintf(out, "test-budget [%s] wall=%s budget=%s\n",
 		cfg.tier, elapsed.Round(time.Millisecond), cfg.budget)
 
 	rc := 0
@@ -222,11 +222,11 @@ func runWall(cfg *config, argv []string, out io.Writer) int {
 		} else {
 			rc = 1
 		}
-		fmt.Fprintf(out, "test-budget [%s] command failed: %v (exit=%d)\n",
+		_, _ = fmt.Fprintf(out, "test-budget [%s] command failed: %v (exit=%d)\n",
 			cfg.tier, err, rc)
 	}
 	if elapsed > cfg.budget {
-		fmt.Fprintf(out, "::error::test-budget [%s] wall %s > budget %s\n",
+		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] wall %s > budget %s\n",
 			cfg.tier, elapsed.Round(time.Millisecond), cfg.budget)
 		if rc == 0 {
 			rc = 1

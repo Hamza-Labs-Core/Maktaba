@@ -93,10 +93,10 @@ type Token struct {
 // IssueInput is the public shape for Issue.
 type IssueInput struct {
 	UserID     string
-	FamilyID   string            // empty ⇒ new family (fresh login)
-	DeviceID   string            // empty ⇒ no device link
-	ClientMeta map[string]any    // attached for audit
-	TTL        time.Duration     // 0 ⇒ DefaultTTL
+	FamilyID   string         // empty ⇒ new family (fresh login)
+	DeviceID   string         // empty ⇒ no device link
+	ClientMeta map[string]any // attached for audit
+	TTL        time.Duration  // 0 ⇒ DefaultTTL
 }
 
 // Store wraps SQL access for `refresh_tokens`.
