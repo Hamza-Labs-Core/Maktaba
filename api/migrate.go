@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -128,14 +129,72 @@ Flags:`)
 // runGooseUp wraps goose.UpContext after copying postgres-only files
 // to a clean staging directory: goose loads every *.sql in its dir,
 // and we want SQLite-parity siblings (foo.sqlite.sql) excluded from
-// the Postgres run.
+// the Postgres run. We also apply slot `0000_schema_version.sql` as
+// a bootstrap step outside goose because goose/v3 refuses to parse
+// version-0 migrations ("migration version must be greater than
+// zero"); see shared/db/migrations/MANIFEST.md for the rationale.
 func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
+	if err := bootstrapSchemaVersion(ctx, db, dir); err != nil {
+		return fmt.Errorf("bootstrap schema_version: %w", err)
+	}
 	stage, err := stagePostgresMigrations(dir)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stage)
 	return goose.UpContext(ctx, db, stage)
+}
+
+// bootstrapSchemaVersion applies the slot-0000 schema_version DDL
+// directly. It's idempotent (CREATE TABLE IF NOT EXISTS + ON CONFLICT
+// DO NOTHING) so re-running on a populated DB is a no-op.
+func bootstrapSchemaVersion(ctx context.Context, db *sql.DB, dir string) error {
+	path := filepath.Join(dir, "0000_schema_version.sql")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Migrations dir without slot 0000 is acceptable for tests
+			// that ship a stripped-down migration set.
+			return nil
+		}
+		return err
+	}
+	// Strip goose Up/Down directives — we apply the Up statements
+	// directly via the driver, no goose envelope needed.
+	sql := stripGooseDirectives(string(raw))
+	if sql == "" {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, sql); err != nil {
+		return err
+	}
+	return nil
+}
+
+// stripGooseDirectives removes the `-- +goose Up`, `-- +goose Down`,
+// and `-- +goose StatementBegin/StatementEnd` lines from a migration's
+// raw text, plus everything after the Down marker. The result is the
+// pure SQL that the Up section would have applied.
+func stripGooseDirectives(raw string) string {
+	const upMarker = "-- +goose Up"
+	const downMarker = "-- +goose Down"
+	out := raw
+	if i := strings.Index(out, downMarker); i >= 0 {
+		out = out[:i]
+	}
+	if i := strings.Index(out, upMarker); i >= 0 {
+		out = out[i+len(upMarker):]
+	}
+	lines := strings.Split(out, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "-- +goose StatementBegin" || trimmed == "-- +goose StatementEnd" {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 // stagePostgresMigrations creates a tmp dir holding only the
@@ -161,6 +220,11 @@ func stagePostgresMigrations(dir string) (string, error) {
 			continue
 		}
 		if hasSuffix(name, ".sqlite.sql") {
+			continue
+		}
+		// Slot 0000 is applied via bootstrapSchemaVersion before goose
+		// runs; goose/v3 refuses version-0 migrations.
+		if strings.HasPrefix(name, "0000_") {
 			continue
 		}
 		if err := copyFile(filepath.Join(dir, name), filepath.Join(stage, name)); err != nil {

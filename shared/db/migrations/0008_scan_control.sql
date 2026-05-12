@@ -24,8 +24,9 @@
 -- ``libraries_alive_idx`` partial index makes ``WHERE deleted_at IS
 -- NULL`` lookups O(1) at any library count.
 --
--- ``+goose NO TRANSACTION`` because ``CREATE INDEX CONCURRENTLY``
--- cannot run inside a Postgres transaction. Every statement uses
+-- The directive on line 1 disables goose's per-migration transaction
+-- wrapper because ``CREATE INDEX CONCURRENTLY`` cannot run inside a
+-- Postgres transaction. Every statement uses
 -- ``IF [NOT] EXISTS`` so a partially-applied migration can be re-run.
 --
 

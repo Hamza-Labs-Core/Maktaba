@@ -9,6 +9,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+# The design-system token builder ships as committed source.
+!web/design-system/build/
 develop-eggs/
 dist/
 downloads/

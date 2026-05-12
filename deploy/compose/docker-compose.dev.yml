@@ -90,6 +90,15 @@ services:
         condition: service_healthy
       chroma:
         condition: service_healthy
+      # Base file gates this on `api: service_healthy` so pipeline
+      # waits for migrations. In dev, api's healthcheck is disabled
+      # (the dev image doesn't bundle /usr/local/bin/healthcheck),
+      # so demote to service_started — pipeline still won't boot
+      # before api exists, but it stops waiting on a healthcheck
+      # that can never report green. See streaming for the same
+      # pattern (and issue #24 for the schema-race motivation).
+      api:
+        condition: service_started
     volumes:
       - ../../pipeline:/src/pipeline:cached
       - uv-cache:/root/.cache/uv

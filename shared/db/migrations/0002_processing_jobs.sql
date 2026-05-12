@@ -20,9 +20,10 @@
 -- 0001 is missing, this migration fails at apply time. Goose enforces
 -- the ordering for us.
 --
--- This file uses `+goose NO TRANSACTION` because Postgres `CREATE INDEX
--- CONCURRENTLY` cannot run inside a transaction (the project lint
--- requires CONCURRENTLY for every Postgres-targeted `CREATE INDEX`).
+-- This file disables goose's per-migration transaction wrapper (see
+-- the directive on line 2) because Postgres `CREATE INDEX CONCURRENTLY`
+-- cannot run inside a transaction (the project lint requires
+-- CONCURRENTLY for every Postgres-targeted `CREATE INDEX`).
 -- Every statement uses `IF [NOT] EXISTS` / `CREATE OR REPLACE` so a
 -- partially-applied migration can be re-run cleanly.
 --

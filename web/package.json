@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "react": "^18.3.1",

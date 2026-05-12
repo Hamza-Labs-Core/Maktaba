@@ -95,11 +95,15 @@ func TestMigrate_Slot0001Through0007_AppliesAndRollsBack(t *testing.T) {
 		assertIndexExists(t, db, idx)
 	}
 
-	// Slot 0001 ships content_hash UNIQUE (global). Slot 0003 (owned
-	// by plan-01-02) replaces this with UNIQUE(library_id,
-	// content_hash); we should NOT have that constraint yet.
-	assertConstraintExists(t, db, "videos", "videos_content_hash_key")
-	assertConstraintAbsent(t, db, "videos", "videos_library_id_content_hash_key")
+	// Slot 0001 ships content_hash UNIQUE (global); slot 0003 (owned
+	// by plan-01-02) drops that and adds UNIQUE (library_id,
+	// content_hash) as the `videos_library_content_hash_key` index
+	// (kept as an index rather than a table-constraint so the CREATE
+	// can use CONCURRENTLY — see migration's inline comment). After
+	// running through slot 7 we should see the new composite index and
+	// not the original global table-constraint.
+	assertConstraintAbsent(t, db, "videos", "videos_content_hash_key")
+	assertIndexExists(t, db, "videos_library_content_hash_key")
 
 	// --- Idempotency: re-run up. Goose should treat already-applied
 	// versions as no-ops; UpToContext returns nil with no DDL emitted.
@@ -167,9 +171,12 @@ func TestMigrate_Slot0001_VideosCascadeDeleteFromLibrary(t *testing.T) {
 	).Scan(&libID); err != nil {
 		t.Fatalf("insert library: %v", err)
 	}
+	// Slot 0003's `videos_content_hash_format_chk` CHECK constrains the
+	// hash to 64 lower-hex chars (sha256 shape); use a real sha256-
+	// shaped string rather than a short sentinel.
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime)
-		VALUES ($1, 'deadbeef', '/tmp/test/x.mkv', 'x.mkv', 12345, now())
+		VALUES ($1, 'deadbeef00000000000000000000000000000000000000000000000000000000', '/tmp/test/x.mkv', 'x.mkv', 12345, now())
 	`, libID)
 	if err != nil {
 		t.Fatalf("insert video: %v", err)

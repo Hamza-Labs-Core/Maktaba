@@ -367,11 +367,15 @@ def test_file_signature_changes_after_write(tmp_path: Path) -> None:
     p.write_bytes(b"hello")
     before = file_signature(p)
 
-    # Bump the mtime explicitly (write may produce the same mtime if
-    # the filesystem only records seconds and the rewrite is fast).
+    p.write_bytes(b"hello-x")  # size change
+
+    # Bump the mtime explicitly AFTER the write — write_bytes resets
+    # mtime to "now," and on fast/low-resolution filesystems "now"
+    # can collide with `before.mtime_ns`. Forcing an explicit +10 s
+    # post-write guarantees a distinct mtime regardless of clock
+    # resolution.
     new_mtime_ns = before.mtime_ns + 10_000_000_000  # +10 s in ns
     os.utime(p, ns=(new_mtime_ns, new_mtime_ns))
-    p.write_bytes(b"hello-x")  # also size change
 
     after = file_signature(p)
     assert before != after
