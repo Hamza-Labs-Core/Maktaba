@@ -256,8 +256,12 @@ test-integration-inner:
 	done
 	@# pytest exits 5 when no tests match the marker — that's the
 	@# normal state until Story 20.4 lands real integration tests.
-	@cd $(PIPELINE_DIR) && uv run pytest -m integration; rc=$$?; \
-		[ $$rc -eq 0 ] || [ $$rc -eq 5 ] || exit $$rc
+	@# The `|| { ... }` form is required because .SHELLFLAGS has
+	@# `-e`, which would otherwise kill the recipe on pytest's
+	@# non-zero exit before the rc check runs.
+	@cd $(PIPELINE_DIR) && uv run pytest -m integration || { \
+		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
+	}
 
 .PHONY: migrate
 migrate:  ## Apply database migrations against $$DATABASE_URL.
