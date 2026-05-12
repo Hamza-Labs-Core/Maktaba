@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from maktaba_pipeline.library_mgmt.dedup import (
@@ -23,7 +25,7 @@ def test_is_path_in_roots_handles_prefix_boundary() -> None:
 
 
 @pytest.mark.unit
-def test_decide_new_when_no_existing(tmp_path) -> None:
+def test_decide_new_when_no_existing(tmp_path: Path) -> None:
     f = tmp_path / "v.mp4"
     f.write_bytes(b"x")
     decision = decide(
@@ -38,7 +40,7 @@ def test_decide_new_when_no_existing(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_decide_moved_when_existing_path_gone(tmp_path) -> None:
+def test_decide_moved_when_existing_path_gone(tmp_path: Path) -> None:
     new = tmp_path / "v.mp4"
     new.write_bytes(b"x")
     existing = ExistingVideo(video_id="vid-1", path=str(tmp_path / "old.mp4"), library_id="lib-1")
@@ -55,7 +57,7 @@ def test_decide_moved_when_existing_path_gone(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_decide_duplicate_when_both_paths_exist(tmp_path) -> None:
+def test_decide_duplicate_when_both_paths_exist(tmp_path: Path) -> None:
     new = tmp_path / "v.mp4"
     new.write_bytes(b"x")
     existing = ExistingVideo(video_id="vid-1", path=str(tmp_path / "old.mp4"), library_id="lib-1")
@@ -71,7 +73,7 @@ def test_decide_duplicate_when_both_paths_exist(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_decide_rejects_path_outside_roots(tmp_path) -> None:
+def test_decide_rejects_path_outside_roots(tmp_path: Path) -> None:
     other = tmp_path / "outside.mp4"
     other.write_bytes(b"x")
     safe_root = tmp_path / "safe"
@@ -87,7 +89,7 @@ def test_decide_rejects_path_outside_roots(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_decide_requires_non_empty_hash(tmp_path) -> None:
+def test_decide_requires_non_empty_hash(tmp_path: Path) -> None:
     f = tmp_path / "v.mp4"
     f.write_bytes(b"x")
     with pytest.raises(ValueError):

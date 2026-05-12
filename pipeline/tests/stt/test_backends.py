@@ -8,6 +8,7 @@ these tests only exercise the orchestration scaffolding around them
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from maktaba_pipeline.stt.faster_whisper import FasterWhisperBackend
@@ -97,7 +98,7 @@ def test_openai_default_backoffs_match_ac() -> None:
     assert DEFAULT_BACKOFFS_SEC == (0.5, 1.0, 2.0, 4.0, 8.0)
 
 
-def test_openai_chunk_planner_returns_single_chunk_for_small_file(tmp_path) -> None:
+def test_openai_chunk_planner_returns_single_chunk_for_small_file(tmp_path: Path) -> None:
     p = tmp_path / "a.wav"
     p.write_bytes(b"\x00" * 1024)
     chunks = compute_chunk_offsets(str(p), chunk_bytes=API_CHUNK_BYTES)
@@ -105,7 +106,7 @@ def test_openai_chunk_planner_returns_single_chunk_for_small_file(tmp_path) -> N
     assert chunks[0].offset_sec == 0.0
 
 
-def test_openai_chunk_planner_splits_large_file(tmp_path) -> None:
+def test_openai_chunk_planner_splits_large_file(tmp_path: Path) -> None:
     p = tmp_path / "big.wav"
     p.write_bytes(b"\x00" * 200_000)
     chunks = compute_chunk_offsets(str(p), chunk_bytes=64_000)

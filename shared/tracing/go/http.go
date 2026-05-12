@@ -43,11 +43,11 @@ func withTrace(ctx context.Context, t Trace) context.Context {
 // and the noop ids stop appearing on the wire.
 func HTTP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceID, spanID := parseTraceparent(r.Header.Get(TraceParentHeader))
+		traceID, _ := parseTraceparent(r.Header.Get(TraceParentHeader))
 		if traceID == "" {
 			traceID = NewTraceID()
 		}
-		spanID = NewSpanID()
+		spanID := NewSpanID()
 		t := Trace{TraceID: traceID, SpanID: spanID}
 		ctx := withTrace(r.Context(), t)
 		w.Header().Set(TraceParentHeader, formatTraceparent(traceID, spanID))

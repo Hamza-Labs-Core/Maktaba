@@ -21,7 +21,6 @@
 package graphql
 
 import (
-	_ "embed"
 	"encoding/json"
 	"net/http"
 )

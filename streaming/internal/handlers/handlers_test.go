@@ -380,8 +380,10 @@ func TestStaticHandler_PosterMissing404(t *testing.T) {
 	}
 }
 
-// helper to satisfy the auth middleware injector when ClaimsFromContext is needed
-func _useAuth() context.Context { return auth.ContextWithClaims(context.Background(), &auth.Claims{}) }
+// Quiet unused-import warning for auth — the package is referenced via
+// ContextWithClaims in test setups but the helper that wrapped it was
+// flagged by `unused`. Use a blank var to keep the import alive.
+var _ = auth.ContextWithClaims
 
 // Quiet unused-import warnings for io, errors used by SrtToVtt edge-case tests
 var (

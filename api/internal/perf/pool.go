@@ -11,11 +11,11 @@ import (
 // PoolConfig captures the canonical *sql.DB pool sizing. Story 18.7
 // owns the numbers; ApplyPool is called once at boot.
 type PoolConfig struct {
-	MaxOpen         int           // hard cap on concurrent connections
-	MaxIdle         int           // idle conns kept alive
-	MaxIdleTime     time.Duration // recycle after idle this long
-	MaxLifetime     time.Duration // recycle after this long regardless
-	ConnTimeout     time.Duration // ping deadline
+	MaxOpen     int           // hard cap on concurrent connections
+	MaxIdle     int           // idle conns kept alive
+	MaxIdleTime time.Duration // recycle after idle this long
+	MaxLifetime time.Duration // recycle after this long regardless
+	ConnTimeout time.Duration // ping deadline
 }
 
 // DefaultPoolConfig is what main.go uses when no env override is set.

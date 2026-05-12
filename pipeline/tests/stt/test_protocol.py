@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from maktaba_pipeline.stt.protocol import (
@@ -21,7 +22,7 @@ class _FakeBackend:
     supports_word_timestamps = True
 
     async def transcribe(self, audio, language, hints):  # type: ignore[no-untyped-def]
-        async def _gen():
+        async def _gen() -> AsyncIterator[Segment]:
             yield Segment(seq=0, start_sec=0.0, end_sec=1.0, text="hello")
 
         return _gen()

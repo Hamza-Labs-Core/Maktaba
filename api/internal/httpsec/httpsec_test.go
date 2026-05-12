@@ -12,7 +12,7 @@ func TestHeaders_StampsAllConfiguredHeaders(t *testing.T) {
 	cfg := DefaultHeaders()
 	cfg.HSTS = HSTSOneYear
 	mw := Headers(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -38,7 +38,7 @@ func TestHeaders_StampsAllConfiguredHeaders(t *testing.T) {
 func TestHeaders_HSTSOmittedWhenEmpty(t *testing.T) {
 	cfg := DefaultHeaders() // HSTS empty
 	mw := Headers(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -52,7 +52,7 @@ func TestCORS_AllowedOriginGetsHeaders(t *testing.T) {
 	cfg := DefaultCORS()
 	cfg.AllowedOrigins = []string{"https://app.maktaba.local"}
 	mw := CORS(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -71,7 +71,7 @@ func TestCORS_UnknownOriginNoHeaders(t *testing.T) {
 	cfg := DefaultCORS()
 	cfg.AllowedOrigins = []string{"https://app.maktaba.local"}
 	mw := CORS(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -88,7 +88,7 @@ func TestCORS_PreflightAllowedOrigin(t *testing.T) {
 	cfg.AllowedOrigins = []string{"https://x"}
 	cfg.MaxAge = 600
 	mw := CORS(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run for preflight")
 	}))
 	req := httptest.NewRequest("OPTIONS", "/", nil)
@@ -111,7 +111,7 @@ func TestCORS_PreflightUnknownOriginStill204NoHeaders(t *testing.T) {
 	cfg := DefaultCORS()
 	cfg.AllowedOrigins = []string{"https://x"}
 	mw := CORS(cfg)
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run for preflight")
 	}))
 	req := httptest.NewRequest("OPTIONS", "/", nil)

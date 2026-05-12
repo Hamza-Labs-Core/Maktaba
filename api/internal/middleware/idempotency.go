@@ -83,22 +83,22 @@ func Idempotency(store idempotency.Store) func(http.Handler) http.Handler {
 				return
 			}
 
-			cap := &captureWriter{ResponseWriter: w}
-			next.ServeHTTP(cap, r)
+			cw := &captureWriter{ResponseWriter: w}
+			next.ServeHTTP(cw, r)
 
 			// Don't cache 5xx — a transient internal error should not be
 			// burned into the replay store. 4xx other than 429 IS cached
 			// because the response is deterministic for that input.
-			if cap.status >= 500 || cap.status == http.StatusTooManyRequests {
+			if cw.status >= 500 || cw.status == http.StatusTooManyRequests {
 				return
 			}
 			rec := idempotency.Record{
 				Key:         key,
 				UserID:      user,
 				RequestHash: hash,
-				Status:      cap.status,
-				Body:        cap.body.Bytes(),
-				Headers:     headerMap(cap.Header()),
+				Status:      cw.status,
+				Body:        cw.body.Bytes(),
+				Headers:     headerMap(cw.Header()),
 			}
 			_ = store.Save(context.Background(), rec)
 		})

@@ -106,12 +106,6 @@ type exchangeRequest struct {
 	Code string `json:"code"`
 }
 
-// exchangeResponse is what the phone receives.
-type exchangeResponse struct {
-	UserID    string `json:"user_id"`
-	ExpiresAt time.Time
-}
-
 // Exchange consumes the ticket and returns the linked user id. The
 // caller is expected to follow up with POST /api/devices/register to
 // obtain a device-scoped access token.

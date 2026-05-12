@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +17,7 @@ from maktaba_pipeline.library_mgmt.roots import (
 
 
 @pytest.mark.unit
-def test_canonicalise_strips_trailing_slash(tmp_path) -> None:
+def test_canonicalise_strips_trailing_slash(tmp_path: Path) -> None:
     p = tmp_path / "media"
     p.mkdir()
     canon = canonicalise(str(p) + "/")
@@ -25,7 +26,7 @@ def test_canonicalise_strips_trailing_slash(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_canonicalise_normalises_dotdot(tmp_path) -> None:
+def test_canonicalise_normalises_dotdot(tmp_path: Path) -> None:
     a = tmp_path / "a"
     a.mkdir()
     spelled = str(a / ".." / "a")
@@ -33,7 +34,7 @@ def test_canonicalise_normalises_dotdot(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_canonicalise_resolves_symlink(tmp_path) -> None:
+def test_canonicalise_resolves_symlink(tmp_path: Path) -> None:
     real = tmp_path / "real"
     real.mkdir()
     link = tmp_path / "link"
@@ -79,7 +80,7 @@ def test_find_overlap_detects_cross_library_collision() -> None:
 
 
 @pytest.mark.unit
-def test_detect_runtime_overlap_picks_up_remount(tmp_path) -> None:
+def test_detect_runtime_overlap_picks_up_remount(tmp_path: Path) -> None:
     real = tmp_path / "shared"
     real.mkdir()
     a = tmp_path / "linkA"

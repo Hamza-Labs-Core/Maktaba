@@ -129,13 +129,13 @@ type Limiter struct {
 	tokens chan struct{}
 }
 
-// NewLimiter returns a Limiter with `cap` slots. cap <= 0 panics; the
+// NewLimiter returns a Limiter with `n` slots. n <= 0 panics; the
 // invariant is enforced at construction so call sites stay clean.
-func NewLimiter(cap int) *Limiter {
-	if cap <= 0 {
+func NewLimiter(n int) *Limiter {
+	if n <= 0 {
 		panic("scale: Limiter cap must be > 0")
 	}
-	return &Limiter{tokens: make(chan struct{}, cap)}
+	return &Limiter{tokens: make(chan struct{}, n)}
 }
 
 // Acquire takes a slot or returns ctx.Err() / ErrLimiterFull.

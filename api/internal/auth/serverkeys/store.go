@@ -109,9 +109,9 @@ type RotateOptions struct {
 // RotateResult reports the outcome of a Rotate call for the
 // caller's audit logging.
 type RotateResult struct {
-	OldKid          string
-	NewKid          string
-	OverlapSeconds  int
+	OldKid           string
+	NewKid           string
+	OverlapSeconds   int
 	OverlapExpiresAt time.Time
 }
 

@@ -11,6 +11,7 @@ from maktaba_pipeline.library_mgmt.sweep import (
     SweepReport,
     SweepRunner,
     SweepStore,
+    SweepWalker,
     _CatalogRow,  # noqa: PLC2701 — internal projection used by tests
 )
 
@@ -39,8 +40,8 @@ class _FakeStore(SweepStore):
         self.reports.append(report)
 
 
-def _make_walker(*entries: tuple[str, int, int]):
-    def walker(root: str) -> list[tuple[str, int, int]]:
+def _make_walker(*entries: tuple[str, int, int]) -> SweepWalker:
+    def walker(root: str) -> Iterable[tuple[str, int, int]]:
         return [e for e in entries if e[0].startswith(root)]
 
     return walker

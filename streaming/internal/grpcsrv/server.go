@@ -236,11 +236,11 @@ func manifestExt(f session.Format) string {
 }
 
 func ladderFor(row *probe.Row, req OpenSessionRequest) []ffmpeg.Rendition {
-	cap := req.MaxBitrateKbps
-	if cap == 0 {
-		cap = row.BitrateKbps
+	kbps := req.MaxBitrateKbps
+	if kbps == 0 {
+		kbps = row.BitrateKbps
 	}
-	return ffmpeg.DefaultLadder(cap)
+	return ffmpeg.DefaultLadder(kbps)
 }
 
 // CloseSession (AC-2) marks a session closed. Idempotent.
@@ -335,4 +335,4 @@ func getHostnameEnv() string {
 }
 
 // getenv is overridable for tests.
-var getenv = func(k string) string { return "" }
+var getenv = func(_ string) string { return "" }

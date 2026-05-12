@@ -2,18 +2,18 @@
 //
 // Wires the router, the i18n provider, and the auth-aware app shell.
 // Page-level components live under src/pages/.
-import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
-import { AppShell } from './components/AppShell';
-import { I18nProvider } from './lib/i18n';
-import { AuthProvider, RequireAuth } from './lib/auth';
-import { LibraryBrowser } from './pages/LibraryBrowser';
-import { VideoDetail } from './pages/VideoDetail';
-import { VideoPlayer } from './pages/VideoPlayer';
-import { Search } from './pages/Search';
-import { ProcessingQueue } from './pages/ProcessingQueue';
-import { Settings } from './pages/Settings';
-import { Login } from './pages/Login';
-import { NotFound } from './pages/NotFound';
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { AppShell } from "./components/AppShell";
+import { I18nProvider } from "./lib/i18n";
+import { AuthProvider, RequireAuth } from "./lib/auth";
+import { LibraryBrowser } from "./pages/LibraryBrowser";
+import { VideoDetail } from "./pages/VideoDetail";
+import { VideoPlayer } from "./pages/VideoPlayer";
+import { Search } from "./pages/Search";
+import { ProcessingQueue } from "./pages/ProcessingQueue";
+import { Settings } from "./pages/Settings";
+import { Login } from "./pages/Login";
+import { NotFound } from "./pages/NotFound";
 
 export function App() {
   return (

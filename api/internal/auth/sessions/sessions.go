@@ -50,15 +50,15 @@ var (
 // value; `csrf_token` is what the SPA echoes back. Both are returned
 // at create time; subsequent lookups only need the id.
 type Session struct {
-	ID          string
-	UserID      string
-	CSRFToken   string
-	CreatedAt   time.Time
-	LastSeenAt  time.Time
-	ExpiresAt   time.Time
-	IP          *string
-	UserAgent   *string
-	RevokedAt   *time.Time
+	ID         string
+	UserID     string
+	CSRFToken  string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	IP         *string
+	UserAgent  *string
+	RevokedAt  *time.Time
 }
 
 // Active reports whether `s` is currently usable (not revoked and not

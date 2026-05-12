@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { resolveTheme, setTheme, type Theme } from '../lib/theme';
+import { useState } from "react";
+import { resolveTheme, setTheme, type Theme } from "../lib/theme";
 
 export function ThemeToggle() {
   const [theme, setLocalTheme] = useState<Theme>(resolveTheme);
-  const next: Theme = theme === 'light' ? 'dark' : 'light';
+  const next: Theme = theme === "light" ? "dark" : "light";
   return (
     <button
       type="button"
@@ -14,7 +14,7 @@ export function ThemeToggle() {
       }}
       aria-label={`Switch to ${next} theme`}
     >
-      {theme === 'light' ? '🌙' : '☀'}
+      {theme === "light" ? "🌙" : "☀"}
     </button>
   );
 }

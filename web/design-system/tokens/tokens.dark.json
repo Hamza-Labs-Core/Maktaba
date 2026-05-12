@@ -1,9 +1,9 @@
 {
   "color": {
     "semantic": {
-      "bg":     { "value": "{color.neutral.900}" },
-      "fg":     { "value": "{color.neutral.50}" },
-      "muted":  { "value": "{color.neutral.400}" },
+      "bg": { "value": "{color.neutral.900}" },
+      "fg": { "value": "{color.neutral.50}" },
+      "muted": { "value": "{color.neutral.400}" },
       "subtle": { "value": "{color.neutral.800}" },
       "accent": { "value": "{color.brand.400}" }
     }

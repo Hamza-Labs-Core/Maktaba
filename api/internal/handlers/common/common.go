@@ -58,8 +58,8 @@ func ReadJSON(r *http.Request, v any, limit int64) *httperror.Error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		var max *http.MaxBytesError
-		if errors.As(err, &max) {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
 			return &httperror.Error{
 				Type:   httperror.TypeBodyTooLarge,
 				Title:  "request body too large",

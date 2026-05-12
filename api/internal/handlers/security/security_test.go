@@ -13,7 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/security"
 )
 
-func newRouter(t *testing.T) (*Handler, http.Handler) {
+func newRouter(_ *testing.T) (*Handler, http.Handler) {
 	h := &Handler{Policy: security.DefaultPolicy()}
 	r := chi.NewRouter()
 	h.Mount(r)

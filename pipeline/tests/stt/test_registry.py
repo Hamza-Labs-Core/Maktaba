@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -27,7 +28,7 @@ class _FakeBackend:
         self._ready = ready
 
     async def transcribe(self, audio, language, hints):  # type: ignore[no-untyped-def]
-        async def _g():
+        async def _g() -> AsyncIterator[object]:
             return
             yield  # pragma: no cover
 
@@ -51,16 +52,16 @@ class _FakeBackend:
 
 def test_list_ready_filters_unhealthy_backends() -> None:
     registry = BackendRegistry()
-    registry.register(_FakeBackend("up", ready=True))  # type: ignore[arg-type]
-    registry.register(_FakeBackend("down", ready=False))  # type: ignore[arg-type]
+    registry.register(_FakeBackend("up", ready=True))
+    registry.register(_FakeBackend("down", ready=False))
     ready = asyncio.run(registry.list_ready())
     assert {b.name for b in ready} == {"up"}
 
 
 def test_pick_backend_walks_chain_until_first_ready() -> None:
     registry = BackendRegistry()
-    registry.register(_FakeBackend("primary", ready=False))  # type: ignore[arg-type]
-    registry.register(_FakeBackend("alt", ready=True))  # type: ignore[arg-type]
+    registry.register(_FakeBackend("primary", ready=False))
+    registry.register(_FakeBackend("alt", ready=True))
 
     backend, trace = asyncio.run(pick_backend(registry, primary="primary", fallback=["alt"]))
     assert backend.name == "alt"
@@ -70,8 +71,8 @@ def test_pick_backend_walks_chain_until_first_ready() -> None:
 
 def test_pick_backend_raises_when_no_ready() -> None:
     registry = BackendRegistry()
-    registry.register(_FakeBackend("a", ready=False))  # type: ignore[arg-type]
-    registry.register(_FakeBackend("b", ready=False))  # type: ignore[arg-type]
+    registry.register(_FakeBackend("a", ready=False))
+    registry.register(_FakeBackend("b", ready=False))
 
     try:
         asyncio.run(pick_backend(registry, primary="a", fallback=["b"]))
@@ -85,7 +86,7 @@ def test_flip_active_transcript_retires_previous_and_inserts_new() -> None:
     db = FakeAudioDB()
     vid = db.add_video()
     # Audio track row needed by the FK.
-    audio_id = db._audio_next_id  # type: ignore[attr-defined]
+    audio_id = db._audio_next_id
     db._dispatch(
         "INSERT INTO audio_tracks "
         "(video_id, track_index, codec, channels, sample_rate, language, title, "

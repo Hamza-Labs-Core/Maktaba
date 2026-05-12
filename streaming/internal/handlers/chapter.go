@@ -132,7 +132,7 @@ func formatInt(n int64) string {
 	return string(buf)
 }
 
-func formatFloat(f float64, fmt byte, prec int) string {
+func formatFloat(f float64, _ byte, prec int) string {
 	// minimal; uses fmt-like format only for our small needs
 	return formatFloatSimple(f, prec)
 }

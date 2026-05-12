@@ -29,22 +29,22 @@ import (
 type Event string
 
 const (
-	EventLoginSuccess      Event = "login.success"
-	EventLoginFailed       Event = "login.failed"
-	EventLogout            Event = "logout"
-	EventLogoutAll         Event = "logout-all"
-	EventLockoutUsername   Event = "lockout-username"
-	EventLockoutIP         Event = "lockout-ip"
-	EventRefreshReplay     Event = "refresh.replay-detected"
-	EventPasswordChanged   Event = "password.changed"
-	EventKeyRotated        Event = "key.rotated"
-	EventAdminTokenUsed    Event = "admin-token.used"
-	EventPermissionDenied  Event = "permission.denied"
-	EventStreamingDirect   Event = "streaming.direct.access"
-	EventPairCodeIssued    Event = "pair.code-issued"
-	EventPairCodeClaimed   Event = "pair.code-claimed"
-	EventSessionRevoked    Event = "session.revoked"
-	EventRefreshRevoked    Event = "refresh.revoked"
+	EventLoginSuccess     Event = "login.success"
+	EventLoginFailed      Event = "login.failed"
+	EventLogout           Event = "logout"
+	EventLogoutAll        Event = "logout-all"
+	EventLockoutUsername  Event = "lockout-username"
+	EventLockoutIP        Event = "lockout-ip"
+	EventRefreshReplay    Event = "refresh.replay-detected"
+	EventPasswordChanged  Event = "password.changed"
+	EventKeyRotated       Event = "key.rotated"
+	EventAdminTokenUsed   Event = "admin-token.used"
+	EventPermissionDenied Event = "permission.denied"
+	EventStreamingDirect  Event = "streaming.direct.access"
+	EventPairCodeIssued   Event = "pair.code-issued"
+	EventPairCodeClaimed  Event = "pair.code-claimed"
+	EventSessionRevoked   Event = "session.revoked"
+	EventRefreshRevoked   Event = "refresh.revoked"
 )
 
 // Category is the audit_log.category value for every security event.

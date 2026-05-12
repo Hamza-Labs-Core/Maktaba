@@ -20,16 +20,16 @@
   line-height: 1;
   cursor: pointer;
   user-select: none;
-  transition: background-color var(--motion-duration-quick, 120ms)
-              var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
-              border-color var(--motion-duration-quick, 120ms)
-              var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
-              color var(--motion-duration-quick, 120ms)
-              var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+  transition:
+    background-color var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    border-color var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    color var(--motion-duration-quick, 120ms) var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
 }
 
 .mk-btn:focus-visible {
-  outline: 2px solid var(--color-semantic-accent, #1E5AD8);
+  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
   outline-offset: 2px;
 }
 
@@ -45,7 +45,9 @@
   --mk-btn-pad-x: var(--spacing-3, 12px);
   font-size: 14px;
 }
-.mk-btn--md { /* default */ }
+.mk-btn--md {
+  /* default */
+}
 .mk-btn--lg {
   --mk-btn-pad-y: var(--spacing-3, 12px);
   --mk-btn-pad-x: var(--spacing-6, 24px);
@@ -55,33 +57,33 @@
 /* Variants — colours pull from the semantic token layer so dark mode
  * and high-contrast themes Just Work via the data-theme switch. */
 .mk-btn--primary {
-  background-color: var(--color-semantic-accent, #1E5AD8);
-  color: var(--color-neutral-0, #FFFFFF);
+  background-color: var(--color-semantic-accent, #1e5ad8);
+  color: var(--color-neutral-0, #ffffff);
 }
 .mk-btn--primary:hover:not([disabled]) {
-  background-color: var(--color-brand-600, #1748B0);
+  background-color: var(--color-brand-600, #1748b0);
 }
 
 .mk-btn--secondary {
   background-color: transparent;
-  color: var(--color-semantic-fg, #18181B);
-  border-color: var(--color-neutral-300, #D4D4D8);
+  color: var(--color-semantic-fg, #18181b);
+  border-color: var(--color-neutral-300, #d4d4d8);
 }
 .mk-btn--secondary:hover:not([disabled]) {
-  background-color: var(--color-semantic-subtle, #F4F4F5);
+  background-color: var(--color-semantic-subtle, #f4f4f5);
 }
 
 .mk-btn--ghost {
   background-color: transparent;
-  color: var(--color-semantic-fg, #18181B);
+  color: var(--color-semantic-fg, #18181b);
 }
 .mk-btn--ghost:hover:not([disabled]) {
-  background-color: var(--color-semantic-subtle, #F4F4F5);
+  background-color: var(--color-semantic-subtle, #f4f4f5);
 }
 
 .mk-btn--destructive {
-  background-color: var(--color-semantic-error, #B6253A);
-  color: var(--color-neutral-0, #FFFFFF);
+  background-color: var(--color-semantic-error, #b6253a);
+  color: var(--color-neutral-0, #ffffff);
 }
 .mk-btn--destructive:hover:not([disabled]) {
   filter: brightness(0.92);
@@ -89,7 +91,7 @@
 
 .mk-btn--link {
   background-color: transparent;
-  color: var(--color-semantic-accent, #1E5AD8);
+  color: var(--color-semantic-accent, #1e5ad8);
   padding: 0;
   text-decoration: underline;
 }
@@ -119,5 +121,7 @@
   height: 14px;
 }
 @keyframes mk-btn-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }

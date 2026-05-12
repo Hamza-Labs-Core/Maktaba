@@ -2,10 +2,10 @@
 //
 // Subscribes to the `/ws/v1/events` stream for job state changes and
 // polls `/api/jobs` on mount.
-import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
-import { ws, type WSMessage } from '../lib/ws';
-import { useI18n } from '../lib/i18n';
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
+import { ws, type WSMessage } from "../lib/ws";
+import { useI18n } from "../lib/i18n";
 
 interface Job {
   id: string;
@@ -26,14 +26,17 @@ export function ProcessingQueue() {
 
   useEffect(() => {
     let alive = true;
-    api.get<JobListResponse>('/api/jobs?limit=100').then((res) => {
-      if (alive) setJobs(res.items ?? []);
-    }).catch(() => {
-      if (alive) setJobs([]);
-    });
+    api
+      .get<JobListResponse>("/api/jobs?limit=100")
+      .then((res) => {
+        if (alive) setJobs(res.items ?? []);
+      })
+      .catch(() => {
+        if (alive) setJobs([]);
+      });
     ws.start();
     const unsub = ws.subscribe((msg: WSMessage) => {
-      if (msg.type !== 'job.updated' || !msg.job) return;
+      if (msg.type !== "job.updated" || !msg.job) return;
       setJobs((prev) => {
         if (!prev) return prev;
         const idx = prev.findIndex((j) => j.id === msg.job.id);
@@ -49,13 +52,13 @@ export function ProcessingQueue() {
     };
   }, []);
 
-  if (!jobs) return <p>{t('common.loading')}</p>;
-  if (jobs.length === 0) return <p className="mkt-empty">{t('common.empty')}</p>;
+  if (!jobs) return <p>{t("common.loading")}</p>;
+  if (jobs.length === 0) return <p className="mkt-empty">{t("common.empty")}</p>;
 
   return (
     <section className="mkt-page mkt-queue">
-      <h1>{t('nav.queue')}</h1>
-      <table className="mkt-table" aria-label={t('nav.queue')}>
+      <h1>{t("nav.queue")}</h1>
+      <table className="mkt-table" aria-label={t("nav.queue")}>
         <thead>
           <tr>
             <th>Stage</th>
@@ -72,9 +75,11 @@ export function ProcessingQueue() {
                 <span className={`mkt-state mkt-state--${j.state}`}>{j.state}</span>
               </td>
               <td>
-                <progress max={100} value={j.progress_pct ?? 0}>{j.progress_pct ?? 0}%</progress>
+                <progress max={100} value={j.progress_pct ?? 0}>
+                  {j.progress_pct ?? 0}%
+                </progress>
               </td>
-              <td className="mkt-mono">{j.video_id ?? '—'}</td>
+              <td className="mkt-mono">{j.video_id ?? "—"}</td>
             </tr>
           ))}
         </tbody>

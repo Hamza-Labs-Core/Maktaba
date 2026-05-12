@@ -16,15 +16,15 @@ import (
 //   - Single global mutex; the hit-rate target leaves headroom for it.
 //   - No background reaper; entries past TTL expire on next access.
 type Cache[T any] struct {
-	mu       sync.Mutex
-	name     string
-	max      int
-	ttl      time.Duration
-	entries  map[string]*cacheEntry[T]
-	hits     uint64
-	misses   uint64
-	evicts   uint64
-	now      func() time.Time
+	mu      sync.Mutex
+	name    string
+	max     int
+	ttl     time.Duration
+	entries map[string]*cacheEntry[T]
+	hits    uint64
+	misses  uint64
+	evicts  uint64
+	now     func() time.Time
 }
 
 type cacheEntry[T any] struct {
@@ -33,11 +33,11 @@ type cacheEntry[T any] struct {
 	lastUsed time.Time
 }
 
-// NewCache creates a named cache. max=0 disables eviction (unbounded).
-func NewCache[T any](name string, max int, ttl time.Duration) *Cache[T] {
+// NewCache creates a named cache. maxEntries=0 disables eviction (unbounded).
+func NewCache[T any](name string, maxEntries int, ttl time.Duration) *Cache[T] {
 	return &Cache[T]{
 		name:    name,
-		max:     max,
+		max:     maxEntries,
 		ttl:     ttl,
 		entries: map[string]*cacheEntry[T]{},
 		now:     time.Now,

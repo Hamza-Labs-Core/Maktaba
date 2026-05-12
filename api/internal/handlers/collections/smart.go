@@ -125,7 +125,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for i, it := range items {
 		_, err := tx.ExecContext(r.Context(), `
@@ -207,7 +207,6 @@ func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
 				JOIN tags t ON t.id = vt.tag_id
 				WHERE t.name_norm = ANY($`+itoa(idx)+`))`)
 		args = append(args, f.Tags)
-		idx++
 	}
 	whereClause := ""
 	if len(where) > 0 {

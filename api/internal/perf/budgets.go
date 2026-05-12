@@ -26,11 +26,11 @@ import (
 
 // Budgets is the parsed YAML.
 type Budgets struct {
-	Version          int                          `yaml:"version"`
-	HardwareProfiles map[string]string            `yaml:"hardware_profiles"`
-	Endpoints        map[string]Budget            `yaml:"endpoints"`
-	Throughputs      map[string]Throughput        `yaml:"throughputs"`
-	Envelopes        map[string]Envelope          `yaml:"envelopes"`
+	Version          int                   `yaml:"version"`
+	HardwareProfiles map[string]string     `yaml:"hardware_profiles"`
+	Endpoints        map[string]Budget     `yaml:"endpoints"`
+	Throughputs      map[string]Throughput `yaml:"throughputs"`
+	Envelopes        map[string]Envelope   `yaml:"envelopes"`
 }
 
 // Budget is one endpoint entry.

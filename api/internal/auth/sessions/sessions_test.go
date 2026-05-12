@@ -8,9 +8,9 @@ import (
 func TestSession_Active(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
-		name    string
-		s       Session
-		want    bool
+		name string
+		s    Session
+		want bool
 	}{
 		{"fresh", Session{ExpiresAt: now.Add(time.Hour)}, true},
 		{"expired", Session{ExpiresAt: now.Add(-time.Hour)}, false},

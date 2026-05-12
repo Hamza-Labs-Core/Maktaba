@@ -6,11 +6,11 @@
 
 type Listener<T> = (msg: T) => void;
 
-const URL_PATH = '/ws/v1/events';
+const URL_PATH = "/ws/v1/events";
 
 export interface WSMessage {
   type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Bag-of-payload until the v1 server settles per-event types.
   [key: string]: any;
 }
 
@@ -46,18 +46,18 @@ class WSClient {
 
   private connect(): void {
     if (!this.shouldRun) return;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${location.host}${URL_PATH}`;
     try {
       this.ws = new WebSocket(url);
-    } catch (e) {
+    } catch {
       this.scheduleReconnect();
       return;
     }
-    this.ws.addEventListener('open', () => {
+    this.ws.addEventListener("open", () => {
       this.backoff = 1000;
     });
-    this.ws.addEventListener('message', (ev) => {
+    this.ws.addEventListener("message", (ev) => {
       try {
         const msg = JSON.parse(ev.data) as WSMessage;
         this.listeners.forEach((fn) => fn(msg));
@@ -65,11 +65,11 @@ class WSClient {
         // ignore non-JSON frames
       }
     });
-    this.ws.addEventListener('close', () => {
+    this.ws.addEventListener("close", () => {
       this.ws = null;
       this.scheduleReconnect();
     });
-    this.ws.addEventListener('error', () => {
+    this.ws.addEventListener("error", () => {
       this.ws?.close();
     });
   }

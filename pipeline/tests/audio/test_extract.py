@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from maktaba_pipeline.audio.extract import (
     DEFAULT_CHUNK_BYTES,
@@ -47,7 +48,7 @@ def test_extract_error_envelope_shape_matches_ac3() -> None:
     assert env == {"kind": "ffmpeg_decode", "returncode": 183, "stderr_tail": "bad codec"}
 
 
-def test_cache_path_uses_content_hash_under_root(tmp_path) -> None:
+def test_cache_path_uses_content_hash_under_root(tmp_path: Path) -> None:
     p = cache_path_for("abc123", root=tmp_path)
     assert p == tmp_path / "abc123.wav"
 

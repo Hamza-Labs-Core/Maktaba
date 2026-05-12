@@ -50,8 +50,8 @@ def test_scan_progress_fraction_zero_when_total_zero() -> None:
 async def test_progress_reporter_coalesces_within_tick_window() -> None:
     sink_calls: list[ScanProgress] = []
 
-    async def sink(p: ScanProgress) -> None:
-        sink_calls.append(p)
+    async def sink(progress: ScanProgress) -> None:
+        sink_calls.append(progress)
 
     clock = iter([0.0, 0.1, 0.2, 0.3, 1.5, 1.6])
     reporter = ProgressReporter(
@@ -74,8 +74,8 @@ async def test_progress_reporter_coalesces_within_tick_window() -> None:
 async def test_progress_reporter_finish_always_flushes() -> None:
     sink_calls: list[ScanProgress] = []
 
-    async def sink(p: ScanProgress) -> None:
-        sink_calls.append(p)
+    async def sink(progress: ScanProgress) -> None:
+        sink_calls.append(progress)
 
     reporter = ProgressReporter(job_id=1, files_to_scan=1, sink=sink, clock=lambda: 0.0)
     await reporter.finish()

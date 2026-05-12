@@ -111,11 +111,11 @@ func generateAndPrint(bits int) error {
 	fmt.Fprintf(os.Stderr,
 		"# kid=%s\n# Set the following in your environment (or in [auth] config):\n#   MAKTABA_JWT_PRIVATE_KEY_PEM=...\n#   MAKTABA_JWT_PUBLIC_KEY_PEM=...\n",
 		k.KID)
-	fmt.Println("--- BEGIN PRIVATE PEM ---")
-	fmt.Print(priv)
-	fmt.Println("--- END PRIVATE PEM ---")
-	fmt.Println("--- BEGIN PUBLIC PEM ---")
-	fmt.Print(pub)
-	fmt.Println("--- END PUBLIC PEM ---")
+	fmt.Fprintln(os.Stdout, "--- BEGIN PRIVATE PEM ---")
+	fmt.Fprint(os.Stdout, priv)
+	fmt.Fprintln(os.Stdout, "--- END PRIVATE PEM ---")
+	fmt.Fprintln(os.Stdout, "--- BEGIN PUBLIC PEM ---")
+	fmt.Fprint(os.Stdout, pub)
+	fmt.Fprintln(os.Stdout, "--- END PUBLIC PEM ---")
 	return nil
 }

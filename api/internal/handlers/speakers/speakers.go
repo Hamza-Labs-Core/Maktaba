@@ -142,7 +142,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(r.Context(), `
 		UPDATE segment_speakers SET speaker_id = $1

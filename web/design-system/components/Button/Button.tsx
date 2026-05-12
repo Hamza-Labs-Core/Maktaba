@@ -64,7 +64,15 @@ function Spinner(props: { "aria-hidden": "true" | "false" }) {
       {/* SVG kept inline so the component doesn't need an icon system
           to render its loading state. The animation runs from CSS. */}
       <svg viewBox="0 0 16 16" width={14} height={14}>
-        <circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" stroke="currentColor" opacity="0.25" />
+        <circle
+          cx="8"
+          cy="8"
+          r="6"
+          fill="none"
+          strokeWidth="2"
+          stroke="currentColor"
+          opacity="0.25"
+        />
         <path d="M14 8a6 6 0 0 0-6-6" fill="none" strokeWidth="2" stroke="currentColor" />
       </svg>
     </span>
