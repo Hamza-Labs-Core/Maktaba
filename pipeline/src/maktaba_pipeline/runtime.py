@@ -92,9 +92,10 @@ class Database:
 
     dialect: str
 
-    def __init__(self, *, dialect: str, conn: Any) -> None:
+    def __init__(self, *, dialect: str, conn: Any, dsn: str = "") -> None:
         self.dialect = dialect
         self._conn = conn
+        self._dsn = dsn  # only used by acquire_listener (postgres only)
         # asyncpg's `Connection` is not safe for concurrent use — every
         # operation enters `_stmt_exclusive_section` and a second
         # concurrent op raises `InterfaceError: another operation is
@@ -110,7 +111,7 @@ class Database:
         if url.startswith(("postgres://", "postgresql://")):
             asyncpg = _import_asyncpg()
             conn = await asyncpg.connect(url)
-            return cls(dialect="postgres", conn=conn)
+            return cls(dialect="postgres", conn=conn, dsn=url)
 
         aiosqlite = _import_aiosqlite()
         path = _sqlite_path_from_url(url)
@@ -154,14 +155,17 @@ class Database:
             return None
 
     async def acquire_listener(self) -> Any:
-        # LISTEN/NOTIFY needs a dedicated connection that doesn't take
-        # the lock for every notify delivery. Returning the underlying
-        # conn here is fine because the pubsub listener stays on its
-        # own asyncio task and doesn't multiplex with other ops on the
-        # same connection while listening.
+        # LISTEN/NOTIFY needs a dedicated connection. asyncpg puts the
+        # connection into a listening mode after `add_listener`, which
+        # blocks every other query on the same connection with
+        # `InterfaceError: another operation is in progress` — the
+        # serializing lock around fetchrow/execute can't help once
+        # the connection is captured by the listener. So we open a
+        # fresh asyncpg connection per listener, using the same DSN.
         if self.dialect != "postgres":
             raise RuntimeError("acquire_listener is Postgres-only")
-        return self._conn
+        asyncpg = _import_asyncpg()
+        return await asyncpg.connect(self._dsn)
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
