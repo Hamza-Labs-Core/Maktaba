@@ -18,11 +18,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const tokensDir = join(here, "..", "tokens");
 
-const SOURCES = [
-  "tokens.json",
-  "tokens.dark.json",
-  "tokens.high-contrast.json",
-];
+const SOURCES = ["tokens.json", "tokens.dark.json", "tokens.high-contrast.json"];
 
 async function main() {
   for (const file of SOURCES) {
@@ -41,7 +37,9 @@ async function main() {
       process.exit(1);
     }
   }
-  console.log(`build-tokens: validated ${SOURCES.length} token source(s) (stub — Epic 17 wires the real generator)`);
+  console.log(
+    `build-tokens: validated ${SOURCES.length} token source(s) (stub — Epic 17 wires the real generator)`
+  );
 }
 
 main().catch((err) => {
