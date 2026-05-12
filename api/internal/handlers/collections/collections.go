@@ -196,7 +196,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	sets := []string{}
 	args := []any{}

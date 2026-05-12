@@ -156,7 +156,7 @@ func TestJWTBearer_RejectsBadAudience(t *testing.T) {
 }
 
 func TestRequireAuth_401WhenAnonymous(t *testing.T) {
-	h := RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequireAuth(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run when anonymous")
 	}))
 	req := httptest.NewRequest("GET", "/api/x", nil)
@@ -168,7 +168,7 @@ func TestRequireAuth_401WhenAnonymous(t *testing.T) {
 }
 
 func TestRequireAdmin_403ForNonAdmin(t *testing.T) {
-	h := RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequireAdmin(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run for non-admin")
 	}))
 	req := httptest.NewRequest("GET", "/api/x", nil)
@@ -184,7 +184,7 @@ func TestRequireAdmin_403ForNonAdmin(t *testing.T) {
 
 func TestRequireAdmin_AllowsAdmin(t *testing.T) {
 	called := false
-	h := RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequireAdmin(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 	req := httptest.NewRequest("GET", "/api/x", nil)

@@ -56,7 +56,7 @@ func TestWriteSampled_Dedupe(t *testing.T) {
 	// Use a Writer with no DB — set the entry handler to track inserts.
 	w := &Writer{last: map[string]time.Time{}}
 	calls := 0
-	w.writeFn = func(ctx context.Context, e Entry) error {
+	w.writeFn = func(_ context.Context, _ Entry) error {
 		calls++
 		return nil
 	}
@@ -83,7 +83,7 @@ func TestWriteSampled_Dedupe(t *testing.T) {
 func TestWriteSampled_ZeroWindow(t *testing.T) {
 	w := &Writer{last: map[string]time.Time{}}
 	calls := 0
-	w.writeFn = func(ctx context.Context, e Entry) error {
+	w.writeFn = func(_ context.Context, _ Entry) error {
 		calls++
 		return nil
 	}
@@ -108,7 +108,7 @@ func TestWriter_ConcurrentDedupe(t *testing.T) {
 	w := &Writer{last: map[string]time.Time{}}
 	var mu sync.Mutex
 	calls := 0
-	w.writeFn = func(ctx context.Context, e Entry) error {
+	w.writeFn = func(_ context.Context, _ Entry) error {
 		mu.Lock()
 		calls++
 		mu.Unlock()
