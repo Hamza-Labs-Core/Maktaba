@@ -80,6 +80,12 @@ services:
       MAKTABA_DATABASE_URL: postgres://${MAKTABA_PG_USER:-maktaba}:${MAKTABA_PG_PASSWORD:-maktaba}@postgres:5432/${MAKTABA_PG_DB:-maktaba}?sslmode=disable
       MAKTABA_HTTP_ADDR: ":8080"
       MAKTABA_ADMIN_ADDR: ":9100"
+      # Run `migrate up` on boot so a fresh `compose up` doesn't
+      # require a separate `make migrate` step (operators can disable
+      # by overriding to "false"). Set unconditionally here because
+      # the pipeline waits on api's healthcheck to land green AFTER
+      # migrations apply — see the depends_on note on pipeline.
+      MAKTABA_AUTO_MIGRATE: "true"
       # Aggregator fan-out: /api/system/health probes these per the
       # plan's name=URL pair format.
       MAKTABA_HEALTH_PEERS: streaming=http://streaming:9101/readyz

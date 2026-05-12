@@ -136,6 +136,20 @@ Commands:
 func runServe() error {
 	logger := initLogger()
 
+	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
+	// the HTTP servers bind. The dev/e2e compose stacks set this so
+	// downstream services (pipeline's reaper, streaming's session
+	// claim) don't race the schema and crash with
+	// `UndefinedTableError: relation "processing_jobs" does not exist`
+	// before the operator has hand-run `make migrate`.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("MAKTABA_AUTO_MIGRATE")), "true") {
+		logger.Info("auto_migrate_starting", "event", "auto_migrate_starting")
+		if err := runMigrate([]string{"up"}); err != nil {
+			return fmt.Errorf("auto-migrate: %w", err)
+		}
+		logger.Info("auto_migrate_complete", "event", "auto_migrate_complete")
+	}
+
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if publicAddr == "" {
 		publicAddr = ":8080"
