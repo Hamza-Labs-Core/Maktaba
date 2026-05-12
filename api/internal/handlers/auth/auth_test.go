@@ -46,7 +46,7 @@ func TestRemoteIP_NoPortFallsBack(t *testing.T) {
 }
 
 func TestEnvAccessTTL_Default(t *testing.T) {
-	if got := EnvAccessTTL(func(k string) string { return "" }); got != DefaultAccessTTL {
+	if got := EnvAccessTTL(func(_ string) string { return "" }); got != DefaultAccessTTL {
 		t.Errorf("got %v want %v", got, DefaultAccessTTL)
 	}
 }
@@ -64,7 +64,7 @@ func TestEnvAccessTTL_Custom(t *testing.T) {
 }
 
 func TestEnvAccessTTL_BadInputFallsBack(t *testing.T) {
-	got := EnvAccessTTL(func(k string) string { return "not-an-int" })
+	got := EnvAccessTTL(func(_ string) string { return "not-an-int" })
 	if got != DefaultAccessTTL {
 		t.Errorf("got %v", got)
 	}

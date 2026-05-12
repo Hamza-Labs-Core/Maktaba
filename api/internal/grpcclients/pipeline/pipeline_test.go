@@ -26,7 +26,7 @@ func TestBreaker_TripsAfterFailures(t *testing.T) {
 
 func TestCallWithRetry_SuccessAfterTransient(t *testing.T) {
 	attempts := 0
-	err := CallWithRetry(context.Background(), NewBreaker(30*time.Second, 10*time.Second, 0.99), 3, func(ctx context.Context) error {
+	err := CallWithRetry(context.Background(), NewBreaker(30*time.Second, 10*time.Second, 0.99), 3, func(_ context.Context) error {
 		attempts++
 		if attempts < 3 {
 			return errors.New("rpc error: code = UNAVAILABLE")
@@ -40,7 +40,7 @@ func TestCallWithRetry_SuccessAfterTransient(t *testing.T) {
 
 func TestCallWithRetry_NonRetryableImmediate(t *testing.T) {
 	attempts := 0
-	err := CallWithRetry(context.Background(), NewBreaker(30*time.Second, 10*time.Second, 0.99), 3, func(ctx context.Context) error {
+	err := CallWithRetry(context.Background(), NewBreaker(30*time.Second, 10*time.Second, 0.99), 3, func(_ context.Context) error {
 		attempts++
 		return errors.New("rpc error: code = INVALID_ARGUMENT")
 	})
@@ -58,7 +58,7 @@ func TestCallWithRetry_OpenBreakerFailsFast(t *testing.T) {
 	for i := 0; i < 11; i++ {
 		b.Record(now, false)
 	}
-	err := CallWithRetry(context.Background(), b, 3, func(ctx context.Context) error {
+	err := CallWithRetry(context.Background(), b, 3, func(_ context.Context) error {
 		t.Fatal("should not be called")
 		return nil
 	})

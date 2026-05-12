@@ -25,7 +25,7 @@ type VersionInfo struct {
 // (Story 22.4 emits this constant from the migrations manifest); a
 // running schema check belongs in /api/system/health, not here.
 func VersionHandler(schemaRev int) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		info := VersionInfo{
 			Version:   version.Version,
 			BuildSHA:  version.Commit,

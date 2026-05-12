@@ -33,11 +33,11 @@ type cacheEntry[T any] struct {
 	lastUsed time.Time
 }
 
-// NewCache creates a named cache. max=0 disables eviction (unbounded).
-func NewCache[T any](name string, max int, ttl time.Duration) *Cache[T] {
+// NewCache creates a named cache. maxEntries=0 disables eviction (unbounded).
+func NewCache[T any](name string, maxEntries int, ttl time.Duration) *Cache[T] {
 	return &Cache[T]{
 		name:    name,
-		max:     max,
+		max:     maxEntries,
 		ttl:     ttl,
 		entries: map[string]*cacheEntry[T]{},
 		now:     time.Now,

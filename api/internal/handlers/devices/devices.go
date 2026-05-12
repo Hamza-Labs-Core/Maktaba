@@ -91,7 +91,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	now := h.now()
 	// AC-5: revoke any prior row for the (user, platform, bundle_id) tuple

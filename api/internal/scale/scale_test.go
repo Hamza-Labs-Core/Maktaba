@@ -67,7 +67,7 @@ func TestInMemoryBusPublishSubscribe(t *testing.T) {
 	}
 }
 
-func TestInMemoryBusDropsOnSlowSubscriber(t *testing.T) {
+func TestInMemoryBusDropsOnSlowSubscriber(_ *testing.T) {
 	b := NewInMemoryBus()
 	defer b.Close()
 	_, _ = b.Subscribe("noisy")

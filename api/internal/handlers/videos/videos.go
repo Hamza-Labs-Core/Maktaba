@@ -547,7 +547,7 @@ func (h *Handler) canRead(ctx context.Context, libraryID string) *httperror.Erro
 }
 
 // canWrite: writes are admin-only (Story 10.13 v1).
-func (h *Handler) canWrite(ctx context.Context, libraryID string) *httperror.Error {
+func (h *Handler) canWrite(ctx context.Context, _ string) *httperror.Error {
 	p := principal.FromContext(ctx)
 	if p == nil {
 		return httperror.Forbidden("", "authentication required")

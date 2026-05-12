@@ -125,7 +125,7 @@ func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tx"))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, name := range req.Add {
 		name = strings.TrimSpace(name)
@@ -189,7 +189,7 @@ func (h *Handler) upsertTag(r *http.Request, name string) (string, string, error
 	if err != nil {
 		return "", "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	id, n, err := upsertTagTx(tx, r, name)
 	if err != nil {
 		return "", "", err

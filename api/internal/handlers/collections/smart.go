@@ -207,7 +207,6 @@ func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
 				JOIN tags t ON t.id = vt.tag_id
 				WHERE t.name_norm = ANY($`+itoa(idx)+`))`)
 		args = append(args, f.Tags)
-		idx++
 	}
 	whereClause := ""
 	if len(where) > 0 {

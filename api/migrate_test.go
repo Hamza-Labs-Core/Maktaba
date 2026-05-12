@@ -241,9 +241,9 @@ func extractCreateBlock(t *testing.T, s, table string) string {
 		t.Fatalf("CREATE TABLE for %s has no opening paren", table)
 	}
 	open += i
-	close := strings.Index(s[open:], ");")
-	if close < 0 {
+	closeIdx := strings.Index(s[open:], ");")
+	if closeIdx < 0 {
 		t.Fatalf("CREATE TABLE for %s has no closing paren", table)
 	}
-	return s[i : open+close+2]
+	return s[i : open+closeIdx+2]
 }
