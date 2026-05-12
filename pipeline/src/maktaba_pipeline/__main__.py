@@ -187,6 +187,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+    # Default to the `run` subcommand. argparse has no native default-
+    # subparser mechanism, so we prepend it ourselves when the caller
+    # passed no subcommand. Without this, run-only flags like
+    # --database-url never attach to the namespace and _serve crashes
+    # with AttributeError. Both the prod ENTRYPOINT (`python -m
+    # maktaba_pipeline`) and the dev supervisor invoke us this way.
+    _subcommands = {"run", "doctor"}
+    _top_level_flags = {"--version", "-V", "--help", "-h"}
+    if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
+        argv = ["run", *argv]
     args = parser.parse_args(argv)
 
     if args.version:
