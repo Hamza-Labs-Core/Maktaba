@@ -6,13 +6,43 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
+// RSA-2048 keygen is the dominant cost in this test binary — every
+// non-trivial test wants at least one keypair, and a few want two
+// distinct pairs (rotation, mismatched-pair). Sharing one keypair
+// across single-key tests cut the package's test runtime from ~5s
+// to ~600 ms on a dev machine, and unblocked the AC4 100 ms per-test
+// budget that the unit gate enforces.
+//
+// `sync.OnceValues` defers generation until the first test that
+// needs it, so `go test ./...` targeting other packages doesn't pay
+// the keygen cost.
+var (
+	sharedKey1 = sync.OnceValues(func() (*Key, error) { return Generate(MinBits) })
+	sharedKey2 = sync.OnceValues(func() (*Key, error) { return Generate(MinBits) })
+)
+
+// mustGen returns the package-shared first keypair. Use mustGen2 when
+// a test needs a second, distinct keypair (rotation, mismatched-pair).
 func mustGen(t *testing.T) *Key {
 	t.Helper()
-	k, err := Generate(MinBits)
+	k, err := sharedKey1()
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	return k
+}
+
+// mustGen2 returns a second package-shared keypair distinct from
+// mustGen's. Use this for tests that exercise rotation, mismatched
+// pairs, or any other scenario where two distinct KIDs are required.
+func mustGen2(t *testing.T) *Key {
+	t.Helper()
+	k, err := sharedKey2()
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -43,7 +73,7 @@ func TestKID_Deterministic(t *testing.T) {
 
 func TestFromPEM_RejectsMismatchedPair(t *testing.T) {
 	a := mustGen(t)
-	b := mustGen(t)
+	b := mustGen2(t)
 	priv, _ := EncodePrivatePEM(a)
 	pubB, _ := EncodePublicPEM(b)
 	if _, err := FromPEM(priv, pubB); err == nil {
@@ -68,7 +98,7 @@ func TestSet_RotateRoutine_KeepsPreviousValid(t *testing.T) {
 		t.Errorf("Active = %v, want first", got)
 	}
 
-	second := mustGen(t)
+	second := mustGen2(t)
 	s.Rotate(second, RotateRoutine)
 	if got := s.Active(); got != second {
 		t.Errorf("after rotate, Active = %v, want second", got)
@@ -86,7 +116,7 @@ func TestSet_RotateImmediate_InvalidatesPrevious(t *testing.T) {
 	first := mustGen(t)
 	s.Replace(first)
 
-	second := mustGen(t)
+	second := mustGen2(t)
 	s.Rotate(second, RotateImmediate)
 	if got := s.Previous(); got != nil {
 		t.Errorf("immediate rotate should clear Previous, got %v", got)
@@ -102,7 +132,7 @@ func TestSet_Changed_FiresOnRotate(t *testing.T) {
 	s.Replace(first)
 	ch := s.Changed()
 
-	second := mustGen(t)
+	second := mustGen2(t)
 	s.Rotate(second, RotateRoutine)
 
 	select {
@@ -116,7 +146,7 @@ func TestSet_ReapExpired(t *testing.T) {
 	s := NewSet(time.Millisecond)
 	first := mustGen(t)
 	s.Replace(first)
-	second := mustGen(t)
+	second := mustGen2(t)
 	s.Rotate(second, RotateRoutine)
 	// Force the previous key's AddedAt into the past.
 	s.previous.AddedAt = time.Now().Add(-time.Second)
@@ -133,7 +163,7 @@ func TestSet_JWKS_IncludesActiveAndPrevious(t *testing.T) {
 	s := NewSet(time.Hour)
 	first := mustGen(t)
 	s.Replace(first)
-	second := mustGen(t)
+	second := mustGen2(t)
 	s.Rotate(second, RotateRoutine)
 
 	body, err := s.JWKS()

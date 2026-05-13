@@ -21,14 +21,19 @@ MIGRATION_LINT_BASE_REF ?= origin/main
 # bounds for the whole tier; the unit tier is per-Go-package
 # (enforced inside tools/test-budget.sh via `go test -json`).
 UNIT_PACKAGE_BUDGET     ?= 30s
-# 100ms was the AC4 target, but every api/internal/auth/keys test runs
-# at least one fresh RSA-2048 keygen (`mustGen`) and CI hardware lands
-# individual tests in the 1.0-1.7s range. Bump to 700ms soft (hard =
-# 2100ms via the 3x rule) so the crypto-heavy tests pass without
-# losing the per-test signal entirely. A proper fix is to share a
-# pre-generated keypair across the tests in that package, but until
-# Epic 10 refactors the tests, this keeps the gate green.
-UNIT_PER_TEST_SOFT_CAP  ?= 700ms
+# 100ms was the AC4 target. The auth/keys tests now share two
+# pre-generated RSA-2048 keypairs across the package via
+# sync.OnceValues, which drops the per-test keygen cost from
+# ~250ms to amortized ~0 in that package. Real-world tests still
+# hit slow paths under `-race` though: `api/internal/auth/jwt`
+# signs/verifies tokens (RSA-PKCS1-v1.5 is not cheap), and the
+# `streaming/internal/auth` signed-URL tests do HMAC + base64
+# round-trips. Hold at 400ms soft (hard = 1200ms via the 3x rule)
+# to cover CI race-detector overhead; tightening further requires
+# either sharing keypairs in jwt/streaming-auth too (parallel to
+# what we did for auth/keys) or pulling the slow ops out of the
+# hot path. See HLB-251 follow-up notes.
+UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 INTEGRATION_TIER_BUDGET ?= 2m
 E2E_TIER_BUDGET         ?= 5m
 PERF_CI_TIER_BUDGET     ?= 2m
