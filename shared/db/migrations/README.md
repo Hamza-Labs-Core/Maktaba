@@ -88,3 +88,45 @@ siblings are never applied to a Postgres connection.
 5. Use `IF [NOT] EXISTS` everywhere; use `CREATE INDEX CONCURRENTLY`
    when the index is non-trivial.
 6. Run `make lint-migrations` locally before pushing.
+
+## Pitfall: never write the literal `+goose` in prose comments
+
+The `pressly/goose/v3` parser flags a line as an annotation candidate
+with this predicate (see `internal/sqlparser/parser.go`):
+
+```go
+strings.HasPrefix(strings.TrimSpace(line), "--") && strings.Contains(line, "+goose")
+```
+
+The `Contains` half over-matches: any `--` line whose text contains
+the four characters `+goose` — including a prose comment that quotes
+the directive in passing — is parsed as an annotation. A line like
+
+```sql
+-- The directive on line 1 uses '+goose NO TRANSACTION' because…
+```
+
+aborts the migration with `not supported: invalid annotation`. The
+predicate is identical in the version we pin (`v3.22.1` in
+`api/go.mod`) and the latest release at time of writing (`v3.27.1`),
+so bumping goose does not help — this section can be deleted once
+upstream tightens the predicate to require `-- +goose` at the start
+of the trimmed line.
+
+### How to write prose that references a directive
+
+When you need to explain a goose directive in prose, **don't quote
+the literal token**. Refer to it indirectly:
+
+- ✅ `-- The directive on line 1 disables goose's per-migration transaction wrapper.`
+- ✅ `-- This file uses goose's StatementBegin/StatementEnd markers around DDL.`
+- ❌ `-- We use '+goose NO TRANSACTION' here because…`
+
+Block comments (`/* … */`) are a safe escape hatch — the predicate
+requires the trimmed line to start with `--`, so block-comment text
+is never scanned. Prefer the indirect-prose style above; reach for
+block comments only when you genuinely need to quote the literal
+token.
+
+For real-world examples of the indirect style, see the header
+comments in `0002_processing_jobs.sql` and `0008_scan_control.sql`.
