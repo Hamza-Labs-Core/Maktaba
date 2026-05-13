@@ -17,20 +17,20 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-go@v5.2.0
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
           cache-dependency-path: |
             api/go.sum
             streaming/go.sum
 
-      - uses: actions/setup-python@v5.4.0
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
 
-      - uses: astral-sh/setup-uv@v5.2.2
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock

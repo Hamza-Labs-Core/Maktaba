@@ -26,9 +26,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: actions/setup-go@v5.2.0
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
           cache-dependency-path: |
@@ -39,14 +39,14 @@ jobs:
       # to keep the matrix focused on the Go cross-compile signal.
       - name: Set up pnpm
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        uses: pnpm/action-setup@v4.0.0
+        uses: pnpm/action-setup@v6.0.8
         with:
           version: 9.15.4
           run_install: false
 
       - name: Set up Node
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
           cache: pnpm
@@ -68,7 +68,7 @@ jobs:
         run: make build-web
 
       - name: Upload Go binaries
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload web bundle
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: web-bundle
           path: web/dist
