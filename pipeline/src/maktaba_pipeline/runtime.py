@@ -80,38 +80,36 @@ class RuntimeConfig:
 class Database:
     """Minimal :class:`DBConn`-compatible facade over asyncpg / aiosqlite.
 
-    The full Story 1.5 connection wrapper layers pooling, retries, and
-    typed cursors on top. Here we expose just enough surface for the
-    claim loop, heartbeat, and reaper to operate.
+    Postgres uses an :class:`asyncpg.Pool` so the reaper, claim loop,
+    and dispatch can run concurrently without contending on a single
+    connection's `_stmt_exclusive_section`. SQLite uses a single
+    aiosqlite connection (the driver serializes its own work through
+    an executor thread, and aiosqlite doesn't expose a pool primitive).
 
     The dialect is inferred from the URL scheme:
 
-    - ``postgres://`` / ``postgresql://`` → asyncpg
-    - ``sqlite://`` / ``file:`` / ``:memory:`` → aiosqlite
+    - ``postgres://`` / ``postgresql://`` → asyncpg pool
+    - ``sqlite://`` / ``file:`` / ``:memory:`` → aiosqlite (single conn)
     """
 
     dialect: str
 
-    def __init__(self, *, dialect: str, conn: Any, dsn: str = "") -> None:
+    def __init__(self, *, dialect: str, conn: Any = None, pool: Any = None, dsn: str = "") -> None:
         self.dialect = dialect
-        self._conn = conn
+        self._conn = conn  # sqlite path only
+        self._pool = pool  # postgres path only
         self._dsn = dsn  # only used by acquire_listener (postgres only)
-        # asyncpg's `Connection` is not safe for concurrent use — every
-        # operation enters `_stmt_exclusive_section` and a second
-        # concurrent op raises `InterfaceError: another operation is
-        # in progress`. The reaper + claim loop + dispatch all share
-        # this Database instance, so we serialize access with a lock.
-        # Story 1.5's real connection pool is the long-term answer;
-        # this lock keeps the daemon from crashing on every tick until
-        # the pool lands.
-        self._lock = asyncio.Lock()
 
     @classmethod
     async def connect(cls, url: str) -> Database:
         if url.startswith(("postgres://", "postgresql://")):
             asyncpg = _import_asyncpg()
-            conn = await asyncpg.connect(url)
-            return cls(dialect="postgres", conn=conn, dsn=url)
+            # min_size=1 keeps a warm connection so the first reaper
+            # tick doesn't pay the TCP+TLS+auth round-trip; max_size=10
+            # is generous for a single pipeline daemon (reaper + claim
+            # loop + per-job dispatch peaks at single-digit concurrency).
+            pool = await asyncpg.create_pool(url, min_size=1, max_size=10)
+            return cls(dialect="postgres", pool=pool, dsn=url)
 
         aiosqlite = _import_aiosqlite()
         path = _sqlite_path_from_url(url)
@@ -121,47 +119,41 @@ class Database:
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
-        # Hold the lock for the entire transaction so nested fetchrow
-        # / execute calls on the yielded conn don't race against
-        # whatever else might try to touch the shared connection.
-        async with self._lock:
-            if self.dialect == "postgres":
-                async with self._conn.transaction():
-                    yield self._conn
-                return
-            await self._conn.execute("BEGIN")
-            try:
-                yield self._conn
-            except BaseException:
-                await self._conn.rollback()
-                raise
-            else:
-                await self._conn.commit()
+        if self.dialect == "postgres":
+            async with self._pool.acquire() as conn, conn.transaction():
+                yield conn
+            return
+        await self._conn.execute("BEGIN")
+        try:
+            yield self._conn
+        except BaseException:
+            await self._conn.rollback()
+            raise
+        else:
+            await self._conn.commit()
 
     async def fetchrow(self, sql: str, *args: Any) -> Any:
-        async with self._lock:
-            if self.dialect == "postgres":
-                return await self._conn.fetchrow(sql, *args)
-            sql_q, params = _rewrite_for_sqlite(sql, args)
-            async with self._conn.execute(sql_q, params) as cursor:
-                return await cursor.fetchone()
+        if self.dialect == "postgres":
+            async with self._pool.acquire() as conn:
+                return await conn.fetchrow(sql, *args)
+        sql_q, params = _rewrite_for_sqlite(sql, args)
+        async with self._conn.execute(sql_q, params) as cursor:
+            return await cursor.fetchone()
 
     async def execute(self, sql: str, *args: Any) -> Any:
-        async with self._lock:
-            if self.dialect == "postgres":
-                return await self._conn.execute(sql, *args)
-            sql_q, params = _rewrite_for_sqlite(sql, args)
-            await self._conn.execute(sql_q, params)
-            return None
+        if self.dialect == "postgres":
+            async with self._pool.acquire() as conn:
+                return await conn.execute(sql, *args)
+        sql_q, params = _rewrite_for_sqlite(sql, args)
+        await self._conn.execute(sql_q, params)
+        return None
 
     async def acquire_listener(self) -> Any:
-        # LISTEN/NOTIFY needs a dedicated connection. asyncpg puts the
-        # connection into a listening mode after `add_listener`, which
-        # blocks every other query on the same connection with
-        # `InterfaceError: another operation is in progress` — the
-        # serializing lock around fetchrow/execute can't help once
-        # the connection is captured by the listener. So we open a
-        # fresh asyncpg connection per listener, using the same DSN.
+        # LISTEN/NOTIFY needs a dedicated, long-lived connection.
+        # `pool.acquire()` returns a context manager whose lifetime is
+        # tied to a `with` block; the listener wants the connection
+        # past that scope. Open a fresh connection outside the pool
+        # so the listener's LISTEN state never blocks pool acquires.
         if self.dialect != "postgres":
             raise RuntimeError("acquire_listener is Postgres-only")
         asyncpg = _import_asyncpg()
@@ -169,7 +161,10 @@ class Database:
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
-            await self._conn.close()
+            if self.dialect == "postgres" and self._pool is not None:
+                await self._pool.close()
+            elif self._conn is not None:
+                await self._conn.close()
 
 
 def connect(url: str) -> Awaitable[Database]:
