@@ -2,20 +2,51 @@ package jwt
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 )
 
-func newSet(t *testing.T) *keys.Set {
+// RSA keygen is the dominant test cost; share keys via sync.OnceValues (cf. keys_test.go).
+var (
+	sharedKey1 = sync.OnceValues(func() (*keys.Key, error) { return keys.Generate(keys.MinBits) })
+	sharedKey2 = sync.OnceValues(func() (*keys.Key, error) { return keys.Generate(keys.MinBits) })
+	sharedKey3 = sync.OnceValues(func() (*keys.Key, error) { return keys.Generate(keys.MinBits) })
+)
+
+func mustGen(t *testing.T) *keys.Key {
 	t.Helper()
-	s := keys.NewSet(time.Hour)
-	k, err := keys.Generate(keys.MinBits)
+	k, err := sharedKey1()
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	s.Replace(k)
+	return k
+}
+
+func mustGen2(t *testing.T) *keys.Key {
+	t.Helper()
+	k, err := sharedKey2()
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	return k
+}
+
+func mustGen3(t *testing.T) *keys.Key {
+	t.Helper()
+	k, err := sharedKey3()
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	return k
+}
+
+func newSet(t *testing.T) *keys.Set {
+	t.Helper()
+	s := keys.NewSet(time.Hour)
+	s.Replace(mustGen(t))
 	return s
 }
 
@@ -71,8 +102,10 @@ func TestVerify_RejectsUnknownKID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Verify against a fresh set that has never seen this key.
-	other := newSet(t)
+	// `other` must hold a distinct key from `signer`, so build it from
+	// the second cached key rather than reusing newSet's first cache.
+	other := keys.NewSet(time.Hour)
+	other.Replace(mustGen2(t))
 	if _, err := Verify(other, tok, "api"); err != ErrUnknownKID {
 		t.Errorf("unknown kid: got %v, want ErrUnknownKID", err)
 	}
@@ -85,18 +118,13 @@ func TestVerify_AcceptsTokensSignedByPreviousKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	next, err := keys.Generate(keys.MinBits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Rotate(next, keys.RotateRoutine) // old key slides to previous
+	s.Rotate(mustGen2(t), keys.RotateRoutine) // old key slides to previous
 	if _, err := Verify(s, tok, "api"); err != nil {
 		t.Errorf("token signed by previous key should still verify during overlap: %v", err)
 	}
 
 	// Immediate rotation invalidates the previous key.
-	next2, _ := keys.Generate(keys.MinBits)
-	s.Rotate(next2, keys.RotateImmediate)
+	s.Rotate(mustGen3(t), keys.RotateImmediate)
 	if _, err := Verify(s, tok, "api"); err == nil {
 		t.Errorf("immediate rotation should invalidate the previous key's tokens")
 	}
