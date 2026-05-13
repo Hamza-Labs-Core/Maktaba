@@ -120,9 +120,8 @@ class Database:
     @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
         if self.dialect == "postgres":
-            async with self._pool.acquire() as conn:
-                async with conn.transaction():
-                    yield conn
+            async with self._pool.acquire() as conn, conn.transaction():
+                yield conn
             return
         await self._conn.execute("BEGIN")
         try:
