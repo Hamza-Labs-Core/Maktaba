@@ -64,21 +64,21 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: golangci-lint (api)
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v6.5.2
         with:
           version: v1.62.2
           working-directory: api
           args: --timeout=5m
 
       - name: golangci-lint (streaming)
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v6.5.2
         with:
           version: v1.62.2
           working-directory: streaming
           args: --timeout=5m
 
       - name: golangci-lint (shared/health/go)
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v6.5.2
         with:
           version: v1.62.2
           working-directory: shared/health/go
