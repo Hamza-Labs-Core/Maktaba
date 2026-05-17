@@ -1,4 +1,4 @@
-"""Track R1 wiring: real dispatch override map + SCAN in defaults.
+"""Track R1 wiring: real dispatch override map + default stages.
 
 These guard the two integration seams the per-stage adapters need:
 
@@ -6,8 +6,10 @@ These guard the two integration seams the per-stage adapters need:
   the runtime's ``dispatch_overrides`` accepts, with PROBE bound to the
   real adapter and the not-yet-wired stages (notably THUMBNAIL, which
   has no implementing module) left off so they keep the placeholder.
-- ``__main__._DEFAULT_STAGES`` lists ``Stage.SCAN`` first again so a
-  default worker claims scan jobs.
+- ``__main__._DEFAULT_STAGES`` must NOT list ``Stage.SCAN``: SCAN has
+  no real handler (it is absent from ``build_real_dispatch()`` and only
+  gets the runtime's no-op placeholder), so a default worker claiming
+  SCAN jobs would silently mark them ``done`` without scanning.
 """
 
 from __future__ import annotations
@@ -38,11 +40,21 @@ def test_build_real_dispatch_binds_probe_only() -> None:
         assert stage not in overrides
 
 
-def test_default_stages_restores_scan_first() -> None:
-    assert _DEFAULT_STAGES[0] is Stage.SCAN
+def test_default_stages_excludes_scan_without_real_handler() -> None:
+    # SCAN has no real handler — it is absent from build_real_dispatch()
+    # and only gets the runtime's no-op placeholder. A default worker
+    # claiming SCAN jobs would silently mark them ``done`` without ever
+    # scanning, so SCAN must stay out of the defaults until it has a
+    # real adapter.
+    assert Stage.SCAN not in _DEFAULT_STAGES
+    assert _DEFAULT_STAGES[0] is Stage.PROBE
+
+    overrides = build_real_dispatch()
+    assert Stage.PROBE in overrides
+    assert Stage.SCAN not in overrides
+
     # The remaining canonical pipeline stages are still present.
     assert set(_DEFAULT_STAGES) >= {
-        Stage.SCAN,
         Stage.PROBE,
         Stage.EXTRACT,
         Stage.TRANSCRIBE,

@@ -34,7 +34,6 @@ from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
 _DEFAULT_STAGES = (
-    Stage.SCAN,
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,
