@@ -14,6 +14,8 @@ is out of scope for Track V.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.perf.ci_subset import Budget, ci_pr_budgets
@@ -58,8 +60,8 @@ def test_ci_pr_subset_excludes_non_ci_entries() -> None:
         assert excluded not in ids, f"{excluded} is ci_pr=false but appeared in subset"
 
 
-def test_missing_budgets_file_fails_loudly(tmp_path: pytest.TempPathFactory) -> None:
+def test_missing_budgets_file_fails_loudly(tmp_path: Path) -> None:
     """Deleting/moving the budgets file must raise, not silently pass."""
-    missing = tmp_path / "does-not-exist.yaml"  # type: ignore[operator]
+    missing = tmp_path / "does-not-exist.yaml"
     with pytest.raises(FileNotFoundError):
         ci_pr_budgets(missing)
