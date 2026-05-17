@@ -33,14 +33,30 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Bring up compose stack
-        run: docker compose -f deploy/compose/docker-compose.yml up -d --wait
+        # The e2e overlay host-publishes api:8080 on 18080 so the
+        # host-run pytest can reach /healthz directly (Caddy, the only
+        # other host ingress, does not proxy /healthz). Canonical file
+        # is left untouched for prod-like runs.
+        run: >-
+          docker compose
+          -f deploy/compose/docker-compose.yml
+          -f deploy/compose/docker-compose.e2e.yml
+          up -d --wait
 
       - name: Run e2e tier
+        # MAKTABA_E2E_BASE_URL is read by tests/e2e/conftest.py; point
+        # it at the port published by the e2e overlay.
+        env:
+          MAKTABA_E2E_BASE_URL: http://localhost:18080
         run: make test-e2e
 
       - name: Capture compose logs
         if: always()
-        run: docker compose -f deploy/compose/docker-compose.yml logs > compose.log || true
+        run: >-
+          docker compose
+          -f deploy/compose/docker-compose.yml
+          -f deploy/compose/docker-compose.e2e.yml
+          logs > compose.log || true
 
       - name: Upload compose logs
         if: always()
@@ -52,4 +68,8 @@ jobs:
 
       - name: Tear down compose stack
         if: always()
-        run: docker compose -f deploy/compose/docker-compose.yml down -v || true
+        run: >-
+          docker compose
+          -f deploy/compose/docker-compose.yml
+          -f deploy/compose/docker-compose.e2e.yml
+          down -v || true

@@ -294,14 +294,15 @@ test-e2e:  ## E2E tier (Story 20.1, Epic 20.5). Assumes the compose stack is up.
 
 .PHONY: test-e2e-inner
 test-e2e-inner:
-	@# pytest exits 5 when no tests match the marker — that's the
-	@# normal state until Story 20.5 lands real e2e tests.
-	@# Same `|| { ... }` form as test-integration-inner — required
-	@# because .SHELLFLAGS has `-e`, which kills the recipe on
-	@# pytest's non-zero exit before the rc check runs.
-	@cd $(PIPELINE_DIR) && uv run pytest -m e2e || { \
-		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
-	}
+	@# Track V: real gate. NO exit-5 swallow — an empty suite (pytest
+	@# exit 5) must FAIL, so a missing/uncollected e2e suite can never
+	@# be a false green. .SHELLFLAGS has `-e`, so any non-zero pytest
+	@# exit kills the recipe, which is exactly the desired behaviour.
+	@#
+	@# Run from the pipeline uv env (the only env with pytest — CI
+	@# does `cd pipeline && uv sync`), but point it at the repo-root
+	@# tests/e2e suite. $(CURDIR) is the repo root (this Makefile).
+	@cd $(PIPELINE_DIR) && uv run pytest -m e2e $(CURDIR)/tests/e2e -q
 
 # ---------------------------------------------------------------------------
 # Perf-CI (gate 5; Story 20.1 perf-ci tier) — reduced perf suite.
@@ -314,7 +315,12 @@ perf-ci:  ## Reduced perf suite (Story 20.1, Epic 20.7).
 
 .PHONY: perf-ci-inner
 perf-ci-inner:
-	@echo "perf-ci stub: Epic 20.7 will replace this with the real reduced perf suite."
+	@# Track V: real gate. Asserts the ci_pr subset of
+	@# shared/perf_budgets.yaml is present, non-empty, and well-formed
+	@# (removing the budgets file makes this fail). Run from the
+	@# pipeline uv env (the only env with pytest) against the
+	@# repo-root tests/perf suite. $(CURDIR) is the repo root.
+	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
 
 # ---------------------------------------------------------------------------
 # Build (gate 6) — Story 22.2 reproducibility envelope
