@@ -198,7 +198,40 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, d)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+	// Redact the push token at the response boundary. Storage and the
+	// SELECT above are unchanged — only what crosses the wire is
+	// sanitised (mirrors settings.redactSecrets, the secret-leak
+	// precedent).
+	redacted := make([]map[string]any, 0, len(items))
+	for _, d := range items {
+		redacted = append(redacted, redactDevice(d))
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": redacted})
+}
+
+// redactDevice converts a Device into its over-the-wire map with the
+// push token stripped: the value becomes "<redacted>" and a sibling
+// "push_token_present" reports whether a non-empty token exists. This
+// is the only place the raw token is dropped — DB rows still carry it
+// for the APNs/FCM bridge (Story 18.x).
+func redactDevice(d Device) map[string]any {
+	out := map[string]any{
+		"id":                 d.ID,
+		"user_id":            d.UserID,
+		"platform":           d.Platform,
+		"push_token":         "<redacted>",
+		"push_token_present": strings.TrimSpace(d.PushToken) != "",
+		"bundle_id":          d.BundleID,
+		"registered_at":      d.RegisteredAt,
+		"last_seen_at":       d.LastSeenAt,
+	}
+	if d.AppVersion != nil {
+		out["app_version"] = *d.AppVersion
+	}
+	if d.Locale != nil {
+		out["locale"] = *d.Locale
+	}
+	return out
 }
 
 func nullIfEmpty(s string) any {
