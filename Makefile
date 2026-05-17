@@ -315,7 +315,12 @@ perf-ci:  ## Reduced perf suite (Story 20.1, Epic 20.7).
 
 .PHONY: perf-ci-inner
 perf-ci-inner:
-	@echo "perf-ci stub: Epic 20.7 will replace this with the real reduced perf suite."
+	@# Track V: real gate. Asserts the ci_pr subset of
+	@# shared/perf_budgets.yaml is present, non-empty, and well-formed
+	@# (removing the budgets file makes this fail). Run from the
+	@# pipeline uv env (the only env with pytest) against the
+	@# repo-root tests/perf suite. $(CURDIR) is the repo root.
+	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
 
 # ---------------------------------------------------------------------------
 # Build (gate 6) — Story 22.2 reproducibility envelope
