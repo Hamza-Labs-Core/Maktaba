@@ -2,6 +2,9 @@
 
 **Date:** 2026-05-17
 **Status:** Approved (brainstorming) — pending spec review
+**Execution policy:** auto-continue (no Wave-0 checkpoint), single final
+PR, no separate Wave-3 gate. W0-V (real test gates) merges before any
+other track — non-negotiable.
 **Source of truth:** `specs/gap-analysis/` (25 epic reports + `MASTER.md`, evidence cited to `file:line`)
 **Tracking:** Linear, HamzaLabs / Maktaba project — 162 `[Gap]` issues (26 P1, 39 P2, 97 P3)
 
@@ -91,8 +94,8 @@ main
 - Track done + tests pass → diff review → merge into
   `integration/gap-closure` → re-run integration suite.
 - Wave N+1 worktrees branch from the **updated** integration branch.
-- Per-wave PR `integration/gap-closure → main` (or one final PR — decided
-  at the end).
+- **One final PR** `integration/gap-closure → main` at the very end (no
+  per-wave PRs). All waves accumulate on the integration branch.
 
 ### Parallelism cap
 
@@ -119,12 +122,15 @@ independent-track count — beyond that, agents collide or block.
   integration suite.
 - **Conflicting fixes grouped:** the 3 auth issues (HLB-385/386/387) are
   one hole → one track, never split across agents.
-- **Greenfield quality:** Wave 3 gets smaller briefs + heavier review;
-  flagged for user go/no-go before dispatch.
+- **Greenfield quality:** Wave 3 gets smaller briefs + heavier review.
+  No separate go/no-go gate (user decision) — runs under the normal
+  per-track review like any other wave.
 - **DAG drift:** a hidden dependency pauses the wave for re-plan rather
   than merging broken work.
-- **Checkpoint after Wave 0:** stop; user evaluates quality before Wave
-  1+ dispatch. Abort leaves a coherent working system banked.
+- **No Wave-0 checkpoint (user decision):** waves auto-continue without
+  stopping for human quality eval. Consequence: the per-track diff
+  review + the real test gates from W0-V are the ONLY quality firewall —
+  W0-V merging first is therefore load-bearing, not optional.
 
 ## 7. Out of scope
 
