@@ -111,6 +111,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/auth/refresh", h.Refresh)
 	r.Post("/api/auth/logout", h.Logout)
 	r.Post("/api/auth/logout-all", h.LogoutAll)
+	// /api/auth/me is NOT in the public allowlist, so the global
+	// RequireAuthExcept gate already 401s anonymous callers; Me
+	// re-checks defensively so it stays correct if mounted standalone.
+	r.Get("/api/auth/me", h.Me)
 	r.Get("/api/security/audit", h.SecurityAudit)
 	r.Delete("/api/users/{id}/sessions/{session_id}", h.AdminRevokeSession)
 	r.Delete("/api/users/{id}/refresh-tokens/{family_id}", h.AdminRevokeRefreshFamily)
@@ -416,6 +420,41 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, CookieSession, h.SecureCookies)
 	clearCookie(w, CookieCSRF, h.SecureCookies)
 	common.WriteNoContent(w)
+}
+
+// meResponse is the public projection of the request principal.
+// libraries is `omitempty`-free so it serializes as [] not null,
+// letting clients iterate without a nil guard.
+type meResponse struct {
+	UserID    string   `json:"user_id"`
+	IsAdmin   bool     `json:"is_admin"`
+	Libraries []string `json:"libraries"`
+}
+
+// Me returns the authenticated principal's projection. The global
+// RequireAuthExcept gate already rejects anonymous callers (the route
+// is not allowlisted); the nil-principal check here is defence in
+// depth so the handler is correct even if mounted without the gate.
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, &httperror.Error{
+			Type:   "https://maktaba.dev/problems/unauthorized",
+			Title:  "unauthorized",
+			Status: http.StatusUnauthorized,
+			Detail: "authentication required",
+		})
+		return
+	}
+	libs := p.Libraries
+	if libs == nil {
+		libs = []string{}
+	}
+	common.WriteJSON(w, r, http.StatusOK, meResponse{
+		UserID:    p.UserID,
+		IsAdmin:   p.IsAdmin,
+		Libraries: libs,
+	})
 }
 
 // SecurityAudit implements Story 10.16 AC-3. Admin-only; non-admins

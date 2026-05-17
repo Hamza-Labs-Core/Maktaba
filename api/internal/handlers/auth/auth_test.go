@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 )
 
@@ -84,6 +86,62 @@ func TestLibrariesFor_ACLErrorPropagates(t *testing.T) {
 	_, err := h.librariesFor(context.Background(), &users.User{ID: "u1"})
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
+// R3.3: GET /api/auth/me projects the request principal. The route is
+// gated globally by RequireAuthExcept (not in the public allowlist),
+// but Me also defends in depth — no principal → 401.
+func TestMe_ProjectsPrincipal(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{
+		UserID:    "user-7",
+		IsAdmin:   true,
+		Libraries: []string{"lib-a", "lib-b"},
+	}))
+	rec := httptest.NewRecorder()
+	h.Me(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		UserID    string   `json:"user_id"`
+		IsAdmin   bool     `json:"is_admin"`
+		Libraries []string `json:"libraries"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if got.UserID != "user-7" || !got.IsAdmin {
+		t.Fatalf("projection = %+v", got)
+	}
+	if len(got.Libraries) != 2 || got.Libraries[0] != "lib-a" || got.Libraries[1] != "lib-b" {
+		t.Fatalf("libraries = %v, want [lib-a lib-b]", got.Libraries)
+	}
+}
+
+func TestMe_NoPrincipalIs401(t *testing.T) {
+	h := &Handler{}
+	rec := httptest.NewRecorder()
+	h.Me(rec, httptest.NewRequest(http.MethodGet, "/api/auth/me", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /api/auth/me: status = %d, want 401", rec.Code)
+	}
+}
+
+func TestMe_NilLibrariesProjectsEmptyArray(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{
+		UserID: "u1",
+	}))
+	rec := httptest.NewRecorder()
+	h.Me(rec, req)
+	// libraries must serialize as [] not null so clients can iterate.
+	if body := rec.Body.String(); !contains(body, `"libraries":[]`) {
+		t.Fatalf("body = %s, want libraries:[]", body)
 	}
 }
 
