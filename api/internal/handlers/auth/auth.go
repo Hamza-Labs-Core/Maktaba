@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -68,6 +69,14 @@ const (
 	TypeCSRFMismatch       = "https://maktaba.dev/problems/csrf-mismatch"
 )
 
+// LibraryACL is the read-side seam the token minter uses to snapshot
+// the user's library grants into the JWT `lib[]` claim at issue time
+// (Story 10.13 AC-5). *authz.ACLStore satisfies it; tests inject a
+// fake so the mint path can be exercised without a database.
+type LibraryACL interface {
+	LibrariesFor(ctx context.Context, userID string) ([]string, error)
+}
+
 // Handler owns the auth surface. All dependencies are required except
 // Audit (a nil writer disables audit emission, used in unit tests).
 type Handler struct {
@@ -77,6 +86,12 @@ type Handler struct {
 	Keys          *keys.Set
 	Audit         *securityaudit.Writer
 	AccessTTL     time.Duration
+
+	// ACL snapshots the user's readable libraries into the access
+	// token's `lib[]` claim at mint time. Streaming's claims guard
+	// errors on an empty `lib` (streaming/internal/auth/claims.go), so
+	// this must be populated for non-admin users to stream.
+	ACL LibraryACL
 
 	// SecureCookies controls whether the Set-Cookie response uses the
 	// Secure attribute. Production should set this to true; tests and
@@ -96,6 +111,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/auth/refresh", h.Refresh)
 	r.Post("/api/auth/logout", h.Logout)
 	r.Post("/api/auth/logout-all", h.LogoutAll)
+	// /api/auth/me is NOT in the public allowlist, so the global
+	// RequireAuthExcept gate already 401s anonymous callers; Me
+	// re-checks defensively so it stays correct if mounted standalone.
+	r.Get("/api/auth/me", h.Me)
 	r.Get("/api/security/audit", h.SecurityAudit)
 	r.Delete("/api/users/{id}/sessions/{session_id}", h.AdminRevokeSession)
 	r.Delete("/api/users/{id}/refresh-tokens/{family_id}", h.AdminRevokeRefreshFamily)
@@ -192,16 +211,12 @@ func (h *Handler) respondNative(w http.ResponseWriter, r *http.Request, u *users
 		accessTTL = DefaultAccessTTL
 	}
 	now := h.now()
-	access, err := jwt.Sign(h.Keys, jwt.Claims{
-		Iss:     "maktaba",
-		Aud:     "api",
-		Sub:     u.ID,
-		Iat:     now.Unix(),
-		Exp:     now.Add(accessTTL).Unix(),
-		Usr:     u.ID,
-		Lib:     []string{},
-		IsAdmin: u.IsAdmin,
-	})
+	libs, err := h.librariesFor(r.Context(), u)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("resolve library acl"))
+		return
+	}
+	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("sign access token"))
 		return
@@ -312,16 +327,12 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		accessTTL = DefaultAccessTTL
 	}
 	now := h.now()
-	access, err := jwt.Sign(h.Keys, jwt.Claims{
-		Iss:     "maktaba",
-		Aud:     "api",
-		Sub:     u.ID,
-		Iat:     now.Unix(),
-		Exp:     now.Add(accessTTL).Unix(),
-		Usr:     u.ID,
-		Lib:     []string{},
-		IsAdmin: u.IsAdmin,
-	})
+	libs, err := h.librariesFor(r.Context(), u)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("resolve library acl"))
+		return
+	}
+	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("sign access token"))
 		return
@@ -409,6 +420,41 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, CookieSession, h.SecureCookies)
 	clearCookie(w, CookieCSRF, h.SecureCookies)
 	common.WriteNoContent(w)
+}
+
+// meResponse is the public projection of the request principal.
+// libraries is `omitempty`-free so it serializes as [] not null,
+// letting clients iterate without a nil guard.
+type meResponse struct {
+	UserID    string   `json:"user_id"`
+	IsAdmin   bool     `json:"is_admin"`
+	Libraries []string `json:"libraries"`
+}
+
+// Me returns the authenticated principal's projection. The global
+// RequireAuthExcept gate already rejects anonymous callers (the route
+// is not allowlisted); the nil-principal check here is defence in
+// depth so the handler is correct even if mounted without the gate.
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, &httperror.Error{
+			Type:   "https://maktaba.dev/problems/unauthorized",
+			Title:  "unauthorized",
+			Status: http.StatusUnauthorized,
+			Detail: "authentication required",
+		})
+		return
+	}
+	libs := p.Libraries
+	if libs == nil {
+		libs = []string{}
+	}
+	common.WriteJSON(w, r, http.StatusOK, meResponse{
+		UserID:    p.UserID,
+		IsAdmin:   p.IsAdmin,
+		Libraries: libs,
+	})
 }
 
 // SecurityAudit implements Story 10.16 AC-3. Admin-only; non-admins
@@ -560,6 +606,41 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 
 // ---------- internal helpers ----------
 
+// librariesFor snapshots the libraries this user can read for the JWT
+// `lib[]` claim. Admins read everything, so we skip the ACL lookup and
+// return an empty slice (the verifier sets AccessAllLibraries from
+// is_admin). A nil ACL (older callers / unit tests that don't exercise
+// the mint path) yields an empty slice rather than a panic.
+func (h *Handler) librariesFor(ctx context.Context, u *users.User) ([]string, error) {
+	if u.IsAdmin || h.ACL == nil {
+		return []string{}, nil
+	}
+	libs, err := h.ACL.LibrariesFor(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if libs == nil {
+		libs = []string{}
+	}
+	return libs, nil
+}
+
+// accessClaims builds the access-token claim set. Kept as a pure
+// function so the lib[] snapshot can be unit-tested without standing
+// up the DB-backed Login/Refresh path.
+func accessClaims(u *users.User, libs []string, now time.Time, ttl time.Duration) jwt.Claims {
+	return jwt.Claims{
+		Iss:     "maktaba",
+		Aud:     "api",
+		Sub:     u.ID,
+		Iat:     now.Unix(),
+		Exp:     now.Add(ttl).Unix(),
+		Usr:     u.ID,
+		Lib:     libs,
+		IsAdmin: u.IsAdmin,
+	}
+}
+
 func (h *Handler) now() time.Time {
 	if h.Now != nil {
 		return h.Now()
@@ -706,6 +787,7 @@ func NewHandler(d Deps) *Handler {
 		Audit:         securityaudit.NewWriter(d.DB),
 		AccessTTL:     d.AccessTTL,
 		SecureCookies: d.SecureCookies,
+		ACL:           &authz.ACLStore{DB: d.DB},
 	}
 }
 

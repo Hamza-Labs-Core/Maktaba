@@ -134,6 +134,65 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// DefaultPublicAllowlist is the exact set of paths that stay reachable
+// without authentication. Everything else served by the public mux is
+// gated by RequireAuthExcept.
+//
+// Justification per route:
+//
+//   - /healthz, /api/system/health, /api/system/version — liveness /
+//     readiness / build probes the orchestrator polls with no creds.
+//   - /api/.well-known/jwks.json — JWKS publication; clients and the
+//     streaming service fetch it to *verify* tokens, so gating it would
+//     be circular.
+//   - /.well-known/security.txt — RFC 9116 mandates unauthenticated
+//     reachability.
+//   - /api/auth/login — issues the first credential; the caller has
+//     none yet by definition.
+//   - /api/auth/refresh — rotates a refresh token; the caller's access
+//     token may already be expired, so it cannot be required here.
+//
+// Deliberately NOT public: /api/system/sbom (internal artifact;
+// only security.txt is mandated public), /api/auth/logout[-all]
+// (operate on an authenticated identity), and every /api/stream/*
+// route (each already enforces a principal in-handler). The api
+// service serves no signed-URL playback endpoint — those live in the
+// separate streaming service with its own auth.
+func DefaultPublicAllowlist() map[string]struct{} {
+	return map[string]struct{}{
+		"/healthz":                   {},
+		"/api/system/health":         {},
+		"/api/system/version":        {},
+		"/api/.well-known/jwks.json": {},
+		"/.well-known/security.txt":  {},
+		"/api/auth/login":            {},
+		"/api/auth/refresh":          {},
+	}
+}
+
+// RequireAuthExcept is the global gate for the public mux: it behaves
+// like RequireAuth (401 unless an upstream middleware attached a
+// principal) for every request whose exact path is NOT in `public`.
+// Allowlisted paths pass straight through anonymously.
+//
+// Exact-match only (not prefix): `/api/auth/login` being public must
+// not make `/api/auth/login-as-admin` public too.
+func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := public[r.URL.Path]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if principal.FromContext(r.Context()) == nil {
+				writeProblem(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireAdmin gates routes that must be admin-only. Returns 403 for
 // non-admin authenticated users; falls through to RequireAuth for the
 // not-authenticated case.

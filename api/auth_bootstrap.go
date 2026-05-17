@@ -89,15 +89,37 @@ func DefaultRotationOverlap() time.Duration {
 }
 
 // applySecurity wraps a public-mux handler with the standard
-// transport-security middleware stack: security headers → CORS →
-// admin-token bypass → JWT bearer. The order matters:
+// transport-security middleware stack:
 //
-//   - headers run last (outermost) so even an early 401/403 from auth
-//     still ships the standard CSP/HSTS,
-//   - admin-token runs before JWT so a single-user install can short
-//     circuit verification.
-func (a *authState) applySecurity(next http.Handler) http.Handler {
+//	headers → CORS → admin-token → JWT bearer → cookie-auth →
+//	RequireAuthExcept(allowlist) → next
+//
+// Order is load-bearing (read outermost-first as the request enters):
+//
+//   - headers run outermost so even an early 401/403 from the gate
+//     still ships the standard CSP/HSTS.
+//   - the three credential-attaching middlewares (admin-token, JWT,
+//     cookie) run before the gate so a valid credential of ANY kind
+//     has populated the principal by the time RequireAuthExcept
+//     decides. admin-token precedes JWT so a single-user install can
+//     short-circuit verification; cookie-auth runs last of the three
+//     and no-ops when a principal is already attached.
+//   - RequireAuthExcept is innermost (closest to the handlers): it
+//     turns "no principal" into 401 for every path except the
+//     explicit public allowlist, finally requiring auth on the
+//     business surface that was previously fully anonymous.
+//
+// cookieAuth is the session-cookie principal middleware
+// (auth.Handler.CookieAuth). It may be nil when the Phase 9 auth
+// surface is unwired (no DB / no keys); in that case the bearer/admin
+// paths still gate the surface and cookie sessions simply aren't
+// honoured.
+func (a *authState) applySecurity(next http.Handler, cookieAuth func(http.Handler) http.Handler) http.Handler {
 	stack := next
+	stack = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(stack)
+	if cookieAuth != nil {
+		stack = cookieAuth(stack)
+	}
 	stack = middleware.JWTBearer(a.keys, "api")(stack)
 	stack = middleware.AdminToken(a.adminToken)(stack)
 	stack = httpsec.CORS(a.cors)(stack)

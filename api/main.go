@@ -211,6 +211,10 @@ func runServe() error {
 	// independent — a starved readiness pool can't take down user
 	// traffic and vice versa. A missing DATABASE_URL leaves the P6
 	// surface unwired (the routes return 404 from chi as before).
+	// cookieAuth is the session-cookie principal middleware, captured
+	// from the Phase 9 handler so applySecurity can install it ahead of
+	// the auth gate. Nil when the auth surface is unwired (no DB/keys).
+	var cookieAuth func(http.Handler) http.Handler
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := sql.Open("postgres", dsn)
 		if dbErr != nil {
@@ -257,6 +261,7 @@ func runServe() error {
 				AccessTTL:     accessTokenTTL(),
 			})
 			if p9 != nil {
+				cookieAuth = p9.CookieAuth
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
 			}
 
@@ -282,7 +287,7 @@ func runServe() error {
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           auth.applySecurity(publicMux),
+		Handler:           auth.applySecurity(publicMux, cookieAuth),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{

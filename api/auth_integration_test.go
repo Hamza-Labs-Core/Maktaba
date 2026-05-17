@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 )
 
 // TestServeWithAuth_JWKSAndHeaders is the integration sanity check
@@ -100,6 +104,77 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 	if resp2.Header.Get("Content-Security-Policy") == "" {
 		t.Error("CSP header should be present")
 	}
+}
+
+// TestApplySecurity_GatesBusinessRoutes is the R3.2 regression: the
+// previously-anonymous business surface must now require auth. We wrap
+// a sentinel "business" handler with the real applySecurity stack and
+// assert anonymous is 401 while a valid bearer reaches the handler.
+func TestApplySecurity_GatesBusinessRoutes(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+
+	business := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("business-ok"))
+	})
+	// cookieAuth nil: the bearer path alone must still gate + admit.
+	stack := st.applySecurity(business, nil)
+
+	// Anonymous business route → 401.
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/libraries", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /api/libraries: status = %d, want 401", rec.Code)
+	}
+
+	// Public route → reaches handler anonymously.
+	recPub := httptest.NewRecorder()
+	stack.ServeHTTP(recPub, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if recPub.Code != http.StatusOK {
+		t.Fatalf("anonymous /api/system/version: status = %d, want 200 (public)", recPub.Code)
+	}
+
+	// Valid bearer → reaches handler.
+	tok := mustSignAPIToken(t, priv, pub)
+	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	recAuth := httptest.NewRecorder()
+	stack.ServeHTTP(recAuth, req)
+	if recAuth.Code != http.StatusOK {
+		t.Fatalf("bearer /api/libraries: status = %d, want 200", recAuth.Code)
+	}
+	if got := recAuth.Body.String(); got != "business-ok" {
+		t.Fatalf("bearer body = %q, want business-ok", got)
+	}
+}
+
+// mustSignAPIToken mints a minimal valid `aud:api` access token using
+// the same key set initAuth loaded from the PEM env vars.
+func mustSignAPIToken(t *testing.T, privPEM, pubPEM string) string {
+	t.Helper()
+	k, err := keys.FromPEM(privPEM, pubPEM)
+	if err != nil {
+		t.Fatalf("keys.FromPEM: %v", err)
+	}
+	set := keys.NewSet(time.Hour)
+	set.Replace(k)
+	tok, err := jwt.Sign(set, jwt.Claims{
+		Iss: "maktaba", Aud: "api", Sub: "u1", Usr: "u1",
+	})
+	if err != nil {
+		t.Fatalf("jwt.Sign: %v", err)
+	}
+	return tok
 }
 
 func mustGet(t *testing.T, url string) *http.Response {
