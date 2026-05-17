@@ -31,6 +31,10 @@ export function VideoPlayer() {
   const [session, setSession] = useState<OpenSessionResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Holds the latest resolved session_id so the open-session effect's
+  // teardown can DELETE the exact session it opened (the session state is
+  // set asynchronously, so closing over it would be stale).
+  const sessionIdRef = useRef<string | null>(null);
 
   // Open a streaming session for this video.
   useEffect(() => {
@@ -39,7 +43,10 @@ export function VideoPlayer() {
     api
       .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
       .then((s) => {
-        if (!cancelled) setSession(s);
+        if (!cancelled) {
+          sessionIdRef.current = s.session_id;
+          setSession(s);
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -48,6 +55,20 @@ export function VideoPlayer() {
       });
     return () => {
       cancelled = true;
+      // Best-effort teardown of the server-side encode/remux pipeline so it
+      // is not orphaned until expires_at. Fires on unmount and on videoId
+      // change (closing the prior session before the next one opens). Guard
+      // on the ref so we never delete a session that never opened, and never
+      // double-delete (the server also TTL-expires the session anyway).
+      const id = sessionIdRef.current;
+      if (id) {
+        sessionIdRef.current = null;
+        void api
+          .delete(`/api/stream/sessions/${encodeURIComponent(id)}`)
+          .catch(() => {
+            /* best-effort; the session TTL-expires server-side */
+          });
+      }
     };
   }, [videoId, t]);
 
