@@ -29,6 +29,7 @@ from typing import Any
 
 from . import __version__
 from .db.jobs import Stage
+from .handlers import build_real_dispatch
 from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
@@ -115,7 +116,12 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             log.warning("pipeline_grpc_disabled", reason=str(exc))
 
     try:
-        return await run(cfg, db=database)
+        # Track R1: feed the real per-stage adapter map. Stages without
+        # a thin-wrapper adapter (EXTRACT, TRANSCRIBE, SUBTITLE_GEN,
+        # INDEX, THUMBNAIL) are absent from the map and keep the
+        # runtime's placeholder handler until their real orchestration
+        # lands — see maktaba_pipeline.handlers.
+        return await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
     finally:
         if grpc_server is not None:
             await grpc_server.stop(grace=1.0)
