@@ -167,6 +167,79 @@ func TestRequireAuth_401WhenAnonymous(t *testing.T) {
 	}
 }
 
+func TestRequireAuthExcept_GatesBusinessRoutesAnonymous(t *testing.T) {
+	gate := RequireAuthExcept(DefaultPublicAllowlist())
+	h := gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/libraries", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /api/libraries: status = %d, want 401", rec.Code)
+	}
+}
+
+func TestRequireAuthExcept_AllowsAuthenticated(t *testing.T) {
+	gate := RequireAuthExcept(DefaultPublicAllowlist())
+	called := false
+	h := gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/libraries", nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(),
+		&principal.Principal{UserID: "u1"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !called {
+		t.Fatalf("authed /api/libraries: status = %d called=%v, want 200/true", rec.Code, called)
+	}
+}
+
+func TestRequireAuthExcept_PublicRoutesBypassGate(t *testing.T) {
+	gate := RequireAuthExcept(DefaultPublicAllowlist())
+	for _, path := range []string{
+		"/healthz",
+		"/api/.well-known/jwks.json",
+		"/.well-known/security.txt",
+		"/api/system/health",
+		"/api/system/version",
+		"/api/auth/login",
+		"/api/auth/refresh",
+	} {
+		called := false
+		h := gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest("POST", path, nil) // anonymous, any verb
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !called {
+			t.Errorf("public %s: status=%d called=%v, want 200/true (must bypass gate)",
+				path, rec.Code, called)
+		}
+	}
+}
+
+func TestRequireAuthExcept_AllowlistIsExactNotPrefix(t *testing.T) {
+	// `/api/auth/logout` must NOT inherit `/api/auth/login`'s public
+	// status — the allowlist matches exact paths only.
+	gate := RequireAuthExcept(DefaultPublicAllowlist())
+	h := gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("logout should be gated, not public")
+	}))
+	req := httptest.NewRequest("POST", "/api/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("/api/auth/logout anonymous: status = %d, want 401", rec.Code)
+	}
+}
+
 func TestRequireAdmin_403ForNonAdmin(t *testing.T) {
 	h := RequireAdmin(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run for non-admin")
