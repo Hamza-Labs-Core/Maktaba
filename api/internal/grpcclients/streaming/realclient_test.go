@@ -106,6 +106,21 @@ func TestStreamingClient_OpenSession_ServerError(t *testing.T) {
 	}
 }
 
+func TestStreamingClient_OpenSession_NonStringServerError(t *testing.T) {
+	c := newFakeStreamingClient(t, map[string]func(map[string]any) map[string]any{
+		"OpenSession": func(_ map[string]any) map[string]any {
+			// Structured (non-string) in-band error must not be
+			// silently dropped just because it isn't a string.
+			return map[string]any{"error": map[string]any{
+				"code": float64(13), "message": "internal",
+			}}
+		},
+	})
+	if _, err := c.OpenSession(context.Background(), OpenSessionRequest{}); err == nil {
+		t.Fatal("expected non-string in-band error to surface, got nil")
+	}
+}
+
 func TestStreamingClient_CloseSession(t *testing.T) {
 	c := newFakeStreamingClient(t, map[string]func(map[string]any) map[string]any{
 		"CloseSession": func(req map[string]any) map[string]any {

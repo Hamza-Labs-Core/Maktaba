@@ -102,8 +102,18 @@ func (c *realClient) invoke(ctx context.Context, method string, req map[string]a
 	if err != nil {
 		return err
 	}
-	if msg, ok := (*resp)["error"].(string); ok && msg != "" {
-		return fmt.Errorf("streaming: %s", msg)
+	// In-band application errors arrive as {"error": ...} with an OK
+	// gRPC status. The value is conventionally a string, but a
+	// non-string (e.g. a structured {"code":..,"message":..} or a
+	// bare true) is still an error and must not be silently dropped.
+	if v, present := (*resp)["error"]; present {
+		if s, ok := v.(string); ok {
+			if s != "" {
+				return fmt.Errorf("streaming: %s", s)
+			}
+		} else if v != nil {
+			return fmt.Errorf("streaming: %v", v)
+		}
 	}
 	return nil
 }

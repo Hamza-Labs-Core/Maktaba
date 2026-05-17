@@ -100,6 +100,21 @@ func TestRealClient_Embed_ServerError(t *testing.T) {
 	}
 }
 
+func TestRealClient_Embed_NonStringServerError(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"Embed": func(_ map[string]any) map[string]any {
+			// Structured (non-string) in-band error must not be
+			// silently dropped just because it isn't a string.
+			return map[string]any{"error": map[string]any{
+				"code": float64(13), "message": "internal",
+			}}
+		},
+	})
+	if _, err := c.Embed(context.Background(), "x"); err == nil {
+		t.Fatal("expected non-string in-band error to surface, got nil")
+	}
+}
+
 func TestRealClient_ListBackends(t *testing.T) {
 	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
 		"ListBackends": func(_ map[string]any) map[string]any {
