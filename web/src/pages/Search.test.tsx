@@ -6,10 +6,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
-const { post } = vi.hoisted(() => ({ post: vi.fn() }));
+const { post, get, del } = vi.hoisted(() => ({
+  post: vi.fn(),
+  get: vi.fn(),
+  del: vi.fn(),
+}));
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
-  return { ...actual, api: { ...actual.api, post } };
+  return { ...actual, api: { ...actual.api, post, get, delete: del } };
 });
 
 import { Search } from "./Search";
@@ -28,6 +32,10 @@ function renderSearch() {
 describe("Search", () => {
   beforeEach(() => {
     post.mockReset();
+    get.mockReset();
+    del.mockReset();
+    // Saved-searches sidebar fetch on mount.
+    get.mockResolvedValue({ items: [], suggestions: [] });
   });
 
   it("POSTs /api/search with { q, mode, limit } and renders server hits", async () => {
@@ -50,8 +58,8 @@ describe("Search", () => {
 
     renderSearch();
     const user = userEvent.setup();
-    await user.type(screen.getByRole("searchbox"), "quick");
-    await user.click(screen.getByRole("button", { name: /search/i }));
+    await user.type(screen.getByRole("combobox", { name: /search/i }), "quick");
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledTimes(1);
@@ -79,11 +87,11 @@ describe("Search", () => {
 
     renderSearch();
     const user = userEvent.setup();
-    await user.type(screen.getByRole("searchbox"), "nothing");
-    await user.click(screen.getByRole("button", { name: /search/i }));
+    await user.type(screen.getByRole("combobox", { name: /search/i }), "nothing");
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/nothing here yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/no results/i)).toBeInTheDocument();
     });
   });
 });

@@ -39,6 +39,8 @@ describe("VideoPlayer", () => {
     get.mockReset();
     del.mockReset();
     del.mockResolvedValue(undefined);
+    // Chapter-ticks fetch fires on mount alongside the session open.
+    get.mockResolvedValue({ items: [] });
   });
 
   it("opens a stream session via POST /api/stream/sessions and plays manifest_url", async () => {
