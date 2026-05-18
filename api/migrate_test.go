@@ -414,3 +414,46 @@ func extractCreateBlock(t *testing.T, s, table string) string {
 	}
 	return s[i : open+closeIdx+2]
 }
+
+// TestGuardDown verifies the Story 22.6 rollback safety guard:
+// MAKTABA_DISABLE_DOWN refuses `down`/`down-to` for every truthy
+// spelling and allows it when unset/falsey.
+func TestGuardDown(t *testing.T) {
+	for _, v := range []string{"1", "true", "TRUE", "Yes", "on", " true "} {
+		t.Setenv("MAKTABA_DISABLE_DOWN", v)
+		if err := guardDown(); err == nil {
+			t.Errorf("MAKTABA_DISABLE_DOWN=%q: expected rollback refused, got nil", v)
+		}
+	}
+	for _, v := range []string{"", "0", "false", "no", "off"} {
+		t.Setenv("MAKTABA_DISABLE_DOWN", v)
+		if err := guardDown(); err != nil {
+			t.Errorf("MAKTABA_DISABLE_DOWN=%q: expected rollback allowed, got %v", v, err)
+		}
+	}
+}
+
+// TestRunMigrate_DownGatedByGuard asserts the `down` action is refused
+// before any DB connection is attempted when the guard is set — the
+// guard fires even with no DATABASE_URL, proving it's a hard gate.
+func TestRunMigrate_DownGatedByGuard(t *testing.T) {
+	t.Setenv("MAKTABA_DISABLE_DOWN", "1")
+	t.Setenv("DATABASE_URL", "")
+	dir := repoMigrationsDir(t)
+	err := runMigrate([]string{"--dir", dir, "--dsn", "postgres://unused", "down"})
+	if err == nil || !strings.Contains(err.Error(), "MAKTABA_DISABLE_DOWN") {
+		t.Fatalf("down with guard set: want MAKTABA_DISABLE_DOWN error, got %v", err)
+	}
+}
+
+// TestRunMigrate_DownToRequiresTarget asserts `down-to` without a
+// version argument is a clean usage error (guard unset so we reach the
+// arg check).
+func TestRunMigrate_DownToRequiresTarget(t *testing.T) {
+	t.Setenv("MAKTABA_DISABLE_DOWN", "")
+	dir := repoMigrationsDir(t)
+	err := runMigrate([]string{"--dir", dir, "--dsn", "postgres://unused", "down-to"})
+	if err == nil || !strings.Contains(err.Error(), "requires a target version") {
+		t.Fatalf("down-to without target: want usage error, got %v", err)
+	}
+}

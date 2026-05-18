@@ -34,13 +34,30 @@ docker compose up -d api streaming pipeline web
 MAKTABA_IMAGE_TAG=v0.1.0 docker compose up -d api streaming pipeline web
 
 # 2. If the new release had a destructive migration, roll the schema
-#    back to the previous slot. `goose down` is idempotent; this is
-#    the only step that mutates Postgres.
-docker compose run --rm api maktaba-api migrate down --to=0053
+#    back. `migrate down` reverts the single most-recent migration;
+#    `migrate down-to <version>` reverts down to a specific schema
+#    version. This is the only step that mutates Postgres.
+#
+#    Rollback is destructive, so it is refused unless you explicitly
+#    opt in: the binary aborts when MAKTABA_DISABLE_DOWN is truthy
+#    (recommended as a standing production env var). Clear it only for
+#    the duration of the rollback.
+MAKTABA_DISABLE_DOWN= docker compose run --rm -e MAKTABA_DISABLE_DOWN= \
+  api maktaba-api migrate down-to 53
 ```
 
 The release manifest (`release-manifest.json`) records the
 `schema_rev` for every release so the rollback target is unambiguous.
+Only roll back within one minor version; for anything wider, restore
+from a database backup (see invariant 4 above).
+
+> NOTE (Story 22.6, deferred): the broader upgrade runtime —
+> `tools/upgrade.sh` / `rollback.sh` / `version-jump-guard.sh`,
+> `/admin/drain`, pre-upgrade `migrate doctor` simulation, and the
+> `--accept-long-migration` ack — is **not yet implemented**. This
+> release wires the concrete, tested rollback path (`migrate down` /
+> `down-to`, guarded by `MAKTABA_DISABLE_DOWN`); the orchestration
+> wrappers and drain endpoint remain tracked in HLB-360.
 
 ## Packaged upgrade (Homebrew / dpkg / rpm)
 

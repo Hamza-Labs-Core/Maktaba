@@ -98,3 +98,9 @@ jobs:
 
       - name: log-lint (no runtime data in log msg, Story 21.1 AC-4)
         run: make lint-log
+
+      # Story 22.2 TC3: uv.lock / pnpm-lock.yaml / go.mod drift fails CI.
+      # The gate existed in the Makefile but was unwired; running it in
+      # the lint gate makes a drifted lockfile a merge blocker.
+      - name: lockfile drift (uv / pnpm / go.mod)
+        run: make lockfile-check

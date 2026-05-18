@@ -1,0 +1,4 @@
+{
+  "_doc": "migration-lint long-running-DDL exemptions (Story 22.4 AC4). Each entry suppresses ONE long-running rule for ONE migration file until `expires` (RFC3339, must be in the future). file/rule/reason/expires are all mandatory; an expired or malformed entry fails closed so the guard reappears. Rule ids: long-running-create-index, long-running-alter-type, long-running-set-not-null. Keep this list empty unless a DDL is provably safe and documented.",
+  "exemptions": []
+}

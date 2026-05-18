@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,10 +46,18 @@ func runMigrate(argv []string) error {
 		fmt.Fprintln(fs.Output(), `Usage: maktaba-api migrate <action> [flags]
 
 Actions:
-  up        Apply all pending migrations
-  status    Show applied vs. pending migrations
-  version   Print the current schema version
-  validate  Verify the migrations directory is well-formed
+  up           Apply all pending migrations
+  status       Show applied vs. pending migrations
+  version      Print the current schema version
+  validate     Verify the migrations directory is well-formed
+  down         Roll back the most recently applied migration
+  down-to <v>  Roll back until the schema is at version <v>
+
+Rollback (Story 22.6 AC2): down / down-to execute the +goose Down
+blocks. They are refused when MAKTABA_DISABLE_DOWN is set to a truthy
+value (recommended on production) so an operator must opt in to
+destructive rollback. Roll back only within one minor version and
+restore from backup for anything wider — see deploy/packaging/upgrade.md.
 
 Flags:`)
 		fs.PrintDefaults()
@@ -81,6 +90,30 @@ Flags:`)
 	// touching dialect/DSN.
 	if action == "validate" {
 		return validateDir(dir)
+	}
+
+	// Rollback safety + arg validation runs before the DB is opened so
+	// `down`/`down-to` fail fast (and deterministically, with no DSN)
+	// when the guard is set or the target is malformed. Mirrors the
+	// `validate` short-circuit above.
+	var downToTarget int64
+	if action == "down" || action == "down-to" {
+		if err := guardDown(); err != nil {
+			return err
+		}
+	}
+	if action == "down-to" {
+		if fs.NArg() < 2 {
+			return errors.New("down-to requires a target version: `migrate down-to <version>`")
+		}
+		t, perr := strconv.ParseInt(fs.Arg(1), 10, 64)
+		if perr != nil {
+			return fmt.Errorf("down-to target %q: not an integer schema version", fs.Arg(1))
+		}
+		if t < 0 {
+			return fmt.Errorf("down-to target %d: must be >= 0", t)
+		}
+		downToTarget = t
 	}
 
 	if dialect != "postgres" {
@@ -121,8 +154,16 @@ Flags:`)
 		return goose.StatusContext(ctx, db, dir)
 	case "version":
 		return goose.VersionContext(ctx, db, dir)
+	case "down":
+		fmt.Fprintf(os.Stderr, "migrate: rolling back the most recent migration in %s against %s\n",
+			dir, redactDSN(dsn))
+		return runGooseDown(ctx, db, dir)
+	case "down-to":
+		fmt.Fprintf(os.Stderr, "migrate: rolling back to schema version %d in %s against %s\n",
+			downToTarget, dir, redactDSN(dsn))
+		return runGooseDownTo(ctx, db, dir, downToTarget)
 	default:
-		return fmt.Errorf("unknown migrate action %q (try 'up', 'status', 'version', 'validate')", action)
+		return fmt.Errorf("unknown migrate action %q (try 'up', 'down', 'down-to', 'status', 'version', 'validate')", action)
 	}
 }
 
@@ -143,6 +184,45 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 	}
 	defer os.RemoveAll(stage)
 	return goose.UpContext(ctx, db, stage)
+}
+
+// guardDown refuses a rollback when MAKTABA_DISABLE_DOWN is truthy.
+// Story 22.6 AC2 + spec EC1: down migrations are destructive and
+// dev-/recovery-only; an operator running on production must explicitly
+// unset the guard before a rollback can proceed.
+func guardDown() error {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_DISABLE_DOWN")))
+	switch v {
+	case "1", "true", "yes", "on":
+		return errors.New("rollback refused: MAKTABA_DISABLE_DOWN is set " +
+			"(down migrations are destructive; unset it to opt in — see deploy/packaging/upgrade.md)")
+	}
+	return nil
+}
+
+// runGooseDown rolls back exactly one applied migration. It reuses the
+// same postgres-only staging dir as `up` so goose sees an identical
+// migration set in both directions (the slot-0000 bootstrap row is
+// never rolled back — it's applied outside goose).
+func runGooseDown(ctx context.Context, db *sql.DB, dir string) error {
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	return goose.DownContext(ctx, db, stage)
+}
+
+// runGooseDownTo rolls back until the schema is at `target`. target==0
+// rolls back every goose-managed migration (the slot-0000 bootstrap
+// row remains; it is not a goose migration).
+func runGooseDownTo(ctx context.Context, db *sql.DB, dir string, target int64) error {
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	return goose.DownToContext(ctx, db, stage, target)
 }
 
 // bootstrapSchemaVersion applies the slot-0000 schema_version DDL
