@@ -268,7 +268,7 @@ func runServe() error {
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
-			router.MountP10(r, router.P10Deps{DB: appDB})
+			router.MountP10(r, router.P10Deps{DB: appDB, Logger: logger})
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 		}

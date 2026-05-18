@@ -4,9 +4,198 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
+
+// errLoadActiveDB is a LicensePersistence whose LoadActive always
+// fails — modelling a DB-level read error on the licenses table.
+type errLoadActiveDB struct{ *fakeLicenseDB }
+
+func (errLoadActiveDB) LoadActive(_ context.Context) (*persistedLicense, error) {
+	return nil, errors.New("db: connection reset")
+}
+
+// signedRow builds a `licenses` row by signing `inner` with `priv`.
+// It mirrors how the production SaveActive serialises the row (the raw
+// signed JSON in RawJWT), letting the fail-closed cases below feed
+// NewPersistentStore a row the runtime verifier will reject.
+func signedRow(t *testing.T, priv ed25519.PrivateKey, inner LicenseInner) persistedLicense {
+	t.Helper()
+	lic, err := Sign(priv, inner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Serialise exactly as production SetLicense does (json.Marshal of
+	// the signed *License) so recover()'s json.Unmarshal round-trips.
+	raw, err := json.Marshal(lic)
+	if err != nil {
+		t.Fatalf("marshal license: %v", err)
+	}
+	return persistedLicense{
+		LicenseID: inner.LicenseID,
+		Tier:      inner.Tier,
+		Seats:     inner.Seats,
+		IssuedAt:  inner.IssuedAt,
+		ExpiresAt: inner.ExpiresAt,
+		RawJWT:    string(raw),
+		Features:  inner.Features,
+	}
+}
+
+// TestPersistentStore_FailsClosed pins the headline security guarantee
+// (spec / HLB-287): a tampered, key-rotated, garbage, or expired
+// persisted license — or a backend read error — must leave the store on
+// the FREE tier, return a non-nil error, and never panic. It must never
+// silently grant premium. These assertions are deliberately strict
+// (Current() nil AND no premium feature) so they fail loudly if recover
+// were ever made fail-OPEN.
+func TestPersistentStore_FailsClosed(t *testing.T) {
+	now := time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC)
+
+	// The key the *runtime* verifier trusts (build-time public key).
+	rtPub, rtPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A DIFFERENT key — the row "signed by a rotated/foreign key".
+	_, otherPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	premiumInner := func(id string, expires time.Time) LicenseInner {
+		return LicenseInner{
+			LicenseID: id,
+			Tier:      TierPremium,
+			Seats:     5,
+			IssuedAt:  now,
+			ExpiresAt: expires,
+		}
+	}
+
+	cases := []struct {
+		name string
+		db   LicensePersistence
+		v    *Verifier
+	}{
+		{
+			// (a) garbage RawJWT — JSON decode failure in recover().
+			name: "garbage_raw_jwt",
+			db: func() LicensePersistence {
+				f := &fakeLicenseDB{}
+				f.rows = append(f.rows, persistedLicense{
+					LicenseID: "lic-garbage",
+					Tier:      TierPremium,
+					Seats:     5,
+					IssuedAt:  now,
+					ExpiresAt: now.Add(365 * 24 * time.Hour),
+					RawJWT:    "{not-valid-json", // decode fails
+				})
+				return f
+			}(),
+			v: &Verifier{PublicKey: rtPub},
+		},
+		{
+			// (a') empty RawJWT — also a JSON decode failure.
+			name: "empty_raw_jwt",
+			db: func() LicensePersistence {
+				f := &fakeLicenseDB{}
+				f.rows = append(f.rows, persistedLicense{
+					LicenseID: "lic-empty",
+					Tier:      TierPremium,
+					Seats:     5,
+					IssuedAt:  now,
+					ExpiresAt: now.Add(365 * 24 * time.Hour),
+					RawJWT:    "",
+				})
+				return f
+			}(),
+			v: &Verifier{PublicKey: rtPub},
+		},
+		{
+			// (b) row signed by a foreign/rotated key — signature
+			// mismatch against the runtime public key.
+			name: "wrong_key_signature_mismatch",
+			db: func() LicensePersistence {
+				f := &fakeLicenseDB{}
+				f.rows = append(f.rows,
+					signedRow(t, otherPriv,
+						premiumInner("lic-wrongkey", now.Add(365*24*time.Hour))))
+				return f
+			}(),
+			v: &Verifier{PublicKey: rtPub},
+		},
+		{
+			// (c) correctly-signed but EXPIRED — Verify -> ErrExpired.
+			// Must degrade to free, NOT premium.
+			name: "expired_license",
+			db: func() LicensePersistence {
+				f := &fakeLicenseDB{}
+				f.rows = append(f.rows,
+					signedRow(t, rtPriv,
+						premiumInner("lic-expired", now.Add(-1*time.Hour))))
+				return f
+			}(),
+			v: &Verifier{PublicKey: rtPub},
+		},
+		{
+			// (d) LoadActive errors — NewPersistentStore returns error,
+			// store still free, no panic, no premium.
+			name: "load_active_error",
+			db:   errLoadActiveDB{&fakeLicenseDB{}},
+			v:    &Verifier{PublicKey: rtPub},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			var (
+				s     *Store
+				gotErr error
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("NewPersistentStore panicked (fail-closed must never panic): %v", r)
+					}
+				}()
+				s, gotErr = NewPersistentStore(ctx, tc.db, tc.v)
+			}()
+
+			if gotErr == nil {
+				t.Fatalf("expected a non-nil recovery error, got nil (the failure was silently swallowed)")
+			}
+			if s == nil {
+				// load_active_error returns (nil, err); the others return
+				// a usable free-tier store. Either way there must be NO
+				// premium — a nil store cannot grant anything, so this is
+				// acceptable only for the LoadActive-error case.
+				if tc.name != "load_active_error" {
+					t.Fatalf("expected a usable free-tier store, got nil")
+				}
+				return
+			}
+
+			// The security assertion: free tier, never premium.
+			if cur := s.Current(); cur != nil {
+				t.Fatalf("FAIL-OPEN: store is on tier %q (entitlement %+v); a "+
+					"tampered/rotated/expired/garbage license must degrade to "+
+					"the FREE tier", cur.Tier, cur)
+			}
+			if s.Allows(FeatureCloudRelay) {
+				t.Fatal("FAIL-OPEN: premium feature cloud_relay is enabled after a failed recovery")
+			}
+			if s.Allows(FeatureFederation) {
+				t.Fatal("FAIL-OPEN: premium feature federation is enabled after a failed recovery")
+			}
+		})
+	}
+}
 
 // fakeLicenseDB is an in-process LicensePersistence stand-in. It mimics
 // the `licenses` table semantics (slot 0056): at most one active

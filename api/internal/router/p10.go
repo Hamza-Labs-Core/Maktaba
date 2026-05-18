@@ -15,6 +15,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -67,6 +68,12 @@ type P10Deps struct {
 	// PerfBudgets is the parsed perf-budgets manifest. Nil disables
 	// /api/admin/perf/budgets.
 	PerfBudgets *perfpkg.Budgets
+
+	// Logger surfaces boot-time breadcrumbs (e.g. a persisted license
+	// that failed re-verification and degraded the instance to the free
+	// tier — a security-relevant state transition that must not be
+	// silent). Nil disables logging; mounting still succeeds.
+	Logger *slog.Logger
 }
 
 // MountP10 attaches the four previously-orphaned handler packages.
@@ -86,8 +93,14 @@ func MountP10(r chi.Router, d P10Deps) {
 			ps, err := subpkg.NewPersistentStore(context.Background(), persist, d.SubscriptionsVerifier)
 			// On a recovery error the store is still usable (free
 			// tier); a corrupt/unverifiable persisted license must not
-			// crash boot nor silently grant premium.
-			_ = err
+			// crash boot nor silently grant premium. Fail-closed
+			// behaviour is unchanged, but the silent premium->free
+			// degradation is a security-relevant transition (tampered /
+			// corrupt / key-rotated row), so emit a breadcrumb.
+			if err != nil && d.Logger != nil {
+				d.Logger.Warn("p10: persisted license unverifiable; degraded to free tier",
+					"event", "license_recover_failed", "err", err)
+			}
 			store = ps
 		} else {
 			store = subpkg.NewStore()
