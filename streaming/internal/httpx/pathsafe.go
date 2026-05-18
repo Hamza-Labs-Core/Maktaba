@@ -85,6 +85,40 @@ func CanonicalUnder(base string, parts ...string) (string, error) {
 	return realPath, nil
 }
 
+// EnsureUnder is a sink-side containment assertion: it cleans candidate
+// and verifies it is base itself or a descendant of base, returning
+// ErrUnsafePath otherwise. CanonicalUnder already guarantees this for
+// its own result, but applying EnsureUnder immediately before an
+// os.Open/os.ReadFile makes the filepath.Clean + prefix-containment
+// barrier visible to static analysers (CodeQL's go/path-injection
+// model) that cannot follow CanonicalUnder's custom logic. It adds no
+// behavioural change for already-safe paths and is cheap defence in
+// depth — never a substitute for CanonicalUnder.
+func EnsureUnder(base, candidate string) (string, error) {
+	absBase, err := filepath.Abs(filepath.Clean(base))
+	if err != nil {
+		return "", ErrUnsafePath
+	}
+	cleaned := filepath.Clean(candidate)
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Clean(filepath.Join(absBase, cleaned))
+	}
+	if withinBase(absBase, cleaned) {
+		return cleaned, nil
+	}
+	// CanonicalUnder hands back the EvalSymlinks-resolved real path
+	// when the leaf exists, which may differ from the lexical base
+	// (e.g. /var -> /private/var on macOS). Re-test against the
+	// resolved base before declaring an escape so a legitimately
+	// canonicalised path is not rejected.
+	if realBase, rerr := filepath.EvalSymlinks(absBase); rerr == nil {
+		if withinBase(filepath.Clean(realBase), cleaned) {
+			return cleaned, nil
+		}
+	}
+	return "", ErrUnsafePath
+}
+
 // withinBase reports whether candidate is base or a descendant of it,
 // using a separator-terminated prefix so "/srv/cache" does not match
 // "/srv/cache-evil".

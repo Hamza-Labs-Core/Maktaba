@@ -102,7 +102,16 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	// Story 23.5 AC-2: rendition is an untrusted URL segment — route
 	// it through the single canonicalizer so `..`/symlink-escape
 	// cannot read outside this session's HLS directory.
-	path, err := httpx.CanonicalUnder(h.Layout.HLSDir(sub), rendition, "index.m3u8")
+	base := h.Layout.HLSDir(sub)
+	path, err := httpx.CanonicalUnder(base, rendition, "index.m3u8")
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
+		return
+	}
+	// Defence-in-depth, statically-visible containment recheck before
+	// the filesystem sink (Story 23.5 AC-2). CanonicalUnder already
+	// guarantees this; the explicit Clean+prefix gate clears CodeQL.
+	path, err = httpx.EnsureUnder(base, path)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
 		return
@@ -136,7 +145,16 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	// Story 23.5 AC-2: rendition + segment are untrusted URL segments
 	// — canonicalize before touching disk.
-	path, err := httpx.CanonicalUnder(h.Layout.HLSDir(sub), rendition, segment)
+	base := h.Layout.HLSDir(sub)
+	path, err := httpx.CanonicalUnder(base, rendition, segment)
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "segment-not-found",
+			"segment not yet written by FFmpeg", "")
+		return
+	}
+	// Defence-in-depth, statically-visible containment recheck before
+	// the filesystem sink (Story 23.5 AC-2).
+	path, err = httpx.EnsureUnder(base, path)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "segment-not-found",
 			"segment not yet written by FFmpeg", "")
