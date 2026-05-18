@@ -92,7 +92,7 @@ func DefaultRotationOverlap() time.Duration {
 // transport-security middleware stack:
 //
 //	headers → CORS → admin-token → JWT bearer → cookie-auth →
-//	RequireAuthExcept(allowlist) → next
+//	RequireAuthExcept(allowlist) → CSRF → next
 //
 // Order is load-bearing (read outermost-first as the request enters):
 //
@@ -104,18 +104,34 @@ func DefaultRotationOverlap() time.Duration {
 //     decides. admin-token precedes JWT so a single-user install can
 //     short-circuit verification; cookie-auth runs last of the three
 //     and no-ops when a principal is already attached.
-//   - RequireAuthExcept is innermost (closest to the handlers): it
-//     turns "no principal" into 401 for every path except the
-//     explicit public allowlist, finally requiring auth on the
-//     business surface that was previously fully anonymous.
+//   - RequireAuthExcept is next: it turns "no principal" into 401 for
+//     every path except the explicit public allowlist, finally
+//     requiring auth on the business surface that was previously fully
+//     anonymous.
+//   - CSRF is innermost (closest to the handlers): by this point the
+//     principal Source is known, so the double-submit guard can
+//     cheaply skip bearer/admin-token clients and only challenge
+//     state-changing ambient-cookie sessions (Story 10.10). Running it
+//     AFTER the auth gate means an anonymous attacker hitting a
+//     protected path already got a 401 and never reaches the CSRF
+//     branch; the public login/refresh routes have no principal so
+//     CSRF no-ops on them (a credential can still be issued).
 //
 // cookieAuth is the session-cookie principal middleware
-// (auth.Handler.CookieAuth). It may be nil when the Phase 9 auth
-// surface is unwired (no DB / no keys); in that case the bearer/admin
-// paths still gate the surface and cookie sessions simply aren't
-// honoured.
-func (a *authState) applySecurity(next http.Handler, cookieAuth func(http.Handler) http.Handler) http.Handler {
+// (auth.Handler.CookieAuth). csrf is the double-submit guard
+// (auth.Handler.CSRF). Either may be nil when the Phase 9 auth surface
+// is unwired (no DB / no keys); in that case the bearer/admin paths
+// still gate the surface, cookie sessions simply aren't honoured, and
+// there are no cookie sessions to CSRF-protect.
+func (a *authState) applySecurity(
+	next http.Handler,
+	cookieAuth func(http.Handler) http.Handler,
+	csrf func(http.Handler) http.Handler,
+) http.Handler {
 	stack := next
+	if csrf != nil {
+		stack = csrf(stack)
+	}
 	stack = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(stack)
 	if cookieAuth != nil {
 		stack = cookieAuth(stack)

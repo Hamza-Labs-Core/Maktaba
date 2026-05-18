@@ -17,7 +17,21 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
 )
+
+// principalForCookieTest returns a context carrying a cookie-sourced
+// principal when the request presents the session cookie. Mirrors what
+// the real CookieAuth middleware does, minus the DB lookup.
+func principalForCookieTest(r *http.Request) context.Context {
+	if c, err := r.Cookie(auth.CookieSession); err == nil && c.Value != "" {
+		return principal.WithPrincipal(r.Context(), &principal.Principal{
+			UserID: "u-cookie", Source: principal.SourceCookie,
+		})
+	}
+	return r.Context()
+}
 
 // TestServeWithAuth_JWKSAndHeaders is the integration sanity check
 // for Stories 10.6 (JWKS publication) and 10.15 (security headers /
@@ -127,8 +141,8 @@ func TestApplySecurity_GatesBusinessRoutes(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("business-ok"))
 	})
-	// cookieAuth nil: the bearer path alone must still gate + admit.
-	stack := st.applySecurity(business, nil)
+	// cookieAuth + csrf nil: the bearer path alone must still gate + admit.
+	stack := st.applySecurity(business, nil, nil)
 
 	// Anonymous business route → 401.
 	rec := httptest.NewRecorder()
@@ -209,6 +223,73 @@ func mustPEMPair(t *testing.T) (string, string) {
 	privPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
 	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 	return privPEM, pubPEM
+}
+
+// TestApplySecurity_CSRFWiredForCookieSessions proves the CSRF
+// double-submit guard is installed in the live applySecurity stack:
+// a cookie-sourced principal making an unsafe request without the
+// X-Maktaba-CSRF header is rejected 403, while a bearer client and a
+// safe GET are unaffected. The cookie principal is supplied by a stub
+// cookieAuth so this test stays DB-free.
+func TestApplySecurity_CSRFWiredForCookieSessions(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+
+	business := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("business-ok"))
+	})
+
+	// stub cookieAuth: attach a cookie-sourced principal so the CSRF
+	// guard's "only cookie sessions are CSRF-able" branch engages.
+	cookieAuth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := principalForCookieTest(r)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	h := &auth.Handler{}
+	stack := st.applySecurity(business, cookieAuth, h.CSRF)
+
+	// Unsafe cookie request, no CSRF header → 403.
+	req := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieSession, Value: "sess-1"})
+	req.AddCookie(&http.Cookie{Name: auth.CookieCSRF, Value: "csrf-1"})
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cookie POST without CSRF header: status = %d, want 403; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Same request WITH matching CSRF header → 200.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req2.AddCookie(&http.Cookie{Name: auth.CookieSession, Value: "sess-1"})
+	req2.AddCookie(&http.Cookie{Name: auth.CookieCSRF, Value: "csrf-1"})
+	req2.Header.Set("X-Maktaba-CSRF", "csrf-1")
+	rec2 := httptest.NewRecorder()
+	stack.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("cookie POST with matching CSRF: status = %d, want 200; body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	// Bearer client unaffected (no cookie, JWT source).
+	tok := mustSignAPIToken(t, priv, pub)
+	req3 := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req3.Header.Set("Authorization", "Bearer "+tok)
+	rec3 := httptest.NewRecorder()
+	stack.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("bearer POST: status = %d, want 200 (CSRF must not affect bearer)", rec3.Code)
+	}
 }
 
 func TestInitAuth_RejectsMismatchedEnvPair(t *testing.T) {

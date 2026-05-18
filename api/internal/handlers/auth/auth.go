@@ -93,6 +93,15 @@ type Handler struct {
 	// this must be populated for non-admin users to stream.
 	ACL LibraryACL
 
+	// FailedLogins drives the per-username brute-force counter
+	// (Story 10.11). *users.Store satisfies it; a nil seam disables
+	// the increment (unit tests that don't exercise lockout).
+	FailedLogins FailedLogins
+
+	// UserAdmin backs the admin user-management surface (Story 10.1
+	// AC-3). *users.Store satisfies it.
+	UserAdmin UserAdmin
+
 	// SecureCookies controls whether the Set-Cookie response uses the
 	// Secure attribute. Production should set this to true; tests and
 	// localhost dev leave it false. Defaults to false; we can't infer
@@ -118,6 +127,14 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/security/audit", h.SecurityAudit)
 	r.Delete("/api/users/{id}/sessions/{session_id}", h.AdminRevokeSession)
 	r.Delete("/api/users/{id}/refresh-tokens/{family_id}", h.AdminRevokeRefreshFamily)
+	// Admin user-management surface (Story 10.1 AC-3). The store layer
+	// was complete but had no HTTP caller (HLB-391); these are
+	// admin-gated in-handler and behind the global RequireAuthExcept
+	// gate (not in the public allowlist).
+	r.Post("/api/users", h.AdminCreateUser)
+	r.Patch("/api/users/{id}", h.AdminUpdateUser)
+	r.Delete("/api/users/{id}", h.AdminDeleteUser)
+	r.Post("/api/users/{id}/unlock", h.AdminUnlockUser)
 }
 
 // loginRequest is the JSON body shape for POST /api/auth/login.
@@ -177,12 +194,25 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.IsLocked(h.now()) {
 		h.logFailedLogin(r, req.Username, u.ID)
+		h.audit(r.Context(), securityaudit.Entry{
+			Event:       securityaudit.EventLockoutUsername,
+			ActorUserID: u.ID,
+			TargetID:    u.ID,
+			Payload:     map[string]any{"username": req.Username, "ip": remoteIP(r)},
+		})
 		h.padFailDelay(started)
-		httperror.Write(w, r, h.invalidCreds())
+		// 423 (not the generic 401) so the client can surface
+		// "locked, try later" — Story 10.11 AC-1. Timing parity is
+		// preserved by padFailDelay above.
+		h.writeLockedOut(w, r)
 		return
 	}
 	if err := u.VerifyPassword(req.Password); err != nil {
 		h.logFailedLogin(r, req.Username, u.ID)
+		// Drive the per-username brute-force counter (HLB-398/388:
+		// previously dead — the store method existed but nothing
+		// called it, so lockout never engaged).
+		h.recordFailedLogin(r.Context(), u.ID)
 		h.padFailDelay(started)
 		httperror.Write(w, r, h.invalidCreds())
 		return
@@ -779,8 +809,9 @@ type Deps struct {
 // NewHandler builds the canonical handler from Deps. Used by the
 // router's MountP9 (api/internal/router/p9.go).
 func NewHandler(d Deps) *Handler {
+	us := users.New(d.DB)
 	return &Handler{
-		Users:         users.New(d.DB),
+		Users:         us,
 		Sessions:      sessions.New(d.DB),
 		RefreshTokens: refresh.New(d.DB),
 		Keys:          d.Keys,
@@ -788,6 +819,11 @@ func NewHandler(d Deps) *Handler {
 		AccessTTL:     d.AccessTTL,
 		SecureCookies: d.SecureCookies,
 		ACL:           &authz.ACLStore{DB: d.DB},
+		// Same store instance backs the brute-force counter so the
+		// (previously dead) IncrementFailedAttempt is driven live.
+		FailedLogins: us,
+		// ...and the admin user-management surface (Story 10.1 AC-3).
+		UserAdmin: us,
 	}
 }
 
