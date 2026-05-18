@@ -239,6 +239,7 @@ func runServe() error {
 	// from the Phase 9 handler so applySecurity can install it ahead of
 	// the auth gate. Nil when the auth surface is unwired (no DB/keys).
 	var cookieAuth func(http.Handler) http.Handler
+	var csrf func(http.Handler) http.Handler
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := sql.Open("postgres", dsn)
 		if dbErr != nil {
@@ -314,6 +315,7 @@ func runServe() error {
 			})
 			if p9 != nil {
 				cookieAuth = p9.CookieAuth
+				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
 			}
 
@@ -343,7 +345,7 @@ func runServe() error {
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           auth.applySecurity(publicMux, cookieAuth),
+		Handler:           auth.applySecurity(publicMux, cookieAuth, csrf),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{
