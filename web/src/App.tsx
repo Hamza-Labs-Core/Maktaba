@@ -4,6 +4,7 @@
 // Page-level components live under src/pages/.
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
+import { DesktopBridge } from "./components/DesktopBridge";
 import { I18nProvider } from "./lib/i18n";
 import { AuthProvider, RequireAuth } from "./lib/auth";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
@@ -20,6 +21,7 @@ export function App() {
     <I18nProvider>
       <AuthProvider>
         <BrowserRouter>
+          <DesktopBridge />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route

@@ -374,3 +374,34 @@ input[type="search"]:focus {
   padding: var(--space-8);
   color: var(--color-muted);
 }
+
+/* Desktop drag-drop import overlay (Story 13.6) */
+.mkt-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.mkt-drop-overlay__card {
+  pointer-events: auto;
+  padding: var(--space-8);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  text-align: center;
+}
+.mkt-drop-overlay__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.mkt-drop-overlay__warn {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+}
