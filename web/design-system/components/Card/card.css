@@ -1,0 +1,66 @@
+.mk-card {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-neutral-0, #ffffff);
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+
+.mk-card--e0 {
+  box-shadow: var(--elevation-0, none);
+}
+.mk-card--e1 {
+  box-shadow: var(--elevation-1, 0 1px 2px rgba(0, 0, 0, 0.06));
+}
+.mk-card--e2 {
+  box-shadow: var(--elevation-2, 0 4px 8px rgba(0, 0, 0, 0.08));
+}
+.mk-card--e3 {
+  box-shadow: var(--elevation-3, 0 12px 24px rgba(0, 0, 0, 0.12));
+}
+
+.mk-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    box-shadow var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+.mk-card--interactive:hover {
+  box-shadow: var(--elevation-3, 0 12px 24px rgba(0, 0, 0, 0.12));
+}
+/* TV / D-pad: focus grows the card ~4% (Story 17.2 TC). */
+.mk-card--interactive:focus-visible {
+  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline-offset: 2px;
+  transform: scale(1.04);
+}
+
+.mk-card__header {
+  padding: var(--spacing-4, 16px);
+  border-bottom: 1px solid var(--color-neutral-200, #e4e4e7);
+  font-weight: 600;
+}
+
+.mk-card__body {
+  padding: var(--spacing-4, 16px);
+  flex: 1;
+}
+/* EC: overflowing child scrolls, never silently clipped. */
+.mk-card__body--scroll {
+  overflow: auto;
+  max-height: 100%;
+}
+
+.mk-card__footer {
+  padding: var(--spacing-4, 16px);
+  border-top: 1px solid var(--color-neutral-200, #e4e4e7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-card--interactive:focus-visible {
+    transform: none;
+  }
+}

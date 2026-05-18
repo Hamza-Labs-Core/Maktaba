@@ -1,0 +1,33 @@
+.mk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1, 4px);
+  padding: 2px var(--spacing-2, 8px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: var(--radius-full, 9999px);
+  white-space: nowrap;
+}
+
+.mk-badge--neutral {
+  background-color: var(--color-semantic-subtle, #f4f4f5);
+  color: var(--color-semantic-fg, #18181b);
+}
+.mk-badge--accent {
+  background-color: color-mix(in srgb, var(--color-semantic-accent, #1e5ad8) 16%, transparent);
+  color: var(--color-semantic-accent, #1e5ad8);
+}
+.mk-badge--success {
+  background-color: color-mix(in srgb, var(--color-semantic-success, #0e8c4f) 16%, transparent);
+  color: var(--color-semantic-success, #0e8c4f);
+}
+.mk-badge--warn {
+  background-color: color-mix(in srgb, var(--color-semantic-warn, #b0790e) 18%, transparent);
+  color: var(--color-semantic-warn, #b0790e);
+}
+.mk-badge--error {
+  background-color: color-mix(in srgb, var(--color-semantic-error, #b6253a) 16%, transparent);
+  color: var(--color-semantic-error, #b6253a);
+}

@@ -39,7 +39,7 @@ export function ThemeProvider({ theme = "system", children }: ThemeProviderProps
 export function useTheme(componentName?: string): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    if (typeof process !== "undefined" && process.env.NODE_ENV !== "production") {
+    if (import.meta.env?.DEV) {
       const tag = componentName ?? "component";
       console.warn(`<${tag}> rendered outside <ThemeProvider>; using system theme.`);
     }

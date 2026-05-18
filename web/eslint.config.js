@@ -9,10 +9,18 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "node_modules", "mockups", "wiki-app"],
+    ignores: [
+      "dist",
+      "node_modules",
+      "mockups",
+      "wiki-app",
+      "design-system/build",
+      "design-system/storybook",
+      "design-system/**/*.stories.tsx",
+    ],
   },
   {
-    files: ["src/**/*.{js,ts,tsx}"],
+    files: ["src/**/*.{js,ts,tsx}", "design-system/**/*.{js,ts,tsx}"],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: "latest",
