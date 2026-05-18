@@ -16,8 +16,17 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+// stopGrace is how long Process.Stop waits after SIGTERM for ffmpeg to
+// finalize the in-flight segment + variant playlist before escalating
+// to SIGKILL. Kept small so idle-reap / CloseSession stays responsive;
+// overridable (tests shrink it). HLB-328 I2: a bare Kill() truncated
+// the current .ts/.m4s and left a stale variant playlist served to
+// players on every reap/close.
+var stopGrace = 5 * time.Second
 
 // Binary configures which executable to run. Defaults to "ffmpeg" on
 // the operator's PATH; overridable via streaming.toml.
@@ -95,16 +104,41 @@ func (p *Process) PID() int {
 // Active reports whether the process is still running.
 func (p *Process) Active() bool { return !p.stopped.Load() }
 
-// Stop kills the subprocess and waits for it to exit. Idempotent.
+// Stop gracefully terminates the subprocess and waits for it to exit.
+// Idempotent (the stopped guard).
+//
+// HLB-328 I2: send SIGTERM first so ffmpeg flushes and finalizes the
+// current segment + variant playlist (a bare SIGKILL truncated the
+// in-flight .ts/.m4s and left a stale playlist for players). Wait up to
+// stopGrace for a clean exit; if the child is still alive, escalate to
+// SIGKILL. The Spawn Wait()-goroutine remains the sole cmd.Wait()
+// caller, so there is no double-wait and no zombie regardless of which
+// signal actually reaps the child — we only observe its completion via
+// p.wg here.
 func (p *Process) Stop(ctx context.Context) error {
 	if p.stopped.Load() {
 		return nil
 	}
+	done := make(chan struct{})
+	go func() { p.wg.Wait(); close(done) }()
+
+	if p.cmd.Process != nil {
+		// SIGTERM: ask ffmpeg to finalize gracefully.
+		_ = p.cmd.Process.Signal(syscall.SIGTERM)
+	}
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(stopGrace):
+		// Grace window elapsed — force kill.
+	}
+
 	if p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
 	}
-	done := make(chan struct{})
-	go func() { p.wg.Wait(); close(done) }()
 	select {
 	case <-done:
 		return nil
