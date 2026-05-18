@@ -6,13 +6,16 @@ import (
 	"time"
 )
 
-// SQLPairingStore's queries run against a live Postgres and are
-// exercised by the migration-text test (slot 0055) plus the
-// integration path; `go test ./...` here has no Postgres driver wired
-// (only lib/pq, no embedded server), so this file asserts the
-// compile-time contract and the clock seam — the same convention the
-// refresh/subscriptions SQL stores follow (interface-seam unit tests,
-// schema validated by the migration test).
+// SQLPairingStore's queries execute against a live Postgres and are
+// exercised end-to-end only on the integration path; `go test ./...`
+// here has no Postgres driver wired (only lib/pq, no embedded server),
+// so this file asserts the compile-time contract and the clock seam —
+// the same interface-seam convention the refresh/subscriptions SQL
+// stores follow. The store's column list is bound to the slot-0055
+// migration text (a cheap, no-DB schema-drift guard) by
+// TestMigrationFiles_Slot0055_PairingTicketsStoreColumns in
+// api/migrate_test.go; the full SQL behaviour itself is integration-only
+// and not unit-covered.
 
 // Compile-time proof SQLPairingStore implements the interface the
 // handler depends on. If a method signature drifts this fails to build.

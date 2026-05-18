@@ -185,15 +185,22 @@ func (m *MemoryPairingStore) Consume(_ context.Context, code string) (PairingTic
 	return t, nil
 }
 
-// Sweep hard-deletes every ticket whose expiry is older than `before`.
-// Mirrors SQLPairingStore.Sweep so the in-memory dev/no-DB path bounds
-// its own growth under the same reaper goroutine. Returns rows removed.
+// Sweep hard-deletes tickets past the retention horizon. It mirrors
+// SQLPairingStore.Sweep's two-predicate selection exactly so the
+// in-memory dev/no-DB path bounds its growth under the same reaper
+// goroutine with identical semantics: a ticket is removed when it is
+// either (a) still unconsumed and expired before `before`, or (b)
+// consumed before `before`. (The split in the SQL store is purely an
+// index-alignment concern; the net selected set is the union, which is
+// what this loop computes.) Returns rows removed.
 func (m *MemoryPairingStore) Sweep(_ context.Context, before time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var n int64
 	for code, t := range m.tickets {
-		if t.ExpiresAt.Before(before) {
+		unconsumedExpired := t.ConsumedAt == nil && t.ExpiresAt.Before(before)
+		consumedStale := t.ConsumedAt != nil && t.ConsumedAt.Before(before)
+		if unconsumedExpired || consumedStale {
 			delete(m.tickets, code)
 			n++
 		}

@@ -143,14 +143,68 @@ func (s *SQLPairingStore) Consume(ctx context.Context, code string) (PairingTick
 }
 
 // Sweep hard-deletes tickets whose expiry is older than `before`.
-// Story 15.6 calls for a periodic reaper; this is the query it runs.
-// Returns the number of rows removed.
+// Story 15.6 calls for a periodic reaper; this is the query it runs
+// every 30s. Returns the total number of rows removed.
+//
+// The reaper is split into two index-aligned statements rather than one
+// blanket `DELETE ... WHERE expires_at < $1`, because the only relevant
+// index is the slot-0055 partial index
+//
+//	pairing_tickets_reaper ON pairing_tickets (expires_at)
+//	    WHERE consumed_at IS NULL
+//
+// Postgres can only use a partial index when the query's WHERE clause
+// implies the index predicate. The original single DELETE never
+// mentioned `consumed_at IS NULL`, so the planner could not use
+// `pairing_tickets_reaper` and ran a full sequential scan on every tick
+// — forever, regardless of table size.
+//
+//  1. delUnconsumed reaps expired-and-still-unconsumed tickets. Its
+//     `WHERE expires_at < $1 AND consumed_at IS NULL` predicate is an
+//     exact superset of the partial-index predicate, so the planner
+//     uses pairing_tickets_reaper (index range scan on expires_at over
+//     only the unconsumed subset). This is the hot path: in steady
+//     state nearly every reaped ticket is one that was issued, never
+//     scanned, and timed out — these dominate the table.
+//
+//  2. delConsumed reaps already-consumed tickets whose consumed_at is
+//     past the same `before` retention horizon (consume() flips
+//     consumed_at, and after a successful exchange the row is dead
+//     weight). No index covers consumed_at and slot-0055 is out of
+//     this track's scope, so this DELETE is not index-supported.
+//     That is acceptable and bounded: consumed rows are a small
+//     minority (one consume per successful pair, vs every issued code
+//     eventually expiring unconsumed), the predicate keys on
+//     consumed_at so the working set is just the consumed slice, and
+//     each row is removed on the first tick after it crosses the 7d
+//     horizon — the set cannot accumulate. The growth-dominant case
+//     (1) is fully index-aligned, which is what removes the every-30s
+//     whole-table seq-scan.
+//
+// Net selection is identical to the prior single DELETE: every ticket
+// last relevant (expired, or consumed) before `before` is removed;
+// anything still live or only recently expired/consumed is retained,
+// preserving the spec's expire-flip-before-7d-hard-delete contract.
 func (s *SQLPairingStore) Sweep(ctx context.Context, before time.Time) (int64, error) {
-	const q = `DELETE FROM pairing_tickets WHERE expires_at < $1`
-	res, err := s.DB.ExecContext(ctx, q, before)
+	const delUnconsumed = `
+		DELETE FROM pairing_tickets
+		WHERE expires_at < $1 AND consumed_at IS NULL`
+	const delConsumed = `
+		DELETE FROM pairing_tickets
+		WHERE consumed_at IS NOT NULL AND consumed_at < $1`
+
+	r1, err := s.DB.ExecContext(ctx, delUnconsumed, before)
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	r2, err := s.DB.ExecContext(ctx, delConsumed, before)
+	if err != nil {
+		// First DELETE already committed; report what it removed so the
+		// caller's counter stays honest and the loop self-heals next tick.
+		n1, _ := r1.RowsAffected()
+		return n1, err
+	}
+	n1, _ := r1.RowsAffected()
+	n2, _ := r2.RowsAffected()
+	return n1 + n2, nil
 }
