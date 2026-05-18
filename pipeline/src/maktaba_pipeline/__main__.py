@@ -34,7 +34,7 @@ from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
 # Only stages with a REAL handler in handlers.build_real_dispatch()
-# (PROBE, EXTRACT, TRANSCRIBE) belong here. SCAN, SUBTITLE_GEN, INDEX,
+# (PROBE, EXTRACT, TRANSCRIBE, INDEX) belong here. SCAN, SUBTITLE_GEN,
 # and THUMBNAIL only get the runtime's no-op placeholder, so a default
 # worker claiming one of those jobs would silently mark it ``done``
 # without doing the work (the silent-drain foot-gun). They stay out of
@@ -45,6 +45,7 @@ _DEFAULT_STAGES = (
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,
+    Stage.INDEX,
 )
 
 

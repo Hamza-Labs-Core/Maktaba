@@ -9,11 +9,11 @@ These guard the two integration seams the per-stage adapters need:
 - ``__main__._DEFAULT_STAGES`` must be a subset of
   ``build_real_dispatch()``'s keys: every default stage needs a real
   handler. A stage that only has the runtime's no-op placeholder (SCAN,
-  SUBTITLE_GEN, INDEX, THUMBNAIL) would be silently marked ``done`` by
-  a default worker without doing the work — the same silent-drain
-  foot-gun that was caught for SCAN. TRANSCRIBE now enqueues
-  SUBTITLE_GEN + INDEX, so this invariant must hold for the whole
-  default set, not just SCAN.
+  SUBTITLE_GEN, THUMBNAIL) would be silently marked ``done`` by a
+  default worker without doing the work — the same silent-drain
+  foot-gun that was caught for SCAN. TRANSCRIBE enqueues SUBTITLE_GEN +
+  INDEX, so this invariant must hold for the whole default set, not
+  just SCAN.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import (
     build_real_dispatch,
     extract_handler,
+    index_handler,
     probe_handler,
     transcribe_handler,
 )
@@ -32,7 +33,7 @@ from maktaba_pipeline.handlers import (
 pytestmark = pytest.mark.unit
 
 
-def test_build_real_dispatch_binds_probe_extract_and_transcribe() -> None:
+def test_build_real_dispatch_binds_probe_extract_transcribe_and_index() -> None:
     overrides = build_real_dispatch()
     assert overrides[Stage.PROBE] is probe_handler
     # Track R2: EXTRACT now has a real thin-wrapper adapter
@@ -45,14 +46,18 @@ def test_build_real_dispatch_binds_probe_extract_and_transcribe() -> None:
     # AUDIO_EXTRACTED -> TRANSCRIBED, and enqueues SUBTITLE_GEN +
     # INDEX), so it joins the override map too.
     assert overrides[Stage.TRANSCRIBE] is transcribe_handler
+    # Track R4: INDEX now has a real thin-wrapper adapter (commit_index
+    # loads the transcript's committed segments, embeds + upserts them
+    # via search.embedder.index_segments, and advances the FSM
+    # TRANSCRIBED -> INDEXED), so it joins the override map too.
+    assert overrides[Stage.INDEX] is index_handler
     # Stages without a thin-wrapper adapter must stay on the runtime
     # placeholder — registering a half-built handler would be worse
     # than the no-op drain. THUMBNAIL has no module at all; SUBTITLE_GEN
-    # / INDEX consume the transcript TRANSCRIBE now produces but their
-    # real orchestration is still pending; SCAN has no real handler.
+    # consumes the transcript TRANSCRIBE now produces but its real
+    # orchestration is still pending; SCAN has no real handler.
     for stage in (
         Stage.SUBTITLE_GEN,
-        Stage.INDEX,
         Stage.THUMBNAIL,
         Stage.SCAN,
     ):
@@ -72,20 +77,25 @@ def test_default_stages_subset_of_real_handlers() -> None:
     )
 
     # The current real-handler stages, in pipeline order. PROBE leads.
-    assert _DEFAULT_STAGES == (Stage.PROBE, Stage.EXTRACT, Stage.TRANSCRIBE)
+    assert _DEFAULT_STAGES == (
+        Stage.PROBE,
+        Stage.EXTRACT,
+        Stage.TRANSCRIBE,
+        Stage.INDEX,
+    )
     assert _DEFAULT_STAGES[0] is Stage.PROBE
     assert Stage.PROBE in overrides
     assert Stage.EXTRACT in overrides
     assert Stage.TRANSCRIBE in overrides
+    assert Stage.INDEX in overrides
 
-    # SUBTITLE_GEN / INDEX / THUMBNAIL / SCAN have no real handler yet
-    # (only the runtime placeholder). TRANSCRIBE now enqueues
-    # SUBTITLE_GEN + INDEX, so leaving any of these in the defaults
-    # would silently no-op-drain real work — they must be excluded from
-    # both the override map and the defaults until their adapters land.
+    # SUBTITLE_GEN / THUMBNAIL / SCAN have no real handler yet (only the
+    # runtime placeholder). TRANSCRIBE enqueues SUBTITLE_GEN + INDEX, so
+    # leaving SUBTITLE_GEN in the defaults would silently no-op-drain
+    # real work — these must be excluded from both the override map and
+    # the defaults until their adapters land.
     for stage in (
         Stage.SUBTITLE_GEN,
-        Stage.INDEX,
         Stage.THUMBNAIL,
         Stage.SCAN,
     ):
