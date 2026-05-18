@@ -95,3 +95,9 @@ jobs:
 
       - name: migration-lint (append-only + idempotency + parity)
         run: make lint-migrations
+
+      # Story 22.2 TC3: uv.lock / pnpm-lock.yaml / go.mod drift fails CI.
+      # The gate existed in the Makefile but was unwired; running it in
+      # the lint gate makes a drifted lockfile a merge blocker.
+      - name: lockfile drift (uv / pnpm / go.mod)
+        run: make lockfile-check

@@ -1,0 +1,325 @@
+# Maktaba release pipeline (Story 22.5 AC2, 22.2 AC5, 22.3 AC1).
+#
+# Triggered ONLY by a `v*` tag push — it is inert for branch pushes and
+# pull requests, so it never adds a status check to a PR and never
+# blocks the `ci-success` merge gate. A self-hoster gets a versioned,
+# signed release from one `git tag vX.Y.Z && git push --tags`.
+#
+# Flow (tag -> rebuild-from-tag -> sign -> publish):
+#   1. build-artifacts  cross-compile the three Go targets + web bundle
+#                        from the tagged tree (same reproducibility
+#                        envelope as CI's _build-artifacts.yml).
+#   2. build-images      build + push the four container images to GHCR
+#                        with OCI version labels and a per-image digest.
+#   3. sign-and-release  checksum every binary, keyless-cosign-sign the
+#                        checksums file AND each pushed image digest,
+#                        then attach binaries + checksums + signatures
+#                        to a GitHub Release.
+#
+# Signing identity: keyless cosign via the workflow's OIDC token
+# (`id-token: write`). No long-lived private key, no repo secret to
+# provision. Verification:
+#
+#   cosign verify-blob --certificate checksums.txt.pem \
+#     --signature checksums.txt.sig \
+#     --certificate-identity-regexp \
+#       'https://github.com/.+/Maktaba/.github/workflows/release.yml@.*' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     checksums.txt
+#
+# OPERATOR NOTE: GHCR push uses the auto-provisioned `GITHUB_TOKEN`
+# (`packages: write`); no secret to set. If you fork to a registry that
+# is NOT ghcr.io, set the `MAKTABA_REGISTRY` repo variable and provide
+# the matching login secret — the `docker/login-action` step below reads
+# `secrets.REGISTRY_TOKEN` when set and otherwise falls back to
+# `GITHUB_TOKEN`/GHCR (see the "Registry login" step).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}
+
+jobs:
+  build-artifacts:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, goos: linux,  goarch: amd64 }
+          - { os: ubuntu-22.04, goos: linux,  goarch: arm64 }
+          - { os: macos-14,     goos: darwin, goarch: arm64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+
+      - name: Set up pnpm
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Set up Node
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      # VERSION comes from the tag, not `git describe`, so the artifact
+      # version string is exactly the tag the maintainer pushed.
+      - name: Build Go binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: make build-go
+
+      - name: Build web bundle
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: make build-web
+
+      - name: Stage release binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp api/bin/maktaba-api "dist/maktaba-api-${GOOS}-${GOARCH}"
+          cp streaming/bin/maktaba-streaming "dist/maktaba-streaming-${GOOS}-${GOARCH}"
+
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7
+
+      - name: Upload web bundle
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-web-bundle
+          path: web/dist
+          retention-days: 7
+
+  build-images:
+    name: image (${{ matrix.svc }})
+    needs: [build-artifacts]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        svc: [api, streaming, pipeline, web]
+    outputs:
+      # Per-service digest, surfaced so sign-and-release can record the
+      # immutable digest (not the mutable tag) in the manifest.
+      digest-api: ${{ steps.export.outputs.digest-api }}
+      digest-streaming: ${{ steps.export.outputs.digest-streaming }}
+      digest-pipeline: ${{ steps.export.outputs.digest-pipeline }}
+      digest-web: ${{ steps.export.outputs.digest-web }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: docker/setup-buildx-action@v3.11.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Registry login
+        uses: docker/login-action@v3.6.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Falls back to GITHUB_TOKEN (GHCR) when REGISTRY_TOKEN is
+          # unset, so this repo works out of the box; forks pushing to a
+          # third-party registry set the REGISTRY_TOKEN secret.
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.svc }}
+        id: build
+        uses: docker/build-push-action@v6.18.0
+        with:
+          # All four Dockerfiles take the repo root as build context.
+          context: .
+          file: ${{ matrix.svc }}/Dockerfile
+          push: true
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      # Keyless cosign over the immutable digest (22.2 AC5: images
+      # signed). --yes suppresses the transparency-log confirmation
+      # prompt; the OIDC identity is the workflow itself.
+      - name: Sign image (keyless cosign)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_REF: ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+      - name: Export digest output
+        id: export
+        env:
+          SVC: ${{ matrix.svc }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "digest-${SVC}=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  sign-and-release:
+    name: sign + publish release
+    needs: [build-artifacts, build-images]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # keyless cosign OIDC
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v6.0.0
+        with:
+          pattern: release-bin-*
+          path: staged
+          merge-multiple: true
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v6.0.0
+        with:
+          name: release-web-bundle
+          path: staged/web-dist
+
+      - name: Assemble release tree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Flatten binaries.
+          find staged -maxdepth 1 -type f -name 'maktaba-*' -exec cp {} dist/ \;
+          # Tar the web bundle so the Release has one downloadable asset.
+          tar -C staged/web-dist -czf "dist/maktaba-web-${TAG}.tar.gz" .
+          ls -l dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          # LC_ALL=C + sorted file list => byte-stable manifest, mirrors
+          # the Makefile `checksums` target.
+          find . -maxdepth 1 -type f ! -name 'checksums.txt' \
+            | sort | LC_ALL=C xargs sha256sum > checksums.txt
+          cat checksums.txt
+
+      # Keyless cosign over the checksums manifest (22.2 AC5: binaries
+      # signed). Emits checksums.txt.sig + checksums.txt.pem; the .pem
+      # is the Fulcio cert that binds the signature to this workflow's
+      # OIDC identity (verifiable offline by a self-hoster).
+      - name: Sign checksums (keyless cosign)
+        working-directory: dist
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign-blob --yes \
+            --output-signature checksums.txt.sig \
+            --output-certificate checksums.txt.pem \
+            checksums.txt
+
+      - name: Write release manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          DIGEST_API: ${{ needs.build-images.outputs.digest-api }}
+          DIGEST_STREAMING: ${{ needs.build-images.outputs.digest-streaming }}
+          DIGEST_PIPELINE: ${{ needs.build-images.outputs.digest-pipeline }}
+          DIGEST_WEB: ${{ needs.build-images.outputs.digest-web }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat > dist/release-manifest.json <<EOF
+          {
+            "version": "${ver}",
+            "git_sha": "${SHA}",
+            "built_at": "${built_at}",
+            "schema_rev": 1,
+            "components": {
+              "api":       {"image": "${REGISTRY}/maktaba-api:${TAG}",       "sha256": "${DIGEST_API}"},
+              "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
+              "pipeline":  {"image": "${REGISTRY}/maktaba-pipeline:${TAG}",  "sha256": "${DIGEST_PIPELINE}"},
+              "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"}
+            },
+            "rollback_to": "",
+            "rollback_schema_rev": 0
+          }
+          EOF
+          cat dist/release-manifest.json
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="Automated release for ${TAG}.
+
+          Artifacts are signed with keyless cosign (Sigstore). Verify the
+          checksums manifest:
+
+          \`\`\`
+          cosign verify-blob --certificate checksums.txt.pem \\
+            --signature checksums.txt.sig \\
+            --certificate-identity-regexp 'https://github.com/.+/Maktaba/.github/workflows/release.yml@.*' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+            checksums.txt
+          \`\`\`
+
+          Container images are signed at their digest; verify with
+          \`cosign verify <image>@<digest>\` using the same identity."
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes "${notes}" \
+            --verify-tag \
+            dist/*
