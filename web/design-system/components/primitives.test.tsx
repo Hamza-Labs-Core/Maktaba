@@ -114,11 +114,7 @@ describe("Select / Textarea", () => {
 describe("EmptyState / ErrorState", () => {
   it("EmptyState tags its kind and renders the CTA", () => {
     render(
-      <EmptyState
-        kind="filtered_out"
-        title="No matches"
-        action={<button>Clear filters</button>}
-      />
+      <EmptyState kind="filtered_out" title="No matches" action={<button>Clear filters</button>} />
     );
     expect(screen.getByText("No matches").closest("[data-kind]")).toHaveAttribute(
       "data-kind",

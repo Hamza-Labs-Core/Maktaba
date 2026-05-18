@@ -29,9 +29,7 @@ export function Menu({ trigger, items, className }: MenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const enabledIndexes = items
-    .map((it, i) => (it.disabled ? -1 : i))
-    .filter((i) => i >= 0);
+  const enabledIndexes = items.map((it, i) => (it.disabled ? -1 : i)).filter((i) => i >= 0);
 
   useEffect(() => {
     if (!open) return;
@@ -64,8 +62,7 @@ export function Menu({ trigger, items, className }: MenuProps) {
 
   function move(dir: 1 | -1) {
     const pos = enabledIndexes.indexOf(activeIndex);
-    const nextPos =
-      (pos + dir + enabledIndexes.length) % enabledIndexes.length;
+    const nextPos = (pos + dir + enabledIndexes.length) % enabledIndexes.length;
     setActiveIndex(enabledIndexes[nextPos]!);
   }
 
@@ -110,13 +107,7 @@ export function Menu({ trigger, items, className }: MenuProps) {
         {trigger}
       </button>
       {open && (
-        <div
-          ref={listRef}
-          id={id}
-          role="menu"
-          className="mk-menu__list"
-          onKeyDown={onListKeyDown}
-        >
+        <div ref={listRef} id={id} role="menu" className="mk-menu__list" onKeyDown={onListKeyDown}>
           {items.map((item, i) => (
             <button
               key={item.id}

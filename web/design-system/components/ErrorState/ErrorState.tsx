@@ -7,12 +7,7 @@ import "../EmptyState/states.css";
 // the region is role="alert" so the failure is announced. Strings come
 // from the consumer (i18n) per the Epic-17 "no prose in JSX" rule.
 
-export type ErrorKind =
-  | "network"
-  | "server"
-  | "permission"
-  | "not_found"
-  | "validation";
+export type ErrorKind = "network" | "server" | "permission" | "not_found" | "validation";
 
 export interface ErrorStateProps {
   kind: ErrorKind;
@@ -24,20 +19,9 @@ export interface ErrorStateProps {
   className?: string;
 }
 
-export function ErrorState({
-  kind,
-  title,
-  description,
-  icon,
-  action,
-  className,
-}: ErrorStateProps) {
+export function ErrorState({ kind, title, description, icon, action, className }: ErrorStateProps) {
   return (
-    <div
-      className={clsx("mk-state mk-state--error", className)}
-      data-kind={kind}
-      role="alert"
-    >
+    <div className={clsx("mk-state mk-state--error", className)} data-kind={kind} role="alert">
       {icon && (
         <div className="mk-state__icon" aria-hidden="true">
           {icon}

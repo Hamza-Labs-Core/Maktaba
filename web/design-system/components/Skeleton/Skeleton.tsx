@@ -17,24 +17,14 @@ export interface SkeletonProps {
   className?: string;
 }
 
-export function Skeleton({
-  variant = "text",
-  width,
-  height,
-  lines = 1,
-  className,
-}: SkeletonProps) {
+export function Skeleton({ variant = "text", width, height, lines = 1, className }: SkeletonProps) {
   const style: CSSProperties = {
     width: width ?? (variant === "circle" ? 40 : undefined),
     height: height ?? (variant === "circle" ? 40 : undefined),
   };
   if (variant === "text" && lines > 1) {
     return (
-      <span
-        className={clsx("mk-skeleton-stack", className)}
-        aria-hidden="true"
-        role="presentation"
-      >
+      <span className={clsx("mk-skeleton-stack", className)} aria-hidden="true" role="presentation">
         {Array.from({ length: lines }, (_, i) => (
           <span
             key={i}

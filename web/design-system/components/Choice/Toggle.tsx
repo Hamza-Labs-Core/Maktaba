@@ -21,11 +21,7 @@ export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(function Toggle(
   const toggleId = useFieldId(id);
   return (
     <label
-      className={clsx(
-        "mk-choice mk-toggle",
-        disabled && "mk-choice--disabled",
-        className
-      )}
+      className={clsx("mk-choice mk-toggle", disabled && "mk-choice--disabled", className)}
       htmlFor={toggleId}
     >
       <input

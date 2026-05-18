@@ -23,14 +23,7 @@ export interface TabsProps {
   className?: string;
 }
 
-export function Tabs({
-  items,
-  defaultValue,
-  value,
-  onChange,
-  label,
-  className,
-}: TabsProps) {
+export function Tabs({ items, defaultValue, value, onChange, label, className }: TabsProps) {
   const baseId = useId();
   const [internal, setInternal] = useState(defaultValue ?? items[0]?.id ?? "");
   const active = value ?? internal;

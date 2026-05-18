@@ -63,11 +63,9 @@ export function VideoPlayer() {
       const id = sessionIdRef.current;
       if (id) {
         sessionIdRef.current = null;
-        void api
-          .delete(`/api/stream/sessions/${encodeURIComponent(id)}`)
-          .catch(() => {
-            /* best-effort; the session TTL-expires server-side */
-          });
+        void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {
+          /* best-effort; the session TTL-expires server-side */
+        });
       }
     };
   }, [videoId, t]);

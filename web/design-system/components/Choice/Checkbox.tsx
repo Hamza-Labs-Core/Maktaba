@@ -8,8 +8,7 @@ import "./choice.css";
 // visually hidden (not removed) so it stays keyboard-focusable and in
 // the accessibility tree; the painted box is a CSS sibling.
 
-export interface CheckboxProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> {
+export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> {
   id?: string;
   label?: ReactNode;
 }
@@ -21,7 +20,11 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
   const boxId = useFieldId(id);
   return (
     <label
-      className={clsx("mk-choice mk-choice--checkbox", disabled && "mk-choice--disabled", className)}
+      className={clsx(
+        "mk-choice mk-choice--checkbox",
+        disabled && "mk-choice--disabled",
+        className
+      )}
       htmlFor={boxId}
     >
       <input

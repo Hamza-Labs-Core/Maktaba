@@ -8,10 +8,7 @@ describe("Pagination", () => {
     const onChange = vi.fn();
     render(<Pagination page={3} pageCount={10} onChange={onChange} />);
     expect(screen.getByRole("navigation", { name: "Pagination" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Page 3" })).toHaveAttribute(
-      "aria-current",
-      "page"
-    );
+    expect(screen.getByRole("button", { name: "Page 3" })).toHaveAttribute("aria-current", "page");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(onChange).toHaveBeenCalledWith(4);
@@ -23,9 +20,7 @@ describe("Pagination", () => {
   });
 
   it("renders nothing for a single page", () => {
-    const { container } = render(
-      <Pagination page={1} pageCount={1} onChange={() => {}} />
-    );
+    const { container } = render(<Pagination page={1} pageCount={1} onChange={() => {}} />);
     expect(container).toBeEmptyDOMElement();
   });
 });

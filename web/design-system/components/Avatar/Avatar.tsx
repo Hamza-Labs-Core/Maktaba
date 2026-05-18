@@ -30,12 +30,7 @@ export function Avatar({ name, src, size = "md", className }: AvatarProps) {
       aria-label={name}
     >
       {showImg ? (
-        <img
-          className="mk-avatar__img"
-          src={src}
-          alt=""
-          onError={() => setFailed(true)}
-        />
+        <img className="mk-avatar__img" src={src} alt="" onError={() => setFailed(true)} />
       ) : (
         <span className="mk-avatar__initials" aria-hidden="true">
           {initials(name)}

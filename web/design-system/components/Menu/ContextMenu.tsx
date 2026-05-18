@@ -21,9 +21,7 @@ export function ContextMenu({ items, children, className }: ContextMenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const enabledIndexes = items
-    .map((it, i) => (it.disabled ? -1 : i))
-    .filter((i) => i >= 0);
+  const enabledIndexes = items.map((it, i) => (it.disabled ? -1 : i)).filter((i) => i >= 0);
 
   useEffect(() => {
     if (!pos) return;
@@ -45,9 +43,7 @@ export function ContextMenu({ items, children, className }: ContextMenuProps) {
 
   function move(dir: 1 | -1) {
     const p = enabledIndexes.indexOf(activeIndex);
-    setActiveIndex(
-      enabledIndexes[(p + dir + enabledIndexes.length) % enabledIndexes.length]!
-    );
+    setActiveIndex(enabledIndexes[(p + dir + enabledIndexes.length) % enabledIndexes.length]!);
   }
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {

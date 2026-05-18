@@ -15,8 +15,7 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-export interface SelectProps
-  extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "id"> {
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "id"> {
   id?: string;
   label?: ReactNode;
   description?: ReactNode;

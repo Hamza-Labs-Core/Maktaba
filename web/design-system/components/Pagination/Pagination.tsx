@@ -62,10 +62,7 @@ export function Pagination({
           <button
             key={it}
             type="button"
-            className={clsx(
-              "mk-pagination__btn",
-              it === page && "mk-pagination__btn--active"
-            )}
+            className={clsx("mk-pagination__btn", it === page && "mk-pagination__btn--active")}
             aria-current={it === page ? "page" : undefined}
             aria-label={`Page ${it}`}
             onClick={() => onChange(it)}

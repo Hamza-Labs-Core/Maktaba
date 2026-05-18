@@ -9,8 +9,7 @@ import "../Field/field.css";
 // a vertical resize so long-form copy (subtitle notes, descriptions)
 // can grow without clipping.
 
-export interface TextareaProps
-  extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "id"> {
+export interface TextareaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "id"> {
   id?: string;
   label?: ReactNode;
   description?: ReactNode;

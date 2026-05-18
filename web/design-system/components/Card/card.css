@@ -23,8 +23,7 @@
 .mk-card--interactive {
   cursor: pointer;
   transition:
-    transform var(--motion-duration-quick, 120ms)
-      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    transform var(--motion-duration-quick, 120ms) var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
     box-shadow var(--motion-duration-quick, 120ms)
       var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
 }

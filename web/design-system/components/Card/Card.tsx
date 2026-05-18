@@ -34,9 +34,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
       {...rest}
     >
       {header != null && <div className="mk-card__header">{header}</div>}
-      <div className={clsx("mk-card__body", scrollable && "mk-card__body--scroll")}>
-        {children}
-      </div>
+      <div className={clsx("mk-card__body", scrollable && "mk-card__body--scroll")}>{children}</div>
       {footer != null && <div className="mk-card__footer">{footer}</div>}
     </div>
   );

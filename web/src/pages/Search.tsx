@@ -53,9 +53,7 @@ function renderSnippet(snippet: string) {
       continue;
     }
     if (part === "") continue;
-    nodes.push(
-      inMark ? <mark key={key++}>{part}</mark> : <span key={key++}>{part}</span>
-    );
+    nodes.push(inMark ? <mark key={key++}>{part}</mark> : <span key={key++}>{part}</span>);
   }
   return nodes;
 }
@@ -100,11 +98,7 @@ export function Search() {
           aria-label={t("nav.search")}
           autoFocus
         />
-        <select
-          value={mode}
-          onChange={(e) => setMode(e.target.value as Mode)}
-          aria-label="Mode"
-        >
+        <select value={mode} onChange={(e) => setMode(e.target.value as Mode)} aria-label="Mode">
           <option value="hybrid">Hybrid</option>
           <option value="fts">Keyword</option>
           <option value="semantic">Semantic</option>
@@ -124,9 +118,7 @@ export function Search() {
           {hits.map((h) => (
             <li key={h.segment_id} className="mkt-result">
               <Link to={`/videos/${h.video_id}/watch?t=${Math.floor(h.start_sec)}`}>
-                {h.snippet && (
-                  <div className="mkt-result__snippet">{renderSnippet(h.snippet)}</div>
-                )}
+                {h.snippet && <div className="mkt-result__snippet">{renderSnippet(h.snippet)}</div>}
               </Link>
             </li>
           ))}

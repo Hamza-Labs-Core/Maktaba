@@ -48,9 +48,7 @@ function focusablesIn(node: HTMLElement): HTMLElement[] {
   // selector covers the attribute case and the filter never caught
   // programmatic `.disabled = true` either). Visibility is the only
   // remaining meaningful exclusion.
-  return Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    isElementVisible
-  );
+  return Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isElementVisible);
 }
 
 // Single document-level handler shared by every trap. It dispatches to
@@ -106,10 +104,7 @@ function maybeStopListening() {
   listening = false;
 }
 
-export function useFocusTrap<T extends HTMLElement>(
-  open: boolean,
-  onClose: () => void
-) {
+export function useFocusTrap<T extends HTMLElement>(open: boolean, onClose: () => void) {
   const ref = useRef<T>(null);
   // Keep the latest onClose without re-running the effect (so a parent
   // re-render doesn't tear down / rebuild the trap and lose its stack

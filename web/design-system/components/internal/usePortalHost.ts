@@ -28,12 +28,7 @@ export function usePortalHost(open: boolean, kind: string): HTMLDivElement | nul
 
   // Attach as early as possible: synchronously on the render that opens
   // the overlay, so the node tree is connected before effects fire.
-  if (
-    open &&
-    host !== null &&
-    typeof document !== "undefined" &&
-    host.parentNode === null
-  ) {
+  if (open && host !== null && typeof document !== "undefined" && host.parentNode === null) {
     document.body.appendChild(host);
   }
 

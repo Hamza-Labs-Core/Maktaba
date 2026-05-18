@@ -24,18 +24,10 @@ function Stacked() {
   const [modalOpen, setModalOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   return (
-    <Modal
-      open={modalOpen}
-      onClose={() => setModalOpen(false)}
-      title="Parent modal"
-    >
+    <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Parent modal">
       <button onClick={() => setDrawerOpen(true)}>Open drawer</button>
       <button>Modal action</button>
-      <Drawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        title="Child drawer"
-      >
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="Child drawer">
         <button>Drawer first</button>
         <button>Drawer last</button>
       </Drawer>
@@ -50,30 +42,20 @@ describe("Nested overlays — focus-trap stack (Fix #2)", () => {
 
     // Open the child drawer from inside the modal.
     await user.click(screen.getByRole("button", { name: "Open drawer" }));
-    expect(
-      screen.getByRole("dialog", { name: "Child drawer" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Child drawer" })).toBeInTheDocument();
     // Modal host is inerted while the drawer is top → its dialog is out
     // of the a11y tree but still mounted.
-    expect(
-      document.querySelector('[data-mk-overlay-host="modal"]')
-    ).toBeInTheDocument();
+    expect(document.querySelector('[data-mk-overlay-host="modal"]')).toBeInTheDocument();
 
     // One Escape: only the drawer (top) closes; the modal stays open
     // and becomes the top + interactive again.
     await user.keyboard("{Escape}");
-    expect(
-      screen.queryByRole("dialog", { name: "Child drawer" })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("dialog", { name: "Parent modal" })
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Child drawer" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Parent modal" })).toBeInTheDocument();
 
     // A second Escape now closes the modal (parent trap reactivated).
     await user.keyboard("{Escape}");
-    expect(
-      screen.queryByRole("dialog", { name: "Parent modal" })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Parent modal" })).not.toBeInTheDocument();
   });
 
   it("traps Tab inside the topmost overlay while a parent overlay is open", async () => {
@@ -175,9 +157,7 @@ describe("Nested overlays — background inert (Fix #3)", () => {
     // aria-hidden; the portal host itself is NOT.
     expect(container).toHaveAttribute("inert");
     expect(container).toHaveAttribute("aria-hidden", "true");
-    expect(
-      document.querySelector('[data-mk-overlay-host="modal"]')
-    ).not.toHaveAttribute("inert");
+    expect(document.querySelector('[data-mk-overlay-host="modal"]')).not.toHaveAttribute("inert");
 
     // Close via Escape; prior state restored exactly (attrs removed,
     // they did not exist before the overlay opened).
@@ -197,21 +177,15 @@ describe("Nested overlays — background inert (Fix #3)", () => {
     // own host is now inert too (only the top drawer stays live).
     await user.click(screen.getByRole("button", { name: "Open drawer" }));
     expect(container).toHaveAttribute("inert");
-    expect(
-      document.querySelector('[data-mk-overlay-host="modal"]')
-    ).toHaveAttribute("inert");
-    expect(
-      document.querySelector('[data-mk-overlay-host="drawer"]')
-    ).not.toHaveAttribute("inert");
+    expect(document.querySelector('[data-mk-overlay-host="modal"]')).toHaveAttribute("inert");
+    expect(document.querySelector('[data-mk-overlay-host="drawer"]')).not.toHaveAttribute("inert");
 
     // Close drawer only — modal still open, so the background sibling
     // stays inert (refcount 2→1, not cleared) and the modal host is
     // restored to interactive.
     await user.keyboard("{Escape}");
     expect(container).toHaveAttribute("inert");
-    expect(
-      document.querySelector('[data-mk-overlay-host="modal"]')
-    ).not.toHaveAttribute("inert");
+    expect(document.querySelector('[data-mk-overlay-host="modal"]')).not.toHaveAttribute("inert");
 
     // Close modal — last overlay gone, background fully restored.
     await user.keyboard("{Escape}");
@@ -245,15 +219,11 @@ describe("Overlay portal host — DOM hygiene on close (not just unmount)", () =
     const { container } = render(<Host />);
 
     // Initially closed: no host in <body>.
-    expect(
-      document.querySelectorAll("[data-mk-overlay-host]")
-    ).toHaveLength(0);
+    expect(document.querySelectorAll("[data-mk-overlay-host]")).toHaveLength(0);
 
     // Open → exactly one host, dialog present, background inerted.
     await user.click(screen.getByRole("button", { name: "open" }));
-    expect(
-      document.querySelectorAll('[data-mk-overlay-host="modal"]')
-    ).toHaveLength(1);
+    expect(document.querySelectorAll('[data-mk-overlay-host="modal"]')).toHaveLength(1);
     expect(screen.getByRole("dialog", { name: "M" })).toBeInTheDocument();
     expect(container).toHaveAttribute("inert");
 
@@ -262,17 +232,13 @@ describe("Overlay portal host — DOM hygiene on close (not just unmount)", () =
     // empty data-mk-overlay-host div remains until unmount.)
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "M" })).not.toBeInTheDocument();
-    expect(
-      document.querySelectorAll("[data-mk-overlay-host]")
-    ).toHaveLength(0);
+    expect(document.querySelectorAll("[data-mk-overlay-host]")).toHaveLength(0);
     expect(container).not.toHaveAttribute("inert");
 
     // Reopen → still exactly ONE dialog (host re-appended synchronously,
     // not duplicated) with inert correctly reapplied.
     await user.click(screen.getByRole("button", { name: "open" }));
-    expect(
-      document.querySelectorAll('[data-mk-overlay-host="modal"]')
-    ).toHaveLength(1);
+    expect(document.querySelectorAll('[data-mk-overlay-host="modal"]')).toHaveLength(1);
     expect(screen.getAllByRole("dialog", { name: "M" })).toHaveLength(1);
     expect(
       within(screen.getByRole("dialog", { name: "M" })).getByRole("button", {
@@ -284,9 +250,7 @@ describe("Overlay portal host — DOM hygiene on close (not just unmount)", () =
 
     // Final close restores <body> exactly once more.
     await user.keyboard("{Escape}");
-    expect(
-      document.querySelectorAll("[data-mk-overlay-host]")
-    ).toHaveLength(0);
+    expect(document.querySelectorAll("[data-mk-overlay-host]")).toHaveLength(0);
     expect(container).not.toHaveAttribute("inert");
   });
 });

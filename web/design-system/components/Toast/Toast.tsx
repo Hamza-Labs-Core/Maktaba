@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
@@ -92,12 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         createPortal(
           <div className="mk-toast-region">
             {toasts.map((t) => (
-              <Toast
-                key={t.id}
-                tone={t.tone}
-                message={t.message}
-                onDismiss={() => dismiss(t.id)}
-              />
+              <Toast key={t.id} tone={t.tone} message={t.message} onDismiss={() => dismiss(t.id)} />
             ))}
           </div>,
           document.body
@@ -124,12 +112,7 @@ export function Toast({ tone, message, onDismiss }: ToastProps) {
       aria-live={tone === "error" ? "assertive" : "polite"}
     >
       <span className="mk-toast__message">{message}</span>
-      <button
-        type="button"
-        className="mk-toast__close"
-        aria-label="Dismiss"
-        onClick={onDismiss}
-      >
+      <button type="button" className="mk-toast__close" aria-label="Dismiss" onClick={onDismiss}>
         <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden="true">
           <path
             d="M4 4l8 8M12 4l-8 8"

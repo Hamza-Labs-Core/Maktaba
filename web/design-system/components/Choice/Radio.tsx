@@ -8,8 +8,7 @@ import "./choice.css";
 // /<legend> so the group has an accessible name and arrow-key roving
 // comes for free from the native radio implementation.
 
-export interface RadioProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> {
+export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> {
   id?: string;
   label?: ReactNode;
 }

@@ -26,9 +26,7 @@ describe("Menu", () => {
   });
 
   it("closes on Escape and restores focus to the trigger", async () => {
-    render(
-      <Menu trigger="Actions" items={[{ id: "a", label: "A", onSelect: () => {} }]} />
-    );
+    render(<Menu trigger="Actions" items={[{ id: "a", label: "A", onSelect: () => {} }]} />);
     const user = userEvent.setup();
     const trigger = screen.getByRole("button", { name: "Actions" });
     await user.click(trigger);
