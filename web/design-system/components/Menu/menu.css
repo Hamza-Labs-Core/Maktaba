@@ -1,0 +1,74 @@
+.mk-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.mk-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1, 4px);
+  padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: var(--type-body-size, 16px);
+  color: var(--color-semantic-fg, #18181b);
+  background: transparent;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+.mk-menu__trigger:focus-visible {
+  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline-offset: 2px;
+}
+
+.mk-menu__list {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: calc(100% + 4px);
+  z-index: var(--z-index-dropdown, 100);
+  min-width: 180px;
+  padding: var(--spacing-1, 4px);
+  background-color: var(--color-neutral-0, #ffffff);
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--elevation-2, 0 4px 8px rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+}
+
+.mk-menu__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: start;
+  padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: 14px;
+  color: var(--color-semantic-fg, #18181b);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+.mk-menu__item:hover:not(:disabled),
+.mk-menu__item:focus-visible {
+  background-color: var(--color-semantic-subtle, #f4f4f5);
+  outline: none;
+}
+.mk-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mk-context-menu {
+  position: fixed;
+  z-index: var(--z-index-dropdown, 100);
+  min-width: 180px;
+  padding: var(--spacing-1, 4px);
+  background-color: var(--color-neutral-0, #ffffff);
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--elevation-2, 0 4px 8px rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+}
