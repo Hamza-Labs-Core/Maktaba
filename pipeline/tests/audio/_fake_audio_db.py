@@ -1,14 +1,22 @@
 """In-memory fake DB for audio probe / extract tests.
 
-Routes the SQL fragments used by :mod:`maktaba_pipeline.audio.probe` and
-:mod:`maktaba_pipeline.stt.segment_commit` to in-memory dicts. The
-fake's surface is ``transaction``, ``fetchrow``, ``execute`` —
-matching the protocol shape both modules consume.
+Routes the SQL fragments used by :mod:`maktaba_pipeline.audio.probe`,
+:mod:`maktaba_pipeline.stt.segment_commit`, the SCAN / INDEX adapters
+and the SUBTITLE_GEN renderer to in-memory dicts. The fake's surface is
+``transaction``, ``fetchrow``, ``fetch``, ``execute`` — matching the
+protocol shape every consuming module uses.
+
+``transaction()`` is rollback-capable: it deep-copies every mutable row
+table (and the autoincrement cursors) on enter and restores them if the
+``async with`` body raises, so transactional atomicity is *observable*
+the way the production ``async with db.transaction():`` envelope
+behaves.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -144,6 +152,23 @@ class _TranscriptRow:
     superseded_at: datetime | None
 
 
+@dataclass
+class _SubtitleFileRow:
+    id: int
+    video_id: UUID
+    transcript_id: UUID | None
+    language: str
+    format: str
+    source: str
+    path: str
+    byte_size: int | None
+    sha256: str | None
+    is_embedded: bool
+    is_external: bool
+    metadata: str
+    deleted_at: datetime | None = None
+
+
 class _Row(dict[str, Any]):
     pass
 
@@ -159,16 +184,66 @@ class FakeAudioDB:
     processing_jobs: dict[int, _ProcessingJobRow] = field(default_factory=dict)
     transcripts: dict[UUID, _TranscriptRow] = field(default_factory=dict)
     transcript_segments: dict[int, _TranscriptSegmentRow] = field(default_factory=dict)
+    subtitle_files: dict[int, _SubtitleFileRow] = field(default_factory=dict)
     notifies: list[tuple[str, str]] = field(default_factory=list)
     _audio_next_id: int = 1
     _job_next_id: int = 1
     _seg_next_id: int = 1
+    _subtitle_next_id: int = 1
     _lock_obj: asyncio.Lock | None = None
 
     def transaction(self) -> Any:
+        """A rollback-capable transaction modelling the real driver.
+
+        The real driver rolls every write back when the ``async with``
+        body raises. An earlier fake was a bare ``yield self`` (no
+        rollback), which silently passed even non-atomic persistence.
+        To make transactional rollback *observable* — the way the
+        production ``async with db.transaction():`` envelope behaves —
+        we deep-copy every mutable row table (and the autoincrement
+        cursors) on enter and restore them on any ``BaseException``.
+
+        The snapshot covers ALL row tables the unioned fake mutates:
+        ``libraries``, ``videos``, ``media_info``, ``audio_tracks``,
+        ``audio_cache``, ``processing_jobs``, ``transcripts``,
+        ``transcript_segments`` and ``subtitle_files`` — plus the
+        ``_audio_next_id`` / ``_job_next_id`` / ``_seg_next_id`` /
+        ``_subtitle_next_id`` autoincrement cursors. The snapshot is
+        cheap for the in-memory fake.
+        """
+
         @asynccontextmanager
         async def _tx() -> Any:
-            yield self
+            snap_libraries = copy.deepcopy(self.libraries)
+            snap_videos = copy.deepcopy(self.videos)
+            snap_media_info = copy.deepcopy(self.media_info)
+            snap_audio_tracks = copy.deepcopy(self.audio_tracks)
+            snap_audio_cache = copy.deepcopy(self.audio_cache)
+            snap_processing_jobs = copy.deepcopy(self.processing_jobs)
+            snap_transcripts = copy.deepcopy(self.transcripts)
+            snap_segments = copy.deepcopy(self.transcript_segments)
+            snap_subtitle_files = copy.deepcopy(self.subtitle_files)
+            snap_audio_next = self._audio_next_id
+            snap_job_next = self._job_next_id
+            snap_seg_next = self._seg_next_id
+            snap_subtitle_next = self._subtitle_next_id
+            try:
+                yield self
+            except BaseException:
+                self.libraries = snap_libraries
+                self.videos = snap_videos
+                self.media_info = snap_media_info
+                self.audio_tracks = snap_audio_tracks
+                self.audio_cache = snap_audio_cache
+                self.processing_jobs = snap_processing_jobs
+                self.transcripts = snap_transcripts
+                self.transcript_segments = snap_segments
+                self.subtitle_files = snap_subtitle_files
+                self._audio_next_id = snap_audio_next
+                self._job_next_id = snap_job_next
+                self._seg_next_id = snap_seg_next
+                self._subtitle_next_id = snap_subtitle_next
+                raise
 
         return _tx()
 
@@ -211,7 +286,8 @@ class FakeAudioDB:
 
         Mirrors exactly what TRANSCRIBE's ``commit_transcribe`` leaves:
         a ``transcripts`` row (active) plus ordered ``transcript_segments``
-        rows. ``segments`` is a list of ``(seq, start_sec, end_sec, text)``;
+        rows committed via ``commit_segment``, keyed by ``seq``.
+        ``segments`` is a list of ``(seq, start_sec, end_sec, text)``;
         when omitted three deterministic segments are seeded.
         """
         tid = uuid4()
@@ -555,7 +631,12 @@ class FakeAudioDB:
         if s.startswith("SELECT pj.id AS id, pj.finished_at"):
             return None
 
-        # enqueue() — INSERT pending row
+        # --- enqueue_scan: library-scoped INSERT (handled above) -------
+        # NOTE: the library-scoped processing_jobs INSERT has a longer,
+        # more specific prefix and is matched earlier in this dispatch
+        # so it never falls through to the per-video INSERT branch.
+
+        # enqueue() — INSERT pending row (per-video)
         if s.startswith("INSERT INTO processing_jobs"):
             video_id, stage, priority, payload, max_attempts = args
             for pj in self.processing_jobs.values():
@@ -734,6 +815,122 @@ class FakeAudioDB:
                 self.audio_tracks[track_id].last_extracted_at = self._now()
             return None
 
+        # index_stage.load_segment_docs — transcript header lookup AND
+        # SUBTITLE_GEN load_transcript_cues — transcript-by-id lookup.
+        # Both consume the same id/video_id/language projection, so a
+        # single branch serves INDEX and SUBTITLE_GEN.
+        if s.startswith("SELECT id, video_id, language FROM transcripts"):
+            hdr = self.transcripts.get(args[0])
+            if hdr is None:
+                return None
+            return _Row(
+                {"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language}
+            )
+
+        # index_stage.load_segment_docs — ordered segment load (the
+        # INDEX projection leads with ``id,`` so its prefix differs from
+        # the SUBTITLE_GEN projection below — neither shadows the other).
+        if s.startswith(
+            "SELECT id, seq, start_sec, end_sec, text, speaker FROM transcript_segments"
+        ):
+            transcript_id = args[0]
+            rows = [
+                _Row(
+                    {
+                        "id": r.id,
+                        "seq": r.seq,
+                        "start_sec": r.start_sec,
+                        "end_sec": r.end_sec,
+                        "text": r.text,
+                        "speaker": r.speaker,
+                    }
+                )
+                for r in sorted(
+                    (
+                        seg
+                        for seg in self.transcript_segments.values()
+                        if seg.transcript_id == transcript_id
+                    ),
+                    key=lambda r: r.seq,
+                )
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # SUBTITLE_GEN — load the transcript's ordered segments (no
+        # leading ``id,`` — distinct prefix from the INDEX load above).
+        if s.startswith(
+            "SELECT seq, start_sec, end_sec, text, speaker FROM transcript_segments"
+        ):
+            tid = args[0]
+            segs = sorted(
+                (
+                    seg
+                    for seg in self.transcript_segments.values()
+                    if seg.transcript_id == tid
+                ),
+                key=lambda r: r.seq,
+            )
+            rows = [
+                _Row(
+                    {
+                        "seq": seg.seq,
+                        "start_sec": seg.start_sec,
+                        "end_sec": seg.end_sec,
+                        "text": seg.text,
+                        "speaker": seg.speaker,
+                    }
+                )
+                for seg in segs
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # SUBTITLE_GEN — register_subtitle UPSERT into subtitle_files.
+        if s.startswith("INSERT INTO subtitle_files"):
+            (
+                video_id,
+                transcript_id,
+                language,
+                fmt,
+                source,
+                path,
+                byte_size,
+                sha256,
+                is_embedded,
+                is_external,
+                metadata,
+            ) = args
+            for sub_row in self.subtitle_files.values():
+                if (
+                    sub_row.deleted_at is None
+                    and sub_row.video_id == video_id
+                    and sub_row.language == language
+                    and sub_row.format == fmt
+                    and sub_row.source == source
+                ):
+                    sub_row.path = str(path)
+                    sub_row.byte_size = byte_size
+                    sub_row.sha256 = sha256
+                    sub_row.metadata = metadata
+                    sub_row.transcript_id = transcript_id
+                    return _Row({"id": sub_row.id})
+            new_id = self._subtitle_next_id
+            self._subtitle_next_id += 1
+            self.subtitle_files[new_id] = _SubtitleFileRow(
+                id=new_id,
+                video_id=video_id,
+                transcript_id=transcript_id,
+                language=language,
+                format=fmt,
+                source=source,
+                path=str(path),
+                byte_size=byte_size,
+                sha256=sha256,
+                is_embedded=bool(is_embedded),
+                is_external=bool(is_external),
+                metadata=metadata,
+            )
+            return _Row({"id": new_id})
+
         # load_resume_point — SELECT last K segments
         if s.startswith("SELECT seq, text FROM transcript_segments"):
             transcript_id, k = args
@@ -789,42 +986,6 @@ class FakeAudioDB:
             return _Row(
                 {"id": job.id, "state": str(new_state), "not_before": not_before}
             )
-
-        # index_stage.load_segment_docs — transcript header lookup.
-        if s.startswith("SELECT id, video_id, language FROM transcripts"):
-            hdr = self.transcripts.get(args[0])
-            if hdr is None:
-                return None
-            return _Row(
-                {"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language}
-            )
-
-        # index_stage.load_segment_docs — ordered segment load.
-        if s.startswith(
-            "SELECT id, seq, start_sec, end_sec, text, speaker FROM transcript_segments"
-        ):
-            transcript_id = args[0]
-            rows = [
-                _Row(
-                    {
-                        "id": r.id,
-                        "seq": r.seq,
-                        "start_sec": r.start_sec,
-                        "end_sec": r.end_sec,
-                        "text": r.text,
-                        "speaker": r.speaker,
-                    }
-                )
-                for r in sorted(
-                    (
-                        seg
-                        for seg in self.transcript_segments.values()
-                        if seg.transcript_id == transcript_id
-                    ),
-                    key=lambda r: r.seq,
-                )
-            ]
-            return rows if many else (rows[0] if rows else None)
 
         raise AssertionError(f"unexpected SQL in fake audio DB: {s!r}")
 
