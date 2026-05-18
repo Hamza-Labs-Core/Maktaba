@@ -75,13 +75,19 @@ func NewPostgresStoreDB(db *sql.DB, logger *slog.Logger) *PostgresStore {
 }
 
 const (
+	// The replay identity is the (user_id, idem_key) pair written as
+	// TWO parameterised columns — never a single NUL-joined string.
+	// Postgres TEXT/varchar rejects 0x00, so the old
+	// userID + "\x00" + key composite was unstorable on real Postgres
+	// (`invalid byte sequence for encoding "UTF8": 0x00`). The
+	// two-column key is also collision-free (no separator to smuggle).
 	insertSQL = `INSERT INTO idempotency_keys
-	    (composite_key, user_id, idem_key, request_hash, status, body, headers, created_at)
-	    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	    ON CONFLICT (composite_key) DO NOTHING`
+	    (user_id, idem_key, request_hash, status, body, headers, created_at)
+	    VALUES ($1, $2, $3, $4, $5, $6, $7)
+	    ON CONFLICT (user_id, idem_key) DO NOTHING`
 
 	lookupSQL = `SELECT request_hash, status, body, headers, created_at
-	    FROM idempotency_keys WHERE composite_key = $1`
+	    FROM idempotency_keys WHERE user_id = $1 AND idem_key = $2`
 
 	sweepSQL = `DELETE FROM idempotency_keys WHERE created_at < $1`
 )
@@ -98,7 +104,7 @@ func isSweep(q string) bool  { return strings.Contains(q, "DELETE FROM idempoten
 // silently re-executes supposedly-idempotent mutations — leaves a
 // breadcrumb instead of being invisible.
 func (s *PostgresStore) Lookup(ctx context.Context, key, userID string) (Record, bool) {
-	row := s.db.QueryRowContext(ctx, lookupSQL, compositeKey(key, userID))
+	row := s.db.QueryRowContext(ctx, lookupSQL, userID, key)
 	var (
 		rec     Record
 		headers []byte
@@ -122,15 +128,17 @@ func (s *PostgresStore) Lookup(ctx context.Context, key, userID string) (Record,
 // Save persists the response so future requests with the same key can
 // replay it. CreatedAt is stamped here when zero so callers don't have
 // to remember. Concurrent duplicate requests are race-safe: the
-// composite_key primary key + ON CONFLICT DO NOTHING means exactly one
-// writer wins and the rest are no-ops — the loser's request then sees
-// the winner's row on the next Lookup, which is the desired replay.
+// (user_id, idem_key) composite primary key + ON CONFLICT DO NOTHING
+// means exactly one writer wins and the rest are no-ops — the loser's
+// request then sees the winner's row on the next Lookup, which is the
+// desired replay. user_id and idem_key are written as separate
+// parameterised columns so no NUL byte ever reaches a Postgres TEXT
+// column.
 func (s *PostgresStore) Save(ctx context.Context, r Record) error {
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now()
 	}
 	_, err := s.db.ExecContext(ctx, insertSQL,
-		compositeKey(r.Key, r.UserID),
 		r.UserID,
 		r.Key,
 		r.RequestHash,
