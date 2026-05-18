@@ -27,4 +27,20 @@ describe("DropOverlay", () => {
     render(<DropOverlay active libraryName="Lectures" rejectedCount={2} onDismiss={vi.fn()} />);
     expect(screen.getByText(/2 file\(s\) skipped \(unsupported\)/i)).toBeInTheDocument();
   });
+
+  it("renders no stray '0' (or warning) for a zero-reject drop", () => {
+    const { container } = render(
+      <DropOverlay active libraryName="Lectures" rejectedCount={0} onDismiss={vi.fn()} />
+    );
+    const card = container.querySelector(".mkt-drop-overlay__card");
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toBe("Drop here to add to Lectures");
+    expect(container.querySelector(".mkt-drop-overlay__warn")).toBeNull();
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("renders no warning when rejectedCount is omitted", () => {
+    const { container } = render(<DropOverlay active libraryName="Lectures" />);
+    expect(container.querySelector(".mkt-drop-overlay__warn")).toBeNull();
+  });
 });

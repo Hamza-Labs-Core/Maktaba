@@ -23,7 +23,7 @@ export function DropOverlay({ active, libraryName, rejectedCount, onDismiss }: D
     <div className="mkt-drop-overlay" role="status" aria-live="polite">
       <div className="mkt-drop-overlay__card">
         <p className="mkt-drop-overlay__title">{target}</p>
-        {rejectedCount && rejectedCount > 0 ? (
+        {(rejectedCount ?? 0) > 0 ? (
           <p className="mkt-drop-overlay__warn">
             {rejectedCount} file(s) skipped (unsupported)
             {onDismiss ? (

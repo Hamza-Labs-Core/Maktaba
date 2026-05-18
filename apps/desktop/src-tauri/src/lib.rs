@@ -179,6 +179,13 @@ pub fn run() {
 }
 
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    // CROSS-LANGUAGE CONTRACT: every custom `MenuItem::with_id(...)` id
+    // below (and the `format!("library-{slot}")` ids) is the cross-language
+    // contract with the web shell. They MUST stay in sync with
+    // `resolveMenuAction` / `KNOWN_MENU_IDS` in `web/src/lib/desktop.ts`
+    // (the authoritative mirror) — a typo on either side silently makes the
+    // menu item a dead no-op (`resolveMenuAction` returns `null`).
+    //
     // Maktaba menu (macOS: appears as the app name; Win/Linux: leftmost)
     let about = PredefinedMenuItem::about(app, Some("About Maktaba"), None)?;
     let prefs = MenuItem::with_id(app, "preferences", "Settings…", true, Some("CmdOrCtrl+,"))?;

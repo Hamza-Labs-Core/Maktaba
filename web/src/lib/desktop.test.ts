@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   isDesktop,
   resolveMenuAction,
+  KNOWN_MENU_IDS,
   filterVideoFiles,
   VIDEO_EXTENSIONS,
   classifyVersionSkew,
@@ -92,6 +93,46 @@ describe("resolveMenuAction", () => {
   it("returns null for an unknown / predefined menu id", () => {
     expect(resolveMenuAction("quit")).toBeNull();
     expect(resolveMenuAction("totally-unknown")).toBeNull();
+  });
+
+  // Cross-language contract guard (Rust↔TS menu-id desync): every static
+  // id declared in lib.rs is mirrored by KNOWN_MENU_IDS and must resolve
+  // to a real action — a future TS-side rename fails loudly here instead
+  // of silently becoming a dead no-op.
+  it("resolves every id in KNOWN_MENU_IDS to a non-null action", () => {
+    expect(KNOWN_MENU_IDS.length).toBeGreaterThan(0);
+    for (const id of KNOWN_MENU_IDS) {
+      expect(resolveMenuAction(id), `menu id "${id}" must resolve`).not.toBeNull();
+    }
+  });
+
+  it("KNOWN_MENU_IDS exactly matches the Rust static menu-id contract", () => {
+    // Mirrors the MenuItem::with_id(...) ids in
+    // apps/desktop/src-tauri/src/lib.rs (excluding dynamic library-N).
+    expect([...KNOWN_MENU_IDS].sort()).toEqual(
+      [
+        "preferences",
+        "focus-search",
+        "scan-library",
+        "switch-server",
+        "new-window",
+        "new-private",
+        "open-docs",
+      ].sort()
+    );
+  });
+
+  it("resolves the dynamic library-N ids for N=1..9 only", () => {
+    for (let n = 1; n <= 9; n++) {
+      expect(resolveMenuAction(`library-${n}`), `library-${n} must resolve`).toEqual({
+        kind: "navigate-library",
+        slot: n,
+      });
+    }
+    // Out of contract: slot 0 and multi-digit slots must NOT resolve.
+    expect(resolveMenuAction("library-0")).toBeNull();
+    expect(resolveMenuAction("library-10")).toBeNull();
+    expect(resolveMenuAction("library-")).toBeNull();
   });
 });
 

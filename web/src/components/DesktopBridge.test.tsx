@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { render, waitFor, screen } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import type { MenuAction } from "../lib/desktop";
 
 // Hoisted mock of the desktop bridge layer so we can drive menu actions
@@ -21,10 +21,16 @@ vi.mock("../lib/desktop", async () => {
 
 import { DesktopBridge } from "./DesktopBridge";
 
+function LocationDisplay() {
+  const loc = useLocation();
+  return <div data-testid="location-display">{loc.pathname}</div>;
+}
+
 function renderBridge(initial = "/library") {
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <DesktopBridge />
+      <LocationDisplay />
     </MemoryRouter>
   );
 }
@@ -63,11 +69,12 @@ describe("DesktopBridge", () => {
 
     renderBridge("/library");
     await waitFor(() => expect(dispatch).toBeDefined());
+    expect(screen.getByTestId("location-display")).toHaveTextContent("/library");
 
     dispatch({ kind: "navigate", to: "/settings" });
-    await waitFor(() => expect(window.location.pathname === "/settings" || true).toBe(true));
-    // Assert via a re-render probe: the bridge dispatched a CustomEvent
-    // for actions it cannot resolve to a route on its own.
+    await waitFor(() =>
+      expect(screen.getByTestId("location-display")).toHaveTextContent("/settings")
+    );
   });
 
   it("emits a maktaba:scan DOM event for the scan action", async () => {

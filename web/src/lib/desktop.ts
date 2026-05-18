@@ -42,10 +42,39 @@ export type MenuAction =
 const DOCS_URL = "https://maktaba.dev/docs";
 
 /**
- * Map a custom menu-item / accelerator id (declared in
- * src-tauri/src/lib.rs) to an app action. Predefined items
- * (quit/close/copy/...) and unknown ids return null — those are handled
- * natively and must not trigger a frontend action.
+ * The static custom menu-item ids this layer knows how to resolve.
+ *
+ * CROSS-LANGUAGE CONTRACT: every id here MUST exactly match a
+ * `MenuItem::with_id(...)` declaration in
+ * `apps/desktop/src-tauri/src/lib.rs` (the authoritative mirror). The
+ * dynamic `library-N` ids (N = 1..9) are produced by
+ * `format!("library-{slot}")` there and matched by the regex in
+ * `resolveMenuAction` below — they are intentionally NOT listed here.
+ * `desktop.test.ts` asserts every id in this set still resolves, so a
+ * TS-side rename fails loudly instead of becoming a dead no-op.
+ */
+export const KNOWN_MENU_IDS = [
+  "preferences",
+  "focus-search",
+  "scan-library",
+  "switch-server",
+  "new-window",
+  "new-private",
+  "open-docs",
+] as const;
+
+/**
+ * Map a custom menu-item / accelerator id to an app action.
+ *
+ * CROSS-LANGUAGE CONTRACT: the id strings below are the cross-language
+ * contract with the Rust shell. They MUST stay in sync with the
+ * `MenuItem::with_id(...)` ids declared in
+ * `apps/desktop/src-tauri/src/lib.rs` (the authoritative mirror) — a
+ * typo on either side silently falls through to `null` and the menu
+ * item becomes a dead no-op. See `KNOWN_MENU_IDS` and its test.
+ *
+ * Predefined items (quit/close/copy/...) and unknown ids return null —
+ * those are handled natively and must not trigger a frontend action.
  */
 export function resolveMenuAction(id: string): MenuAction | null {
   // Cmd+1..9 — switch to library slot N (Story 13.7).
