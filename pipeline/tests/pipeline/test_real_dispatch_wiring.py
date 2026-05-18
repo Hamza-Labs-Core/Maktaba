@@ -4,14 +4,14 @@ These guard the two integration seams the per-stage adapters need:
 
 - :func:`maktaba_pipeline.handlers.build_real_dispatch` returns a map
   the runtime's ``dispatch_overrides`` accepts, with SCAN/PROBE/EXTRACT/
-  TRANSCRIBE bound to their real adapters and the not-yet-wired stages
-  (notably THUMBNAIL, which has no implementing module) left off so they
-  keep the placeholder.
+  TRANSCRIBE/INDEX bound to their real adapters and the not-yet-wired
+  stages (SUBTITLE_GEN, and THUMBNAIL which has no implementing module)
+  left off so they keep the placeholder.
 - ``__main__._DEFAULT_STAGES`` must be a subset of
   ``build_real_dispatch()``'s keys: every default stage needs a real
   handler. A stage that only has the runtime's no-op placeholder
-  (SUBTITLE_GEN, INDEX, THUMBNAIL) would be silently marked ``done`` by
-  a default worker without doing the work — the same silent-drain
+  (SUBTITLE_GEN, THUMBNAIL) would be silently marked ``done`` by a
+  default worker without doing the work — the same silent-drain
   foot-gun that was caught for SCAN. TRANSCRIBE now enqueues
   SUBTITLE_GEN + INDEX, so this invariant must hold for the whole
   default set.
@@ -26,6 +26,12 @@ These guard the two integration seams the per-stage adapters need:
   handler — marking a SCAN job ``done`` without scanning would have
   silently "completed" a library that was never walked. That hazard is
   now resolved by the real adapter, so the exclusion is lifted.
+- ``__main__._DEFAULT_STAGES`` now also lists ``Stage.INDEX``: it has a
+  real thin-wrapper adapter (``index_handler`` — embed + Chroma upsert
+  via ``search.embedder.index_segments``, FSM ``TRANSCRIBED ->
+  INDEXED``), so a default worker claiming the INDEX job TRANSCRIBE
+  enqueues runs the real vector indexing instead of the silent no-op
+  drain.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import (
     build_real_dispatch,
     extract_handler,
+    index_handler,
     probe_handler,
     scan_handler,
     transcribe_handler,
@@ -45,7 +52,7 @@ from maktaba_pipeline.handlers import (
 pytestmark = pytest.mark.unit
 
 
-def test_build_real_dispatch_binds_scan_probe_extract_and_transcribe() -> None:
+def test_build_real_dispatch_binds_scan_probe_extract_transcribe_and_index() -> None:
     overrides = build_real_dispatch()
     # Gap-closure: SCAN now has a real library-scoped thin-wrapper
     # adapter (slot 0058 + SqlScanStore + Story 1.1 orchestrator).
@@ -61,14 +68,18 @@ def test_build_real_dispatch_binds_scan_probe_extract_and_transcribe() -> None:
     # AUDIO_EXTRACTED -> TRANSCRIBED, and enqueues SUBTITLE_GEN +
     # INDEX), so it joins the override map too.
     assert overrides[Stage.TRANSCRIBE] is transcribe_handler
+    # Track R4: INDEX now has a real thin-wrapper adapter (commit_index
+    # loads the transcript's committed segments, embeds + upserts them
+    # via search.embedder.index_segments, and advances the FSM
+    # TRANSCRIBED -> INDEXED), so it joins the override map too.
+    assert overrides[Stage.INDEX] is index_handler
     # Stages without a thin-wrapper adapter must stay on the runtime
     # placeholder — registering a half-built handler would be worse
     # than the no-op drain. THUMBNAIL has no module at all; SUBTITLE_GEN
-    # / INDEX consume the transcript TRANSCRIBE now produces but their
-    # real orchestration is still pending.
+    # consumes the transcript TRANSCRIBE now produces but its real
+    # orchestration is still pending.
     for stage in (
         Stage.SUBTITLE_GEN,
-        Stage.INDEX,
         Stage.THUMBNAIL,
     ):
         assert stage not in overrides
@@ -90,18 +101,20 @@ def test_default_stages_subset_of_real_handlers() -> None:
     # bound in build_real_dispatch() to scan_handler, which walks the
     # library and enqueues per-video PROBE jobs. So SCAN is safe in the
     # defaults and leads the tuple as the pipeline's entry stage; the
-    # per-video PROBE -> EXTRACT -> TRANSCRIBE chain follows.
+    # per-video PROBE -> EXTRACT -> TRANSCRIBE -> INDEX chain follows.
     assert _DEFAULT_STAGES == (
         Stage.SCAN,
         Stage.PROBE,
         Stage.EXTRACT,
         Stage.TRANSCRIBE,
+        Stage.INDEX,
     )
     assert _DEFAULT_STAGES[0] is Stage.SCAN
     assert Stage.SCAN in overrides
     assert Stage.PROBE in overrides
     assert Stage.EXTRACT in overrides
     assert Stage.TRANSCRIBE in overrides
+    assert Stage.INDEX in overrides
 
     # The full canonical pipeline is now present in the defaults.
     assert set(_DEFAULT_STAGES) >= {
@@ -109,16 +122,16 @@ def test_default_stages_subset_of_real_handlers() -> None:
         Stage.PROBE,
         Stage.EXTRACT,
         Stage.TRANSCRIBE,
+        Stage.INDEX,
     }
 
-    # SUBTITLE_GEN / INDEX / THUMBNAIL have no real handler yet (only
-    # the runtime placeholder). TRANSCRIBE now enqueues SUBTITLE_GEN +
-    # INDEX, so leaving any of these in the defaults would silently
-    # no-op-drain real work — they must be excluded from both the
-    # override map and the defaults until their adapters land.
+    # SUBTITLE_GEN / THUMBNAIL have no real handler yet (only the
+    # runtime placeholder). TRANSCRIBE enqueues SUBTITLE_GEN + INDEX, so
+    # leaving SUBTITLE_GEN in the defaults would silently no-op-drain
+    # real work — these must be excluded from both the override map and
+    # the defaults until their adapters land.
     for stage in (
         Stage.SUBTITLE_GEN,
-        Stage.INDEX,
         Stage.THUMBNAIL,
     ):
         assert stage not in overrides

@@ -198,6 +198,63 @@ class FakeAudioDB:
         )
         return lib_id
 
+    def seed_transcript(
+        self,
+        *,
+        video_id: UUID,
+        audio_track_id: int = 1,
+        language: str = "ara",
+        segments: list[tuple[int, float, float, str]] | None = None,
+        is_active: bool = True,
+    ) -> UUID:
+        """Seed a complete transcript + its committed segments.
+
+        Mirrors exactly what TRANSCRIBE's ``commit_transcribe`` leaves:
+        a ``transcripts`` row (active) plus ordered ``transcript_segments``
+        rows. ``segments`` is a list of ``(seq, start_sec, end_sec, text)``;
+        when omitted three deterministic segments are seeded.
+        """
+        tid = uuid4()
+        self.transcripts[tid] = _TranscriptRow(
+            id=tid,
+            video_id=video_id,
+            audio_track_id=audio_track_id,
+            language=language,
+            detected_language=None,
+            language_confidence=None,
+            backend="fake-stt",
+            model="fake-model-v1",
+            backend_version="1.0.0",
+            word_level=False,
+            diarized=False,
+            is_active=is_active,
+            metadata="{}",
+            superseded_at=None,
+        )
+        segs = (
+            [
+                (0, 0.0, 2.0, "bismillah"),
+                (1, 2.0, 4.5, "al-hamdu"),
+                (2, 4.5, 6.0, "lillah"),
+            ]
+            if segments is None
+            else segments
+        )
+        for seq, start_sec, end_sec, text in segs:
+            seg_id = self._seg_next_id
+            self._seg_next_id += 1
+            self.transcript_segments[seg_id] = _TranscriptSegmentRow(
+                id=seg_id,
+                transcript_id=tid,
+                seq=seq,
+                start_sec=start_sec,
+                end_sec=end_sec,
+                text=text,
+                speaker=None,
+                confidence=None,
+            )
+        return tid
+
     @staticmethod
     def _now() -> datetime:
         return datetime.now(UTC)
@@ -732,6 +789,42 @@ class FakeAudioDB:
             return _Row(
                 {"id": job.id, "state": str(new_state), "not_before": not_before}
             )
+
+        # index_stage.load_segment_docs — transcript header lookup.
+        if s.startswith("SELECT id, video_id, language FROM transcripts"):
+            hdr = self.transcripts.get(args[0])
+            if hdr is None:
+                return None
+            return _Row(
+                {"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language}
+            )
+
+        # index_stage.load_segment_docs — ordered segment load.
+        if s.startswith(
+            "SELECT id, seq, start_sec, end_sec, text, speaker FROM transcript_segments"
+        ):
+            transcript_id = args[0]
+            rows = [
+                _Row(
+                    {
+                        "id": r.id,
+                        "seq": r.seq,
+                        "start_sec": r.start_sec,
+                        "end_sec": r.end_sec,
+                        "text": r.text,
+                        "speaker": r.speaker,
+                    }
+                )
+                for r in sorted(
+                    (
+                        seg
+                        for seg in self.transcript_segments.values()
+                        if seg.transcript_id == transcript_id
+                    ),
+                    key=lambda r: r.seq,
+                )
+            ]
+            return rows if many else (rows[0] if rows else None)
 
         raise AssertionError(f"unexpected SQL in fake audio DB: {s!r}")
 

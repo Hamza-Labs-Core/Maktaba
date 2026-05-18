@@ -32,6 +32,7 @@ import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from .audio.extract import ExtractError
 from .audio.extract import extract_to_file as _ffmpeg_extract
@@ -45,15 +46,18 @@ from .scanner import Scanner, ScanStore, SqlScanStore
 if TYPE_CHECKING:
     from .audio.extract import _ExtractDB
     from .audio.probe import _ProbeDB
+    from .search.index_stage import _IndexDB
     from .stt.transcribe import _TranscribeDB
 
 __all__ = [
     "BackendSelector",
     "ExtractRunner",
+    "IndexTargetResolver",
     "ProbeRunner",
     "ScanStoreFactory",
     "build_real_dispatch",
     "extract_handler",
+    "index_handler",
     "probe_handler",
     "scan_handler",
     "transcribe_handler",
@@ -77,6 +81,15 @@ ExtractRunner = Callable[..., Awaitable[Path]]
 # tests inject a fake returning a canned backend so the suite never
 # loads a model / spawns a subprocess (mirrors PROBE/EXTRACT seams).
 BackendSelector = Callable[..., Awaitable[tuple[Any, str, "str | None"]]]
+
+# DI seam for INDEX: ``(*, video_id) -> IndexTarget`` (a Chroma
+# collection + optional embed fn). The default resolves the *configured*
+# process-wide collection via ``search.index_stage.default_index_target``
+# (``make_collection`` imports chromadb lazily); tests inject a fake
+# returning an in-memory collection + a deterministic embed fn so the
+# suite never loads a model / touches a real vector DB (mirrors the
+# PROBE/EXTRACT/TRANSCRIBE seams).
+IndexTargetResolver = Callable[..., Awaitable[Any]]
 
 _SELECT_VIDEO_PATH = "SELECT path FROM videos WHERE id = $1"
 _SELECT_VIDEO_SRC = "SELECT path, content_hash FROM videos WHERE id = $1"
@@ -583,11 +596,188 @@ async def transcribe_handler(
         )
 
 
+async def index_handler(
+    db: DBConn,
+    job: Job,
+    *,
+    resolve_target: IndexTargetResolver | None = None,
+) -> None:
+    """Real INDEX stage: load the transcript's segments then embed + upsert.
+
+    Consumes exactly what TRANSCRIBE persisted:
+
+    1. the job ``payload`` ``{transcript_id, audio_track_id}`` TRANSCRIBE
+       enqueued — ``transcript_id`` locates the *exact* transcript this
+       stage indexes (no "which transcript is active" re-query race),
+    2. :func:`search.index_stage.load_segment_docs` reads the transcript
+       header (``video_id`` / ``language``) + every committed
+       ``transcript_segments`` row (ordered by ``seq``) and builds the
+       :class:`SegmentDoc` list,
+    3. resolve the target Chroma collection + embed fn via the DI seam
+       (``resolve_target`` — default = the configured process-wide
+       collection; tests inject a fake collection + deterministic embed
+       so no model loads and no network is touched),
+    4. :func:`search.index_stage.commit_index` calls the existing
+       :func:`search.embedder.index_segments` (the embed + upsert hot
+       path stays there), then advances the FSM
+       ``TRANSCRIBED -> INDEXED`` (replay-guarded exactly like
+       ``commit_transcribe``),
+    5. flip the job ``done``.
+
+    Failure classification: a missing payload / missing
+    ``transcript_id`` / missing transcript header / a transcript with
+    zero segments are *non-retryable* (a data inconsistency — TRANSCRIBE
+    only enqueues INDEX after activating a complete transcript, and a
+    re-run cannot fix it); a transient embed / vector-store error is
+    *retryable*; a video that vanished mid-flight is terminal (mirrors
+    EXTRACT/TRANSCRIBE's ``LookupError`` guard).
+    """
+    from .search.index_stage import (  # noqa: PLC0415 — avoid import cycle at module load
+        commit_index,
+        default_index_target,
+        load_segment_docs,
+    )
+
+    resolve = resolve_target or default_index_target
+    try:
+        if job.video_id is None:
+            # Per-video stage with no video_id — impossible under the
+            # slot 0058 scope CHECK (INDEX is per-video; only SCAN is
+            # library-scoped), but defend anyway (terminal: a re-run
+            # cannot invent the video). Mirrors the
+            # probe/extract/transcribe guards.
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="index_missing_source",
+                    message=f"index job {job.id} has no video_id",
+                    retryable=False,
+                ),
+            )
+            return
+        payload = job.payload or {}
+        raw_tid = payload.get("transcript_id")
+        if not raw_tid:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="index_missing_payload",
+                    message=(
+                        f"INDEX job {job.id} has no payload.transcript_id"
+                        " — TRANSCRIBE should have enqueued it with one"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        try:
+            transcript_id = UUID(str(raw_tid))
+        except (ValueError, AttributeError, TypeError):
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="index_bad_payload",
+                    message=f"INDEX job {job.id} payload.transcript_id is not a UUID: {raw_tid!r}",
+                    retryable=False,
+                ),
+            )
+            return
+
+        docs = await load_segment_docs(
+            cast("_IndexDB", db), transcript_id=transcript_id
+        )
+        if docs is None:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="index_missing_transcript",
+                    message=(
+                        f"no transcripts row for transcript_id={transcript_id}"
+                        " — TRANSCRIBE should not have enqueued INDEX"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+        if not docs:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="index_no_segments",
+                    message=(
+                        f"transcript {transcript_id} has zero segments"
+                        " — a committed transcript always has >= 1"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        target = await resolve(video_id=job.video_id)
+
+        await commit_index(
+            cast("_IndexDB", db),
+            video_id=job.video_id,
+            transcript_id=transcript_id,
+            docs=docs,
+            target=target,
+        )
+        await mark_done(db, job_id=job.id)
+    except LookupError as exc:
+        # TOCTOU: the video row vanished between the segment load and
+        # commit_index's state read. Terminal — a re-run cannot
+        # resurrect it (mirrors transcribe_handler's LookupError guard).
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.INDEX.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="index_video_vanished",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=False,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
+        # Embed / vector-store failures (model load hiccup, a Chroma
+        # write error, a transient I/O fault) are transient by nature →
+        # retryable.
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.INDEX.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="index_failed",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=True,
+            ),
+        )
+
+
 def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
 
     Only stages with a genuine thin-wrapper adapter are registered.
-    Every unregistered stage (SUBTITLE_GEN, INDEX, THUMBNAIL) keeps the
+    Every unregistered stage (SUBTITLE_GEN, THUMBNAIL) keeps the
     runtime's placeholder handler until its real orchestration lands —
     see the module docstring and the gap-closure plan's Track R1/R2/R3
     concerns. THUMBNAIL has no implementing module at all.
@@ -613,6 +803,17 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
     the real walk + per-video PROBE enqueue rather than the silent
     no-op drain that would have marked the library "scanned" without
     discovering anything.
+
+    Track R4: INDEX now has a real thin-wrapper adapter
+    (``commit_index`` loads the transcript's committed segments, calls
+    the existing ``search.embedder.index_segments`` to embed + upsert
+    them into the configured Chroma collection, and advances the FSM
+    ``TRANSCRIBED -> INDEXED``), so it joins the override map too.
+    ``_DEFAULT_STAGES`` listing INDEX is now safe — a default worker
+    claiming the INDEX job TRANSCRIBE enqueues runs the real vector
+    indexing rather than the silent no-op drain. INDEX has no follow-on
+    enqueue: its FSM successor THUMBNAIL has no implementing module yet
+    (mirrors SUBTITLE_GEN, which also enqueues nothing).
     """
 
     return {
@@ -620,4 +821,5 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
         Stage.PROBE: probe_handler,
         Stage.EXTRACT: extract_handler,
         Stage.TRANSCRIBE: transcribe_handler,
+        Stage.INDEX: index_handler,
     }
