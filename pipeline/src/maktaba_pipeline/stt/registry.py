@@ -30,7 +30,9 @@ __all__ = [
     "BackendRegistry",
     "FallbackTrace",
     "NoBackendReady",
+    "activate_transcript",
     "flip_active_transcript",
+    "insert_inactive_transcript",
     "pick_backend",
 ]
 
@@ -160,6 +162,91 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11)
 RETURNING id
 """
 
+_INSERT_INACTIVE_SQL = """
+INSERT INTO transcripts
+       (video_id, audio_track_id, language, detected_language,
+        language_confidence, backend, model, backend_version,
+        word_level, diarized, is_active, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, $11)
+RETURNING id
+"""
+
+_ACTIVATE_NEW_SQL = """
+UPDATE transcripts
+   SET is_active = true,
+       superseded_at = NULL
+ WHERE id = $1
+"""
+
+
+async def insert_inactive_transcript(
+    db: _DBConn,
+    *,
+    video_id: UUID,
+    audio_track_id: int,
+    language: str,
+    detected_language: str | None,
+    language_confidence: float | None,
+    backend: str,
+    model: str,
+    backend_version: str | None,
+    word_level: bool,
+    diarized: bool,
+    metadata: dict[str, Any] | None = None,
+) -> UUID:
+    """Insert a new transcript row as ``is_active=false`` and return its UUID.
+
+    The first half of the create-then-activate split (REVIEW §1.1 —
+    flip-then-stream data-loss fix). History rows are unconstrained by
+    the ``transcripts_active_unique`` partial index (it only covers
+    ``is_active=true``), so this NEVER touches the current active
+    transcript: a caller can fill the row with segments and only later
+    promote it via :func:`activate_transcript`. On any mid-fill failure
+    the prior good transcript stays active+intact and the partial row
+    is an inert ``is_active=false`` history row that no consumer reads.
+    """
+    payload = json.dumps(metadata or {})
+    row = await db.fetchrow(
+        _INSERT_INACTIVE_SQL,
+        video_id,
+        audio_track_id,
+        language,
+        detected_language,
+        language_confidence,
+        backend,
+        model,
+        backend_version,
+        word_level,
+        diarized,
+        payload,
+    )
+    if row is None:
+        raise RuntimeError("insert_inactive_transcript: INSERT returned no row")
+    return UUID(str(row["id"]))
+
+
+async def activate_transcript(
+    db: _DBConn,
+    *,
+    transcript_id: UUID,
+    video_id: UUID,
+    audio_track_id: int,
+) -> None:
+    """Atomically retire the prior active transcript and flip ``transcript_id``.
+
+    The second half of the create-then-activate split. Called only
+    AFTER every segment has been committed into ``transcript_id`` so
+    the exactly-one-active invariant always points at a *complete*
+    transcript. Story 3.5 AC-4 — the partial unique index on
+    ``(video_id, audio_track_id) WHERE is_active=true`` enforces
+    "exactly one active" while history rows stay unconstrained.
+    Concurrent flips race on the index; the loser sees a unique
+    violation and the orchestrator retries.
+    """
+    async with db.transaction():
+        await db.execute(_FLIP_PREVIOUS_SQL, video_id, audio_track_id)
+        await db.execute(_ACTIVATE_NEW_SQL, transcript_id)
+
 
 async def flip_active_transcript(
     db: _DBConn,
@@ -183,6 +270,14 @@ async def flip_active_transcript(
     enforces "exactly one active" while history rows stay unconstrained.
     Concurrent flips race on the index; the loser sees a unique
     violation and the orchestrator retries.
+
+    NOTE: ``commit_transcribe`` no longer uses this — it now does the
+    create-then-activate split (:func:`insert_inactive_transcript` +
+    :func:`activate_transcript`) so a mid-stream failure can never
+    leave an empty active transcript (REVIEW §1.1). This single-shot
+    form is retained for callers that create a complete transcript in
+    one go (it has the documented limitation that the prior active is
+    retired before the new one is known-good).
     """
     payload = json.dumps(metadata or {})
     async with db.transaction():

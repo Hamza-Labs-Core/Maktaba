@@ -33,13 +33,18 @@ from .handlers import build_real_dispatch
 from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
+# Only stages with a REAL handler in handlers.build_real_dispatch()
+# (PROBE, EXTRACT, TRANSCRIBE) belong here. SCAN, SUBTITLE_GEN, INDEX,
+# and THUMBNAIL only get the runtime's no-op placeholder, so a default
+# worker claiming one of those jobs would silently mark it ``done``
+# without doing the work (the silent-drain foot-gun). They stay out of
+# the defaults until their real adapters land — see the
+# defaults-vs-real-handlers invariant in
+# tests/pipeline/test_real_dispatch_wiring.py.
 _DEFAULT_STAGES = (
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,
-    Stage.SUBTITLE_GEN,
-    Stage.INDEX,
-    Stage.THUMBNAIL,
 )
 
 
@@ -117,10 +122,11 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
 
     try:
         # Track R1: feed the real per-stage adapter map. Stages without
-        # a thin-wrapper adapter (TRANSCRIBE, SUBTITLE_GEN,
-        # INDEX, THUMBNAIL) are absent from the map and keep the
-        # runtime's placeholder handler until their real orchestration
-        # lands — see maktaba_pipeline.handlers.
+        # a thin-wrapper adapter (SCAN, SUBTITLE_GEN, INDEX, THUMBNAIL)
+        # are absent from the map and keep the runtime's placeholder
+        # handler until their real orchestration lands — they are also
+        # kept out of _DEFAULT_STAGES so a default worker never silently
+        # no-op-drains them — see maktaba_pipeline.handlers.
         return await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
     finally:
         if grpc_server is not None:

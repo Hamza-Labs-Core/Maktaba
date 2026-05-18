@@ -118,6 +118,12 @@ class STTBackend(Protocol):
     """The Protocol every backend implements (Story 3.1 AC-1)."""
 
     name: str
+    #: The concrete model identity stamped onto ``transcripts.model``
+    #: (e.g. ``"large-v3"`` for Whisper, ``"whisper-1"`` for the OpenAI
+    #: API). This is the *model* — distinct from ``name`` (the backend
+    #: vendor key) and the runtime ``version``. Every concrete backend
+    #: is constructed with ``model=`` and exposes it here.
+    model: str
     supports_streaming: bool
     requires_file: bool
     cost_per_minute: float | None

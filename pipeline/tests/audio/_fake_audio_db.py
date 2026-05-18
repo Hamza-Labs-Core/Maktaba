@@ -325,7 +325,7 @@ class FakeAudioDB:
         if s.startswith("UPDATE processing_jobs SET last_segment_end_sec"):
             return self._exec_progress_sqlite(args)
 
-        # flip_active_transcript — UPDATE previous active
+        # flip_active_transcript / activate_transcript — UPDATE previous active
         if s.startswith("UPDATE transcripts SET is_active = false"):
             video_id, audio_track_id = args
             for tr in self.transcripts.values():
@@ -334,8 +334,21 @@ class FakeAudioDB:
                     tr.superseded_at = self._now()
             return None
 
-        # flip_active_transcript — INSERT new active
+        # activate_transcript — flip a specific (inactive) row active
+        if s.startswith("UPDATE transcripts SET is_active = true"):
+            (transcript_id,) = args
+            target = self.transcripts.get(transcript_id)
+            if target is not None:
+                target.is_active = True
+                target.superseded_at = None
+            return None
+
+        # flip_active_transcript / insert_inactive_transcript — INSERT row.
+        # The SQL's ``is_active`` literal (true vs false) decides whether
+        # the new row is born active (single-shot flip) or inactive
+        # (create-then-activate split — REVIEW §1.1).
         if s.startswith("INSERT INTO transcripts"):
+            born_active = "is_active, metadata)" in s and ", false, $11)" not in s
             (
                 video_id,
                 audio_track_id,
@@ -362,7 +375,7 @@ class FakeAudioDB:
                 backend_version=backend_version,
                 word_level=bool(word_level),
                 diarized=bool(diarized),
-                is_active=True,
+                is_active=born_active,
                 metadata=metadata,
                 superseded_at=None,
             )
@@ -403,6 +416,25 @@ class FakeAudioDB:
                 bytes=nbytes,
             )
             return None
+
+        # transcribe handler — read back the EXTRACT-persisted
+        # audio_cache artifact (cached WAV path + audio_track_id) by
+        # the content-addressed primary key.
+        if s.startswith(
+            "SELECT content_hash, video_id, audio_track_id, path, bytes FROM audio_cache"
+        ):
+            cache_row = self.audio_cache.get(str(args[0]))
+            if cache_row is None:
+                return None
+            return _Row(
+                {
+                    "content_hash": cache_row.content_hash,
+                    "video_id": cache_row.video_id,
+                    "audio_track_id": cache_row.audio_track_id,
+                    "path": cache_row.path,
+                    "bytes": cache_row.bytes,
+                }
+            )
 
         # commit_extract — stamp audio_tracks.last_extracted_at.
         if s.startswith("UPDATE audio_tracks SET last_extracted_at"):
