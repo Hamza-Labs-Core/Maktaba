@@ -34,14 +34,24 @@ from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
 # Only stages with a REAL handler in handlers.build_real_dispatch()
-# (PROBE, EXTRACT, TRANSCRIBE) belong here. SCAN, SUBTITLE_GEN, INDEX,
+# (SCAN, PROBE, EXTRACT, TRANSCRIBE) belong here. SUBTITLE_GEN, INDEX,
 # and THUMBNAIL only get the runtime's no-op placeholder, so a default
 # worker claiming one of those jobs would silently mark it ``done``
 # without doing the work (the silent-drain foot-gun). They stay out of
 # the defaults until their real adapters land — see the
 # defaults-vs-real-handlers invariant in
 # tests/pipeline/test_real_dispatch_wiring.py.
+#
+# Gap-closure (HLB-257/255): SCAN now has a real library-scoped
+# adapter (`handlers.scan_handler`, registered in `build_real_dispatch`)
+# backed by slot 0058 + `SqlScanStore`, so it is safe in the defaults —
+# a default worker claiming a SCAN job runs the real walk + per-video
+# PROBE enqueue, not the silent no-op drain. SCAN leads the tuple
+# because it is the pipeline's entry stage (it produces the videos every
+# later stage consumes); the per-video PROBE -> EXTRACT -> TRANSCRIBE
+# chain follows.
 _DEFAULT_STAGES = (
+    Stage.SCAN,
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,

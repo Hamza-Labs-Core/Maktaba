@@ -128,14 +128,18 @@ class StageDB(FakeAudioDB):
 def make_job(
     *,
     job_id: int,
-    video_id: UUID,
+    video_id: UUID | None,
     stage: Any,
+    library_id: UUID | None = None,
     payload: dict[str, Any] | None = None,
 ) -> Any:
     """Build a minimal :class:`~maktaba_pipeline.db.jobs.Job`.
 
     Only the fields the adapters touch are meaningful; the rest take
     schema-shaped defaults so the frozen dataclass constructs cleanly.
+
+    Slot 0058: per-video stages pass ``video_id`` (``library_id`` left
+    ``None``); a SCAN job passes ``library_id`` with ``video_id=None``.
     The claim loop hydrates ``payload`` from the row's JSON; tests that
     drive a payload-carrying stage (TRANSCRIBE) pass it explicitly so
     the adapter sees the same shape EXTRACT enqueued.
@@ -148,6 +152,7 @@ def make_job(
     return Job(
         id=job_id,
         video_id=video_id,
+        library_id=library_id,
         stage=stage,
         state=JobState.CLAIMED,
         priority=100,

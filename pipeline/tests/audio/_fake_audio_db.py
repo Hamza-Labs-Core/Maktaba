@@ -17,10 +17,24 @@ from uuid import UUID, uuid4
 
 
 @dataclass
+class _LibraryRow:
+    id: UUID
+    name: str
+    roots: list[str]
+    settings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class _VideoRow:
     id: UUID
     library_id: UUID
     state: str = "discovered"
+    content_hash: str | None = None
+    path: str | None = None
+    filename: str | None = None
+    size_bytes: int | None = None
+    mtime: Any = None
+    last_seen_at: Any = None
 
 
 @dataclass
@@ -63,10 +77,28 @@ class _AudioCacheRow:
 @dataclass
 class _ProcessingJobRow:
     id: int
-    video_id: UUID
+    video_id: UUID | None
     stage: str
     state: str = "pending"
     priority: int = 100
+    library_id: UUID | None = None
+    # Default 1 (not 0): a claimed/running row has had >=1 claim, and the
+    # backoff helper rejects attempts < 1. This preserves the prior
+    # behaviour when `_ProcessingJobRow` had no `attempts` field and the
+    # StageDB read fell back to `getattr(job, "attempts", 1)`. The fake
+    # claim path still increments on top of this.
+    attempts: int = 1
+    max_attempts: int = 3
+    claimed_by: str | None = None
+    claimed_at: datetime | None = None
+    not_before: datetime | None = None
+    total_duration_seconds: float | None = None
+    paused_at: datetime | None = None
+    paused_at_sec: float | None = None
+    resumed_at: datetime | None = None
+    resume_count: int = 0
+    metrics: str | None = None
+    created_at: datetime | None = None
     last_segment_end_sec: float = 0.0
     processed_seconds: float = 0.0
     segments_completed: int = 0
@@ -119,6 +151,7 @@ class _Row(dict[str, Any]):
 @dataclass
 class FakeAudioDB:
     dialect: str = "postgres"
+    libraries: dict[UUID, _LibraryRow] = field(default_factory=dict)
     videos: dict[UUID, _VideoRow] = field(default_factory=dict)
     media_info: dict[UUID, _MediaInfoRow] = field(default_factory=dict)
     audio_tracks: dict[int, _AudioTrackRow] = field(default_factory=dict)
@@ -148,6 +181,22 @@ class FakeAudioDB:
         vid = uuid4()
         self.videos[vid] = _VideoRow(id=vid, library_id=library_id or uuid4(), state=state)
         return vid
+
+    def add_library(
+        self,
+        *,
+        roots: list[str],
+        name: str = "test-lib",
+        settings: dict[str, Any] | None = None,
+    ) -> UUID:
+        lib_id = uuid4()
+        self.libraries[lib_id] = _LibraryRow(
+            id=lib_id,
+            name=name,
+            roots=list(roots),
+            settings=dict(settings or {}),
+        )
+        return lib_id
 
     @staticmethod
     def _now() -> datetime:
@@ -181,7 +230,192 @@ class FakeAudioDB:
         async with self._lock():
             self._dispatch(s, args, many=False)
 
+    def _job_row_full(self, job: _ProcessingJobRow) -> dict[str, Any]:
+        """Materialise a ``RETURNING *``-shaped row for ``_row_to_job``.
+
+        Mirrors the slot 0002 + slot 0058 column set the claim path
+        decodes; unset optional columns default to schema-shaped
+        nulls/zeros so the frozen :class:`Job` dataclass constructs."""
+        return {
+            "id": job.id,
+            "video_id": job.video_id,
+            "library_id": job.library_id,
+            "stage": job.stage,
+            "state": job.state,
+            "priority": job.priority,
+            "attempts": job.attempts,
+            "max_attempts": job.max_attempts,
+            "claimed_by": job.claimed_by,
+            "claimed_at": job.claimed_at,
+            "last_heartbeat_at": job.last_heartbeat_at,
+            "not_before": job.not_before,
+            "error": job.error,
+            "total_duration_seconds": job.total_duration_seconds,
+            "processed_seconds": job.processed_seconds,
+            "segments_completed": job.segments_completed,
+            "last_segment_end_sec": job.last_segment_end_sec,
+            "estimated_remaining_sec": job.estimated_remaining_sec,
+            "realtime_factor": job.realtime_factor,
+            "progress_updated_at": job.progress_updated_at,
+            "pause_requested": job.pause_requested,
+            "cancel_requested": job.cancel_requested,
+            "paused_at": job.paused_at,
+            "paused_at_sec": job.paused_at_sec,
+            "paused_reason": job.paused_reason,
+            "resumed_at": job.resumed_at,
+            "resume_count": job.resume_count,
+            "metrics": job.metrics,
+            "payload": job.payload,
+            "created_at": job.created_at or self._now(),
+            "finished_at": job.finished_at,
+        }
+
     def _dispatch(self, s: str, args: tuple[Any, ...], *, many: bool) -> Any:
+        # --- SqlScanStore: library projection ---------------------------
+        if s.startswith("SELECT id, name, roots, settings FROM libraries"):
+            lib = self.libraries.get(args[0])
+            if lib is None:
+                return None
+            return _Row(
+                {
+                    "id": lib.id,
+                    "name": lib.name,
+                    "roots": list(lib.roots),
+                    "settings": dict(lib.settings),
+                }
+            )
+
+        # --- SqlScanStore: skip-rehash path lookup ----------------------
+        if s.startswith("SELECT id, size_bytes, mtime, content_hash FROM videos"):
+            library_id, path = args
+            for vid_row in self.videos.values():
+                if vid_row.library_id == library_id and vid_row.path == path:
+                    return _Row(
+                        {
+                            "id": vid_row.id,
+                            "size_bytes": vid_row.size_bytes,
+                            "mtime": vid_row.mtime,
+                            "content_hash": vid_row.content_hash,
+                        }
+                    )
+            return None
+
+        # --- SqlScanStore: SQLite pre-check (insert vs update) ----------
+        if s.startswith("SELECT id FROM videos WHERE library_id"):
+            library_id, content_hash = args
+            for vid_row in self.videos.values():
+                if (
+                    vid_row.library_id == library_id
+                    and vid_row.content_hash == content_hash
+                ):
+                    return _Row({"id": vid_row.id})
+            return None
+
+        # --- SqlScanStore: content-addressed UPSERT --------------------
+        if s.startswith("INSERT INTO videos"):
+            (
+                library_id,
+                content_hash,
+                path,
+                filename,
+                size_bytes,
+                mtime,
+                last_seen_at,
+            ) = args
+            video_match = next(
+                (
+                    vr
+                    for vr in self.videos.values()
+                    if vr.library_id == library_id and vr.content_hash == content_hash
+                ),
+                None,
+            )
+            if video_match is not None:
+                video_match.path = path
+                video_match.filename = filename
+                video_match.size_bytes = size_bytes
+                video_match.mtime = mtime
+                video_match.last_seen_at = last_seen_at
+                return _Row({"id": video_match.id, "inserted": False})
+            new_video_id = uuid4()
+            self.videos[new_video_id] = _VideoRow(
+                id=new_video_id,
+                library_id=library_id,
+                state="discovered",
+                content_hash=content_hash,
+                path=path,
+                filename=filename,
+                size_bytes=size_bytes,
+                mtime=mtime,
+                last_seen_at=last_seen_at,
+            )
+            return _Row({"id": new_video_id, "inserted": True})
+
+        # --- enqueue_scan: library-scoped INSERT ------------------------
+        if s.startswith(
+            "INSERT INTO processing_jobs (library_id, video_id, stage,"
+        ):
+            library_id, priority, payload, max_attempts = args
+            for pj in self.processing_jobs.values():
+                if (
+                    pj.library_id == library_id
+                    and pj.stage == "scan"
+                    and pj.state
+                    in {"pending", "claimed", "running", "resuming", "paused"}
+                ):
+                    return None  # ON CONFLICT DO NOTHING (one live scan/lib)
+            new_id = self._job_next_id
+            self._job_next_id += 1
+            self.processing_jobs[new_id] = _ProcessingJobRow(
+                id=new_id,
+                video_id=None,
+                library_id=library_id,
+                stage="scan",
+                priority=int(priority),
+                payload=payload,
+                attempts=0,  # fresh pending row; claim() bumps to 1
+                max_attempts=int(max_attempts),
+                created_at=self._now(),
+            )
+            return _Row({"id": new_id})
+
+        # --- enqueue_scan: fallback live-scan SELECT --------------------
+        if s.startswith("SELECT id FROM processing_jobs WHERE library_id"):
+            (library_id,) = args
+            for pj in self.processing_jobs.values():
+                if (
+                    pj.library_id == library_id
+                    and pj.stage == "scan"
+                    and pj.state
+                    in {"pending", "claimed", "running", "resuming", "paused"}
+                ):
+                    return _Row({"id": pj.id})
+            return None
+
+        # --- claim_one_pg: atomic single-job claim (RETURNING *) -------
+        if s.startswith("UPDATE processing_jobs SET state = 'claimed'"):
+            stages = list(args[1])
+            claim_candidates = sorted(
+                (
+                    pj
+                    for pj in self.processing_jobs.values()
+                    if pj.state in {"pending", "paused"}
+                    and not pj.pause_requested
+                    and not pj.cancel_requested
+                    and pj.stage in stages
+                ),
+                key=lambda r: (r.priority, r.id),
+            )
+            if not claim_candidates:
+                return None
+            claim_target = claim_candidates[0]
+            claim_target.state = "claimed"
+            claim_target.claimed_by = args[0]
+            claim_target.claimed_at = self._now()
+            claim_target.last_heartbeat_at = self._now()
+            claim_target.attempts += 1
+            return _Row(self._job_row_full(claim_target))
+
         # advance_after_stage SELECT-FOR-UPDATE
         if s.startswith("SELECT state, library_id FROM videos"):
             v = self.videos.get(args[0])
@@ -451,6 +685,53 @@ class FakeAudioDB:
                 key=lambda r: -r.seq,
             )[: int(k)]
             return [_Row({"seq": r.seq, "text": r.text}) for r in segs]
+
+        # --- jobs_state.mark_done — terminal success transition --------
+        if s.startswith("UPDATE processing_jobs SET state = 'done'"):
+            job = self.processing_jobs.get(int(args[0]))
+            if job is None or job.state not in {"claimed", "running", "resuming"}:
+                return None
+            job.state = "done"
+            job.finished_at = self._now()
+            job.claimed_by = None
+            return _Row({"id": job.id, "state": "done"})
+
+        # --- jobs_state.mark_failed_or_retry — read attempts -----------
+        if s.startswith("SELECT attempts, max_attempts FROM processing_jobs"):
+            job = self.processing_jobs.get(int(args[0]))
+            if job is None:
+                return None
+            return _Row(
+                {"attempts": job.attempts, "max_attempts": job.max_attempts}
+            )
+
+        # --- jobs_state.mark_failed_or_retry — write failed/pending ----
+        if s.startswith("UPDATE processing_jobs SET state = $2") or s.startswith(
+            "UPDATE processing_jobs SET state = ?"
+        ):
+            if self.dialect == "postgres":
+                job_id, new_state, not_before, err_json = (
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                )
+            else:
+                new_state, not_before, err_json, _finished, job_id = (
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                    args[4],
+                )
+            job = self.processing_jobs.get(int(job_id))
+            if job is None or job.state not in {"claimed", "running", "resuming"}:
+                return None
+            job.state = str(new_state)
+            job.error = err_json
+            return _Row(
+                {"id": job.id, "state": str(new_state), "not_before": not_before}
+            )
 
         raise AssertionError(f"unexpected SQL in fake audio DB: {s!r}")
 

@@ -40,6 +40,7 @@ from .audio.probe import probe as _ffprobe
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .log import get_logger
+from .scanner import Scanner, ScanStore, SqlScanStore
 
 if TYPE_CHECKING:
     from .audio.extract import _ExtractDB
@@ -50,9 +51,11 @@ __all__ = [
     "BackendSelector",
     "ExtractRunner",
     "ProbeRunner",
+    "ScanStoreFactory",
     "build_real_dispatch",
     "extract_handler",
     "probe_handler",
+    "scan_handler",
     "transcribe_handler",
 ]
 
@@ -95,6 +98,20 @@ async def probe_handler(
     """
     probe = run_probe or _ffprobe
     try:
+        if job.video_id is None:
+            # Per-video stage with no video_id — impossible under the
+            # slot 0058 scope CHECK, but defend anyway (terminal: a
+            # re-run cannot invent the video).
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="probe_missing_source",
+                    message=f"probe job {job.id} has no video_id",
+                    retryable=False,
+                ),
+            )
+            return
         row = await db.fetchrow(_SELECT_VIDEO_PATH, job.video_id)
         if row is None or row["path"] is None:
             await mark_failed_or_retry(
@@ -175,6 +192,19 @@ async def extract_handler(
     """
     extract = run_extract or _ffmpeg_extract
     try:
+        if job.video_id is None:
+            # Per-video stage with no video_id — impossible under the
+            # slot 0058 scope CHECK; terminal defence.
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="extract_missing_source",
+                    message=f"extract job {job.id} has no video_id",
+                    retryable=False,
+                ),
+            )
+            return
         row = await db.fetchrow(_SELECT_VIDEO_SRC, job.video_id)
         if row is None or row["path"] is None or row["content_hash"] is None:
             await mark_failed_or_retry(
@@ -296,6 +326,117 @@ async def extract_handler(
         )
 
 
+# DI seam for SCAN: production builds a `SqlScanStore` over the runtime
+# Database facade; the unit suite injects a fake store backed by an
+# in-memory `libraries`/`videos` table so no real filesystem-vs-DB
+# wiring is exercised twice. The library's roots are real directories
+# (the orchestrator's own `walk()` reads them) — tests point a seeded
+# library at a tmp_path, exactly like the Story 1.1 scanner suite.
+ScanStoreFactory = Callable[[DBConn], ScanStore]
+
+
+def _default_scan_store(db: DBConn) -> ScanStore:
+    return SqlScanStore(db)  # type: ignore[arg-type]  # Database ⊇ _ScanDB
+
+
+async def scan_handler(
+    db: DBConn,
+    job: Job,
+    *,
+    make_store: ScanStoreFactory | None = None,
+) -> None:
+    """Real SCAN stage: bootstrap-walk a library and persist discoveries.
+
+    Library-scoped (slot 0058): the job carries ``library_id`` and a
+    null ``video_id`` — the scan is what *discovers* videos. The heavy
+    logic (walk + hash + skip-rehash + per-video PROBE enqueue) all
+    lives in :class:`maktaba_pipeline.scanner.Scanner` and is exercised
+    by ``tests/scanner/test_scanner.py``. This adapter only resolves the
+    store, validates the job scope, drives ``Scanner.run``, and flips
+    the job ``done`` / ``failed`` — the exact thin-wrapper shape
+    :func:`probe_handler` / :func:`extract_handler` use.
+
+    Failure classification: a missing ``library_id`` or a vanished
+    library (``LookupError``) is *non-retryable* — a re-run cannot
+    invent the scope. Any other error (walk IO, store write) is
+    *retryable*; per-file errors are already absorbed into
+    :class:`ScanResult.errors` by the orchestrator and never reach
+    here.
+    """
+    factory = make_store or _default_scan_store
+    try:
+        if job.library_id is None:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="scan_missing_library",
+                    message=(
+                        f"scan job {job.id} has no library_id "
+                        "(slot 0058 scope CHECK should have rejected this)"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        store = factory(db)
+        scanner = Scanner(store, log=_log)
+        try:
+            result = await scanner.run(job.library_id)
+        except LookupError as exc:
+            # Library row vanished (deleted between enqueue and claim).
+            # A re-run cannot resurrect it — terminal.
+            _log.warning(
+                "stage_handler_failed",
+                stage=Stage.SCAN.value,
+                job_id=job.id,
+                library_id=str(job.library_id),
+                error=str(exc),
+            )
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="scan_library_vanished",
+                    message=str(exc),
+                    traceback=traceback.format_exc(),
+                    retryable=False,
+                ),
+            )
+            return
+
+        _log.info(
+            "scan_committed",
+            job_id=job.id,
+            library_id=str(job.library_id),
+            files_walked=result.files_walked,
+            files_inserted=result.files_inserted,
+            files_unchanged=result.files_unchanged,
+            files_skipped=result.files_skipped,
+            errors=len(result.errors),
+        )
+        await mark_done(db, job_id=job.id)
+    except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.SCAN.value,
+            job_id=job.id,
+            library_id=str(job.library_id) if job.library_id is not None else None,
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="scan_failed",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=True,
+            ),
+        )
+
+
 async def transcribe_handler(
     db: DBConn,
     job: Job,
@@ -337,6 +478,21 @@ async def transcribe_handler(
 
     pick = select_backend or default_select_backend
     try:
+        if job.video_id is None:
+            # Per-video stage with no video_id — impossible under the
+            # slot 0058 scope CHECK (TRANSCRIBE is per-video; only SCAN
+            # is library-scoped), but defend anyway (terminal: a re-run
+            # cannot invent the video). Mirrors the probe/extract guards.
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="transcribe_missing_source",
+                    message=f"transcribe job {job.id} has no video_id",
+                    retryable=False,
+                ),
+            )
+            return
         payload = job.payload or {}
         content_hash = payload.get("content_hash")
         if not content_hash:
@@ -449,9 +605,18 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
     INDEX), so it joins the override map. ``_DEFAULT_STAGES`` listing
     TRANSCRIBE is now safe — a default worker claiming a TRANSCRIBE job
     runs the real STT path rather than the silent no-op drain.
+
+    Gap-closure (HLB-257/255): SCAN now has a real library-scoped
+    adapter (slot 0058 + :class:`SqlScanStore` + the Story 1.1
+    orchestrator), so it joins the map too. It is therefore also safe
+    in ``_DEFAULT_STAGES`` — a default worker claiming a SCAN job runs
+    the real walk + per-video PROBE enqueue rather than the silent
+    no-op drain that would have marked the library "scanned" without
+    discovering anything.
     """
 
     return {
+        Stage.SCAN: scan_handler,
         Stage.PROBE: probe_handler,
         Stage.EXTRACT: extract_handler,
         Stage.TRANSCRIBE: transcribe_handler,

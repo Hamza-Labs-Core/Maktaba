@@ -130,6 +130,52 @@ async def test_reaper_no_payload_when_nothing_stale(db: FakeDB) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reaper_reaps_library_scoped_scan_row_null_video_id(db: FakeDB) -> None:
+    """A crashed library-scoped scan row (video_id NULL; real scan rows
+    also carry library_id, which the reaper never reads) is reaped
+    without raising; the reaped row carries video_id is None.
+
+    The reap SELECTs filter only on state, so a stale scan job is a
+    candidate. Decoding it must not blow up on the null video_id.
+    """
+    row = db.add(
+        stage="scan",
+        state="running",
+        video_id=None,
+        claimed_by="worker-dead",
+        claimed_at=_ago(120),
+        last_heartbeat_at=_ago(120),
+        last_segment_end_sec=0.0,
+    )
+    reaped = await reap_once(db, stale_claim_sec=90.0)
+    assert len(reaped) == 1
+    r = reaped[0]
+    assert r.id == row.id
+    assert r.video_id is None
+    assert r.stage == "scan"
+    assert r.prev_state == "running"
+    assert db.rows[row.id].state == "paused"
+    assert db.rows[row.id].paused_reason == "crash"
+
+
+@pytest.mark.asyncio
+async def test_reaper_reaps_library_scoped_scan_row_sqlite(sqlite_db: FakeDB) -> None:
+    """SQLite path: a stale scan row with NULL video_id reaps cleanly."""
+    row = sqlite_db.add(
+        stage="scan",
+        state="running",
+        video_id=None,
+        last_heartbeat_at=_ago(120),
+        last_segment_end_sec=0.0,
+    )
+    reaped = await reap_once(sqlite_db, stale_claim_sec=90.0)
+    assert len(reaped) == 1
+    assert reaped[0].id == row.id
+    assert reaped[0].video_id is None
+    assert reaped[0].stage == "scan"
+
+
+@pytest.mark.asyncio
 async def test_reaper_handles_zero_offset(db: FakeDB) -> None:
     """A row with zero last_segment_end_sec yields paused_at_sec=0."""
     db.add(state="running", last_heartbeat_at=_ago(120), last_segment_end_sec=0.0)

@@ -68,6 +68,7 @@ land at the next free integer (no gaps, no reservations).
 | `0055` | `0055_pairing_tickets.sql` | plan-15-05 / plan-15-06 | 0029 | `pairing_tickets` (short-lived QR pairing codes for TV/desktop). |
 | `0056` | `0056_licenses.sql` | plan-16-04 | 0029 | `licenses` (active premium license snapshot — sole row enforces single active license). |
 | `0057` | `0057_integrity_checks.sql` | plan-24-07 | 0001 | `integrity_checks` (per-video hash + segment count snapshots for periodic verification). |
+| `0058` | `0058_processing_jobs_library_scoped.sql` | gap-closure (HLB-257/255) | 0001, 0002 | Decouple library-scoped jobs: `processing_jobs.library_id` (nullable FK), `video_id` made nullable, `processing_jobs_scope_chk`, one-live-scan-per-library partial unique index. |
 
 ---
 
