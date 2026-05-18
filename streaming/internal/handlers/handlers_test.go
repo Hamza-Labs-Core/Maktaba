@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -377,6 +378,113 @@ func TestStaticHandler_PosterMissing404(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != 404 {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+// Story 23.5 AC-2: a symlink planted inside the session HLS dir that
+// points OUTSIDE the cache root must not be followed. Router path
+// cleaning cannot defend this — only the canonicalizer can. Result is
+// an indistinguishable-from-missing 404.
+func TestManifestHandler_ServeSegment_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	layout := cache.New(dir)
+	_ = layout.EnsureTiers()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sessID := uuid.New()
+	hlsDir := layout.HLSDir(sessID.String())
+	if err := os.MkdirAll(hlsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink: {hlsDir}/v0 -> {secretDir}. A request for
+	// /stream/SID/v0/passwd would, without the canonicalizer, read
+	// the secret.
+	if err := os.Symlink(secretDir, filepath.Join(hlsDir, "v0")); err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+		sessID: {ID: sessID, Format: session.FormatHLS},
+	}}
+	h := &ManifestHandler{Sessions: store, Layout: layout}
+	r := chi.NewRouter()
+	r.With(injectSubject(sessID.String())).
+		Get("/stream/{session_id}/{rendition}/{segment}", h.ServeSegment)
+	req := httptest.NewRequest("GET", "/stream/"+sessID.String()+"/v0/passwd", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("symlink escape leaked the secret file")
+	}
+}
+
+// Story 23.5 AC-2: a symlinked thumb name must not escape the thumbs
+// dir.
+func TestStaticHandler_ServeThumb_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	thumbDir := filepath.Join(dir, "thumbs", "vid")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(secretDir, "passwd"), filepath.Join(thumbDir, "leak.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/thumbs/{video_id}/{name}", h.ServeThumb)
+	req := httptest.NewRequest("GET", "/stream/thumbs/vid/leak.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("symlink escape leaked the secret file")
+	}
+}
+
+// Regression: a legitimate thumb still serves after the canonicalizer
+// is in the path.
+func TestStaticHandler_ServeThumb_LegitStillServes(t *testing.T) {
+	dir := t.TempDir()
+	thumbDir := filepath.Join(dir, "thumbs", "vid")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(thumbDir, "t1.jpg"), []byte("THUMBJPEG"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/thumbs/{video_id}/{name}", h.ServeThumb)
+	req := httptest.NewRequest("GET", "/stream/thumbs/vid/t1.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("legit thumb status=%d want 200", rec.Code)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), []byte("THUMBJPEG")) {
+		t.Fatalf("body=%q", rec.Body.String())
 	}
 }
 

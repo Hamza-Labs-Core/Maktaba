@@ -72,7 +72,21 @@ func (h *StaticHandler) ServeThumb(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusBadRequest, "missing-thumb-id", "video_id or name missing", "")
 		return
 	}
-	path := h.Resolver.ThumbPath(videoID, name)
+	// Story 23.5 AC-2: video_id and name are untrusted URL segments.
+	// The resolver builds {thumbsBase}/{name}; route the resolved
+	// path through the single canonicalizer, asserting it stays
+	// inside this video's thumbs directory — defeats
+	// `..`/NUL/symlink-escape regardless of resolver internals.
+	rawPath := h.Resolver.ThumbPath(videoID, name)
+	base := h.Resolver.ThumbPath(videoID, "")
+	rel := strings.TrimPrefix(strings.TrimPrefix(rawPath, base), string(filepath.Separator))
+	path, err := httpx.CanonicalUnder(base, rel)
+	if err != nil {
+		// Indistinguishable-from-missing so a probe can't tell
+		// "traversal rejected" from "no such asset".
+		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", "")
+		return
+	}
 	h.serveFile(w, r, path, contentTypeForThumb(name))
 }
 
