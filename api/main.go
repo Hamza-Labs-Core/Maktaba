@@ -31,6 +31,7 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
@@ -244,8 +245,27 @@ func runServe() error {
 			logger.Warn("p6: sql.Open failed; handlers unwired",
 				"err", dbErr, "event", "p6_db_open_failed")
 		} else {
-			appDB.SetMaxOpenConns(envIntDefault("MAKTABA_DB_MAX_OPEN", 32))
-			appDB.SetMaxIdleConns(envIntDefault("MAKTABA_DB_MAX_IDLE", 8))
+			// Story 18.7 / HLB-346: route pool sizing through the
+			// canonical perf.ApplyPool helper instead of bypassing it
+			// with raw setters. Env overrides preserve operator control;
+			// the perf package's tuned defaults/timeouts now actually
+			// apply (previously dead code).
+			poolCfg := perf.DefaultPoolConfig()
+			poolCfg.MaxOpen = envIntDefault("MAKTABA_DB_MAX_OPEN", 32)
+			poolCfg.MaxIdle = envIntDefault("MAKTABA_DB_MAX_IDLE", 8)
+			if perr := perf.ApplyPool(appDB, poolCfg); perr != nil {
+				logger.Warn("p6: perf.ApplyPool rejected config; "+
+					"falling back to raw setters",
+					"err", perr, "event", "p6_pool_cfg_invalid")
+				appDB.SetMaxOpenConns(poolCfg.MaxOpen)
+				appDB.SetMaxIdleConns(poolCfg.MaxIdle)
+			}
+
+			// Shared perf cache registry (Story 18.8 AC4 / HLB-346):
+			// hot-path caches register here so POST /admin/cache/{name}/
+			// flush can drop them. Previously MountP10 always built an
+			// empty registry, so every flush 404'd.
+			perfRegistry := perf.NewRegistry()
 
 			pipelineAddr := os.Getenv("MAKTABA_PIPELINE_ADDR")
 			streamingAddr := os.Getenv("MAKTABA_STREAMING_ADDR")
@@ -279,6 +299,7 @@ func runServe() error {
 				StreamingClient: streamingClient,
 				BusCtx:          busCtx,
 				BusDSN:          dsn,
+				PerfRegistry:    perfRegistry,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
@@ -300,7 +321,11 @@ func runServe() error {
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
-			router.MountP10(r, router.P10Deps{DB: appDB, Logger: logger})
+			router.MountP10(r, router.P10Deps{
+				DB:           appDB,
+				Logger:       logger,
+				PerfRegistry: perfRegistry,
+			})
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 		}

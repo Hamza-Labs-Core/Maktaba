@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -30,7 +31,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 )
+
+// DefaultSemanticBudget is the hard per-request wall-clock budget for the
+// Embed+Chroma round-trip (Story 18.2 AC4 / HLB-333). On breach the
+// semantic leg is abandoned, the request degrades to FTS-only, and the
+// response carries degraded:true. Tunable via the Handler field so the
+// budget stays a single source of truth (no magic numbers in callers).
+const DefaultSemanticBudget = 200 * time.Millisecond
 
 // SemanticClient is the gRPC-backed embed-then-Chroma path. Story 7.18
 // owns the concrete implementation; this package only consumes the
@@ -88,6 +97,12 @@ type Response struct {
 	TookMs  ResponseT `json:"took_ms"`
 	Mode    string    `json:"mode"`
 	Filters Filters   `json:"filters"`
+
+	// Degraded is true when the semantic leg was abandoned (deadline
+	// breach or backend error) and the request was served FTS-only
+	// (Story 18.2 AC4 / HLB-333). Clients surface a "results may be
+	// incomplete" banner. Omitted on the happy path.
+	Degraded bool `json:"degraded,omitempty"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -102,6 +117,93 @@ type Handler struct {
 	DB       *sql.DB
 	Semantic SemanticClient // optional
 	NowFunc  func() time.Time
+
+	// EmbedCache memoises semantic results keyed by the normalised
+	// query + filters + k (Story 18.2 AC2 / HLB-333). Identical
+	// repeated queries skip the Embed+Chroma round-trip entirely.
+	// Reuses the orphaned generic perf.Cache (HLB-346) — no second
+	// cache implementation. Nil disables caching (behaviour unchanged).
+	EmbedCache *perf.Cache[[]Hit]
+
+	// SemanticBudget is the hard per-request deadline for the semantic
+	// leg. Zero falls back to DefaultSemanticBudget. On breach the
+	// request degrades to FTS-only with degraded:true.
+	SemanticBudget time.Duration
+
+	// Logger records degradation events (deadline breach / backend
+	// error) so operators see a metric-able breadcrumb instead of the
+	// previously-silent `semHits, _ = ...` swallow. Nil → slog default.
+	Logger *slog.Logger
+}
+
+// semanticBudget returns the effective per-request semantic deadline.
+func (h *Handler) semanticBudget() time.Duration {
+	if h.SemanticBudget > 0 {
+		return h.SemanticBudget
+	}
+	return DefaultSemanticBudget
+}
+
+// log returns the effective logger (never nil).
+func (h *Handler) log() *slog.Logger {
+	if h.Logger != nil {
+		return h.Logger
+	}
+	return slog.Default()
+}
+
+// embedKey builds the cache key for a semantic query. The filters are
+// part of the key because they change the Chroma result set.
+func embedKey(q string, k int, f Filters) string {
+	b, _ := json.Marshal(struct {
+		Q string  `json:"q"`
+		K int     `json:"k"`
+		F Filters `json:"f"`
+	}{strings.ToLower(strings.TrimSpace(q)), k, f})
+	return string(b)
+}
+
+// runSemantic executes the semantic leg under a hard deadline and an
+// in-process result cache. It never returns an error: on any failure
+// (cache miss + backend error, or deadline breach) it returns nil hits
+// and degraded=true so the caller can fall back to FTS-only. This is
+// the single place HLB-333's cache + deadline + degraded triad lives.
+func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (hits []Hit, degraded bool) {
+	if h.Semantic == nil {
+		return nil, false
+	}
+	key := embedKey(q, k, f)
+	if h.EmbedCache != nil {
+		if v, ok := h.EmbedCache.Get(key); ok {
+			// Defensive copy: perf.Cache.Get returns the live backing
+			// slice (no internal copy). The caller mutates Hit.Snippet
+			// in place (highlightSnippet), so handing back the alias
+			// would corrupt the cached entry on every hit (progressive
+			// nested <mark>) and race when two same-key requests run
+			// concurrently. Hit has only scalar/string fields, so a
+			// shallow copy is sufficient.
+			return append([]Hit(nil), v...), false
+		}
+	}
+	cctx, cancel := context.WithTimeout(ctx, h.semanticBudget())
+	defer cancel()
+	res, err := h.Semantic.Search(cctx, q, k, f)
+	if err != nil {
+		// Deadline breach or backend error: log + continue FTS-only
+		// (Story 18.2 AC4). Previously this was silently swallowed.
+		h.log().Warn("search: semantic leg degraded; serving FTS-only",
+			"event", "search_semantic_degraded",
+			"budget_ms", h.semanticBudget().Milliseconds(),
+			"err", err)
+		return nil, true
+	}
+	if h.EmbedCache != nil {
+		// Store a copy so retaining `res` after Put (and mutating it
+		// downstream) cannot alias and corrupt the live cache entry.
+		cp := append([]Hit(nil), res...)
+		h.EmbedCache.Put(key, cp)
+	}
+	return res, false
 }
 
 // Mount wires the search routes.
@@ -170,10 +272,11 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		ftsHits []Hit
-		semHits []Hit
-		took    ResponseT
-		errFTS  error
+		ftsHits  []Hit
+		semHits  []Hit
+		took     ResponseT
+		errFTS   error
+		degraded bool
 	)
 	t0 := time.Now()
 	if req.Mode == "fts" || req.Mode == "hybrid" {
@@ -186,7 +289,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	if (req.Mode == "semantic" || req.Mode == "hybrid") && h.Semantic != nil {
 		t1 := time.Now()
-		semHits, _ = h.Semantic.Search(r.Context(), req.Q, req.Limit, req.Filters)
+		semHits, degraded = h.runSemantic(r.Context(), req.Q, req.Limit, req.Filters)
 		took.Semantic = time.Since(t1).Milliseconds()
 	}
 
@@ -209,7 +312,8 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	took.Fusion = time.Since(t2).Milliseconds()
 
 	common.WriteJSON(w, r, http.StatusOK, Response{
-		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode, Filters: req.Filters,
+		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode,
+		Filters: req.Filters, Degraded: degraded,
 	})
 }
 
