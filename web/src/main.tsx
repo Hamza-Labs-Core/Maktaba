@@ -6,11 +6,17 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { applyInitialTheme } from "./lib/theme";
+import { bootNative } from "./lib/native";
 import { App } from "./App";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
 applyInitialTheme();
+
+// Wire the native lifecycle bridge (Story 12.1 / 12.2). Fire-and-forget:
+// the web-side consumers install synchronously inside bootNative; the
+// Capacitor bridge (native builds only) loads asynchronously after.
+void bootNative();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
