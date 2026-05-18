@@ -166,6 +166,9 @@ func runServe() error {
 		Env:          env(),
 		Version:      version.Version,
 		OTLPEndpoint: os.Getenv("MAKTABA_OTLP_ENDPOINT"),
+		// Self-hosters running a local collector on loopback set
+		// MAKTABA_OTLP_INSECURE=1 to skip TLS. Default keeps TLS on.
+		OTLPInsecure: os.Getenv("MAKTABA_OTLP_INSECURE") == "1",
 		SampleRatio:  0.01,
 	})
 	if err != nil {

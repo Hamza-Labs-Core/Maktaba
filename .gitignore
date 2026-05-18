@@ -150,6 +150,7 @@ api/bin/
 streaming/streaming
 streaming/bin/
 tools/migration-lint/migration-lint
+tools/log-lint/log-lint
 
 # Live-reload tmp dirs (air) — Story 22.8
 api/tmp/

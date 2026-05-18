@@ -95,3 +95,6 @@ jobs:
 
       - name: migration-lint (append-only + idempotency + parity)
         run: make lint-migrations
+
+      - name: log-lint (no runtime data in log msg, Story 21.1 AC-4)
+        run: make lint-log
