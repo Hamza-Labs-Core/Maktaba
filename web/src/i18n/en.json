@@ -15,6 +15,8 @@
   "common.empty": "Nothing here yet.",
   "common.error": "Something went wrong.",
   "common.retry": "Try again",
+  "pwa.updateAvailable": "A new version is available.",
+  "pwa.reload": "Reload",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.close": "Close",

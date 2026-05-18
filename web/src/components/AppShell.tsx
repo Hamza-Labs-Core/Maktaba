@@ -9,6 +9,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { useShortcuts } from "../lib/keyboard/shortcuts";
+import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
 
@@ -34,13 +35,29 @@ export function AppShell() {
   }, [focusSearchRef]);
 
   useEffect(() => {
-    const onUpdate = () =>
+    const onUpdate = (e: Event) => {
+      const reg = (e as CustomEvent<SwUpdateDetail>).detail?.registration;
       toast.show({
         id: "sw-update",
         tone: "info",
-        message: t("common.retry"),
         durationMs: 0,
+        message: (
+          <span className="mkt-sw-update">
+            <span>{t("pwa.updateAvailable")}</span>
+            <button
+              type="button"
+              className="mkt-btn mkt-btn--ghost"
+              onClick={() => {
+                if (reg) applyServiceWorkerUpdate(reg);
+                else window.location.reload();
+              }}
+            >
+              {t("pwa.reload")}
+            </button>
+          </span>
+        ),
       });
+    };
     window.addEventListener("mkt:sw-update", onUpdate);
     return () => window.removeEventListener("mkt:sw-update", onUpdate);
   }, [toast, t]);

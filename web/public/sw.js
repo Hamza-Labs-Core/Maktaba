@@ -3,73 +3,69 @@
 //   - App shell: cache-first. The cache name carries a build stamp so a
 //     new deploy busts the old shell (the registration in src/lib/pwa.ts
 //     fires `mkt:sw-update` so the UI can offer a reload).
-//   - GET /api/* metadata: stale-while-revalidate with a 5-minute TTL —
-//     the cached copy is served instantly, then refreshed in the
-//     background; entries older than the TTL are re-fetched inline.
-//   - Auth/stream/WS endpoints: never cached (always fresh credentials).
-//   - Mutations (non-GET): pass through untouched.
+//   - /api/*: NETWORK-ONLY. The API authenticates via the HttpOnly
+//     `mkt_sess` cookie (web/src/lib/api.ts sends credentials:"include").
+//     Cache Storage is keyed by URL only — it cannot tell user A's
+//     `/api/videos` from user B's. There is NO offline requirement in
+//     scope, so we never read or write the SWR cache for any `/api/*`
+//     request. This is a security boundary: do NOT add an `/api/*`
+//     allowlist back without a per-user cache key (default-deny).
+//   - Mutations (non-GET) and WS: pass through untouched.
+//
+// `skipWaiting()` is NOT called on install: a new SW stays "waiting"
+// until the user accepts the in-app update (pwa.ts posts SKIP_WAITING
+// on the reload action). This guarantees a mid-session SW swap cannot
+// silently activate and resurrect any legacy poisoned API cache while
+// the page is still showing the previous user's data.
 const BUILD = "v2";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
-const API_CACHE = "mkt-api-" + BUILD;
 const SHELL = ["/", "/index.html"];
-const API_TTL_MS = 5 * 60 * 1000;
+
+// Any cache name matching this is purged on activate and on logout.
+// Covers the legacy `mkt-api-v1` / `mkt-api-v2` SWR caches that older
+// SW versions populated with cross-user authenticated bodies.
+function isApiCache(name) {
+  return name.startsWith("mkt-api-");
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
-  self.skipWaiting();
+  // Intentionally NO self.skipWaiting() — see header comment.
 });
 
 self.addEventListener("activate", (event) => {
-  const keep = new Set([SHELL_CACHE, API_CACHE]);
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))))
+      // Keep only the current shell cache. This deletes every legacy
+      // API cache (mkt-api-*) and any stale shell, so the first time
+      // this SW activates it scrubs the poisoned cross-user store.
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== SHELL_CACHE).map((k) => caches.delete(k)))
+      )
       .then(() => self.clients.claim())
   );
 });
 
-function isFreshMetadata(req) {
-  const url = new URL(req.url);
-  if (!url.pathname.startsWith("/api/")) return false;
-  // Only cache safe, idempotent metadata reads — never auth/stream.
-  if (url.pathname.startsWith("/api/auth/") || url.pathname.startsWith("/api/stream/")) {
-    return false;
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || typeof data.type !== "string") return;
+  if (data.type === "SKIP_WAITING") {
+    // Driven by the in-app "reload to update" affordance (pwa.ts).
+    self.skipWaiting();
+    return;
   }
-  return true;
-}
-
-async function staleWhileRevalidate(req) {
-  const cache = await caches.open(API_CACHE);
-  const cached = await cache.match(req);
-  const fetchAndStore = fetch(req)
-    .then((res) => {
-      if (res.ok) {
-        const clone = res.clone();
-        const headers = new Headers(clone.headers);
-        headers.set("x-mkt-cached-at", String(Date.now()));
-        clone.blob().then((body) => {
-          cache.put(
-            req,
-            new Response(body, {
-              status: clone.status,
-              statusText: clone.statusText,
-              headers,
-            })
-          );
-        });
-      }
-      return res;
-    })
-    .catch(() => cached);
-
-  if (cached) {
-    const at = Number(cached.headers.get("x-mkt-cached-at") || 0);
-    if (Date.now() - at < API_TTL_MS) return cached; // fresh: serve, revalidate in bg
-    return fetchAndStore; // stale: wait for the network refresh
+  if (data.type === "PURGE_API_CACHE") {
+    // Driven by the client logout path (src/lib/sw.ts). Defensive:
+    // this SW never writes an API cache, but an older SW version may
+    // have left one behind before this build activated.
+    event.waitUntil(
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.filter((k) => isApiCache(k)).map((k) => caches.delete(k))))
+    );
   }
-  return fetchAndStore;
-}
+});
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
@@ -78,13 +74,10 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/ws/")) return;
 
-  if (url.pathname.startsWith("/api/")) {
-    if (isFreshMetadata(req)) {
-      event.respondWith(staleWhileRevalidate(req));
-    }
-    return;
-  }
+  // /api/* is network-only: do not consult or populate any cache.
+  if (url.pathname.startsWith("/api/")) return;
 
+  // App shell: cache-first with a network fallback to the SPA entry.
   event.respondWith(
     caches
       .match(req)
