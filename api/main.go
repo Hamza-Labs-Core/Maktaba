@@ -324,6 +324,7 @@ func runServe() error {
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
 			router.MountP10(r, router.P10Deps{
 				DB:           appDB,
+				Keys:         auth.keys,
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			})

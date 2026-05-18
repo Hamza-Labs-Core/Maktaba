@@ -20,6 +20,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	discoverypkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
 	perfh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/perf"
@@ -46,12 +50,20 @@ type P10Deps struct {
 	// /api/admin/license endpoint disabled.
 	SubscriptionsVerifier *subpkg.Verifier
 
-	// PairingStore persists pairing tickets. Nil falls back to the
+	// PairingStore persists pairing tickets. Nil + a non-nil DB →
+	// Postgres-backed store (`pairing_tickets`, slot 0055) so a code
+	// survives a restart and works across replicas. Nil + nil DB →
 	// in-memory store (dev-only).
 	PairingStore discoverypkg.PairingStore
 
 	// PairingTTL bounds ticket lifetime. Zero defaults to 5 minutes.
 	PairingTTL time.Duration
+
+	// Keys is the RS256 signing set. When set (with a DB), pairing
+	// Exchange mints a real device access JWT + refresh token. Nil
+	// leaves Exchange disabled (503) rather than dead-ending with an
+	// unusable body.
+	Keys *keys.Set
 
 	// SecurityPolicy is the RFC 9116 disclosure policy. Zero-value
 	// uses the package default.
@@ -108,16 +120,40 @@ func MountP10(r chi.Router, d P10Deps) {
 	}
 	(&subh.Handler{Store: store, Verifier: d.SubscriptionsVerifier}).Mount(r)
 
-	// Pairing.
+	// Pairing. Prefer a persistent store: an in-memory store loses
+	// every code on restart and is invisible to other replicas (the
+	// audit's worst pairing gap). With a DB we back it with
+	// `pairing_tickets` (slot 0055).
 	pstore := d.PairingStore
 	if pstore == nil {
-		pstore = discoverypkg.NewMemoryPairingStore()
+		if d.DB != nil {
+			pstore = discoverypkg.NewSQLPairingStore(d.DB)
+		} else {
+			pstore = discoverypkg.NewMemoryPairingStore()
+		}
 	}
 	ttl := d.PairingTTL
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	(&discoveryh.Handler{Store: pstore, TTL: ttl}).Mount(r)
+	ph := &discoveryh.Handler{Store: pstore, TTL: ttl}
+	// Exchange can only issue a working session when both a refresh
+	// store (DB) and a signing key set are available. Without them the
+	// handler returns 503 on Exchange instead of returning a body that
+	// can't authenticate anything (the prior dead-end behaviour).
+	if d.DB != nil && d.Keys != nil {
+		uStore := users.New(d.DB)
+		resolver := discoveryh.NewUsersAdminResolver(func(ctx context.Context, id string) (bool, error) {
+			u, err := uStore.GetByID(ctx, id)
+			if err != nil {
+				return false, err
+			}
+			return u.IsAdmin, nil
+		})
+		ph.Minter = discoveryh.NewTokenMinter(resolver, refresh.New(d.DB), d.Keys)
+		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
+	}
+	ph.Mount(r)
 
 	// Security disclosure + SBOM.
 	policy := d.SecurityPolicy
@@ -132,4 +168,25 @@ func MountP10(r chi.Router, d P10Deps) {
 		reg = perfpkg.NewRegistry()
 	}
 	(&perfh.Handler{Registry: reg, Budgets: d.PerfBudgets}).Mount(r)
+}
+
+// pairAudit adapts a *securityaudit.Writer to the discovery handler's
+// narrow AuditSink seam. A failed audit write must never fail the
+// pairing request (best-effort, mirrors handlers/auth.audit).
+type pairAudit struct{ w *securityaudit.Writer }
+
+func (p pairAudit) WritePairEvent(ctx context.Context, claimed bool, actorUserID, code string) {
+	if p.w == nil {
+		return
+	}
+	ev := securityaudit.EventPairCodeIssued
+	if claimed {
+		ev = securityaudit.EventPairCodeClaimed
+	}
+	_ = p.w.Write(ctx, securityaudit.Entry{
+		Event:       ev,
+		ActorUserID: actorUserID,
+		TargetID:    code,
+		Payload:     map[string]any{"code": code},
+	})
 }
