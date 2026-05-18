@@ -333,6 +333,25 @@ perf-ci-inner:
 	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
 
 # ---------------------------------------------------------------------------
+# Coverage floor (Story 20.3 AC1/TC1) — real gate with teeth.
+#
+# Collects `go test -short -coverprofile` per Go module and a
+# pytest-cov total for the pipeline, then fails if any module's
+# statement coverage is below its documented floor in
+# tools/coverage-floor/floors.yaml. The floors are a NON-BREAKING
+# RATCHET set at the coverage measured on the integrated branch, so
+# enabling the gate cannot redden an in-flight PR; raise floors as
+# coverage improves, never lower them to pass a red PR. Wired into the
+# CI Lint gate (.github/workflows/_lint.yml) so a coverage regression
+# blocks merge — mirrors V's real-gate pattern (test-e2e / perf-ci).
+# ---------------------------------------------------------------------------
+
+.PHONY: test-coverage
+test-coverage:  ## Coverage-floor gate (Story 20.3): fail if a module regresses below its floor.
+	@GO_MODULES="$(GO_MODULES)" PIPELINE_DIR="$(PIPELINE_DIR)" \
+		bash tools/coverage-floor.sh
+
+# ---------------------------------------------------------------------------
 # Build (gate 6) — Story 22.2 reproducibility envelope
 # ---------------------------------------------------------------------------
 

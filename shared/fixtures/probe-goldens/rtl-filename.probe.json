@@ -1,0 +1,17 @@
+{
+  "_fixture": "Story 20.2 EC3 — source file with a right-to-left (Arabic) filename. Path handling, JSON encoding and DB round-trip must preserve the UTF-8 RTL bytes exactly (no mojibake, no NFC/NFD mangling). The path below is المحاضرة-الأولى.mp4 ('the-first-lecture.mp4').",
+  "content_hash": "0000000000000000000000000000000000000000000000000000000000000003",
+  "path": "/media/المحاضرة-الأولى.mp4",
+  "container": "mp4",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "hdr": "",
+  "height": 1080,
+  "width": 1920,
+  "duration_sec": 3600.0,
+  "bitrate_kbps": 4500,
+  "audio_channels": 2,
+  "mime_type": "video/mp4",
+  "size": 2025000000,
+  "probed": true
+}
