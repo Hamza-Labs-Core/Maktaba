@@ -24,7 +24,7 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 	srv := grpc.NewServer(grpc.ForceServerCodec(codec))
 
 	mk := func(h func(map[string]any) map[string]any) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
-		return func(_ any, ctx context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
+		return func(_ any, _ context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
 			req := map[string]any{}
 			if err := dec(&req); err != nil {
 				return nil, err

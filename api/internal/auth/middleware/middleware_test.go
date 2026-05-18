@@ -229,7 +229,7 @@ func TestRequireAuthExcept_AllowlistIsExactNotPrefix(t *testing.T) {
 	// `/api/auth/logout` must NOT inherit `/api/auth/login`'s public
 	// status — the allowlist matches exact paths only.
 	gate := RequireAuthExcept(DefaultPublicAllowlist())
-	h := gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := gate(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("logout should be gated, not public")
 	}))
 	req := httptest.NewRequest("POST", "/api/auth/logout", nil)

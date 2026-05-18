@@ -46,6 +46,6 @@ func TestCodec_EmptyUnmarshalIsNoop(t *testing.T) {
 // TestCodec_SatisfiesGRPCInterface pins the codec to the gRPC
 // encoding.Codec contract so a grpc upgrade that changes the
 // interface fails here rather than at a call site.
-func TestCodec_SatisfiesGRPCInterface(t *testing.T) {
+func TestCodec_SatisfiesGRPCInterface(_ *testing.T) {
 	var _ encoding.Codec = Codec{}
 }

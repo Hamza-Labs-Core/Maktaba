@@ -209,11 +209,14 @@ def test_walk_breaks_symlink_loops_when_following(tmp_path: Path) -> None:
     cfg = WalkConfig(follow_symlinks=True)
     got = _rels(tmp_path, walk(tmp_path, cfg, log))
 
-    # The same movie.mp4 may appear under multiple paths thanks to the
-    # symlinked directories — what matters is that the walk terminated
-    # at all (no infinite recursion). At minimum the canonical path is
-    # present.
-    assert "a/movie.mp4" in got
+    # What this test guarantees is loop *termination*: the walk returned
+    # (no infinite recursion) and the (st_dev, st_ino) guard collapsed the
+    # a<->b cycle so the single real movie.mp4 is emitted exactly once.
+    # Which path survives the dedup ("a/movie.mp4" vs "b/to_a/movie.mp4")
+    # depends on filesystem directory-iteration order and is NOT
+    # deterministic across platforms, so assert by basename, not prefix.
+    movies = [p for p in got if p.endswith("movie.mp4")]
+    assert len(movies) == 1, f"expected exactly one movie.mp4, got {movies}"
     # ``scanner.symlink_loop_skipped`` should fire at least once.
     loop_events = [event for event, _ in log.debugs if event == "scanner.symlink_loop_skipped"]
     assert loop_events, "symlink loop guard never triggered"
