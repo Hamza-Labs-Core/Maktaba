@@ -8,12 +8,13 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/testtier/go tools/test-budget
+GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
 MIGRATION_LINT_DIR := tools/migration-lint
 MIGRATION_LINT_BASE_REF ?= origin/main
+LOG_LINT_DIR := tools/log-lint
 
 # Story 20.1 budgets — single source of truth, mirrored across
 # shared/testtier/{go,py} so the soft caps + tier totals stay in
@@ -159,7 +160,16 @@ dev-ps:  ## Show status of dev stack services.
 # ---------------------------------------------------------------------------
 
 .PHONY: lint
-lint: lint-go lint-py lint-web lint-migrations  ## Run every linter (CI gate 1).
+lint: lint-go lint-py lint-web lint-migrations lint-log  ## Run every linter (CI gate 1).
+
+.PHONY: lint-log
+lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
+	@echo "==> log-lint vet/test"
+	cd $(LOG_LINT_DIR) && go vet ./...
+	cd $(LOG_LINT_DIR) && go test ./...
+	@echo "==> log-lint (api/streaming/shared log sites)"
+	cd $(LOG_LINT_DIR) && go run . \
+		--dirs "$(CURDIR)/api,$(CURDIR)/streaming,$(CURDIR)/shared/log/go,$(CURDIR)/shared/health/go,$(CURDIR)/shared/metrics/go,$(CURDIR)/shared/tracing/go,$(CURDIR)/shared/errrpt/go"
 
 .PHONY: lint-migrations
 lint-migrations:  ## Migration conventions: append-only + idempotency + SQLite parity.

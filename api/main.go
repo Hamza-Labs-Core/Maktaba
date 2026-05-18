@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
@@ -166,12 +167,25 @@ func runServe() error {
 		Env:          env(),
 		Version:      version.Version,
 		OTLPEndpoint: os.Getenv("MAKTABA_OTLP_ENDPOINT"),
+		// Self-hosters running a local collector on loopback set
+		// MAKTABA_OTLP_INSECURE=1 to skip TLS. Default keeps TLS on.
+		OTLPInsecure: os.Getenv("MAKTABA_OTLP_INSECURE") == "1",
 		SampleRatio:  0.01,
 	})
 	if err != nil {
 		logger.Warn("tracing init failed; continuing with noop tracer",
 			"err", err, "event", "tracing_init_failed")
 	}
+
+	// Shared error-reporting surface (HLB-300). One Reporter for the
+	// process, mirroring how tracing is constructed once here. The
+	// webhook sink is opt-in via $MAKTABA_ERROR_WEBHOOK: unset => nil
+	// sink => default-off (no outbound, never fails), exactly the
+	// errrpt package's documented behaviour. Capture still mints the
+	// error_id and logs structured locally. The sink drops rather than
+	// queues, so there is nothing to flush/close on shutdown.
+	errReporter := errrpt.New(logger,
+		errrpt.NewWebhookSink(os.Getenv("MAKTABA_ERROR_WEBHOOK")))
 
 	checks := buildChecks(logger)
 	warm := warmPeriod()
@@ -212,6 +226,7 @@ func runServe() error {
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
 		AggregatorServices: buildAggregatorServices(),
+		ErrorReporter:      errReporter,
 	})
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
