@@ -255,9 +255,13 @@ func Sign(priv ed25519.PrivateKey, inner LicenseInner) (*License, error) {
 	}, nil
 }
 
-// canonicalJSON marshals inner with sorted keys and no trailing newline.
-// The signature is computed over this exact byte sequence; verifiers
-// must reconstruct it identically.
+// canonicalJSON marshals inner via encoding/json (Go struct-field
+// declaration order, NOT lexically sorted keys) and trims a trailing
+// newline. The canonicalization contract is this exact byte sequence —
+// not a key-ordering rule. A future cross-language verifier must
+// reproduce encoding/json's struct-field-order output byte-for-byte;
+// substituting a JCS/RFC-8785 sorted-key canonicalizer here would
+// silently break every signature. Sign and verify share this function.
 func canonicalJSON(inner LicenseInner) ([]byte, error) {
 	b, err := json.Marshal(inner)
 	if err != nil {
