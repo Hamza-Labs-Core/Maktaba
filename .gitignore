@@ -151,6 +151,7 @@ streaming/streaming
 streaming/bin/
 tools/migration-lint/migration-lint
 tools/log-lint/log-lint
+tools/coverage-floor/coverage-floor
 
 # Live-reload tmp dirs (air) — Story 22.8
 api/tmp/
