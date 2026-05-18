@@ -4,10 +4,14 @@ The layout under ``~/.maktaba/cache/subtitles/`` is
 
     {root}/{video_id}/{source}.{language}.{format}
 
-Atomic writes: :func:`write_atomic` writes to a sibling ``.tmp-{pid}-{n}``
-file and ``os.replace``s onto the target. Same atomicity guarantee as
-the audio cache; concurrent generators of the same subtitle either see
-"file present" or "file with full new contents", never a torn write.
+Atomic writes: :func:`write_atomic` delegates to the canonical
+:func:`maktaba_pipeline.integrity.atomic_write_bytes` recipe (temp file
++ fsync + ``os.replace`` + containing-directory fsync). One helper, one
+implementation — this wrapper only adds the ``mkdir -p`` of the cache
+directory and the ``(byte_size, sha256)`` stamp the registry row needs.
+Concurrent generators of the same subtitle either see "file present" or
+"file with full new contents", never a torn write; and the rename is
+durable across a crash because the directory entry is fsynced.
 
 Soft-deletion: :func:`soft_delete_subtitle` tombstones the row by
 setting ``deleted_at`` and unlinks the file. The DB row stays so a
@@ -28,6 +32,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..integrity import atomic_write_bytes
 from .formats import SubtitleFormat
 
 __all__ = [
@@ -104,35 +109,25 @@ def write_atomic(path: str | os.PathLike[str], content: str | bytes) -> tuple[in
     """Write ``content`` to ``path`` atomically.
 
     Returns ``(byte_size, sha256_hex)`` so the caller can stamp the row.
-    The temp file lives in the same directory so ``os.replace`` is a
-    rename within one filesystem.
 
-    Concurrent writers each pick a unique temp name; the loser's
-    ``replace`` simply overwrites the winner's. Both observe the
-    file-replaced postcondition.
+    The write itself goes through the single canonical recipe in
+    :func:`maktaba_pipeline.integrity.atomic_write_bytes` (temp file +
+    file fsync + ``os.replace`` + containing-directory fsync). This
+    wrapper only adds the cache-directory ``mkdir -p`` and the size /
+    digest the ``subtitle_files`` row needs — it does **not**
+    re-implement the atomic dance.
+
+    Crash safety: if the process dies mid-write the existing target (if
+    any) is untouched and only an ``O_EXCL`` temp file may be left for
+    the next sweep — a reader never observes a torn subtitle. The
+    directory fsync makes the rename itself durable across power loss.
     """
     dest = Path(path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     payload = content.encode("utf-8") if isinstance(content, str) else content
     digest = hashlib.sha256(payload).hexdigest()
-    # ``mktemp``-style: pid + counter ensures uniqueness without an
-    # extra syscall to ``tempfile.NamedTemporaryFile``.
-    tmp = dest.with_name(f".{dest.name}.tmp-{os.getpid()}-{_next_counter()}")
-    with open(tmp, "wb") as fh:
-        fh.write(payload)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, dest)
+    atomic_write_bytes(dest, payload)
     return len(payload), digest
-
-
-_counter = 0
-
-
-def _next_counter() -> int:
-    global _counter
-    _counter += 1
-    return _counter
 
 
 _PG_UPSERT_REGISTER = """
