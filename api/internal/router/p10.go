@@ -13,6 +13,7 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -72,10 +73,25 @@ type P10Deps struct {
 // Each handler is safe to mount with partial deps; missing inputs
 // surface as 404 / 503 at the route, not as a panic at boot.
 func MountP10(r chi.Router, d P10Deps) {
-	// Subscriptions.
+	// Subscriptions. An explicitly-supplied store wins. Otherwise, if a
+	// DB handle is available, back the store with the `licenses` table
+	// (slot 0056) so an applied premium license survives a restart
+	// (HLB-287). With no DB we fall back to the in-memory store — the
+	// dev / no-Postgres path, where losing the license on restart is
+	// acceptable.
 	store := d.SubscriptionsStore
 	if store == nil {
-		store = subpkg.NewStore()
+		if d.DB != nil {
+			persist := subpkg.NewSQLLicensePersistence(d.DB)
+			ps, err := subpkg.NewPersistentStore(context.Background(), persist, d.SubscriptionsVerifier)
+			// On a recovery error the store is still usable (free
+			// tier); a corrupt/unverifiable persisted license must not
+			// crash boot nor silently grant premium.
+			_ = err
+			store = ps
+		} else {
+			store = subpkg.NewStore()
+		}
 	}
 	(&subh.Handler{Store: store, Verifier: d.SubscriptionsVerifier}).Mount(r)
 

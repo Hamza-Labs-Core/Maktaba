@@ -182,6 +182,12 @@ func canonicalJSON(inner LicenseInner) ([]byte, error) {
 type Store struct {
 	mu      sync.RWMutex
 	current *Entitlements
+
+	// persist, when non-nil, makes Set/Revoke durable so an applied
+	// license survives a process restart (HLB-287). Nil keeps the
+	// store in-memory only — the original behaviour, retained for
+	// tests and the no-DB dev path.
+	persist LicensePersistence
 }
 
 // NewStore creates a Store seeded with the free tier.

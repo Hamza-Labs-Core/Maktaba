@@ -141,6 +141,57 @@ func TestMigrationFiles_Slot0007_AddsLastSeenAndDeletedAt(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0056_LicensesShape asserts slot 0056 ships
+// the `licenses` table with the columns the persistent subscriptions
+// store (HLB-287) reads/writes, plus the one-active-license invariant
+// (the partial unique index on the Postgres sibling). This guards the
+// schema the entitlement-persistence code depends on against a
+// "tidy-up" regression.
+func TestMigrationFiles_Slot0056_LicensesShape(t *testing.T) {
+	dir := repoMigrationsDir(t)
+
+	pg, err := os.ReadFile(filepath.Join(dir, "0056_licenses.sql"))
+	if err != nil {
+		t.Fatalf("read 0056_licenses.sql: %v", err)
+	}
+	pgs := string(pg)
+	for _, want := range []string{
+		"CREATE TABLE IF NOT EXISTS licenses",
+		"license_id",
+		"tier",
+		"seats",
+		"issued_at",
+		"expires_at",
+		"revoked_at",
+		"raw_jwt",
+		"features",
+		"licenses_only_one_active",
+		"WHERE revoked_at IS NULL",
+		"DROP TABLE IF EXISTS licenses",
+	} {
+		if !strings.Contains(pgs, want) {
+			t.Errorf("0056_licenses.sql: missing %q", want)
+		}
+	}
+
+	lite, err := os.ReadFile(filepath.Join(dir, "0056_licenses.sqlite.sql"))
+	if err != nil {
+		t.Fatalf("read 0056_licenses.sqlite.sql: %v", err)
+	}
+	lites := string(lite)
+	for _, want := range []string{
+		"CREATE TABLE IF NOT EXISTS licenses",
+		"license_id",
+		"raw_jwt",
+		"revoked_at",
+		"DROP TABLE IF EXISTS licenses",
+	} {
+		if !strings.Contains(lites, want) {
+			t.Errorf("0056_licenses.sqlite.sql: missing %q", want)
+		}
+	}
+}
+
 // TestMigrationFiles_PostgresUsesConcurrentlyForCreateIndex enforces
 // the migrations/README.md §4 rule: every CREATE INDEX in a
 // Postgres-targeted slot 0001+ migration uses CONCURRENTLY (the lint
