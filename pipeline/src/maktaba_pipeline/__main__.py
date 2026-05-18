@@ -117,7 +117,7 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
 
     try:
         # Track R1: feed the real per-stage adapter map. Stages without
-        # a thin-wrapper adapter (EXTRACT, TRANSCRIBE, SUBTITLE_GEN,
+        # a thin-wrapper adapter (TRANSCRIBE, SUBTITLE_GEN,
         # INDEX, THUMBNAIL) are absent from the map and keep the
         # runtime's placeholder handler until their real orchestration
         # lands — see maktaba_pipeline.handlers.

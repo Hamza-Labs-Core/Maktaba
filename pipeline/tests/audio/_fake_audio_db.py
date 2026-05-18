@@ -48,6 +48,16 @@ class _AudioTrackRow:
     title: str | None
     is_default: bool
     disposition: str
+    last_extracted_at: datetime | None = None
+
+
+@dataclass
+class _AudioCacheRow:
+    content_hash: str
+    video_id: UUID
+    audio_track_id: int
+    path: str
+    bytes: int | None
 
 
 @dataclass
@@ -68,6 +78,7 @@ class _ProcessingJobRow:
     cancel_requested: bool = False
     paused_reason: str | None = None
     payload: str | None = None
+    error: str | None = None
     finished_at: datetime | None = None
 
 
@@ -111,6 +122,7 @@ class FakeAudioDB:
     videos: dict[UUID, _VideoRow] = field(default_factory=dict)
     media_info: dict[UUID, _MediaInfoRow] = field(default_factory=dict)
     audio_tracks: dict[int, _AudioTrackRow] = field(default_factory=dict)
+    audio_cache: dict[str, _AudioCacheRow] = field(default_factory=dict)
     processing_jobs: dict[int, _ProcessingJobRow] = field(default_factory=dict)
     transcripts: dict[UUID, _TranscriptRow] = field(default_factory=dict)
     transcript_segments: dict[int, _TranscriptSegmentRow] = field(default_factory=dict)
@@ -355,6 +367,49 @@ class FakeAudioDB:
                 superseded_at=None,
             )
             return _Row({"id": new})
+
+        # commit_extract — read back PROBE-persisted audio_tracks rows.
+        if s.startswith("SELECT id, track_index, codec, channels, sample_rate"):
+            vid = args[0]
+            rows = [
+                _Row(
+                    {
+                        "id": t.id,
+                        "track_index": t.track_index,
+                        "codec": t.codec,
+                        "channels": t.channels,
+                        "sample_rate": t.sample_rate,
+                        "language": t.language,
+                        "title": t.title,
+                        "is_default": t.is_default,
+                        "disposition": t.disposition,
+                    }
+                )
+                for t in sorted(
+                    (r for r in self.audio_tracks.values() if r.video_id == vid),
+                    key=lambda r: r.track_index,
+                )
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # commit_extract — UPSERT the audio_cache artifact reference.
+        if s.startswith("INSERT INTO audio_cache"):
+            content_hash, video_id, audio_track_id, path, nbytes = args
+            self.audio_cache[str(content_hash)] = _AudioCacheRow(
+                content_hash=str(content_hash),
+                video_id=video_id,
+                audio_track_id=int(audio_track_id),
+                path=str(path),
+                bytes=nbytes,
+            )
+            return None
+
+        # commit_extract — stamp audio_tracks.last_extracted_at.
+        if s.startswith("UPDATE audio_tracks SET last_extracted_at"):
+            track_id = int(args[0])
+            if track_id in self.audio_tracks:
+                self.audio_tracks[track_id].last_extracted_at = self._now()
+            return None
 
         # load_resume_point — SELECT last K segments
         if s.startswith("SELECT seq, text FROM transcript_segments"):

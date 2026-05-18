@@ -18,19 +18,22 @@ import pytest
 
 from maktaba_pipeline.__main__ import _DEFAULT_STAGES
 from maktaba_pipeline.db.jobs import Stage
-from maktaba_pipeline.handlers import build_real_dispatch, probe_handler
+from maktaba_pipeline.handlers import build_real_dispatch, extract_handler, probe_handler
 
 pytestmark = pytest.mark.unit
 
 
-def test_build_real_dispatch_binds_probe_only() -> None:
+def test_build_real_dispatch_binds_probe_and_extract() -> None:
     overrides = build_real_dispatch()
     assert overrides[Stage.PROBE] is probe_handler
+    # Track R2: EXTRACT now has a real thin-wrapper adapter
+    # (commit_extract persists the audio_cache artifact, advances the
+    # FSM, and enqueues TRANSCRIBE), so it joins the override map.
+    assert overrides[Stage.EXTRACT] is extract_handler
     # Stages without a thin-wrapper adapter must stay on the runtime
     # placeholder — registering a half-built handler would be worse
     # than the no-op drain. THUMBNAIL has no module at all.
     for stage in (
-        Stage.EXTRACT,
         Stage.TRANSCRIBE,
         Stage.SUBTITLE_GEN,
         Stage.INDEX,
@@ -51,6 +54,10 @@ def test_default_stages_excludes_scan_without_real_handler() -> None:
 
     overrides = build_real_dispatch()
     assert Stage.PROBE in overrides
+    # EXTRACT has a real handler now and is safe in the defaults: a
+    # default worker claiming an EXTRACT job runs the real adapter
+    # rather than the silent no-op drain.
+    assert Stage.EXTRACT in overrides
     assert Stage.SCAN not in overrides
 
     # The remaining canonical pipeline stages are still present.
