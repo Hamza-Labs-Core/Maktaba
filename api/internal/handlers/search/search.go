@@ -641,22 +641,60 @@ func highlightSnippet(s, q string, maxLen int) string {
 	}
 	excerpt := string(runes[start:end])
 	// Replace each (case-insensitive) occurrence with <mark>...</mark>.
-	// excerpt is rune-aligned at both ends; strings.Index/byte slicing
-	// within it against ql never cuts a rune.
+	// The needle is matched in *folded* space (excerptLower vs ql), but
+	// the marked text must be sliced from the *original-case* excerpt.
+	// For case-folds that change byte length (Turkish dotted-İ U+0130
+	// 2B→1B, uppercase-ẞ U+1E9E 3B→2B) the folded match-span byte length
+	// (len(ql)) is NOT the original-case span length, so wrapping/advancing
+	// with len(ql) against `excerpt` mis-places <mark> (e.g. trailing
+	// "L" left outside the mark for "İSTANBUL"). Instead the loop walks
+	// `excerpt` and `excerptLower` rune-by-rune in lockstep, keeping the
+	// two byte cursors (orig / fold) aligned at rune boundaries. The
+	// folded match offsets returned by strings.Index are translated to
+	// original-case byte offsets via that lockstep walk, so the mark
+	// wraps EXACTLY the original-case matched text. This makes NO
+	// rune-count-preserving assumption about strings.ToLower: even a
+	// hypothetical length- or rune-count-changing fold cannot mis-place
+	// the mark or split a rune, because every boundary is rune-aligned
+	// by construction.
 	var out strings.Builder
 	excerptLower := strings.ToLower(excerpt)
-	i := 0
-	for i < len(excerpt) {
-		j := strings.Index(excerptLower[i:], ql)
+	orig, fold := 0, 0 // byte cursors into excerpt / excerptLower (rune-aligned)
+	for fold < len(excerptLower) {
+		j := strings.Index(excerptLower[fold:], ql)
 		if j < 0 {
-			out.WriteString(excerpt[i:])
+			out.WriteString(excerpt[orig:])
+			orig, fold = len(excerpt), len(excerptLower)
 			break
 		}
-		out.WriteString(excerpt[i : i+j])
+		foldMatchStart := fold + j
+		foldMatchEnd := foldMatchStart + len(ql)
+		// Advance the lockstep cursors to the folded match start,
+		// emitting the un-marked original-case prefix.
+		origMatchStart := orig
+		for fold < foldMatchStart {
+			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
+			_, ow := utf8.DecodeRuneInString(excerpt[origMatchStart:])
+			fold += fw
+			origMatchStart += ow
+		}
+		out.WriteString(excerpt[orig:origMatchStart])
+		// Advance to the folded match end, capturing the original-case
+		// span [origMatchStart, origMatchEnd).
+		origMatchEnd := origMatchStart
+		for fold < foldMatchEnd {
+			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
+			_, ow := utf8.DecodeRuneInString(excerpt[origMatchEnd:])
+			fold += fw
+			origMatchEnd += ow
+		}
 		out.WriteString("<mark>")
-		out.WriteString(excerpt[i+j : i+j+len(ql)])
+		out.WriteString(excerpt[origMatchStart:origMatchEnd])
 		out.WriteString("</mark>")
-		i += j + len(ql)
+		orig = origMatchEnd
+	}
+	if orig < len(excerpt) {
+		out.WriteString(excerpt[orig:])
 	}
 	prefix := ""
 	if start > 0 {

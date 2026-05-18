@@ -85,6 +85,76 @@ func TestHighlightSnippet_ArabicTruncationGraphemeSafe(t *testing.T) {
 	}
 }
 
+// TestHighlightSnippet_TurkishDottedICaseFold guards the byte-length-
+// changing case-fold regression: Turkish dotted-İ (U+0130, 2 bytes)
+// folds to ASCII "i" (1 byte) via strings.ToLower, so the folded
+// match-span byte length (len(ql)) is shorter than the original-case
+// span. The previous len(ql)-based wrap mis-placed </mark> one rune
+// early — "İstanbul" matched "İSTANBUL" but wrapped only "İSTANBU",
+// leaving a dangling "L" OUTSIDE the mark (…<mark>İSTANBU</mark>Lyyyyy).
+// The fix wraps EXACTLY the original-case matched text.
+func TestHighlightSnippet_TurkishDottedICaseFold(t *testing.T) {
+	got := highlightSnippet("xxxxxİSTANBULyyyyy", "İstanbul", 240)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("snippet is not valid UTF-8 (rune split): %q", got)
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Fatalf("snippet contains U+FFFD replacement char: %q", got)
+	}
+	// The WHOLE original-case "İSTANBUL" must be inside <mark>, with no
+	// dangling byte before </mark> (fails on len(ql) code: "İSTANBU"
+	// + a trailing "L" outside the mark).
+	want := "xxxxx<mark>İSTANBUL</mark>yyyyy"
+	if got != want {
+		t.Fatalf("mark mis-placed for byte-length-changing fold:\n got  %q\n want %q", got, want)
+	}
+	if !strings.Contains(got, "<mark>İSTANBUL</mark>") {
+		t.Fatalf("İSTANBUL not wholly wrapped (dangling byte outside mark): %q", got)
+	}
+}
+
+// TestHighlightSnippet_UppercaseSharpSCaseFold covers the other byte-
+// length-changing fold: uppercase-ẞ (U+1E9E, 3 bytes) folds to ß
+// (U+00DF, 2 bytes). Same invariant: the whole original-case match is
+// wrapped, byte-exact, with valid UTF-8.
+func TestHighlightSnippet_UppercaseSharpSCaseFold(t *testing.T) {
+	got := highlightSnippet("xxxxxSTRAẞEyyyyy", "straße", 240)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("snippet is not valid UTF-8 (rune split): %q", got)
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Fatalf("snippet contains U+FFFD replacement char: %q", got)
+	}
+	want := "xxxxx<mark>STRAẞE</mark>yyyyy"
+	if got != want {
+		t.Fatalf("mark mis-placed for byte-length-changing fold:\n got  %q\n want %q", got, want)
+	}
+	if !strings.Contains(got, "<mark>STRAẞE</mark>") {
+		t.Fatalf("STRAẞE not wholly wrapped: %q", got)
+	}
+}
+
+// TestHighlightSnippet_ArabicMatchExactlyWrapped reinforces that the
+// caseless Arabic path (len(q)==len(ql), rune-count preserved) wraps
+// the exact original-case Arabic term — the Story 5.4 rune-windowing
+// fix must remain intact alongside the byte-length-fold fix.
+func TestHighlightSnippet_ArabicMatchExactlyWrapped(t *testing.T) {
+	got := highlightSnippet("مرحبا كلمة وداعا", "كلمة", 240)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("snippet is not valid UTF-8 (rune split): %q", got)
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Fatalf("snippet contains U+FFFD replacement char: %q", got)
+	}
+	want := "مرحبا <mark>كلمة</mark> وداعا"
+	if got != want {
+		t.Fatalf("Arabic match not exactly wrapped:\n got  %q\n want %q", got, want)
+	}
+}
+
 func TestNormaliseSuggestQuery_LowercasesAndStripsMarks(t *testing.T) {
 	got := normaliseSuggestQuery("Café")
 	if got != "cafe" && got != "café" {
