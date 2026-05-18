@@ -254,8 +254,7 @@ func runServe() error {
 			poolCfg.MaxOpen = envIntDefault("MAKTABA_DB_MAX_OPEN", 32)
 			poolCfg.MaxIdle = envIntDefault("MAKTABA_DB_MAX_IDLE", 8)
 			if perr := perf.ApplyPool(appDB, poolCfg); perr != nil {
-				logger.Warn("p6: perf.ApplyPool rejected config; "+
-					"falling back to raw setters",
+				logger.Warn("p6: perf.ApplyPool rejected config; falling back to raw setters",
 					"err", perr, "event", "p6_pool_cfg_invalid")
 				appDB.SetMaxOpenConns(poolCfg.MaxOpen)
 				appDB.SetMaxIdleConns(poolCfg.MaxIdle)
