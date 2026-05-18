@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from .protocol import AudioSource, BackendHealth, Segment, TranscriptionHints
+from .protocol import AudioSource, BackendHealth, Segment, TranscriptionHints, parse_words
 
 __all__ = ["WhisperMLXBackend"]
 
@@ -101,6 +101,12 @@ class WhisperMLXBackend:
                 end_sec=float(seg["end"]),
                 text=text,
                 confidence=seg.get("confidence"),
+                # Story 3.6-1.3 — surface per-word timing so the commit
+                # path can persist transcript_words. mlx_whisper returns
+                # a ``words`` list per segment when word_timestamps is
+                # requested; dropping it here is why the rows were never
+                # written despite supports_word_timestamps=True.
+                words=parse_words(seg.get("words")) if hints.word_timestamps else (),
                 metadata={"backend": self.name},
             )
             prev_text.append(text)

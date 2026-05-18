@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from maktaba_pipeline.stt.protocol import Segment
+from maktaba_pipeline.stt.protocol import Segment, Word
 from maktaba_pipeline.stt.segment_commit import ReorderBuffer, commit_segment
 
 from ..audio._fake_audio_db import FakeAudioDB, _ProcessingJobRow
@@ -92,6 +92,109 @@ def test_sqlite_commit_emits_segments_committed_notify() -> None:
     payload = asyncio.run(_drive())
     assert payload["seq"] == 0
     assert payload["transcript_id"] == str(transcript_id)
+    # Story 3.6-4 — the live-indexer / VTT-renderer contract keys off
+    # ``last_segment_end_sec`` (the advanced job watermark), NOT the raw
+    # ``end_sec``. The old payload emitted ``end_sec`` which the Epic-5.5
+    # consumer cannot consume.
+    assert payload["last_segment_end_sec"] == 2.0
+    assert "end_sec" not in payload
+
+
+# --- transcript_words (Story 3.6-1.3) ------------------------------------
+
+_WORDS = (
+    Word(text="bismillah", start_sec=0.0, end_sec=0.8, confidence=0.97),
+    Word(text="al-rahman", start_sec=0.8, end_sec=1.6, confidence=0.91),
+    Word(text="al-rahim", start_sec=1.6, end_sec=2.0, confidence=None),
+)
+
+
+def test_pg_commit_persists_word_rows() -> None:
+    db = FakeAudioDB(dialect="postgres")
+    transcript_id = uuid4()
+    job_id = _seed_job(db)
+    seg = Segment(
+        seq=0,
+        start_sec=0.0,
+        end_sec=2.0,
+        text="bismillah al-rahman al-rahim",
+        words=_WORDS,
+        audio_sec=2.0,
+        wall_sec=1.0,
+    )
+    result = asyncio.run(
+        commit_segment(
+            db, transcript_id=transcript_id, job_id=job_id, segment=seg, total_duration_sec=10.0
+        )
+    )
+    assert result.accepted is True
+    assert result.words_committed == 3
+    rows = sorted(db.transcript_words.values(), key=lambda w: w.seq)
+    assert [w.text for w in rows] == ["bismillah", "al-rahman", "al-rahim"]
+    assert [w.seq for w in rows] == [0, 1, 2]
+    assert all(w.segment_id == result.segment_id for w in rows)
+    assert rows[0].confidence == 0.97
+    assert rows[2].confidence is None
+
+
+def test_sqlite_commit_persists_word_rows() -> None:
+    db = FakeAudioDB(dialect="sqlite")
+    transcript_id = uuid4()
+    job_id = _seed_job(db)
+    seg = Segment(
+        seq=0,
+        start_sec=0.0,
+        end_sec=2.0,
+        text="bismillah al-rahman al-rahim",
+        words=_WORDS,
+        audio_sec=2.0,
+        wall_sec=0.5,
+    )
+    result = asyncio.run(
+        commit_segment(
+            db, transcript_id=transcript_id, job_id=job_id, segment=seg, total_duration_sec=10.0
+        )
+    )
+    assert result.words_committed == 3
+    rows = sorted(db.transcript_words.values(), key=lambda w: w.seq)
+    assert [w.text for w in rows] == ["bismillah", "al-rahman", "al-rahim"]
+    assert all(w.segment_id == result.segment_id for w in rows)
+
+
+def test_word_rows_idempotent_on_replayed_seq() -> None:
+    """A replayed segment commit must not duplicate (or orphan) words."""
+    db = FakeAudioDB(dialect="postgres")
+    transcript_id = uuid4()
+    job_id = _seed_job(db)
+    seg = Segment(
+        seq=0, start_sec=0.0, end_sec=2.0, text="x", words=_WORDS, audio_sec=2.0, wall_sec=1.0
+    )
+
+    async def _commit() -> object:
+        return await commit_segment(
+            db, transcript_id=transcript_id, job_id=job_id, segment=seg, total_duration_sec=10.0
+        )
+
+    asyncio.run(_commit())
+    second = asyncio.run(_commit())
+    # ON CONFLICT swallowed the replayed segment → no second word write.
+    assert second.accepted is False  # type: ignore[attr-defined]
+    assert second.words_committed == 0  # type: ignore[attr-defined]
+    assert len(db.transcript_words) == 3
+
+
+def test_no_words_when_segment_has_none() -> None:
+    db = FakeAudioDB(dialect="postgres")
+    transcript_id = uuid4()
+    job_id = _seed_job(db)
+    seg = Segment(seq=0, start_sec=0.0, end_sec=2.0, text="x", audio_sec=2.0, wall_sec=1.0)
+    result = asyncio.run(
+        commit_segment(
+            db, transcript_id=transcript_id, job_id=job_id, segment=seg, total_duration_sec=10.0
+        )
+    )
+    assert result.words_committed == 0
+    assert db.transcript_words == {}
 
 
 # --- ReorderBuffer --------------------------------------------------------

@@ -35,7 +35,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from ..db.pubsub import get_bus
-from .protocol import Segment
+from .protocol import Segment, Word
 
 __all__ = [
     "SEGMENTS_COMMITTED",
@@ -65,6 +65,7 @@ class CommitResult:
     seq: int
     end_sec: float
     accepted: bool  # False when ON CONFLICT swallowed the insert (retry path)
+    words_committed: int = 0  # transcript_words rows persisted for this segment
 
 
 _PG_CALL_FN = "SELECT commit_segment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) AS id"
@@ -96,6 +97,23 @@ SELECT last_segment_end_sec, COALESCE(realtime_factor, 0) AS realtime_factor
  WHERE id = ?
 """
 
+# Story 3.6-1.3 — optional per-word timing. Inserted in the SAME
+# transaction as the owning segment so word rows can never outlive (or
+# precede) a rolled-back segment. ON CONFLICT keeps a replayed seq
+# idempotent exactly like the segment insert. ``segment_id`` is the row
+# id ``commit_segment`` (PG fn) / the SQLite INSERT just returned.
+_PG_WORD_INSERT = """
+INSERT INTO transcript_words (segment_id, seq, start_sec, end_sec, text, confidence)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (segment_id, seq) DO NOTHING
+"""
+
+_SQLITE_WORD_INSERT = """
+INSERT INTO transcript_words (segment_id, seq, start_sec, end_sec, text, confidence)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (segment_id, seq) DO NOTHING
+"""
+
 
 async def commit_segment(
     db: _DBConn,
@@ -122,6 +140,7 @@ async def commit_segment(
     )
 
     if db.dialect == "postgres":
+        words_committed = 0
         async with db.transaction():
             row = await db.fetchrow(
                 _PG_CALL_FN,
@@ -138,12 +157,23 @@ async def commit_segment(
                 total_duration_sec,
                 ewma_alpha,
             )
-        seg_id = int(row["id"]) if row is not None and row["id"] is not None else None
+            seg_id = int(row["id"]) if row is not None and row["id"] is not None else None
+            # The PG fn returns NULL when ON CONFLICT swallowed the
+            # segment (replayed seq): the original commit already wrote
+            # its words, so re-inserting them would be redundant — and we
+            # have no segment_id to attach to anyway. Only persist words
+            # for a freshly-inserted segment, in THIS transaction so a
+            # rollback drops segment + words together (Story 3.6-2).
+            if seg_id is not None and segment.words:
+                words_committed = await _insert_words(
+                    db, _PG_WORD_INSERT, segment_id=seg_id, words=segment.words
+                )
         return CommitResult(
             segment_id=seg_id,
             seq=segment.seq,
             end_sec=segment.end_sec,
             accepted=seg_id is not None,
+            words_committed=words_committed,
         )
 
     # SQLite path — replicate the function's body in Python.
@@ -197,18 +227,68 @@ async def commit_segment(
             job_id,
         )
 
+        # Story 3.6-1.3 — per-word rows in the SAME transaction as the
+        # segment so a rollback drops both (Story 3.6-2).
+        words_committed = 0
+        if segment.words:
+            words_committed = await _insert_words(
+                db, _SQLITE_WORD_INSERT, segment_id=seg_id, words=segment.words
+            )
+
     # SQLite has no NOTIFY; publish on the in-process bus so listeners
-    # (incremental indexer, live VTT renderer) see the same shape.
+    # (incremental indexer, live VTT renderer) see the same shape. The
+    # payload carries ``last_segment_end_sec`` — the live-indexer /
+    # VTT-renderer contract (Story 3.6-4 / Epic 5.5) keys off the job's
+    # advanced watermark, not this segment's raw end. For the
+    # straight-through monotonic path they're equal; the explicit name
+    # matches the PG ``segments.committed`` NOTIFY payload (migration
+    # 0062) so both dialects emit the identical shape.
     get_bus().publish(
         SEGMENTS_COMMITTED,
         {
             "transcript_id": str(transcript_id),
             "segment_id": seg_id,
             "seq": segment.seq,
-            "end_sec": segment.end_sec,
+            "last_segment_end_sec": segment.end_sec,
         },
     )
-    return CommitResult(segment_id=seg_id, seq=segment.seq, end_sec=segment.end_sec, accepted=True)
+    return CommitResult(
+        segment_id=seg_id,
+        seq=segment.seq,
+        end_sec=segment.end_sec,
+        accepted=True,
+        words_committed=words_committed,
+    )
+
+
+async def _insert_words(
+    db: _DBConn,
+    sql: str,
+    *,
+    segment_id: int,
+    words: tuple[Word, ...],
+) -> int:
+    """Insert per-word timing rows for one segment; return the count.
+
+    Story 3.6-1.3. The word ``seq`` is the word's index within its
+    owning segment (0-based, monotonic) — the natural ordering the
+    backend emitted; combined with ``segment_id`` it's the
+    ``transcript_words`` unique key, so a replayed segment commit
+    re-issuing the same words is an idempotent no-op (ON CONFLICT). The
+    caller invokes this INSIDE the segment's transaction so the two
+    writes commit/rollback together (Story 3.6-2).
+    """
+    for word_seq, word in enumerate(words):
+        await db.execute(
+            sql,
+            segment_id,
+            word_seq,
+            word.start_sec,
+            word.end_sec,
+            word.text,
+            word.confidence,
+        )
+    return len(words)
 
 
 # --- reorder buffer ---------------------------------------------------

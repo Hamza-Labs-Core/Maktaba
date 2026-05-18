@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from .protocol import AudioSource, BackendHealth, Segment, TranscriptionHints
+from .protocol import AudioSource, BackendHealth, Segment, TranscriptionHints, parse_words
 
 __all__ = ["FasterWhisperBackend"]
 
@@ -86,6 +86,11 @@ class FasterWhisperBackend:
                 end_sec=float(seg["end"]),
                 text=seg.get("text", ""),
                 confidence=seg.get("confidence"),
+                # Story 3.6-1.3 — faster-whisper emits per-word
+                # ``Word(word,start,end,probability)`` objects when
+                # word_timestamps=True; surface them so commit_segment
+                # persists transcript_words (was silently dropped).
+                words=parse_words(seg.get("words")) if hints.word_timestamps else (),
                 metadata={"backend": self.name, "compute_type": self._compute_type},
             )
 
@@ -150,6 +155,19 @@ def _default_transcribe_fn(
                 "end": s.end,
                 "text": s.text,
                 "confidence": getattr(s, "avg_logprob", None),
+                # faster-whisper attaches a per-segment ``words`` list of
+                # Word(word,start,end,probability) only when
+                # word_timestamps=True; pass it through verbatim for
+                # parse_words to normalise (Story 3.6-1.3).
+                "words": [
+                    {
+                        "word": w.word,
+                        "start": w.start,
+                        "end": w.end,
+                        "probability": getattr(w, "probability", None),
+                    }
+                    for w in (getattr(s, "words", None) or [])
+                ],
             }
             for s in segments
         ]

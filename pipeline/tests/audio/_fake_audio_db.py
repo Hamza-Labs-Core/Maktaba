@@ -135,6 +135,26 @@ class _TranscriptSegmentRow:
 
 
 @dataclass
+class _SttUsageRow:
+    library_id: UUID
+    backend: str
+    period_yyyymm: int
+    minutes: float
+    est_usd: float
+
+
+@dataclass
+class _TranscriptWordRow:
+    id: int
+    segment_id: int
+    seq: int
+    start_sec: float
+    end_sec: float
+    text: str
+    confidence: float | None
+
+
+@dataclass
 class _TranscriptRow:
     id: UUID
     video_id: UUID
@@ -184,11 +204,14 @@ class FakeAudioDB:
     processing_jobs: dict[int, _ProcessingJobRow] = field(default_factory=dict)
     transcripts: dict[UUID, _TranscriptRow] = field(default_factory=dict)
     transcript_segments: dict[int, _TranscriptSegmentRow] = field(default_factory=dict)
+    transcript_words: dict[int, _TranscriptWordRow] = field(default_factory=dict)
+    stt_usage: dict[tuple[UUID, str, int], _SttUsageRow] = field(default_factory=dict)
     subtitle_files: dict[int, _SubtitleFileRow] = field(default_factory=dict)
     notifies: list[tuple[str, str]] = field(default_factory=list)
     _audio_next_id: int = 1
     _job_next_id: int = 1
     _seg_next_id: int = 1
+    _word_next_id: int = 1
     _subtitle_next_id: int = 1
     _lock_obj: asyncio.Lock | None = None
 
@@ -206,8 +229,9 @@ class FakeAudioDB:
         The snapshot covers ALL row tables the unioned fake mutates:
         ``libraries``, ``videos``, ``media_info``, ``audio_tracks``,
         ``audio_cache``, ``processing_jobs``, ``transcripts``,
-        ``transcript_segments`` and ``subtitle_files`` — plus the
-        ``_audio_next_id`` / ``_job_next_id`` / ``_seg_next_id`` /
+        ``transcript_segments``, ``transcript_words`` and
+        ``subtitle_files`` — plus the ``_audio_next_id`` /
+        ``_job_next_id`` / ``_seg_next_id`` / ``_word_next_id`` /
         ``_subtitle_next_id`` autoincrement cursors. The snapshot is
         cheap for the in-memory fake.
         """
@@ -222,10 +246,13 @@ class FakeAudioDB:
             snap_processing_jobs = copy.deepcopy(self.processing_jobs)
             snap_transcripts = copy.deepcopy(self.transcripts)
             snap_segments = copy.deepcopy(self.transcript_segments)
+            snap_words = copy.deepcopy(self.transcript_words)
+            snap_stt_usage = copy.deepcopy(self.stt_usage)
             snap_subtitle_files = copy.deepcopy(self.subtitle_files)
             snap_audio_next = self._audio_next_id
             snap_job_next = self._job_next_id
             snap_seg_next = self._seg_next_id
+            snap_word_next = self._word_next_id
             snap_subtitle_next = self._subtitle_next_id
             try:
                 yield self
@@ -238,10 +265,13 @@ class FakeAudioDB:
                 self.processing_jobs = snap_processing_jobs
                 self.transcripts = snap_transcripts
                 self.transcript_segments = snap_segments
+                self.transcript_words = snap_words
+                self.stt_usage = snap_stt_usage
                 self.subtitle_files = snap_subtitle_files
                 self._audio_next_id = snap_audio_next
                 self._job_next_id = snap_job_next
                 self._seg_next_id = snap_seg_next
+                self._word_next_id = snap_word_next
                 self._subtitle_next_id = snap_subtitle_next
                 raise
 
@@ -543,6 +573,18 @@ class FakeAudioDB:
             return _Row(self._job_row_full(claim_target))
 
         # advance_after_stage SELECT-FOR-UPDATE
+        # monthly_spend_usd — sum the month's est_usd ledger rows.
+        if s.startswith("SELECT COALESCE(SUM(est_usd), 0) AS spent FROM stt_usage"):
+            library_id, backend, period = args
+            total = sum(
+                u.est_usd
+                for u in self.stt_usage.values()
+                if u.library_id == library_id
+                and u.backend == backend
+                and u.period_yyyymm == int(period)
+            )
+            return _Row({"spent": total})
+
         if s.startswith("SELECT state, library_id FROM videos"):
             v = self.videos.get(args[0])
             if v is None:
@@ -677,6 +719,32 @@ class FakeAudioDB:
                     "realtime_factor": job.realtime_factor or 0,
                 }
             )
+
+        # record_stt_usage — additive UPSERT on (library_id, backend,
+        # period_yyyymm). Same shape for both dialects (the $n vs ?
+        # placeholder differs only in the driver the fake elides).
+        if s.startswith("INSERT INTO stt_usage"):
+            library_id, backend, period, minutes, est_usd = args
+            key = (library_id, str(backend), int(period))
+            existing = self.stt_usage.get(key)
+            if existing is None:
+                self.stt_usage[key] = _SttUsageRow(
+                    library_id=library_id,
+                    backend=str(backend),
+                    period_yyyymm=int(period),
+                    minutes=float(minutes),
+                    est_usd=float(est_usd),
+                )
+            else:
+                existing.minutes += float(minutes)
+                existing.est_usd += float(est_usd)
+            return None
+
+        # commit_segment — per-word rows (Story 3.6-1.3). Same SQL shape
+        # for both dialects ($n vs ? differ only in the driver layer the
+        # fake elides); ON CONFLICT (segment_id, seq) is idempotent.
+        if s.startswith("INSERT INTO transcript_words"):
+            return self._exec_word_insert(args)
 
         # commit_segment — SQLite INSERT
         if s.startswith("INSERT INTO transcript_segments"):
@@ -1059,6 +1127,32 @@ class FakeAudioDB:
             confidence=confidence,
         )
         self._last_seg_id = seg_id
+        return None
+
+    def _exec_word_insert(self, args: tuple[Any, ...]) -> None:
+        (segment_id, seq, start_sec, end_sec, text, confidence) = args
+        sid = int(segment_id)
+        existing = next(
+            (
+                w
+                for w in self.transcript_words.values()
+                if w.segment_id == sid and w.seq == int(seq)
+            ),
+            None,
+        )
+        if existing is not None:
+            return None  # ON CONFLICT (segment_id, seq) DO NOTHING
+        wid = self._word_next_id
+        self._word_next_id += 1
+        self.transcript_words[wid] = _TranscriptWordRow(
+            id=wid,
+            segment_id=sid,
+            seq=int(seq),
+            start_sec=float(start_sec),
+            end_sec=float(end_sec),
+            text=str(text),
+            confidence=confidence,
+        )
         return None
 
     def _exec_progress_sqlite(self, args: tuple[Any, ...]) -> None:

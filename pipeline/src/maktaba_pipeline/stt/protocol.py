@@ -31,6 +31,7 @@ __all__ = [
     "STTBackend",
     "TranscriptionHints",
     "Word",
+    "parse_words",
 ]
 
 
@@ -42,6 +43,47 @@ class Word:
     start_sec: float
     end_sec: float
     confidence: float | None = None
+
+
+def parse_words(raw: Any) -> tuple[Word, ...]:
+    """Map a backend's raw per-word list onto :class:`Word` tuples.
+
+    Story 3.6-1.3 — every backend that sets
+    ``supports_word_timestamps`` and is asked for word timestamps
+    (``hints.word_timestamps``) returns a ``words`` list on each raw
+    segment dict (``mlx_whisper`` / ``faster-whisper`` / the OpenAI
+    verbose-JSON shape all use ``{word|text, start, end,
+    probability|confidence}``). This single parser is the one place
+    that normalises those vendor key variants so the three backends'
+    Segment-mapping stays DRY and the ``transcript_words`` rows
+    :func:`maktaba_pipeline.stt.segment_commit.commit_segment` persists
+    have a uniform shape regardless of which backend produced them.
+
+    A missing / empty / non-list ``words`` value yields an empty tuple
+    (the Segment default) — word timestamps are strictly optional and a
+    backend that did not produce them must not raise here.
+    """
+    if not raw or not isinstance(raw, (list, tuple)):
+        return ()
+    out: list[Word] = []
+    for w in raw:
+        if not isinstance(w, dict):
+            continue
+        text = w.get("word", w.get("text"))
+        start = w.get("start", w.get("start_sec"))
+        end = w.get("end", w.get("end_sec"))
+        if text is None or start is None or end is None:
+            continue
+        conf = w.get("probability", w.get("confidence"))
+        out.append(
+            Word(
+                text=str(text),
+                start_sec=float(start),
+                end_sec=float(end),
+                confidence=float(conf) if conf is not None else None,
+            )
+        )
+    return tuple(out)
 
 
 @dataclass(slots=True, frozen=True)

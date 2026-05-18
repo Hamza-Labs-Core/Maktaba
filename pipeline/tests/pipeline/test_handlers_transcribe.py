@@ -31,11 +31,13 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
+
+import pytest
 
 from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import transcribe_handler
-from maktaba_pipeline.stt.protocol import Segment
+from maktaba_pipeline.stt.protocol import Segment, Word
 from tests.audio._fake_audio_db import _AudioCacheRow, _AudioTrackRow, _ProcessingJobRow
 
 from .conftest import StageDB, make_job
@@ -535,6 +537,130 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
         t for t in stage_db.transcripts.values() if t.video_id == video_id and t.id != good_id
     ]
     assert all(p.is_active is False for p in partials)
+
+
+def test_transcribe_persists_words_and_records_paid_usage_end_to_end() -> None:
+    """HLB-324 + HLB-314 on the LIVE commit_transcribe path.
+
+    A paid, word-capable backend → (a) the transcript row is stamped
+    ``word_level=true``, (b) ``transcript_words`` rows are persisted via
+    the real commit_segment, (c) the previously-missing ``stt_usage``
+    ledger row is written for the paid spend.
+    """
+    from maktaba_pipeline.stt.transcribe import (
+        AudioArtifact,
+        SelectedBackend,
+        commit_transcribe,
+    )
+    from tests.audio._fake_audio_db import FakeAudioDB
+
+    db = FakeAudioDB(dialect="postgres")
+    lib = uuid4()
+    video_id = db.add_video(state="audio_extracted", library_id=lib)
+    # Build the EXTRACT-produced audio_tracks row directly on the plain
+    # fake (commit_transcribe takes the AudioArtifact, so no audio_cache
+    # read is needed here — that path is covered by the handler tests).
+    track_id = db._audio_next_id  # noqa: SLF001
+    db._audio_next_id += 1  # noqa: SLF001
+    db.audio_tracks[track_id] = _AudioTrackRow(
+        id=track_id,
+        video_id=video_id,
+        track_index=0,
+        codec="aac",
+        channels=2,
+        sample_rate=48000,
+        language="ara",
+        title=None,
+        is_default=True,
+        disposition=json.dumps({"default": 1}),
+        last_extracted_at=db._now(),  # noqa: SLF001
+    )
+    job_id = 91
+    db.processing_jobs[job_id] = _ProcessingJobRow(
+        id=job_id, video_id=video_id, stage=Stage.TRANSCRIBE.value, state="running"
+    )
+
+    class _PaidWordBackend:
+        name = "openai-api"
+        model = "whisper-1"
+        supports_streaming = False
+        requires_file = True
+        cost_per_minute: float | None = 0.006
+        supports_word_timestamps = True
+
+        def transcribe(self, audio: Any, language: str | None, hints: Any) -> Any:
+            assert hints.word_timestamps is True  # backend asked for words
+
+            async def _gen() -> AsyncIterator[Segment]:
+                yield Segment(
+                    seq=0,
+                    start_sec=0.0,
+                    end_sec=60.0,
+                    text="bismillah",
+                    audio_sec=60.0,
+                    wall_sec=2.0,
+                    words=(
+                        Word(text="bismi", start_sec=0.0, end_sec=30.0, confidence=0.9),
+                        Word(text="llah", start_sec=30.0, end_sec=60.0, confidence=0.8),
+                    ),
+                )
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+        async def health(self) -> Any:
+            from datetime import UTC, datetime
+
+            from maktaba_pipeline.stt.protocol import BackendHealth
+
+            return BackendHealth(
+                ready=True,
+                model_loaded=True,
+                version="v1",
+                device="openai-api",
+                last_check_at=datetime.now(tz=UTC),
+            )
+
+        async def warmup(self) -> None:
+            return
+
+    backend = _PaidWordBackend()
+
+    asyncio.run(
+        commit_transcribe(
+            db,
+            video_id=video_id,
+            artifact=AudioArtifact(
+                content_hash="z" * 64,
+                video_id=video_id,
+                audio_track_id=track_id,
+                path="/cache/audio/z.wav",
+            ),
+            selected=SelectedBackend(backend=backend, name="openai-api", version="v1"),
+            job_id=job_id,
+            total_duration_sec=30 * 60,  # 30 min paid
+            language=None,
+        )
+    )
+
+    # (a) transcript row stamped word_level=true.
+    tr = next(t for t in db.transcripts.values() if t.video_id == video_id and t.is_active)
+    assert tr.word_level is True
+    # (b) transcript_words persisted via the real commit_segment path.
+    seg = next(s for s in db.transcript_segments.values() if s.transcript_id == tr.id)
+    words = sorted(
+        (w for w in db.transcript_words.values() if w.segment_id == seg.id),
+        key=lambda w: w.seq,
+    )
+    assert [w.text for w in words] == ["bismi", "llah"]
+    assert [w.seq for w in words] == [0, 1]
+    # (c) the paid spend was recorded onto the previously-missing ledger.
+    usage = list(db.stt_usage.values())
+    assert len(usage) == 1
+    assert usage[0].backend == "openai-api"
+    assert usage[0].est_usd == pytest.approx(30 * 0.006)  # 30 min × $0.006
 
 
 def test_transcribe_stamps_backend_declared_model() -> None:
