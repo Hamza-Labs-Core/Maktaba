@@ -142,6 +142,8 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	devHandler := &devices.Handler{DB: d.DB}
 	devHandler.Mount(r)
+	// Story 12.11 downloaded-flag sync routes (slot 0063).
+	devHandler.MountDownloads(r)
 
 	wsHandler := &ws.Handler{Hub: hub}
 	// Cross-replica WS event bus (Epic 19 Story 19.2 / HLB-353).
