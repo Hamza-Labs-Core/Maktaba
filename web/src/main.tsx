@@ -1,16 +1,18 @@
 // Entry point for the Maktaba web app (Epic 11).
 //
-// Mounts the React tree under #root. Theme initialisation runs before
-// the first paint so the dark/light pick from localStorage doesn't
-// flicker (Story 11.8 AC-3).
+// The resolved theme is already on <html data-theme> from the inline
+// boot script in index.html (Story 11.8, no FOUC); applyResolvedTheme
+// here only reconciles after the bundle parses. The service worker is
+// registered post-paint (Story 11.10).
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { applyInitialTheme } from "./lib/theme";
+import { applyResolvedTheme, readMode } from "./lib/theme";
+import { registerServiceWorker } from "./lib/pwa";
 import { App } from "./App";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
-applyInitialTheme();
+applyResolvedTheme(readMode());
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
@@ -22,3 +24,5 @@ ReactDOM.createRoot(rootEl).render(
     <App />
   </React.StrictMode>
 );
+
+registerServiceWorker();

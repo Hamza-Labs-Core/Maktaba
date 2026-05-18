@@ -1,21 +1,48 @@
-// Story 11.6 — Settings page (account, sessions, theme, language).
+// Story 11.6 — Settings.
 //
-// Phase 10 scaffolds three sub-views: profile/security, active sessions
-// (Story 11.14), and appearance. PAT management (Story 11.13) follows
-// once that surface lands.
+// Implemented (genuinely buildable against the live API):
+//   Account     — sign-out-everywhere (POST /api/auth/logout-all, wired)
+//   Appearance  — theme light/dark/system (11.8), language en/ar (11.12),
+//                 density comfortable/compact (persisted)
+//   About       — app version
+//
+// Honestly deferred (no backend endpoint exists — Epic 10/auth, NOT
+// Epic 11):
+//   Sessions    — 11.14: there is NO GET /api/me/sessions /
+//                 DELETE /api/me/sessions/{id}. Only the admin
+//                 DELETE /api/users/{id}/sessions/{sid} exists. Showing
+//                 a fake list against a dead route would be a false
+//                 green, so this panel states the dependency instead.
+//   PAT tokens  — 11.13: no personal_access_tokens table / endpoint /
+//                 verifier exists anywhere in api/internal. Same call.
 import { useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router-dom";
-import { api, ApiError } from "../lib/api";
+import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
+import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
-import { useI18n } from "../lib/i18n";
-import { resolveTheme, setTheme, type Theme } from "../lib/theme";
+import { useI18n, type Locale } from "../lib/i18n";
+import { readMode, setMode, type ThemeMode } from "../lib/theme";
 
-interface SessionRow {
-  id: string;
-  created_at: string;
-  last_seen_at: string;
-  ip?: string;
-  user_agent?: string;
+const DENSITY_KEY = "mkt:density";
+type Density = "comfortable" | "compact";
+
+function readDensity(): Density {
+  try {
+    const d = localStorage.getItem(DENSITY_KEY);
+    if (d === "comfortable" || d === "compact") return d;
+  } catch {
+    /* ignored */
+  }
+  return "comfortable";
+}
+
+function applyDensity(d: Density) {
+  document.documentElement.dataset.density = d;
+  try {
+    localStorage.setItem(DENSITY_KEY, d);
+  } catch {
+    /* ignored */
+  }
 }
 
 export function Settings() {
@@ -23,113 +50,121 @@ export function Settings() {
   return (
     <section className="mkt-page mkt-settings">
       <h1>{t("nav.settings")}</h1>
-      <nav className="mkt-settings__nav" aria-label="Settings sections">
-        <Link to="">Account</Link>
-        <Link to="sessions">Sessions</Link>
-        <Link to="appearance">Appearance</Link>
+      <nav className="mkt-settings__nav" aria-label={t("nav.settings")}>
+        <Link to="">{t("settings.section.account")}</Link>
+        <Link to="sessions">{t("settings.section.sessions")}</Link>
+        <Link to="appearance">{t("settings.section.appearance")}</Link>
+        <Link to="about">{t("settings.section.about")}</Link>
       </nav>
       <Routes>
         <Route index element={<AccountTab />} />
         <Route path="sessions" element={<SessionsTab />} />
         <Route path="appearance" element={<AppearanceTab />} />
+        <Route path="about" element={<AboutTab />} />
       </Routes>
     </section>
   );
 }
 
 function AccountTab() {
+  const { t } = useI18n();
   const { user, logoutAll } = useAuth();
   const nav = useNavigate();
   if (!user) return null;
   return (
     <div className="mkt-settings__panel">
       <p>
-        Signed in as <strong>{user.username}</strong>
-        {user.is_admin && " (admin)"}
+        {t("settings.signedInAs")} <strong>{user.username}</strong>
+        {user.is_admin && ` (${t("settings.admin")})`}
       </p>
-      <button
-        type="button"
-        className="mkt-btn mkt-btn--danger"
+      <Button
+        variant="destructive"
         onClick={async () => {
           await logoutAll();
           nav("/login", { replace: true });
         }}
       >
-        Sign out everywhere
-      </button>
+        {t("settings.signOutEverywhere")}
+      </Button>
+      <hr />
+      {/* 11.13 deferred — no backend endpoint. */}
+      <p className="mkt-muted">{t("settings.tokens.deferred")}</p>
     </div>
   );
 }
 
 function SessionsTab() {
   const { t } = useI18n();
-  const [rows, setRows] = useState<SessionRow[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .get<{ items: SessionRow[] }>("/api/users/me/sessions")
-      .then((r) => setRows(r.items ?? []))
-      .catch((e) => {
-        if (e instanceof ApiError) setErr(e.problem.title);
-        else setErr(t("common.error"));
-        setRows([]);
-      });
-  }, [t]);
-
-  if (err)
-    return (
-      <div className="mkt-alert" role="alert">
-        {err}
-      </div>
-    );
-  if (!rows) return <p>{t("common.loading")}</p>;
-  if (rows.length === 0) return <p className="mkt-empty">{t("common.empty")}</p>;
-
+  // 11.14 deferred — no GET /api/me/sessions. Stating the dependency
+  // truthfully beats rendering a list against a 404 route.
   return (
     <div className="mkt-settings__panel">
-      <table className="mkt-table">
-        <thead>
-          <tr>
-            <th>Last seen</th>
-            <th>IP</th>
-            <th>User-Agent</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td>{r.last_seen_at}</td>
-              <td>{r.ip ?? "—"}</td>
-              <td className="mkt-truncate">{r.user_agent ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <p className="mkt-muted">{t("settings.sessions.deferred")}</p>
     </div>
   );
 }
 
 function AppearanceTab() {
-  const [theme, setLocalTheme] = useState<Theme>(resolveTheme);
+  const { t, locale, setLocale } = useI18n();
+  const [mode, setLocalMode] = useState<ThemeMode>(readMode);
+  const [density, setDensity] = useState<Density>(readDensity);
+
+  useEffect(() => {
+    applyDensity(density);
+  }, [density]);
+
+  return (
+    <div className="mkt-settings__panel mkt-settings__appearance">
+      <RadioGroup legend={t("settings.theme")} name="theme">
+        {(["light", "dark", "system"] as ThemeMode[]).map((opt) => (
+          <Radio
+            key={opt}
+            name="theme"
+            label={t(`settings.theme.${opt}`)}
+            checked={mode === opt}
+            onChange={() => {
+              setMode(opt);
+              setLocalMode(opt);
+            }}
+          />
+        ))}
+      </RadioGroup>
+
+      <RadioGroup legend={t("settings.language")} name="language">
+        {(["en", "ar"] as Locale[]).map((opt) => (
+          <Radio
+            key={opt}
+            name="language"
+            label={t(`settings.language.${opt}`)}
+            checked={locale === opt}
+            onChange={() => setLocale(opt)}
+          />
+        ))}
+      </RadioGroup>
+
+      <RadioGroup legend={t("settings.density")} name="density">
+        {(["comfortable", "compact"] as Density[]).map((opt) => (
+          <Radio
+            key={opt}
+            name="density"
+            label={t(`settings.density.${opt}`)}
+            checked={density === opt}
+            onChange={() => setDensity(opt)}
+          />
+        ))}
+      </RadioGroup>
+    </div>
+  );
+}
+
+function AboutTab() {
+  const { t } = useI18n();
+  const version = import.meta.env?.VITE_APP_VERSION ?? "0.1.0";
   return (
     <div className="mkt-settings__panel">
-      <fieldset>
-        <legend>Theme</legend>
-        {(["light", "dark"] as Theme[]).map((opt) => (
-          <label key={opt} className="mkt-radio">
-            <input
-              type="radio"
-              checked={theme === opt}
-              onChange={() => {
-                setTheme(opt);
-                setLocalTheme(opt);
-              }}
-            />
-            <span>{opt}</span>
-          </label>
-        ))}
-      </fieldset>
+      <p>
+        {t("settings.about.version")}: <strong>{String(version)}</strong>
+      </p>
     </div>
   );
 }

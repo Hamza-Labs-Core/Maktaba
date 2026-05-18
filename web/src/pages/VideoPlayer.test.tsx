@@ -39,6 +39,8 @@ describe("VideoPlayer", () => {
     get.mockReset();
     del.mockReset();
     del.mockResolvedValue(undefined);
+    // Chapter-ticks fetch fires on mount alongside the session open.
+    get.mockResolvedValue({ items: [] });
   });
 
   it("opens a stream session via POST /api/stream/sessions and plays manifest_url", async () => {
@@ -59,9 +61,7 @@ describe("VideoPlayer", () => {
     expect(openCall![1]).toMatchObject({ video_id: "vid-uuid-1" });
 
     // Never hits the old, unmounted route.
-    expect(get).not.toHaveBeenCalledWith(
-      expect.stringContaining("/api/videos/vid-uuid-1/stream")
-    );
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining("/api/videos/vid-uuid-1/stream"));
 
     const video = await screen.findByTestId("mkt-video");
     expect(video).toHaveAttribute("src", "/stream/sess-abc/manifest.m3u8");
@@ -98,9 +98,7 @@ describe("VideoPlayer", () => {
     video.dispatchEvent(new Event("timeupdate"));
 
     await waitFor(() => {
-      const progressCall = post.mock.calls.find((c) =>
-        String(c[0]).endsWith("/progress")
-      );
+      const progressCall = post.mock.calls.find((c) => String(c[0]).endsWith("/progress"));
       expect(progressCall).toBeTruthy();
       expect(progressCall![0]).toBe("/api/stream/sessions/sess-prog/progress");
       expect(progressCall![1]).toMatchObject({ position_sec: 30 });
