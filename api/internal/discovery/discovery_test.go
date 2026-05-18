@@ -164,7 +164,7 @@ func TestSweepSelectionLogic(t *testing.T) {
 // TestSweepInterfaceContract proves both PairingStore implementations
 // satisfy the Sweep seam the boot reaper (main.runPairingSweep) drives.
 // A signature drift on either fails the build here.
-func TestSweepInterfaceContract(t *testing.T) {
+func TestSweepInterfaceContract(_ *testing.T) {
 	var _ PairingStore = (*MemoryPairingStore)(nil)
 	var _ PairingStore = (*SQLPairingStore)(nil)
 }

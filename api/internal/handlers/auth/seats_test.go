@@ -120,7 +120,7 @@ func TestSeatGate_CounterErrorFailsClosed(t *testing.T) {
 
 // The subscriptions Store adapter satisfies the SeatLimiter seam, so
 // the production wiring is real (not a test-only fiction).
-func TestSubscriptionsStoreSatisfiesSeatLimiter(t *testing.T) {
+func TestSubscriptionsStoreSatisfiesSeatLimiter(_ *testing.T) {
 	var _ SeatLimiter = subscriptions.NewSeatLimiter(subscriptions.NewStore())
 	var _ SeatCounter = (*users.Store)(nil)
 }

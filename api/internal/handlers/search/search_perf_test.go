@@ -18,15 +18,14 @@ import (
 
 // stubSemantic records call count and can be made slow or failing.
 type stubSemantic struct {
-	calls   int32
-	delay   time.Duration
-	err     error
-	hits    []Hit
-	gotCtx  context.Context
-	blockCh chan struct{}
+	calls  int32
+	delay  time.Duration
+	err    error
+	hits   []Hit
+	gotCtx context.Context
 }
 
-func (s *stubSemantic) Search(ctx context.Context, q string, k int, f Filters) ([]Hit, error) {
+func (s *stubSemantic) Search(ctx context.Context, _ string, _ int, _ Filters) ([]Hit, error) {
 	atomic.AddInt32(&s.calls, 1)
 	s.gotCtx = ctx
 	if s.delay > 0 {

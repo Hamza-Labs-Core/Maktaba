@@ -664,7 +664,7 @@ func highlightSnippet(s, q string, maxLen int) string {
 		j := strings.Index(excerptLower[fold:], ql)
 		if j < 0 {
 			out.WriteString(excerpt[orig:])
-			orig, fold = len(excerpt), len(excerptLower)
+			orig = len(excerpt) // tail emitted; suppress the post-loop guard
 			break
 		}
 		foldMatchStart := fold + j

@@ -198,7 +198,7 @@ func TestUsersAdmin_UnlockOK(t *testing.T) {
 
 // E10-USR-10: *users.Store satisfies the UserAdmin seam, so the live
 // route drives the real store CRUD.
-func TestUsersStore_SatisfiesUserAdminSeam(t *testing.T) {
+func TestUsersStore_SatisfiesUserAdminSeam(_ *testing.T) {
 	var _ UserAdmin = (*users.Store)(nil)
 }
 

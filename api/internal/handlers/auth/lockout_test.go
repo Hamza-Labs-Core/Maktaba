@@ -128,7 +128,7 @@ func TestRecordFailedLogin_EmptyIDNoOp(t *testing.T) {
 
 // E10-LOCK-3: a nil seam (older callers / tests that don't exercise
 // the mint path) must not panic.
-func TestRecordFailedLogin_NilSeamNoPanic(t *testing.T) {
+func TestRecordFailedLogin_NilSeamNoPanic(_ *testing.T) {
 	h := &Handler{}
 	h.recordFailedLogin(context.Background(), "user-1") // must not panic
 }
@@ -162,7 +162,7 @@ func TestLockedOut_Returns423(t *testing.T) {
 
 // E10-LOCK-6: *users.Store satisfies the FailedLogins seam, so the
 // real login path drives the real (previously dead) increment.
-func TestUsersStore_SatisfiesFailedLoginsSeam(t *testing.T) {
+func TestUsersStore_SatisfiesFailedLoginsSeam(_ *testing.T) {
 	var _ FailedLogins = (*users.Store)(nil)
 }
 

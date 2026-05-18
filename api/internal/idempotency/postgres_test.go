@@ -215,7 +215,7 @@ func TestPostgresStore_ConcurrentDuplicateRaceSafe(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := 0; i < n; i++ {
-		go func(i int) {
+		go func(_ int) {
 			defer wg.Done()
 			_ = s.Save(ctx, Record{
 				Key:         "race",
@@ -238,7 +238,7 @@ func TestPostgresStore_ConcurrentDuplicateRaceSafe(t *testing.T) {
 	}
 }
 
-func TestPostgresStore_ImplementsStore(t *testing.T) {
+func TestPostgresStore_ImplementsStore(_ *testing.T) {
 	var _ Store = (*PostgresStore)(nil)
 }
 
@@ -341,7 +341,7 @@ func (d errDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, e
 }
 
 func (d errDB) QueryRowContext(_ context.Context, _ string, _ ...any) rowScanner {
-	return errRow{err: d.err}
+	return errRow(d)
 }
 
 // TestPostgresStore_LookupDBError_MissAndWarn pins Fix #1: a real
