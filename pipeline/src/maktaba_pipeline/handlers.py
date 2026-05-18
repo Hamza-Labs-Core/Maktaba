@@ -465,7 +465,6 @@ async def subtitle_handler(
     ``LookupError`` guard).
     """
     from .subtitle.subtitle_gen import (  # noqa: PLC0415 — avoid import cycle at module load
-        MissingTranscript,
         commit_subtitles,
         load_transcript_cues,
     )
@@ -530,25 +529,6 @@ async def subtitle_handler(
             loaded=loaded,
         )
         await mark_done(db, job_id=job.id)
-    except MissingTranscript as exc:
-        # Data inconsistency surfaced from deeper in the load — terminal.
-        _log.warning(
-            "stage_handler_failed",
-            stage=Stage.SUBTITLE_GEN.value,
-            job_id=job.id,
-            video_id=str(job.video_id),
-            error=str(exc),
-        )
-        await mark_failed_or_retry(
-            db,
-            job_id=job.id,
-            error=StageError(
-                kind="subtitle_missing_transcript",
-                message=str(exc),
-                traceback=traceback.format_exc(),
-                retryable=False,
-            ),
-        )
     except LookupError as exc:
         # TOCTOU: the video row vanished between the load and
         # commit_subtitles' state read. Terminal — a re-run cannot

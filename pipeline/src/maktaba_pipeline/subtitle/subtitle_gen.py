@@ -20,14 +20,18 @@ adapter delegates to:
   :func:`maktaba_pipeline.audio.extract.commit_extract`: it renders SRT
   + VTT via the existing pure
   :func:`~maktaba_pipeline.subtitle.generator.generate_srt` /
-  :func:`~maktaba_pipeline.subtitle.generator.generate_vtt`, persists
-  both artifacts via the *pre-existing* subtitle persistence helpers
-  (:func:`~maktaba_pipeline.subtitle.manager.write_atomic` +
-  :func:`~maktaba_pipeline.subtitle.manager.register_subtitle` into the
-  ``subtitle_files`` registry — exactly the way EXTRACT reused the
-  pre-existing ``audio_cache``), then advances the FSM
-  ``TRANSCRIBED -> INDEXED`` via :func:`advance_after_stage`
-  (replay-guarded exactly like ``commit_extract`` / ``commit_transcribe``).
+  :func:`~maktaba_pipeline.subtitle.generator.generate_vtt`, writes both
+  sidecars via the *pre-existing*
+  :func:`~maktaba_pipeline.subtitle.manager.write_atomic` (idempotent
+  filesystem replace, outside the txn), then registers BOTH
+  ``subtitle_files`` rows via
+  :func:`~maktaba_pipeline.subtitle.manager.register_subtitle` inside a
+  single ``async with db.transaction():`` so the registry is never
+  observed SRT-only — the same transactional persistence envelope
+  ``commit_extract`` wraps its ``audio_cache`` writes in. It then
+  advances the FSM ``TRANSCRIBED -> INDEXED`` via
+  :func:`advance_after_stage` (replay-guarded exactly like
+  ``commit_extract`` / ``commit_transcribe``).
 
 Scope (Wave 0): exactly one transcript -> two artifacts (SRT + VTT),
 straight-through, written to the canonical content-addressed sidecar
@@ -63,20 +67,10 @@ if TYPE_CHECKING:
     from .generator import SubtitleCue
 
 __all__ = [
-    "MissingTranscript",
     "TranscriptCues",
     "commit_subtitles",
     "load_transcript_cues",
 ]
-
-
-class MissingTranscript(LookupError):
-    """The job's ``transcript_id`` has no transcript / no usable segments.
-
-    A data inconsistency: TRANSCRIBE only enqueues SUBTITLE_GEN *after*
-    activating a complete transcript. The handler classifies this
-    non-retryable — a re-run cannot resurrect missing rows.
-    """
 
 
 class _SubtitleDB(Protocol):
@@ -184,24 +178,35 @@ async def commit_subtitles(
        rendering logic is NOT reimplemented here),
     2. write each to its deterministic content-addressed sidecar via
        the pre-existing
-       :func:`~maktaba_pipeline.subtitle.manager.write_atomic` and
-       register the row via
+       :func:`~maktaba_pipeline.subtitle.manager.write_atomic`. These
+       filesystem writes (temp file + ``os.replace``) are idempotent on
+       retry — a re-run overwrites the same path in place — and stay
+       OUTSIDE the registry transaction (filesystem writes cannot
+       participate in a DB transaction),
+    3. register BOTH ``subtitle_files`` rows (SRT + VTT) via
        :func:`~maktaba_pipeline.subtitle.manager.register_subtitle`
-       (idempotent UPSERT on ``(video_id, language, format, source)`` —
-       a re-run overwrites in place, exactly like EXTRACT's
-       content-addressed ``audio_cache`` UPSERT — so no duplicate
-       artifacts on replay),
-    3. advance the FSM ``TRANSCRIBED -> INDEXED`` via
+       inside a single ``async with db.transaction():`` — the same
+       transactional envelope ``commit_extract`` wraps its
+       ``audio_cache`` UPSERT + ``last_extracted_at`` stamp in. Both
+       rows commit atomically or neither does: a failure registering
+       the second format rolls the first back, so the registry is never
+       observed in a partial (SRT-only) state. Each write is an
+       idempotent UPSERT on ``(video_id, language, format, source)``, so
+       a retried job re-registers both rows cleanly with no duplicates,
+    4. advance the FSM ``TRANSCRIBED -> INDEXED`` via
        :func:`advance_after_stage` (its terminal-drop guard + the
        explicit state check make a replay a no-op — exactly the
-       ``commit_extract`` / ``commit_transcribe`` shape).
+       ``commit_extract`` / ``commit_transcribe`` shape). This runs
+       AFTER persistence, in its own locked transaction, and is
+       replay-guarded — unchanged.
 
     No follow-on enqueue: SUBTITLE_GEN is a parallel leaf TRANSCRIBE
     already fanned out alongside INDEX.
 
-    Idempotent on replay: ``register_subtitle``'s ON CONFLICT upsert and
-    the FSM ``late_stage_finish`` / state-check guard both tolerate a
-    repeat; ``write_atomic`` overwrites the same deterministic path.
+    Idempotent on replay: the two-row register transaction's ON CONFLICT
+    upserts and the FSM ``late_stage_finish`` / state-check guard all
+    tolerate a repeat; ``write_atomic`` overwrites the same
+    deterministic path.
     """
     from ..domain.states import Outcome, State, Trigger  # noqa: PLC0415
     from ..log import get_logger  # noqa: PLC0415
@@ -218,11 +223,19 @@ async def commit_subtitles(
 
     log = get_logger()
 
-    renderers = (
+    # Render + write both sidecars first. ``write_atomic`` lands each
+    # format on its deterministic content-addressed path via a temp
+    # file + ``os.replace`` — idempotent on retry (a re-run overwrites
+    # the same path in place), so the filesystem writes stay OUTSIDE
+    # the registry transaction. Filesystem writes cannot participate in
+    # a DB transaction anyway; making the two *registry rows* atomic is
+    # what matters for crash consistency.
+    rendered = (
         (SubtitleFormat.SRT, generate_srt(loaded.cues)),
         (SubtitleFormat.VTT, generate_vtt(loaded.cues)),
     )
-    for fmt, content in renderers:
+    records: list[SubtitleRecord] = []
+    for fmt, content in rendered:
         dest = cache_path_for(
             video_id,
             loaded.language,
@@ -231,8 +244,7 @@ async def commit_subtitles(
             root=cache_root,
         )
         byte_size, sha256 = write_atomic(dest, content)
-        await register_subtitle(
-            _as_manager_db(db),
+        records.append(
             SubtitleRecord(
                 video_id=video_id,
                 language=loaded.language,
@@ -243,8 +255,18 @@ async def commit_subtitles(
                 sha256=sha256,
                 transcript_id=loaded.transcript_id,
                 metadata={"transcript_id": str(loaded.transcript_id)},
-            ),
+            )
         )
+
+    # Persist BOTH ``subtitle_files`` rows in one transaction so the
+    # registry never observes a partial (SRT-only) state — exactly the
+    # ``async with db.transaction():`` envelope ``commit_extract`` wraps
+    # its audio_cache UPSERT + last_extracted_at stamp in. A failure
+    # registering the second format rolls the first back; the job is
+    # retried and a clean re-run registers both (the UPSERT dedupes).
+    async with db.transaction():
+        for record in records:
+            await register_subtitle(_as_manager_db(db), record)
 
     state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
     if state_row is None:

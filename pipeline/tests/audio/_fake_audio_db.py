@@ -152,9 +152,46 @@ class FakeAudioDB:
     _lock_obj: asyncio.Lock | None = None
 
     def transaction(self) -> Any:
+        """A best-effort rollback-modelling transaction.
+
+        The real driver rolls every write back when the ``async with``
+        body raises. The earlier fake was a bare ``yield self`` (no
+        rollback), which silently passed even non-atomic persistence.
+        To make transactional rollback *observable* — the way the
+        production ``async with db.transaction():`` envelope behaves —
+        we deep-copy the mutable row tables (and the autoincrement
+        cursors) on enter and restore them if the body raises. Scoped
+        to the tables the transactional writers touch; the snapshot is
+        cheap for the in-memory fake.
+        """
+        import copy
+
         @asynccontextmanager
         async def _tx() -> Any:
-            yield self
+            snap_videos = copy.deepcopy(self.videos)
+            snap_media_info = copy.deepcopy(self.media_info)
+            snap_audio_tracks = copy.deepcopy(self.audio_tracks)
+            snap_audio_cache = copy.deepcopy(self.audio_cache)
+            snap_transcripts = copy.deepcopy(self.transcripts)
+            snap_segments = copy.deepcopy(self.transcript_segments)
+            snap_subtitle_files = copy.deepcopy(self.subtitle_files)
+            snap_audio_next = self._audio_next_id
+            snap_seg_next = self._seg_next_id
+            snap_subtitle_next = self._subtitle_next_id
+            try:
+                yield self
+            except BaseException:
+                self.videos = snap_videos
+                self.media_info = snap_media_info
+                self.audio_tracks = snap_audio_tracks
+                self.audio_cache = snap_audio_cache
+                self.transcripts = snap_transcripts
+                self.transcript_segments = snap_segments
+                self.subtitle_files = snap_subtitle_files
+                self._audio_next_id = snap_audio_next
+                self._seg_next_id = snap_seg_next
+                self._subtitle_next_id = snap_subtitle_next
+                raise
 
         return _tx()
 
