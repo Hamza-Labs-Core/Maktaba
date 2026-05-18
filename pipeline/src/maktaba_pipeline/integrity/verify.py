@@ -92,9 +92,16 @@ def verify_video(
             transcripts_ok=transcripts_ok,
             error=f"size mismatch: expected {expected_size}, got {size}",
         )
+    # TOCTOU note: the size stat above and the re-stat inside
+    # hash_file are deliberately not locked — this is a best-effort
+    # nightly sweeper, so a future reader should not add a lock here.
     try:
         digest = hash_file(p)
-    except OSError as e:
+    except (OSError, ValueError) as e:
+        # ValueError: canonical hasher rejects non-regular files
+        # (FIFO/socket/block device/symlink-to-non-regular) — mirror
+        # scanner/service.py's proven (OSError, ValueError) defence so
+        # one bad path is recorded, not crashed on.
         return IntegrityResult(
             file_present=True,
             size_bytes=size,

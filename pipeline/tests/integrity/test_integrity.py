@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 import pathlib
 
 import pytest
@@ -213,3 +214,31 @@ def test_verify_hash_mismatch(tmp_path: pathlib.Path) -> None:
     f.write_bytes(b"abc")
     res = verify_video(path=f, expected_hash="0" * 64)
     assert res.error == "hash mismatch"
+
+
+def test_verify_non_regular_file_records_error(tmp_path: pathlib.Path) -> None:
+    """A non-regular file (FIFO) becomes a recorded error, not a crash.
+
+    ``verify_video`` delegates to the canonical identity hasher, which
+    raises ``ValueError`` (not ``OSError``) on a non-regular file. The
+    sweeper must keep going: the result is a populated
+    ``IntegrityResult`` with ``error`` set, never a propagated
+    exception.
+    """
+    pipe = tmp_path / "pipe.mp4"
+    try:
+        os.mkfifo(pipe)
+        # A FIFO stats with a real st_size of 0; pass a matching
+        # expected_size so the size check does NOT short-circuit before
+        # the hash call (the path under test).
+        expected_size = pipe.stat().st_size
+    except (AttributeError, OSError):
+        # os.mkfifo unavailable on this runner — fall back to a symlink
+        # whose target is a directory, which the hasher also rejects as
+        # a non-regular file with ValueError.
+        pipe = tmp_path / "link.mp4"
+        pipe.symlink_to(tmp_path)
+        expected_size = pipe.stat().st_size
+    res = verify_video(path=pipe, expected_size=expected_size)
+    assert not res.is_ok()
+    assert res.error is not None
