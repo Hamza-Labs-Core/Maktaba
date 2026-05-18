@@ -7,10 +7,15 @@
 #
 # Flow (tag -> rebuild-from-tag -> sign -> publish):
 #   1. build-artifacts  cross-compile the three Go targets + web bundle
-#                        from the tagged tree (same reproducibility
-#                        envelope as CI's _build-artifacts.yml).
+#                        from the tagged tree (multi-arch binaries:
+#                        linux/amd64, linux/arm64, darwin/arm64 — same
+#                        reproducibility envelope as CI's
+#                        _build-artifacts.yml).
 #   2. build-images      build + push the four container images to GHCR
 #                        with OCI version labels and a per-image digest.
+#                        Images are linux/amd64 ONLY (single-arch,
+#                        mirroring _build-artifacts.yml's container
+#                        scope); only the binaries are multi-arch.
 #   3. sign-and-release  checksum every binary, keyless-cosign-sign the
 #                        checksums file AND each pushed image digest,
 #                        then attach binaries + checksums + signatures
@@ -142,13 +147,10 @@ jobs:
       fail-fast: false
       matrix:
         svc: [api, streaming, pipeline, web]
-    outputs:
-      # Per-service digest, surfaced so sign-and-release can record the
-      # immutable digest (not the mutable tag) in the manifest.
-      digest-api: ${{ steps.export.outputs.digest-api }}
-      digest-streaming: ${{ steps.export.outputs.digest-streaming }}
-      digest-pipeline: ${{ steps.export.outputs.digest-pipeline }}
-      digest-web: ${{ steps.export.outputs.digest-web }}
+    # NOTE: job-level `outputs` are NOT merged across matrix legs by
+    # GitHub Actions (the map resolves from a single leg), so the
+    # immutable per-image digest is handed off via a per-leg artifact
+    # (`digest-<svc>`) that sign-and-release downloads and assembles.
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -193,16 +195,27 @@ jobs:
       # prompt; the OIDC identity is the workflow itself.
       - name: Sign image (keyless cosign)
         env:
-          COSIGN_EXPERIMENTAL: "1"
           IMAGE_REF: ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}@${{ steps.build.outputs.digest }}
         run: cosign sign --yes "$IMAGE_REF"
 
-      - name: Export digest output
-        id: export
+      # Hand the {svc, digest} pair off to sign-and-release via a unique
+      # per-leg artifact, because matrix job `outputs` do NOT merge.
+      - name: Stage digest for hand-off
         env:
           SVC: ${{ matrix.svc }}
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "digest-${SVC}=${DIGEST}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          mkdir -p digest-out
+          printf '%s %s\n' "${SVC}" "${DIGEST}" > "digest-out/${SVC}"
+          cat "digest-out/${SVC}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: digest-${{ matrix.svc }}
+          path: digest-out/${{ matrix.svc }}
+          retention-days: 7
 
   sign-and-release:
     name: sign + publish release
@@ -230,6 +243,15 @@ jobs:
         with:
           name: release-web-bundle
           path: staged/web-dist
+
+      # One artifact per build-images matrix leg ("digest-<svc>", each a
+      # single file named "<svc>" holding "<svc> sha256:...").
+      - name: Download image digests
+        uses: actions/download-artifact@v6.0.0
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
 
       - name: Assemble release tree
         env:
@@ -259,8 +281,6 @@ jobs:
       # OIDC identity (verifiable offline by a self-hoster).
       - name: Sign checksums (keyless cosign)
         working-directory: dist
-        env:
-          COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign-blob --yes \
             --output-signature checksums.txt.sig \
@@ -271,14 +291,31 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
-          DIGEST_API: ${{ needs.build-images.outputs.digest-api }}
-          DIGEST_STREAMING: ${{ needs.build-images.outputs.digest-streaming }}
-          DIGEST_PIPELINE: ${{ needs.build-images.outputs.digest-pipeline }}
-          DIGEST_WEB: ${{ needs.build-images.outputs.digest-web }}
         run: |
           set -euo pipefail
           ver="${TAG#v}"
           built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Each digests/<svc> file holds "<svc> sha256:<64hex>" written by
+          # the matching build-images matrix leg. Read all four (fail loud
+          # if any leg's digest is missing) so the manifest records the
+          # real, distinct, immutable digest per component.
+          digest_of() {
+            local svc="$1" f="digests/$1" d
+            test -f "$f" || { echo "missing digest artifact for ${svc}" >&2; exit 1; }
+            d="$(awk -v s="$svc" '$1==s {print $2}' "$f")"
+            case "$d" in
+              sha256:*) ;;
+              *) echo "bad digest for ${svc}: '${d}'" >&2; exit 1 ;;
+            esac
+            printf '%s' "$d"
+          }
+          DIGEST_API="$(digest_of api)"
+          DIGEST_STREAMING="$(digest_of streaming)"
+          DIGEST_PIPELINE="$(digest_of pipeline)"
+          DIGEST_WEB="$(digest_of web)"
+          # TODO(HLB-337 follow-up): derive schema_rev from migration set;
+          # hardcoded 1 until then. rollback_* stay empty/0 until the
+          # rollback-tracking story lands (same follow-up).
           cat > dist/release-manifest.json <<EOF
           {
             "version": "${ver}",
@@ -318,8 +355,19 @@ jobs:
 
           Container images are signed at their digest; verify with
           \`cosign verify <image>@<digest>\` using the same identity."
-          gh release create "${TAG}" \
-            --title "${TAG}" \
-            --notes "${notes}" \
-            --verify-tag \
-            dist/*
+          # Idempotent: a re-run of the same tag after images pushed but a
+          # prior publish failed must update the existing release with the
+          # (re-pushed, digest-stable) assets rather than hard-failing.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" \
+              --title "${TAG}" \
+              --notes "${notes}" \
+              --verify-tag
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --notes "${notes}" \
+              --verify-tag \
+              dist/*
+          fi
