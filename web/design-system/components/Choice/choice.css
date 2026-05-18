@@ -1,0 +1,127 @@
+/* Shared styles for the boolean form controls: Checkbox, Radio, Toggle.
+ * Each keeps a real focusable native <input> (visually hidden, not
+ * display:none, so it stays in the a11y tree and keyboard-reachable);
+ * the visible box/track is a sibling driven by :checked / :focus-visible
+ * sibling selectors. */
+
+.mk-choice {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--spacing-2, 8px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: var(--type-body-size, 16px);
+  color: var(--color-semantic-fg, #18181b);
+  cursor: pointer;
+}
+
+.mk-choice--disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.mk-choice__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mk-choice__control {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1.5px solid var(--color-neutral-400, #a1a1aa);
+  background-color: var(--color-neutral-0, #ffffff);
+  transition:
+    background-color var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    border-color var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.mk-choice--checkbox .mk-choice__control {
+  border-radius: var(--radius-sm, 4px);
+}
+.mk-choice--radio .mk-choice__control {
+  border-radius: var(--radius-full, 9999px);
+}
+
+.mk-choice__glyph {
+  opacity: 0;
+  color: var(--color-neutral-0, #ffffff);
+  transition: opacity var(--motion-duration-quick, 120ms)
+    var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.mk-choice__input:checked ~ .mk-choice__control {
+  background-color: var(--color-semantic-accent, #1e5ad8);
+  border-color: var(--color-semantic-accent, #1e5ad8);
+}
+.mk-choice__input:checked ~ .mk-choice__control .mk-choice__glyph {
+  opacity: 1;
+}
+
+.mk-choice__input:focus-visible ~ .mk-choice__control {
+  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline-offset: 2px;
+}
+
+.mk-choice__input[aria-invalid="true"] ~ .mk-choice__control {
+  border-color: var(--color-semantic-error, #b6253a);
+}
+
+.mk-choice__label {
+  line-height: 1.4;
+}
+
+/* ---- Toggle (switch) variant ---- */
+
+.mk-toggle .mk-choice__control {
+  width: 40px;
+  height: 22px;
+  padding: 2px;
+  border-radius: var(--radius-full, 9999px);
+  justify-content: flex-start;
+}
+
+.mk-toggle__thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--color-neutral-0, #ffffff);
+  box-shadow: var(--elevation-1, 0 1px 2px rgba(0, 0, 0, 0.06));
+  transition: transform var(--motion-duration-quick, 120ms)
+    var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.mk-toggle .mk-choice__input:checked ~ .mk-choice__control .mk-toggle__thumb {
+  transform: translateX(18px);
+}
+[dir="rtl"] .mk-toggle .mk-choice__input:checked ~ .mk-choice__control .mk-toggle__thumb {
+  transform: translateX(-18px);
+}
+
+.mk-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2, 8px);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.mk-radio-group__legend {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: var(--spacing-1, 4px);
+  padding: 0;
+}
