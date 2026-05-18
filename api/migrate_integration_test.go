@@ -309,8 +309,13 @@ func TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	if err := goose.UpToContext(ctx, db, stage, 59); err != nil {
-		t.Fatalf("goose up to 59: %v", err)
+	// idempotency_keys is slot 0060 (goose version 60). The renumber
+	// 0059->0060 (commit 1143e85, audit_log claimed 0059) renamed the
+	// test but left these version literals at 59/58 — UpTo(59) stopped
+	// one slot short and never applied 0060. Target the slot's real
+	// goose version.
+	if err := goose.UpToContext(ctx, db, stage, 60); err != nil {
+		t.Fatalf("goose up to 60: %v", err)
 	}
 
 	assertTableExists(t, db, "idempotency_keys")
@@ -404,9 +409,11 @@ func TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
 		t.Fatal("fresh row must survive sweep")
 	}
 
-	// Down migration cleanly drops the table + index.
-	if err := goose.DownToContext(ctx, db, stage, 58); err != nil {
-		t.Fatalf("goose down to 58: %v", err)
+	// Down migration cleanly drops the table + index. DownTo(59) rolls
+	// back slot 0060 (version 60 > 59) while leaving slot 0059
+	// (audit_log) in place.
+	if err := goose.DownToContext(ctx, db, stage, 59); err != nil {
+		t.Fatalf("goose down to 59: %v", err)
 	}
 	assertTableAbsent(t, db, "idempotency_keys")
 }
