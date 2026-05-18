@@ -274,6 +274,42 @@ func TestMigrationFiles_Slot0059_AuditLogAppendOnly(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0060_HasIdempotencyKeys asserts slot 0060
+// (gap-closure / HLB-315) ships both Postgres and SQLite siblings for
+// the durable Idempotency-Key replay store: the table, the
+// composite_key primary key that makes concurrent duplicate writes
+// race-safe (ON CONFLICT), the reaper index that backs the TTL sweep,
+// and a correct down. Real schema-against-Postgres assertions live in
+// migrate_integration_test.go (build tag: integration).
+func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
+	dir := repoMigrationsDir(t)
+	for _, name := range []string{
+		"0060_idempotency_keys.sql",
+		"0060_idempotency_keys.sqlite.sql",
+	} {
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		s := string(body)
+		for _, want := range []string{
+			"-- +goose Up",
+			"-- +goose Down",
+			"CREATE TABLE IF NOT EXISTS idempotency_keys",
+			"composite_key",
+			"PRIMARY KEY",
+			"request_hash",
+			"idempotency_keys_reaper",
+			"DROP INDEX IF EXISTS idempotency_keys_reaper",
+			"DROP TABLE IF EXISTS idempotency_keys",
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%s: missing %q", name, want)
+			}
+		}
+	}
+}
+
 // repoMigrationsDir locates shared/db/migrations relative to the
 // test working directory by walking up to the repo root. The Go test
 // runner sets cwd to the package directory, so we walk up from
