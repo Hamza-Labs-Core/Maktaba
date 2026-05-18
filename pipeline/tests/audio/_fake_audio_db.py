@@ -404,6 +404,25 @@ class FakeAudioDB:
             )
             return None
 
+        # transcribe handler — read back the EXTRACT-persisted
+        # audio_cache artifact (cached WAV path + audio_track_id) by
+        # the content-addressed primary key.
+        if s.startswith(
+            "SELECT content_hash, video_id, audio_track_id, path, bytes FROM audio_cache"
+        ):
+            cache_row = self.audio_cache.get(str(args[0]))
+            if cache_row is None:
+                return None
+            return _Row(
+                {
+                    "content_hash": cache_row.content_hash,
+                    "video_id": cache_row.video_id,
+                    "audio_track_id": cache_row.audio_track_id,
+                    "path": cache_row.path,
+                    "bytes": cache_row.bytes,
+                }
+            )
+
         # commit_extract — stamp audio_tracks.last_extracted_at.
         if s.startswith("UPDATE audio_tracks SET last_extracted_at"):
             track_id = int(args[0])

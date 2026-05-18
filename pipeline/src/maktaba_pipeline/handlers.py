@@ -31,7 +31,7 @@ from __future__ import annotations
 import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from .audio.extract import ExtractError
 from .audio.extract import extract_to_file as _ffmpeg_extract
@@ -44,13 +44,16 @@ from .log import get_logger
 if TYPE_CHECKING:
     from .audio.extract import _ExtractDB
     from .audio.probe import _ProbeDB
+    from .stt.transcribe import _TranscribeDB
 
 __all__ = [
+    "BackendSelector",
     "ExtractRunner",
     "ProbeRunner",
     "build_real_dispatch",
     "extract_handler",
     "probe_handler",
+    "transcribe_handler",
 ]
 
 _log = get_logger()
@@ -64,6 +67,13 @@ ProbeRunner = Callable[[str], Awaitable[ProbeResult]]
 # WAV via ffmpeg; tests inject a fake returning a path so the unit
 # suite never spawns ffmpeg (mirrors PROBE's ``run_probe`` seam).
 ExtractRunner = Callable[..., Awaitable[Path]]
+
+# DI seam for TRANSCRIBE: ``(*, video_id) -> (backend, name, version)``.
+# The default builds a registry from the *configured* STT backend and
+# walks the fallback chain (``stt.transcribe.default_select_backend``);
+# tests inject a fake returning a canned backend so the suite never
+# loads a model / spawns a subprocess (mirrors PROBE/EXTRACT seams).
+BackendSelector = Callable[..., Awaitable[tuple[Any, str, "str | None"]]]
 
 _SELECT_VIDEO_PATH = "SELECT path FROM videos WHERE id = $1"
 _SELECT_VIDEO_SRC = "SELECT path, content_hash FROM videos WHERE id = $1"
@@ -286,22 +296,161 @@ async def extract_handler(
         )
 
 
+async def transcribe_handler(
+    db: DBConn,
+    job: Job,
+    *,
+    select_backend: BackendSelector | None = None,
+) -> None:
+    """Real TRANSCRIBE stage: pick a backend then transcribe + commit.
+
+    Consumes exactly what EXTRACT persisted:
+
+    1. the job ``payload`` ``{audio_track_id, content_hash}`` EXTRACT
+       enqueued — the ``content_hash`` is the ``audio_cache`` key,
+    2. :func:`stt.transcribe.load_audio_artifact` reads back the
+       ``audio_cache`` row (the decoded WAV path + ``audio_track_id``),
+    3. select an STT backend via the registry seam (DI: ``select_backend``
+       — default builds the registry from the *configured* backend and
+       walks the fallback chain; tests inject a fake so no model loads),
+    4. :func:`stt.transcribe.commit_transcribe` creates + activates the
+       transcript, persists every backend segment via the existing
+       :func:`stt.segment_commit.commit_segment`, advances the FSM
+       ``AUDIO_EXTRACTED -> TRANSCRIBED``, and enqueues the follow-on
+       ``SUBTITLE_GEN`` + ``INDEX`` jobs (same ``enqueue`` mechanism
+       ``commit_extract`` uses),
+    5. flip the job ``done``.
+
+    Failure classification: a missing payload / missing ``audio_cache``
+    row is *non-retryable* (a data inconsistency — EXTRACT only
+    enqueues TRANSCRIBE after persisting the artifact); a transient
+    backend / IO error mid-stream is *retryable*; a video that vanished
+    mid-flight is terminal (mirrors EXTRACT's ``LookupError`` guard).
+    """
+    from .stt.transcribe import (  # noqa: PLC0415 — avoid import cycle at module load
+        SelectedBackend,
+        commit_transcribe,
+        default_select_backend,
+        load_audio_artifact,
+    )
+
+    pick = select_backend or default_select_backend
+    try:
+        payload = job.payload or {}
+        content_hash = payload.get("content_hash")
+        if not content_hash:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="transcribe_missing_payload",
+                    message=(
+                        f"TRANSCRIBE job {job.id} has no payload.content_hash"
+                        " — EXTRACT should have enqueued it with one"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        artifact = await load_audio_artifact(
+            cast("_TranscribeDB", db), content_hash=str(content_hash)
+        )
+        if artifact is None:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="transcribe_missing_audio_cache",
+                    message=(
+                        f"no audio_cache row for content_hash={content_hash}"
+                        " — EXTRACT should not have enqueued TRANSCRIBE"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        backend, name, version = await pick(video_id=job.video_id)
+
+        await commit_transcribe(
+            cast("_TranscribeDB", db),
+            video_id=job.video_id,
+            artifact=artifact,
+            selected=SelectedBackend(backend=backend, name=name, version=version),
+            job_id=job.id,
+            total_duration_sec=job.total_duration_seconds or 0.0,
+            language=None,
+        )
+        await mark_done(db, job_id=job.id)
+    except LookupError as exc:
+        # TOCTOU: the video row vanished between the artifact read and
+        # commit_transcribe's state read. Terminal — a re-run cannot
+        # resurrect it (mirrors extract_handler's LookupError guard).
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.TRANSCRIBE.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="transcribe_video_vanished",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=False,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
+        # Backend / IO failures (NoBackendReady, a broken model pipe, a
+        # transient decode error) are transient by nature → retryable.
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.TRANSCRIBE.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="transcribe_failed",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=True,
+            ),
+        )
+
+
 def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
 
     Only stages with a genuine thin-wrapper adapter are registered.
-    Every unregistered stage (TRANSCRIBE, SUBTITLE_GEN, INDEX,
-    THUMBNAIL) keeps the runtime's placeholder handler until its real
-    orchestration lands — see the module docstring and the gap-closure
-    plan's Track R1/R2 concerns.
+    Every unregistered stage (SUBTITLE_GEN, INDEX, THUMBNAIL) keeps the
+    runtime's placeholder handler until its real orchestration lands —
+    see the module docstring and the gap-closure plan's Track R1/R2/R3
+    concerns. THUMBNAIL has no implementing module at all.
 
     Track R2: EXTRACT now has a real adapter and joins the map. Because
     it is in the map, ``_DEFAULT_STAGES`` listing EXTRACT is safe — a
     default worker claiming an EXTRACT job runs the real decode +
     commit + TRANSCRIBE enqueue rather than the silent no-op drain.
+
+    Track R3: TRANSCRIBE now has a real thin-wrapper adapter
+    (``commit_transcribe`` creates + activates the transcript, persists
+    every backend segment via ``commit_segment``, advances the FSM
+    ``AUDIO_EXTRACTED -> TRANSCRIBED``, and enqueues SUBTITLE_GEN +
+    INDEX), so it joins the override map. ``_DEFAULT_STAGES`` listing
+    TRANSCRIBE is now safe — a default worker claiming a TRANSCRIBE job
+    runs the real STT path rather than the silent no-op drain.
     """
 
     return {
         Stage.PROBE: probe_handler,
         Stage.EXTRACT: extract_handler,
+        Stage.TRANSCRIBE: transcribe_handler,
     }

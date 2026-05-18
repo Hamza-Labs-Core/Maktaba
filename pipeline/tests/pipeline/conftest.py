@@ -125,11 +125,20 @@ class StageDB(FakeAudioDB):
         return super()._dispatch(s, args, many=many)
 
 
-def make_job(*, job_id: int, video_id: UUID, stage: Any) -> Any:
+def make_job(
+    *,
+    job_id: int,
+    video_id: UUID,
+    stage: Any,
+    payload: dict[str, Any] | None = None,
+) -> Any:
     """Build a minimal :class:`~maktaba_pipeline.db.jobs.Job`.
 
     Only the fields the adapters touch are meaningful; the rest take
     schema-shaped defaults so the frozen dataclass constructs cleanly.
+    The claim loop hydrates ``payload`` from the row's JSON; tests that
+    drive a payload-carrying stage (TRANSCRIBE) pass it explicitly so
+    the adapter sees the same shape EXTRACT enqueued.
     """
     from datetime import UTC, datetime
 
@@ -164,7 +173,7 @@ def make_job(*, job_id: int, video_id: UUID, stage: Any) -> Any:
         resumed_at=None,
         resume_count=0,
         metrics=None,
-        payload=None,
+        payload=payload,
         created_at=now,
         finished_at=None,
     )

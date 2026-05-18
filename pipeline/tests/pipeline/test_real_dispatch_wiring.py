@@ -18,23 +18,35 @@ import pytest
 
 from maktaba_pipeline.__main__ import _DEFAULT_STAGES
 from maktaba_pipeline.db.jobs import Stage
-from maktaba_pipeline.handlers import build_real_dispatch, extract_handler, probe_handler
+from maktaba_pipeline.handlers import (
+    build_real_dispatch,
+    extract_handler,
+    probe_handler,
+    transcribe_handler,
+)
 
 pytestmark = pytest.mark.unit
 
 
-def test_build_real_dispatch_binds_probe_and_extract() -> None:
+def test_build_real_dispatch_binds_probe_extract_and_transcribe() -> None:
     overrides = build_real_dispatch()
     assert overrides[Stage.PROBE] is probe_handler
     # Track R2: EXTRACT now has a real thin-wrapper adapter
     # (commit_extract persists the audio_cache artifact, advances the
     # FSM, and enqueues TRANSCRIBE), so it joins the override map.
     assert overrides[Stage.EXTRACT] is extract_handler
+    # Track R3: TRANSCRIBE now has a real thin-wrapper adapter
+    # (commit_transcribe creates + activates the transcript, persists
+    # every backend segment via commit_segment, advances the FSM
+    # AUDIO_EXTRACTED -> TRANSCRIBED, and enqueues SUBTITLE_GEN +
+    # INDEX), so it joins the override map too.
+    assert overrides[Stage.TRANSCRIBE] is transcribe_handler
     # Stages without a thin-wrapper adapter must stay on the runtime
     # placeholder — registering a half-built handler would be worse
-    # than the no-op drain. THUMBNAIL has no module at all.
+    # than the no-op drain. THUMBNAIL has no module at all; SUBTITLE_GEN
+    # / INDEX consume the transcript TRANSCRIBE now produces but their
+    # real orchestration is still pending; SCAN has no real handler.
     for stage in (
-        Stage.TRANSCRIBE,
         Stage.SUBTITLE_GEN,
         Stage.INDEX,
         Stage.THUMBNAIL,
@@ -54,10 +66,16 @@ def test_default_stages_excludes_scan_without_real_handler() -> None:
 
     overrides = build_real_dispatch()
     assert Stage.PROBE in overrides
-    # EXTRACT has a real handler now and is safe in the defaults: a
-    # default worker claiming an EXTRACT job runs the real adapter
-    # rather than the silent no-op drain.
+    # EXTRACT + TRANSCRIBE have real handlers now and are safe in the
+    # defaults: a default worker claiming one of those jobs runs the
+    # real adapter rather than the silent no-op drain.
     assert Stage.EXTRACT in overrides
+    assert Stage.TRANSCRIBE in overrides
+    # SUBTITLE_GEN / INDEX / THUMBNAIL are still on the placeholder —
+    # they remain in _DEFAULT_STAGES but a default worker claiming one
+    # only no-op-drains it until its real adapter lands (Track R4+).
+    assert Stage.SUBTITLE_GEN not in overrides
+    assert Stage.INDEX not in overrides
     assert Stage.SCAN not in overrides
 
     # The remaining canonical pipeline stages are still present.
