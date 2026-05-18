@@ -76,7 +76,14 @@ func MountP6(r chi.Router, d P6Deps) {
 		hub = ws.NewHub()
 	}
 
-	libHandler := &libraries.Handler{DB: d.DB}
+	// Story 9.6 AC-1: inject the concrete library-scoped scan
+	// enqueuer so POST /api/libraries/{id}/scan actually creates a
+	// pending SCAN job (slot-0058 contract, mirrors pipeline
+	// enqueue_scan) instead of soft-failing with an empty job_id.
+	libHandler := &libraries.Handler{
+		DB:          d.DB,
+		JobEnqueuer: &libraries.PostgresJobEnqueuer{DB: d.DB},
+	}
 	libHandler.Mount(r)
 	// Phase 8 / Story 9.17: surfaced library audit feed.
 	libHandler.MountAudit(r)
