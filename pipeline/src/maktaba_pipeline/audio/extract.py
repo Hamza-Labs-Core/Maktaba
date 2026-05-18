@@ -383,8 +383,11 @@ async def load_selected_track(
     # Local imports keep this module importable without the probe /
     # track-selection import chain at module load (mirrors the lazy
     # imports the probe adapter uses to dodge the package cycle).
+    from ..log import get_logger  # noqa: PLC0415
     from .probe import AudioTrack as _AudioTrack  # noqa: PLC0415
     from .track_selection import select_tracks  # noqa: PLC0415
+
+    log = get_logger()
 
     rows = await db.fetch(_SELECT_AUDIO_TRACKS, video_id)
     if not rows:
@@ -419,6 +422,22 @@ async def load_selected_track(
     selected = select_tracks(tracks, settings)
     if not selected:
         return None
+    if len(selected) > 1:
+        # Wave 0 is single-track only. The Story 2.2 policy can return
+        # several tracks (multi_audio settings); EXTRACT keeps the first
+        # and drops the rest. Surface the dropped tracks so this
+        # intentional narrowing is visible in the logs rather than a
+        # silent cliff.
+        log.warning(
+            "extract_multi_track_truncated",
+            video_id=str(video_id),
+            selected_count=len(selected),
+            kept_track_index=selected[0].index,
+            dropped_track_indices=[t.index for t in selected[1:]],
+        )
+    # TODO(multi-audio): single-track only for Wave 0; libraries.settings
+    # (preferred_audio_language/multi_audio/include_commentary) not yet
+    # plumbed — see Story 2.2/2.3.
     chosen = selected[0]
     return SelectedTrack(db_id=by_index[chosen.index], track=chosen)
 

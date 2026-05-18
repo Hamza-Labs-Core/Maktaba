@@ -243,6 +243,29 @@ async def extract_handler(
                 retryable=True,
             ),
         )
+    except LookupError as exc:
+        # The video row vanished mid-flight (TOCTOU: present at the
+        # source SELECT, gone by ``commit_extract``'s state read). A
+        # re-run cannot resurrect it, so this is terminal — classifying
+        # it retryable would burn one attempt before the retry hit the
+        # non-retryable missing-source guard anyway.
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.EXTRACT.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="extract_video_vanished",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=False,
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
         _log.warning(
             "stage_handler_failed",

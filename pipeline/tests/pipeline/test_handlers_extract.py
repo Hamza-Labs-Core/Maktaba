@@ -221,6 +221,43 @@ def test_extract_handler_ffmpeg_failure_is_retryable() -> None:
     assert chash not in stage_db.audio_cache
 
 
+def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
+    """TOCTOU: the video row is present at the source SELECT but gone by
+    the time ``commit_extract`` reads ``videos.state`` (it raises
+    ``LookupError``). That is unrecoverable — classify it non-retryable
+    so no attempt is wasted before the retry would hit the
+    missing-source guard anyway."""
+    import pytest as _pytest
+
+    from maktaba_pipeline.audio import extract as _extract_mod
+
+    stage_db = StageDB(dialect="postgres")
+    chash = "9" * 64
+    video_id = stage_db.add_video(
+        state="probed", path="/lib/movie.mkv", content_hash=chash
+    )
+    _seed_audio_track(stage_db, video_id=video_id)
+    job = make_job(job_id=14, video_id=video_id, stage=Stage.EXTRACT)
+    _seed_claimed_job(stage_db, job_id=14, video_id=video_id)
+
+    async def fake_extract(path: str, track_index: int, *, content_hash: str) -> Path:
+        return Path(f"/cache/{content_hash}.wav")
+
+    async def vanished_commit(*_a: object, **_k: object) -> str:
+        raise LookupError(f"video {video_id} not found")
+
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_extract_mod, "commit_extract", vanished_commit)
+        asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+
+    # terminal failure, non-retryable, with the dedicated kind — and
+    # crucially still on attempt 1 (no wasted retry).
+    assert stage_db.processing_jobs[14].state == "failed"
+    err = json.loads(stage_db.processing_jobs[14].error or "{}")
+    assert err["retryable"] is False
+    assert err["kind"] == "extract_video_vanished"
+
+
 def test_extract_handler_idempotent_on_rerun() -> None:
     """Re-running EXTRACT (e.g. a retried job) is a clean no-op-ish:
     the artifact UPSERT and the FSM advance both tolerate a repeat."""
