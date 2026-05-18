@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
@@ -41,6 +43,13 @@ type P6Deps struct {
 	SearchSemantic  search.SemanticClient
 	URLSigner       streaming.URLSigner
 	EventHub        *ws.Hub
+
+	// PerfRegistry, when set, receives the named hot-path caches MountP6
+	// instantiates (e.g. the search embedding cache, Story 18.2 AC2 /
+	// HLB-333) so the admin flush endpoint can drop them by name
+	// (Story 18.8 AC4 / HLB-346). Nil → caches still work, just aren't
+	// admin-flushable.
+	PerfRegistry *perfpkg.Registry
 
 	// BusCtx / BusDSN enable the cross-replica WS event bus (Epic 19
 	// Story 19.2). When both are set MountP6 stands up an
@@ -75,7 +84,21 @@ func MountP6(r chi.Router, d P6Deps) {
 	videoHandler := &videos.Handler{DB: d.DB}
 	videoHandler.Mount(r)
 
-	searchHandler := &search.Handler{DB: d.DB, Semantic: d.SearchSemantic}
+	// Story 18.2 AC2/AC4 (HLB-333): the search handler gets an
+	// in-process embedding-result cache (reusing the orphaned generic
+	// perf.Cache — HLB-346, no second cache impl) and the default hard
+	// per-request semantic deadline. The cache is registered so
+	// POST /admin/cache/search_embed/flush actually drops it (Story
+	// 18.8 AC4) instead of 404-ing on an empty registry.
+	embedCache := perfpkg.NewCache[[]search.Hit]("search_embed", 10000, 10*time.Minute)
+	if d.PerfRegistry != nil {
+		d.PerfRegistry.Register(embedCache)
+	}
+	searchHandler := &search.Handler{
+		DB:         d.DB,
+		Semantic:   d.SearchSemantic,
+		EmbedCache: embedCache,
+	}
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}
