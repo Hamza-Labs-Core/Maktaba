@@ -182,6 +182,16 @@ func runServe() error {
 // wiring (Postgres-backed stores land with the API's JWKS URL); the
 // API drives OpenSession / CloseSession / EvictHashCache /
 // GetCapabilities / HealthCheck over this.
+//
+// NOTE (deferred residuals, tracked):
+//   - HLB-334 / HLB-338: the session + probe stores below are still the
+//     in-memory fakes. A Postgres-backed session.Store + probe.Backend
+//     (same interfaces, mirroring the api lib/pq store pattern) plus a
+//     spec-correct streaming_sessions migration that the Streaming
+//     service owns are NOT done here: the streaming go.mod carries no
+//     DB driver, so that is a net-new dependency + schema-ownership
+//     change best landed as its own change. HLB-328 (FFmpeg never
+//     spawned) is closed below via srv.Transcode.
 func buildGRPCServer(logger *slog.Logger) *grpcsrv.Server {
 	cfg := config.Load()
 	store := session.NewMemoryStore(5 * time.Second)
@@ -201,6 +211,17 @@ func buildGRPCServer(logger *slog.Logger) *grpcsrv.Server {
 
 	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
 	srv.HWAccel = hw
+
+	// HLB-328: wire the real ffmpeg-spawning orchestrator so
+	// OpenSession actually transcodes. The output dir must match the
+	// manifest handler's HLSDir so the player's manifest/segment GETs
+	// resolve to what FFmpeg writes.
+	layout := cache.New(cfg.Cache.Root)
+	if lerr := layout.EnsureTiers(); lerr != nil {
+		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
+	}
+	srv.Transcode = ffmpeg.DefaultOrchestrator(ffmpeg.DefaultBinary())
+	srv.ResolveDir = layout.HLSDir
 	return srv
 }
 

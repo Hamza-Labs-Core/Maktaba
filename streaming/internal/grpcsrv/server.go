@@ -90,19 +90,37 @@ var (
 	ErrNotFound           = errors.New("not-found")
 )
 
+// TranscodeOrchestrator is the seam grpcsrv.OpenSession uses to spawn
+// FFmpeg for transcode-mode sessions (HLB-328). Production wires
+// ffmpeg.DefaultOrchestrator (real ffmpeg via Spawn); unit tests inject
+// a fake that writes canned output and never execs ffmpeg.
+type TranscodeOrchestrator interface {
+	Start(ctx context.Context, job ffmpeg.Job) (*ffmpeg.Handle, error)
+}
+
 // Server is the in-process surface. The API holds one of these and
 // calls methods directly; production replaces it with a thin grpc
 // handler that delegates to the same struct.
 type Server struct {
-	Probe        *probe.Cache
-	Profiles     *capability.Registry
-	Sessions     session.Store
-	Allocator    *slots.Allocator
-	HWAccel      ffmpeg.HWAccel
-	Host         string // hostname, recorded in row.Host
-	Now          func() time.Time
-	SessionTTL   time.Duration // expires_at = now + TTL (default 30 min)
-	ResolveDirCB func(sessID string) string
+	Probe      *probe.Cache
+	Profiles   *capability.Registry
+	Sessions   session.Store
+	Allocator  *slots.Allocator
+	HWAccel    ffmpeg.HWAccel
+	Host       string // hostname, recorded in row.Host
+	Now        func() time.Time
+	SessionTTL time.Duration // expires_at = now + TTL (default 30 min)
+
+	// Transcode spawns FFmpeg for transcode-mode sessions (HLB-328).
+	// Nil → no FFmpeg is spawned (the pre-HLB-328 behaviour: manifest
+	// requests 404 until something writes the playlist). main.go wires
+	// ffmpeg.DefaultOrchestrator.
+	Transcode TranscodeOrchestrator
+
+	// ResolveDir maps a session id to its on-disk HLS output dir
+	// (cache/hls/{session_id}). Required when Transcode is set so the
+	// orchestrator and the manifest handler agree on the directory.
+	ResolveDir func(sessID string) string
 }
 
 // New returns a Server with sensible defaults filled in.
@@ -186,23 +204,67 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		format = session.FormatDASH
 	}
 
+	sessID := uuid.New()
+	ladder := ladderFor(row, req)
+
+	// HLB-328: spawn FFmpeg for active transcode sessions *before*
+	// persisting the row, so the stored row carries the live handle +
+	// pid and the reaper / CloseSession can kill the child on
+	// idle/close. Before this, HLSArgs/DASHArgs had no runtime caller,
+	// so the manifest handler served files nothing ever wrote → every
+	// manifest/segment 404'd in production. We spawn via the Transcode
+	// seam (real ffmpeg in prod, fake in tests). Spawn failures abort
+	// the open with ErrFailedPrecondition rather than handing the
+	// client a session whose manifest will never materialise.
+	var transcoder session.Transcoder
+	pid := 0
+	if mode == session.ModeTranscode && state == session.StateActive && s.Transcode != nil {
+		if s.ResolveDir == nil {
+			return OpenSessionResponse{}, errors.New("transcode configured without ResolveDir")
+		}
+		fmtStr := "hls"
+		if format == session.FormatDASH {
+			fmtStr = "dash"
+		}
+		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
+			SessionID:  sessID.String(),
+			InputPath:  row.Path,
+			OutputDir:  s.ResolveDir(sessID.String()),
+			Ladder:     ladder,
+			HWAccel:    string(s.HWAccel),
+			Format:     fmtStr,
+			MasterName: "master.m3u8",
+		})
+		if terr != nil {
+			return OpenSessionResponse{}, ErrFailedPrecondition
+		}
+		transcoder = handle
+		pid = handle.PID()
+	}
+
 	sessRow := &session.Row{
-		ID:            uuid.New(),
+		ID:            sessID,
 		VideoID:       videoUUID,
 		UserID:        userUUID,
 		ClientProfile: profile.Name,
 		Mode:          mode,
 		Format:        format,
 		Host:          s.Host,
+		PID:           pid,
 		StartedAt:     s.Now().UTC(),
 		LastSegmentAt: s.Now().UTC(),
 		State:         state,
+		Transcoder:    transcoder,
 	}
 	if err := s.Sessions.Insert(ctx, sessRow); err != nil {
+		// Don't leak the FFmpeg child if the row can't be stored.
+		if transcoder != nil {
+			_ = transcoder.Stop(ctx)
+		}
 		return OpenSessionResponse{}, err
 	}
 
-	return s.respFor(sessRow, ladderFor(row, req)), nil
+	return s.respFor(sessRow, ladder), nil
 }
 
 func (s *Server) respFor(row *session.Row, ladder []ffmpeg.Rendition) OpenSessionResponse {

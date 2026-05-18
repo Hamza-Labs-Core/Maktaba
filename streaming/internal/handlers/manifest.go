@@ -184,19 +184,9 @@ func segmentContentType(name string) string {
 }
 
 // BuildMasterPlaylist composes the HLS master m3u8 from the ladder
-// (Story 8.5 §4.3 shape). Used both by the FFmpeg orchestrator (which
-// writes it to disk for serving) and by tests.
+// (Story 8.5 §4.3 shape). Delegates to ffmpeg.BuildMasterPlaylistFor so
+// the on-disk master the orchestrator writes (HLB-328) and what tests
+// assert come from a single source of truth.
 func BuildMasterPlaylist(ladder []ffmpeg.Rendition) []byte {
-	var sb strings.Builder
-	sb.WriteString("#EXTM3U\n")
-	sb.WriteString("#EXT-X-VERSION:6\n")
-	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
-	for _, r := range ladder {
-		sb.WriteString(fmt.Sprintf(
-			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"avc1.4d4028,mp4a.40.2\"\n",
-			r.BitrateKbps*1000, r.Width, r.Height,
-		))
-		sb.WriteString(r.Name + "/index.m3u8\n")
-	}
-	return []byte(sb.String())
+	return ffmpeg.BuildMasterPlaylistFor(ladder)
 }
