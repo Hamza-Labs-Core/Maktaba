@@ -32,6 +32,7 @@ import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from .audio.extract import ExtractError
 from .audio.extract import extract_to_file as _ffmpeg_extract
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
     from .audio.extract import _ExtractDB
     from .audio.probe import _ProbeDB
     from .stt.transcribe import _TranscribeDB
+    from .subtitle.subtitle_gen import _SubtitleDB
 
 __all__ = [
     "BackendSelector",
@@ -53,6 +55,7 @@ __all__ = [
     "build_real_dispatch",
     "extract_handler",
     "probe_handler",
+    "subtitle_handler",
     "transcribe_handler",
 ]
 
@@ -427,13 +430,175 @@ async def transcribe_handler(
         )
 
 
+async def subtitle_handler(
+    db: DBConn,
+    job: Job,
+) -> None:
+    """Real SUBTITLE_GEN stage: load segments then render + commit.
+
+    Consumes exactly what TRANSCRIBE persisted:
+
+    1. the job ``payload`` ``{transcript_id, audio_track_id}`` TRANSCRIBE
+       enqueued — the ``transcript_id`` names the *exact* transcript
+       this stage renders (no "which transcript is active" re-query
+       race),
+    2. :func:`subtitle.subtitle_gen.load_transcript_cues` reads the
+       transcript (its ``language``) + every ordered
+       ``transcript_segments`` row and projects them into the
+       renderers' cue shape via the existing ``segments_to_cues``,
+    3. :func:`subtitle.subtitle_gen.commit_subtitles` renders SRT + VTT
+       via the existing pure ``generate_srt`` / ``generate_vtt``,
+       persists both via the pre-existing ``write_atomic`` +
+       ``register_subtitle`` (the ``subtitle_files`` registry — the
+       EXTRACT-``audio_cache`` analogue), and advances the FSM
+       ``TRANSCRIBED -> INDEXED`` (replay-guarded),
+    4. flip the job ``done``.
+
+    No follow-on enqueue: TRANSCRIBE already fanned out SUBTITLE_GEN +
+    INDEX in parallel — SUBTITLE_GEN is a leaf.
+
+    Failure classification: a missing payload / missing transcript /
+    no renderable segments is *non-retryable* (a data inconsistency —
+    TRANSCRIBE only enqueues SUBTITLE_GEN after activating a complete
+    transcript); a transient write / IO error is *retryable*; a video
+    that vanished mid-flight is terminal (mirrors EXTRACT/TRANSCRIBE's
+    ``LookupError`` guard).
+    """
+    from .subtitle.subtitle_gen import (  # noqa: PLC0415 — avoid import cycle at module load
+        MissingTranscript,
+        commit_subtitles,
+        load_transcript_cues,
+    )
+
+    try:
+        payload = job.payload or {}
+        raw_transcript_id = payload.get("transcript_id")
+        if not raw_transcript_id:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="subtitle_missing_payload",
+                    message=(
+                        f"SUBTITLE_GEN job {job.id} has no payload.transcript_id"
+                        " — TRANSCRIBE should have enqueued it with one"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        try:
+            transcript_id = UUID(str(raw_transcript_id))
+        except (ValueError, AttributeError, TypeError):
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="subtitle_bad_payload",
+                    message=(
+                        f"SUBTITLE_GEN job {job.id} payload.transcript_id"
+                        f" is not a UUID: {raw_transcript_id!r}"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        loaded = await load_transcript_cues(
+            cast("_SubtitleDB", db), transcript_id=transcript_id
+        )
+        if loaded is None:
+            await mark_failed_or_retry(
+                db,
+                job_id=job.id,
+                error=StageError(
+                    kind="subtitle_missing_transcript",
+                    message=(
+                        f"no transcript / renderable segments for"
+                        f" transcript_id={transcript_id}"
+                        " — TRANSCRIBE should not have enqueued SUBTITLE_GEN"
+                    ),
+                    retryable=False,
+                ),
+            )
+            return
+
+        await commit_subtitles(
+            cast("_SubtitleDB", db),
+            video_id=job.video_id,
+            loaded=loaded,
+        )
+        await mark_done(db, job_id=job.id)
+    except MissingTranscript as exc:
+        # Data inconsistency surfaced from deeper in the load — terminal.
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.SUBTITLE_GEN.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="subtitle_missing_transcript",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=False,
+            ),
+        )
+    except LookupError as exc:
+        # TOCTOU: the video row vanished between the load and
+        # commit_subtitles' state read. Terminal — a re-run cannot
+        # resurrect it (mirrors extract/transcribe's LookupError guard).
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.SUBTITLE_GEN.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="subtitle_video_vanished",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=False,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
+        # A write / disk / transient IO failure is transient by nature
+        # → retryable.
+        _log.warning(
+            "stage_handler_failed",
+            stage=Stage.SUBTITLE_GEN.value,
+            job_id=job.id,
+            video_id=str(job.video_id),
+            error=str(exc),
+        )
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="subtitle_failed",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                retryable=True,
+            ),
+        )
+
+
 def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
 
     Only stages with a genuine thin-wrapper adapter are registered.
-    Every unregistered stage (SUBTITLE_GEN, INDEX, THUMBNAIL) keeps the
-    runtime's placeholder handler until its real orchestration lands —
-    see the module docstring and the gap-closure plan's Track R1/R2/R3
+    Every unregistered stage (INDEX, THUMBNAIL) keeps the runtime's
+    placeholder handler until its real orchestration lands — see the
+    module docstring and the gap-closure plan's Track R1/R2/R3/R4
     concerns. THUMBNAIL has no implementing module at all.
 
     Track R2: EXTRACT now has a real adapter and joins the map. Because
@@ -449,10 +614,25 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
     INDEX), so it joins the override map. ``_DEFAULT_STAGES`` listing
     TRANSCRIBE is now safe — a default worker claiming a TRANSCRIBE job
     runs the real STT path rather than the silent no-op drain.
+
+    Track R4: SUBTITLE_GEN now has a real thin-wrapper adapter
+    (``commit_subtitles`` loads the transcript's ordered segments,
+    renders SRT + VTT via the existing pure generator, persists both
+    via the pre-existing ``subtitle_files`` registry +
+    content-addressed sidecar — the EXTRACT-``audio_cache`` analogue —
+    and advances the FSM ``TRANSCRIBED -> INDEXED``), so it joins the
+    override map. ``_DEFAULT_STAGES`` listing SUBTITLE_GEN is now safe
+    — a default worker claiming a SUBTITLE_GEN job runs the real render
+    + persist rather than the silent no-op drain. SUBTITLE_GEN is a
+    leaf (no follow-on enqueue): TRANSCRIBE already fanned it out in
+    parallel with INDEX, and the shared ``TRANSCRIBED -> INDEXED`` FSM
+    edge is replay-guarded so the second of the two parallel stages
+    no-ops the advance.
     """
 
     return {
         Stage.PROBE: probe_handler,
         Stage.EXTRACT: extract_handler,
         Stage.TRANSCRIBE: transcribe_handler,
+        Stage.SUBTITLE_GEN: subtitle_handler,
     }

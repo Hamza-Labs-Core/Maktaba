@@ -112,6 +112,23 @@ class _TranscriptRow:
     superseded_at: datetime | None
 
 
+@dataclass
+class _SubtitleFileRow:
+    id: int
+    video_id: UUID
+    transcript_id: UUID | None
+    language: str
+    format: str
+    source: str
+    path: str
+    byte_size: int | None
+    sha256: str | None
+    is_embedded: bool
+    is_external: bool
+    metadata: str
+    deleted_at: datetime | None = None
+
+
 class _Row(dict[str, Any]):
     pass
 
@@ -126,10 +143,12 @@ class FakeAudioDB:
     processing_jobs: dict[int, _ProcessingJobRow] = field(default_factory=dict)
     transcripts: dict[UUID, _TranscriptRow] = field(default_factory=dict)
     transcript_segments: dict[int, _TranscriptSegmentRow] = field(default_factory=dict)
+    subtitle_files: dict[int, _SubtitleFileRow] = field(default_factory=dict)
     notifies: list[tuple[str, str]] = field(default_factory=list)
     _audio_next_id: int = 1
     _job_next_id: int = 1
     _seg_next_id: int = 1
+    _subtitle_next_id: int = 1
     _lock_obj: asyncio.Lock | None = None
 
     def transaction(self) -> Any:
@@ -148,6 +167,60 @@ class FakeAudioDB:
         vid = uuid4()
         self.videos[vid] = _VideoRow(id=vid, library_id=library_id or uuid4(), state=state)
         return vid
+
+    def seed_transcript(
+        self,
+        *,
+        video_id: UUID,
+        audio_track_id: int = 1,
+        language: str = "ara",
+        segments: list[tuple[int, float, float, str]] | None = None,
+        is_active: bool = True,
+    ) -> UUID:
+        """Seed a complete active transcript + its ordered segments.
+
+        Mirrors exactly what TRANSCRIBE's ``commit_transcribe`` leaves
+        behind for a SUBTITLE_GEN job to consume: a transcript row plus
+        ``transcript_segments`` rows committed via ``commit_segment``,
+        keyed by ``seq``. ``segments`` is a list of
+        ``(seq, start_sec, end_sec, text)`` tuples.
+        """
+        tid = uuid4()
+        self.transcripts[tid] = _TranscriptRow(
+            id=tid,
+            video_id=video_id,
+            audio_track_id=audio_track_id,
+            language=language,
+            detected_language=None,
+            language_confidence=None,
+            backend="fake-stt",
+            model="fake-model-v1",
+            backend_version=None,
+            word_level=False,
+            diarized=False,
+            is_active=is_active,
+            metadata="{}",
+            superseded_at=None,
+        )
+        rows = segments if segments is not None else [
+            (0, 0.0, 2.0, "bismillah"),
+            (1, 2.0, 4.5, "al-hamdu lillah"),
+            (2, 4.5, 6.0, "rabbi al-alamin"),
+        ]
+        for seq, start, end, text in rows:
+            sid = self._seg_next_id
+            self._seg_next_id += 1
+            self.transcript_segments[sid] = _TranscriptSegmentRow(
+                id=sid,
+                transcript_id=tid,
+                seq=seq,
+                start_sec=start,
+                end_sec=end,
+                text=text,
+                speaker=None,
+                confidence=None,
+            )
+        return tid
 
     @staticmethod
     def _now() -> datetime:
@@ -442,6 +515,93 @@ class FakeAudioDB:
             if track_id in self.audio_tracks:
                 self.audio_tracks[track_id].last_extracted_at = self._now()
             return None
+
+        # SUBTITLE_GEN — load the transcript row by id (id/video/lang).
+        if s.startswith("SELECT id, video_id, language FROM transcripts"):
+            sub_tr = self.transcripts.get(args[0])
+            if sub_tr is None:
+                return None
+            return _Row(
+                {
+                    "id": sub_tr.id,
+                    "video_id": sub_tr.video_id,
+                    "language": sub_tr.language,
+                }
+            )
+
+        # SUBTITLE_GEN — load the transcript's ordered segments.
+        if s.startswith(
+            "SELECT seq, start_sec, end_sec, text, speaker FROM transcript_segments"
+        ):
+            tid = args[0]
+            segs = sorted(
+                (
+                    seg
+                    for seg in self.transcript_segments.values()
+                    if seg.transcript_id == tid
+                ),
+                key=lambda r: r.seq,
+            )
+            rows = [
+                _Row(
+                    {
+                        "seq": seg.seq,
+                        "start_sec": seg.start_sec,
+                        "end_sec": seg.end_sec,
+                        "text": seg.text,
+                        "speaker": seg.speaker,
+                    }
+                )
+                for seg in segs
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # SUBTITLE_GEN — register_subtitle UPSERT into subtitle_files.
+        if s.startswith("INSERT INTO subtitle_files"):
+            (
+                video_id,
+                transcript_id,
+                language,
+                fmt,
+                source,
+                path,
+                byte_size,
+                sha256,
+                is_embedded,
+                is_external,
+                metadata,
+            ) = args
+            for sub_row in self.subtitle_files.values():
+                if (
+                    sub_row.deleted_at is None
+                    and sub_row.video_id == video_id
+                    and sub_row.language == language
+                    and sub_row.format == fmt
+                    and sub_row.source == source
+                ):
+                    sub_row.path = str(path)
+                    sub_row.byte_size = byte_size
+                    sub_row.sha256 = sha256
+                    sub_row.metadata = metadata
+                    sub_row.transcript_id = transcript_id
+                    return _Row({"id": sub_row.id})
+            new_id = self._subtitle_next_id
+            self._subtitle_next_id += 1
+            self.subtitle_files[new_id] = _SubtitleFileRow(
+                id=new_id,
+                video_id=video_id,
+                transcript_id=transcript_id,
+                language=language,
+                format=fmt,
+                source=source,
+                path=str(path),
+                byte_size=byte_size,
+                sha256=sha256,
+                is_embedded=bool(is_embedded),
+                is_external=bool(is_external),
+                metadata=metadata,
+            )
+            return _Row({"id": new_id})
 
         # load_resume_point — SELECT last K segments
         if s.startswith("SELECT seq, text FROM transcript_segments"):
