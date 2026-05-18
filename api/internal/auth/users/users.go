@@ -307,12 +307,17 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+// clearLockoutSQL is the single canonical statement that zeroes the
+// brute-force counter and drops the lockout window. Both the admin
+// Unlock escape hatch and the reset-on-successful-login path use it so
+// "cleared" means exactly one thing (DRY — no divergent clear).
+const clearLockoutSQL = `UPDATE users SET failed_attempts = 0, locked_until = NULL, updated_at = now() WHERE id = $1`
+
 // Unlock clears `failed_attempts` and `locked_until` (Story 10.1
 // AC-3). Used by the admin unlock endpoint and by the lockout-window
 // expiry path.
 func (s *Store) Unlock(ctx context.Context, id string) error {
-	res, err := s.DB.ExecContext(ctx,
-		`UPDATE users SET failed_attempts = 0, locked_until = NULL, updated_at = now() WHERE id = $1`, id)
+	res, err := s.DB.ExecContext(ctx, clearLockoutSQL, id)
 	if err != nil {
 		return err
 	}
@@ -323,15 +328,47 @@ func (s *Store) Unlock(ctx context.Context, id string) error {
 	return nil
 }
 
+// ResetFailedAttempts zeroes the brute-force counter and clears the
+// lockout window after a SUCCESSFUL authentication. Without this a user
+// who once hit the threshold keeps failed_attempts pinned at the cap:
+// the next isolated typo lands at cap+1 >= threshold and instantly
+// re-locks for the full window, leaving admin Unlock as the only
+// recovery (HLB-398 correctness). It reuses the exact same clear SQL as
+// admin Unlock so a "cleared" account is identical regardless of which
+// path cleared it. A missing row is not an error here: the caller has
+// already authenticated against a loaded user, and a best-effort reset
+// must never turn a successful login into a 500.
+func (s *Store) ResetFailedAttempts(ctx context.Context, id string) error {
+	_, err := s.DB.ExecContext(ctx, clearLockoutSQL, id)
+	return err
+}
+
 // IncrementFailedAttempt bumps `failed_attempts` and, when the count
 // crosses the threshold, applies a `locked_until` window. The threshold
 // and window are owned by Story 10.11; we accept them as arguments so
 // this package stays unaware of the policy.
+//
+// Stale-window correctness (HLB-398): if a prior lockout window has
+// fully expired (locked_until is set but no longer in the future — the
+// same condition User.IsLocked uses, just negated) the counter is NOT
+// accumulated across it. The expired window is dropped and this attempt
+// is counted as #1. Without this, an account that locked once stays
+// pinned at the cap forever: the window elapses, the user is no longer
+// IsLocked, but the very next typo is oldCount+1 >= threshold and
+// instantly re-locks. A NULL locked_until (never locked) keeps the
+// simple +1 accumulation toward the first lockout.
 func (s *Store) IncrementFailedAttempt(ctx context.Context, id string, threshold int, lockFor time.Duration) error {
 	const q = `UPDATE users SET
-	             failed_attempts = failed_attempts + 1,
+	             failed_attempts = CASE
+	               WHEN locked_until IS NOT NULL AND locked_until <= now() THEN 1
+	               ELSE failed_attempts + 1
+	             END,
 	             locked_until = CASE
-	               WHEN failed_attempts + 1 >= $2 THEN now() + ($3 || ' seconds')::interval
+	               WHEN (CASE
+	                       WHEN locked_until IS NOT NULL AND locked_until <= now() THEN 1
+	                       ELSE failed_attempts + 1
+	                     END) >= $2 THEN now() + ($3 || ' seconds')::interval
+	               WHEN locked_until IS NOT NULL AND locked_until <= now() THEN NULL
 	               ELSE locked_until
 	             END,
 	             updated_at = now()

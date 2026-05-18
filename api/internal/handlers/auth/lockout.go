@@ -29,10 +29,18 @@ const TypeAccountLocked = "https://maktaba.dev/problems/account-locked"
 // FailedLogins is the narrow seam the login path uses to drive the
 // per-username brute-force counter. *users.Store satisfies it; unit
 // tests inject a fake so the wiring is exercised without a DB. A nil
-// seam disables increment (used by unit tests that don't touch the
-// counter), exactly like the ACL seam's nil handling.
+// seam disables increment/reset (used by unit tests that don't touch
+// the counter), exactly like the ACL seam's nil handling.
+//
+// ResetFailedAttempts zeroes the counter on a SUCCESSFUL login so a
+// user who once tripped the threshold isn't left one isolated typo
+// away from re-lockout (HLB-398 correctness). It lives on the same
+// seam as IncrementFailedAttempt because *users.Store owns both and
+// they're a matched pair: every login outcome either increments
+// (failure) or resets (success).
 type FailedLogins interface {
 	IncrementFailedAttempt(ctx context.Context, id string, threshold int, lockFor time.Duration) error
+	ResetFailedAttempts(ctx context.Context, id string) error
 }
 
 // recordFailedLogin bumps the per-username failed-attempt counter using
@@ -45,6 +53,20 @@ func (h *Handler) recordFailedLogin(ctx context.Context, userID string) {
 		return
 	}
 	_ = h.FailedLogins.IncrementFailedAttempt(ctx, userID, LockoutThreshold, LockoutWindow)
+}
+
+// resetFailedLogin zeroes the per-user failed-attempt counter and drops
+// any lockout window after a SUCCESSFUL authentication. Mirrors
+// recordFailedLogin's guards: an empty id and a nil seam are no-ops,
+// and a store error is swallowed so a counter hiccup never turns a
+// successful login into a 500. Without this call a legitimate user who
+// once hit the threshold stays pinned at the cap and the next single
+// typo instantly re-locks them (HLB-398 correctness).
+func (h *Handler) resetFailedLogin(ctx context.Context, userID string) {
+	if userID == "" || h.FailedLogins == nil {
+		return
+	}
+	_ = h.FailedLogins.ResetFailedAttempts(ctx, userID)
 }
 
 // writeLockedOut emits the 423 account-locked problem. Callers MUST

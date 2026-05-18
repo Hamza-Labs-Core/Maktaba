@@ -218,6 +218,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Past auth — a successful credential check must zero the
+	// brute-force counter and drop any (now irrelevant) lockout window.
+	// Otherwise a user who once tripped the threshold stays pinned at
+	// the cap and the next isolated typo lands at cap+1 >= threshold,
+	// re-locking them for the full window with admin Unlock the only
+	// recovery (HLB-398 correctness). Best-effort, like recordFailedLogin.
+	h.resetFailedLogin(r.Context(), u.ID)
+
 	// Past auth — emit login.success.
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventLoginSuccess,
