@@ -195,8 +195,15 @@ func runServe() error {
 
 	// Public router (chi). The aggregator + version routes live inside
 	// router.New; later stories mount business handlers here.
-	idemStore := idempotency.NewMemoryStore()
-	go runIdempotencySweep(idemStore)
+	//
+	// Idempotency store: Postgres-backed when DATABASE_URL is set so
+	// retried mutations replay correctly across restarts and replicas
+	// (HLB-315); falls back to the in-memory store otherwise (dev /
+	// no-DB stub). The Postgres store opens its own small pool for the
+	// same isolation reason P6 does — the replay path must not contend
+	// with handler or readiness pools.
+	idemStore, idemSweep := buildIdempotencyStore(logger)
+	go idemSweep()
 
 	r := router.New(router.Deps{
 		IdempotencyStore:   idemStore,
@@ -355,13 +362,54 @@ func runServe() error {
 	}
 }
 
-// runIdempotencySweep deletes idempotency-key entries older than 24 h
-// every 5 min. Story 7.1's TTL-bounded growth contract.
-func runIdempotencySweep(s *idempotency.MemoryStore) {
+// idempotencyTTL is how long a replay record is honoured. Story 7.1's
+// TTL-bounded growth contract; HLB-315 keeps the same 24h window for
+// the Postgres-backed store so behaviour is unchanged from the
+// in-memory era.
+const idempotencyTTL = 24 * time.Hour
+
+// buildIdempotencyStore returns the idempotency Store plus a blocking
+// sweep loop the caller runs in a goroutine. When DATABASE_URL is set
+// the store is Postgres-backed (durable across restarts, shared across
+// replicas — the whole point of an idempotency key); otherwise it
+// falls back to the in-memory store so dev / no-DB stubs still work.
+//
+// The Postgres store opens a dedicated small pool: the replay path is
+// latency-sensitive and must not contend with the handler or
+// readiness pools (same isolation rationale as the P6 wiring).
+func buildIdempotencyStore(logger *slog.Logger) (idempotency.Store, func()) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		s := idempotency.NewMemoryStore()
+		logger.Info("idempotency: in-memory store (DATABASE_URL unset; lost on restart)",
+			"event", "idempotency_memory")
+		return s, func() { runIdempotencySweep(s) }
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		s := idempotency.NewMemoryStore()
+		logger.Warn("idempotency: sql.Open failed; falling back to in-memory store",
+			"err", err, "event", "idempotency_db_open_failed")
+		return s, func() { runIdempotencySweep(s) }
+	}
+	db.SetMaxOpenConns(envIntDefault("MAKTABA_IDEM_DB_MAX_OPEN", 4))
+	db.SetMaxIdleConns(envIntDefault("MAKTABA_IDEM_DB_MAX_IDLE", 2))
+	s := idempotency.NewPostgresStoreDB(db)
+	logger.Info("idempotency: Postgres-backed store (survives restart, replica-safe)",
+		"event", "idempotency_postgres")
+	return s, func() { runIdempotencySweep(s) }
+}
+
+// runIdempotencySweep deletes idempotency-key entries older than the
+// TTL every 5 min. Works against any Store backend (in-memory map or
+// the Postgres `idempotency_keys` table); the SweepExpired contract is
+// the same. This is the documented TTL-bounded growth reaper — no
+// external scheduled sweeper is required.
+func runIdempotencySweep(s idempotency.Store) {
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for range t.C {
-		_, _ = s.SweepExpired(context.Background(), 24*time.Hour)
+		_, _ = s.SweepExpired(context.Background(), idempotencyTTL)
 	}
 }
 

@@ -7,9 +7,11 @@ import (
 	"database/sql"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 )
@@ -193,6 +195,131 @@ func TestMigrate_Slot0001_VideosCascadeDeleteFromLibrary(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("after library delete: %d videos remain, want 0 (CASCADE failed)", n)
 	}
+}
+
+// TestMigrate_Slot0059_IdempotencyKeysRoundTripAndRaceSafe applies the
+// full migration set through slot 0059 and exercises the durable
+// idempotency store against real Postgres (HLB-315): a stored record
+// replays exactly, the TTL sweep drops only expired rows, and N
+// concurrent duplicate Save calls insert exactly one row (ON CONFLICT
+// DO NOTHING) — the loser requests then replay the winner's response.
+func TestMigrate_Slot0059_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL unset")
+	}
+	db := openTestDB(t, dsn)
+	t.Cleanup(func() { db.Close() })
+	resetSchema(t, db)
+
+	dir := repoMigrationsDir(t)
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stage) })
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("set dialect: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	if err := goose.UpToContext(ctx, db, stage, 59); err != nil {
+		t.Fatalf("goose up to 59: %v", err)
+	}
+
+	assertTableExists(t, db, "idempotency_keys")
+	for _, col := range []string{
+		"composite_key", "user_id", "idem_key", "request_hash",
+		"status", "body", "headers", "created_at",
+	} {
+		assertColumnExists(t, db, "idempotency_keys", col)
+	}
+	assertIndexExists(t, db, "idempotency_keys_reaper")
+
+	s := idempotency.NewPostgresStoreDB(db)
+
+	// Round-trip: a stored record replays byte-for-byte.
+	rec := idempotency.Record{
+		Key:         "K-int",
+		UserID:      "user-int",
+		RequestHash: "hash-int",
+		Status:      201,
+		Body:        []byte(`{"created":true}`),
+		Headers:     map[string]string{"Content-Type": "application/json"},
+	}
+	if err := s.Save(ctx, rec); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, ok := s.Lookup(ctx, "K-int", "user-int")
+	if !ok {
+		t.Fatal("Lookup miss after Save")
+	}
+	if got.Status != 201 || string(got.Body) != `{"created":true}` ||
+		got.RequestHash != "hash-int" ||
+		got.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("replay roundtrip mismatch: %+v", got)
+	}
+
+	// Distinct keys are independent; same key + different user too.
+	if _, ok := s.Lookup(ctx, "K-int", "other-user"); ok {
+		t.Fatal("same key, different user must not resolve")
+	}
+
+	// Concurrent duplicate Save: ON CONFLICT DO NOTHING ⇒ one row.
+	const n = 24
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			_ = s.Save(ctx, idempotency.Record{
+				Key:         "K-race",
+				UserID:      "user-int",
+				RequestHash: "h",
+				Status:      200,
+				Body:        []byte("race-body"),
+			})
+		}()
+	}
+	wg.Wait()
+	var cnt int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM idempotency_keys WHERE idem_key = 'K-race'`).Scan(&cnt); err != nil {
+		t.Fatalf("count race rows: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("concurrent duplicate Save left %d rows, want exactly 1", cnt)
+	}
+	if _, ok := s.Lookup(ctx, "K-race", "user-int"); !ok {
+		t.Fatal("race key must be replayable after concurrent writes")
+	}
+
+	// TTL sweep: backdate one row, expect exactly it to be reaped.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE idempotency_keys SET created_at = now() - interval '48 hours'
+		   WHERE idem_key = 'K-int'`); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	dropped, err := s.SweepExpired(ctx, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("SweepExpired: %v", err)
+	}
+	if dropped != 1 {
+		t.Fatalf("SweepExpired dropped %d, want 1", dropped)
+	}
+	if _, ok := s.Lookup(ctx, "K-int", "user-int"); ok {
+		t.Fatal("expired row should be gone after sweep")
+	}
+	if _, ok := s.Lookup(ctx, "K-race", "user-int"); !ok {
+		t.Fatal("fresh row must survive sweep")
+	}
+
+	// Down migration cleanly drops the table + index.
+	if err := goose.DownToContext(ctx, db, stage, 58); err != nil {
+		t.Fatalf("goose down to 58: %v", err)
+	}
+	assertTableAbsent(t, db, "idempotency_keys")
 }
 
 // --- helpers ---
