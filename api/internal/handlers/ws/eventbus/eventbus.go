@@ -83,6 +83,27 @@ type Notification struct {
 	Channel string `json:"channel"`
 }
 
+// ReconnectSignal is the sentinel a Backend pushes onto its Listen
+// stream when the underlying listener reconnects after a DB blip
+// (pq.Listener delivers a nil notification on reconnect; MemoryBackend
+// pushes it via SignalReconnect). It is distinguishable from every
+// real frame because the slot-0061 trigger never emits id 0 / empty
+// channel (BIGSERIAL starts at 1, channel is NOT NULL). Surfacing it
+// through the existing Listen seam — instead of a new Backend method —
+// keeps the interface (and the integration tier) source-compatible.
+var ReconnectSignal = Notification{ID: 0, Channel: ""}
+
+func (n Notification) isReconnect() bool {
+	return n.ID == 0 && n.Channel == ""
+}
+
+// DefaultReplayLimit bounds a single Replay/deliverThrough chunk so a
+// long-outage backlog is drained in fixed-size pages rather than
+// materialized whole (OOM / Bus.Run stall). Overridable per-Bus for
+// tests (Bus.replayLimit) and forms the handshake cap (ws.go) so the
+// client re-handshakes for the remainder.
+const DefaultReplayLimit = 500
+
 // Backend is the durable + notify substrate. PostgresBackend is the
 // production implementation (events table + pq.Listener on
 // 'ws.events'); MemoryBackend models the identical contract for the
@@ -94,13 +115,20 @@ type Backend interface {
 	// trigger does this in Postgres; MemoryBackend does it inline).
 	Append(ctx context.Context, ev Event) (int64, error)
 
-	// Replay returns every stored event on channel with id > afterID,
-	// ascending. Backs both the on-connect last_event_id handshake and
-	// the LISTEN-loop gap recovery.
-	Replay(ctx context.Context, channel string, afterID int64) ([]Event, error)
+	// Replay returns up to limit stored events on channel with
+	// id > afterID, ascending. The bound keeps a long-outage backlog
+	// from being materialized whole into memory and blocking Bus.Run;
+	// callers chunk by advancing afterID past the last returned id and
+	// repeating until a short read (< limit rows). limit <= 0 means
+	// the backend default (DefaultReplayLimit).
+	Replay(ctx context.Context, channel string, afterID int64, limit int) ([]Event, error)
 
 	// Listen returns the stream of NOTIFY frames for this replica. The
-	// channel is closed when ctx is done or the backend is closed.
+	// channel is closed when ctx is done or the backend is closed. A
+	// frame equal to ReconnectSignal (id 0, empty channel) is the
+	// listener-reconnect tick: it is not a real event, it tells
+	// Bus.Run to re-scan every known channel so events missed during a
+	// DB blip are recovered with bounded latency (not "next NOTIFY").
 	Listen(ctx context.Context) (<-chan Notification, error)
 
 	// Get reads a single stored event by id (the LISTEN loop reads the

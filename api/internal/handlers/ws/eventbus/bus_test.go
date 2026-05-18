@@ -200,10 +200,191 @@ func TestPrune_DropsExpiredKeepsRecent(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("expected 1 pruned (the 10-day-old row), got %d", n)
 	}
-	remaining, _ := backend.Replay(ctx, "jobs", 0)
+	remaining, _ := backend.Replay(ctx, "jobs", 0, 0)
 	if len(remaining) != 1 {
 		t.Fatalf("expected 1 row to survive prune, got %d", len(remaining))
 	}
+}
+
+// TestReconnectTriggersReplayOfMissedEvents proves Fix #1: when a
+// replica's listener "reconnects" (pq.Listener re-establishes its
+// connection after a DB blip), the Bus re-scans EVERY channel it has a
+// non-zero cursor for and delivers everything missed during the
+// outage — WITHOUT waiting for a new per-channel publish. Before the
+// fix the reconnect signal was a no-op so a low-traffic channel
+// stalled until the next NOTIFY (unbounded latency).
+func TestReconnectTriggersReplayOfMissedEvents(t *testing.T) {
+	backend := NewMemoryBackend()
+	t.Cleanup(func() { _ = backend.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	hub := ws.NewHub()
+	bus := New(backend, hub, nil)
+	bus.rescanEvery = time.Hour // isolate: only the reconnect path may deliver
+
+	sub := hub.Subscribe("jobs")
+	go func() { _ = bus.Run(ctx) }()
+	waitListeners(t, backend, 1)
+
+	// One event delivered normally so the replica has a non-zero
+	// cursor for "jobs" (id 1).
+	if err := bus.Publish(ctx, "jobs", "jobs.progress", map[string]any{"n": 1}); err != nil {
+		t.Fatalf("publish 1: %v", err)
+	}
+	if e := recv(t, sub, 2*time.Second); e.Payload["n"] != float64(1) && e.Payload["n"] != 1 {
+		t.Fatalf("expected event 1 first, got %v", e.Payload)
+	}
+
+	// Listener is "down": the rows are durably appended on the
+	// primary but NO NOTIFY reaches this replica (DB blip) — exactly
+	// the gap Fix #1's reconnect re-scan must heal.
+	backend.SetListenerDown(true)
+	for _, n := range []int{2, 3, 4} {
+		if _, err := backend.Append(ctx, Event{Channel: "jobs", Type: "jobs.progress", Payload: map[string]any{"n": n}}); err != nil {
+			t.Fatalf("append %d: %v", n, err)
+		}
+	}
+	// No NOTIFY arrives, no new publish. Nothing should be delivered.
+	select {
+	case e := <-sub.C:
+		t.Fatalf("event delivered before reconnect (no NOTIFY expected): %v", e.Payload)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	// Listener reconnects. This MUST re-scan "jobs" and deliver 2,3,4.
+	backend.SignalReconnect()
+
+	seen := map[float64]bool{}
+	deadline := time.After(2 * time.Second)
+	for len(seen) < 3 {
+		select {
+		case e := <-sub.C:
+			seen[asF(e.Payload["n"])] = true
+		case <-deadline:
+			t.Fatalf("reconnect did not replay missed events; saw %v (want 2,3,4)", seen)
+		}
+	}
+	if !seen[2] || !seen[3] || !seen[4] {
+		t.Fatalf("reconnect replay incomplete: %v", seen)
+	}
+}
+
+// TestPeriodicSafetyRescanDeliversSilentlyMissedEvents proves Fix #1's
+// belt-and-braces tick: an event whose NOTIFY was silently lost (no
+// overflow signal, no reconnect, no subsequent publish) is still
+// delivered by the periodic re-scan. Before the fix there was no
+// independent tick so it stalled forever.
+func TestPeriodicSafetyRescanDeliversSilentlyMissedEvents(t *testing.T) {
+	backend := NewMemoryBackend()
+	t.Cleanup(func() { _ = backend.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	hub := ws.NewHub()
+	bus := New(backend, hub, nil)
+	bus.rescanEvery = 10 * time.Millisecond // fast tick for the test
+
+	sub := hub.Subscribe("jobs")
+	go func() { _ = bus.Run(ctx) }()
+	waitListeners(t, backend, 1)
+
+	// Establish a non-zero cursor for "jobs" via a delivered event.
+	if err := bus.Publish(ctx, "jobs", "jobs.progress", map[string]any{"n": 1}); err != nil {
+		t.Fatalf("publish 1: %v", err)
+	}
+	if e := recv(t, sub, 2*time.Second); asF(e.Payload["n"]) != 1 {
+		t.Fatalf("expected event 1, got %v", e.Payload)
+	}
+
+	// Silently-missed event: appended durably, NOTIFY lost, and NO
+	// reconnect signal — only the independent periodic tick can
+	// recover it (the listener stays "down" the whole time).
+	backend.SetListenerDown(true)
+	if _, err := backend.Append(ctx, Event{Channel: "jobs", Type: "jobs.progress", Payload: map[string]any{"n": 2}}); err != nil {
+		t.Fatalf("append 2: %v", err)
+	}
+
+	// Only the periodic tick can deliver this.
+	got := recv(t, sub, 2*time.Second)
+	if asF(got.Payload["n"]) != 2 {
+		t.Fatalf("periodic re-scan did not deliver the silently-missed event; got %v", got.Payload)
+	}
+}
+
+// TestReplayIsChunkedAndBounded proves Fix #2: a backlog larger than
+// the replay bound is delivered fully and in order via multiple
+// bounded chunks, and a single Replay call never returns more than
+// replayLimit rows (so Bus.Run is never blocked materializing an
+// unbounded tail after a long outage).
+func TestReplayIsChunkedAndBounded(t *testing.T) {
+	backend := NewMemoryBackend()
+	t.Cleanup(func() { _ = backend.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	hub := ws.NewHub()
+	bus := New(backend, hub, nil)
+	bus.replayLimit = 4 // tiny bound to force chunking deterministically
+	bus.rescanEvery = time.Hour
+
+	const total = 13 // > 3 chunks at limit 4
+	for i := 1; i <= total; i++ {
+		if _, err := backend.Append(ctx, Event{Channel: "jobs", Type: "jobs.progress", Payload: map[string]any{"n": i}}); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+
+	// Replay (the bounded backend query) must honor the LIMIT.
+	page, err := backend.Replay(ctx, "jobs", 0, bus.replayLimit)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if len(page) != bus.replayLimit {
+		t.Fatalf("Replay ignored LIMIT: got %d rows, want %d", len(page), bus.replayLimit)
+	}
+	if page[0].ID != 1 || page[len(page)-1].ID != 4 {
+		t.Fatalf("Replay not ordered/bounded from cursor: %+v", page)
+	}
+
+	// deliverThrough must chunk through the whole backlog in order.
+	sub := hub.Subscribe("jobs")
+	go func() { _ = bus.Run(ctx) }()
+	waitListeners(t, backend, 1)
+	// A single NOTIFY for the highest id triggers the chunked drain.
+	if _, err := backend.Append(ctx, Event{Channel: "jobs", Type: "jobs.progress", Payload: map[string]any{"n": total + 1}}); err != nil {
+		t.Fatalf("append trigger: %v", err)
+	}
+	backend.SignalReconnect() // force a deterministic re-scan now
+
+	var order []int
+	deadline := time.After(3 * time.Second)
+	for len(order) < total+1 {
+		select {
+		case e := <-sub.C:
+			order = append(order, int(asF(e.Payload["n"])))
+		case <-deadline:
+			t.Fatalf("chunked replay incomplete: delivered %d/%d: %v", len(order), total+1, order)
+		}
+	}
+	for i, v := range order {
+		if v != i+1 {
+			t.Fatalf("chunked replay out of order at %d: %v", i, order)
+		}
+	}
+}
+
+// asF normalizes a JSON-ish numeric payload value to float64.
+func asF(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return -1
 }
 
 // waitListeners blocks until backend has at least n registered

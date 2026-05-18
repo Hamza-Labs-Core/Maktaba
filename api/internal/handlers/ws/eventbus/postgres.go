@@ -42,8 +42,11 @@ const (
 	appendSQL = `INSERT INTO events (channel, type, payload, created_at)
 	    VALUES ($1, $2, $3, $4) RETURNING id`
 
+	// replaySQL is bounded by $3 (LIMIT) so a long-outage backlog is
+	// pulled in fixed-size pages — never the whole channel tail at
+	// once (Fix #2: OOM / Bus.Run stall). Served by events_channel_id.
 	replaySQL = `SELECT id, channel, type, payload, created_at
-	    FROM events WHERE channel = $1 AND id > $2 ORDER BY id ASC`
+	    FROM events WHERE channel = $1 AND id > $2 ORDER BY id ASC LIMIT $3`
 
 	getSQL = `SELECT id, channel, type, payload, created_at
 	    FROM events WHERE id = $1`
@@ -68,11 +71,16 @@ func (p *PostgresBackend) Append(ctx context.Context, ev Event) (int64, error) {
 	return id, err
 }
 
-// Replay scans events on channel with id > afterID, ascending. Backs
-// the LISTEN-loop gap recovery and the on-connect last_event_id
-// handshake (Story 19.2 AC3), served by the events_channel_id index.
-func (p *PostgresBackend) Replay(ctx context.Context, channel string, afterID int64) ([]Event, error) {
-	rows, err := p.db.QueryContext(ctx, replaySQL, channel, afterID)
+// Replay scans up to limit events on channel with id > afterID,
+// ascending. Backs the LISTEN-loop gap recovery and the on-connect
+// last_event_id handshake (Story 19.2 AC3), served by the
+// events_channel_id index. The LIMIT bounds memory + Bus.Run block
+// time per chunk; callers page by advancing afterID (Fix #2).
+func (p *PostgresBackend) Replay(ctx context.Context, channel string, afterID int64, limit int) ([]Event, error) {
+	if limit <= 0 {
+		limit = DefaultReplayLimit
+	}
+	rows, err := p.db.QueryContext(ctx, replaySQL, channel, afterID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -129,10 +137,18 @@ func (p *PostgresBackend) Listen(ctx context.Context) (<-chan Notification, erro
 				return
 			case n := <-l.NotificationChannel():
 				if n == nil {
-					// reconnect tick: a Notification with no payload.
-					// The Bus loop only fans out on real frames; the
-					// next real NOTIFY's gap scan covers anything
-					// missed during the disconnect.
+					// Reconnect tick: pq.Listener delivers a nil
+					// notification when it re-establishes the LISTEN
+					// connection after a blip. Surface it as the
+					// ReconnectSignal sentinel so Bus.Run re-scans
+					// EVERY known channel now (bounded-latency
+					// recovery) instead of stalling until the next
+					// per-channel NOTIFY — Fix #1.
+					select {
+					case out <- ReconnectSignal:
+					case <-ctx.Done():
+						return
+					}
 					continue
 				}
 				var note Notification
