@@ -1,6 +1,10 @@
 package search
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestRRFuse_Deterministic(t *testing.T) {
 	a := []Hit{{SegmentID: 1}, {SegmentID: 2}, {SegmentID: 3}}
@@ -39,6 +43,45 @@ func TestHighlightSnippet_NoMatch(t *testing.T) {
 	got := highlightSnippet("hello world", "missing", 240)
 	if got != "hello world" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// TestHighlightSnippet_ArabicGraphemeSafe asserts the explicit Story 5.4
+// "Arabic grapheme-aware" highlighting AC: snippet windowing/truncation
+// must NOT split a multi-byte UTF-8 rune. Arabic code points are 2 bytes
+// in UTF-8, so byte-offset slicing (idx-60, s[:maxLen], s[start:end])
+// cuts mid-rune and yields invalid UTF-8 (U+FFFD / mojibake).
+func TestHighlightSnippet_ArabicGraphemeSafe(t *testing.T) {
+	// 30 Arabic words ("كلمة" = 8 bytes, 4 runes) before the match so the
+	// idx-60-byte back-window lands mid-rune; the matched term is ASCII so
+	// strings.Index byte offsets are stable and the bug is isolated to the
+	// surrounding-context slicing.
+	prefix := strings.Repeat("كلمة ", 30)
+	s := prefix + "TARGET كلمة كلمة كلمة"
+	got := highlightSnippet(s, "TARGET", 240)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("snippet is not valid UTF-8 (rune split): %q", got)
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Fatalf("snippet contains U+FFFD replacement char (rune split): %q", got)
+	}
+	if !strings.Contains(got, "<mark>TARGET</mark>") {
+		t.Fatalf("match not wrapped: %q", got)
+	}
+}
+
+// TestHighlightSnippet_ArabicTruncationGraphemeSafe covers the no-match
+// long-string path (s[:maxLen]+"…"), which also byte-slices.
+func TestHighlightSnippet_ArabicTruncationGraphemeSafe(t *testing.T) {
+	s := strings.Repeat("كلمة ", 200) // long, no match -> truncation path
+	got := highlightSnippet(s, "missing", 41)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated snippet is not valid UTF-8 (rune split): %q", got)
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Fatalf("truncated snippet contains U+FFFD (rune split): %q", got)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -602,32 +603,46 @@ func RRFuse(a, b []Hit, k int) []Hit {
 }
 
 // highlightSnippet wraps each occurrence of q in s with “<mark>...</mark>“
-// and trims to maxLen with an ellipsis around the first match. Search
-// is case-insensitive.
+// and trims to maxLen with an ellipsis around the first match. Search is
+// case-insensitive.
+//
+// All windowing and truncation are performed on a []rune view so the
+// snippet is never cut mid-rune — Arabic code points are multi-byte in
+// UTF-8 and a byte-offset slice would split a rune and emit invalid
+// UTF-8 (Story 5.4 "Arabic grapheme-aware" highlighting AC). Match
+// wrapping reuses byte offsets, but only inside an already rune-aligned
+// excerpt against a (lower-cased) needle, so it stays UTF-8-safe.
 func highlightSnippet(s, q string, maxLen int) string {
 	if s == "" || q == "" {
 		return s
 	}
+	runes := []rune(s)
 	lower := strings.ToLower(s)
 	ql := strings.ToLower(q)
-	idx := strings.Index(lower, ql)
-	if idx == -1 {
-		if len(s) > maxLen {
-			return s[:maxLen] + "…"
+	byteIdx := strings.Index(lower, ql)
+	if byteIdx == -1 {
+		if len(runes) > maxLen {
+			return string(runes[:maxLen]) + "…"
 		}
 		return s
 	}
-	// Build snippet around the match.
-	start := idx - 60
+	// Translate the byte offset of the first match to a rune offset so
+	// the surrounding window is computed in runes, not bytes.
+	matchRuneStart := utf8.RuneCountInString(lower[:byteIdx])
+	matchRuneLen := utf8.RuneCountInString(ql)
+
+	start := matchRuneStart - 60
 	if start < 0 {
 		start = 0
 	}
-	end := idx + len(q) + maxLen - (idx - start)
-	if end > len(s) {
-		end = len(s)
+	end := matchRuneStart + matchRuneLen + maxLen - (matchRuneStart - start)
+	if end > len(runes) {
+		end = len(runes)
 	}
-	excerpt := s[start:end]
+	excerpt := string(runes[start:end])
 	// Replace each (case-insensitive) occurrence with <mark>...</mark>.
+	// excerpt is rune-aligned at both ends; strings.Index/byte slicing
+	// within it against ql never cuts a rune.
 	var out strings.Builder
 	excerptLower := strings.ToLower(excerpt)
 	i := 0
@@ -639,16 +654,16 @@ func highlightSnippet(s, q string, maxLen int) string {
 		}
 		out.WriteString(excerpt[i : i+j])
 		out.WriteString("<mark>")
-		out.WriteString(excerpt[i+j : i+j+len(q)])
+		out.WriteString(excerpt[i+j : i+j+len(ql)])
 		out.WriteString("</mark>")
-		i += j + len(q)
+		i += j + len(ql)
 	}
 	prefix := ""
 	if start > 0 {
 		prefix = "…"
 	}
 	suffix := ""
-	if end < len(s) {
+	if end < len(runes) {
 		suffix = "…"
 	}
 	return prefix + out.String() + suffix
