@@ -175,7 +175,14 @@ func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (
 	key := embedKey(q, k, f)
 	if h.EmbedCache != nil {
 		if v, ok := h.EmbedCache.Get(key); ok {
-			return v, false
+			// Defensive copy: perf.Cache.Get returns the live backing
+			// slice (no internal copy). The caller mutates Hit.Snippet
+			// in place (highlightSnippet), so handing back the alias
+			// would corrupt the cached entry on every hit (progressive
+			// nested <mark>) and race when two same-key requests run
+			// concurrently. Hit has only scalar/string fields, so a
+			// shallow copy is sufficient.
+			return append([]Hit(nil), v...), false
 		}
 	}
 	cctx, cancel := context.WithTimeout(ctx, h.semanticBudget())
@@ -191,7 +198,10 @@ func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (
 		return nil, true
 	}
 	if h.EmbedCache != nil {
-		h.EmbedCache.Put(key, res)
+		// Store a copy so retaining `res` after Put (and mutating it
+		// downstream) cannot alias and corrupt the live cache entry.
+		cp := append([]Hit(nil), res...)
+		h.EmbedCache.Put(key, cp)
 	}
 	return res, false
 }
