@@ -42,7 +42,7 @@ class ReapedRow:
     """One row swept by the reaper. Used for logging + notify payloads."""
 
     id: int
-    video_id: UUID
+    video_id: UUID | None
     stage: str
     prev_state: str
     paused_at_sec: float
@@ -129,7 +129,7 @@ async def _reap_postgres(db: DBConn, stale_claim_sec: float) -> list[ReapedRow]:
             continue
         reaped = ReapedRow(
             id=int(r["id"]),
-            video_id=_to_uuid(r["video_id"]),
+            video_id=_optional_uuid(r["video_id"]),
             stage=str(r["stage"]),
             prev_state=str(r["prev_state"]),
             paused_at_sec=float(r["paused_at_sec"] or 0.0),
@@ -170,7 +170,7 @@ async def _reap_sqlite(db: DBConn, stale_claim_sec: float) -> list[ReapedRow]:
             continue
         reaped = ReapedRow(
             id=int(cand["id"]),
-            video_id=_to_uuid(cand["video_id"]),
+            video_id=_optional_uuid(cand["video_id"]),
             stage=str(cand["stage"]),
             prev_state=str(cand["prev_state"]),
             paused_at_sec=float(updated["paused_at_sec"] or 0.0),
@@ -206,7 +206,14 @@ async def _emit_notify_pg(db: DBConn, reaped: ReapedRow) -> None:
         await execute("SELECT pg_notify($1, $2)", "jobs.reaped", payload)
 
 
-def _to_uuid(value: Any) -> UUID:
+def _optional_uuid(value: Any) -> UUID | None:
+    """Decode a nullable UUID column (slot 0058 made both scope columns
+    nullable: ``video_id`` is null on scan rows, ``library_id`` is null
+    on per-video rows). The reap SELECTs do not stage-filter, so a
+    crashed library-scoped scan row (``video_id`` null) is a reap
+    candidate and must decode cleanly."""
+    if value is None:
+        return None
     if isinstance(value, UUID):
         return value
     return UUID(str(value))

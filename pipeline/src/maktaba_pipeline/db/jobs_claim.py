@@ -239,12 +239,6 @@ def _row_to_job(row: Any) -> Job:
     )
 
 
-def _to_uuid(value: Any) -> UUID:
-    if isinstance(value, UUID):
-        return value
-    return UUID(str(value))
-
-
 def _optional_uuid(value: Any) -> UUID | None:
     """Decode a nullable UUID column (slot 0058 made both scope columns
     nullable: ``video_id`` is null on scan rows, ``library_id`` is null
