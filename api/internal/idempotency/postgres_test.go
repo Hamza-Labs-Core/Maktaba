@@ -21,35 +21,68 @@ import (
 // ACL store.
 type fakeDB struct {
 	mu sync.Mutex
-	// rows keyed by composite (userID\x00key).
-	rows map[string]Record
+	// rows keyed by the in-memory composite of (userID, idem_key).
+	// This is a Go-map convenience ONLY — the SQL the store emits now
+	// carries user_id and idem_key as two separate parameterised
+	// columns; nothing here joins them with a NUL the way the buggy
+	// first cut did. errPGNul (below) is what guarantees that.
+	rows map[[2]string]Record
 	// inserts counts how many Save calls actually inserted a row (vs.
 	// lost the ON CONFLICT race). Used to assert race-safety.
 	inserts int
 }
 
-func newFakeDB() *fakeDB { return &fakeDB{rows: map[string]Record{}} }
+func newFakeDB() *fakeDB { return &fakeDB{rows: map[[2]string]Record{}} }
+
+// errPGNul is the unit-tier model of the production bug. Postgres
+// TEXT/varchar rejects the 0x00 byte with exactly this class of error
+// (`pq: invalid byte sequence for encoding "UTF8": 0x00`). The W1-C3
+// first cut joined userID + "\x00" + key into one TEXT column, which
+// is unstorable on real Postgres but was silently tolerated by the
+// old map-keyed-by-string fake — that is precisely how the bug slipped
+// review. This fake now rejects a NUL in ANY value bound to a
+// TEXT-modelled column, so the regression cannot reappear unnoticed.
+var errPGNul = errors.New(`pq: invalid byte sequence for encoding "UTF8": 0x00`)
+
+// rejectNulText fails if s contains a NUL, matching Postgres TEXT
+// column behaviour. user_id, idem_key, and request_hash are TEXT.
+func rejectNulText(s string) error {
+	if strings.IndexByte(s, 0) >= 0 {
+		return errPGNul
+	}
+	return nil
+}
 
 func (f *fakeDB) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
 	case isInsert(query):
-		// args: composite, userID, key, requestHash, status, body,
+		// args: userID, key, requestHash, status, body,
 		// headers(json), createdAt
-		composite := args[0].(string)
-		if _, exists := f.rows[composite]; exists {
-			// ON CONFLICT DO NOTHING — 0 rows affected.
+		userID := args[0].(string)
+		key := args[1].(string)
+		reqHash := args[2].(string)
+		// Model Postgres TEXT semantics: a NUL in any TEXT column is a
+		// hard error, never a silently-stored byte.
+		for _, txt := range []string{userID, key, reqHash} {
+			if err := rejectNulText(txt); err != nil {
+				return nil, err
+			}
+		}
+		pk := [2]string{userID, key}
+		if _, exists := f.rows[pk]; exists {
+			// ON CONFLICT (user_id, idem_key) DO NOTHING — 0 rows.
 			return fakeResult{0}, nil
 		}
-		f.rows[composite] = Record{
-			Key:         args[2].(string),
-			UserID:      args[1].(string),
-			RequestHash: args[3].(string),
-			Status:      args[4].(int),
-			Body:        args[5].([]byte),
-			Headers:     decodeHeaders(args[6].([]byte)),
-			CreatedAt:   args[7].(time.Time),
+		f.rows[pk] = Record{
+			Key:         key,
+			UserID:      userID,
+			RequestHash: reqHash,
+			Status:      args[3].(int),
+			Body:        args[4].([]byte),
+			Headers:     decodeHeaders(args[5].([]byte)),
+			CreatedAt:   args[6].(time.Time),
 		}
 		f.inserts++
 		return fakeResult{1}, nil
@@ -70,8 +103,10 @@ func (f *fakeDB) ExecContext(_ context.Context, query string, args ...any) (sql.
 func (f *fakeDB) QueryRowContext(_ context.Context, _ string, args ...any) rowScanner {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	composite := args[0].(string)
-	r, ok := f.rows[composite]
+	// lookupSQL binds (user_id, idem_key).
+	userID := args[0].(string)
+	key := args[1].(string)
+	r, ok := f.rows[[2]string{userID, key}]
 	return &fakeRow{rec: r, found: ok}
 }
 
@@ -205,6 +240,89 @@ func TestPostgresStore_ConcurrentDuplicateRaceSafe(t *testing.T) {
 
 func TestPostgresStore_ImplementsStore(t *testing.T) {
 	var _ Store = (*PostgresStore)(nil)
+}
+
+// TestPostgresStore_NoNulByteWrittenToText is the unit-tier guard for
+// the W1-C3 hotfix. The store must never bind a value containing 0x00
+// to a Postgres TEXT column. The fake now models real Postgres
+// (rejectNulText → errPGNul) so this asserts the production bug
+// (`pq: invalid byte sequence for encoding "UTF8": 0x00`) cannot
+// recur. user_id and idem_key go in as SEPARATE columns; there is no
+// NUL-joined composite anymore.
+//
+// Fail-without-fix evidence: revert postgres.go to the old
+// `compositeKey(r.Key, r.UserID)` (userID + "\x00" + key) bound to the
+// first TEXT column and this test fails with errPGNul on Save — which
+// is exactly the prod/CI failure. (Demonstrated below by calling the
+// old compositeKey join through the same fake.)
+func TestPostgresStore_NoNulByteWrittenToText(t *testing.T) {
+	db := newFakeDB()
+	s := NewPostgresStore(db)
+	ctx := context.Background()
+
+	// Realistic values: a UUID-ish user and an opaque client key.
+	rec := Record{
+		Key:         "client-supplied-idem-key-7f3a",
+		UserID:      "11111111-2222-3333-4444-555555555555",
+		RequestHash: "deadbeef",
+		Status:      201,
+		Body:        []byte(`{"ok":true}`),
+		Headers:     map[string]string{"Content-Type": "application/json"},
+	}
+	if err := s.Save(ctx, rec); err != nil {
+		t.Fatalf("Save must not write a NUL to a TEXT column; got %v", err)
+	}
+	if _, ok := s.Lookup(ctx, rec.Key, rec.UserID); !ok {
+		t.Fatal("record must round-trip after NUL-free Save")
+	}
+
+	// Prove the guard has teeth: the OLD design joined userID + \x00 +
+	// key into one TEXT column. Feed that exact string through the
+	// fake's TEXT-column model and it must be rejected the way real
+	// Postgres rejects it. If this ever stops failing, the guard is
+	// toothless and the bug could silently return.
+	oldComposite := compositeKey(rec.Key, rec.UserID) // userID + "\x00" + key
+	if err := rejectNulText(oldComposite); err == nil {
+		t.Fatal("guard is toothless: the old NUL-joined composite was NOT rejected")
+	} else if !errors.Is(err, errPGNul) {
+		t.Fatalf("old composite rejected with unexpected error: %v", err)
+	}
+}
+
+// TestPostgresStore_RequestHashConflictContractPreserved pins the
+// middleware's 409 contract end-to-end through the store: a second
+// request with the SAME (user_id, idem_key) but a DIFFERENT body must
+// still expose the FIRST writer's RequestHash on Lookup (ON CONFLICT
+// DO NOTHING keeps the winner), so the middleware can compare hashes
+// and emit 409 on mismatch. The two-column key change must not alter
+// this.
+func TestPostgresStore_RequestHashConflictContractPreserved(t *testing.T) {
+	db := newFakeDB()
+	s := NewPostgresStore(db)
+	ctx := context.Background()
+
+	first := Record{Key: "K", UserID: "u", RequestHash: "hash-A", Status: 201, Body: []byte("A")}
+	if err := s.Save(ctx, first); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	// A retry that changed its body: same key, different hash. ON
+	// CONFLICT DO NOTHING ⇒ this is a no-op; winner's row is untouched.
+	second := Record{Key: "K", UserID: "u", RequestHash: "hash-B", Status: 200, Body: []byte("B")}
+	if err := s.Save(ctx, second); err != nil {
+		t.Fatalf("Save second (conflict): %v", err)
+	}
+
+	got, ok := s.Lookup(ctx, "K", "u")
+	if !ok {
+		t.Fatal("Lookup miss after conflicting writes")
+	}
+	if got.RequestHash != "hash-A" {
+		t.Fatalf("409-guard contract broken: stored RequestHash = %q, want first writer's %q",
+			got.RequestHash, "hash-A")
+	}
+	if string(got.Body) != "A" {
+		t.Fatalf("winner's body must survive the conflicting retry, got %q", got.Body)
+	}
 }
 
 // errRow is a rowScanner whose Scan always fails with a non-ErrNoRows

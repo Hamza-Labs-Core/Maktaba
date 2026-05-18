@@ -327,10 +327,12 @@ func TestMigrationFiles_Slot0059_AuditLogAppendOnly(t *testing.T) {
 
 // TestMigrationFiles_Slot0060_HasIdempotencyKeys asserts slot 0060
 // (gap-closure / HLB-315) ships both Postgres and SQLite siblings for
-// the durable Idempotency-Key replay store: the table, the
-// composite_key primary key that makes concurrent duplicate writes
-// race-safe (ON CONFLICT), the reaper index that backs the TTL sweep,
-// and a correct down. Real schema-against-Postgres assertions live in
+// the durable Idempotency-Key replay store: the table, the TWO-COLUMN
+// (user_id, idem_key) composite primary key that makes concurrent
+// duplicate writes race-safe (ON CONFLICT) WITHOUT a NUL-joined
+// string (Postgres TEXT rejects 0x00 — W1-C3 hotfix), the reaper
+// index that backs the TTL sweep, and a correct down. Real
+// schema-against-Postgres assertions live in
 // migrate_integration_test.go (build tag: integration).
 func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
 	dir := repoMigrationsDir(t)
@@ -347,8 +349,7 @@ func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
 			"-- +goose Up",
 			"-- +goose Down",
 			"CREATE TABLE IF NOT EXISTS idempotency_keys",
-			"composite_key",
-			"PRIMARY KEY",
+			"PRIMARY KEY (user_id, idem_key)",
 			"request_hash",
 			"idempotency_keys_reaper",
 			"DROP INDEX IF EXISTS idempotency_keys_reaper",
@@ -357,6 +358,12 @@ func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
 			if !strings.Contains(s, want) {
 				t.Errorf("%s: missing %q", name, want)
 			}
+		}
+		// The NUL-joined composite_key column must be gone: it was
+		// unstorable on Postgres TEXT (the W1-C3 prod/CI bug).
+		if strings.Contains(s, "composite_key") {
+			t.Errorf("%s: composite_key column must be removed "+
+				"(Postgres TEXT rejects the 0x00 separator)", name)
 		}
 	}
 }

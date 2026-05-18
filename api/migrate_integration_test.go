@@ -314,13 +314,17 @@ func TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
 	}
 
 	assertTableExists(t, db, "idempotency_keys")
+	// No composite_key column: the replay identity is the two-column
+	// (user_id, idem_key) PK. The old single NUL-joined TEXT column
+	// was unstorable on real Postgres (W1-C3 hotfix).
 	for _, col := range []string{
-		"composite_key", "user_id", "idem_key", "request_hash",
+		"user_id", "idem_key", "request_hash",
 		"status", "body", "headers", "created_at",
 	} {
 		assertColumnExists(t, db, "idempotency_keys", col)
 	}
 	assertIndexExists(t, db, "idempotency_keys_reaper")
+	assertColumnAbsent(t, db, "idempotency_keys", "composite_key")
 
 	s := idempotency.NewPostgresStoreDB(db, nil)
 
@@ -492,6 +496,24 @@ func assertColumnExists(t *testing.T, db *sql.DB, table, column string) {
 	}
 	if n == 0 {
 		t.Errorf("column %s.%s missing", table, column)
+	}
+}
+
+func assertColumnAbsent(t *testing.T, db *sql.DB, table, column string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var n int
+	err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = $1 AND column_name = $2
+	`, table, column).Scan(&n)
+	if err != nil {
+		t.Fatalf("query columns for %s.%s: %v", table, column, err)
+	}
+	if n != 0 {
+		t.Errorf("column %s.%s must NOT exist", table, column)
 	}
 }
 
