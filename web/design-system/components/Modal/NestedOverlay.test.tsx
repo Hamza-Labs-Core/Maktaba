@@ -219,3 +219,74 @@ describe("Nested overlays — background inert (Fix #3)", () => {
     expect(container).not.toHaveAttribute("aria-hidden");
   });
 });
+
+describe("Overlay portal host — DOM hygiene on close (not just unmount)", () => {
+  it("removes the portal host from <body> on close while the component stays MOUNTED, and reopening yields exactly one working dialog with inert reapplied", async () => {
+    const user = userEvent.setup();
+
+    // The component is ALWAYS mounted — only `open` toggles. This is the
+    // normal state-controlled pattern. Before the fix the host <div> was
+    // only removed in a [host]-dep cleanup (component unmount), so an
+    // empty [data-mk-overlay-host] div lingered in <body> after close,
+    // deviating from the "no orphan hosts; body child list restored
+    // exactly on close" contract.
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <div data-testid="app-root">
+          <button onClick={() => setOpen(true)}>open</button>
+          <Modal open={open} onClose={() => setOpen(false)} title="M">
+            <button>Inside</button>
+          </Modal>
+        </div>
+      );
+    }
+
+    const { container } = render(<Host />);
+
+    // Initially closed: no host in <body>.
+    expect(
+      document.querySelectorAll("[data-mk-overlay-host]")
+    ).toHaveLength(0);
+
+    // Open → exactly one host, dialog present, background inerted.
+    await user.click(screen.getByRole("button", { name: "open" }));
+    expect(
+      document.querySelectorAll('[data-mk-overlay-host="modal"]')
+    ).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "M" })).toBeInTheDocument();
+    expect(container).toHaveAttribute("inert");
+
+    // Close (component STAYS MOUNTED). The host must be gone — no orphan
+    // host lingering in <body>. (Pre-fix: this assertion FAILS — an
+    // empty data-mk-overlay-host div remains until unmount.)
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "M" })).not.toBeInTheDocument();
+    expect(
+      document.querySelectorAll("[data-mk-overlay-host]")
+    ).toHaveLength(0);
+    expect(container).not.toHaveAttribute("inert");
+
+    // Reopen → still exactly ONE dialog (host re-appended synchronously,
+    // not duplicated) with inert correctly reapplied.
+    await user.click(screen.getByRole("button", { name: "open" }));
+    expect(
+      document.querySelectorAll('[data-mk-overlay-host="modal"]')
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("dialog", { name: "M" })).toHaveLength(1);
+    expect(
+      within(screen.getByRole("dialog", { name: "M" })).getByRole("button", {
+        name: "Inside",
+      })
+    ).toBeInTheDocument();
+    expect(container).toHaveAttribute("inert");
+    expect(container).toHaveAttribute("aria-hidden", "true");
+
+    // Final close restores <body> exactly once more.
+    await user.keyboard("{Escape}");
+    expect(
+      document.querySelectorAll("[data-mk-overlay-host]")
+    ).toHaveLength(0);
+    expect(container).not.toHaveAttribute("inert");
+  });
+});

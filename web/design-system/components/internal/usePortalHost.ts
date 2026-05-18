@@ -11,7 +11,12 @@ import { useEffect, useState } from "react";
 //  - A dedicated host (not document.body directly) gives
 //    useInertBackground a precise element to exclude, so stacked
 //    overlays compose coherently (only live overlays stay interactive).
-//  - It is removed on unmount, restoring the <body> child list exactly.
+//  - It is removed when the overlay CLOSES (and on unmount), restoring
+//    the <body> child list exactly — no orphan host lingers after close
+//    when the component stays mounted (the normal state-controlled
+//    `<Modal open={open} />` pattern). Re-opening re-appends the same
+//    stable node synchronously, so open→close→reopen yields exactly one
+//    dialog with inert correctly reapplied.
 
 export function usePortalHost(open: boolean, kind: string): HTMLDivElement | null {
   const [host] = useState<HTMLDivElement | null>(() => {
@@ -32,12 +37,20 @@ export function usePortalHost(open: boolean, kind: string): HTMLDivElement | nul
     document.body.appendChild(host);
   }
 
+  // Remove the host when the overlay closes (and on unmount). The
+  // synchronous append above runs on the opening render so the node is
+  // connected before any effect (notably useFocusTrap) fires; this
+  // effect's cleanup then detaches it the moment `open` flips false (or
+  // the component unmounts), so the <body> child list is restored
+  // exactly on close instead of lingering until unmount. The focus-trap
+  // stack and useInertBackground refcount are driven by their own
+  // [open]-dep effects and are unaffected by this.
   useEffect(() => {
-    if (!host) return;
+    if (!host || !open) return;
     return () => {
       host.remove();
     };
-  }, [host]);
+  }, [host, open]);
 
   return open ? host : null;
 }
