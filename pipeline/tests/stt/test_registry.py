@@ -21,6 +21,7 @@ from ..audio._fake_audio_db import FakeAudioDB
 class _FakeBackend:
     def __init__(self, name: str, ready: bool) -> None:
         self.name = name
+        self.model = "large-v3"
         self.supports_streaming = True
         self.requires_file = False
         self.cost_per_minute: float | None = 0.0

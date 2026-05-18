@@ -115,6 +115,7 @@ def _fake_backend(
     class _FakeBackend:
         def __init__(self) -> None:
             self.name = name
+            self.model = "fake-model-v1"
             self.supports_streaming = True
             self.requires_file = True
             self.cost_per_minute: float | None = 0.0
@@ -317,6 +318,7 @@ def test_transcribe_handler_backend_error_is_retryable() -> None:
 
     class _BoomBackend:
         name = "boom"
+        model = "boom-model"
         supports_streaming = True
         requires_file = True
         cost_per_minute = 0.0
@@ -398,3 +400,193 @@ def test_transcribe_handler_idempotent_on_rerun() -> None:
     ]
     assert len(sg) == 1
     assert len(idx) == 1
+
+
+def _boom_after_first_backend(name: str = "boom-mid") -> Any:
+    """A backend that yields seg 0 then dies — a mid-stream failure."""
+
+    class _BoomMid:
+        def __init__(self) -> None:
+            self.name = name
+            self.model = "boom-model-v1"
+            self.supports_streaming = True
+            self.requires_file = True
+            self.cost_per_minute: float | None = 0.0
+            self.supports_word_timestamps = False
+
+        def transcribe(
+            self, audio: Any, language: str | None, hints: Any
+        ) -> AsyncIterator[Segment]:
+            async def _gen() -> AsyncIterator[Segment]:
+                yield _SEGMENTS[0]
+                raise OSError("backend pipe broke mid-stream")
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+    return _BoomMid()
+
+
+def test_transcribe_first_time_midstream_failure_leaves_no_empty_active() -> None:
+    """REVIEW §1.1 (first-time case): a video with no prior transcript
+    whose backend fails mid-stream must NOT end up with an empty/partial
+    transcript as its sole *active* one. The create-then-activate split
+    leaves at most an ``is_active=false`` row; no active transcript
+    exists, so a downstream consumer never reads a half transcript."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "f" * 64
+    video_id = stage_db.add_video(
+        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
+    )
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=30,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db, job_id=30, video_id=video_id, content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _boom_after_first_backend(), "boom-mid", None
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    # The job is retryable-pending and the FSM did not advance.
+    assert stage_db.processing_jobs[30].state == "pending"
+    assert stage_db.videos[video_id].state == "audio_extracted"
+    # No ACTIVE transcript exists — the partial row (if any) is inert.
+    actives = [
+        t
+        for t in stage_db.transcripts.values()
+        if t.video_id == video_id and t.is_active
+    ]
+    assert actives == []
+
+
+def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None:
+    """REVIEW §1.1 (re-transcription case): a video that already has a
+    good ACTIVE transcript, re-transcribed by a backend that dies
+    mid-stream, must keep the previous good transcript active AND
+    complete — the prior good data is never retired for a replacement
+    that never finished."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "g" * 64
+    video_id = stage_db.add_video(
+        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
+    )
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+
+    # First run: a good backend produces a complete active transcript.
+    good = _fake_backend(name="good-stt")
+
+    async def pick_good(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return good, "good-stt", "1.0.0"
+
+    job1 = make_job(
+        job_id=31,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db, job_id=31, video_id=video_id, content_hash=chash,
+        audio_track_id=track_id,
+    )
+    asyncio.run(transcribe_handler(stage_db, job1, select_backend=pick_good))
+
+    good_active = next(
+        t
+        for t in stage_db.transcripts.values()
+        if t.video_id == video_id and t.is_active
+    )
+    good_id = good_active.id
+    good_segs = sorted(
+        (s for s in stage_db.transcript_segments.values() if s.transcript_id == good_id),
+        key=lambda r: r.seq,
+    )
+    assert [s.seq for s in good_segs] == [0, 1, 2]
+
+    # Re-transcribe: the second backend dies mid-stream.
+    job2 = make_job(
+        job_id=32,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db, job_id=32, video_id=video_id, content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    async def pick_boom(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _boom_after_first_backend(), "boom-mid", None
+
+    asyncio.run(transcribe_handler(stage_db, job2, select_backend=pick_boom))
+
+    # The prior good transcript is STILL the sole active one and STILL
+    # complete (all 3 segments) — the failed re-run never retired it.
+    actives = [
+        t
+        for t in stage_db.transcripts.values()
+        if t.video_id == video_id and t.is_active
+    ]
+    assert len(actives) == 1
+    assert actives[0].id == good_id
+    assert actives[0].is_active is True
+    still_segs = sorted(
+        (s for s in stage_db.transcript_segments.values() if s.transcript_id == good_id),
+        key=lambda r: r.seq,
+    )
+    assert [s.seq for s in still_segs] == [0, 1, 2]
+    assert [s.text for s in still_segs] == ["bismillah", "al-hamdu", "lillah"]
+    # The failed run's partial row, if it exists, is NOT active.
+    partials = [
+        t
+        for t in stage_db.transcripts.values()
+        if t.video_id == video_id and t.id != good_id
+    ]
+    assert all(p.is_active is False for p in partials)
+
+
+def test_transcribe_stamps_backend_declared_model() -> None:
+    """REVIEW §1.2: the backend's declared ``model`` (not its name) is
+    stamped onto ``transcripts.model``."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "h" * 64
+    video_id = stage_db.add_video(
+        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
+    )
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=33,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db, job_id=33, video_id=video_id, content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    backend = _fake_backend(name="fake-stt")  # declares model="fake-model-v1"
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return backend, "fake-stt", "9.9.9"
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    tr = next(
+        t
+        for t in stage_db.transcripts.values()
+        if t.video_id == video_id and t.is_active
+    )
+    # The MODEL, not the backend NAME, is stamped.
+    assert tr.model == "fake-model-v1"
+    assert tr.model != tr.backend
+    assert tr.backend == "fake-stt"

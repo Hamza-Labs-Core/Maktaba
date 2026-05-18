@@ -16,14 +16,18 @@ delegates to:
   fallback chain via :func:`pick_backend`. Tests inject a fake selector
   yielding a canned backend so no model is ever loaded.
 - :func:`commit_transcribe` is the TRANSCRIBE analogue of
-  :func:`maktaba_pipeline.audio.extract.commit_extract`: it creates +
-  activates the transcript row, streams every backend segment through
-  the existing :func:`maktaba_pipeline.stt.segment_commit.commit_segment`
-  (the hot path stays there), advances the FSM
-  ``AUDIO_EXTRACTED -> TRANSCRIBED`` via :func:`advance_after_stage`
-  (replay-guarded exactly like ``commit_extract``), and enqueues the
-  follow-on ``SUBTITLE_GEN`` + ``INDEX`` jobs via the *same* idempotent
-  per-video :func:`enqueue` mechanism.
+  :func:`maktaba_pipeline.audio.extract.commit_extract`: it inserts the
+  transcript row *inactive*, streams every backend segment through the
+  existing :func:`maktaba_pipeline.stt.segment_commit.commit_segment`
+  (the hot path stays there), and only AFTER the full stream succeeds
+  atomically retires the prior active transcript + flips the new
+  complete one active (the create-then-activate ordering — a mid-stream
+  failure never leaves an empty active transcript; REVIEW §1.1). It
+  then advances the FSM ``AUDIO_EXTRACTED -> TRANSCRIBED`` via
+  :func:`advance_after_stage` (replay-guarded exactly like
+  ``commit_extract``), and enqueues the follow-on ``SUBTITLE_GEN`` +
+  ``INDEX`` jobs via the *same* idempotent per-video :func:`enqueue`
+  mechanism.
 
 Scope (Wave 0): exactly one job -> one track -> one transcript,
 straight-through. Pause/resume & crash-recovery mid-transcription is a
@@ -218,32 +222,45 @@ async def commit_transcribe(
     job_id: int,
     total_duration_sec: float,
     language: str | None,
-    detected_language: str | None = None,
 ) -> str:
     """Create the transcript, persist every segment, advance + enqueue.
 
     Returns the new ``videos.state``. The TRANSCRIBE analogue of
     :func:`maktaba_pipeline.audio.extract.commit_extract`:
 
-    1. :func:`flip_active_transcript` atomically retires any prior
-       active transcript for ``(video_id, audio_track_id)`` and inserts
-       the new active row,
-    2. iterate the backend's segment stream and persist each via the
-       existing :func:`commit_segment` (the hot path / progress
-       accounting stays there — not reimplemented),
-    3. advance the FSM ``AUDIO_EXTRACTED -> TRANSCRIBED`` via
+    1. :func:`insert_inactive_transcript` inserts the new row as
+       ``is_active=false`` — it does NOT touch the current active
+       transcript,
+    2. iterate the backend's segment stream and persist each into that
+       inactive row via the existing :func:`commit_segment` (the hot
+       path / progress accounting stays there — not reimplemented),
+    3. ONLY after the full stream succeeds, :func:`activate_transcript`
+       atomically retires the prior active transcript and flips the new
+       (now complete) row active,
+    4. advance the FSM ``AUDIO_EXTRACTED -> TRANSCRIBED`` via
        :func:`advance_after_stage` (its terminal-drop guard + the
        explicit state check make a replay a no-op — exactly the
        ``commit_extract`` shape),
-    4. enqueue the follow-on ``SUBTITLE_GEN`` + ``INDEX`` jobs via
+    5. enqueue the follow-on ``SUBTITLE_GEN`` + ``INDEX`` jobs via
        :func:`enqueue` — the *same* idempotent per-video mechanism
        ``commit_extract`` uses for the TRANSCRIBE enqueue.
 
-    Idempotent on replay: ``flip_active_transcript`` creates a fresh
-    transcript (history rows are unconstrained; exactly-one-active is
-    preserved), ``commit_segment``'s ON CONFLICT swallows duplicate
-    seqs, the FSM guard tolerates a repeat, and the ``enqueue``
-    unique-live index dedupes the downstream rows.
+    Failure safety (REVIEW §1.1 — flip-then-stream data-loss fix): the
+    activate step runs *after* every segment is committed, so a
+    mid-stream backend failure / exhausted-retry never retires the
+    prior good transcript and never leaves an empty active one. On
+    failure the new row remains an inert ``is_active=false`` history
+    row; for a re-transcription the previous good transcript stays
+    active+complete, and for a first-time run there is simply no active
+    transcript (never an empty active one).
+
+    Idempotent on replay: each run creates a fresh inactive row
+    (history rows are unconstrained; exactly-one-active is preserved by
+    the partial unique index), ``commit_segment``'s ON CONFLICT swallows
+    duplicate seqs, the FSM guard tolerates a repeat, and the
+    ``enqueue`` unique-live index dedupes the downstream rows. (A row
+    abandoned by a crashed prior run stays ``is_active=false`` and is
+    never read — superseded by the replay's fresh active row.)
     """
     from ..db.jobs import Stage as _JobStage  # noqa: PLC0415
     from ..db.jobs import enqueue  # noqa: PLC0415
@@ -251,28 +268,40 @@ async def commit_transcribe(
     from ..log import get_logger  # noqa: PLC0415
     from ..orchestrator.advance import advance_after_stage  # noqa: PLC0415
     from .protocol import TranscriptionHints  # noqa: PLC0415
-    from .registry import flip_active_transcript  # noqa: PLC0415
+    from .registry import (  # noqa: PLC0415
+        activate_transcript,
+        insert_inactive_transcript,
+    )
     from .segment_commit import commit_segment  # noqa: PLC0415
 
     log = get_logger()
 
-    lang = language or detected_language or "auto"
-    transcript_id = await flip_active_transcript(
+    # NOTE(wave-0): language is left to backend auto-detect; the handler
+    # always passes ``language=None`` (no explicit/forced-language UI
+    # yet). Plumbing an explicit or backend-detected language onto the
+    # transcript row (``detected_language`` / ``language_confidence``)
+    # is Story 3.x — deliberately deferred, not silent dead code. Until
+    # then ``lang`` is ``"auto"`` and detect_language() is not called.
+    lang = language or "auto"
+    transcript_id = await insert_inactive_transcript(
         db,
         video_id=video_id,
         audio_track_id=artifact.audio_track_id,
         language=lang,
-        detected_language=detected_language,
+        detected_language=None,
         language_confidence=None,
         backend=selected.name,
-        model=getattr(selected.backend, "model", selected.name),
+        model=selected.backend.model,
         backend_version=selected.version,
         word_level=False,
         diarized=False,
         metadata={"content_hash": artifact.content_hash},
     )
 
-    # Stream the backend's segments straight through commit_segment.
+    # Stream the backend's segments straight through commit_segment into
+    # the still-inactive row. A failure here (broken backend pipe,
+    # exhausted retries) leaves the prior active transcript untouched —
+    # this row stays is_active=false until the activate step below.
     # TODO(resume): mid-transcription pause/resume is Story 3.6-3/3.7 —
     # out of Wave 0. A resumed job would seek the decoder + skip the
     # already-committed seq prefix here (and the reorder buffer would
@@ -288,6 +317,17 @@ async def commit_transcribe(
             segment=segment,
             total_duration_sec=total_duration_sec,
         )
+
+    # The full stream landed — only NOW retire the prior active
+    # transcript and flip this complete one active, atomically. This is
+    # the create-then-activate ordering that makes the exactly-one-
+    # active invariant always point at a complete transcript.
+    await activate_transcript(
+        db,
+        transcript_id=transcript_id,
+        video_id=video_id,
+        audio_track_id=artifact.audio_track_id,
+    )
 
     state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
     if state_row is None:

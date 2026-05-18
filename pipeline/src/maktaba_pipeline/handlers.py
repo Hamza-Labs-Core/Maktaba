@@ -313,9 +313,10 @@ async def transcribe_handler(
     3. select an STT backend via the registry seam (DI: ``select_backend``
        — default builds the registry from the *configured* backend and
        walks the fallback chain; tests inject a fake so no model loads),
-    4. :func:`stt.transcribe.commit_transcribe` creates + activates the
-       transcript, persists every backend segment via the existing
-       :func:`stt.segment_commit.commit_segment`, advances the FSM
+    4. :func:`stt.transcribe.commit_transcribe` inserts the transcript
+       inactive, persists every backend segment via the existing
+       :func:`stt.segment_commit.commit_segment`, activates it only
+       after the full stream succeeds, advances the FSM
        ``AUDIO_EXTRACTED -> TRANSCRIBED``, and enqueues the follow-on
        ``SUBTITLE_GEN`` + ``INDEX`` jobs (same ``enqueue`` mechanism
        ``commit_extract`` uses),
@@ -441,8 +442,9 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
     commit + TRANSCRIBE enqueue rather than the silent no-op drain.
 
     Track R3: TRANSCRIBE now has a real thin-wrapper adapter
-    (``commit_transcribe`` creates + activates the transcript, persists
-    every backend segment via ``commit_segment``, advances the FSM
+    (``commit_transcribe`` inserts the transcript inactive, persists
+    every backend segment via ``commit_segment``, activates it only
+    after the full stream succeeds, advances the FSM
     ``AUDIO_EXTRACTED -> TRANSCRIBED``, and enqueues SUBTITLE_GEN +
     INDEX), so it joins the override map. ``_DEFAULT_STAGES`` listing
     TRANSCRIBE is now safe — a default worker claiming a TRANSCRIBE job
