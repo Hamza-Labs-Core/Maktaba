@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
--- SQLite parity sibling for slot 0063 (Epic 12 Story 12.11).
+-- SQLite parity sibling for slot 0064 (Epic 12 Story 12.11).
 -- Same shape as the Postgres table; UUIDs are stored as TEXT and the
 -- CONCURRENTLY index keyword (Postgres-only) is dropped.
 CREATE TABLE IF NOT EXISTS device_downloads (

@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0064 (gap-closure Wave 3 / Epic 12 Story 12.10) — extend the
+-- Slot 0065 (gap-closure Wave 3 / Epic 12 Story 12.10) — extend the
 -- slot-0040 `devices` table (owned by Story 7.22) with the two
 -- additive columns Story 12.10 requires but 7.22 omitted:
 --

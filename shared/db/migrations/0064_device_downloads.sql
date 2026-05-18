@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0063 (gap-closure Wave 3 / Epic 12 Story 12.11) —
+-- Slot 0064 (gap-closure Wave 3 / Epic 12 Story 12.11) —
 -- device_downloads: the server-side "this video is downloaded on this
 -- device" flag set, so other surfaces (web library, GraphQL
 -- Video.downloads) can show where an offline copy exists.
