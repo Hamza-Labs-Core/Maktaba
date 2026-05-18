@@ -237,7 +237,7 @@ func TestMigrate_Slot0059_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
 	}
 	assertIndexExists(t, db, "idempotency_keys_reaper")
 
-	s := idempotency.NewPostgresStoreDB(db)
+	s := idempotency.NewPostgresStoreDB(db, nil)
 
 	// Round-trip: a stored record replays byte-for-byte.
 	rec := idempotency.Record{

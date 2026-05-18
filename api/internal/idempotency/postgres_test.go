@@ -1,9 +1,12 @@
 package idempotency
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -202,4 +205,80 @@ func TestPostgresStore_ConcurrentDuplicateRaceSafe(t *testing.T) {
 
 func TestPostgresStore_ImplementsStore(t *testing.T) {
 	var _ Store = (*PostgresStore)(nil)
+}
+
+// errRow is a rowScanner whose Scan always fails with a non-ErrNoRows
+// error — a real DB failure (connection reset, perms), as opposed to
+// the benign "no such row".
+type errRow struct{ err error }
+
+func (r errRow) Scan(_ ...any) error { return r.err }
+
+// errDB returns errRow from every QueryRowContext so Lookup hits the
+// non-ErrNoRows branch. Save/Sweep are unused here.
+type errDB struct{ err error }
+
+func (d errDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+	return nil, d.err
+}
+
+func (d errDB) QueryRowContext(_ context.Context, _ string, _ ...any) rowScanner {
+	return errRow{err: d.err}
+}
+
+// TestPostgresStore_LookupDBError_MissAndWarn pins Fix #1: a real
+// (non-ErrNoRows) Lookup failure must STILL be a miss (the
+// in-memory-equivalent contract is unchanged) but must no longer be
+// silent — it emits a Warn breadcrumb so a persistently failing replay
+// path that silently re-executes mutations is observable.
+//
+// Fails without the fix: pre-fix Lookup collapsed every error into a
+// bare `return Record{}, false` with no log, so the captured buffer
+// would be empty and the WARN assertion would fail.
+func TestPostgresStore_LookupDBError_MissAndWarn(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	logger := slog.New(h)
+
+	s := NewPostgresStoreDB(nil, logger)
+	// Swap in the failing executor (NewPostgresStoreDB wraps a real
+	// *sql.DB; we only need the dbExecutor seam for this unit).
+	s.db = errDB{err: errors.New("connection reset by peer")}
+
+	rec, ok := s.Lookup(context.Background(), "K1", "u1")
+	if ok {
+		t.Fatalf("Lookup on DB error must be a miss, got hit: %+v", rec)
+	}
+	if rec.Key != "" || rec.Status != 0 || rec.Body != nil || rec.RequestHash != "" {
+		t.Fatalf("Lookup on DB error must return zero Record, got %+v", rec)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") {
+		t.Fatalf("expected a WARN breadcrumb on DB-error-as-miss, log was: %q", out)
+	}
+	if !strings.Contains(out, "idempotency_lookup_failed") {
+		t.Fatalf("expected event=idempotency_lookup_failed in log, log was: %q", out)
+	}
+	if !strings.Contains(out, "connection reset by peer") {
+		t.Fatalf("expected the underlying err in the log, log was: %q", out)
+	}
+}
+
+// TestPostgresStore_LookupNoRows_SilentMiss pins the other half of Fix
+// #1: a benign sql.ErrNoRows (or no row) is a normal miss and must NOT
+// log — otherwise every cache-miss would spam Warn.
+func TestPostgresStore_LookupNoRows_SilentMiss(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	s := NewPostgresStoreDB(nil, logger)
+	s.db = newFakeDB() // empty → fakeRow returns sql.ErrNoRows
+
+	if _, ok := s.Lookup(context.Background(), "absent", "u"); ok {
+		t.Fatal("Lookup on absent key must be a miss")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("a plain cache-miss (ErrNoRows) must not log, got: %q", buf.String())
+	}
 }

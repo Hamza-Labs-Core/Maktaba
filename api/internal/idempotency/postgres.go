@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,11 @@ import (
 // writes.
 type PostgresStore struct {
 	db dbExecutor
+	// log records the swallowed-as-miss breadcrumb on a non-ErrNoRows
+	// Lookup failure (see Lookup). Defaults to slog.Default() so the
+	// store is usable without explicit plumbing, mirroring the
+	// slog.Default() fallback in internal/middleware's guardedWriter.
+	log *slog.Logger
 }
 
 // dbExecutor is the slice of *sql.DB PostgresStore needs. Pulling it
@@ -53,14 +59,19 @@ func (a sqlDBAdapter) QueryRowContext(ctx context.Context, q string, args ...any
 // api/main.go's idempotency sweep goroutine) so the table doesn't grow
 // without bound.
 func NewPostgresStore(db dbExecutor) *PostgresStore {
-	return &PostgresStore{db: db}
+	return &PostgresStore{db: db, log: slog.Default()}
 }
 
 // NewPostgresStoreDB is the production constructor: it wraps a real
 // *sql.DB. Split from NewPostgresStore so callers in main.go don't
-// have to know about the dbExecutor seam.
-func NewPostgresStoreDB(db *sql.DB) *PostgresStore {
-	return &PostgresStore{db: sqlDBAdapter{db}}
+// have to know about the dbExecutor seam. logger receives the
+// swallowed-as-miss breadcrumb (see Lookup); nil falls back to
+// slog.Default() so callers may omit it.
+func NewPostgresStoreDB(db *sql.DB, logger *slog.Logger) *PostgresStore {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PostgresStore{db: sqlDBAdapter{db}, log: logger}
 }
 
 const (
@@ -81,7 +92,11 @@ func isSweep(q string) bool  { return strings.Contains(q, "DELETE FROM idempoten
 // Lookup returns a previously cached record, if any. The bool is false
 // when no row exists (or on a query error — the caller's contract is
 // "no replay available → process from scratch", and re-processing is
-// safe-by-design for an idempotent handler).
+// safe-by-design for an idempotent handler). A non-ErrNoRows query
+// error is still treated as a miss (the in-memory-equivalent contract)
+// but is logged at Warn so a persistently failing replay path — which
+// silently re-executes supposedly-idempotent mutations — leaves a
+// breadcrumb instead of being invisible.
 func (s *PostgresStore) Lookup(ctx context.Context, key, userID string) (Record, bool) {
 	row := s.db.QueryRowContext(ctx, lookupSQL, compositeKey(key, userID))
 	var (
@@ -89,7 +104,13 @@ func (s *PostgresStore) Lookup(ctx context.Context, key, userID string) (Record,
 		headers []byte
 	)
 	err := row.Scan(&rec.RequestHash, &rec.Status, &rec.Body, &headers, &rec.CreatedAt)
-	if errors.Is(err, sql.ErrNoRows) || err != nil {
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			// Real DB failure: still a miss (contract preserved) but
+			// no longer silent — this re-executes the mutation.
+			s.log.Warn("idempotency: lookup failed; treating as cache miss (mutation will re-execute)",
+				"err", err, "event", "idempotency_lookup_failed")
+		}
 		return Record{}, false
 	}
 	rec.Key = key
