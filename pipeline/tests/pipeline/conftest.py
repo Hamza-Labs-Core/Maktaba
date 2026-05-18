@@ -125,11 +125,19 @@ class StageDB(FakeAudioDB):
         return super()._dispatch(s, args, many=many)
 
 
-def make_job(*, job_id: int, video_id: UUID, stage: Any) -> Any:
+def make_job(
+    *,
+    job_id: int,
+    video_id: UUID | None,
+    stage: Any,
+    library_id: UUID | None = None,
+) -> Any:
     """Build a minimal :class:`~maktaba_pipeline.db.jobs.Job`.
 
     Only the fields the adapters touch are meaningful; the rest take
     schema-shaped defaults so the frozen dataclass constructs cleanly.
+    Slot 0058: per-video stages pass ``video_id`` (``library_id`` left
+    ``None``); a SCAN job passes ``library_id`` with ``video_id=None``.
     """
     from datetime import UTC, datetime
 
@@ -139,6 +147,7 @@ def make_job(*, job_id: int, video_id: UUID, stage: Any) -> Any:
     return Job(
         id=job_id,
         video_id=video_id,
+        library_id=library_id,
         stage=stage,
         state=JobState.CLAIMED,
         priority=100,

@@ -44,6 +44,7 @@ from .service import (
     ScanResult,
     ScanStore,
 )
+from .store import SqlScanStore
 from .walker import (
     DEFAULT_IGNORE_BASENAMES,
     DEFAULT_IGNORE_DIRNAMES,
@@ -72,6 +73,7 @@ __all__ = [
     "ScanResult",
     "ScanStore",
     "Scanner",
+    "SqlScanStore",
     "WalkConfig",
     "walk",
 ]

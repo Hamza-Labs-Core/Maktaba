@@ -33,7 +33,15 @@ from .handlers import build_real_dispatch
 from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
+# Gap-closure (HLB-257/255): SCAN now has a real library-scoped
+# adapter (`handlers.scan_handler`, registered in `build_real_dispatch`)
+# backed by slot 0058 + `SqlScanStore`, so it is safe in the defaults —
+# a default worker claiming a SCAN job runs the real walk + per-video
+# PROBE enqueue, not the silent no-op drain. SCAN leads the tuple
+# because it is the pipeline's entry stage (it produces the videos every
+# later stage consumes).
 _DEFAULT_STAGES = (
+    Stage.SCAN,
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,
