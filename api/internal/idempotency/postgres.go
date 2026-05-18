@@ -12,7 +12,7 @@ import (
 )
 
 // PostgresStore is a durable Store backed by the `idempotency_keys`
-// table (migration slot 0059). Unlike MemoryStore, entries survive a
+// table (migration slot 0060). Unlike MemoryStore, entries survive a
 // process restart and are shared across API replicas — which is the
 // whole point of an idempotency key, defeated by an in-memory map.
 //

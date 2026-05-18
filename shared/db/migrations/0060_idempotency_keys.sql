@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0059 (gap-closure Wave 1 / HLB-315) — idempotency_keys table.
+-- Slot 0060 (gap-closure Wave 1 / HLB-315) — idempotency_keys table.
 --
 -- Durable backing for the API's Idempotency-Key replay store. The
 -- in-memory MemoryStore lost every entry on restart and was not shared

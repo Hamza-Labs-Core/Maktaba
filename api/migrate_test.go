@@ -201,18 +201,18 @@ func TestMigrationFiles_PostgresAndSqliteSiblingsExist(t *testing.T) {
 	}
 }
 
-// TestMigrationFiles_Slot0059_HasIdempotencyKeys asserts slot 0059
+// TestMigrationFiles_Slot0060_HasIdempotencyKeys asserts slot 0060
 // (gap-closure / HLB-315) ships both Postgres and SQLite siblings for
 // the durable Idempotency-Key replay store: the table, the
 // composite_key primary key that makes concurrent duplicate writes
 // race-safe (ON CONFLICT), the reaper index that backs the TTL sweep,
 // and a correct down. Real schema-against-Postgres assertions live in
 // migrate_integration_test.go (build tag: integration).
-func TestMigrationFiles_Slot0059_HasIdempotencyKeys(t *testing.T) {
+func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
 	dir := repoMigrationsDir(t)
 	for _, name := range []string{
-		"0059_idempotency_keys.sql",
-		"0059_idempotency_keys.sqlite.sql",
+		"0060_idempotency_keys.sql",
+		"0060_idempotency_keys.sqlite.sql",
 	} {
 		body, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {

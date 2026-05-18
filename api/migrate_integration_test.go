@@ -197,13 +197,13 @@ func TestMigrate_Slot0001_VideosCascadeDeleteFromLibrary(t *testing.T) {
 	}
 }
 
-// TestMigrate_Slot0059_IdempotencyKeysRoundTripAndRaceSafe applies the
-// full migration set through slot 0059 and exercises the durable
+// TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe applies the
+// full migration set through slot 0060 and exercises the durable
 // idempotency store against real Postgres (HLB-315): a stored record
 // replays exactly, the TTL sweep drops only expired rows, and N
 // concurrent duplicate Save calls insert exactly one row (ON CONFLICT
 // DO NOTHING) — the loser requests then replay the winner's response.
-func TestMigrate_Slot0059_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
+func TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL unset")
