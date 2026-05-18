@@ -33,6 +33,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
@@ -303,6 +304,19 @@ func runServe() error {
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
+			// Epic 16 — build the entitlement store ONCE and share the
+			// single instance with both the auth surface (Story 16.2
+			// seat enforcement on POST /api/users) and the
+			// subscriptions surface (apply/revoke). Separate stores
+			// would let a license apply be invisible to the seat gate.
+			p10Deps := router.P10Deps{
+				DB:           appDB,
+				Logger:       logger,
+				PerfRegistry: perfRegistry,
+			}
+			entStore, _ := router.EntitlementStore(p10Deps)
+			p10Deps.SubscriptionsStore = entStore
+
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
 			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
 			// as a reasonable proxy for "we're behind TLS"; operators
@@ -312,6 +326,7 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
+				Seats:         subscriptions.NewSeatLimiter(entStore),
 			})
 			if p9 != nil {
 				cookieAuth = p9.CookieAuth
@@ -322,11 +337,7 @@ func runServe() error {
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
-			router.MountP10(r, router.P10Deps{
-				DB:           appDB,
-				Logger:       logger,
-				PerfRegistry: perfRegistry,
-			})
+			router.MountP10(r, p10Deps)
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 		}

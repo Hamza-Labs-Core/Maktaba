@@ -20,7 +20,70 @@ import (
 const (
 	TypeUsernameExists = "https://maktaba.dev/problems/username-exists"
 	TypeLastAdmin      = "https://maktaba.dev/problems/last-admin"
+	// TypeSeatLimit is returned when provisioning another user would
+	// exceed the licensed seat cap (Epic 16 Story 16.2). It is a 403:
+	// the request is well-formed and the caller is authorised, but the
+	// instance's entitlement forbids the action.
+	TypeSeatLimit = "https://maktaba.dev/problems/seat-limit"
 )
+
+// SeatLimiter reports the maximum number of provisionable user seats
+// for the running instance's entitlement (Epic 16 Story 16.2).
+// subscriptions.NewSeatLimiter wraps the live entitlement Store;
+// subscriptions.SeatsUnlimited means no cap.
+type SeatLimiter interface {
+	SeatLimit() int
+}
+
+// SeatCounter reports how many real user accounts already exist (seats
+// consumed). *users.Store satisfies it via CountUsers.
+type SeatCounter interface {
+	CountUsers(ctx context.Context) (int, error)
+}
+
+// seatsUnlimited mirrors subscriptions.SeatsUnlimited without importing
+// the package here (avoids an import cycle risk and keeps this handler
+// dependency-light). Kept in sync by the seat-gate tests.
+const seatsUnlimited = -1
+
+// enforceSeatLimit is the Epic 16 Story 16.2 gate at the user-create
+// boundary — the first real premium-gate call site. It returns a
+// non-nil *httperror.Error to abort the create when the licensed seat
+// cap would be exceeded, or when the current seat count cannot be
+// determined (fail-closed: never silently over-provision a paid tier).
+// With no SeatLimiter wired the gate is inert (returns nil).
+func (h *Handler) enforceSeatLimit(ctx context.Context) error {
+	if h.Seats == nil {
+		return nil // gate not wired (free build / no entitlement source)
+	}
+	limit := h.Seats.SeatLimit()
+	if limit == seatsUnlimited {
+		return nil // pro tier — no cap
+	}
+	counter := h.SeatCount
+	if counter == nil {
+		// Fall back to the limiter if it also counts (the production
+		// wiring keeps these as separate seams, but a combined test
+		// double is convenient).
+		if c, ok := h.Seats.(SeatCounter); ok {
+			counter = c
+		}
+	}
+	if counter == nil {
+		// We have a cap but no way to count — cannot prove we're under
+		// it. Fail closed.
+		return httperror.Unavailable(0)
+	}
+	n, err := counter.CountUsers(ctx)
+	if err != nil {
+		return httperror.Unavailable(0)
+	}
+	if n+1 > limit {
+		return httperror.Forbidden(TypeSeatLimit,
+			"seat limit reached for the current subscription tier")
+	}
+	return nil
+}
 
 // UserAdmin is the seam the admin user-management surface drives.
 // *users.Store satisfies it; unit tests inject a fake so the HTTP
@@ -79,6 +142,13 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{
 			{Field: "password", Message: "must not be empty"},
 		}))
+		return
+	}
+	// Epic 16 Story 16.2 — seat enforcement. The server enforces the
+	// gate (clients only render UI). Checked *before* the store call so
+	// an over-cap request never mutates state.
+	if e := h.enforceSeatLimit(r.Context()); e != nil {
+		httperror.Write(w, r, e)
 		return
 	}
 	u, err := h.UserAdmin.Create(r.Context(), users.CreateInput{

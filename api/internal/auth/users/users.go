@@ -388,6 +388,18 @@ func (s *Store) HasAnyUser(ctx context.Context) (bool, error) {
 	return exists, err
 }
 
+// CountUsers returns the number of *real* user accounts — i.e. seats
+// consumed for Epic 16 seat enforcement. The disabled-password
+// sentinel rows (the single-user/admin-token bypass seed, Story 10.9)
+// are excluded: they are an auth-bypass mechanism, not a provisioned
+// seat, so they must not count against a paid tier's seat cap.
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	const q = `SELECT COUNT(*) FROM users WHERE pw_hash <> $1`
+	var n int
+	err := s.DB.QueryRowContext(ctx, q, "<unsalted-disabled>").Scan(&n)
+	return n, err
+}
+
 // validateUsername enforces a small set of rules: non-empty, ≤64 byes,
 // no leading/trailing whitespace, and no control chars. Stricter rules
 // (no `:`, no `@`) are punted to handlers since they're tied to UI
