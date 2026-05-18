@@ -9,6 +9,7 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 
@@ -40,6 +41,17 @@ type P6Deps struct {
 	SearchSemantic  search.SemanticClient
 	URLSigner       streaming.URLSigner
 	EventHub        *ws.Hub
+
+	// BusCtx / BusDSN enable the cross-replica WS event bus (Epic 19
+	// Story 19.2). When both are set MountP6 stands up an
+	// eventbus.Bus over the slot-0061 `events` table + LISTEN/NOTIFY:
+	// a per-replica LISTEN loop fans events out to this replica's hub,
+	// the WS handler replays missed events on reconnect, and a pruner
+	// enforces 7-day retention. Both zero → single-process hub only
+	// (dev/test path; behaviour unchanged). Lifetime is tied to
+	// BusCtx so a graceful shutdown stops the loop.
+	BusCtx context.Context
+	BusDSN string
 }
 
 // MountP6 attaches every Phase 6 handler onto r. Safe to call with a
@@ -102,6 +114,14 @@ func MountP6(r chi.Router, d P6Deps) {
 	devHandler.Mount(r)
 
 	wsHandler := &ws.Handler{Hub: hub}
+	// Cross-replica WS event bus (Epic 19 Story 19.2 / HLB-353).
+	// When a DSN + ctx are supplied, every replica appends events to
+	// the durable slot-0061 `events` table; the slot-0061 trigger
+	// fires pg_notify('ws.events',…); this replica's LISTEN loop fans
+	// them out to `hub`, so a client whose socket is on *this* replica
+	// receives an event published on *any* replica. The handler also
+	// replays missed events on reconnect.
+	wireEventBus(d, hub, wsHandler)
 	wsHandler.Mount(r)
 
 	// GraphQL — schema endpoint + SDL.

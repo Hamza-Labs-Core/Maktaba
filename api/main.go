@@ -251,10 +251,19 @@ func runServe() error {
 					"addr", streamingAddr, "event", "p6_streaming_wired")
 			}
 
+			// Cross-replica WS event bus lifetime (Epic 19 Story 19.2 /
+			// HLB-353). Bound to its own context so the LISTEN loop +
+			// pruner stop on process exit; cancelled via defer so a
+			// panic in later bootstrap still tears the listener down.
+			busCtx, busCancel := context.WithCancel(context.Background())
+			defer busCancel()
+
 			router.MountP6(r, router.P6Deps{
 				DB:              appDB,
 				PipelineClient:  pipelineClient,
 				StreamingClient: streamingClient,
+				BusCtx:          busCtx,
+				BusDSN:          dsn,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 

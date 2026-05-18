@@ -361,6 +361,71 @@ func TestMigrationFiles_Slot0060_HasIdempotencyKeys(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0061_HasEventsBus asserts slot 0061
+// (gap-closure Wave 2 / Epic 19 Story 19.2 / HLB-353) ships both
+// Postgres and SQLite siblings for the cross-replica WS event bus:
+// the durable append-only `events` table with the monotonic id +
+// channel/type/payload, the replay and pruner indexes, and — on
+// Postgres only — the bounded pg_notify('ws.events',…) trigger that
+// keeps the NOTIFY frame under the 8 KiB limit while the full payload
+// stays in the table. Real schema-against-Postgres + the live
+// cross-replica/replay flow are exercised in eventbus_integration_test.go
+// (build tag: integration).
+func TestMigrationFiles_Slot0061_HasEventsBus(t *testing.T) {
+	dir := repoMigrationsDir(t)
+
+	pg, err := os.ReadFile(filepath.Join(dir, "0061_events.sql"))
+	if err != nil {
+		t.Fatalf("read 0061_events.sql: %v", err)
+	}
+	pgs := string(pg)
+	for _, want := range []string{
+		"-- +goose NO TRANSACTION",
+		"-- +goose Up",
+		"-- +goose Down",
+		"CREATE TABLE IF NOT EXISTS events",
+		"id          BIGSERIAL    PRIMARY KEY",
+		"channel     TEXT         NOT NULL",
+		"payload     JSONB",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS events_channel_id",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS events_created_at",
+		"CREATE OR REPLACE FUNCTION events_notify()",
+		"pg_notify(",
+		"'ws.events'",
+		"CREATE OR REPLACE TRIGGER events_notify_trg",
+		"DROP TRIGGER IF EXISTS events_notify_trg ON events",
+		"DROP FUNCTION IF EXISTS events_notify()",
+		"DROP TABLE IF EXISTS events",
+	} {
+		if !strings.Contains(pgs, want) {
+			t.Errorf("0061_events.sql: missing %q", want)
+		}
+	}
+	// The bounded-NOTIFY contract (Story 19.2 AC3): the trigger must
+	// notify with id + channel only — never the payload — so the
+	// frame can't exceed Postgres' 8 KiB NOTIFY bound.
+	if strings.Contains(pgs, "NEW.payload") {
+		t.Errorf("0061_events.sql: NOTIFY must not carry the payload (8 KiB bound) — found NEW.payload near pg_notify")
+	}
+
+	sl, err := os.ReadFile(filepath.Join(dir, "0061_events.sqlite.sql"))
+	if err != nil {
+		t.Fatalf("read 0061_events.sqlite.sql: %v", err)
+	}
+	sls := string(sl)
+	for _, want := range []string{
+		"-- +goose Up",
+		"-- +goose Down",
+		"CREATE TABLE IF NOT EXISTS events",
+		"INTEGER     PRIMARY KEY AUTOINCREMENT",
+		"DROP TABLE IF EXISTS events",
+	} {
+		if !strings.Contains(sls, want) {
+			t.Errorf("0061_events.sqlite.sql: missing %q", want)
+		}
+	}
+}
+
 // repoMigrationsDir locates shared/db/migrations relative to the
 // test working directory by walking up to the repo root. The Go test
 // runner sets cwd to the package directory, so we walk up from

@@ -71,6 +71,7 @@ land at the next free integer (no gaps, no reservations).
 | `0058` | `0058_processing_jobs_library_scoped.sql` | gap-closure (HLB-257/255) | 0001, 0002 | Decouple library-scoped jobs: `processing_jobs.library_id` (nullable FK), `video_id` made nullable, `processing_jobs_scope_chk`, one-live-scan-per-library partial unique index. |
 | `0059` | `0059_audit_log_append_only.sql` | gap-closure (HLB-359/311) | 0036, 0054 | Make `audit_log` genuinely append-only: `audit_log_no_mutate()` + `audit_log_append_only_trg` BEFORE UPDATE OR DELETE trigger (INSERT/SELECT only). Partitioning deferred (populated-table rewrite — see file rationale). |
 | `0060` | `0060_idempotency_keys.sql` | gap-closure Wave 1 (HLB-315) | — | `idempotency_keys` (durable Idempotency-Key replay store — survives restart, replica-safe; `composite_key` PK for ON CONFLICT race-safety + `created_at` reaper index for the TTL sweep). |
+| `0061` | `0061_events.sql` | gap-closure Wave 2 (Epic 19 / HLB-353) | — | `events` cross-replica WS event bus: append-only log (`id BIGSERIAL` monotonic replay cursor, `channel`/`type`/`payload`), `events_notify()` + `events_notify_trg` AFTER INSERT trigger firing bounded `pg_notify('ws.events', {id,channel})` (<8 KiB; full payload read from table by each replica's LISTEN loop), `events_channel_id` replay index + `events_created_at` pruner index. |
 
 ---
 

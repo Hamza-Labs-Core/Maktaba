@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -108,9 +109,33 @@ func (h *Hub) Publish(channel string, e Event) {
 	}
 }
 
+// Replayer is the on-connect catch-up seam (Story 19.2 AC3). The
+// cross-replica bus (internal/handlers/ws/eventbus) satisfies it: on
+// (re)connect the SSE handler asks for every event the client missed
+// since the id it last processed, so a client that reconnects to a
+// *different* replica loses nothing. nil → no replay (single-process
+// dev path; behaviour unchanged). Kept as a local interface so ws has
+// no import cycle / hard dependency on eventbus.
+type Replayer interface {
+	Replay(ctx context.Context, channel string, lastEventID int64) ([]ReplayEvent, error)
+}
+
+// ReplayEvent is the minimal shape ws needs from a replayed event. The
+// eventbus adapter (busReplayAdapter, wired in p6.go) maps its richer
+// Event onto this.
+type ReplayEvent struct {
+	Type    string
+	At      time.Time
+	Payload map[string]any
+}
+
 // Handler exposes the SSE endpoints.
 type Handler struct {
 	Hub *Hub
+	// Replay, when set, is consulted on connect with the client's
+	// Last-Event-ID so missed cross-replica events are re-delivered
+	// before the live stream resumes.
+	Replay Replayer
 }
 
 // Mount wires the SSE routes. WebSocket is intentionally absent here;
@@ -152,13 +177,36 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
+	// Subscribe BEFORE replay so an event that lands while we are
+	// catching up is buffered on the live channel rather than lost in
+	// the gap between replay and subscribe.
 	sub := h.Hub.Subscribe(channel)
 	defer h.Hub.Unsubscribe(channel, sub)
 
+	ctx := r.Context()
+
+	// Replay-on-connect (Story 19.2 AC3): re-deliver every event the
+	// client missed since the id it last processed. Last-Event-ID is
+	// the standard SSE reconnect header; ?last_event_id= is the WS
+	// fallback. 0/absent → no replay (fresh client). A duplicate at
+	// the replay/live boundary is harmless — clients dedupe on the
+	// monotonic "_event_id".
+	if h.Replay != nil {
+		if last := parseLastEventID(r); last > 0 {
+			if evs, err := h.Replay.Replay(ctx, channel, last); err == nil {
+				for _, e := range evs {
+					frame, _ := json.Marshal(Event{Type: e.Type, At: e.At, Payload: e.Payload})
+					_, _ = w.Write([]byte("data: "))
+					_, _ = w.Write(frame)
+					_, _ = w.Write([]byte("\n\n"))
+				}
+				flusher.Flush()
+			}
+		}
+	}
+
 	heartbeat := time.NewTicker(30 * time.Second)
 	defer heartbeat.Stop()
-
-	ctx := r.Context()
 	for {
 		select {
 		case <-ctx.Done():
@@ -179,9 +227,30 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// PublishFromCtx is a tiny helper used by Postgres listener loops to
-// route NOTIFY payloads into the right channel. Currently a no-op
-// adapter shape; left in place so service bootstrap can wire it.
+// parseLastEventID extracts the client's reconnect cursor from the
+// standard SSE `Last-Event-ID` header, falling back to the
+// `?last_event_id=` query param (the WS-fallback transport can't set
+// the header). An unparseable/absent value is 0 → no replay.
+func parseLastEventID(r *http.Request) int64 {
+	v := r.Header.Get("Last-Event-ID")
+	if v == "" {
+		v = r.URL.Query().Get("last_event_id")
+	}
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// PublishFromCtx routes an event into the local hub. The cross-replica
+// publish path goes through eventbus.Bus.Publish (durable insert →
+// NOTIFY → every replica's LISTEN loop fans out to its own hub); this
+// helper remains the single-process direct-fan-out shim for the
+// dev/test path where no bus is wired.
 func PublishFromCtx(_ context.Context, hub *Hub, channel, typ string, payload map[string]any) {
 	hub.Publish(channel, Event{Type: typ, At: time.Now().UTC(), Payload: payload})
 }
