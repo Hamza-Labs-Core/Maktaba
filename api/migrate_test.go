@@ -234,6 +234,49 @@ func TestMigrationFiles_Slot0063_TierDomainFreeHomePro(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0055_PairingTicketsStoreColumns binds the
+// column list SQLPairingStore reads/writes to the slot-0055 migration
+// text. This is the cheap schema-binding guard the discovery store unit
+// tests reference (no DB needed): if someone renames or drops a column
+// in the migration without updating internal/discovery/sqlstore.go (or
+// vice versa) this fails, instead of the drift only surfacing in an
+// integration run. It also pins the partial index Sweep's hot path
+// relies on, so removing pairing_tickets_reaper resurrects the every-30s
+// whole-table sequential scan loudly.
+func TestMigrationFiles_Slot0055_PairingTicketsStoreColumns(t *testing.T) {
+	dir := repoMigrationsDir(t)
+
+	pg, err := os.ReadFile(filepath.Join(dir, "0055_pairing_tickets.sql"))
+	if err != nil {
+		t.Fatalf("read 0055_pairing_tickets.sql: %v", err)
+	}
+	block := extractCreateBlock(t, string(pg), "pairing_tickets")
+	// Every column SQLPairingStore.{Put,Get,Consume,Sweep} names must
+	// exist in the table definition.
+	for _, col := range []string{
+		"code",
+		"user_id",
+		"issued_at",
+		"expires_at",
+		"consumed_at",
+	} {
+		if !strings.Contains(block, col) {
+			t.Errorf("0055_pairing_tickets.sql pairing_tickets table: missing column %q "+
+				"(SQLPairingStore reads/writes it)", col)
+		}
+	}
+	// Sweep's index-aligned hot path requires this exact partial index;
+	// dropping the predicate would silently reintroduce the seq-scan.
+	for _, want := range []string{
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS pairing_tickets_reaper",
+		"ON pairing_tickets (expires_at) WHERE consumed_at IS NULL",
+	} {
+		if !strings.Contains(string(pg), want) {
+			t.Errorf("0055_pairing_tickets.sql: missing %q (Sweep's partial-index hot path)", want)
+		}
+	}
+}
+
 // TestMigrationFiles_PostgresUsesConcurrentlyForCreateIndex enforces
 // the migrations/README.md §4 rule: every CREATE INDEX in a
 // Postgres-targeted slot 0001+ migration uses CONCURRENTLY (the lint

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
@@ -311,6 +312,7 @@ func runServe() error {
 			// would let a license apply be invisible to the seat gate.
 			p10Deps := router.P10Deps{
 				DB:           appDB,
+				Keys:         auth.keys,
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			}
@@ -337,9 +339,16 @@ func runServe() error {
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
-			router.MountP10(r, p10Deps)
+			pairingStore := router.MountP10(r, p10Deps)
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
+
+			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
+			// (go idemSweep()): a boot goroutine expires stale tickets and
+			// hard-deletes them past the 7-day retention horizon so
+			// `pairing_tickets` cannot grow unbounded. Same context/log
+			// convention as runIdempotencySweep.
+			go runPairingSweep(pairingStore, logger)
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",
@@ -489,6 +498,36 @@ func runIdempotencySweep(s idempotency.Store, logger *slog.Logger) {
 		if _, err := s.SweepExpired(context.Background(), idempotencyTTL); err != nil {
 			logger.Warn("idempotency: sweep failed; entries will accrue until it recovers",
 				"err", err, "event", "idempotency_sweep_failed")
+		}
+	}
+}
+
+// pairingSweepInterval is the Story 15.6 reaper cadence ("30 s
+// sweeper"). pairingRetention is the hard-delete horizon: a ticket is
+// already treated as expired by Get/Consume the instant it passes its
+// ExpiresAt, but the row is retained for 7 days afterwards (Story 15.6
+// "7 d hard delete") so a just-missed pairing can still surface a
+// precise "expired" status before the row is reaped.
+const (
+	pairingSweepInterval = 30 * time.Second
+	pairingRetention     = 7 * 24 * time.Hour
+)
+
+// runPairingSweep hard-deletes pairing tickets whose expiry is older
+// than the 7-day retention horizon, every 30 s. Mirrors
+// runIdempotencySweep exactly (same ticker-driven loop, same
+// context.Background(), same event-keyed Warn-on-error that keeps the
+// loop alive so a transient failure self-heals next tick). Works
+// against any PairingStore backend — the Postgres `pairing_tickets`
+// table or the in-memory dev store — via the Sweep seam.
+func runPairingSweep(s discovery.PairingStore, logger *slog.Logger) {
+	t := time.NewTicker(pairingSweepInterval)
+	defer t.Stop()
+	for range t.C {
+		before := time.Now().UTC().Add(-pairingRetention)
+		if _, err := s.Sweep(context.Background(), before); err != nil {
+			logger.Warn("pairing: sweep failed; expired tickets will accrue until it recovers",
+				"err", err, "event", "pairing_sweep_failed")
 		}
 	}
 }
