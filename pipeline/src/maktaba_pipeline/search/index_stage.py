@@ -38,6 +38,17 @@ INDEX upserts the *same* ids (Chroma upsert overwrites in place; no
 duplicate vectors). The loader does not need a bespoke id scheme; the
 existing ``{transcript_id}:{seq}`` key already supports replay.
 
+NOTE(wave-0): that determinism only covers replay of the *same*
+transcript. Re-transcription creates a NEW ``transcript_id``, so INDEX
+writes a DISJOINT vector-id set and the prior transcript's vectors are
+NOT deleted — no delete-by-transcript path exists yet, by design.
+Consequence: stale vectors from a superseded transcript stay queryable
+(search-relevance drift) and the vector store grows unbounded across
+re-transcriptions. Deterministic-id replay does NOT reconcile this (it
+only overwrites the same ``transcript_id:seq``); supersede-cleanup
+(delete-by-transcript on re-transcription) is a SEPARATE later story —
+deliberately deferred here, not silent.
+
 Scope (Wave 0): exactly one job -> one transcript -> one collection,
 straight-through. Re-embedding policy on a transcript revision,
 multi-collection / per-library collection routing, and hybrid-search
