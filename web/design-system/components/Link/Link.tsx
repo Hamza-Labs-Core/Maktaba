@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { clsx } from "../internal/clsx";
+import "../internal/base.css";
 import "./link.css";
 
 // Story 17.2 — Link. A token-styled <a>. When `external` is set it adds

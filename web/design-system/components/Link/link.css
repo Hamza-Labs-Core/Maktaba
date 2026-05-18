@@ -15,16 +15,3 @@
   outline: 2px solid var(--color-semantic-accent, #1e5ad8);
   outline-offset: 2px;
 }
-
-/* Shared screen-reader-only utility used across primitives. */
-.mk-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}

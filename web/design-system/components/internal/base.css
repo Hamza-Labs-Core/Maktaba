@@ -1,0 +1,19 @@
+/* Shared base utilities used across primitives. Co-located in
+ * internal/ (mirrors the shared internal/* TS helpers) and imported by
+ * any component that needs them, so the utility is reliably present
+ * regardless of which single component a consumer pulls in. */
+
+/* Screen-reader-only: kept in the a11y tree + keyboard-reachable, just
+ * visually clipped. Used by Link's "(opens in new tab)" hint and
+ * available to any future primitive needing an SR-only label. */
+.mk-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

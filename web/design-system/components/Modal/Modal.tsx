@@ -4,6 +4,8 @@ import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
 import { useFieldId } from "../internal/useId";
 import { useFocusTrap } from "../internal/useFocusTrap";
+import { useInertBackground } from "../internal/useInertBackground";
+import { usePortalHost } from "../internal/usePortalHost";
 import "./overlay.css";
 
 // Story 17.2 — Modal. role="dialog" aria-modal, focus trapped + restored
@@ -33,6 +35,9 @@ export function Modal({
 }: ModalProps) {
   const ref = useFocusTrap<HTMLDivElement>(open, onClose);
   const titleId = useFieldId();
+  const host = usePortalHost(open, "modal");
+
+  useInertBackground(open, host);
 
   useEffect(() => {
     if (!open) return;
@@ -43,7 +48,7 @@ export function Modal({
     };
   }, [open]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (!open || typeof document === "undefined" || !host) return null;
 
   return createPortal(
     <div
@@ -84,6 +89,6 @@ export function Modal({
         {footer != null && <div className="mk-modal__footer">{footer}</div>}
       </div>
     </div>,
-    document.body
+    host
   );
 }

@@ -19,15 +19,41 @@ export function Tooltip({ label, children, side = "top", className }: TooltipPro
   const [open, setOpen] = useState(false);
   const id = useId();
 
+  // Chain every wrapped handler: run the tooltip's behaviour, then the
+  // child's own pre-existing handler (a wrapped trigger may already
+  // have onFocus / onMouseEnter / etc — those must not be silently
+  // dropped). Mirrors how onKeyDown was already chained.
+  // NOTE(wave-1): hover/focus only; touch tap-to-toggle is a separate
+  // enhancement (known hover-tooltip limitation, deferred).
+  const childProps = children.props as {
+    onMouseEnter?: (e: React.MouseEvent) => void;
+    onMouseLeave?: (e: React.MouseEvent) => void;
+    onFocus?: (e: React.FocusEvent) => void;
+    onBlur?: (e: React.FocusEvent) => void;
+    onKeyDown?: (e: React.KeyboardEvent) => void;
+  };
+
   const trigger = cloneElement(children, {
     "aria-describedby": open ? id : undefined,
-    onMouseEnter: () => setOpen(true),
-    onMouseLeave: () => setOpen(false),
-    onFocus: () => setOpen(true),
-    onBlur: () => setOpen(false),
+    onMouseEnter: (e: React.MouseEvent) => {
+      setOpen(true);
+      childProps.onMouseEnter?.(e);
+    },
+    onMouseLeave: (e: React.MouseEvent) => {
+      setOpen(false);
+      childProps.onMouseLeave?.(e);
+    },
+    onFocus: (e: React.FocusEvent) => {
+      setOpen(true);
+      childProps.onFocus?.(e);
+    },
+    onBlur: (e: React.FocusEvent) => {
+      setOpen(false);
+      childProps.onBlur?.(e);
+    },
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
-      (children.props as { onKeyDown?: (e: React.KeyboardEvent) => void }).onKeyDown?.(e);
+      childProps.onKeyDown?.(e);
     },
   });
 

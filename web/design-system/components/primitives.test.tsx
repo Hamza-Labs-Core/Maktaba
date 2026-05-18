@@ -148,6 +148,27 @@ describe("Tooltip", () => {
     expect(btn).toHaveAttribute("aria-describedby");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Save changes");
   });
+
+  it("chains the trigger's own onFocus / onMouseEnter (not just onKeyDown)", async () => {
+    const onFocus = vi.fn();
+    const onMouseEnter = vi.fn();
+    render(
+      <Tooltip label="Hint">
+        <button onFocus={onFocus} onMouseEnter={onMouseEnter}>
+          Trigger
+        </button>
+      </Tooltip>
+    );
+    const user = userEvent.setup();
+    const btn = screen.getByRole("button", { name: "Trigger" });
+    await user.tab();
+    expect(btn).toHaveFocus();
+    expect(onFocus).toHaveBeenCalledTimes(1); // child handler still runs
+    await user.hover(btn);
+    expect(onMouseEnter).toHaveBeenCalledTimes(1);
+    // Tooltip behaviour still works alongside the chained handlers.
+    expect(btn).toHaveAttribute("aria-describedby");
+  });
 });
 
 describe("Drawer", () => {

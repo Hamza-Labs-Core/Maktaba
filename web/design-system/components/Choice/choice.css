@@ -111,6 +111,17 @@
   transform: translateX(-18px);
 }
 
+/* Reduced-motion discipline (mirrors overlay.css / toast.css): snap the
+ * Toggle thumb's translateX (and the control/glyph transitions) instead
+ * of animating them. The checked end-position is unchanged. */
+@media (prefers-reduced-motion: reduce) {
+  .mk-choice__control,
+  .mk-choice__glyph,
+  .mk-toggle__thumb {
+    transition: none;
+  }
+}
+
 .mk-radio-group {
   display: flex;
   flex-direction: column;

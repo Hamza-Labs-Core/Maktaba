@@ -4,6 +4,8 @@ import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
 import { useFieldId } from "../internal/useId";
 import { useFocusTrap } from "../internal/useFocusTrap";
+import { useInertBackground } from "../internal/useInertBackground";
+import { usePortalHost } from "../internal/usePortalHost";
 import "../Modal/overlay.css";
 
 // Story 17.2 — Drawer. Edge-anchored panel sharing Modal's focus-trap +
@@ -29,6 +31,9 @@ export function Drawer({
 }: DrawerProps) {
   const ref = useFocusTrap<HTMLDivElement>(open, onClose);
   const titleId = useFieldId();
+  const host = usePortalHost(open, "drawer");
+
+  useInertBackground(open, host);
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +44,7 @@ export function Drawer({
     };
   }, [open]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (!open || typeof document === "undefined" || !host) return null;
 
   return createPortal(
     <div
@@ -79,6 +84,6 @@ export function Drawer({
         <div className="mk-drawer__body">{children}</div>
       </div>
     </div>,
-    document.body
+    host
   );
 }
