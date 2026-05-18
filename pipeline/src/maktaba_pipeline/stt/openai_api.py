@@ -39,6 +39,10 @@ __all__ = [
     "OpenAIWhisperBackend",
     "compute_chunk_offsets",
     "default_cost_per_minute",
+    "first_of_next_month",
+    "monthly_spend_usd",
+    "period_yyyymm",
+    "record_stt_usage",
     "should_refuse_claim",
 ]
 
@@ -228,6 +232,127 @@ def should_refuse_claim(
         return False
     projected = (duration_sec / 60.0) * cost_per_minute
     return monthly_spent_usd + projected > monthly_cap_usd
+
+
+# --- usage ledger (the real `stt_usage` producer + reader) ------------
+#
+# Story 3.4 AC-4's budget cap was a facade end-to-end: `should_refuse_claim`
+# is a pure projection that sums a `monthly_spent_usd` NOTHING produced
+# (no code ever wrote `stt_usage`) and NOTHING summed. These helpers
+# make the *ledger* real: `record_stt_usage` is the producer wired into
+# the live transcribe path (commit_transcribe) for a paid backend, and
+# `monthly_spend_usd` is the real summation `should_refuse_claim` needs.
+# `first_of_next_month` is the `not_before` boundary the AC's claim-side
+# refusal uses. The remaining facade — reading the per-library
+# `stt.backends.<name>.max_usd_per_month` setting in the worker and the
+# claim-path `not_before` requeue — is the cross-epic library-settings-
+# to-worker plumbing already deferred in `transcribe.default_select_backend`
+# (Story 3.5 / 9.1) plus the Epic-6 claim path; explicitly NOT faked here.
+
+
+def period_yyyymm(when: datetime) -> int:
+    """The ``stt_usage.period_yyyymm`` bucket for a timestamp (e.g. 202605)."""
+    return when.year * 100 + when.month
+
+
+def first_of_next_month(when: datetime) -> datetime:
+    """UTC midnight on the first of the month AFTER ``when``.
+
+    Story 3.4 AC-4: the value a budget-cap refusal sets ``not_before``
+    to so a capped library's job becomes claimable again exactly when
+    the next calendar month's allowance opens.
+    """
+    year, month = when.year, when.month
+    if month == 12:
+        year, month = year + 1, 1
+    else:
+        month += 1
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+_SUM_USAGE_SQL_PG = (
+    "SELECT COALESCE(SUM(est_usd), 0) AS spent FROM stt_usage "
+    "WHERE library_id = $1 AND backend = $2 AND period_yyyymm = $3"
+)
+_SUM_USAGE_SQL_SQLITE = (
+    "SELECT COALESCE(SUM(est_usd), 0) AS spent FROM stt_usage "
+    "WHERE library_id = ? AND backend = ? AND period_yyyymm = ?"
+)
+
+
+async def monthly_spend_usd(
+    db: Any,
+    *,
+    library_id: Any,
+    backend: str,
+    when: datetime,
+) -> float:
+    """Sum the calendar month's recorded ``est_usd`` for a library+backend.
+
+    The real data source ``should_refuse_claim`` was missing. Returns
+    ``0.0`` when the ledger has no rows yet (the first job of the month).
+    """
+    sql = (
+        _SUM_USAGE_SQL_PG
+        if getattr(db, "dialect", "postgres") == "postgres"
+        else (_SUM_USAGE_SQL_SQLITE)
+    )
+    row = await db.fetchrow(sql, library_id, backend, period_yyyymm(when))
+    if row is None or row["spent"] is None:
+        return 0.0
+    return float(row["spent"])
+
+
+_UPSERT_USAGE_SQL_PG = """
+INSERT INTO stt_usage (library_id, backend, period_yyyymm, minutes, est_usd, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (library_id, backend, period_yyyymm) DO UPDATE
+   SET minutes    = stt_usage.minutes + EXCLUDED.minutes,
+       est_usd    = stt_usage.est_usd + EXCLUDED.est_usd,
+       updated_at = now()
+"""
+
+_UPSERT_USAGE_SQL_SQLITE = """
+INSERT INTO stt_usage (library_id, backend, period_yyyymm, minutes, est_usd, updated_at)
+VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+ON CONFLICT (library_id, backend, period_yyyymm) DO UPDATE
+   SET minutes    = stt_usage.minutes + excluded.minutes,
+       est_usd    = stt_usage.est_usd + excluded.est_usd,
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+"""
+
+
+async def record_stt_usage(
+    db: Any,
+    *,
+    library_id: Any,
+    backend: str,
+    duration_sec: float,
+    cost_per_minute: float,
+    when: datetime | None = None,
+) -> float:
+    """Accrue this job's minutes + estimated USD onto the month's ledger row.
+
+    The previously-missing producer. Idempotent-safe under the unique
+    ``(library_id, backend, period_yyyymm)`` key via an additive UPSERT
+    (a re-run accrues again — usage is monotonic by design; the dedupe
+    of a *replayed* job is the job-queue's concern, not the ledger's).
+    Returns the estimated USD recorded so the caller can log it. A
+    zero-cost (local) backend is a no-op — the ledger only tracks paid
+    spend the cap meters.
+    """
+    minutes = max(0.0, duration_sec) / 60.0
+    est_usd = minutes * max(0.0, cost_per_minute)
+    if est_usd <= 0:
+        return 0.0
+    now = when or datetime.now(tz=UTC)
+    sql = (
+        _UPSERT_USAGE_SQL_PG
+        if getattr(db, "dialect", "postgres") == "postgres"
+        else (_UPSERT_USAGE_SQL_SQLITE)
+    )
+    await db.execute(sql, library_id, backend, period_yyyymm(now), minutes, est_usd)
+    return est_usd
 
 
 class _RetryableAPIError(Exception):

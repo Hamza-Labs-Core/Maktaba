@@ -281,6 +281,15 @@ async def commit_transcribe(
     # is Story 3.x — deliberately deferred, not silent dead code. Until
     # then ``lang`` is ``"auto"`` and detect_language() is not called.
     lang = language or "auto"
+    # Story 3.6-1.3 — the transcript's ``word_level`` flag reflects
+    # whether the chosen backend produces per-word timing. When it does,
+    # the hints below request word timestamps and ``commit_segment``
+    # persists the ``transcript_words`` rows; downstream (search
+    # highlight, word-accurate seek) keys off this flag. A backend
+    # without word support leaves it false and emits segment-only rows —
+    # the column already defaults false, but stamping it explicitly
+    # keeps the row self-describing for re-runs that swap backends.
+    word_level = bool(getattr(selected.backend, "supports_word_timestamps", False))
     transcript_id = await insert_inactive_transcript(
         db,
         video_id=video_id,
@@ -291,7 +300,7 @@ async def commit_transcribe(
         backend=selected.name,
         model=selected.backend.model,
         backend_version=selected.version,
-        word_level=False,
+        word_level=word_level,
         diarized=False,
         metadata={"content_hash": artifact.content_hash},
     )
@@ -305,7 +314,7 @@ async def commit_transcribe(
     # already-committed seq prefix here (and the reorder buffer would
     # plug in front of commit_segment); the straight-through path emits
     # the full stream from seq 0. Deliberately deferred, not silent.
-    hints = TranscriptionHints(language=language)
+    hints = TranscriptionHints(language=language, word_timestamps=word_level)
     segment_stream = selected.backend.transcribe(artifact.path, language, hints)
     async for segment in segment_stream:
         await commit_segment(
@@ -327,10 +336,38 @@ async def commit_transcribe(
         audio_track_id=artifact.audio_track_id,
     )
 
-    state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
+    state_row = await db.fetchrow("SELECT state, library_id FROM videos WHERE id = $1", video_id)
     if state_row is None:
         raise LookupError(f"video {video_id} not found")
     current_state = State(state_row["state"])
+
+    # Story 3.4 AC-4 — record real spend onto the `stt_usage` ledger
+    # for a PAID backend (cost_per_minute > 0). This is the producer
+    # the budget cap was missing: nothing ever wrote `stt_usage`, so
+    # `should_refuse_claim` summed a total no code supplied. A local
+    # backend (cost None/0) is a no-op (`record_stt_usage` guards). The
+    # cap *enforcement* (reading per-library `max_usd_per_month` in the
+    # worker + the claim-path `not_before` requeue) stays the
+    # cross-epic library-settings-to-worker plumbing already deferred
+    # in `default_select_backend` (Story 3.5 / 9.1) + the Epic-6 claim
+    # path — explicitly NOT faked here; only the real ledger is wired.
+    cost_per_minute = getattr(selected.backend, "cost_per_minute", None)
+    if cost_per_minute:
+        from .openai_api import record_stt_usage  # noqa: PLC0415
+
+        est_usd = await record_stt_usage(
+            db,
+            library_id=state_row["library_id"],
+            backend=selected.name,
+            duration_sec=total_duration_sec,
+            cost_per_minute=float(cost_per_minute),
+        )
+        log.info(
+            "stt_usage_recorded",
+            video_id=str(video_id),
+            backend=selected.name,
+            est_usd=round(est_usd, 6),
+        )
 
     if current_state == State.AUDIO_EXTRACTED:
         new_state = await advance_after_stage(db, video_id, Trigger.TRANSCRIBE, Outcome.OK, log=log)
