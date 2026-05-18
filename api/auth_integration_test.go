@@ -172,6 +172,105 @@ func TestApplySecurity_GatesBusinessRoutes(t *testing.T) {
 	}
 }
 
+// TestApplySecurity_HSTSDefaultsOnWithoutEnv is the Story 23.3 AC-2
+// regression: HSTS must be sent EVEN WHEN MAKTABA_HSTS is unset
+// (secure-by-default). The pre-fix behaviour was opt-in (header
+// absent unless MAKTABA_HSTS=1).
+func TestApplySecurity_HSTSDefaultsOnWithoutEnv(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	os.Unsetenv("MAKTABA_HSTS") // explicitly unset: must still be on
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+		nil,
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("HSTS = %q, want default-on max-age=31536000; includeSubDomains", got)
+	}
+}
+
+// TestApplySecurity_HSTSExplicitOptOut: an operator on a `.local`
+// HTTP-only install clears HSTS with MAKTABA_HSTS=0.
+func TestApplySecurity_HSTSExplicitOptOut(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "0")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+		nil,
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("HSTS = %q, want empty (explicit opt-out)", got)
+	}
+}
+
+// TestApplySecurity_AuthRouteRateLimitWired is the Story 23.6 AC-1
+// regression: the per-route table is live on the real applySecurity
+// chain — /api/auth/login is capped at 10/min/IP, far below the
+// generic limiter, and the cap fires before any credential work.
+func TestApplySecurity_AuthRouteRateLimitWired(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	// Sentinel handler stands in for the login handler (out of lane).
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		nil,
+		nil,
+	)
+
+	var got429 bool
+	for i := 0; i < 11; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+		req.RemoteAddr = "203.0.113.42:6000"
+		rec := httptest.NewRecorder()
+		stack.ServeHTTP(rec, req)
+		if i < 10 && rec.Code != http.StatusOK {
+			t.Fatalf("login %d via chain: status=%d want 200", i+1, rec.Code)
+		}
+		if rec.Code == http.StatusTooManyRequests {
+			got429 = true
+			if rec.Header().Get("Retry-After") == "" {
+				t.Fatal("chain 429 must carry Retry-After")
+			}
+		}
+	}
+	if !got429 {
+		t.Fatal("11th /api/auth/login through applySecurity should be 429 (per-route cap not wired)")
+	}
+}
+
 // mustSignAPIToken mints a minimal valid `aud:api` access token using
 // the same key set initAuth loaded from the PEM env vars.
 func mustSignAPIToken(t *testing.T, privPEM, pubPEM string) string {

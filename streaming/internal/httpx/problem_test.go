@@ -32,20 +32,28 @@ func TestWrite_SetsHeadersAndStatus(t *testing.T) {
 }
 
 func TestWriteSignedURLError_AllSubTypesHaveDetail(t *testing.T) {
-	cases := []string{
-		SignedURLMissing, SignedURLExpired, SignedURLWrongAud,
-		SignedURLWrongSub, SignedURLWrongLib, SignedURLBadSignature,
+	// Story 23.2 AC-3: expired → 403; everything else stays 401.
+	wantStatus := map[string]int{
+		SignedURLMissing:      401,
+		SignedURLExpired:      403,
+		SignedURLWrongAud:     401,
+		SignedURLWrongSub:     401,
+		SignedURLWrongLib:     401,
+		SignedURLBadSignature: 401,
 	}
-	for _, c := range cases {
+	for c, want := range wantStatus {
 		t.Run(c, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			WriteSignedURLError(rec, c)
-			if rec.Code != 401 {
-				t.Fatalf("status=%d", rec.Code)
+			if rec.Code != want {
+				t.Fatalf("sub-type %q: status=%d want %d", c, rec.Code, want)
 			}
 			var p Problem
 			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
 				t.Fatalf("json: %v", err)
+			}
+			if p.Status != want {
+				t.Fatalf("envelope status=%d want %d", p.Status, want)
 			}
 			if !strings.Contains(p.Type, "signed-url-"+c) {
 				t.Fatalf("type=%q does not include sub-type %q", p.Type, c)
@@ -54,6 +62,16 @@ func TestWriteSignedURLError_AllSubTypesHaveDetail(t *testing.T) {
 				t.Fatalf("missing detail for %s", c)
 			}
 		})
+	}
+}
+
+// Story 23.2 AC-3 focused regression: an expired signed-URL/manifest
+// token must produce a clear 403, never 401.
+func TestWriteSignedURLError_ExpiredIs403(t *testing.T) {
+	rec := httptest.NewRecorder()
+	WriteSignedURLError(rec, SignedURLExpired)
+	if rec.Code != 403 {
+		t.Fatalf("expired status=%d want 403 (AC-3: not 401)", rec.Code)
 	}
 }
 

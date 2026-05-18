@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httpsec"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 )
 
@@ -67,10 +69,18 @@ func initAuth(logger *slog.Logger) (*authState, error) {
 	st.cors = httpsec.DefaultCORS()
 	st.cors.AllowedOrigins = httpsec.ParseAllowedOrigins(os.Getenv("MAKTABA_CORS_ALLOWED_ORIGINS"))
 
-	// --- Security headers (Story 10.15 AC-2, AC-5) ---
+	// --- Security headers (Story 10.15 AC-2, AC-5 / Story 23.3 AC-2) ---
+	// HSTS is secure-by-default (DefaultHeaders pre-populates it). An
+	// operator on a `.local` install without a trusted cert opts OUT
+	// with MAKTABA_HSTS=0 (or "false"/"off"), which clears the header
+	// so HTTP-only setups don't pin clients to a cert they can't
+	// present. Any other value (including unset) keeps HSTS on.
 	st.headers = httpsec.DefaultHeaders()
-	if os.Getenv("MAKTABA_HSTS") == "1" {
-		st.headers.HSTS = httpsec.HSTSOneYear
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_HSTS"))) {
+	case "0", "false", "off", "no":
+		st.headers.HSTS = ""
+		logger.Warn("auth: HSTS disabled via MAKTABA_HSTS opt-out; clients will not be pinned to HTTPS",
+			"event", "hsts_disabled")
 	}
 
 	return st, nil
@@ -91,13 +101,22 @@ func DefaultRotationOverlap() time.Duration {
 // applySecurity wraps a public-mux handler with the standard
 // transport-security middleware stack:
 //
-//	headers → CORS → admin-token → JWT bearer → cookie-auth →
-//	RequireAuthExcept(allowlist) → CSRF → next
+//	headers → CORS → auth-route-rate-limit → admin-token →
+//	JWT bearer → cookie-auth → RequireAuthExcept(allowlist) →
+//	CSRF → next
 //
 // Order is load-bearing (read outermost-first as the request enters):
 //
-//   - headers run outermost so even an early 401/403 from the gate
-//     still ships the standard CSP/HSTS.
+//   - headers run outermost so even an early 401/403/429 from the
+//     gate still ships the standard CSP/HSTS.
+//   - auth-route-rate-limit (Story 23.6 AC-1) is a distinct,
+//     self-contained layer that sits OUTSIDE the credential-attaching
+//     middlewares: a brute-force on /api/auth/login must be capped
+//     before any verification work, and the per-route ceiling applies
+//     regardless of whether a (stale) credential is presented. It is
+//     intentionally a separate middleware (not folded into
+//     PerIP/auth) so a union merge with Epic 10's chain edits is
+//     clean — it never touches the login handler or lockout state.
 //   - the three credential-attaching middlewares (admin-token, JWT,
 //     cookie) run before the gate so a valid credential of ANY kind
 //     has populated the principal by the time RequireAuthExcept
@@ -138,6 +157,9 @@ func (a *authState) applySecurity(
 	}
 	stack = middleware.JWTBearer(a.keys, "api")(stack)
 	stack = middleware.AdminToken(a.adminToken)(stack)
+	// Story 23.6 AC-1: per-route auth caps, outside the credential
+	// middlewares so a brute-force is rejected before verification.
+	stack = mw.AuthRouteRateLimit(mw.DefaultAuthRouteLimits())(stack)
 	stack = httpsec.CORS(a.cors)(stack)
 	stack = httpsec.Headers(a.headers)(stack)
 	return stack

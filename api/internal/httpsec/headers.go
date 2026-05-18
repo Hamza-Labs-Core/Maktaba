@@ -18,10 +18,12 @@ import (
 // `Headers` middleware. Defaults match Story 10.15 AC-5; operators
 // override CSP via the Settings.CSP field when the SPA evolves.
 type HeadersConfig struct {
-	// HSTS is the Strict-Transport-Security value. Empty string ⇒ the
-	// header is not emitted (e.g. `.local` setups without a trusted
-	// cert; AC-2). When non-empty, the value is sent on every
-	// response.
+	// HSTS is the Strict-Transport-Security value. DefaultHeaders
+	// sets this to HSTSOneYear (secure-by-default, Story 23.3 AC-2).
+	// Empty string ⇒ the header is not emitted — reserved for the
+	// explicit opt-out (`.local` setups without a trusted cert; the
+	// MAKTABA_HSTS=0 toggle clears it). When non-empty, the value is
+	// sent on every response.
 	HSTS string
 
 	// CSP is the Content-Security-Policy value applied to the SPA
@@ -42,11 +44,16 @@ type HeadersConfig struct {
 }
 
 // DefaultHeaders returns the production-default header set described
-// in Story 10.15 AC-5. The HSTS field is left empty by default; the
-// caller must set it explicitly so an operator running a `.local`
-// install can opt out.
+// in Story 10.15 AC-5 / Story 23.3 AC-2. HSTS is secure-by-default:
+// the field is pre-populated with HSTSOneYear so a transport that
+// forgets to wire it still ships the header. An operator running a
+// `.local` install without a trusted cert opts OUT explicitly via
+// the documented MAKTABA_HSTS=0 toggle (see auth_bootstrap.go),
+// which clears the field. This matches how every other security
+// header here defaults to its hardened value rather than to "off".
 func DefaultHeaders() HeadersConfig {
 	return HeadersConfig{
+		HSTS:         HSTSOneYear,
 		CSP:          "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'",
 		Referrer:     "strict-origin-when-cross-origin",
 		COOP:         "same-origin",

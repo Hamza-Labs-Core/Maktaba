@@ -35,15 +35,38 @@ func TestHeaders_StampsAllConfiguredHeaders(t *testing.T) {
 	}
 }
 
-func TestHeaders_HSTSOmittedWhenEmpty(t *testing.T) {
-	cfg := DefaultHeaders() // HSTS empty
+// Story 23.3 AC-2: HSTS is secure-by-default. DefaultHeaders must
+// pre-populate the one-year value so a transport that forgets to wire
+// it still ships the header.
+func TestHeaders_HSTSDefaultsOnSecure(t *testing.T) {
+	cfg := DefaultHeaders()
+	if cfg.HSTS != HSTSOneYear {
+		t.Fatalf("DefaultHeaders().HSTS = %q, want secure-by-default %q", cfg.HSTS, HSTSOneYear)
+	}
+	mw := Headers(cfg)
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Strict-Transport-Security"); got != HSTSOneYear {
+		t.Errorf("HSTS should default-on, got %q want %q", got, HSTSOneYear)
+	}
+}
+
+// The explicit opt-out path: an operator clears HSTS (the
+// MAKTABA_HSTS=0 toggle does this) for a `.local`/HTTP-only install.
+func TestHeaders_HSTSOmittedWhenExplicitlyCleared(t *testing.T) {
+	cfg := DefaultHeaders()
+	cfg.HSTS = "" // explicit opt-out
 	mw := Headers(cfg)
 	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Header().Get("Strict-Transport-Security") != "" {
-		t.Errorf("HSTS should be omitted when config empty, got %q",
+		t.Errorf("HSTS should be omitted when explicitly cleared, got %q",
 			rec.Header().Get("Strict-Transport-Security"))
 	}
 }

@@ -99,8 +99,15 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusBadRequest, "missing-rendition", "rendition path missing", "")
 		return
 	}
-	dir := filepath.Join(h.Layout.HLSDir(sub), rendition)
-	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8"))
+	// Story 23.5 AC-2: rendition is an untrusted URL segment — route
+	// it through the single canonicalizer so `..`/symlink-escape
+	// cannot read outside this session's HLS directory.
+	path, err := httpx.CanonicalUnder(h.Layout.HLSDir(sub), rendition, "index.m3u8")
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
+		return
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
@@ -127,7 +134,14 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := filepath.Join(h.Layout.HLSDir(sub), rendition, segment)
+	// Story 23.5 AC-2: rendition + segment are untrusted URL segments
+	// — canonicalize before touching disk.
+	path, err := httpx.CanonicalUnder(h.Layout.HLSDir(sub), rendition, segment)
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "segment-not-found",
+			"segment not yet written by FFmpeg", "")
+		return
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// AC-3: 404 if segment not yet on disk. Players will refetch

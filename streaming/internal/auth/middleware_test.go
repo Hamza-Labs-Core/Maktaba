@@ -117,14 +117,17 @@ func TestSignedURL_BadSignature(t *testing.T) {
 	}
 }
 
+// Story 23.2 AC-3: an expired (but well-formed, signature-valid)
+// signed-URL token must produce a clear 403, NOT 401, so the player
+// can distinguish "re-mint the URL" from "log in again".
 func TestSignedURL_Expired(t *testing.T) {
 	f := newFixture(t)
 	claims := auth.Claims{Aud: "streaming", Sub: f.sess.String(), Lib: []string{f.libA.String()}, Exp: time.Now().Add(-10 * time.Minute).Unix()}
 	tok := f.mint(t, claims)
 	mw := auth.SignedURL(f.verifier, auth.AudSession, "sub")
 	rec := runMiddleware(t, mw, "GET", "/stream/"+f.sess.String()+"/foo?sig="+tok, nil, f.sess.String())
-	if rec.Code != 401 {
-		t.Fatalf("status=%d", rec.Code)
+	if rec.Code != 403 {
+		t.Fatalf("expired status=%d want 403 (AC-3: not 401)", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "signed-url-expired") {
 		t.Fatalf("body=%s", rec.Body.String())

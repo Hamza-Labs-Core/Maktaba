@@ -43,13 +43,35 @@ const (
 	SignedURLBadSignature = "bad-signature"
 )
 
-// WriteSignedURLError emits the AC-1 401 envelope for a signed-URL
-// failure.
+// WriteSignedURLError emits the signed-URL failure envelope. The
+// status is sub-type-precise (Story 23.2 AC-3):
+//
+//   - missing / bad-signature → 401 Unauthorized: no usable
+//     credential was presented (or it isn't trustworthy at all), so
+//     the correct answer is "authenticate".
+//   - expired → 403 Forbidden: a well-formed, signature-valid token
+//     was presented but is past its exp. AC-3 explicitly requires a
+//     "clear 403 (not 401)" so a player distinguishes "re-mint the
+//     URL" from "log in again".
+//
+// Other refused-but-authenticated sub-types (wrong-aud / wrong-sub /
+// wrong-lib) keep the original 401 — they are out of this change's
+// scope (Epic 10 owns the entitlement-claim minting side) and are
+// left untouched to avoid behavioural drift in that lane.
 func WriteSignedURLError(w http.ResponseWriter, subType string) {
-	Write(w, http.StatusUnauthorized,
+	Write(w, signedURLStatus(subType),
 		"signed-url-"+subType,
 		"Signed URL invalid",
 		signedURLDetail(subType))
+}
+
+// signedURLStatus maps a signed-URL sub-type to its HTTP status.
+// Expired is the only sub-type promoted to 403 per Story 23.2 AC-3.
+func signedURLStatus(subType string) int {
+	if subType == SignedURLExpired {
+		return http.StatusForbidden
+	}
+	return http.StatusUnauthorized
 }
 
 func signedURLDetail(s string) string {
