@@ -1,9 +1,10 @@
 import datetime as dt
-import hashlib
+import os
 import pathlib
 
 import pytest
 
+from maktaba_pipeline.identity import hash_file
 from maktaba_pipeline.integrity import (
     AtomicWriteError,
     BackupManifest,
@@ -138,13 +139,67 @@ def test_verify_missing_file(tmp_path: pathlib.Path) -> None:
     assert not res.is_ok()
 
 
-def test_verify_ok_for_present_file(tmp_path: pathlib.Path) -> None:
+def test_verify_ok_against_canonical_content_hash(tmp_path: pathlib.Path) -> None:
+    """An unmodified file verifies OK against its stored ``videos.content_hash``.
+
+    ``videos.content_hash`` is written by the SCAN stage via the
+    canonical identity hasher (BLAKE3 head‖tail‖size), so the verifier
+    must produce the *same* digest for an untouched file.
+    """
     f = tmp_path / "v.mp4"
     f.write_bytes(b"x" * 1024)
-    expected = hashlib.sha256(b"x" * 1024).hexdigest()
-    res = verify_video(path=f, expected_size=1024, expected_hash=expected)
-    assert res.is_ok()
+    canonical = hash_file(f)
+    res = verify_video(
+        path=f,
+        expected_size=canonical.size_bytes,
+        expected_hash=canonical.content_hash,
+    )
+    assert res.is_ok(), res.error
     assert res.size_bytes == 1024
+    assert res.content_hash == canonical.content_hash
+
+
+def test_verify_detects_altered_file(tmp_path: pathlib.Path) -> None:
+    """A file altered in place (same size) is DETECTED as corrupt.
+
+    The head bytes change while size is unchanged, so only a real
+    content identity (not a size check) can catch this.
+    """
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x" * 1024)
+    stored = hash_file(f).content_hash
+    f.write_bytes(b"y" * 1024)  # same length, different bytes
+    res = verify_video(path=f, expected_size=1024, expected_hash=stored)
+    assert res.error == "hash mismatch"
+    assert not res.is_ok()
+
+
+def test_verify_detects_truncated_file(tmp_path: pathlib.Path) -> None:
+    """A truncated file is DETECTED as mismatched."""
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x" * 4096)
+    stored_hash = hash_file(f).content_hash
+    stored_size = 4096
+    f.write_bytes(b"x" * 100)  # truncated
+    res = verify_video(path=f, expected_size=stored_size, expected_hash=stored_hash)
+    # Size check fires first for a length change; either way it must fail.
+    assert res.error is not None
+    assert not res.is_ok()
+
+
+def test_verify_small_file_under_head_tail_window(tmp_path: pathlib.Path) -> None:
+    """Edge: a file smaller than the head+tail window verifies via the
+    canonical formula (head and tail are the same byte range)."""
+    f = tmp_path / "tiny.mp4"
+    f.write_bytes(b"abc")  # 3 bytes, far below HEAD_TAIL_BYTES
+    canonical = hash_file(f)
+    res = verify_video(
+        path=f,
+        expected_size=canonical.size_bytes,
+        expected_hash=canonical.content_hash,
+    )
+    assert res.is_ok(), res.error
+    assert res.content_hash == canonical.content_hash
 
 
 def test_verify_size_mismatch(tmp_path: pathlib.Path) -> None:
@@ -159,3 +214,31 @@ def test_verify_hash_mismatch(tmp_path: pathlib.Path) -> None:
     f.write_bytes(b"abc")
     res = verify_video(path=f, expected_hash="0" * 64)
     assert res.error == "hash mismatch"
+
+
+def test_verify_non_regular_file_records_error(tmp_path: pathlib.Path) -> None:
+    """A non-regular file (FIFO) becomes a recorded error, not a crash.
+
+    ``verify_video`` delegates to the canonical identity hasher, which
+    raises ``ValueError`` (not ``OSError``) on a non-regular file. The
+    sweeper must keep going: the result is a populated
+    ``IntegrityResult`` with ``error`` set, never a propagated
+    exception.
+    """
+    pipe = tmp_path / "pipe.mp4"
+    try:
+        os.mkfifo(pipe)
+        # A FIFO stats with a real st_size of 0; pass a matching
+        # expected_size so the size check does NOT short-circuit before
+        # the hash call (the path under test).
+        expected_size = pipe.stat().st_size
+    except (AttributeError, OSError):
+        # os.mkfifo unavailable on this runner — fall back to a symlink
+        # whose target is a directory, which the hasher also rejects as
+        # a non-regular file with ValueError.
+        pipe = tmp_path / "link.mp4"
+        pipe.symlink_to(tmp_path)
+        expected_size = pipe.stat().st_size
+    res = verify_video(path=pipe, expected_size=expected_size)
+    assert not res.is_ok()
+    assert res.error is not None
