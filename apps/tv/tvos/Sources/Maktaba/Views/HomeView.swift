@@ -1,16 +1,28 @@
+#if os(tvOS)
 import SwiftUI
 
 public struct HomeView: View {
+    @EnvironmentObject var session: AppSession
     @State private var continueRow: [VideoSummary] = []
     @State private var recommendations: [VideoSummary] = []
+    @State private var loadError: String?
 
     public init() {}
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 48) {
-                if !continueRow.isEmpty {
-                    Section(header: rowHeader("Continue Watching")) {
+                if let loadError = loadError {
+                    Text(loadError)
+                        .font(.headline)
+                        .foregroundColor(.orange)
+                }
+                Section(header: rowHeader("Continue Watching")) {
+                    if continueRow.isEmpty {
+                        Text("Nothing in progress yet — start a video to see it here.")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    } else {
                         rowOfPosters(continueRow, showProgress: true)
                     }
                 }
@@ -33,16 +45,29 @@ public struct HomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 32) {
                 ForEach(items) { item in
-                    PosterCard(item: item, showProgress: showProgress)
+                    Button(action: {}) {
+                        PosterCard(item: item, showProgress: showProgress)
+                    }
+                    .buttonStyle(.card)
                 }
             }
         }
     }
 
     private func reload() async {
-        let svc = LibraryService()
-        continueRow = (try? await svc.continueWatching()) ?? []
-        recommendations = (try? await svc.recommendations()) ?? []
+        guard let cfg = session.apiConfig else {
+            loadError = "Not paired with a server."
+            return
+        }
+        let svc = LibraryService(gql: GraphQLClient(config: cfg))
+        do {
+            continueRow = try await svc.continueWatching()
+            recommendations = try await svc.recommendations()
+            loadError = nil
+        } catch {
+            // EC: surface a banner instead of silently swallowing.
+            loadError = "Showing cached rows — couldn't reach the server."
+        }
     }
 }
 
@@ -57,10 +82,15 @@ public struct PosterCard: View {
                 .frame(width: 320, height: 180)
                 .overlay {
                     if showProgress {
-                        ProgressView(value: item.progressFraction)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
+                        VStack {
+                            Spacer()
+                            Text(remainingLabel)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                            ProgressView(value: item.progressFraction)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
+                        }
                     }
                 }
             Text(item.title)
@@ -69,4 +99,10 @@ public struct PosterCard: View {
                 .frame(width: 320, alignment: .leading)
         }
     }
+
+    private var remainingLabel: String {
+        let mins = Int(item.remainingSec / 60)
+        return "\(mins) min left"
+    }
 }
+#endif
