@@ -155,7 +155,7 @@ func TestPersistentStore_FailsClosed(t *testing.T) {
 			ctx := context.Background()
 
 			var (
-				s     *Store
+				s      *Store
 				gotErr error
 			)
 			func() {
