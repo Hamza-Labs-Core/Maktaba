@@ -5,7 +5,21 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 )
+
+// serveTimeout bounds one inbound request end-to-end: parse → loopback
+// call → full response body relay. It exists because the loopback
+// http.Client's ResponseHeaderTimeout only bounds time-to-first-byte,
+// NOT body reads — a local handler that emits headers then trickles or
+// wedges the body would otherwise pin the per-stream goroutine (and the
+// cloud's matching stream) forever. The bound is deliberately generous:
+// a legitimate large/slow loopback response (e.g. a multi-hundred-MiB
+// export streamed off slow disk) must complete, while a genuinely stuck
+// handler is abandoned in bounded time. 10 minutes is well above any
+// healthy loopback response yet finite, so a stall always yields a
+// CLOSE_STREAM rather than a leaked goroutine.
+const serveTimeout = 10 * time.Minute
 
 // Multiplexer owns the read loop for one live tunnel. It demuxes
 // inbound frames by stream id, reassembles each REQUEST_HEAD+BODY into
@@ -24,6 +38,13 @@ type Multiplexer struct {
 
 	mu      sync.Mutex
 	streams map[uint32]*reqAssembly
+	// cancels holds the per-stream cancel handle for in-flight handle()
+	// goroutines. A cloud KindCloseStream (or tunnel teardown) cancels
+	// the matching context so a wedged loopback body relay is abandoned
+	// promptly and the goroutine exits instead of leaking. Values are
+	// pointers so a goroutine only ever removes the exact handle it
+	// registered (id reuse / racing CloseStream safe).
+	cancels map[uint32]*streamCancel
 
 	closeOnce sync.Once
 	closed    atomic.Bool
@@ -36,12 +57,21 @@ type Multiplexer struct {
 	reqs     atomic.Int64
 }
 
+// streamCancel is a heap-identity wrapper around a context.CancelFunc so
+// the registering goroutine can prove ownership before removing its own
+// entry (a later stream reusing the same id, or a CloseStream that
+// already cancelled+deleted it, must not be clobbered).
+type streamCancel struct {
+	cancel context.CancelFunc
+}
+
 // NewMultiplexer wires the read loop and returns immediately.
 func NewMultiplexer(conn FrameConn, proxy *LocalProxy) *Multiplexer {
 	m := &Multiplexer{
 		conn:    conn,
 		proxy:   proxy,
 		streams: make(map[uint32]*reqAssembly),
+		cancels: make(map[uint32]*streamCancel),
 		done:    make(chan struct{}),
 	}
 	go m.readLoop()
@@ -64,6 +94,15 @@ func (m *Multiplexer) Close() {
 	m.closeOnce.Do(func() {
 		m.closed.Store(true)
 		_ = m.conn.Close()
+		// Cancel every in-flight per-stream context so a goroutine
+		// blocked on a wedged loopback body relay unblocks and exits
+		// instead of leaking past tunnel teardown.
+		m.mu.Lock()
+		for id, sc := range m.cancels {
+			sc.cancel()
+			delete(m.cancels, id)
+		}
+		m.mu.Unlock()
 		close(m.done)
 	})
 }
@@ -146,8 +185,16 @@ func (m *Multiplexer) dispatch(f Frame) {
 		asm.body.Write(f.Payload)
 		m.mu.Unlock()
 	case KindCloseStream:
+		// The cloud aborted this stream. Drop any partial assembly AND
+		// cancel a running handle()/serve() goroutine so a wedged
+		// loopback body relay is abandoned promptly (M-4): previously
+		// this only deleted the map entry and left the goroutine pinned.
 		m.mu.Lock()
 		delete(m.streams, f.StreamID)
+		if sc, ok := m.cancels[f.StreamID]; ok {
+			sc.cancel()
+			delete(m.cancels, f.StreamID)
+		}
 		m.mu.Unlock()
 	}
 }
@@ -160,7 +207,37 @@ type sink struct{ m *Multiplexer }
 func (s sink) WriteFrame(f Frame) error { return s.m.writeFrame(f) }
 
 func (m *Multiplexer) handle(streamID uint32, asm *reqAssembly) {
-	if err := m.proxy.serve(context.Background(), streamID, asm, sink{m}); err != nil {
+	// Bound the whole request+body relay and make it cancelable so a
+	// stalled loopback body cannot pin this goroutine forever (I-2) and
+	// a cloud KindCloseStream / tunnel teardown unblocks it at once
+	// (M-4). On timeout/cancel resp.Body.Read fails, so serve() still
+	// emits a CLOSE_STREAM and the cloud's matching stream is freed.
+	ctx, cancel := context.WithTimeout(context.Background(), serveTimeout)
+	defer cancel()
+	sc := &streamCancel{cancel: cancel}
+
+	m.mu.Lock()
+	if m.closed.Load() {
+		// Tunnel already torn down between dispatch and here; abandon.
+		m.mu.Unlock()
+		cancel()
+		return
+	}
+	m.cancels[streamID] = sc
+	m.mu.Unlock()
+
+	defer func() {
+		m.mu.Lock()
+		// Only delete our own handle: a later stream reusing this id (or
+		// a CloseStream that already cancelled+deleted it) must not have
+		// its cancel clobbered.
+		if cur, ok := m.cancels[streamID]; ok && cur == sc {
+			delete(m.cancels, streamID)
+		}
+		m.mu.Unlock()
+	}()
+
+	if err := m.proxy.serve(ctx, streamID, asm, sink{m}); err != nil {
 		// A write failure means the tunnel is gone; surface it so the
 		// supervisor reconnects.
 		m.fatal(err)
