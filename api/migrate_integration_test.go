@@ -195,6 +195,91 @@ func TestMigrate_Slot0001_VideosCascadeDeleteFromLibrary(t *testing.T) {
 	}
 }
 
+// TestMigrate_Slot0059_AuditLogAppendOnly applies the full migration
+// chain and proves the slot-0059 guard end to end:
+//
+//   - INSERT into audit_log still succeeds (every existing writer —
+//     api securityaudit.Write, api libraries.WriteAudit, the pipeline
+//     AuditWriter — uses INSERT only and must keep working),
+//   - UPDATE on audit_log raises,
+//   - DELETE on audit_log raises,
+//   - the row count is unchanged after the failed mutations (the
+//     append-only invariant actually held).
+//
+// The FK declaration / trigger DDL is useless if the deploy DB doesn't
+// enforce it, so this is a deliberate behavioural check, not a schema
+// introspection.
+func TestMigrate_Slot0059_AuditLogAppendOnly(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL unset: skipping migration integration test")
+	}
+	db := openTestDB(t, dsn)
+	t.Cleanup(func() { db.Close() })
+	resetSchema(t, db)
+
+	dir := repoMigrationsDir(t)
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		t.Fatalf("stage migrations: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stage) })
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("set dialect: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Apply the whole chain (slot 0059 depends on 0036/0054 + the rest).
+	if err := goose.UpContext(ctx, db, stage); err != nil {
+		t.Fatalf("goose up (full chain): %v", err)
+	}
+
+	assertTableExists(t, db, "audit_log")
+
+	// INSERT must succeed (append path stays open). actor_user_id is a
+	// nullable FK to users; leave it null so we don't need a users row.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO audit_log (category, action, payload)
+		VALUES ('security', 'test.append', '{"k":"v"}'::jsonb)
+	`); err != nil {
+		t.Fatalf("INSERT into audit_log must succeed (append-only allows INSERT): %v", err)
+	}
+
+	var id int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&id); err != nil {
+		t.Fatalf("read back inserted row: %v", err)
+	}
+
+	// UPDATE must raise.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE audit_log SET action = 'tampered' WHERE id = $1`, id); err == nil {
+		t.Fatalf("UPDATE on audit_log must raise (append-only), got nil error")
+	} else if !strings.Contains(err.Error(), "append-only") {
+		t.Errorf("UPDATE error = %v, want it to mention append-only", err)
+	}
+
+	// DELETE must raise.
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM audit_log WHERE id = $1`, id); err == nil {
+		t.Fatalf("DELETE on audit_log must raise (append-only), got nil error")
+	} else if !strings.Contains(err.Error(), "append-only") {
+		t.Errorf("DELETE error = %v, want it to mention append-only", err)
+	}
+
+	// The row survived both blocked mutations.
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM audit_log WHERE id = $1`, id).Scan(&n); err != nil {
+		t.Fatalf("count after blocked mutations: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("audit_log row count = %d after blocked UPDATE/DELETE, want 1", n)
+	}
+}
+
 // --- helpers ---
 
 // openTestDB opens dsn and pings to make sure the connection is

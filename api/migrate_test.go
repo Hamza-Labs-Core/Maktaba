@@ -201,6 +201,79 @@ func TestMigrationFiles_PostgresAndSqliteSiblingsExist(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0059_AuditLogAppendOnly asserts slot 0059
+// ships the append-only guard for `audit_log` on both backends:
+//   - the Postgres file declares the guard function + a BEFORE
+//     UPDATE OR DELETE trigger (and crucially does NOT guard INSERT,
+//     so every existing writer keeps working),
+//   - the SQLite parity sibling ships equivalent BEFORE UPDATE /
+//     BEFORE DELETE RAISE(ABORT) triggers,
+//   - both files carry idempotent down blocks,
+//   - partitioning is explicitly deferred (documented in-file) rather
+//     than silently dropped.
+//
+// Static file check, mirroring the rest of this file. Live-DB
+// behaviour (UPDATE/DELETE raises, INSERT succeeds) is asserted in
+// migrate_integration_test.go.
+func TestMigrationFiles_Slot0059_AuditLogAppendOnly(t *testing.T) {
+	dir := repoMigrationsDir(t)
+
+	pgPath := filepath.Join(dir, "0059_audit_log_append_only.sql")
+	pgBody, err := os.ReadFile(pgPath)
+	if err != nil {
+		t.Fatalf("read pg slot 0059: %v", err)
+	}
+	pg := string(pgBody)
+	for _, want := range []string{
+		"-- +goose Up",
+		"-- +goose Down",
+		"CREATE OR REPLACE FUNCTION audit_log_no_mutate()",
+		"RAISE EXCEPTION",
+		"DROP TRIGGER IF EXISTS audit_log_append_only_trg ON audit_log",
+		"CREATE OR REPLACE TRIGGER audit_log_append_only_trg",
+		"BEFORE UPDATE OR DELETE ON audit_log",
+		"DROP FUNCTION IF EXISTS audit_log_no_mutate()",
+	} {
+		if !strings.Contains(pg, want) {
+			t.Errorf("0059 pg: missing %q", want)
+		}
+	}
+	// INSERT must NOT be in the trigger event list — guarding INSERT
+	// would break securityaudit.Write / libraries.WriteAudit / the
+	// pipeline AuditWriter. The trigger fires on UPDATE OR DELETE only.
+	if strings.Contains(pg, "BEFORE INSERT") ||
+		strings.Contains(pg, "INSERT OR UPDATE") ||
+		strings.Contains(pg, "INSERT OR DELETE") {
+		t.Errorf("0059 pg: trigger must not guard INSERT (append path must stay open)")
+	}
+	// Partitioning is deferred, not silently dropped: the rationale
+	// must be in the file.
+	if !strings.Contains(strings.ToLower(pg), "partitioning") ||
+		!strings.Contains(strings.ToLower(pg), "defer") {
+		t.Errorf("0059 pg: partitioning deferral must be documented in-file")
+	}
+
+	sqlitePath := filepath.Join(dir, "0059_audit_log_append_only.sqlite.sql")
+	sqliteBody, err := os.ReadFile(sqlitePath)
+	if err != nil {
+		t.Fatalf("read sqlite slot 0059: %v", err)
+	}
+	sq := string(sqliteBody)
+	for _, want := range []string{
+		"CREATE TRIGGER IF NOT EXISTS audit_log_no_update_trg",
+		"BEFORE UPDATE ON audit_log",
+		"CREATE TRIGGER IF NOT EXISTS audit_log_no_delete_trg",
+		"BEFORE DELETE ON audit_log",
+		"RAISE(ABORT",
+		"DROP TRIGGER IF EXISTS audit_log_no_delete_trg",
+		"DROP TRIGGER IF EXISTS audit_log_no_update_trg",
+	} {
+		if !strings.Contains(sq, want) {
+			t.Errorf("0059 sqlite: missing %q", want)
+		}
+	}
+}
+
 // repoMigrationsDir locates shared/db/migrations relative to the
 // test working directory by walking up to the repo root. The Go test
 // runner sets cwd to the package directory, so we walk up from
