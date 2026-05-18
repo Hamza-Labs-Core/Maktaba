@@ -38,6 +38,18 @@ type userResolver interface {
 	IsAdmin(ctx context.Context, userID string) (bool, error)
 }
 
+// libraryResolver is the read-side seam the minter uses to snapshot the
+// user's readable libraries into the access token's `lib[]` claim — the
+// exact source of truth native login uses (handlers/auth.librariesFor →
+// authz.ACLStore.LibrariesFor). Without this claim a paired non-admin
+// is default-denied on every library read/search (authz.go HasLibrary →
+// ErrForbidden; search.go empty-libs → empty results), so the pairing
+// flow dead-ends for non-admins. Interface-seam so the mint path is
+// unit-testable without a database.
+type libraryResolver interface {
+	LibrariesFor(ctx context.Context, userID string) ([]string, error)
+}
+
 // refreshIssuer is the slice of refresh.Store the minter needs.
 type refreshIssuer interface {
 	Issue(ctx context.Context, in refresh.IssueInput) (*refresh.Token, error)
@@ -57,6 +69,7 @@ func (k keySetSigner) Sign(c jwt.Claims) (string, error) { return jwt.Sign(k.Set
 // tokenMinter is the production TokenMinter.
 type tokenMinter struct {
 	users   userResolver
+	libs    libraryResolver
 	refresh refreshIssuer
 	signer  jwtSigner
 	now     func() time.Time
@@ -64,10 +77,14 @@ type tokenMinter struct {
 
 // NewTokenMinter builds the production minter. keySet may be nil only
 // in tests; production callers must pass a live set or pairing Exchange
-// is left disabled (the handler returns 503 when Minter is nil).
-func NewTokenMinter(u userResolver, rt refreshIssuer, keySet *keys.Set) TokenMinter {
+// is left disabled (the handler returns 503 when Minter is nil). acl is
+// the library ACL source; a nil acl yields an empty `lib[]` snapshot
+// (the same fallback handlers/auth.librariesFor uses when its ACL is
+// unset) — correct for admins, default-deny for non-admins.
+func NewTokenMinter(u userResolver, acl libraryResolver, rt refreshIssuer, keySet *keys.Set) TokenMinter {
 	return &tokenMinter{
 		users:   u,
+		libs:    acl,
 		refresh: rt,
 		signer:  keySetSigner{Set: keySet},
 	}
@@ -93,6 +110,23 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		isAdmin = a
 	}
 
+	// Mirror handlers/auth.librariesFor exactly: admins read everything,
+	// so skip the ACL lookup and emit an empty slice (the verifier sets
+	// AccessAllLibraries from is_admin). A non-admin gets the ACL
+	// snapshot; a nil resolver or nil result yields an empty slice
+	// rather than a panic. Without this claim a paired non-admin is
+	// default-denied on every library read/search (Defect 1 / AC 15.5).
+	libs := []string{}
+	if !isAdmin && m.libs != nil {
+		l, err := m.libs.LibrariesFor(ctx, userID)
+		if err != nil {
+			return MintedTokens{}, err
+		}
+		if l != nil {
+			libs = l
+		}
+	}
+
 	access, err := m.signer.Sign(jwt.Claims{
 		Iss:     "maktaba",
 		Aud:     "api",
@@ -100,6 +134,7 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		Iat:     now.Unix(),
 		Exp:     now.Add(pairAccessTTL).Unix(),
 		Usr:     userID,
+		Lib:     libs,
 		IsAdmin: isAdmin,
 	})
 	if err != nil {

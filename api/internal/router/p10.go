@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
@@ -91,7 +92,13 @@ type P10Deps struct {
 // MountP10 attaches the four previously-orphaned handler packages.
 // Each handler is safe to mount with partial deps; missing inputs
 // surface as 404 / 503 at the route, not as a panic at boot.
-func MountP10(r chi.Router, d P10Deps) {
+//
+// It returns the pairing store it wired so the caller can drive the
+// Story 15.6 reaper goroutine against it (mirrors the idempotency
+// sweeper handed back by buildIdempotencyStore). The return is never
+// nil — MountP10 always constructs a store (Postgres-backed with a DB,
+// in-memory otherwise).
+func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	// Subscriptions. An explicitly-supplied store wins. Otherwise, if a
 	// DB handle is available, back the store with the `licenses` table
 	// (slot 0056) so an applied premium license survives a restart
@@ -150,7 +157,12 @@ func MountP10(r chi.Router, d P10Deps) {
 			}
 			return u.IsAdmin, nil
 		})
-		ph.Minter = discoveryh.NewTokenMinter(resolver, refresh.New(d.DB), d.Keys)
+		// Library ACL snapshot — the same source of truth native login
+		// uses (handlers/auth wires &authz.ACLStore{DB} into its minter).
+		// Without it a paired non-admin's JWT carries no `lib[]` and is
+		// default-denied on every library read/search (Defect 1).
+		acl := &authz.ACLStore{DB: d.DB}
+		ph.Minter = discoveryh.NewTokenMinter(resolver, acl, refresh.New(d.DB), d.Keys)
 		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
 	}
 	ph.Mount(r)
@@ -168,6 +180,8 @@ func MountP10(r chi.Router, d P10Deps) {
 		reg = perfpkg.NewRegistry()
 	}
 	(&perfh.Handler{Registry: reg, Budgets: d.PerfBudgets}).Mount(r)
+
+	return pstore
 }
 
 // pairAudit adapts a *securityaudit.Writer to the discovery handler's

@@ -101,6 +101,14 @@ type PairingStore interface {
 	Put(ctx context.Context, t PairingTicket) error
 	Get(ctx context.Context, code string) (PairingTicket, error)
 	Consume(ctx context.Context, code string) (PairingTicket, error)
+	// Sweep is the Story 15.6 reaper query: hard-delete every ticket
+	// whose expiry is older than `before`, returning the rows removed.
+	// A boot goroutine drives it on a 30 s tick (see main.runPairingSweep)
+	// so expired/consumed tickets do not accrete unbounded. The expiry
+	// "flip" is implicit: Get/Consume already treat any ticket past its
+	// ExpiresAt as expired, and Sweep then hard-deletes it once it is
+	// older than the 7-day retention horizon the caller passes.
+	Sweep(ctx context.Context, before time.Time) (int64, error)
 }
 
 // ErrCodeNotFound is returned by PairingStore.Get/Consume when the
@@ -175,6 +183,22 @@ func (m *MemoryPairingStore) Consume(_ context.Context, code string) (PairingTic
 	t.ConsumedAt = &now
 	m.tickets[code] = t
 	return t, nil
+}
+
+// Sweep hard-deletes every ticket whose expiry is older than `before`.
+// Mirrors SQLPairingStore.Sweep so the in-memory dev/no-DB path bounds
+// its own growth under the same reaper goroutine. Returns rows removed.
+func (m *MemoryPairingStore) Sweep(_ context.Context, before time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for code, t := range m.tickets {
+		if t.ExpiresAt.Before(before) {
+			delete(m.tickets, code)
+			n++
+		}
+	}
+	return n, nil
 }
 
 // GenerateCode mints a short, human-typable pairing code. The format is
