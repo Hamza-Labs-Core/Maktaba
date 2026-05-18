@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
@@ -176,6 +177,16 @@ func runServe() error {
 			"err", err, "event", "tracing_init_failed")
 	}
 
+	// Shared error-reporting surface (HLB-300). One Reporter for the
+	// process, mirroring how tracing is constructed once here. The
+	// webhook sink is opt-in via $MAKTABA_ERROR_WEBHOOK: unset => nil
+	// sink => default-off (no outbound, never fails), exactly the
+	// errrpt package's documented behaviour. Capture still mints the
+	// error_id and logs structured locally. The sink drops rather than
+	// queues, so there is nothing to flush/close on shutdown.
+	errReporter := errrpt.New(logger,
+		errrpt.NewWebhookSink(os.Getenv("MAKTABA_ERROR_WEBHOOK")))
+
 	checks := buildChecks(logger)
 	warm := warmPeriod()
 	adminMux := health.AdminMux("api", checks, warm)
@@ -215,6 +226,7 @@ func runServe() error {
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
 		AggregatorServices: buildAggregatorServices(),
+		ErrorReporter:      errReporter,
 	})
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the

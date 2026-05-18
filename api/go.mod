@@ -3,6 +3,7 @@ module github.com/Hamza-Labs-Core/Maktaba/api
 go 1.23
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0-00010101000000-000000000000
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go v0.0.0
@@ -54,6 +55,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 )
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go => ../shared/errrpt/go
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/health/go => ../shared/health/go
 
