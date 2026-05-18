@@ -68,8 +68,7 @@ def test_commit_extract_persists_artifact_advances_and_enqueues() -> None:
     assert row.bytes == 4096
     assert db.audio_tracks[tid].last_extracted_at is not None
     assert any(
-        j.stage == "transcribe" and j.state == "pending"
-        for j in db.processing_jobs.values()
+        j.stage == "transcribe" and j.state == "pending" for j in db.processing_jobs.values()
     )
 
 
@@ -151,11 +150,7 @@ def test_load_selected_track_wave0_keeps_first_and_warns_on_multi(
     assert selected.db_id == first_id
 
     # (b) the truncation warning was emitted with the dropped indices.
-    warnings = [
-        e
-        for e in captured_logs.entries
-        if e["event"] == "extract_multi_track_truncated"
-    ]
+    warnings = [e for e in captured_logs.entries if e["event"] == "extract_multi_track_truncated"]
     assert len(warnings) == 1
     w = warnings[0]
     assert w["log_level"] == "warning"
@@ -179,11 +174,7 @@ def test_load_selected_track_single_track_default_path_no_warning(
     assert selected is not None
     assert selected.db_id == tid
     assert selected.track.index == 0
-    assert not [
-        e
-        for e in captured_logs.entries
-        if e["event"] == "extract_multi_track_truncated"
-    ]
+    assert not [e for e in captured_logs.entries if e["event"] == "extract_multi_track_truncated"]
 
 
 def test_commit_extract_missing_video_raises() -> None:

@@ -118,9 +118,7 @@ class StageDB(FakeAudioDB):
                 return None
             job.state = str(new_state)
             job.error = err_json
-            return _Row(
-                {"id": job.id, "state": str(new_state), "not_before": not_before}
-            )
+            return _Row({"id": job.id, "state": str(new_state), "not_before": not_before})
 
         return super()._dispatch(s, args, many=many)
 

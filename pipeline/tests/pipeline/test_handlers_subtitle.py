@@ -59,9 +59,7 @@ def _seed_claimed_job(
         video_id=video_id,
         stage=Stage.SUBTITLE_GEN.value,
         state="running",
-        payload=json.dumps(
-            {"transcript_id": str(transcript_id), "audio_track_id": audio_track_id}
-        ),
+        payload=json.dumps({"transcript_id": str(transcript_id), "audio_track_id": audio_track_id}),
     )
     stage_db._job_next_id = max(stage_db._job_next_id, job_id + 1)  # noqa: SLF001
 
@@ -90,9 +88,7 @@ def test_subtitle_handler_renders_persists_and_advances(tmp_path: object) -> Non
 
     # Both formats were registered in subtitle_files for this video,
     # source=generated, pointing back at the transcript.
-    rows = [
-        r for r in stage_db.subtitle_files.values() if r.video_id == video_id
-    ]
+    rows = [r for r in stage_db.subtitle_files.values() if r.video_id == video_id]
     fmts = {r.format for r in rows}
     assert fmts == {"srt", "vtt"}
     for r in rows:
@@ -154,9 +150,7 @@ def test_subtitle_handler_segments_loaded_in_order() -> None:
     asyncio.run(subtitle_handler(stage_db, job))
 
     srt_row = next(
-        r
-        for r in stage_db.subtitle_files.values()
-        if r.video_id == video_id and r.format == "srt"
+        r for r in stage_db.subtitle_files.values() if r.video_id == video_id and r.format == "srt"
     )
     from pathlib import Path
 
@@ -196,9 +190,7 @@ def test_subtitle_handler_idempotent_on_rerun() -> None:
     assert stage_db.processing_jobs[42].state == "done"
     assert stage_db.processing_jobs[43].state == "done"
     assert stage_db.videos[video_id].state == "indexed"
-    rows = [
-        r for r in stage_db.subtitle_files.values() if r.video_id == video_id
-    ]
+    rows = [r for r in stage_db.subtitle_files.values() if r.video_id == video_id]
     # Still exactly two rows (srt + vtt) — the UPSERT deduped.
     assert len(rows) == 2
     assert {r.format for r in rows} == {"srt", "vtt"}
@@ -228,9 +220,7 @@ def test_subtitle_handler_replay_guarded_when_already_indexed() -> None:
 
     assert stage_db.processing_jobs[44].state == "done"
     assert stage_db.videos[video_id].state == "indexed"
-    rows = [
-        r for r in stage_db.subtitle_files.values() if r.video_id == video_id
-    ]
+    rows = [r for r in stage_db.subtitle_files.values() if r.video_id == video_id]
     assert {r.format for r in rows} == {"srt", "vtt"}
     from pathlib import Path
 
@@ -366,6 +356,4 @@ def test_subtitle_handler_write_failure_is_retryable(monkeypatch: object) -> Non
     # FSM stayed put — no premature INDEXED.
     assert stage_db.videos[video_id].state == "transcribed"
     # No artifact rows persisted.
-    assert not [
-        r for r in stage_db.subtitle_files.values() if r.video_id == video_id
-    ]
+    assert not [r for r in stage_db.subtitle_files.values() if r.video_id == video_id]

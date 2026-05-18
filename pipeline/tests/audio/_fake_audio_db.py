@@ -437,10 +437,7 @@ class FakeAudioDB:
         if s.startswith("SELECT id FROM videos WHERE library_id"):
             library_id, content_hash = args
             for vid_row in self.videos.values():
-                if (
-                    vid_row.library_id == library_id
-                    and vid_row.content_hash == content_hash
-                ):
+                if vid_row.library_id == library_id and vid_row.content_hash == content_hash:
                     return _Row({"id": vid_row.id})
             return None
 
@@ -485,16 +482,13 @@ class FakeAudioDB:
             return _Row({"id": new_video_id, "inserted": True})
 
         # --- enqueue_scan: library-scoped INSERT ------------------------
-        if s.startswith(
-            "INSERT INTO processing_jobs (library_id, video_id, stage,"
-        ):
+        if s.startswith("INSERT INTO processing_jobs (library_id, video_id, stage,"):
             library_id, priority, payload, max_attempts = args
             for pj in self.processing_jobs.values():
                 if (
                     pj.library_id == library_id
                     and pj.stage == "scan"
-                    and pj.state
-                    in {"pending", "claimed", "running", "resuming", "paused"}
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
                 ):
                     return None  # ON CONFLICT DO NOTHING (one live scan/lib)
             new_id = self._job_next_id
@@ -519,8 +513,7 @@ class FakeAudioDB:
                 if (
                     pj.library_id == library_id
                     and pj.stage == "scan"
-                    and pj.state
-                    in {"pending", "claimed", "running", "resuming", "paused"}
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
                 ):
                     return _Row({"id": pj.id})
             return None
@@ -823,9 +816,7 @@ class FakeAudioDB:
             hdr = self.transcripts.get(args[0])
             if hdr is None:
                 return None
-            return _Row(
-                {"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language}
-            )
+            return _Row({"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language})
 
         # index_stage.load_segment_docs — ordered segment load (the
         # INDEX projection leads with ``id,`` so its prefix differs from
@@ -858,16 +849,10 @@ class FakeAudioDB:
 
         # SUBTITLE_GEN — load the transcript's ordered segments (no
         # leading ``id,`` — distinct prefix from the INDEX load above).
-        if s.startswith(
-            "SELECT seq, start_sec, end_sec, text, speaker FROM transcript_segments"
-        ):
+        if s.startswith("SELECT seq, start_sec, end_sec, text, speaker FROM transcript_segments"):
             tid = args[0]
             segs = sorted(
-                (
-                    seg
-                    for seg in self.transcript_segments.values()
-                    if seg.transcript_id == tid
-                ),
+                (seg for seg in self.transcript_segments.values() if seg.transcript_id == tid),
                 key=lambda r: r.seq,
             )
             rows = [
@@ -955,9 +940,7 @@ class FakeAudioDB:
             job = self.processing_jobs.get(int(args[0]))
             if job is None:
                 return None
-            return _Row(
-                {"attempts": job.attempts, "max_attempts": job.max_attempts}
-            )
+            return _Row({"attempts": job.attempts, "max_attempts": job.max_attempts})
 
         # --- jobs_state.mark_failed_or_retry — write failed/pending ----
         if s.startswith("UPDATE processing_jobs SET state = $2") or s.startswith(
@@ -983,9 +966,7 @@ class FakeAudioDB:
                 return None
             job.state = str(new_state)
             job.error = err_json
-            return _Row(
-                {"id": job.id, "state": str(new_state), "not_before": not_before}
-            )
+            return _Row({"id": job.id, "state": str(new_state), "not_before": not_before})
 
         raise AssertionError(f"unexpected SQL in fake audio DB: {s!r}")
 

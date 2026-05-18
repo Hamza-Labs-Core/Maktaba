@@ -157,9 +157,7 @@ def test_index_handler_loads_segments_indexes_and_advances() -> None:
     assert md["language"] == "ara"
     assert md["seq"] == 0
     # the deterministic embed was used (no model load).
-    assert call["embeddings"] == _deterministic_embed(
-        ["bismillah", "al-hamdu", "lillah"]
-    )
+    assert call["embeddings"] == _deterministic_embed(["bismillah", "al-hamdu", "lillah"])
     # FSM advanced TRANSCRIBED -> INDEXED.
     assert stage_db.videos[video_id].state == "indexed"
     # INDEX has no follow-on enqueue (THUMBNAIL has no module yet).
@@ -244,9 +242,7 @@ def test_index_handler_missing_payload_is_non_retryable() -> None:
     stage_db = StageDB(dialect="postgres")
     video_id = stage_db.add_video(state="transcribed")
     job = make_job(job_id=44, video_id=video_id, stage=Stage.INDEX)
-    _seed_claimed_index_job(
-        stage_db, job_id=44, video_id=video_id, transcript_id=None
-    )
+    _seed_claimed_index_job(stage_db, job_id=44, video_id=video_id, transcript_id=None)
 
     async def fake_resolve(*, video_id: UUID) -> IndexTarget:  # noqa: ARG001  # pragma: no cover
         raise AssertionError("collection must not be resolved with no payload")
@@ -271,9 +267,7 @@ def test_index_handler_missing_transcript_is_non_retryable() -> None:
         stage=Stage.INDEX,
         payload={"transcript_id": str(ghost), "audio_track_id": 1},
     )
-    _seed_claimed_index_job(
-        stage_db, job_id=45, video_id=video_id, transcript_id=ghost
-    )
+    _seed_claimed_index_job(stage_db, job_id=45, video_id=video_id, transcript_id=ghost)
 
     async def fake_resolve(*, video_id: UUID) -> IndexTarget:  # noqa: ARG001  # pragma: no cover
         raise AssertionError("collection must not be resolved with no transcript")

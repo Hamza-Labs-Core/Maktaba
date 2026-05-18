@@ -494,9 +494,7 @@ async def commit_extract(
     current_state = State(state_row["state"])
 
     if current_state == State.PROBED:
-        new_state = await advance_after_stage(
-            db, video_id, Trigger.EXTRACT, Outcome.OK, log=log
-        )
+        new_state = await advance_after_stage(db, video_id, Trigger.EXTRACT, Outcome.OK, log=log)
     else:
         # Replay / out-of-order: leave the row where it is. The FSM
         # would otherwise raise IllegalStateTransition for

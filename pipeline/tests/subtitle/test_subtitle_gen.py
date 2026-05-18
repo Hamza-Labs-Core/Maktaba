@@ -105,15 +105,11 @@ def test_commit_subtitles_replay_guard_no_double_advance(tmp_path: Path) -> None
         loaded = await load_transcript_cues(db, transcript_id=tid)
         assert loaded is not None
 
-        s1 = await commit_subtitles(
-            db, video_id=vid, loaded=loaded, cache_root=str(tmp_path)
-        )
+        s1 = await commit_subtitles(db, video_id=vid, loaded=loaded, cache_root=str(tmp_path))
         assert s1 == "indexed"
         # Second run: video already INDEXED — must NOT raise
         # IllegalStateTransition; the advance is a no-op.
-        s2 = await commit_subtitles(
-            db, video_id=vid, loaded=loaded, cache_root=str(tmp_path)
-        )
+        s2 = await commit_subtitles(db, video_id=vid, loaded=loaded, cache_root=str(tmp_path))
         assert s2 == "indexed"
         # UPSERT deduped — still exactly two rows.
         rows = [r for r in db.subtitle_files.values() if r.video_id == vid]
@@ -165,9 +161,7 @@ def test_commit_subtitles_second_format_failure_rolls_both_rows_back(
         monkeypatch.setattr(mgr, "register_subtitle", _flaky_register)
 
         with pytest.raises(OSError, match="registry write failed"):
-            await commit_subtitles(
-                db, video_id=vid, loaded=loaded, cache_root=str(tmp_path)
-            )
+            await commit_subtitles(db, video_id=vid, loaded=loaded, cache_root=str(tmp_path))
 
         # Atomic rollback: NEITHER row persisted (not SRT-only), and the
         # FSM did not advance — the job is retryable.
@@ -198,9 +192,7 @@ def test_commit_subtitles_missing_video_raises_lookup(tmp_path: Path) -> None:
         del db.videos[vid]
         raised = False
         try:
-            await commit_subtitles(
-                db, video_id=vid, loaded=loaded, cache_root=str(tmp_path)
-            )
+            await commit_subtitles(db, video_id=vid, loaded=loaded, cache_root=str(tmp_path))
         except LookupError:
             raised = True
         assert raised

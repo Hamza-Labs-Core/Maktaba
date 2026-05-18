@@ -117,9 +117,7 @@ def test_commit_index_idempotent_rerun_no_dup_vectors() -> None:
     coll = _FakeCollection()
     target = IndexTarget(collection=coll, embed=_embed)
 
-    asyncio.run(
-        commit_index(db, video_id=video_id, transcript_id=tid, docs=docs, target=target)
-    )
+    asyncio.run(commit_index(db, video_id=video_id, transcript_id=tid, docs=docs, target=target))
     # Second run: already INDEXED — FSM advance is a no-op, ids overwrite.
     count2, state2 = asyncio.run(
         commit_index(db, video_id=video_id, transcript_id=tid, docs=docs, target=target)

@@ -162,9 +162,7 @@ async def default_select_backend(
     model = str(stt_cfg.get("model", "large-v3"))
 
     registry = _build_registry(model=model)
-    backend, trace = await pick_backend(
-        registry, primary=primary, fallback=fallback
-    )
+    backend, trace = await pick_backend(registry, primary=primary, fallback=fallback)
     return backend, trace.chosen, _backend_version(backend)
 
 
@@ -335,9 +333,7 @@ async def commit_transcribe(
     current_state = State(state_row["state"])
 
     if current_state == State.AUDIO_EXTRACTED:
-        new_state = await advance_after_stage(
-            db, video_id, Trigger.TRANSCRIBE, Outcome.OK, log=log
-        )
+        new_state = await advance_after_stage(db, video_id, Trigger.TRANSCRIBE, Outcome.OK, log=log)
     else:
         # Replay / out-of-order: leave the row where it is. The FSM has
         # no AUDIO_EXTRACTED <- edge from TRANSCRIBED, mirroring the

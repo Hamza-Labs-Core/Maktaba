@@ -80,9 +80,7 @@ def _seed_audio_track(
 def test_extract_handler_extracts_persists_and_enqueues_transcribe() -> None:
     stage_db = StageDB(dialect="postgres")
     chash = "b" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/movie.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     track_id = _seed_audio_track(stage_db, video_id=video_id)
     job = make_job(job_id=7, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=7, video_id=video_id)
@@ -121,9 +119,7 @@ def test_extract_handler_selects_track_via_policy() -> None:
     """Two tracks: the language/default policy picks the Arabic one."""
     stage_db = StageDB(dialect="postgres")
     chash = "c" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/multi.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/multi.mkv", content_hash=chash)
     # index 0 is English (default-flagged), index 1 is Arabic. The
     # selection rule prefers Arabic over the container default.
     _seed_audio_track(
@@ -182,9 +178,7 @@ def test_extract_handler_no_audio_tracks_fails_non_retryable() -> None:
     inconsistency, not a transient error."""
     stage_db = StageDB(dialect="postgres")
     chash = "d" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/silent.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/silent.mkv", content_hash=chash)
     job = make_job(job_id=10, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=10, video_id=video_id)
 
@@ -202,9 +196,7 @@ def test_extract_handler_no_audio_tracks_fails_non_retryable() -> None:
 def test_extract_handler_ffmpeg_failure_is_retryable() -> None:
     stage_db = StageDB(dialect="postgres")
     chash = "e" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/movie.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
     job = make_job(job_id=11, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=11, video_id=video_id)
@@ -233,9 +225,7 @@ def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
 
     stage_db = StageDB(dialect="postgres")
     chash = "9" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/movie.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
     job = make_job(job_id=14, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=14, video_id=video_id)
@@ -263,9 +253,7 @@ def test_extract_handler_idempotent_on_rerun() -> None:
     the artifact UPSERT and the FSM advance both tolerate a repeat."""
     stage_db = StageDB(dialect="postgres")
     chash = "f" * 64
-    video_id = stage_db.add_video(
-        state="probed", path="/lib/movie.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
 
     async def fake_extract(path: str, track_index: int, *, content_hash: str) -> Path:
@@ -284,8 +272,6 @@ def test_extract_handler_idempotent_on_rerun() -> None:
     assert stage_db.videos[video_id].state == "audio_extracted"
     # Exactly one TRANSCRIBE row — the enqueue idempotency held.
     transcribe_rows = [
-        pj
-        for pj in stage_db.processing_jobs.values()
-        if pj.stage == Stage.TRANSCRIBE.value
+        pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.TRANSCRIBE.value
     ]
     assert len(transcribe_rows) == 1

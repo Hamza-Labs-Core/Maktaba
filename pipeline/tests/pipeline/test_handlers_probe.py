@@ -121,9 +121,7 @@ def test_probe_handler_no_audio_skips_extract() -> None:
 
     asyncio.run(probe_handler(stage_db, job, run_probe=fake_probe))
 
-    assert not any(
-        pj.stage == Stage.EXTRACT.value for pj in stage_db.processing_jobs.values()
-    )
+    assert not any(pj.stage == Stage.EXTRACT.value for pj in stage_db.processing_jobs.values())
     assert stage_db.processing_jobs[1].state == "done"
 
 

@@ -128,9 +128,7 @@ def test_rescan_is_idempotent_no_dup_videos_or_probes(tmp_path: Path) -> None:
         await scan_handler(db, j1, make_store=_store_factory)
 
         videos_after_first = len(db.videos)
-        probes_after_first = sum(
-            1 for pj in db.processing_jobs.values() if pj.stage == "probe"
-        )
+        probes_after_first = sum(1 for pj in db.processing_jobs.values() if pj.stage == "probe")
         assert videos_after_first == 1
         assert probes_after_first == 1
 

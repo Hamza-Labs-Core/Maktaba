@@ -273,9 +273,7 @@ async def commit_index(
     current_state = State(state_row["state"])
 
     if current_state == State.TRANSCRIBED:
-        new_state = await advance_after_stage(
-            db, video_id, Trigger.INDEX, Outcome.OK, log=log
-        )
+        new_state = await advance_after_stage(db, video_id, Trigger.INDEX, Outcome.OK, log=log)
     else:
         # Replay / converged-with-SUBTITLE_GEN / out-of-order: leave the
         # row where it is. The FSM has no INDEX edge out of INDEXED (or

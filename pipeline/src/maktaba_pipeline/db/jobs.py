@@ -407,6 +407,5 @@ async def enqueue_scan(
             return EnqueueResult(id=int(live["id"]), outcome="reused")
 
         raise RuntimeError(
-            "enqueue_scan: INSERT swallowed but no live scan row found "
-            "— schema invariant violated",
+            "enqueue_scan: INSERT swallowed but no live scan row found — schema invariant violated",
         )

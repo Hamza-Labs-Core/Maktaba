@@ -227,9 +227,7 @@ async def extract_handler(
                 job_id=job.id,
                 error=StageError(
                     kind="extract_missing_source",
-                    message=(
-                        f"no videos.path/content_hash for video_id={job.video_id}"
-                    ),
+                    message=(f"no videos.path/content_hash for video_id={job.video_id}"),
                     retryable=False,
                 ),
             )
@@ -240,9 +238,7 @@ async def extract_handler(
 
         from .audio.extract import commit_extract, load_selected_track  # noqa: PLC0415
 
-        selected = await load_selected_track(
-            cast("_ExtractDB", db), video_id=job.video_id
-        )
+        selected = await load_selected_track(cast("_ExtractDB", db), video_id=job.video_id)
         if selected is None:
             await mark_failed_or_retry(
                 db,
@@ -688,9 +684,7 @@ async def subtitle_handler(
             )
             return
 
-        loaded = await load_transcript_cues(
-            cast("_SubtitleDB", db), transcript_id=transcript_id
-        )
+        loaded = await load_transcript_cues(cast("_SubtitleDB", db), transcript_id=transcript_id)
         if loaded is None:
             await mark_failed_or_retry(
                 db,
@@ -847,9 +841,7 @@ async def index_handler(
             )
             return
 
-        docs = await load_segment_docs(
-            cast("_IndexDB", db), transcript_id=transcript_id
-        )
+        docs = await load_segment_docs(cast("_IndexDB", db), transcript_id=transcript_id)
         if docs is None:
             await mark_failed_or_retry(
                 db,

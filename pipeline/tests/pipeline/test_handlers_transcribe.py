@@ -64,9 +64,7 @@ def _seed_claimed_job(
         video_id=video_id,
         stage=Stage.TRANSCRIBE.value,
         state="running",
-        payload=json.dumps(
-            {"audio_track_id": audio_track_id, "content_hash": content_hash}
-        ),
+        payload=json.dumps({"audio_track_id": audio_track_id, "content_hash": content_hash}),
     )
     stage_db._job_next_id = max(stage_db._job_next_id, job_id + 1)  # noqa: SLF001
 
@@ -107,9 +105,7 @@ def _seed_extract_output(
     return track_id
 
 
-def _fake_backend(
-    name: str = "fake-stt", *, segments: tuple[Segment, ...] = _SEGMENTS
-) -> Any:
+def _fake_backend(name: str = "fake-stt", *, segments: tuple[Segment, ...] = _SEGMENTS) -> Any:
     """A canonical fake STT backend yielding deterministic segments."""
 
     class _FakeBackend:
@@ -153,7 +149,10 @@ def test_transcribe_handler_selects_backend_persists_segments_advances() -> None
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=20, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=20,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -171,11 +170,7 @@ def test_transcribe_handler_selects_backend_persists_segments_advances() -> None
     # the cached WAV path was handed to the backend (requires_file).
     assert backend.seen[0][0] == f"/cache/audio/{chash}.wav"
     # a transcript row was created + activated for this video/track.
-    actives = [
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.is_active
-    ]
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
     assert len(actives) == 1
     tr = actives[0]
     assert tr.audio_track_id == track_id
@@ -190,11 +185,7 @@ def test_transcribe_handler_selects_backend_persists_segments_advances() -> None
     # FSM advanced AUDIO_EXTRACTED -> TRANSCRIBED.
     assert stage_db.videos[video_id].state == "transcribed"
     # BOTH downstream stages were enqueued.
-    stages = {
-        pj.stage
-        for pj in stage_db.processing_jobs.values()
-        if pj.video_id == video_id
-    }
+    stages = {pj.stage for pj in stage_db.processing_jobs.values() if pj.video_id == video_id}
     assert Stage.SUBTITLE_GEN.value in stages
     assert Stage.INDEX.value in stages
     # the TRANSCRIBE job itself is done.
@@ -207,9 +198,7 @@ def test_transcribe_handler_downstream_payload_contract() -> None:
     re-query race."""
     stage_db = StageDB(dialect="postgres")
     chash = "b" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
     job = make_job(
         job_id=21,
@@ -218,7 +207,10 @@ def test_transcribe_handler_downstream_payload_contract() -> None:
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=21, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=21,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -246,9 +238,7 @@ def test_transcribe_handler_missing_audio_cache_is_non_retryable() -> None:
     inconsistency (EXTRACT must have persisted it); non-retryable."""
     stage_db = StageDB(dialect="postgres")
     chash = "c" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     # NOTE: no _seed_extract_output → audio_cache empty.
     job = make_job(
         job_id=22,
@@ -257,7 +247,10 @@ def test_transcribe_handler_missing_audio_cache_is_non_retryable() -> None:
         payload={"audio_track_id": 999, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=22, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=22,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=999,
     )
 
@@ -301,9 +294,7 @@ def test_transcribe_handler_backend_error_is_retryable() -> None:
     """A transient backend / IO failure mid-stream is retryable."""
     stage_db = StageDB(dialect="postgres")
     chash = "d" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
     job = make_job(
         job_id=24,
@@ -312,7 +303,10 @@ def test_transcribe_handler_backend_error_is_retryable() -> None:
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=24, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=24,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -353,9 +347,7 @@ def test_transcribe_handler_idempotent_on_rerun() -> None:
     dedupes — no duplicate SUBTITLE_GEN/INDEX rows."""
     stage_db = StageDB(dialect="postgres")
     chash = "e" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
 
     async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
@@ -368,7 +360,10 @@ def test_transcribe_handler_idempotent_on_rerun() -> None:
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=25, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=25,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
     asyncio.run(transcribe_handler(stage_db, job1, select_backend=fake_pick))
@@ -380,7 +375,10 @@ def test_transcribe_handler_idempotent_on_rerun() -> None:
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=26, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=26,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
     asyncio.run(transcribe_handler(stage_db, job2, select_backend=fake_pick))
@@ -388,16 +386,8 @@ def test_transcribe_handler_idempotent_on_rerun() -> None:
     assert stage_db.processing_jobs[25].state == "done"
     assert stage_db.processing_jobs[26].state == "done"
     assert stage_db.videos[video_id].state == "transcribed"
-    sg = [
-        pj
-        for pj in stage_db.processing_jobs.values()
-        if pj.stage == Stage.SUBTITLE_GEN.value
-    ]
-    idx = [
-        pj
-        for pj in stage_db.processing_jobs.values()
-        if pj.stage == Stage.INDEX.value
-    ]
+    sg = [pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.SUBTITLE_GEN.value]
+    idx = [pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.INDEX.value]
     assert len(sg) == 1
     assert len(idx) == 1
 
@@ -437,9 +427,7 @@ def test_transcribe_first_time_midstream_failure_leaves_no_empty_active() -> Non
     exists, so a downstream consumer never reads a half transcript."""
     stage_db = StageDB(dialect="postgres")
     chash = "f" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
     job = make_job(
         job_id=30,
@@ -448,7 +436,10 @@ def test_transcribe_first_time_midstream_failure_leaves_no_empty_active() -> Non
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=30, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=30,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -461,11 +452,7 @@ def test_transcribe_first_time_midstream_failure_leaves_no_empty_active() -> Non
     assert stage_db.processing_jobs[30].state == "pending"
     assert stage_db.videos[video_id].state == "audio_extracted"
     # No ACTIVE transcript exists — the partial row (if any) is inert.
-    actives = [
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.is_active
-    ]
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
     assert actives == []
 
 
@@ -477,9 +464,7 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
     that never finished."""
     stage_db = StageDB(dialect="postgres")
     chash = "g" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
 
     # First run: a good backend produces a complete active transcript.
@@ -495,15 +480,16 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=31, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=31,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
     asyncio.run(transcribe_handler(stage_db, job1, select_backend=pick_good))
 
     good_active = next(
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.is_active
+        t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active
     )
     good_id = good_active.id
     good_segs = sorted(
@@ -520,7 +506,10 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=32, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=32,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -531,11 +520,7 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
 
     # The prior good transcript is STILL the sole active one and STILL
     # complete (all 3 segments) — the failed re-run never retired it.
-    actives = [
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.is_active
-    ]
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
     assert len(actives) == 1
     assert actives[0].id == good_id
     assert actives[0].is_active is True
@@ -547,9 +532,7 @@ def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None
     assert [s.text for s in still_segs] == ["bismillah", "al-hamdu", "lillah"]
     # The failed run's partial row, if it exists, is NOT active.
     partials = [
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.id != good_id
+        t for t in stage_db.transcripts.values() if t.video_id == video_id and t.id != good_id
     ]
     assert all(p.is_active is False for p in partials)
 
@@ -559,9 +542,7 @@ def test_transcribe_stamps_backend_declared_model() -> None:
     stamped onto ``transcripts.model``."""
     stage_db = StageDB(dialect="postgres")
     chash = "h" * 64
-    video_id = stage_db.add_video(
-        state="audio_extracted", path="/lib/m.mkv", content_hash=chash
-    )
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
     track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
     job = make_job(
         job_id=33,
@@ -570,7 +551,10 @@ def test_transcribe_stamps_backend_declared_model() -> None:
         payload={"audio_track_id": track_id, "content_hash": chash},
     )
     _seed_claimed_job(
-        stage_db, job_id=33, video_id=video_id, content_hash=chash,
+        stage_db,
+        job_id=33,
+        video_id=video_id,
+        content_hash=chash,
         audio_track_id=track_id,
     )
 
@@ -581,11 +565,7 @@ def test_transcribe_stamps_backend_declared_model() -> None:
 
     asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
 
-    tr = next(
-        t
-        for t in stage_db.transcripts.values()
-        if t.video_id == video_id and t.is_active
-    )
+    tr = next(t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active)
     # The MODEL, not the backend NAME, is stamped.
     assert tr.model == "fake-model-v1"
     assert tr.model != tr.backend
