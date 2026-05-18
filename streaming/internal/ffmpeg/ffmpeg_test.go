@@ -2,9 +2,108 @@ package ffmpeg
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestProcessStop_SIGTERMGracefulThenKill covers HLB-328 I2. Stop must
+// first SIGTERM (so ffmpeg can finalize the current segment/playlist),
+// wait a bounded grace window, then escalate to SIGKILL if the child is
+// still alive. We prove both arms with real OS processes.
+func TestProcessStop_SIGTERMGracefulThenKill(t *testing.T) {
+	// Shrink the grace window so the SIGKILL-escalation arm stays fast.
+	old := stopGrace
+	stopGrace = 300 * time.Millisecond
+	t.Cleanup(func() { stopGrace = old })
+
+	t.Run("graceful exit on SIGTERM (no SIGKILL needed)", func(t *testing.T) {
+		dir := t.TempDir()
+		// Default SIGTERM disposition terminates `sleep`, so this child
+		// exits promptly on the TERM — well inside the grace window.
+		script := filepath.Join(dir, "term-graceful")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		p, err := Spawn(context.Background(), Binary{FFmpeg: script}, Args{"x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		if err := p.Stop(context.Background()); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		// Must have exited via the grace window, not after it (i.e. no
+		// SIGKILL escalation was required).
+		if elapsed := time.Since(start); elapsed >= stopGrace {
+			t.Fatalf("Stop took %v (>= grace %v) — child did not exit on "+
+				"SIGTERM as expected", elapsed, stopGrace)
+		}
+		if p.Active() {
+			t.Fatal("process still active after graceful Stop")
+		}
+		// Idempotent.
+		if err := p.Stop(context.Background()); err != nil {
+			t.Fatalf("second Stop not idempotent: %v", err)
+		}
+	})
+
+	t.Run("escalates to SIGKILL when SIGTERM ignored", func(t *testing.T) {
+		dir := t.TempDir()
+		// Trap SIGTERM and keep running — only SIGKILL can stop this.
+		// The child touches `ready` *after* the trap is installed so the
+		// test can wait for that before sending the signal — otherwise a
+		// TERM delivered before `sh` parses the trap hits the default
+		// disposition and the child dies early (flaky). Real ffmpeg
+		// likewise has its signal handler up by the time it produces a
+		// segment, so gating on readiness models production faithfully.
+		script := filepath.Join(dir, "term-ignorer")
+		ready := filepath.Join(dir, "ready")
+		body := "#!/bin/sh\ntrap '' TERM\ntouch '" + ready + "'\nwhile true; do sleep 1; done\n"
+		if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		p, err := Spawn(context.Background(), Binary{FFmpeg: script}, Args{"x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !waitUntilFile(2*time.Second, ready) {
+			t.Fatal("child never signalled readiness (trap not installed)")
+		}
+		start := time.Now()
+		if err := p.Stop(context.Background()); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		// Should only have exited after the grace window elapsed and the
+		// SIGKILL landed — proving the TERM-then-grace-then-KILL order.
+		if elapsed := time.Since(start); elapsed < stopGrace {
+			t.Fatalf("Stop returned in %v (< grace %v) — SIGTERM-ignoring "+
+				"child should have required the full grace window before "+
+				"SIGKILL", elapsed, stopGrace)
+		}
+		if p.Active() {
+			t.Fatal("SIGTERM-ignoring process still active after Stop — " +
+				"SIGKILL escalation did not happen")
+		}
+	})
+}
+
+// waitUntilFile polls for the existence of path until it appears or the
+// deadline elapses. Small bounded sleeps keep the stop tests fast and
+// non-flaky.
+func waitUntilFile(d time.Duration, path string) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 func TestRemuxArgs_CopyOnly(t *testing.T) {
 	args := RemuxArgs("/in.mkv", "/out.mp4")

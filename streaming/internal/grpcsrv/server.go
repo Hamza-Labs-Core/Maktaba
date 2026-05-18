@@ -258,8 +258,16 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	}
 	if err := s.Sessions.Insert(ctx, sessRow); err != nil {
 		// Don't leak the FFmpeg child if the row can't be stored.
+		// HLB-328 I2: use a fresh background-scoped ctx, NOT the request
+		// ctx — the request ctx is about to be cancelled by grpc-go, and
+		// Process.Stop's select{case <-ctx.Done()} would return
+		// context.Canceled before SIGTERM/SIGKILL is confirmed, orphaning
+		// ffmpeg. The timeout covers the SIGTERM grace window plus a
+		// margin so termination is always confirmed.
 		if transcoder != nil {
-			_ = transcoder.Stop(ctx)
+			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_ = transcoder.Stop(stopCtx)
+			cancel()
 		}
 		return OpenSessionResponse{}, err
 	}

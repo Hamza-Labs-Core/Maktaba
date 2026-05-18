@@ -34,17 +34,38 @@ type Job struct {
 // CloseSession can terminate the child on idle/close. *Process already
 // implements this; Handle adds a nil-safe wrapper for the fake-runner
 // path where no OS process exists.
+//
+// HLB-328 C1: the encoder MUST outlive the OpenSession RPC. grpc-go
+// cancels the inbound per-RPC ctx the instant OpenSession returns, so
+// the child process can NOT be parented to that ctx (exec.CommandContext
+// would SIGKILL ffmpeg within ms of the reply, before any segment was
+// produced). The encoder is therefore spawned under a session-scoped
+// context owned here: procCancel cancels that context and is driven
+// only by Handle.Stop (reaper Sweep / MemoryStore.Close / CloseSession
+// all funnel through Handle.Stop). The request ctx is kept strictly for
+// request-scoped concerns (the Orchestrator's pre-spawn validation).
 type Handle struct {
-	proc   *Process
-	stopFn func(context.Context) error
-	pidFn  func() int
-	actFn  func() bool
+	proc       *Process
+	procCancel context.CancelFunc // cancels the session-scoped encoder ctx
+	stopFn     func(context.Context) error
+	pidFn      func() int
+	actFn      func() bool
 }
 
 // Stop terminates the underlying process. Idempotent.
+//
+// procCancel() is invoked IN ADDITION to Process.Stop so that the
+// session-scoped encoder context is always torn down even though the
+// child is no longer parented to the request ctx. Process.Stop still
+// does the deterministic SIGTERM→grace→SIGKILL termination + Wait reap;
+// cancelling procCtx is belt-and-braces (and frees the context's
+// goroutine) and makes Stop the single owner of the encoder lifetime.
 func (h *Handle) Stop(ctx context.Context) error {
 	if h == nil {
 		return nil
+	}
+	if h.procCancel != nil {
+		h.procCancel()
 	}
 	if h.proc != nil {
 		return h.proc.Stop(ctx)
@@ -174,11 +195,23 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	} else {
 		args = HLSArgs(job.InputPath, job.OutputDir, job.MasterName, job.Ladder, job.HWAccel)
 	}
-	proc, err := Spawn(ctx, e.Bin, args)
+	// HLB-328 C1: derive a session-scoped context from Background, NOT
+	// from the inbound request ctx. grpc-go cancels the request ctx the
+	// instant OpenSession returns; if exec.CommandContext were parented
+	// to it, ffmpeg would be SIGKILLed within ms — no variant playlist
+	// or segments would ever be produced and the client would poll
+	// forever. The encoder's lifetime is owned by the Handle and torn
+	// down only via Handle.Stop (reaper / CloseSession / store Close).
+	// The request ctx is intentionally unused here (request-scoped
+	// validation happens upstream in Orchestrator.Start).
+	_ = ctx
+	procCtx, procCancel := context.WithCancel(context.Background())
+	proc, err := Spawn(procCtx, e.Bin, args)
 	if err != nil {
+		procCancel()
 		return nil, err
 	}
-	return &Handle{proc: proc}, nil
+	return &Handle{proc: proc, procCancel: procCancel}, nil
 }
 
 // NewHandleForTest builds a Handle wired to caller-supplied closures —
