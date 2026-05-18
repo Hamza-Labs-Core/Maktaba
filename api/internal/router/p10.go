@@ -76,21 +76,41 @@ type P10Deps struct {
 	Logger *slog.Logger
 }
 
-// MountP10 attaches the four previously-orphaned handler packages.
-// Each handler is safe to mount with partial deps; missing inputs
-// surface as 404 / 503 at the route, not as a panic at boot.
-func MountP10(r chi.Router, d P10Deps) {
-	// Subscriptions. An explicitly-supplied store wins. Otherwise, if a
-	// DB handle is available, back the store with the `licenses` table
-	// (slot 0056) so an applied premium license survives a restart
-	// (HLB-287). With no DB we fall back to the in-memory store — the
-	// dev / no-Postgres path, where losing the license on restart is
-	// acceptable.
+// EntitlementStore constructs the live entitlement Store + license
+// Verifier from d, applying the same precedence MountP10 uses. It is
+// exported so main.go can build the store *once* and share the single
+// instance with both the auth surface (Epic 16 Story 16.2 seat
+// enforcement on POST /api/users) and the subscriptions surface — a
+// mid-process license apply/revoke must be visible to every gate, so
+// they cannot each own a separate Store.
+//
+//   - Verifier: an explicitly-supplied one wins (tests). Otherwise the
+//     build-time embedded license-server public key (Story 16.4). With
+//     only the placeholder embed it stays nil and /api/admin/license is
+//     disabled (503) — fail-closed, never a panic, never a zero key.
+//   - Store: an explicit one wins. Else, with a DB, the `licenses`
+//     table (slot 0056) so an applied license survives a restart
+//     (HLB-287). With no DB, the in-memory store (dev path).
+func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
+	verifier := d.SubscriptionsVerifier
+	if verifier == nil {
+		if v, err := subpkg.EmbeddedVerifier(); err == nil {
+			verifier = v
+			if d.Logger != nil {
+				d.Logger.Info("p10: license verifier loaded from embedded key",
+					"event", "license_verifier_embedded")
+			}
+		} else if d.Logger != nil {
+			d.Logger.Info("p10: no embedded license key; /api/admin/license disabled",
+				"event", "license_verifier_absent", "err", err)
+		}
+	}
+
 	store := d.SubscriptionsStore
 	if store == nil {
 		if d.DB != nil {
 			persist := subpkg.NewSQLLicensePersistence(d.DB)
-			ps, err := subpkg.NewPersistentStore(context.Background(), persist, d.SubscriptionsVerifier)
+			ps, err := subpkg.NewPersistentStore(context.Background(), persist, verifier)
 			// On a recovery error the store is still usable (free
 			// tier); a corrupt/unverifiable persisted license must not
 			// crash boot nor silently grant premium. Fail-closed
@@ -106,7 +126,15 @@ func MountP10(r chi.Router, d P10Deps) {
 			store = subpkg.NewStore()
 		}
 	}
-	(&subh.Handler{Store: store, Verifier: d.SubscriptionsVerifier}).Mount(r)
+	return store, verifier
+}
+
+// MountP10 attaches the four previously-orphaned handler packages.
+// Each handler is safe to mount with partial deps; missing inputs
+// surface as 404 / 503 at the route, not as a panic at boot.
+func MountP10(r chi.Router, d P10Deps) {
+	store, verifier := EntitlementStore(d)
+	(&subh.Handler{Store: store, Verifier: verifier}).Mount(r)
 
 	// Pairing.
 	pstore := d.PairingStore

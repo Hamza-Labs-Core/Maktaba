@@ -102,6 +102,16 @@ type Handler struct {
 	// AC-3). *users.Store satisfies it.
 	UserAdmin UserAdmin
 
+	// Seats + SeatCount drive Epic 16 Story 16.2 seat enforcement on
+	// POST /api/users — the first real premium-gate call site in the
+	// codebase (the gap analysis flagged that no entitlement gate had
+	// *any* caller). Both nil ⇒ the gate is inert (free build / no
+	// entitlement source), so every existing call path is unaffected.
+	// Wired together: Seats is a subscriptions.Store adapter, SeatCount
+	// is the same *users.Store as UserAdmin.
+	Seats     SeatLimiter
+	SeatCount SeatCounter
+
 	// SecureCookies controls whether the Set-Cookie response uses the
 	// Secure attribute. Production should set this to true; tests and
 	// localhost dev leave it false. Defaults to false; we can't infer
@@ -812,6 +822,11 @@ type Deps struct {
 	Keys          *keys.Set
 	SecureCookies bool
 	AccessTTL     time.Duration
+
+	// Seats is the live entitlement seat-cap source (Epic 16 Story
+	// 16.2). Nil ⇒ the user-create seat gate is inert. SeatCount is
+	// derived from the same *users.Store as UserAdmin.
+	Seats SeatLimiter
 }
 
 // NewHandler builds the canonical handler from Deps. Used by the
@@ -832,6 +847,12 @@ func NewHandler(d Deps) *Handler {
 		FailedLogins: us,
 		// ...and the admin user-management surface (Story 10.1 AC-3).
 		UserAdmin: us,
+		// Epic 16 Story 16.2 seat enforcement: the cap comes from the
+		// shared entitlement Store (d.Seats); the current count from
+		// the same *users.Store. Both nil-safe — gate inert if d.Seats
+		// is nil.
+		Seats:     d.Seats,
+		SeatCount: us,
 	}
 }
 

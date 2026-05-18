@@ -76,7 +76,12 @@ func (h *Handler) SetLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Verifier == nil {
-		httperror.Write(w, r, httperror.Internal("verifier not configured"))
+		// No build-time license-server key was embedded (the
+		// open-source default). The endpoint is *disabled*, not
+		// erroring — surface 503 so clients/operators can tell
+		// "feature off in this build" from "we broke" (500). Story
+		// 16.4 / gap analysis: fail-closed, never trust a zero key.
+		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
 	var lic subscriptions.License

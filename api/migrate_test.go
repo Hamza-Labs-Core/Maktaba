@@ -192,6 +192,48 @@ func TestMigrationFiles_Slot0056_LicensesShape(t *testing.T) {
 	}
 }
 
+// TestMigrationFiles_Slot0063_TierDomainFreeHomePro asserts slot 0063
+// widens licenses.tier to the spec's free/home/pro model (Epic 16
+// Story 16.2). Guards against a regression that would re-narrow the
+// CHECK and reject legitimate home/pro license rows.
+func TestMigrationFiles_Slot0063_TierDomainFreeHomePro(t *testing.T) {
+	dir := repoMigrationsDir(t)
+
+	pg, err := os.ReadFile(filepath.Join(dir, "0063_licenses_tier_free_home_pro.sql"))
+	if err != nil {
+		t.Fatalf("read 0063 pg: %v", err)
+	}
+	pgs := string(pg)
+	for _, want := range []string{
+		"DROP CONSTRAINT IF EXISTS licenses_tier_check",
+		"CHECK (tier IN ('free', 'home', 'pro'))",
+		"pg_constraint",
+		"UPDATE licenses SET tier = 'pro' WHERE tier = 'premium'",
+		"-- +goose Down",
+		"CHECK (tier IN ('free', 'premium'))", // down restores 0056 domain
+	} {
+		if !strings.Contains(pgs, want) {
+			t.Errorf("0063 pg: missing %q", want)
+		}
+	}
+
+	lite, err := os.ReadFile(filepath.Join(dir, "0063_licenses_tier_free_home_pro.sqlite.sql"))
+	if err != nil {
+		t.Fatalf("read 0063 sqlite: %v", err)
+	}
+	lites := string(lite)
+	for _, want := range []string{
+		"CHECK (tier IN ('free', 'home', 'pro'))",
+		"DROP TABLE IF EXISTS licenses",
+		"RENAME TO licenses",
+		"-- +goose Down",
+	} {
+		if !strings.Contains(lites, want) {
+			t.Errorf("0063 sqlite: missing %q", want)
+		}
+	}
+}
+
 // TestMigrationFiles_PostgresUsesConcurrentlyForCreateIndex enforces
 // the migrations/README.md §4 rule: every CREATE INDEX in a
 // Postgres-targeted slot 0001+ migration uses CONCURRENTLY (the lint

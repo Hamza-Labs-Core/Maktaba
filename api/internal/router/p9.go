@@ -20,6 +20,12 @@ type P9Deps struct {
 	Keys          *keys.Set
 	SecureCookies bool
 	AccessTTL     time.Duration
+
+	// Seats is the live entitlement seat-cap source for Epic 16 Story
+	// 16.2 enforcement on POST /api/users. Nil ⇒ the gate is inert
+	// (free build / no entitlement source). Must be the SAME Store the
+	// subscriptions surface uses so an apply/revoke is seen here too.
+	Seats auth.SeatLimiter
 }
 
 // MountP9 attaches every Phase 9 (Epic 10 stories 10.2/10.3/10.4/10.5/10.16)
@@ -38,6 +44,7 @@ func MountP9(r chi.Router, d P9Deps) *auth.Handler {
 		Keys:          d.Keys,
 		SecureCookies: d.SecureCookies,
 		AccessTTL:     d.AccessTTL,
+		Seats:         d.Seats,
 	})
 	h.Mount(r)
 	return h
