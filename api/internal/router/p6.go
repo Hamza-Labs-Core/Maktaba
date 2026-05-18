@@ -154,7 +154,11 @@ func MountP6(r chi.Router, d P6Deps) {
 	wireEventBus(d, hub, wsHandler)
 	wsHandler.Mount(r)
 
-	// GraphQL — schema endpoint + SDL.
-	r.Method(http.MethodPost, "/graphql", graphql.Handler{})
-	r.Method(http.MethodGet, "/graphql/schema", graphql.Handler{})
+	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
+	// clients (Epic 14). Resolvers reuse the recommendations + search
+	// DB logic so REST and GraphQL return identical data; other root
+	// fields still answer the honest schema-only 501.
+	gqlHandler := graphql.Handler{Resolvers: graphql.NewResolvers(d.DB)}
+	r.Method(http.MethodPost, "/graphql", gqlHandler)
+	r.Method(http.MethodGet, "/graphql/schema", gqlHandler)
 }

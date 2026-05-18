@@ -1,3 +1,4 @@
+#if os(tvOS)
 import SwiftUI
 
 @main
@@ -40,3 +41,4 @@ public struct MainTabView: View {
         }
     }
 }
+#endif
