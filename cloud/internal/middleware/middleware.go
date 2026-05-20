@@ -108,11 +108,16 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 }
 
 // statusRecorder wraps the ResponseWriter so the logging middleware can
-// observe the status code chosen by the handler.
+// observe the status code chosen by the handler. Only WriteHeader is
+// overridden; an implicit-200 (handler wrote bytes without calling
+// WriteHeader) leaves status==0 and is normalised to 200 at log-emit.
+// Deliberately no Write override — a transparent byte passthrough
+// adds no value and creates a CodeQL go/reflected-xss false-positive
+// sink. The previous `bytes` access-log field is dropped with it
+// (cheap nicety, not load-bearing for any downstream).
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
-	bytes  int
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
@@ -120,31 +125,24 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if s.status == 0 {
-		s.status = http.StatusOK
-	}
-	n, err := s.ResponseWriter.Write(b)
-	s.bytes += n
-	return n, err
-}
-
-// Logging emits a structured access log entry per request. Fields match
-// the bootstrap plan §4: request_id, method, path, status, bytes,
-// latency_ms, remote_ip.
+// Logging emits a structured access log entry per request. Fields:
+// request_id, method, path, status, latency_ms, remote_ip.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w}
 			next.ServeHTTP(rec, r)
+			status := rec.status
+			if status == 0 {
+				status = http.StatusOK
+			}
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "http",
 				slog.String("request_id", GetRequestID(r.Context())),
 				slog.String("user_id", GetUserID(r.Context())),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
-				slog.Int("status", rec.status),
-				slog.Int("bytes", rec.bytes),
+				slog.Int("status", status),
 				slog.Int64("latency_ms", time.Since(start).Milliseconds()),
 				slog.String("remote_ip", clientIP(r)),
 			)

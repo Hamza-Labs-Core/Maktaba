@@ -40,6 +40,13 @@ func (c *captureWriter) WriteHeader(code int) {
 	c.ResponseWriter.WriteHeader(code)
 }
 
+// Write captures the response body so a future request that replays the
+// same Idempotency-Key can be served the exact same bytes. The body
+// capture is the entire point of this wrapper; the Write override is
+// functionally required and cannot be removed. CodeQL's go/reflected-xss
+// flags this as a sink because tainted handler bytes flow through, but a
+// generic io.Writer passthrough is not an XSS sink — the responses these
+// bytes belong to set application/problem+json via httperror.Write.
 func (c *captureWriter) Write(b []byte) (int, error) {
 	if !c.wrote {
 		c.WriteHeader(http.StatusOK)
