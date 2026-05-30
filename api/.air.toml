@@ -4,10 +4,11 @@
 # `bin`. The supervisor SIGTERMs the previous process before starting
 # the new one so each save cleanly tears down + starts.
 #
-# Stub note (Story 22.1/22.2): the current api `main` exits after
-# printing a banner, so air will rebuild + re-exec on save and you'll
-# see the new banner in logs within ~3 s. Once Epic 7 wires the real
-# HTTP serve loop, the binary will stay up between rebuilds.
+# Epic 7 wired the real HTTP serve loop, exposed via the `serve`
+# subcommand, so air re-execs `./tmp/main serve` and the binary stays
+# up between rebuilds. Running `./tmp/main` with no args only prints
+# the usage banner (the old stub path), which is why `full_bin` must
+# carry the `serve` argument.
 
 root = "/src/api"
 tmp_dir = "/src/api/tmp"
@@ -15,7 +16,7 @@ tmp_dir = "/src/api/tmp"
 [build]
   cmd = "go build -o ./tmp/main ."
   bin = "./tmp/main"
-  full_bin = "./tmp/main"
+  full_bin = "./tmp/main serve"
   include_ext = ["go", "tpl", "tmpl", "html", "sql"]
   exclude_dir = ["tmp", "vendor", "bin"]
   exclude_regex = ["_test\\.go$"]

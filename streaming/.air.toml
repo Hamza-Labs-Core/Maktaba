@@ -7,7 +7,7 @@ tmp_dir = "/src/streaming/tmp"
 [build]
   cmd = "go build -o ./tmp/main ."
   bin = "./tmp/main"
-  full_bin = "./tmp/main"
+  full_bin = "./tmp/main serve"
   include_ext = ["go", "tpl", "tmpl", "html", "sql"]
   exclude_dir = ["tmp", "vendor", "bin"]
   exclude_regex = ["_test\\.go$"]
