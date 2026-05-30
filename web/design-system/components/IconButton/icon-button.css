@@ -1,0 +1,32 @@
+/* IconButton — square sizing layered on top of the shared .mk-btn
+ * surface so variant colours/hover/focus stay identical to Button. */
+
+.mk-icon-btn {
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.mk-icon-btn--sm {
+  width: 28px;
+  height: 28px;
+}
+.mk-icon-btn--md {
+  width: 36px;
+  height: 36px;
+}
+.mk-icon-btn--lg {
+  width: 44px; /* 44px = WCAG minimum touch target */
+  height: 44px;
+}
+
+.mk-icon-btn__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60%;
+  height: 60%;
+}
+.mk-icon-btn__glyph svg {
+  width: 100%;
+  height: 100%;
+}

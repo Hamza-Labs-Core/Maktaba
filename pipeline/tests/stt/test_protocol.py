@@ -16,6 +16,7 @@ from maktaba_pipeline.stt.protocol import (
 
 class _FakeBackend:
     name = "fake"
+    model = "fake-model"
     supports_streaming = True
     requires_file = False
     cost_per_minute = 0.0

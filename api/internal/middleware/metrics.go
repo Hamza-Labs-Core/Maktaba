@@ -48,8 +48,12 @@ func Metrics(next http.Handler) http.Handler {
 				route = rp
 			}
 		}
+		status := sc.status
+		if status == 0 {
+			status = http.StatusOK
+		}
 		metrics.HTTPRequestDuration.
-			WithLabelValues(r.Method, route, statusClass(sc.status)).
+			WithLabelValues(r.Method, route, statusClass(status)).
 			Observe(time.Since(t0).Seconds())
 	})
 }

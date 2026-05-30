@@ -1,0 +1,17 @@
+.mk-link {
+  color: var(--color-semantic-accent, #1e5ad8);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+  transition: color var(--motion-duration-quick, 120ms)
+    var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.mk-link:hover {
+  color: var(--color-brand-600, #1748b0);
+}
+
+.mk-link:focus-visible {
+  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline-offset: 2px;
+}

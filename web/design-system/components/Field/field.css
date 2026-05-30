@@ -1,0 +1,95 @@
+/* Shared form-field scaffold. Token-driven; consumer must have imported
+ * the generated tokens.css upstream (var() fallbacks keep it usable
+ * standalone). */
+
+.mk-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 4px);
+}
+
+.mk-field__label {
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-semantic-fg, #18181b);
+}
+
+.mk-field__required {
+  color: var(--color-semantic-error, #b6253a);
+}
+
+.mk-field__desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-semantic-muted, #71717a);
+}
+
+.mk-field__error {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-semantic-error, #b6253a);
+}
+
+/* ---- shared control surface used by Input / Textarea / Select ---- */
+
+.mk-control {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: var(--type-body-size, 16px);
+  line-height: 1.4;
+  color: var(--color-semantic-fg, #18181b);
+  background-color: var(--color-neutral-0, #ffffff);
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: var(--radius-md, 8px);
+  transition:
+    border-color var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1)),
+    box-shadow var(--motion-duration-quick, 120ms)
+      var(--motion-ease-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.mk-control::placeholder {
+  color: var(--color-semantic-muted, #71717a);
+}
+
+.mk-control:focus-visible {
+  outline: none;
+  border-color: var(--color-semantic-accent, #1e5ad8);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-semantic-accent, #1e5ad8) 28%, transparent);
+}
+
+.mk-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: var(--color-semantic-subtle, #f4f4f5);
+}
+
+.mk-control[aria-invalid="true"] {
+  border-color: var(--color-semantic-error, #b6253a);
+}
+
+.mk-control[aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-semantic-error, #b6253a) 28%, transparent);
+}
+
+.mk-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.mk-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2371717a' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-3, 12px) center;
+  padding-inline-end: var(--spacing-8, 32px);
+}
+
+[dir="rtl"] .mk-select {
+  background-position: left var(--spacing-3, 12px) center;
+}

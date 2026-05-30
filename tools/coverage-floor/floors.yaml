@@ -1,0 +1,49 @@
+# Story 20.3 AC1 — per-module statement-coverage floors (the gate).
+#
+# WHAT THIS IS
+#   Enforced by tools/coverage-floor, run from the unit tier
+#   (`make test-coverage`, wired into the CI Lint gate). If a module's
+#   `go test -short -coverprofile` (or pytest-cov for pipeline)
+#   statement coverage drops below its floor here, the PR is blocked.
+#
+# RATCHET POLICY (non-breaking)
+#   Each floor is set at the coverage MEASURED on the integrated
+#   gap-closure branch when this gate landed, rounded DOWN to the
+#   nearest whole percent. That guarantees enabling the gate cannot
+#   redden an already-open PR. Floors are a one-way ratchet: raise
+#   them as coverage improves; never lower them to make a red PR pass
+#   (fix the test gap instead).
+#
+#   Measured 2026-05-17 on integration/gap-closure (W0+W1+W2-c1):
+#   command per module: `go test -short -count=1 -coverprofile`,
+#   total = `go tool cover -func | tail -1`. Pipeline:
+#   `pytest -m unit --cov=src/maktaba_pipeline`.
+#
+# format: `<label>: <min-percent>`  (flat; stdlib parser, not full YAML)
+
+# --- Go service modules ---
+api:                 33    # measured 33.6
+streaming:           60    # measured 60.9
+
+# --- Go shared libraries ---
+shared/log/go:       64    # measured 64.0
+shared/health/go:    80    # measured 80.0
+shared/metrics/go:   45    # measured 45.7
+shared/tracing/go:   71    # measured 71.3
+shared/errrpt/go:    85    # measured 85.8
+shared/testtier/go:  43    # measured 43.2
+
+# --- Go tooling modules ---
+tools/test-budget:   70    # measured 70.4
+tools/log-lint:      53    # measured 53.1
+
+# --- Python pipeline ---
+pipeline:            48    # measured 48 (pytest -m unit, src/maktaba_pipeline)
+
+# NOTE — web/ has NO coverage floor here on purpose. The web vitest
+# suite currently collects zero tests (no src/**/*.test.tsx exist), so
+# any web floor > 0 would be structurally unmeetable and any floor = 0
+# would be a meaningless false green. The Story 20.3 `web/src/lib >= 80`
+# floor is therefore explicitly DEFERRED until the web unit suite
+# exists (tracked under Epic 20.3 / web test bootstrap). Adding a web
+# entry here without web tests must be treated as a gate regression.

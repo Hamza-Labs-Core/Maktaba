@@ -99,8 +99,24 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusBadRequest, "missing-rendition", "rendition path missing", "")
 		return
 	}
-	dir := filepath.Join(h.Layout.HLSDir(sub), rendition)
-	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8"))
+	// Story 23.5 AC-2: rendition is an untrusted URL segment — route
+	// it through the single canonicalizer so `..`/symlink-escape
+	// cannot read outside this session's HLS directory.
+	base := h.Layout.HLSDir(sub)
+	path, err := httpx.CanonicalUnder(base, rendition, "index.m3u8")
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
+		return
+	}
+	// Defence-in-depth, statically-visible containment recheck before
+	// the filesystem sink (Story 23.5 AC-2). CanonicalUnder already
+	// guarantees this; the explicit Clean+prefix gate clears CodeQL.
+	path, err = httpx.EnsureUnder(base, path)
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
+		return
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
@@ -127,7 +143,23 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := filepath.Join(h.Layout.HLSDir(sub), rendition, segment)
+	// Story 23.5 AC-2: rendition + segment are untrusted URL segments
+	// — canonicalize before touching disk.
+	base := h.Layout.HLSDir(sub)
+	path, err := httpx.CanonicalUnder(base, rendition, segment)
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "segment-not-found",
+			"segment not yet written by FFmpeg", "")
+		return
+	}
+	// Defence-in-depth, statically-visible containment recheck before
+	// the filesystem sink (Story 23.5 AC-2).
+	path, err = httpx.EnsureUnder(base, path)
+	if err != nil {
+		httpx.Write(w, http.StatusNotFound, "segment-not-found",
+			"segment not yet written by FFmpeg", "")
+		return
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// AC-3: 404 if segment not yet on disk. Players will refetch
@@ -170,19 +202,9 @@ func segmentContentType(name string) string {
 }
 
 // BuildMasterPlaylist composes the HLS master m3u8 from the ladder
-// (Story 8.5 §4.3 shape). Used both by the FFmpeg orchestrator (which
-// writes it to disk for serving) and by tests.
+// (Story 8.5 §4.3 shape). Delegates to ffmpeg.BuildMasterPlaylistFor so
+// the on-disk master the orchestrator writes (HLB-328) and what tests
+// assert come from a single source of truth.
 func BuildMasterPlaylist(ladder []ffmpeg.Rendition) []byte {
-	var sb strings.Builder
-	sb.WriteString("#EXTM3U\n")
-	sb.WriteString("#EXT-X-VERSION:6\n")
-	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
-	for _, r := range ladder {
-		sb.WriteString(fmt.Sprintf(
-			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"avc1.4d4028,mp4a.40.2\"\n",
-			r.BitrateKbps*1000, r.Width, r.Height,
-		))
-		sb.WriteString(r.Name + "/index.m3u8\n")
-	}
-	return []byte(sb.String())
+	return ffmpeg.BuildMasterPlaylistFor(ladder)
 }

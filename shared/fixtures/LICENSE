@@ -1,0 +1,34 @@
+Maktaba shared test fixtures — licensing
+========================================
+
+Story 20.2 AC4 requires an explicit licence statement covering every
+committed sample. This file is the single source of that statement.
+
+1. Synthetic / structural fixtures (committed today)
+   ---------------------------------------------------
+   Every file currently committed under shared/fixtures/ is either:
+
+     * hand-authored JSON (the probe-goldens/*.json edge-case
+       descriptors), or
+     * documentation / manifests (README.md, *.manifest.json).
+
+   These contain NO third-party media and NO copyrighted content.
+   They are original work, released under the same licence as the
+   Maktaba repository (see the repository-root LICENSE). They may be
+   freely used, modified, and redistributed within this project.
+
+2. Real media samples (NOT yet committed — see README.md "DEFERRED")
+   -----------------------------------------------------------------
+   The Story 20.2 AC1 audio/video samples (Arabic / English / mixed /
+   multitrack / 4K-HDR) are deliberately NOT committed yet. When they
+   are introduced, EACH sample MUST arrive with its own provenance and
+   licence recorded in this file, one stanza per sample, e.g.:
+
+     samples/<name>.<ext>
+       source:   <url or "self-recorded">
+       licence:  <CC0 / CC-BY-4.0 / public-domain / self, all-rights>
+       sha256:   <hash, must match samples/<name>.sha256>
+
+   A sample with no stanza here is a Story 20.2 AC4 violation and the
+   fixtures-check gate (when it lands) must reject it. Until then this
+   section is intentionally empty: there are no media samples to cover.

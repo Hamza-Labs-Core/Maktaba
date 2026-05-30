@@ -76,7 +76,12 @@ func (h *Handler) SetLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Verifier == nil {
-		httperror.Write(w, r, httperror.Internal("verifier not configured"))
+		// No build-time license-server key was embedded (the
+		// open-source default). The endpoint is *disabled*, not
+		// erroring — surface 503 so clients/operators can tell
+		// "feature off in this build" from "we broke" (500). Story
+		// 16.4 / gap analysis: fail-closed, never trust a zero key.
+		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
 	var lic subscriptions.License
@@ -89,7 +94,13 @@ func (h *Handler) SetLicense(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest(err.Error()))
 		return
 	}
-	h.Store.Set(ent)
+	// SetLicense persists the signed license (when the store has a DB
+	// backend) so the entitlement survives a restart; with the
+	// in-memory store it is equivalent to the old Set(ent).
+	if err := h.Store.SetLicense(r.Context(), &lic, ent); err != nil {
+		httperror.Write(w, r, httperror.Internal("persist license"))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -100,7 +111,10 @@ func (h *Handler) RevokeLicense(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "admin required"))
 		return
 	}
-	h.Store.Set(nil)
+	if err := h.Store.Revoke(r.Context()); err != nil {
+		httperror.Write(w, r, httperror.Internal("persist revoke"))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

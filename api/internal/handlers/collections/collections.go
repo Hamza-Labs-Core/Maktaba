@@ -290,11 +290,34 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c.IsSmart {
-		// Stub for now per EC ("invalid smart_query → 200 with items: [], warning").
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{
-			"items":   []CollectionItem{},
-			"warning": "smart-collection-evaluation-not-yet-implemented",
-		})
+		// Story 9.14 AC-2: live evaluation via the shared resolver.
+		// `smart_query` is the same filter shape as a saved search, so
+		// the items returned here mirror /search with that query. A
+		// malformed `smart_query` is not a 5xx — per the EC it degrades
+		// to an empty list with a warning so the UI stays usable.
+		cursor, e := common.QueryInt(r, "cursor", 0)
+		if e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+		limit, e := common.QueryInt(r, "limit", 100)
+		if e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+		items, next, err := h.LiveItems(r.Context(), c, cursor, limit)
+		if err != nil {
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{
+				"items":   []CollectionItem{},
+				"warning": "smart-collection-query-invalid",
+			})
+			return
+		}
+		out := map[string]any{"items": items}
+		if next > 0 {
+			out["next_cursor"] = next
+		}
+		common.WriteJSON(w, r, http.StatusOK, out)
 		return
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `

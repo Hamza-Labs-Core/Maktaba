@@ -1,0 +1,28 @@
+.mk-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mk-tooltip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-index-tooltip, 1200);
+  padding: var(--spacing-1, 4px) var(--spacing-2, 8px);
+  font-family: var(--type-body-family, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--color-neutral-0, #ffffff);
+  background-color: var(--color-neutral-900, #18181b);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: var(--elevation-2, 0 4px 8px rgba(0, 0, 0, 0.08));
+  pointer-events: none;
+}
+
+.mk-tooltip--top {
+  bottom: calc(100% + 6px);
+}
+.mk-tooltip--bottom {
+  top: calc(100% + 6px);
+}

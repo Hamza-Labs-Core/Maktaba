@@ -95,3 +95,19 @@ jobs:
 
       - name: migration-lint (append-only + idempotency + parity)
         run: make lint-migrations
+
+      - name: log-lint (no runtime data in log msg, Story 21.1 AC-4)
+        run: make lint-log
+
+      # Story 22.2 TC3: uv.lock / pnpm-lock.yaml / go.mod drift fails CI.
+      # The gate existed in the Makefile but was unwired; running it in
+      # the lint gate makes a drifted lockfile a merge blocker.
+      - name: lockfile drift (uv / pnpm / go.mod)
+        run: make lockfile-check
+
+      # Story 20.3 AC1/TC1: per-module coverage-floor gate. A coverage
+      # regression below the documented floor in
+      # tools/coverage-floor/floors.yaml blocks merge. Floors are a
+      # non-breaking ratchet pinned at the integrated-branch baseline.
+      - name: coverage floor (Story 20.3)
+        run: make test-coverage

@@ -1,14 +1,22 @@
 """In-memory fake DB for audio probe / extract tests.
 
-Routes the SQL fragments used by :mod:`maktaba_pipeline.audio.probe` and
-:mod:`maktaba_pipeline.stt.segment_commit` to in-memory dicts. The
-fake's surface is ``transaction``, ``fetchrow``, ``execute`` —
-matching the protocol shape both modules consume.
+Routes the SQL fragments used by :mod:`maktaba_pipeline.audio.probe`,
+:mod:`maktaba_pipeline.stt.segment_commit`, the SCAN / INDEX adapters
+and the SUBTITLE_GEN renderer to in-memory dicts. The fake's surface is
+``transaction``, ``fetchrow``, ``fetch``, ``execute`` — matching the
+protocol shape every consuming module uses.
+
+``transaction()`` is rollback-capable: it deep-copies every mutable row
+table (and the autoincrement cursors) on enter and restores them if the
+``async with`` body raises, so transactional atomicity is *observable*
+the way the production ``async with db.transaction():`` envelope
+behaves.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -17,10 +25,24 @@ from uuid import UUID, uuid4
 
 
 @dataclass
+class _LibraryRow:
+    id: UUID
+    name: str
+    roots: list[str]
+    settings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class _VideoRow:
     id: UUID
     library_id: UUID
     state: str = "discovered"
+    content_hash: str | None = None
+    path: str | None = None
+    filename: str | None = None
+    size_bytes: int | None = None
+    mtime: Any = None
+    last_seen_at: Any = None
 
 
 @dataclass
@@ -48,15 +70,43 @@ class _AudioTrackRow:
     title: str | None
     is_default: bool
     disposition: str
+    last_extracted_at: datetime | None = None
+
+
+@dataclass
+class _AudioCacheRow:
+    content_hash: str
+    video_id: UUID
+    audio_track_id: int
+    path: str
+    bytes: int | None
 
 
 @dataclass
 class _ProcessingJobRow:
     id: int
-    video_id: UUID
+    video_id: UUID | None
     stage: str
     state: str = "pending"
     priority: int = 100
+    library_id: UUID | None = None
+    # Default 1 (not 0): a claimed/running row has had >=1 claim, and the
+    # backoff helper rejects attempts < 1. This preserves the prior
+    # behaviour when `_ProcessingJobRow` had no `attempts` field and the
+    # StageDB read fell back to `getattr(job, "attempts", 1)`. The fake
+    # claim path still increments on top of this.
+    attempts: int = 1
+    max_attempts: int = 3
+    claimed_by: str | None = None
+    claimed_at: datetime | None = None
+    not_before: datetime | None = None
+    total_duration_seconds: float | None = None
+    paused_at: datetime | None = None
+    paused_at_sec: float | None = None
+    resumed_at: datetime | None = None
+    resume_count: int = 0
+    metrics: str | None = None
+    created_at: datetime | None = None
     last_segment_end_sec: float = 0.0
     processed_seconds: float = 0.0
     segments_completed: int = 0
@@ -68,6 +118,7 @@ class _ProcessingJobRow:
     cancel_requested: bool = False
     paused_reason: str | None = None
     payload: str | None = None
+    error: str | None = None
     finished_at: datetime | None = None
 
 
@@ -80,6 +131,26 @@ class _TranscriptSegmentRow:
     end_sec: float
     text: str
     speaker: str | None
+    confidence: float | None
+
+
+@dataclass
+class _SttUsageRow:
+    library_id: UUID
+    backend: str
+    period_yyyymm: int
+    minutes: float
+    est_usd: float
+
+
+@dataclass
+class _TranscriptWordRow:
+    id: int
+    segment_id: int
+    seq: int
+    start_sec: float
+    end_sec: float
+    text: str
     confidence: float | None
 
 
@@ -101,6 +172,23 @@ class _TranscriptRow:
     superseded_at: datetime | None
 
 
+@dataclass
+class _SubtitleFileRow:
+    id: int
+    video_id: UUID
+    transcript_id: UUID | None
+    language: str
+    format: str
+    source: str
+    path: str
+    byte_size: int | None
+    sha256: str | None
+    is_embedded: bool
+    is_external: bool
+    metadata: str
+    deleted_at: datetime | None = None
+
+
 class _Row(dict[str, Any]):
     pass
 
@@ -108,22 +196,84 @@ class _Row(dict[str, Any]):
 @dataclass
 class FakeAudioDB:
     dialect: str = "postgres"
+    libraries: dict[UUID, _LibraryRow] = field(default_factory=dict)
     videos: dict[UUID, _VideoRow] = field(default_factory=dict)
     media_info: dict[UUID, _MediaInfoRow] = field(default_factory=dict)
     audio_tracks: dict[int, _AudioTrackRow] = field(default_factory=dict)
+    audio_cache: dict[str, _AudioCacheRow] = field(default_factory=dict)
     processing_jobs: dict[int, _ProcessingJobRow] = field(default_factory=dict)
     transcripts: dict[UUID, _TranscriptRow] = field(default_factory=dict)
     transcript_segments: dict[int, _TranscriptSegmentRow] = field(default_factory=dict)
+    transcript_words: dict[int, _TranscriptWordRow] = field(default_factory=dict)
+    stt_usage: dict[tuple[UUID, str, int], _SttUsageRow] = field(default_factory=dict)
+    subtitle_files: dict[int, _SubtitleFileRow] = field(default_factory=dict)
     notifies: list[tuple[str, str]] = field(default_factory=list)
     _audio_next_id: int = 1
     _job_next_id: int = 1
     _seg_next_id: int = 1
+    _word_next_id: int = 1
+    _subtitle_next_id: int = 1
     _lock_obj: asyncio.Lock | None = None
 
     def transaction(self) -> Any:
+        """A rollback-capable transaction modelling the real driver.
+
+        The real driver rolls every write back when the ``async with``
+        body raises. An earlier fake was a bare ``yield self`` (no
+        rollback), which silently passed even non-atomic persistence.
+        To make transactional rollback *observable* — the way the
+        production ``async with db.transaction():`` envelope behaves —
+        we deep-copy every mutable row table (and the autoincrement
+        cursors) on enter and restore them on any ``BaseException``.
+
+        The snapshot covers ALL row tables the unioned fake mutates:
+        ``libraries``, ``videos``, ``media_info``, ``audio_tracks``,
+        ``audio_cache``, ``processing_jobs``, ``transcripts``,
+        ``transcript_segments``, ``transcript_words`` and
+        ``subtitle_files`` — plus the ``_audio_next_id`` /
+        ``_job_next_id`` / ``_seg_next_id`` / ``_word_next_id`` /
+        ``_subtitle_next_id`` autoincrement cursors. The snapshot is
+        cheap for the in-memory fake.
+        """
+
         @asynccontextmanager
         async def _tx() -> Any:
-            yield self
+            snap_libraries = copy.deepcopy(self.libraries)
+            snap_videos = copy.deepcopy(self.videos)
+            snap_media_info = copy.deepcopy(self.media_info)
+            snap_audio_tracks = copy.deepcopy(self.audio_tracks)
+            snap_audio_cache = copy.deepcopy(self.audio_cache)
+            snap_processing_jobs = copy.deepcopy(self.processing_jobs)
+            snap_transcripts = copy.deepcopy(self.transcripts)
+            snap_segments = copy.deepcopy(self.transcript_segments)
+            snap_words = copy.deepcopy(self.transcript_words)
+            snap_stt_usage = copy.deepcopy(self.stt_usage)
+            snap_subtitle_files = copy.deepcopy(self.subtitle_files)
+            snap_audio_next = self._audio_next_id
+            snap_job_next = self._job_next_id
+            snap_seg_next = self._seg_next_id
+            snap_word_next = self._word_next_id
+            snap_subtitle_next = self._subtitle_next_id
+            try:
+                yield self
+            except BaseException:
+                self.libraries = snap_libraries
+                self.videos = snap_videos
+                self.media_info = snap_media_info
+                self.audio_tracks = snap_audio_tracks
+                self.audio_cache = snap_audio_cache
+                self.processing_jobs = snap_processing_jobs
+                self.transcripts = snap_transcripts
+                self.transcript_segments = snap_segments
+                self.transcript_words = snap_words
+                self.stt_usage = snap_stt_usage
+                self.subtitle_files = snap_subtitle_files
+                self._audio_next_id = snap_audio_next
+                self._job_next_id = snap_job_next
+                self._seg_next_id = snap_seg_next
+                self._word_next_id = snap_word_next
+                self._subtitle_next_id = snap_subtitle_next
+                raise
 
         return _tx()
 
@@ -136,6 +286,80 @@ class FakeAudioDB:
         vid = uuid4()
         self.videos[vid] = _VideoRow(id=vid, library_id=library_id or uuid4(), state=state)
         return vid
+
+    def add_library(
+        self,
+        *,
+        roots: list[str],
+        name: str = "test-lib",
+        settings: dict[str, Any] | None = None,
+    ) -> UUID:
+        lib_id = uuid4()
+        self.libraries[lib_id] = _LibraryRow(
+            id=lib_id,
+            name=name,
+            roots=list(roots),
+            settings=dict(settings or {}),
+        )
+        return lib_id
+
+    def seed_transcript(
+        self,
+        *,
+        video_id: UUID,
+        audio_track_id: int = 1,
+        language: str = "ara",
+        segments: list[tuple[int, float, float, str]] | None = None,
+        is_active: bool = True,
+    ) -> UUID:
+        """Seed a complete transcript + its committed segments.
+
+        Mirrors exactly what TRANSCRIBE's ``commit_transcribe`` leaves:
+        a ``transcripts`` row (active) plus ordered ``transcript_segments``
+        rows committed via ``commit_segment``, keyed by ``seq``.
+        ``segments`` is a list of ``(seq, start_sec, end_sec, text)``;
+        when omitted three deterministic segments are seeded.
+        """
+        tid = uuid4()
+        self.transcripts[tid] = _TranscriptRow(
+            id=tid,
+            video_id=video_id,
+            audio_track_id=audio_track_id,
+            language=language,
+            detected_language=None,
+            language_confidence=None,
+            backend="fake-stt",
+            model="fake-model-v1",
+            backend_version="1.0.0",
+            word_level=False,
+            diarized=False,
+            is_active=is_active,
+            metadata="{}",
+            superseded_at=None,
+        )
+        segs = (
+            [
+                (0, 0.0, 2.0, "bismillah"),
+                (1, 2.0, 4.5, "al-hamdu"),
+                (2, 4.5, 6.0, "lillah"),
+            ]
+            if segments is None
+            else segments
+        )
+        for seq, start_sec, end_sec, text in segs:
+            seg_id = self._seg_next_id
+            self._seg_next_id += 1
+            self.transcript_segments[seg_id] = _TranscriptSegmentRow(
+                id=seg_id,
+                transcript_id=tid,
+                seq=seq,
+                start_sec=start_sec,
+                end_sec=end_sec,
+                text=text,
+                speaker=None,
+                confidence=None,
+            )
+        return tid
 
     @staticmethod
     def _now() -> datetime:
@@ -169,8 +393,198 @@ class FakeAudioDB:
         async with self._lock():
             self._dispatch(s, args, many=False)
 
+    def _job_row_full(self, job: _ProcessingJobRow) -> dict[str, Any]:
+        """Materialise a ``RETURNING *``-shaped row for ``_row_to_job``.
+
+        Mirrors the slot 0002 + slot 0058 column set the claim path
+        decodes; unset optional columns default to schema-shaped
+        nulls/zeros so the frozen :class:`Job` dataclass constructs."""
+        return {
+            "id": job.id,
+            "video_id": job.video_id,
+            "library_id": job.library_id,
+            "stage": job.stage,
+            "state": job.state,
+            "priority": job.priority,
+            "attempts": job.attempts,
+            "max_attempts": job.max_attempts,
+            "claimed_by": job.claimed_by,
+            "claimed_at": job.claimed_at,
+            "last_heartbeat_at": job.last_heartbeat_at,
+            "not_before": job.not_before,
+            "error": job.error,
+            "total_duration_seconds": job.total_duration_seconds,
+            "processed_seconds": job.processed_seconds,
+            "segments_completed": job.segments_completed,
+            "last_segment_end_sec": job.last_segment_end_sec,
+            "estimated_remaining_sec": job.estimated_remaining_sec,
+            "realtime_factor": job.realtime_factor,
+            "progress_updated_at": job.progress_updated_at,
+            "pause_requested": job.pause_requested,
+            "cancel_requested": job.cancel_requested,
+            "paused_at": job.paused_at,
+            "paused_at_sec": job.paused_at_sec,
+            "paused_reason": job.paused_reason,
+            "resumed_at": job.resumed_at,
+            "resume_count": job.resume_count,
+            "metrics": job.metrics,
+            "payload": job.payload,
+            "created_at": job.created_at or self._now(),
+            "finished_at": job.finished_at,
+        }
+
     def _dispatch(self, s: str, args: tuple[Any, ...], *, many: bool) -> Any:
+        # --- SqlScanStore: library projection ---------------------------
+        if s.startswith("SELECT id, name, roots, settings FROM libraries"):
+            lib = self.libraries.get(args[0])
+            if lib is None:
+                return None
+            return _Row(
+                {
+                    "id": lib.id,
+                    "name": lib.name,
+                    "roots": list(lib.roots),
+                    "settings": dict(lib.settings),
+                }
+            )
+
+        # --- SqlScanStore: skip-rehash path lookup ----------------------
+        if s.startswith("SELECT id, size_bytes, mtime, content_hash FROM videos"):
+            library_id, path = args
+            for vid_row in self.videos.values():
+                if vid_row.library_id == library_id and vid_row.path == path:
+                    return _Row(
+                        {
+                            "id": vid_row.id,
+                            "size_bytes": vid_row.size_bytes,
+                            "mtime": vid_row.mtime,
+                            "content_hash": vid_row.content_hash,
+                        }
+                    )
+            return None
+
+        # --- SqlScanStore: SQLite pre-check (insert vs update) ----------
+        if s.startswith("SELECT id FROM videos WHERE library_id"):
+            library_id, content_hash = args
+            for vid_row in self.videos.values():
+                if vid_row.library_id == library_id and vid_row.content_hash == content_hash:
+                    return _Row({"id": vid_row.id})
+            return None
+
+        # --- SqlScanStore: content-addressed UPSERT --------------------
+        if s.startswith("INSERT INTO videos"):
+            (
+                library_id,
+                content_hash,
+                path,
+                filename,
+                size_bytes,
+                mtime,
+                last_seen_at,
+            ) = args
+            video_match = next(
+                (
+                    vr
+                    for vr in self.videos.values()
+                    if vr.library_id == library_id and vr.content_hash == content_hash
+                ),
+                None,
+            )
+            if video_match is not None:
+                video_match.path = path
+                video_match.filename = filename
+                video_match.size_bytes = size_bytes
+                video_match.mtime = mtime
+                video_match.last_seen_at = last_seen_at
+                return _Row({"id": video_match.id, "inserted": False})
+            new_video_id = uuid4()
+            self.videos[new_video_id] = _VideoRow(
+                id=new_video_id,
+                library_id=library_id,
+                state="discovered",
+                content_hash=content_hash,
+                path=path,
+                filename=filename,
+                size_bytes=size_bytes,
+                mtime=mtime,
+                last_seen_at=last_seen_at,
+            )
+            return _Row({"id": new_video_id, "inserted": True})
+
+        # --- enqueue_scan: library-scoped INSERT ------------------------
+        if s.startswith("INSERT INTO processing_jobs (library_id, video_id, stage,"):
+            library_id, priority, payload, max_attempts = args
+            for pj in self.processing_jobs.values():
+                if (
+                    pj.library_id == library_id
+                    and pj.stage == "scan"
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
+                ):
+                    return None  # ON CONFLICT DO NOTHING (one live scan/lib)
+            new_id = self._job_next_id
+            self._job_next_id += 1
+            self.processing_jobs[new_id] = _ProcessingJobRow(
+                id=new_id,
+                video_id=None,
+                library_id=library_id,
+                stage="scan",
+                priority=int(priority),
+                payload=payload,
+                attempts=0,  # fresh pending row; claim() bumps to 1
+                max_attempts=int(max_attempts),
+                created_at=self._now(),
+            )
+            return _Row({"id": new_id})
+
+        # --- enqueue_scan: fallback live-scan SELECT --------------------
+        if s.startswith("SELECT id FROM processing_jobs WHERE library_id"):
+            (library_id,) = args
+            for pj in self.processing_jobs.values():
+                if (
+                    pj.library_id == library_id
+                    and pj.stage == "scan"
+                    and pj.state in {"pending", "claimed", "running", "resuming", "paused"}
+                ):
+                    return _Row({"id": pj.id})
+            return None
+
+        # --- claim_one_pg: atomic single-job claim (RETURNING *) -------
+        if s.startswith("UPDATE processing_jobs SET state = 'claimed'"):
+            stages = list(args[1])
+            claim_candidates = sorted(
+                (
+                    pj
+                    for pj in self.processing_jobs.values()
+                    if pj.state in {"pending", "paused"}
+                    and not pj.pause_requested
+                    and not pj.cancel_requested
+                    and pj.stage in stages
+                ),
+                key=lambda r: (r.priority, r.id),
+            )
+            if not claim_candidates:
+                return None
+            claim_target = claim_candidates[0]
+            claim_target.state = "claimed"
+            claim_target.claimed_by = args[0]
+            claim_target.claimed_at = self._now()
+            claim_target.last_heartbeat_at = self._now()
+            claim_target.attempts += 1
+            return _Row(self._job_row_full(claim_target))
+
         # advance_after_stage SELECT-FOR-UPDATE
+        # monthly_spend_usd — sum the month's est_usd ledger rows.
+        if s.startswith("SELECT COALESCE(SUM(est_usd), 0) AS spent FROM stt_usage"):
+            library_id, backend, period = args
+            total = sum(
+                u.est_usd
+                for u in self.stt_usage.values()
+                if u.library_id == library_id
+                and u.backend == backend
+                and u.period_yyyymm == int(period)
+            )
+            return _Row({"spent": total})
+
         if s.startswith("SELECT state, library_id FROM videos"):
             v = self.videos.get(args[0])
             if v is None:
@@ -252,7 +666,12 @@ class FakeAudioDB:
         if s.startswith("SELECT pj.id AS id, pj.finished_at"):
             return None
 
-        # enqueue() — INSERT pending row
+        # --- enqueue_scan: library-scoped INSERT (handled above) -------
+        # NOTE: the library-scoped processing_jobs INSERT has a longer,
+        # more specific prefix and is matched earlier in this dispatch
+        # so it never falls through to the per-video INSERT branch.
+
+        # enqueue() — INSERT pending row (per-video)
         if s.startswith("INSERT INTO processing_jobs"):
             video_id, stage, priority, payload, max_attempts = args
             for pj in self.processing_jobs.values():
@@ -301,6 +720,32 @@ class FakeAudioDB:
                 }
             )
 
+        # record_stt_usage — additive UPSERT on (library_id, backend,
+        # period_yyyymm). Same shape for both dialects (the $n vs ?
+        # placeholder differs only in the driver the fake elides).
+        if s.startswith("INSERT INTO stt_usage"):
+            library_id, backend, period, minutes, est_usd = args
+            key = (library_id, str(backend), int(period))
+            existing = self.stt_usage.get(key)
+            if existing is None:
+                self.stt_usage[key] = _SttUsageRow(
+                    library_id=library_id,
+                    backend=str(backend),
+                    period_yyyymm=int(period),
+                    minutes=float(minutes),
+                    est_usd=float(est_usd),
+                )
+            else:
+                existing.minutes += float(minutes)
+                existing.est_usd += float(est_usd)
+            return None
+
+        # commit_segment — per-word rows (Story 3.6-1.3). Same SQL shape
+        # for both dialects ($n vs ? differ only in the driver layer the
+        # fake elides); ON CONFLICT (segment_id, seq) is idempotent.
+        if s.startswith("INSERT INTO transcript_words"):
+            return self._exec_word_insert(args)
+
         # commit_segment — SQLite INSERT
         if s.startswith("INSERT INTO transcript_segments"):
             return self._exec_segment_insert_sqlite(args)
@@ -313,7 +758,7 @@ class FakeAudioDB:
         if s.startswith("UPDATE processing_jobs SET last_segment_end_sec"):
             return self._exec_progress_sqlite(args)
 
-        # flip_active_transcript — UPDATE previous active
+        # flip_active_transcript / activate_transcript — UPDATE previous active
         if s.startswith("UPDATE transcripts SET is_active = false"):
             video_id, audio_track_id = args
             for tr in self.transcripts.values():
@@ -322,8 +767,21 @@ class FakeAudioDB:
                     tr.superseded_at = self._now()
             return None
 
-        # flip_active_transcript — INSERT new active
+        # activate_transcript — flip a specific (inactive) row active
+        if s.startswith("UPDATE transcripts SET is_active = true"):
+            (transcript_id,) = args
+            target = self.transcripts.get(transcript_id)
+            if target is not None:
+                target.is_active = True
+                target.superseded_at = None
+            return None
+
+        # flip_active_transcript / insert_inactive_transcript — INSERT row.
+        # The SQL's ``is_active`` literal (true vs false) decides whether
+        # the new row is born active (single-shot flip) or inactive
+        # (create-then-activate split — REVIEW §1.1).
         if s.startswith("INSERT INTO transcripts"):
+            born_active = "is_active, metadata)" in s and ", false, $11)" not in s
             (
                 video_id,
                 audio_track_id,
@@ -350,11 +808,181 @@ class FakeAudioDB:
                 backend_version=backend_version,
                 word_level=bool(word_level),
                 diarized=bool(diarized),
-                is_active=True,
+                is_active=born_active,
                 metadata=metadata,
                 superseded_at=None,
             )
             return _Row({"id": new})
+
+        # commit_extract — read back PROBE-persisted audio_tracks rows.
+        if s.startswith("SELECT id, track_index, codec, channels, sample_rate"):
+            vid = args[0]
+            rows = [
+                _Row(
+                    {
+                        "id": t.id,
+                        "track_index": t.track_index,
+                        "codec": t.codec,
+                        "channels": t.channels,
+                        "sample_rate": t.sample_rate,
+                        "language": t.language,
+                        "title": t.title,
+                        "is_default": t.is_default,
+                        "disposition": t.disposition,
+                    }
+                )
+                for t in sorted(
+                    (r for r in self.audio_tracks.values() if r.video_id == vid),
+                    key=lambda r: r.track_index,
+                )
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # commit_extract — UPSERT the audio_cache artifact reference.
+        if s.startswith("INSERT INTO audio_cache"):
+            content_hash, video_id, audio_track_id, path, nbytes = args
+            self.audio_cache[str(content_hash)] = _AudioCacheRow(
+                content_hash=str(content_hash),
+                video_id=video_id,
+                audio_track_id=int(audio_track_id),
+                path=str(path),
+                bytes=nbytes,
+            )
+            return None
+
+        # transcribe handler — read back the EXTRACT-persisted
+        # audio_cache artifact (cached WAV path + audio_track_id) by
+        # the content-addressed primary key.
+        if s.startswith(
+            "SELECT content_hash, video_id, audio_track_id, path, bytes FROM audio_cache"
+        ):
+            cache_row = self.audio_cache.get(str(args[0]))
+            if cache_row is None:
+                return None
+            return _Row(
+                {
+                    "content_hash": cache_row.content_hash,
+                    "video_id": cache_row.video_id,
+                    "audio_track_id": cache_row.audio_track_id,
+                    "path": cache_row.path,
+                    "bytes": cache_row.bytes,
+                }
+            )
+
+        # commit_extract — stamp audio_tracks.last_extracted_at.
+        if s.startswith("UPDATE audio_tracks SET last_extracted_at"):
+            track_id = int(args[0])
+            if track_id in self.audio_tracks:
+                self.audio_tracks[track_id].last_extracted_at = self._now()
+            return None
+
+        # index_stage.load_segment_docs — transcript header lookup AND
+        # SUBTITLE_GEN load_transcript_cues — transcript-by-id lookup.
+        # Both consume the same id/video_id/language projection, so a
+        # single branch serves INDEX and SUBTITLE_GEN.
+        if s.startswith("SELECT id, video_id, language FROM transcripts"):
+            hdr = self.transcripts.get(args[0])
+            if hdr is None:
+                return None
+            return _Row({"id": hdr.id, "video_id": hdr.video_id, "language": hdr.language})
+
+        # index_stage.load_segment_docs — ordered segment load (the
+        # INDEX projection leads with ``id,`` so its prefix differs from
+        # the SUBTITLE_GEN projection below — neither shadows the other).
+        if s.startswith(
+            "SELECT id, seq, start_sec, end_sec, text, speaker FROM transcript_segments"
+        ):
+            transcript_id = args[0]
+            rows = [
+                _Row(
+                    {
+                        "id": r.id,
+                        "seq": r.seq,
+                        "start_sec": r.start_sec,
+                        "end_sec": r.end_sec,
+                        "text": r.text,
+                        "speaker": r.speaker,
+                    }
+                )
+                for r in sorted(
+                    (
+                        seg
+                        for seg in self.transcript_segments.values()
+                        if seg.transcript_id == transcript_id
+                    ),
+                    key=lambda r: r.seq,
+                )
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # SUBTITLE_GEN — load the transcript's ordered segments (no
+        # leading ``id,`` — distinct prefix from the INDEX load above).
+        if s.startswith("SELECT seq, start_sec, end_sec, text, speaker FROM transcript_segments"):
+            tid = args[0]
+            segs = sorted(
+                (seg for seg in self.transcript_segments.values() if seg.transcript_id == tid),
+                key=lambda r: r.seq,
+            )
+            rows = [
+                _Row(
+                    {
+                        "seq": seg.seq,
+                        "start_sec": seg.start_sec,
+                        "end_sec": seg.end_sec,
+                        "text": seg.text,
+                        "speaker": seg.speaker,
+                    }
+                )
+                for seg in segs
+            ]
+            return rows if many else (rows[0] if rows else None)
+
+        # SUBTITLE_GEN — register_subtitle UPSERT into subtitle_files.
+        if s.startswith("INSERT INTO subtitle_files"):
+            (
+                video_id,
+                transcript_id,
+                language,
+                fmt,
+                source,
+                path,
+                byte_size,
+                sha256,
+                is_embedded,
+                is_external,
+                metadata,
+            ) = args
+            for sub_row in self.subtitle_files.values():
+                if (
+                    sub_row.deleted_at is None
+                    and sub_row.video_id == video_id
+                    and sub_row.language == language
+                    and sub_row.format == fmt
+                    and sub_row.source == source
+                ):
+                    sub_row.path = str(path)
+                    sub_row.byte_size = byte_size
+                    sub_row.sha256 = sha256
+                    sub_row.metadata = metadata
+                    sub_row.transcript_id = transcript_id
+                    return _Row({"id": sub_row.id})
+            new_id = self._subtitle_next_id
+            self._subtitle_next_id += 1
+            self.subtitle_files[new_id] = _SubtitleFileRow(
+                id=new_id,
+                video_id=video_id,
+                transcript_id=transcript_id,
+                language=language,
+                format=fmt,
+                source=source,
+                path=str(path),
+                byte_size=byte_size,
+                sha256=sha256,
+                is_embedded=bool(is_embedded),
+                is_external=bool(is_external),
+                metadata=metadata,
+            )
+            return _Row({"id": new_id})
 
         # load_resume_point — SELECT last K segments
         if s.startswith("SELECT seq, text FROM transcript_segments"):
@@ -364,6 +992,49 @@ class FakeAudioDB:
                 key=lambda r: -r.seq,
             )[: int(k)]
             return [_Row({"seq": r.seq, "text": r.text}) for r in segs]
+
+        # --- jobs_state.mark_done — terminal success transition --------
+        if s.startswith("UPDATE processing_jobs SET state = 'done'"):
+            job = self.processing_jobs.get(int(args[0]))
+            if job is None or job.state not in {"claimed", "running", "resuming"}:
+                return None
+            job.state = "done"
+            job.finished_at = self._now()
+            job.claimed_by = None
+            return _Row({"id": job.id, "state": "done"})
+
+        # --- jobs_state.mark_failed_or_retry — read attempts -----------
+        if s.startswith("SELECT attempts, max_attempts FROM processing_jobs"):
+            job = self.processing_jobs.get(int(args[0]))
+            if job is None:
+                return None
+            return _Row({"attempts": job.attempts, "max_attempts": job.max_attempts})
+
+        # --- jobs_state.mark_failed_or_retry — write failed/pending ----
+        if s.startswith("UPDATE processing_jobs SET state = $2") or s.startswith(
+            "UPDATE processing_jobs SET state = ?"
+        ):
+            if self.dialect == "postgres":
+                job_id, new_state, not_before, err_json = (
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                )
+            else:
+                new_state, not_before, err_json, _finished, job_id = (
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                    args[4],
+                )
+            job = self.processing_jobs.get(int(job_id))
+            if job is None or job.state not in {"claimed", "running", "resuming"}:
+                return None
+            job.state = str(new_state)
+            job.error = err_json
+            return _Row({"id": job.id, "state": str(new_state), "not_before": not_before})
 
         raise AssertionError(f"unexpected SQL in fake audio DB: {s!r}")
 
@@ -456,6 +1127,32 @@ class FakeAudioDB:
             confidence=confidence,
         )
         self._last_seg_id = seg_id
+        return None
+
+    def _exec_word_insert(self, args: tuple[Any, ...]) -> None:
+        (segment_id, seq, start_sec, end_sec, text, confidence) = args
+        sid = int(segment_id)
+        existing = next(
+            (
+                w
+                for w in self.transcript_words.values()
+                if w.segment_id == sid and w.seq == int(seq)
+            ),
+            None,
+        )
+        if existing is not None:
+            return None  # ON CONFLICT (segment_id, seq) DO NOTHING
+        wid = self._word_next_id
+        self._word_next_id += 1
+        self.transcript_words[wid] = _TranscriptWordRow(
+            id=wid,
+            segment_id=sid,
+            seq=int(seq),
+            start_sec=float(start_sec),
+            end_sec=float(end_sec),
+            text=str(text),
+            confidence=confidence,
+        )
         return None
 
     def _exec_progress_sqlite(self, args: tuple[Any, ...]) -> None:

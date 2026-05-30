@@ -11,8 +11,21 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@ds/*": ["design-system/*"]
+    }
   },
-  "include": ["src"],
-  "exclude": ["dist", "node_modules", "mockups", "wiki-app", "design-system"]
+  "include": ["src", "design-system/components"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "mockups",
+    "wiki-app",
+    "design-system/build",
+    "design-system/storybook",
+    "design-system/**/*.stories.tsx"
+  ]
 }

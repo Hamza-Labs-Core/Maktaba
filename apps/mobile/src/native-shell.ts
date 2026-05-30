@@ -4,16 +4,57 @@
 // see web/src/lib/native.ts. The bridge publishes DOM events the SPA
 // already listens for, so the same React code drives the web and the
 // native experience without compile-time branching.
-import { App, type AppState } from '@capacitor/app';
+import { App, type AppState, type URLOpenListenerEvent } from '@capacitor/app';
 import { Network, type ConnectionStatus } from '@capacitor/network';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { Preferences } from '@capacitor/preferences';
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import {
+  Haptics,
+  ImpactStyle,
+  NotificationType,
+} from '@capacitor/haptics';
 
 const dispatch = (name: string, detail?: unknown) => {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 };
+
+/**
+ * Parse a `maktaba://` (or https Universal/App-Link) URL into a SPA
+ * path. Story 12.9: scheme `maktaba://watch/{id}?t=` and the
+ * /watch /search /library /queue /settings /collection routes.
+ *
+ * Exported (and pure) so the web side can unit-test the mapping without
+ * a Capacitor runtime.
+ */
+export function deepLinkToPath(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  // maktaba://watch/123 → host="watch", pathname="/123"
+  // https://maktaba.app/watch/123 → pathname="/watch/123"
+  const isCustom = u.protocol === 'maktaba:';
+  const segs = (
+    isCustom ? `${u.host}${u.pathname}` : u.pathname
+  )
+    .split('/')
+    .filter(Boolean);
+  if (segs.length === 0) return null;
+  const known = new Set([
+    'watch',
+    'search',
+    'library',
+    'queue',
+    'settings',
+    'collection',
+  ]);
+  if (!known.has(segs[0])) return null;
+  const qs = u.search ?? '';
+  return '/' + segs.join('/') + qs;
+}
 
 /**
  * Wire native lifecycle → DOM events. Idempotent: safe to call once at
@@ -25,6 +66,26 @@ export async function installNativeShell(): Promise<void> {
   });
   App.addListener('appRestoredResult', (data) => {
     dispatch('mkt:appRestored', data);
+  });
+
+  // Story 12.9: deep links (custom scheme + Universal/App Links). The
+  // SPA router consumes `mkt:deepLink` and navigates; cold-launch links
+  // are delivered through the same event because Capacitor replays the
+  // launch URL via appUrlOpen.
+  App.addListener('appUrlOpen', (ev: URLOpenListenerEvent) => {
+    const path = deepLinkToPath(ev.url);
+    if (path) dispatch('mkt:deepLink', { path, raw: ev.url });
+  });
+
+  // Story 12.2: Android hardware back button. Pop SPA history; at the
+  // history root emit a quit-prompt request the SPA can confirm before
+  // calling App.exitApp().
+  App.addListener('backButton', ({ canGoBack }) => {
+    if (canGoBack) {
+      window.history.back();
+    } else {
+      dispatch('mkt:backAtRoot');
+    }
   });
 
   Network.addListener('networkStatusChange', (status: ConnectionStatus) => {
@@ -60,14 +121,102 @@ export async function installNativeShell(): Promise<void> {
 }
 
 /**
- * Light haptic tap. No-op on the web preview.
+ * Haptics (Story 12.8). Closed vocabulary mapped to UIImpact /
+ * UINotification (iOS) and HapticFeedbackConstants (Android) by the
+ * @capacitor/haptics plugin.
+ *
+ *   tap            — light impact   (tab change, button)
+ *   medium         — medium impact  (long-press)
+ *   selection      — selection tick (toggle, picker)
+ *   success/warning/error — notification haptics (download done / EC)
+ *
+ * EC: throttled to at most one pulse / 100 ms. The OS reduce-motion /
+ * reduced-haptics preference and the in-app Settings → Accessibility →
+ * Haptics level (off | light | full) both gate firing.
  */
-export async function tapHaptic(): Promise<void> {
+export type HapticKind =
+  | 'tap'
+  | 'medium'
+  | 'selection'
+  | 'success'
+  | 'warning'
+  | 'error';
+
+export type HapticLevel = 'off' | 'light' | 'full';
+
+let hapticLevel: HapticLevel = 'full';
+let lastHapticAt = 0;
+
+/** Set by the SPA from Settings → Accessibility → Haptics. */
+export function setHapticLevel(level: HapticLevel): void {
+  hapticLevel = level;
+}
+
+function prefersReducedMotion(): boolean {
   try {
-    await Haptics.impact({ style: ImpactStyle.Light });
+    return (
+      typeof matchMedia === 'function' &&
+      matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Decide (purely) whether a given haptic kind should fire right now. */
+export function shouldFireHaptic(
+  kind: HapticKind,
+  now: number,
+  level: HapticLevel = hapticLevel,
+  reducedMotion: boolean = prefersReducedMotion(),
+): boolean {
+  if (level === 'off') return false;
+  if (reducedMotion) return false;
+  // "light" only allows the gentle tap/selection family; impact-heavy
+  // and notification haptics need the full setting.
+  if (level === 'light' && kind !== 'tap' && kind !== 'selection') {
+    return false;
+  }
+  return now - lastHapticAt >= 100; // EC: ≤ 1 / 100 ms
+}
+
+export async function haptic(kind: HapticKind = 'tap'): Promise<void> {
+  const now = Date.now();
+  if (!shouldFireHaptic(kind, now)) return;
+  lastHapticAt = now;
+  try {
+    switch (kind) {
+      case 'medium':
+        await Haptics.impact({ style: ImpactStyle.Medium });
+        break;
+      case 'selection':
+        await Haptics.selectionStart();
+        await Haptics.selectionEnd();
+        break;
+      case 'success':
+        await Haptics.notification({ type: NotificationType.Success });
+        break;
+      case 'warning':
+        await Haptics.notification({ type: NotificationType.Warning });
+        break;
+      case 'error':
+        await Haptics.notification({ type: NotificationType.Error });
+        break;
+      case 'tap':
+      default:
+        await Haptics.impact({ style: ImpactStyle.Light });
+    }
   } catch {
     // ignore on web preview
   }
+}
+
+/**
+ * Back-compat shim for the original single-style export.
+ * @deprecated use {@link haptic}.
+ */
+export async function tapHaptic(): Promise<void> {
+  await haptic('tap');
 }
 
 /**

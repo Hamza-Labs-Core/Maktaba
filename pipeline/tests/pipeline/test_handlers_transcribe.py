@@ -1,0 +1,698 @@
+"""Track R3 — real TRANSCRIBE stage adapter.
+
+The adapter is a thin glue layer mirroring :func:`probe_handler` /
+:func:`extract_handler`:
+
+1. resolve the EXTRACT-produced ``audio_cache`` row for the job's
+   ``payload.content_hash`` (the cached WAV path + ``audio_track_id``),
+2. select an STT backend via the registry seam (default = the
+   configured/registry default; tests inject a fake backend yielding
+   canned segments so no model is ever loaded),
+3. create + activate the transcript row
+   (:func:`stt.registry.flip_active_transcript`),
+4. persist every backend segment via the existing
+   :func:`stt.segment_commit.commit_segment` (heavy logic stays there),
+5. advance the FSM ``AUDIO_EXTRACTED -> TRANSCRIBED`` and enqueue the
+   follow-on ``SUBTITLE_GEN`` + ``INDEX`` jobs via the same idempotent
+   per-video :func:`db.jobs.enqueue` ``commit_extract`` uses,
+6. flip the job ``done``.
+
+These tests assert the adapter wires those pieces together against the
+*same* DB contract the libraries already expect (the shared
+:class:`StageDB` fake seeded with EXTRACT-produced rows + a fake STT
+backend). Async work is driven via :func:`asyncio.run` — the same
+pattern ``tests/pipeline/test_handlers_extract.py`` uses, and for the
+same netguard reason; these tests are intentionally NOT ``unit``-marked.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+from typing import Any
+from uuid import UUID, uuid4
+
+import pytest
+
+from maktaba_pipeline.db.jobs import Stage
+from maktaba_pipeline.handlers import transcribe_handler
+from maktaba_pipeline.stt.protocol import Segment, Word
+from tests.audio._fake_audio_db import _AudioCacheRow, _AudioTrackRow, _ProcessingJobRow
+
+from .conftest import StageDB, make_job
+
+_SEGMENTS = (
+    Segment(seq=0, start_sec=0.0, end_sec=2.0, text="bismillah", audio_sec=2.0, wall_sec=0.5),
+    Segment(seq=1, start_sec=2.0, end_sec=4.5, text="al-hamdu", audio_sec=2.5, wall_sec=0.5),
+    Segment(seq=2, start_sec=4.5, end_sec=6.0, text="lillah", audio_sec=1.5, wall_sec=0.5),
+)
+
+
+def _seed_claimed_job(
+    stage_db: StageDB,
+    *,
+    job_id: int,
+    video_id: UUID,
+    content_hash: str,
+    audio_track_id: int,
+) -> None:
+    """Mirror a TRANSCRIBE row the ClaimLoop flipped to ``running``.
+
+    EXTRACT enqueued it with ``payload={audio_track_id, content_hash}``.
+    """
+    stage_db.processing_jobs[job_id] = _ProcessingJobRow(
+        id=job_id,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE.value,
+        state="running",
+        payload=json.dumps({"audio_track_id": audio_track_id, "content_hash": content_hash}),
+    )
+    stage_db._job_next_id = max(stage_db._job_next_id, job_id + 1)  # noqa: SLF001
+
+
+def _seed_extract_output(
+    stage_db: StageDB,
+    *,
+    video_id: UUID,
+    content_hash: str,
+) -> int:
+    """Seed exactly what EXTRACT's ``commit_extract`` would have left.
+
+    An ``audio_tracks`` row + the ``audio_cache`` artifact keyed by
+    ``content_hash`` pointing at the decoded WAV.
+    """
+    track_id = stage_db._audio_next_id  # noqa: SLF001
+    stage_db._audio_next_id += 1  # noqa: SLF001
+    stage_db.audio_tracks[track_id] = _AudioTrackRow(
+        id=track_id,
+        video_id=video_id,
+        track_index=0,
+        codec="aac",
+        channels=2,
+        sample_rate=48000,
+        language="ara",
+        title=None,
+        is_default=True,
+        disposition=json.dumps({"default": 1}),
+        last_extracted_at=stage_db._now(),
+    )
+    stage_db.audio_cache[content_hash] = _AudioCacheRow(
+        content_hash=content_hash,
+        video_id=video_id,
+        audio_track_id=track_id,
+        path=f"/cache/audio/{content_hash}.wav",
+        bytes=123456,
+    )
+    return track_id
+
+
+def _fake_backend(name: str = "fake-stt", *, segments: tuple[Segment, ...] = _SEGMENTS) -> Any:
+    """A canonical fake STT backend yielding deterministic segments."""
+
+    class _FakeBackend:
+        def __init__(self) -> None:
+            self.name = name
+            self.model = "fake-model-v1"
+            self.supports_streaming = True
+            self.requires_file = True
+            self.cost_per_minute: float | None = 0.0
+            self.supports_word_timestamps = False
+            self.seen: list[tuple[object, str | None]] = []
+
+        def transcribe(
+            self, audio: Any, language: str | None, hints: Any
+        ) -> AsyncIterator[Segment]:
+            self.seen.append((audio, language))
+
+            async def _gen() -> AsyncIterator[Segment]:
+                for seg in segments:
+                    yield seg
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+    return _FakeBackend()
+
+
+def test_transcribe_handler_selects_backend_persists_segments_advances() -> None:
+    stage_db = StageDB(dialect="postgres")
+    chash = "a" * 64
+    video_id = stage_db.add_video(
+        state="audio_extracted", path="/lib/movie.mkv", content_hash=chash
+    )
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=20,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=20,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    backend = _fake_backend()
+    picks: list[str] = []
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        picks.append("picked")
+        return backend, "fake-stt", "9.9.9"
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    # backend was selected via the injected registry seam.
+    assert picks == ["picked"]
+    # the cached WAV path was handed to the backend (requires_file).
+    assert backend.seen[0][0] == f"/cache/audio/{chash}.wav"
+    # a transcript row was created + activated for this video/track.
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
+    assert len(actives) == 1
+    tr = actives[0]
+    assert tr.audio_track_id == track_id
+    assert tr.backend == "fake-stt"
+    # every backend segment was persisted via commit_segment.
+    segs = sorted(
+        (s for s in stage_db.transcript_segments.values() if s.transcript_id == tr.id),
+        key=lambda r: r.seq,
+    )
+    assert [s.seq for s in segs] == [0, 1, 2]
+    assert [s.text for s in segs] == ["bismillah", "al-hamdu", "lillah"]
+    # FSM advanced AUDIO_EXTRACTED -> TRANSCRIBED.
+    assert stage_db.videos[video_id].state == "transcribed"
+    # BOTH downstream stages were enqueued.
+    stages = {pj.stage for pj in stage_db.processing_jobs.values() if pj.video_id == video_id}
+    assert Stage.SUBTITLE_GEN.value in stages
+    assert Stage.INDEX.value in stages
+    # the TRANSCRIBE job itself is done.
+    assert stage_db.processing_jobs[20].state == "done"
+
+
+def test_transcribe_handler_downstream_payload_contract() -> None:
+    """SUBTITLE_GEN + INDEX carry the transcript id (+ track) so the
+    downstream stages can locate the active transcript without a
+    re-query race."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "b" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=21,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=21,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    backend = _fake_backend()
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return backend, "fake-stt", None
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    tr = next(t for t in stage_db.transcripts.values() if t.is_active)
+    for stage in (Stage.SUBTITLE_GEN, Stage.INDEX):
+        row = next(
+            pj
+            for pj in stage_db.processing_jobs.values()
+            if pj.stage == stage.value and pj.video_id == video_id
+        )
+        payload = json.loads(row.payload or "{}")
+        assert payload["transcript_id"] == str(tr.id)
+        assert payload["audio_track_id"] == track_id
+
+
+def test_transcribe_handler_missing_audio_cache_is_non_retryable() -> None:
+    """No ``audio_cache`` row for the payload hash → a data
+    inconsistency (EXTRACT must have persisted it); non-retryable."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "c" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    # NOTE: no _seed_extract_output → audio_cache empty.
+    job = make_job(
+        job_id=22,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": 999, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=22,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=999,
+    )
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001  # pragma: no cover
+        raise AssertionError("backend must not be picked with no audio_cache")
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    assert stage_db.processing_jobs[22].state == "failed"
+    err = json.loads(stage_db.processing_jobs[22].error or "{}")
+    assert err["retryable"] is False
+    assert err["kind"] == "transcribe_missing_audio_cache"
+
+
+def test_transcribe_handler_missing_payload_is_non_retryable() -> None:
+    """A TRANSCRIBE job with no payload (or no content_hash) cannot
+    locate its audio — a data inconsistency, non-retryable."""
+    stage_db = StageDB(dialect="postgres")
+    video_id = stage_db.add_video(state="audio_extracted")
+    job = make_job(job_id=23, video_id=video_id, stage=Stage.TRANSCRIBE)
+    stage_db.processing_jobs[23] = _ProcessingJobRow(
+        id=23,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE.value,
+        state="running",
+        payload=None,
+    )
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001  # pragma: no cover
+        raise AssertionError("backend must not be picked with no payload")
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    assert stage_db.processing_jobs[23].state == "failed"
+    err = json.loads(stage_db.processing_jobs[23].error or "{}")
+    assert err["retryable"] is False
+    assert err["kind"] == "transcribe_missing_payload"
+
+
+def test_transcribe_handler_backend_error_is_retryable() -> None:
+    """A transient backend / IO failure mid-stream is retryable."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "d" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=24,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=24,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    class _BoomBackend:
+        name = "boom"
+        model = "boom-model"
+        supports_streaming = True
+        requires_file = True
+        cost_per_minute = 0.0
+        supports_word_timestamps = False
+
+        def transcribe(
+            self, audio: Any, language: str | None, hints: Any
+        ) -> AsyncIterator[Segment]:
+            async def _gen() -> AsyncIterator[Segment]:
+                yield _SEGMENTS[0]
+                raise OSError("backend pipe broke")
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _BoomBackend(), "boom", None
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    # attempts(1) < max_attempts(3) and retryable → pending.
+    assert stage_db.processing_jobs[24].state == "pending"
+    # FSM stayed put — no premature TRANSCRIBED.
+    assert stage_db.videos[video_id].state == "audio_extracted"
+
+
+def test_transcribe_handler_idempotent_on_rerun() -> None:
+    """Re-running TRANSCRIBE (retried job) is replay-safe: the FSM
+    advance is a no-op past AUDIO_EXTRACTED and the downstream enqueue
+    dedupes — no duplicate SUBTITLE_GEN/INDEX rows."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "e" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _fake_backend(), "fake-stt", None
+
+    job1 = make_job(
+        job_id=25,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=25,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+    asyncio.run(transcribe_handler(stage_db, job1, select_backend=fake_pick))
+
+    job2 = make_job(
+        job_id=26,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=26,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+    asyncio.run(transcribe_handler(stage_db, job2, select_backend=fake_pick))
+
+    assert stage_db.processing_jobs[25].state == "done"
+    assert stage_db.processing_jobs[26].state == "done"
+    assert stage_db.videos[video_id].state == "transcribed"
+    sg = [pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.SUBTITLE_GEN.value]
+    idx = [pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.INDEX.value]
+    assert len(sg) == 1
+    assert len(idx) == 1
+
+
+def _boom_after_first_backend(name: str = "boom-mid") -> Any:
+    """A backend that yields seg 0 then dies — a mid-stream failure."""
+
+    class _BoomMid:
+        def __init__(self) -> None:
+            self.name = name
+            self.model = "boom-model-v1"
+            self.supports_streaming = True
+            self.requires_file = True
+            self.cost_per_minute: float | None = 0.0
+            self.supports_word_timestamps = False
+
+        def transcribe(
+            self, audio: Any, language: str | None, hints: Any
+        ) -> AsyncIterator[Segment]:
+            async def _gen() -> AsyncIterator[Segment]:
+                yield _SEGMENTS[0]
+                raise OSError("backend pipe broke mid-stream")
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+    return _BoomMid()
+
+
+def test_transcribe_first_time_midstream_failure_leaves_no_empty_active() -> None:
+    """REVIEW §1.1 (first-time case): a video with no prior transcript
+    whose backend fails mid-stream must NOT end up with an empty/partial
+    transcript as its sole *active* one. The create-then-activate split
+    leaves at most an ``is_active=false`` row; no active transcript
+    exists, so a downstream consumer never reads a half transcript."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "f" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=30,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=30,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _boom_after_first_backend(), "boom-mid", None
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    # The job is retryable-pending and the FSM did not advance.
+    assert stage_db.processing_jobs[30].state == "pending"
+    assert stage_db.videos[video_id].state == "audio_extracted"
+    # No ACTIVE transcript exists — the partial row (if any) is inert.
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
+    assert actives == []
+
+
+def test_transcribe_retranscription_midstream_failure_keeps_prior_good() -> None:
+    """REVIEW §1.1 (re-transcription case): a video that already has a
+    good ACTIVE transcript, re-transcribed by a backend that dies
+    mid-stream, must keep the previous good transcript active AND
+    complete — the prior good data is never retired for a replacement
+    that never finished."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "g" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+
+    # First run: a good backend produces a complete active transcript.
+    good = _fake_backend(name="good-stt")
+
+    async def pick_good(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return good, "good-stt", "1.0.0"
+
+    job1 = make_job(
+        job_id=31,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=31,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+    asyncio.run(transcribe_handler(stage_db, job1, select_backend=pick_good))
+
+    good_active = next(
+        t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active
+    )
+    good_id = good_active.id
+    good_segs = sorted(
+        (s for s in stage_db.transcript_segments.values() if s.transcript_id == good_id),
+        key=lambda r: r.seq,
+    )
+    assert [s.seq for s in good_segs] == [0, 1, 2]
+
+    # Re-transcribe: the second backend dies mid-stream.
+    job2 = make_job(
+        job_id=32,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=32,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    async def pick_boom(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return _boom_after_first_backend(), "boom-mid", None
+
+    asyncio.run(transcribe_handler(stage_db, job2, select_backend=pick_boom))
+
+    # The prior good transcript is STILL the sole active one and STILL
+    # complete (all 3 segments) — the failed re-run never retired it.
+    actives = [t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active]
+    assert len(actives) == 1
+    assert actives[0].id == good_id
+    assert actives[0].is_active is True
+    still_segs = sorted(
+        (s for s in stage_db.transcript_segments.values() if s.transcript_id == good_id),
+        key=lambda r: r.seq,
+    )
+    assert [s.seq for s in still_segs] == [0, 1, 2]
+    assert [s.text for s in still_segs] == ["bismillah", "al-hamdu", "lillah"]
+    # The failed run's partial row, if it exists, is NOT active.
+    partials = [
+        t for t in stage_db.transcripts.values() if t.video_id == video_id and t.id != good_id
+    ]
+    assert all(p.is_active is False for p in partials)
+
+
+def test_transcribe_persists_words_and_records_paid_usage_end_to_end() -> None:
+    """HLB-324 + HLB-314 on the LIVE commit_transcribe path.
+
+    A paid, word-capable backend → (a) the transcript row is stamped
+    ``word_level=true``, (b) ``transcript_words`` rows are persisted via
+    the real commit_segment, (c) the previously-missing ``stt_usage``
+    ledger row is written for the paid spend.
+    """
+    from maktaba_pipeline.stt.transcribe import (
+        AudioArtifact,
+        SelectedBackend,
+        commit_transcribe,
+    )
+    from tests.audio._fake_audio_db import FakeAudioDB
+
+    db = FakeAudioDB(dialect="postgres")
+    lib = uuid4()
+    video_id = db.add_video(state="audio_extracted", library_id=lib)
+    # Build the EXTRACT-produced audio_tracks row directly on the plain
+    # fake (commit_transcribe takes the AudioArtifact, so no audio_cache
+    # read is needed here — that path is covered by the handler tests).
+    track_id = db._audio_next_id  # noqa: SLF001
+    db._audio_next_id += 1  # noqa: SLF001
+    db.audio_tracks[track_id] = _AudioTrackRow(
+        id=track_id,
+        video_id=video_id,
+        track_index=0,
+        codec="aac",
+        channels=2,
+        sample_rate=48000,
+        language="ara",
+        title=None,
+        is_default=True,
+        disposition=json.dumps({"default": 1}),
+        last_extracted_at=db._now(),  # noqa: SLF001
+    )
+    job_id = 91
+    db.processing_jobs[job_id] = _ProcessingJobRow(
+        id=job_id, video_id=video_id, stage=Stage.TRANSCRIBE.value, state="running"
+    )
+
+    class _PaidWordBackend:
+        name = "openai-api"
+        model = "whisper-1"
+        supports_streaming = False
+        requires_file = True
+        cost_per_minute: float | None = 0.006
+        supports_word_timestamps = True
+
+        def transcribe(self, audio: Any, language: str | None, hints: Any) -> Any:
+            assert hints.word_timestamps is True  # backend asked for words
+
+            async def _gen() -> AsyncIterator[Segment]:
+                yield Segment(
+                    seq=0,
+                    start_sec=0.0,
+                    end_sec=60.0,
+                    text="bismillah",
+                    audio_sec=60.0,
+                    wall_sec=2.0,
+                    words=(
+                        Word(text="bismi", start_sec=0.0, end_sec=30.0, confidence=0.9),
+                        Word(text="llah", start_sec=30.0, end_sec=60.0, confidence=0.8),
+                    ),
+                )
+
+            return _gen()
+
+        async def detect_language(self, audio: Any) -> str:
+            return "ar"
+
+        async def health(self) -> Any:
+            from datetime import UTC, datetime
+
+            from maktaba_pipeline.stt.protocol import BackendHealth
+
+            return BackendHealth(
+                ready=True,
+                model_loaded=True,
+                version="v1",
+                device="openai-api",
+                last_check_at=datetime.now(tz=UTC),
+            )
+
+        async def warmup(self) -> None:
+            return
+
+    backend = _PaidWordBackend()
+
+    asyncio.run(
+        commit_transcribe(
+            db,
+            video_id=video_id,
+            artifact=AudioArtifact(
+                content_hash="z" * 64,
+                video_id=video_id,
+                audio_track_id=track_id,
+                path="/cache/audio/z.wav",
+            ),
+            selected=SelectedBackend(backend=backend, name="openai-api", version="v1"),
+            job_id=job_id,
+            total_duration_sec=30 * 60,  # 30 min paid
+            language=None,
+        )
+    )
+
+    # (a) transcript row stamped word_level=true.
+    tr = next(t for t in db.transcripts.values() if t.video_id == video_id and t.is_active)
+    assert tr.word_level is True
+    # (b) transcript_words persisted via the real commit_segment path.
+    seg = next(s for s in db.transcript_segments.values() if s.transcript_id == tr.id)
+    words = sorted(
+        (w for w in db.transcript_words.values() if w.segment_id == seg.id),
+        key=lambda w: w.seq,
+    )
+    assert [w.text for w in words] == ["bismi", "llah"]
+    assert [w.seq for w in words] == [0, 1]
+    # (c) the paid spend was recorded onto the previously-missing ledger.
+    usage = list(db.stt_usage.values())
+    assert len(usage) == 1
+    assert usage[0].backend == "openai-api"
+    assert usage[0].est_usd == pytest.approx(30 * 0.006)  # 30 min × $0.006
+
+
+def test_transcribe_stamps_backend_declared_model() -> None:
+    """REVIEW §1.2: the backend's declared ``model`` (not its name) is
+    stamped onto ``transcripts.model``."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "h" * 64
+    video_id = stage_db.add_video(state="audio_extracted", path="/lib/m.mkv", content_hash=chash)
+    track_id = _seed_extract_output(stage_db, video_id=video_id, content_hash=chash)
+    job = make_job(
+        job_id=33,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload={"audio_track_id": track_id, "content_hash": chash},
+    )
+    _seed_claimed_job(
+        stage_db,
+        job_id=33,
+        video_id=video_id,
+        content_hash=chash,
+        audio_track_id=track_id,
+    )
+
+    backend = _fake_backend(name="fake-stt")  # declares model="fake-model-v1"
+
+    async def fake_pick(*, video_id: UUID) -> tuple[Any, str, str | None]:  # noqa: ARG001
+        return backend, "fake-stt", "9.9.9"
+
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=fake_pick))
+
+    tr = next(t for t in stage_db.transcripts.values() if t.video_id == video_id and t.is_active)
+    # The MODEL, not the backend NAME, is stamped.
+    assert tr.model == "fake-model-v1"
+    assert tr.model != tr.backend
+    assert tr.backend == "fake-stt"

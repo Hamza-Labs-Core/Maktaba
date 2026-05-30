@@ -39,6 +39,7 @@ __all__ = [
     "JobState",
     "Stage",
     "enqueue",
+    "enqueue_scan",
 ]
 
 
@@ -117,10 +118,24 @@ class Job:
     Field order and types match the migration. ``payload`` is parsed
     JSON; the worker reads it back into the stage-specific options
     dict.
+
+    Slot 0058 (gap-closure) made jobs scopeable two ways, enforced by
+    the ``processing_jobs_scope_chk`` CHECK:
+
+    - **per-video** stages (PROBE/EXTRACT/TRANSCRIBE/…) carry a
+      ``video_id`` and a null ``library_id`` — exactly as before.
+    - **library-scoped** SCAN carries a ``library_id`` and a null
+      ``video_id`` (no ``videos`` row exists yet — the scan is what
+      discovers them).
+
+    So ``video_id`` is ``UUID | None`` and ``library_id`` is the new
+    ``UUID | None`` companion; a handler reads whichever its stage
+    uses.
     """
 
     id: int
-    video_id: UUID
+    video_id: UUID | None
+    library_id: UUID | None
     stage: Stage
     state: JobState
     priority: int
@@ -213,6 +228,37 @@ SELECT pj.id          AS id,
  LIMIT 1
 """
 
+# --- Library-scoped SCAN enqueue (slot 0058) ----------------------------
+#
+# A SCAN job has no video — it is what discovers them — so it cannot use
+# the per-video `enqueue` above. It rides the slot 0058 partial unique
+# index `processing_jobs_one_live_scan_per_library`
+# (UNIQUE (library_id, stage) WHERE stage='scan' AND state IN <live>) the
+# exact same race-free way: concurrent inserts collide on the index, the
+# loser's INSERT is a no-op, the caller falls back to the existing live
+# row's id. There is no "skip when done" branch — a library is always
+# re-scannable (the source tree changes out of band), unlike a finished
+# per-video stage whose inputs are immutable.
+
+_INSERT_SCAN_SQL = """
+INSERT INTO processing_jobs
+       (library_id, video_id, stage, state, priority, payload, max_attempts)
+VALUES ($1, NULL, 'scan', 'pending', $2, $3, $4)
+ON CONFLICT (library_id, stage)
+   WHERE stage = 'scan'
+     AND state IN ('pending','claimed','running','resuming','paused')
+DO NOTHING
+RETURNING id
+"""
+
+_FALLBACK_LIVE_SCAN_SQL = """
+SELECT id FROM processing_jobs
+ WHERE library_id = $1
+   AND stage      = 'scan'
+   AND state IN ('pending','claimed','running','resuming','paused')
+ LIMIT 1
+"""
+
 
 async def enqueue(
     db: DBConn,
@@ -298,4 +344,68 @@ async def enqueue(
         # here means the schema invariant was violated.
         raise RuntimeError(
             "enqueue: INSERT swallowed but no live row found — schema invariant violated",
+        )
+
+
+async def enqueue_scan(
+    db: DBConn,
+    *,
+    library_id: UUID,
+    priority: int = 100,
+    payload: dict[str, Any] | None = None,
+    max_attempts: int = 3,
+) -> EnqueueResult:
+    """Insert a library-scoped ``pending`` SCAN row, or reuse the live one.
+
+    The library-scoped sibling of :func:`enqueue`. Mirrors its
+    conventions (same signature shape minus ``video_id``/``stage``,
+    same :class:`EnqueueResult`, same SQLite manual-publish on the
+    in-process bus) but honours the slot 0058 partial unique index
+    ``processing_jobs_one_live_scan_per_library`` instead of the
+    per-video one.
+
+    Idempotency: a live scan row for the library → return its id with
+    ``outcome='reused'`` (the partial unique index swallows the
+    duplicate INSERT). Otherwise INSERT and return
+    ``outcome='inserted'``. There is no ``skipped_done_unchanged``
+    branch — a finished scan does not block the next one (the library's
+    on-disk tree mutates out of band; "unchanged source" has no stable
+    meaning for a whole library the way it does for one immutable
+    video).
+    """
+    payload_text = json.dumps(payload) if payload is not None else None
+
+    async with db.transaction():
+        row = await db.fetchrow(
+            _INSERT_SCAN_SQL,
+            library_id,
+            priority,
+            payload_text,
+            max_attempts,
+        )
+        if row is not None:
+            new_id = int(row["id"])
+            if db.dialect == "sqlite":
+                # Postgres has the slot 0002 AFTER INSERT trigger;
+                # SQLite has no NOTIFY so publish manually. video_id is
+                # null for a scan job — keep the key present (as None)
+                # so subscribers see a stable payload shape.
+                get_bus().publish(
+                    JOBS_NEW,
+                    {
+                        "id": new_id,
+                        "video_id": None,
+                        "library_id": str(library_id),
+                        "stage": Stage.SCAN.value,
+                        "priority": priority,
+                    },
+                )
+            return EnqueueResult(id=new_id, outcome="inserted")
+
+        live = await db.fetchrow(_FALLBACK_LIVE_SCAN_SQL, library_id)
+        if live is not None:
+            return EnqueueResult(id=int(live["id"]), outcome="reused")
+
+        raise RuntimeError(
+            "enqueue_scan: INSERT swallowed but no live scan row found — schema invariant violated",
         )

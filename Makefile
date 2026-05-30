@@ -8,12 +8,13 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/testtier/go tools/test-budget
+GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
 MIGRATION_LINT_DIR := tools/migration-lint
 MIGRATION_LINT_BASE_REF ?= origin/main
+LOG_LINT_DIR := tools/log-lint
 
 # Story 20.1 budgets — single source of truth, mirrored across
 # shared/testtier/{go,py} so the soft caps + tier totals stay in
@@ -159,7 +160,16 @@ dev-ps:  ## Show status of dev stack services.
 # ---------------------------------------------------------------------------
 
 .PHONY: lint
-lint: lint-go lint-py lint-web lint-migrations  ## Run every linter (CI gate 1).
+lint: lint-go lint-py lint-web lint-migrations lint-log  ## Run every linter (CI gate 1).
+
+.PHONY: lint-log
+lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
+	@echo "==> log-lint vet/test"
+	cd $(LOG_LINT_DIR) && go vet ./...
+	cd $(LOG_LINT_DIR) && go test ./...
+	@echo "==> log-lint (api/streaming/shared log sites)"
+	cd $(LOG_LINT_DIR) && go run . \
+		--dirs "$(CURDIR)/api,$(CURDIR)/streaming,$(CURDIR)/shared/log/go,$(CURDIR)/shared/health/go,$(CURDIR)/shared/metrics/go,$(CURDIR)/shared/tracing/go,$(CURDIR)/shared/errrpt/go"
 
 .PHONY: lint-migrations
 lint-migrations:  ## Migration conventions: append-only + idempotency + SQLite parity.
@@ -294,14 +304,15 @@ test-e2e:  ## E2E tier (Story 20.1, Epic 20.5). Assumes the compose stack is up.
 
 .PHONY: test-e2e-inner
 test-e2e-inner:
-	@# pytest exits 5 when no tests match the marker — that's the
-	@# normal state until Story 20.5 lands real e2e tests.
-	@# Same `|| { ... }` form as test-integration-inner — required
-	@# because .SHELLFLAGS has `-e`, which kills the recipe on
-	@# pytest's non-zero exit before the rc check runs.
-	@cd $(PIPELINE_DIR) && uv run pytest -m e2e || { \
-		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
-	}
+	@# Track V: real gate. NO exit-5 swallow — an empty suite (pytest
+	@# exit 5) must FAIL, so a missing/uncollected e2e suite can never
+	@# be a false green. .SHELLFLAGS has `-e`, so any non-zero pytest
+	@# exit kills the recipe, which is exactly the desired behaviour.
+	@#
+	@# Run from the pipeline uv env (the only env with pytest — CI
+	@# does `cd pipeline && uv sync`), but point it at the repo-root
+	@# tests/e2e suite. $(CURDIR) is the repo root (this Makefile).
+	@cd $(PIPELINE_DIR) && uv run pytest -m e2e $(CURDIR)/tests/e2e -q
 
 # ---------------------------------------------------------------------------
 # Perf-CI (gate 5; Story 20.1 perf-ci tier) — reduced perf suite.
@@ -314,7 +325,31 @@ perf-ci:  ## Reduced perf suite (Story 20.1, Epic 20.7).
 
 .PHONY: perf-ci-inner
 perf-ci-inner:
-	@echo "perf-ci stub: Epic 20.7 will replace this with the real reduced perf suite."
+	@# Track V: real gate. Asserts the ci_pr subset of
+	@# shared/perf_budgets.yaml is present, non-empty, and well-formed
+	@# (removing the budgets file makes this fail). Run from the
+	@# pipeline uv env (the only env with pytest) against the
+	@# repo-root tests/perf suite. $(CURDIR) is the repo root.
+	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
+
+# ---------------------------------------------------------------------------
+# Coverage floor (Story 20.3 AC1/TC1) — real gate with teeth.
+#
+# Collects `go test -short -coverprofile` per Go module and a
+# pytest-cov total for the pipeline, then fails if any module's
+# statement coverage is below its documented floor in
+# tools/coverage-floor/floors.yaml. The floors are a NON-BREAKING
+# RATCHET set at the coverage measured on the integrated branch, so
+# enabling the gate cannot redden an in-flight PR; raise floors as
+# coverage improves, never lower them to pass a red PR. Wired into the
+# CI Lint gate (.github/workflows/_lint.yml) so a coverage regression
+# blocks merge — mirrors V's real-gate pattern (test-e2e / perf-ci).
+# ---------------------------------------------------------------------------
+
+.PHONY: test-coverage
+test-coverage:  ## Coverage-floor gate (Story 20.3): fail if a module regresses below its floor.
+	@GO_MODULES="$(GO_MODULES)" PIPELINE_DIR="$(PIPELINE_DIR)" \
+		bash tools/coverage-floor.sh
 
 # ---------------------------------------------------------------------------
 # Build (gate 6) — Story 22.2 reproducibility envelope

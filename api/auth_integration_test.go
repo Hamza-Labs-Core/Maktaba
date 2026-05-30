@@ -10,10 +10,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
 )
+
+// principalForCookieTest returns a context carrying a cookie-sourced
+// principal when the request presents the session cookie. Mirrors what
+// the real CookieAuth middleware does, minus the DB lookup.
+func principalForCookieTest(r *http.Request) context.Context {
+	if c, err := r.Cookie(auth.CookieSession); err == nil && c.Value != "" {
+		return principal.WithPrincipal(r.Context(), &principal.Principal{
+			UserID: "u-cookie", Source: principal.SourceCookie,
+		})
+	}
+	return r.Context()
+}
 
 // TestServeWithAuth_JWKSAndHeaders is the integration sanity check
 // for Stories 10.6 (JWKS publication) and 10.15 (security headers /
@@ -102,6 +120,176 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 	}
 }
 
+// TestApplySecurity_GatesBusinessRoutes is the R3.2 regression: the
+// previously-anonymous business surface must now require auth. We wrap
+// a sentinel "business" handler with the real applySecurity stack and
+// assert anonymous is 401 while a valid bearer reaches the handler.
+func TestApplySecurity_GatesBusinessRoutes(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+
+	business := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("business-ok"))
+	})
+	// cookieAuth + csrf nil: the bearer path alone must still gate + admit.
+	stack := st.applySecurity(business, nil, nil)
+
+	// Anonymous business route → 401.
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/libraries", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /api/libraries: status = %d, want 401", rec.Code)
+	}
+
+	// Public route → reaches handler anonymously.
+	recPub := httptest.NewRecorder()
+	stack.ServeHTTP(recPub, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if recPub.Code != http.StatusOK {
+		t.Fatalf("anonymous /api/system/version: status = %d, want 200 (public)", recPub.Code)
+	}
+
+	// Valid bearer → reaches handler.
+	tok := mustSignAPIToken(t, priv, pub)
+	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	recAuth := httptest.NewRecorder()
+	stack.ServeHTTP(recAuth, req)
+	if recAuth.Code != http.StatusOK {
+		t.Fatalf("bearer /api/libraries: status = %d, want 200", recAuth.Code)
+	}
+	if got := recAuth.Body.String(); got != "business-ok" {
+		t.Fatalf("bearer body = %q, want business-ok", got)
+	}
+}
+
+// TestApplySecurity_HSTSDefaultsOnWithoutEnv is the Story 23.3 AC-2
+// regression: HSTS must be sent EVEN WHEN MAKTABA_HSTS is unset
+// (secure-by-default). The pre-fix behaviour was opt-in (header
+// absent unless MAKTABA_HSTS=1).
+func TestApplySecurity_HSTSDefaultsOnWithoutEnv(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	os.Unsetenv("MAKTABA_HSTS") // explicitly unset: must still be on
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+		nil,
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("HSTS = %q, want default-on max-age=31536000; includeSubDomains", got)
+	}
+}
+
+// TestApplySecurity_HSTSExplicitOptOut: an operator on a `.local`
+// HTTP-only install clears HSTS with MAKTABA_HSTS=0.
+func TestApplySecurity_HSTSExplicitOptOut(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "0")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+		nil,
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("HSTS = %q, want empty (explicit opt-out)", got)
+	}
+}
+
+// TestApplySecurity_AuthRouteRateLimitWired is the Story 23.6 AC-1
+// regression: the per-route table is live on the real applySecurity
+// chain — /api/auth/login is capped at 10/min/IP, far below the
+// generic limiter, and the cap fires before any credential work.
+func TestApplySecurity_AuthRouteRateLimitWired(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+	// Sentinel handler stands in for the login handler (out of lane).
+	stack := st.applySecurity(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		nil,
+		nil,
+	)
+
+	var got429 bool
+	for i := 0; i < 11; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+		req.RemoteAddr = "203.0.113.42:6000"
+		rec := httptest.NewRecorder()
+		stack.ServeHTTP(rec, req)
+		if i < 10 && rec.Code != http.StatusOK {
+			t.Fatalf("login %d via chain: status=%d want 200", i+1, rec.Code)
+		}
+		if rec.Code == http.StatusTooManyRequests {
+			got429 = true
+			if rec.Header().Get("Retry-After") == "" {
+				t.Fatal("chain 429 must carry Retry-After")
+			}
+		}
+	}
+	if !got429 {
+		t.Fatal("11th /api/auth/login through applySecurity should be 429 (per-route cap not wired)")
+	}
+}
+
+// mustSignAPIToken mints a minimal valid `aud:api` access token using
+// the same key set initAuth loaded from the PEM env vars.
+func mustSignAPIToken(t *testing.T, privPEM, pubPEM string) string {
+	t.Helper()
+	k, err := keys.FromPEM(privPEM, pubPEM)
+	if err != nil {
+		t.Fatalf("keys.FromPEM: %v", err)
+	}
+	set := keys.NewSet(time.Hour)
+	set.Replace(k)
+	tok, err := jwt.Sign(set, jwt.Claims{
+		Iss: "maktaba", Aud: "api", Sub: "u1", Usr: "u1",
+	})
+	if err != nil {
+		t.Fatalf("jwt.Sign: %v", err)
+	}
+	return tok
+}
+
 func mustGet(t *testing.T, url string) *http.Response {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -134,6 +322,73 @@ func mustPEMPair(t *testing.T) (string, string) {
 	privPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
 	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 	return privPEM, pubPEM
+}
+
+// TestApplySecurity_CSRFWiredForCookieSessions proves the CSRF
+// double-submit guard is installed in the live applySecurity stack:
+// a cookie-sourced principal making an unsafe request without the
+// X-Maktaba-CSRF header is rejected 403, while a bearer client and a
+// safe GET are unaffected. The cookie principal is supplied by a stub
+// cookieAuth so this test stays DB-free.
+func TestApplySecurity_CSRFWiredForCookieSessions(t *testing.T) {
+	priv, pub := mustPEMPair(t)
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", priv)
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", pub)
+	t.Setenv("MAKTABA_ADMIN_TOKEN", "")
+	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("MAKTABA_HSTS", "")
+
+	st, err := initAuth(noopLogger())
+	if err != nil {
+		t.Fatalf("initAuth: %v", err)
+	}
+
+	business := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("business-ok"))
+	})
+
+	// stub cookieAuth: attach a cookie-sourced principal so the CSRF
+	// guard's "only cookie sessions are CSRF-able" branch engages.
+	cookieAuth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := principalForCookieTest(r)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	h := &auth.Handler{}
+	stack := st.applySecurity(business, cookieAuth, h.CSRF)
+
+	// Unsafe cookie request, no CSRF header → 403.
+	req := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieSession, Value: "sess-1"})
+	req.AddCookie(&http.Cookie{Name: auth.CookieCSRF, Value: "csrf-1"})
+	rec := httptest.NewRecorder()
+	stack.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cookie POST without CSRF header: status = %d, want 403; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Same request WITH matching CSRF header → 200.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req2.AddCookie(&http.Cookie{Name: auth.CookieSession, Value: "sess-1"})
+	req2.AddCookie(&http.Cookie{Name: auth.CookieCSRF, Value: "csrf-1"})
+	req2.Header.Set("X-Maktaba-CSRF", "csrf-1")
+	rec2 := httptest.NewRecorder()
+	stack.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("cookie POST with matching CSRF: status = %d, want 200; body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	// Bearer client unaffected (no cookie, JWT source).
+	tok := mustSignAPIToken(t, priv, pub)
+	req3 := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)
+	req3.Header.Set("Authorization", "Bearer "+tok)
+	rec3 := httptest.NewRecorder()
+	stack.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("bearer POST: status = %d, want 200 (CSRF must not affect bearer)", rec3.Code)
+	}
 }
 
 func TestInitAuth_RejectsMismatchedEnvPair(t *testing.T) {

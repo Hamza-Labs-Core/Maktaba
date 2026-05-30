@@ -1,9 +1,21 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeTemp writes body to a fresh temp file and returns its path.
+func writeTemp(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "lints.json")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatalf("write temp: %v", err)
+	}
+	return p
+}
 
 func TestIdempotencyCatchesUnguardedCreateTable(t *testing.T) {
 	stmt := "CREATE TABLE foo (id int)"
@@ -130,5 +142,60 @@ CREATE TABLE IF NOT EXISTS foo (id int);
 	}
 	if !strings.Contains(string(stripped), "CREATE TABLE") {
 		t.Errorf("CREATE TABLE got dropped: %q", stripped)
+	}
+}
+
+// --- lints.json exemption system (Story 22.4 AC4) ---
+
+func TestLoadExemptions_MissingFileIsNoError(t *testing.T) {
+	set, err := loadExemptions(t.TempDir() + "/does-not-exist.json")
+	if err != nil {
+		t.Fatalf("missing file: want nil error, got %v", err)
+	}
+	if _, ok := set.exempt("0042_x.sql", "long-running-set-not-null"); ok {
+		t.Errorf("empty set should exempt nothing")
+	}
+}
+
+func TestLoadExemptions_LiveExemptionApplies(t *testing.T) {
+	p := writeTemp(t, `{"exemptions":[{"file":"0042_x.sql","rule":"long-running-set-not-null","reason":"backfilled async; column already NOT NULL in practice","expires":"2999-01-01T00:00:00Z"}]}`)
+	set, err := loadExemptions(p)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	reason, ok := set.exempt("shared/db/migrations/0042_x.sql", "long-running-set-not-null")
+	if !ok {
+		t.Fatalf("live exemption should apply")
+	}
+	if !strings.Contains(reason, "backfilled async") {
+		t.Errorf("reason not surfaced: %q", reason)
+	}
+	if _, ok := set.exempt("0042_x.sql", "long-running-create-index"); ok {
+		t.Errorf("exemption must be rule-scoped")
+	}
+}
+
+func TestLoadExemptions_ExpiredFailsClosed(t *testing.T) {
+	p := writeTemp(t, `{"exemptions":[{"file":"0042_x.sql","rule":"long-running-alter-type","reason":"r","expires":"2000-01-01T00:00:00Z"}]}`)
+	set, err := loadExemptions(p)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, ok := set.exempt("0042_x.sql", "long-running-alter-type"); ok {
+		t.Errorf("expired exemption must fail closed (violation reappears)")
+	}
+}
+
+func TestLoadExemptions_MalformedIsFatal(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing reason": `{"exemptions":[{"file":"a.sql","rule":"r","expires":"2999-01-01T00:00:00Z"}]}`,
+		"bad expiry":     `{"exemptions":[{"file":"a.sql","rule":"r","reason":"x","expires":"soon"}]}`,
+		"unknown field":  `{"exemptions":[{"file":"a.sql","rule":"r","reason":"x","expires":"2999-01-01T00:00:00Z","oops":1}]}`,
+		"not json":       `{`,
+	} {
+		p := writeTemp(t, body)
+		if _, err := loadExemptions(p); err == nil {
+			t.Errorf("%s: expected error, got nil", name)
+		}
 	}
 }

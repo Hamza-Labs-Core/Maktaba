@@ -28,12 +28,16 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
@@ -166,12 +170,25 @@ func runServe() error {
 		Env:          env(),
 		Version:      version.Version,
 		OTLPEndpoint: os.Getenv("MAKTABA_OTLP_ENDPOINT"),
+		// Self-hosters running a local collector on loopback set
+		// MAKTABA_OTLP_INSECURE=1 to skip TLS. Default keeps TLS on.
+		OTLPInsecure: os.Getenv("MAKTABA_OTLP_INSECURE") == "1",
 		SampleRatio:  0.01,
 	})
 	if err != nil {
 		logger.Warn("tracing init failed; continuing with noop tracer",
 			"err", err, "event", "tracing_init_failed")
 	}
+
+	// Shared error-reporting surface (HLB-300). One Reporter for the
+	// process, mirroring how tracing is constructed once here. The
+	// webhook sink is opt-in via $MAKTABA_ERROR_WEBHOOK: unset => nil
+	// sink => default-off (no outbound, never fails), exactly the
+	// errrpt package's documented behaviour. Capture still mints the
+	// error_id and logs structured locally. The sink drops rather than
+	// queues, so there is nothing to flush/close on shutdown.
+	errReporter := errrpt.New(logger,
+		errrpt.NewWebhookSink(os.Getenv("MAKTABA_ERROR_WEBHOOK")))
 
 	checks := buildChecks(logger)
 	warm := warmPeriod()
@@ -195,8 +212,16 @@ func runServe() error {
 
 	// Public router (chi). The aggregator + version routes live inside
 	// router.New; later stories mount business handlers here.
-	idemStore := idempotency.NewMemoryStore()
-	go runIdempotencySweep(idemStore)
+	//
+	// Idempotency store: Postgres-backed when DATABASE_URL is set so
+	// retried mutations replay correctly across restarts and replicas
+	// (HLB-315); falls back to the in-memory store otherwise (dev /
+	// no-DB stub). The Postgres store opens its own small pool for the
+	// same isolation reason P6 does — the replay path must not contend
+	// with handler or readiness pools.
+	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger)
+	go idemSweep()
+	defer idemClose()
 
 	r := router.New(router.Deps{
 		IdempotencyStore:   idemStore,
@@ -204,6 +229,7 @@ func runServe() error {
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
 		AggregatorServices: buildAggregatorServices(),
+		ErrorReporter:      errReporter,
 	})
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
@@ -211,14 +237,37 @@ func runServe() error {
 	// independent — a starved readiness pool can't take down user
 	// traffic and vice versa. A missing DATABASE_URL leaves the P6
 	// surface unwired (the routes return 404 from chi as before).
+	// cookieAuth is the session-cookie principal middleware, captured
+	// from the Phase 9 handler so applySecurity can install it ahead of
+	// the auth gate. Nil when the auth surface is unwired (no DB/keys).
+	var cookieAuth func(http.Handler) http.Handler
+	var csrf func(http.Handler) http.Handler
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := sql.Open("postgres", dsn)
 		if dbErr != nil {
 			logger.Warn("p6: sql.Open failed; handlers unwired",
 				"err", dbErr, "event", "p6_db_open_failed")
 		} else {
-			appDB.SetMaxOpenConns(envIntDefault("MAKTABA_DB_MAX_OPEN", 32))
-			appDB.SetMaxIdleConns(envIntDefault("MAKTABA_DB_MAX_IDLE", 8))
+			// Story 18.7 / HLB-346: route pool sizing through the
+			// canonical perf.ApplyPool helper instead of bypassing it
+			// with raw setters. Env overrides preserve operator control;
+			// the perf package's tuned defaults/timeouts now actually
+			// apply (previously dead code).
+			poolCfg := perf.DefaultPoolConfig()
+			poolCfg.MaxOpen = envIntDefault("MAKTABA_DB_MAX_OPEN", 32)
+			poolCfg.MaxIdle = envIntDefault("MAKTABA_DB_MAX_IDLE", 8)
+			if perr := perf.ApplyPool(appDB, poolCfg); perr != nil {
+				logger.Warn("p6: perf.ApplyPool rejected config; falling back to raw setters",
+					"err", perr, "event", "p6_pool_cfg_invalid")
+				appDB.SetMaxOpenConns(poolCfg.MaxOpen)
+				appDB.SetMaxIdleConns(poolCfg.MaxIdle)
+			}
+
+			// Shared perf cache registry (Story 18.8 AC4 / HLB-346):
+			// hot-path caches register here so POST /admin/cache/{name}/
+			// flush can drop them. Previously MountP10 always built an
+			// empty registry, so every flush 404'd.
+			perfRegistry := perf.NewRegistry()
 
 			pipelineAddr := os.Getenv("MAKTABA_PIPELINE_ADDR")
 			streamingAddr := os.Getenv("MAKTABA_STREAMING_ADDR")
@@ -239,12 +288,36 @@ func runServe() error {
 					"addr", streamingAddr, "event", "p6_streaming_wired")
 			}
 
+			// Cross-replica WS event bus lifetime (Epic 19 Story 19.2 /
+			// HLB-353). Bound to its own context so the LISTEN loop +
+			// pruner stop on process exit; cancelled via defer so a
+			// panic in later bootstrap still tears the listener down.
+			busCtx, busCancel := context.WithCancel(context.Background())
+			defer busCancel()
+
 			router.MountP6(r, router.P6Deps{
 				DB:              appDB,
 				PipelineClient:  pipelineClient,
 				StreamingClient: streamingClient,
+				BusCtx:          busCtx,
+				BusDSN:          dsn,
+				PerfRegistry:    perfRegistry,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
+
+			// Epic 16 — build the entitlement store ONCE and share the
+			// single instance with both the auth surface (Story 16.2
+			// seat enforcement on POST /api/users) and the
+			// subscriptions surface (apply/revoke). Separate stores
+			// would let a license apply be invisible to the seat gate.
+			p10Deps := router.P10Deps{
+				DB:           appDB,
+				Keys:         auth.keys,
+				Logger:       logger,
+				PerfRegistry: perfRegistry,
+			}
+			entStore, _ := router.EntitlementStore(p10Deps)
+			p10Deps.SubscriptionsStore = entStore
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
 			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
@@ -255,17 +328,27 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
+				Seats:         subscriptions.NewSeatLimiter(entStore),
 			})
 			if p9 != nil {
+				cookieAuth = p9.CookieAuth
+				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
 			}
 
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
-			router.MountP10(r, router.P10Deps{DB: appDB})
+			pairingStore := router.MountP10(r, p10Deps)
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
+
+			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
+			// (go idemSweep()): a boot goroutine expires stale tickets and
+			// hard-deletes them past the 7-day retention horizon so
+			// `pairing_tickets` cannot grow unbounded. Same context/log
+			// convention as runIdempotencySweep.
+			go runPairingSweep(pairingStore, logger)
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",
@@ -282,7 +365,7 @@ func runServe() error {
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           auth.applySecurity(publicMux),
+		Handler:           auth.applySecurity(publicMux, cookieAuth, csrf),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{
@@ -350,13 +433,102 @@ func runServe() error {
 	}
 }
 
-// runIdempotencySweep deletes idempotency-key entries older than 24 h
-// every 5 min. Story 7.1's TTL-bounded growth contract.
-func runIdempotencySweep(s *idempotency.MemoryStore) {
+// idempotencyTTL is how long a replay record is honoured. Story 7.1's
+// TTL-bounded growth contract; HLB-315 keeps the same 24h window for
+// the Postgres-backed store so behaviour is unchanged from the
+// in-memory era.
+const idempotencyTTL = 24 * time.Hour
+
+// buildIdempotencyStore returns the idempotency Store, a blocking
+// sweep loop the caller runs in a goroutine, and a cleanup func the
+// caller defers so the dedicated pool is released on shutdown. When
+// DATABASE_URL is set the store is Postgres-backed (durable across
+// restarts, shared across replicas — the whole point of an idempotency
+// key); otherwise it falls back to the in-memory store so dev / no-DB
+// stubs still work.
+//
+// The Postgres store opens a dedicated small pool: the replay path is
+// latency-sensitive and must not contend with the handler or
+// readiness pools (same isolation rationale as the P6 wiring). That
+// pool is closed by the returned cleanup func on graceful shutdown so
+// it doesn't leak; for the in-memory fallback the cleanup is a no-op.
+func buildIdempotencyStore(logger *slog.Logger) (idempotency.Store, func(), func()) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		s := idempotency.NewMemoryStore()
+		logger.Info("idempotency: in-memory store (DATABASE_URL unset; lost on restart)",
+			"event", "idempotency_memory")
+		return s, func() { runIdempotencySweep(s, logger) }, func() {}
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		s := idempotency.NewMemoryStore()
+		logger.Warn("idempotency: sql.Open failed; falling back to in-memory store",
+			"err", err, "event", "idempotency_db_open_failed")
+		return s, func() { runIdempotencySweep(s, logger) }, func() {}
+	}
+	db.SetMaxOpenConns(envIntDefault("MAKTABA_IDEM_DB_MAX_OPEN", 4))
+	db.SetMaxIdleConns(envIntDefault("MAKTABA_IDEM_DB_MAX_IDLE", 2))
+	s := idempotency.NewPostgresStoreDB(db, logger)
+	logger.Info("idempotency: Postgres-backed store (survives restart, replica-safe)",
+		"event", "idempotency_postgres")
+	return s, func() { runIdempotencySweep(s, logger) }, func() {
+		if cerr := db.Close(); cerr != nil {
+			logger.Warn("idempotency: closing dedicated pool failed",
+				"err", cerr, "event", "idempotency_db_close_failed")
+		}
+	}
+}
+
+// runIdempotencySweep deletes idempotency-key entries older than the
+// TTL every 5 min. Works against any Store backend (in-memory map or
+// the Postgres `idempotency_keys` table); the SweepExpired contract is
+// the same. This is the documented TTL-bounded growth reaper — no
+// external scheduled sweeper is required.
+//
+// A per-tick SweepExpired failure (lock contention, perms) is logged
+// at Warn — mirroring the auth-key reaper's event-keyed logging — so a
+// persistently failing reaper is visible before disk pressure, rather
+// than silently discarded. The loop keeps running on error so a
+// transient failure self-heals on the next tick.
+func runIdempotencySweep(s idempotency.Store, logger *slog.Logger) {
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for range t.C {
-		_, _ = s.SweepExpired(context.Background(), 24*time.Hour)
+		if _, err := s.SweepExpired(context.Background(), idempotencyTTL); err != nil {
+			logger.Warn("idempotency: sweep failed; entries will accrue until it recovers",
+				"err", err, "event", "idempotency_sweep_failed")
+		}
+	}
+}
+
+// pairingSweepInterval is the Story 15.6 reaper cadence ("30 s
+// sweeper"). pairingRetention is the hard-delete horizon: a ticket is
+// already treated as expired by Get/Consume the instant it passes its
+// ExpiresAt, but the row is retained for 7 days afterwards (Story 15.6
+// "7 d hard delete") so a just-missed pairing can still surface a
+// precise "expired" status before the row is reaped.
+const (
+	pairingSweepInterval = 30 * time.Second
+	pairingRetention     = 7 * 24 * time.Hour
+)
+
+// runPairingSweep hard-deletes pairing tickets whose expiry is older
+// than the 7-day retention horizon, every 30 s. Mirrors
+// runIdempotencySweep exactly (same ticker-driven loop, same
+// context.Background(), same event-keyed Warn-on-error that keeps the
+// loop alive so a transient failure self-heals next tick). Works
+// against any PairingStore backend — the Postgres `pairing_tickets`
+// table or the in-memory dev store — via the Sweep seam.
+func runPairingSweep(s discovery.PairingStore, logger *slog.Logger) {
+	t := time.NewTicker(pairingSweepInterval)
+	defer t.Stop()
+	for range t.C {
+		before := time.Now().UTC().Add(-pairingRetention)
+		if _, err := s.Sweep(context.Background(), before); err != nil {
+			logger.Warn("pairing: sweep failed; expired tickets will accrue until it recovers",
+				"err", err, "event", "pairing_sweep_failed")
+		}
 	}
 }
 

@@ -7,9 +7,11 @@ import (
 	"database/sql"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 )
@@ -195,6 +197,227 @@ func TestMigrate_Slot0001_VideosCascadeDeleteFromLibrary(t *testing.T) {
 	}
 }
 
+// TestMigrate_Slot0059_AuditLogAppendOnly applies the full migration
+// chain and proves the slot-0059 guard end to end:
+//
+//   - INSERT into audit_log still succeeds (every existing writer —
+//     api securityaudit.Write, api libraries.WriteAudit, the pipeline
+//     AuditWriter — uses INSERT only and must keep working),
+//   - UPDATE on audit_log raises,
+//   - DELETE on audit_log raises,
+//   - the row count is unchanged after the failed mutations (the
+//     append-only invariant actually held).
+//
+// The FK declaration / trigger DDL is useless if the deploy DB doesn't
+// enforce it, so this is a deliberate behavioural check, not a schema
+// introspection.
+func TestMigrate_Slot0059_AuditLogAppendOnly(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL unset: skipping migration integration test")
+	}
+	db := openTestDB(t, dsn)
+	t.Cleanup(func() { db.Close() })
+	resetSchema(t, db)
+
+	dir := repoMigrationsDir(t)
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		t.Fatalf("stage migrations: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stage) })
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("set dialect: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Apply the whole chain (slot 0059 depends on 0036/0054 + the rest).
+	if err := goose.UpContext(ctx, db, stage); err != nil {
+		t.Fatalf("goose up (full chain): %v", err)
+	}
+
+	assertTableExists(t, db, "audit_log")
+
+	// INSERT must succeed (append path stays open). actor_user_id is a
+	// nullable FK to users; leave it null so we don't need a users row.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO audit_log (category, action, payload)
+		VALUES ('security', 'test.append', '{"k":"v"}'::jsonb)
+	`); err != nil {
+		t.Fatalf("INSERT into audit_log must succeed (append-only allows INSERT): %v", err)
+	}
+
+	var id int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&id); err != nil {
+		t.Fatalf("read back inserted row: %v", err)
+	}
+
+	// UPDATE must raise.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE audit_log SET action = 'tampered' WHERE id = $1`, id); err == nil {
+		t.Fatalf("UPDATE on audit_log must raise (append-only), got nil error")
+	} else if !strings.Contains(err.Error(), "append-only") {
+		t.Errorf("UPDATE error = %v, want it to mention append-only", err)
+	}
+
+	// DELETE must raise.
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM audit_log WHERE id = $1`, id); err == nil {
+		t.Fatalf("DELETE on audit_log must raise (append-only), got nil error")
+	} else if !strings.Contains(err.Error(), "append-only") {
+		t.Errorf("DELETE error = %v, want it to mention append-only", err)
+	}
+
+	// The row survived both blocked mutations.
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM audit_log WHERE id = $1`, id).Scan(&n); err != nil {
+		t.Fatalf("count after blocked mutations: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("audit_log row count = %d after blocked UPDATE/DELETE, want 1", n)
+	}
+}
+
+// TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe applies the
+// full migration set through slot 0060 and exercises the durable
+// idempotency store against real Postgres (HLB-315): a stored record
+// replays exactly, the TTL sweep drops only expired rows, and N
+// concurrent duplicate Save calls insert exactly one row (ON CONFLICT
+// DO NOTHING) — the loser requests then replay the winner's response.
+func TestMigrate_Slot0060_IdempotencyKeysRoundTripAndRaceSafe(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL unset")
+	}
+	db := openTestDB(t, dsn)
+	t.Cleanup(func() { db.Close() })
+	resetSchema(t, db)
+
+	dir := repoMigrationsDir(t)
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(stage) })
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("set dialect: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	// idempotency_keys is slot 0060 (goose version 60). The renumber
+	// 0059->0060 (commit 1143e85, audit_log claimed 0059) renamed the
+	// test but left these version literals at 59/58 — UpTo(59) stopped
+	// one slot short and never applied 0060. Target the slot's real
+	// goose version.
+	if err := goose.UpToContext(ctx, db, stage, 60); err != nil {
+		t.Fatalf("goose up to 60: %v", err)
+	}
+
+	assertTableExists(t, db, "idempotency_keys")
+	// No composite_key column: the replay identity is the two-column
+	// (user_id, idem_key) PK. The old single NUL-joined TEXT column
+	// was unstorable on real Postgres (W1-C3 hotfix).
+	for _, col := range []string{
+		"user_id", "idem_key", "request_hash",
+		"status", "body", "headers", "created_at",
+	} {
+		assertColumnExists(t, db, "idempotency_keys", col)
+	}
+	assertIndexExists(t, db, "idempotency_keys_reaper")
+	assertColumnAbsent(t, db, "idempotency_keys", "composite_key")
+
+	s := idempotency.NewPostgresStoreDB(db, nil)
+
+	// Round-trip: a stored record replays byte-for-byte.
+	rec := idempotency.Record{
+		Key:         "K-int",
+		UserID:      "user-int",
+		RequestHash: "hash-int",
+		Status:      201,
+		Body:        []byte(`{"created":true}`),
+		Headers:     map[string]string{"Content-Type": "application/json"},
+	}
+	if err := s.Save(ctx, rec); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, ok := s.Lookup(ctx, "K-int", "user-int")
+	if !ok {
+		t.Fatal("Lookup miss after Save")
+	}
+	if got.Status != 201 || string(got.Body) != `{"created":true}` ||
+		got.RequestHash != "hash-int" ||
+		got.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("replay roundtrip mismatch: %+v", got)
+	}
+
+	// Distinct keys are independent; same key + different user too.
+	if _, ok := s.Lookup(ctx, "K-int", "other-user"); ok {
+		t.Fatal("same key, different user must not resolve")
+	}
+
+	// Concurrent duplicate Save: ON CONFLICT DO NOTHING ⇒ one row.
+	const n = 24
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			_ = s.Save(ctx, idempotency.Record{
+				Key:         "K-race",
+				UserID:      "user-int",
+				RequestHash: "h",
+				Status:      200,
+				Body:        []byte("race-body"),
+			})
+		}()
+	}
+	wg.Wait()
+	var cnt int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM idempotency_keys WHERE idem_key = 'K-race'`).Scan(&cnt); err != nil {
+		t.Fatalf("count race rows: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("concurrent duplicate Save left %d rows, want exactly 1", cnt)
+	}
+	if _, ok := s.Lookup(ctx, "K-race", "user-int"); !ok {
+		t.Fatal("race key must be replayable after concurrent writes")
+	}
+
+	// TTL sweep: backdate one row, expect exactly it to be reaped.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE idempotency_keys SET created_at = now() - interval '48 hours'
+		   WHERE idem_key = 'K-int'`); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	dropped, err := s.SweepExpired(ctx, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("SweepExpired: %v", err)
+	}
+	if dropped != 1 {
+		t.Fatalf("SweepExpired dropped %d, want 1", dropped)
+	}
+	if _, ok := s.Lookup(ctx, "K-int", "user-int"); ok {
+		t.Fatal("expired row should be gone after sweep")
+	}
+	if _, ok := s.Lookup(ctx, "K-race", "user-int"); !ok {
+		t.Fatal("fresh row must survive sweep")
+	}
+
+	// Down migration cleanly drops the table + index. DownTo(59) rolls
+	// back slot 0060 (version 60 > 59) while leaving slot 0059
+	// (audit_log) in place.
+	if err := goose.DownToContext(ctx, db, stage, 59); err != nil {
+		t.Fatalf("goose down to 59: %v", err)
+	}
+	assertTableAbsent(t, db, "idempotency_keys")
+}
+
 // --- helpers ---
 
 // openTestDB opens dsn and pings to make sure the connection is
@@ -280,6 +503,24 @@ func assertColumnExists(t *testing.T, db *sql.DB, table, column string) {
 	}
 	if n == 0 {
 		t.Errorf("column %s.%s missing", table, column)
+	}
+}
+
+func assertColumnAbsent(t *testing.T, db *sql.DB, table, column string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var n int
+	err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = $1 AND column_name = $2
+	`, table, column).Scan(&n)
+	if err != nil {
+		t.Fatalf("query columns for %s.%s: %v", table, column, err)
+	}
+	if n != 0 {
+		t.Errorf("column %s.%s must NOT exist", table, column)
 	}
 }
 

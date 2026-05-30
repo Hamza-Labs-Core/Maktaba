@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { clsx } from "../internal/clsx";
 import "./button.css";
 
 // Story 17.2 — Button. The 5 variants × 3 sizes are the AC-1 surface.
@@ -16,10 +17,6 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
-}
-
-function clsx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

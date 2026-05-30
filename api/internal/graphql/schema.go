@@ -23,6 +23,10 @@ package graphql
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // Schema is the SDL source for the API. Stories 7.17 AC-1 + AC-2
@@ -223,7 +227,24 @@ type Recommendation {
 type Rail {
   id: String!
   title: String!
+  reasonKind: String!
   items: [Recommendation!]!
+}
+
+"""
+A single Continue Watching / library card as consumed by the 10-foot
+TV clients (Story 14.5 / 14.6). durationSec + positionSec drive the
+progress bar; reason is the localizable rail reason key.
+"""
+type RailCard {
+  id: ID!
+  title: String!
+  durationSec: Float!
+  positionSec: Float
+  remainingSec: Float
+  posterUrl: String
+  snippet: String
+  reason: String
 }
 
 type Device {
@@ -300,7 +321,8 @@ type Query {
 
   settings: JSON!
 
-  recommendations(surface: String, limit: Int): [Rail!]!
+  recommendations(surface: String, limit: Int): [RailCard!]!
+  continueWatching(limit: Int): [RailCard!]!
 
   streamCapabilities: JSON!
   streamSession(id: ID!): StreamingSession
@@ -345,15 +367,40 @@ type Subscription {
 }
 `
 
-// Handler is the GraphQL HTTP endpoint. The full resolver wiring lands
-// in a subsequent story that introduces gqlgen; today the handler
-// returns 501 with a clear “schema-only“ extension so a client can
-// detect when the resolvers are not yet wired.
-type Handler struct{}
+// Handler is the GraphQL HTTP endpoint.
+//
+// We do not pull in gqlgen / a full GraphQL engine (still gated by a
+// separate plan). Instead this is a focused operation dispatcher: it
+// recognises the specific root fields the 10-foot TV clients query —
+// `recommendations`, `continueWatching`, `search`, `searchSuggest` —
+// runs them against real DB-backed resolvers, and returns a
+// spec-shaped `{"data": …}` body. Any other root field falls back to
+// the honest `schema-only` 501 so callers can tell which fields are
+// live versus still pending the full engine.
+//
+// Resolvers is optional: a zero-value Handler (no DB) keeps serving
+// the SDL on GET /graphql/schema and answers POST /graphql with 501,
+// preserving the pre-existing behaviour for callers that wire the
+// handler without a DB.
+type Handler struct {
+	Resolvers *Resolvers
+}
 
-// Mount wires POST /graphql + GET /graphql/schema. The schema endpoint
-// is unauthenticated and serves the SDL string above, so a client tool
-// can introspect the contract.
+// gqlRequest is the standard GraphQL-over-HTTP POST body.
+type gqlRequest struct {
+	Query         string         `json:"query"`
+	OperationName string         `json:"operationName"`
+	Variables     map[string]any `json:"variables"`
+}
+
+// rootFieldRE pulls the first selected root field name out of the
+// query body. Good enough for the fixed set of single-root operations
+// the TV clients send; it is intentionally not a general parser.
+var rootFieldRE = regexp.MustCompile(`(?s)\{\s*([A-Za-z_][A-Za-z0-9_]*)`)
+
+// ServeHTTP wires POST /graphql + GET /graphql/schema. The schema
+// endpoint is unauthenticated and serves the SDL string above so a
+// client tool can introspect the contract.
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/graphql/schema" {
 		w.Header().Set("Content-Type", "application/graphql")
@@ -361,15 +408,89 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+
+	if h.Resolvers == nil {
+		h.write501(w)
+		return
+	}
+
+	var req gqlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Query) == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(gqlErrors("malformed GraphQL request body", "bad-request"))
+		return
+	}
+
+	field := h.rootField(&req)
+	if field == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(gqlErrors("could not determine root field", "bad-request"))
+		return
+	}
+
+	// Every TV-facing query requires an authenticated principal —
+	// the resolvers are user-scoped (no cross-user leak).
+	if principal.FromContext(r.Context()) == nil {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(gqlErrors("authentication required", "forbidden"))
+		return
+	}
+
+	data, code, err := h.Resolvers.resolve(r, field, req.Variables)
+	if err != nil {
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(gqlErrors(err.Error(), gqlCode(code)))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{field: data}})
+}
+
+func (h Handler) rootField(req *gqlRequest) string {
+	m := rootFieldRE.FindStringSubmatch(req.Query)
+	if len(m) < 2 {
+		return ""
+	}
+	// `query`/`mutation`/`subscription` keyword captured first? skip it.
+	switch m[1] {
+	case "query", "mutation", "subscription":
+		body := req.Query[strings.Index(req.Query, m[1])+len(m[1]):]
+		if idx := strings.Index(body, "{"); idx >= 0 {
+			if mm := rootFieldRE.FindStringSubmatch(body[idx:]); len(mm) >= 2 {
+				return mm[1]
+			}
+		}
+		return ""
+	}
+	return m[1]
+}
+
+func (h Handler) write501(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(gqlErrors(
+		"GraphQL resolvers are not yet wired in this build", "schema-only"))
+}
+
+func gqlErrors(msg, code string) map[string]any {
+	return map[string]any{
 		"errors": []map[string]any{
 			{
-				"message": "GraphQL resolvers are not yet wired in this build",
-				"extensions": map[string]any{
-					"code": "schema-only",
-				},
+				"message":    msg,
+				"extensions": map[string]any{"code": code},
 			},
 		},
-	})
+	}
+}
+
+func gqlCode(httpStatus int) string {
+	switch httpStatus {
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusBadRequest:
+		return "bad-request"
+	case http.StatusNotImplemented:
+		return "schema-only"
+	default:
+		return "internal"
+	}
 }

@@ -1,0 +1,42 @@
+/* Shared layout for EmptyState + ErrorState — same centred column so the
+ * two read as a family. */
+
+.mk-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--spacing-2, 8px);
+  padding: var(--spacing-12, 48px) var(--spacing-4, 16px);
+  color: var(--color-semantic-fg, #18181b);
+}
+
+.mk-state__icon {
+  display: inline-flex;
+  color: var(--color-semantic-muted, #71717a);
+  margin-bottom: var(--spacing-2, 8px);
+}
+
+.mk-state__title {
+  margin: 0;
+  font-family: var(--type-display-family, system-ui, sans-serif);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mk-state__desc {
+  margin: 0;
+  max-width: 42ch;
+  font-size: var(--type-body-size, 16px);
+  color: var(--color-semantic-muted, #71717a);
+}
+
+.mk-state__action {
+  margin-top: var(--spacing-3, 12px);
+  display: flex;
+  gap: var(--spacing-2, 8px);
+}
+
+.mk-state--error .mk-state__icon {
+  color: var(--color-semantic-error, #b6253a);
+}

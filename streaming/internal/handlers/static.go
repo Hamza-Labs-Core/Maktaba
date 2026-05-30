@@ -37,7 +37,21 @@ func (h *StaticHandler) ServePoster(w http.ResponseWriter, r *http.Request) {
 		// fall back: when called via a session route the subject is the session
 		videoID = auth.SubjectFromContext(r.Context())
 	}
-	path := h.Resolver.PosterPath(strings.TrimSuffix(videoID, ".jpg"))
+	id := strings.TrimSuffix(videoID, ".jpg")
+	// Story 23.5 AC-2: video_id is an untrusted URL segment. Mirror the
+	// manifest.go / ServeThumb pattern — derive the trusted poster ROOT
+	// (the resolver's poster dir, with an empty id) and route the RAW
+	// id straight through the single canonicalizer rather than trusting
+	// the resolver's full path. Defeats `..`/NUL/symlink-escape
+	// regardless of resolver internals.
+	posterRoot := filepath.Dir(h.Resolver.PosterPath(""))
+	path, err := httpx.CanonicalUnder(posterRoot, id+".jpg")
+	if err != nil {
+		// Indistinguishable-from-missing so a probe can't tell
+		// "traversal rejected" from "no such asset".
+		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", "")
+		return
+	}
 	h.serveFile(w, r, path, "image/jpeg")
 }
 
@@ -60,7 +74,19 @@ func (h *StaticHandler) ServeSprite(w http.ResponseWriter, r *http.Request) {
 	case ".vtt":
 		contentType = "text/vtt; charset=utf-8"
 	}
-	path := h.Resolver.SpritePath(id, ext)
+	// Story 23.5 AC-2: video_id is an untrusted URL segment. Mirror the
+	// manifest.go / ServeThumb pattern — derive the trusted sprite ROOT
+	// (the resolver's sprite dir, with empty id+ext) and route the RAW
+	// id+ext straight through the single canonicalizer rather than
+	// trusting the resolver's full path.
+	spriteRoot := filepath.Dir(h.Resolver.SpritePath("x", ""))
+	path, err := httpx.CanonicalUnder(spriteRoot, id+ext)
+	if err != nil {
+		// Indistinguishable-from-missing so a probe can't tell
+		// "traversal rejected" from "no such asset".
+		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", "")
+		return
+	}
 	h.serveFile(w, r, path, contentType)
 }
 
@@ -72,7 +98,21 @@ func (h *StaticHandler) ServeThumb(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusBadRequest, "missing-thumb-id", "video_id or name missing", "")
 		return
 	}
-	path := h.Resolver.ThumbPath(videoID, name)
+	// Story 23.5 AC-2: video_id and name are untrusted URL segments.
+	// Mirror the manifest.go pattern (CanonicalUnder(trustedRoot,
+	// rawParam, rawParam)) — derive the trusted thumbs ROOT (the
+	// resolver's thumbs dir, with empty video+name) and pass the RAW
+	// chi params straight through the single canonicalizer. This
+	// avoids any string-stripping round-trip and defeats
+	// `..`/NUL/symlink-escape regardless of resolver internals.
+	thumbsRoot := h.Resolver.ThumbPath("", "")
+	path, err := httpx.CanonicalUnder(thumbsRoot, videoID, name)
+	if err != nil {
+		// Indistinguishable-from-missing so a probe can't tell
+		// "traversal rejected" from "no such asset".
+		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", "")
+		return
+	}
 	h.serveFile(w, r, path, contentTypeForThumb(name))
 }
 

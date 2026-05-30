@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
 
@@ -62,6 +63,13 @@ type Deps struct {
 	// AggregatorServices is the fan-out target list for
 	// /api/system/health (Story 21.4).
 	AggregatorServices []system.Service
+
+	// ErrorReporter is the shared errrpt surface the Recoverer uses to
+	// report recovered panics (HLB-300 live path). nil keeps the
+	// historical behaviour (plain recover + 500 + slog "panic" line, no
+	// errrpt capture) so unit tests that build a bare Deps are
+	// unaffected; main.go populates it from MAKTABA_ERROR_WEBHOOK.
+	ErrorReporter *errrpt.Reporter
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -73,7 +81,11 @@ func New(d Deps) chi.Router {
 
 	r.Use(chimw.RealIP)
 	r.Use(mw.RequestID)
-	r.Use(mw.Recoverer)
+	// Recoverer carries the central HLB-300 error-report hook. With a
+	// nil d.ErrorReporter this is exactly the old mw.Recoverer (no
+	// errrpt capture), so the canonical chain order/behaviour is
+	// unchanged when no webhook/reporter is configured.
+	r.Use(mw.RecovererWithReporter(d.ErrorReporter))
 	r.Use(tracing.HTTP)
 	r.Use(mw.SLogLogger)
 	r.Use(mw.Metrics)

@@ -49,6 +49,72 @@ def test_write_atomic_no_temp_left_behind(tmp_path: Path) -> None:
     assert siblings == [dest]
 
 
+@pytest.mark.unit
+def test_write_atomic_delegates_to_canonical_helper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The subtitle write path goes through the ONE canonical
+    :func:`maktaba_pipeline.integrity.atomic_write_bytes` recipe.
+
+    This pins the DRY fix for HLB-405: ``subtitle/manager.write_atomic``
+    must not re-implement the atomic dance — it delegates to the shared
+    helper, so that helper is no longer dead code on a real write path.
+    """
+    from maktaba_pipeline.integrity import atomic_write_bytes as canonical
+
+    called: dict[str, object] = {}
+
+    def spy(target: object, data: bytes, *a: object, **k: object) -> None:
+        called["target"] = target
+        called["data"] = data
+        canonical(target, data, *a, **k)  # type: ignore[arg-type]
+
+    # Patch the name as bound inside subtitle.manager — proves the
+    # production wrapper actually routes through the canonical helper.
+    monkeypatch.setattr("maktaba_pipeline.subtitle.manager.atomic_write_bytes", spy)
+    dest = tmp_path / "v" / "generated.en.srt"
+    size, digest = write_atomic(dest, "hello\n")
+
+    assert called, "write_atomic must invoke the canonical atomic_write_bytes helper"
+    assert called["data"] == b"hello\n"
+    assert dest.read_bytes() == b"hello\n"
+    assert size == 6
+
+
+@pytest.mark.unit
+def test_write_atomic_interrupted_write_leaves_no_torn_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash mid-write must NOT leave a partial subtitle on the target.
+
+    Simulates the process dying while streaming bytes to the temp file:
+    the canonical helper writes to an ``O_EXCL`` temp and only
+    ``os.replace``s on success, so a pre-existing target is untouched
+    and no half-written file is published. Proves the durability
+    guarantee on the wired path (HLB-405).
+    """
+    from maktaba_pipeline.integrity import AtomicWriteError
+
+    dest = tmp_path / "v" / "generated.en.srt"
+    write_atomic(dest, "GOOD ORIGINAL CONTENT")  # an existing good sidecar
+    original = dest.read_bytes()
+
+    def boom(src: object, dst: object, *a: object, **k: object) -> None:
+        raise OSError("simulated crash before rename")
+
+    # Interrupt the final rename inside the canonical helper.
+    monkeypatch.setattr("maktaba_pipeline.integrity.atomic.os.replace", boom)
+    with pytest.raises(AtomicWriteError):  # canonical helper wraps the OSError
+        write_atomic(dest, "TORN HALF WRITTEN GARBAGE")
+    monkeypatch.undo()
+
+    # Target still holds the original, fully-formed content...
+    assert dest.read_bytes() == original
+    # ...and no temp/partial sibling was left published as the artifact.
+    survivors = sorted(p.name for p in dest.parent.iterdir())
+    assert survivors == [dest.name], f"torn/temp file leaked: {survivors}"
+
+
 # --- cache_path_for ---------------------------------------------------
 
 

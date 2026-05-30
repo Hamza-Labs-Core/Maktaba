@@ -21,3 +21,13 @@ maktaba = "maktaba.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["maktaba"]
+
+# Repo-root pytest config. The e2e / perf-ci gates (Track V) live in
+# ./tests and are invoked with an explicit path, which makes pytest
+# resolve rootdir here and read THIS config (not pipeline's). The
+# `e2e` marker mirrors pipeline/pyproject.toml so the suite collects
+# without an unregistered-marker warning regardless of rootdir.
+[tool.pytest.ini_options]
+markers = [
+    "e2e: tests that drive the full compose stack (Epic 20.5)",
+]

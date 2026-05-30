@@ -63,10 +63,11 @@ type SweepSummary struct {
 }
 
 // StatsCached implements “GET /api/libraries/{id}/stats“ with the
-// cache-first read path. It overrides the Phase-3 Stats handler when
-// wired via :func:`MountStatsCached` (default in production); the
-// no-cache path remains for environments where the
-// “library_stats_cache“ table hasn't been migrated yet.
+// cache-first read path. :meth:`Handler.Mount` binds the “/stats“
+// route to this handler (Story 9.7 AC-1); the Phase-3 `Stats` handler
+// in libraries.go remains as a legacy direct-from-“videos“ fallback
+// for environments where the “library_stats_cache“ table hasn't been
+// migrated yet.
 func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {

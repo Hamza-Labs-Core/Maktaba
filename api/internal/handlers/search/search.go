@@ -17,12 +17,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -30,7 +32,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 )
+
+// DefaultSemanticBudget is the hard per-request wall-clock budget for the
+// Embed+Chroma round-trip (Story 18.2 AC4 / HLB-333). On breach the
+// semantic leg is abandoned, the request degrades to FTS-only, and the
+// response carries degraded:true. Tunable via the Handler field so the
+// budget stays a single source of truth (no magic numbers in callers).
+const DefaultSemanticBudget = 200 * time.Millisecond
 
 // SemanticClient is the gRPC-backed embed-then-Chroma path. Story 7.18
 // owns the concrete implementation; this package only consumes the
@@ -88,6 +98,12 @@ type Response struct {
 	TookMs  ResponseT `json:"took_ms"`
 	Mode    string    `json:"mode"`
 	Filters Filters   `json:"filters"`
+
+	// Degraded is true when the semantic leg was abandoned (deadline
+	// breach or backend error) and the request was served FTS-only
+	// (Story 18.2 AC4 / HLB-333). Clients surface a "results may be
+	// incomplete" banner. Omitted on the happy path.
+	Degraded bool `json:"degraded,omitempty"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -102,6 +118,93 @@ type Handler struct {
 	DB       *sql.DB
 	Semantic SemanticClient // optional
 	NowFunc  func() time.Time
+
+	// EmbedCache memoises semantic results keyed by the normalised
+	// query + filters + k (Story 18.2 AC2 / HLB-333). Identical
+	// repeated queries skip the Embed+Chroma round-trip entirely.
+	// Reuses the orphaned generic perf.Cache (HLB-346) — no second
+	// cache implementation. Nil disables caching (behaviour unchanged).
+	EmbedCache *perf.Cache[[]Hit]
+
+	// SemanticBudget is the hard per-request deadline for the semantic
+	// leg. Zero falls back to DefaultSemanticBudget. On breach the
+	// request degrades to FTS-only with degraded:true.
+	SemanticBudget time.Duration
+
+	// Logger records degradation events (deadline breach / backend
+	// error) so operators see a metric-able breadcrumb instead of the
+	// previously-silent `semHits, _ = ...` swallow. Nil → slog default.
+	Logger *slog.Logger
+}
+
+// semanticBudget returns the effective per-request semantic deadline.
+func (h *Handler) semanticBudget() time.Duration {
+	if h.SemanticBudget > 0 {
+		return h.SemanticBudget
+	}
+	return DefaultSemanticBudget
+}
+
+// log returns the effective logger (never nil).
+func (h *Handler) log() *slog.Logger {
+	if h.Logger != nil {
+		return h.Logger
+	}
+	return slog.Default()
+}
+
+// embedKey builds the cache key for a semantic query. The filters are
+// part of the key because they change the Chroma result set.
+func embedKey(q string, k int, f Filters) string {
+	b, _ := json.Marshal(struct {
+		Q string  `json:"q"`
+		K int     `json:"k"`
+		F Filters `json:"f"`
+	}{strings.ToLower(strings.TrimSpace(q)), k, f})
+	return string(b)
+}
+
+// runSemantic executes the semantic leg under a hard deadline and an
+// in-process result cache. It never returns an error: on any failure
+// (cache miss + backend error, or deadline breach) it returns nil hits
+// and degraded=true so the caller can fall back to FTS-only. This is
+// the single place HLB-333's cache + deadline + degraded triad lives.
+func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (hits []Hit, degraded bool) {
+	if h.Semantic == nil {
+		return nil, false
+	}
+	key := embedKey(q, k, f)
+	if h.EmbedCache != nil {
+		if v, ok := h.EmbedCache.Get(key); ok {
+			// Defensive copy: perf.Cache.Get returns the live backing
+			// slice (no internal copy). The caller mutates Hit.Snippet
+			// in place (highlightSnippet), so handing back the alias
+			// would corrupt the cached entry on every hit (progressive
+			// nested <mark>) and race when two same-key requests run
+			// concurrently. Hit has only scalar/string fields, so a
+			// shallow copy is sufficient.
+			return append([]Hit(nil), v...), false
+		}
+	}
+	cctx, cancel := context.WithTimeout(ctx, h.semanticBudget())
+	defer cancel()
+	res, err := h.Semantic.Search(cctx, q, k, f)
+	if err != nil {
+		// Deadline breach or backend error: log + continue FTS-only
+		// (Story 18.2 AC4). Previously this was silently swallowed.
+		h.log().Warn("search: semantic leg degraded; serving FTS-only",
+			"event", "search_semantic_degraded",
+			"budget_ms", h.semanticBudget().Milliseconds(),
+			"err", err)
+		return nil, true
+	}
+	if h.EmbedCache != nil {
+		// Store a copy so retaining `res` after Put (and mutating it
+		// downstream) cannot alias and corrupt the live cache entry.
+		cp := append([]Hit(nil), res...)
+		h.EmbedCache.Put(key, cp)
+	}
+	return res, false
 }
 
 // Mount wires the search routes.
@@ -170,10 +273,11 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		ftsHits []Hit
-		semHits []Hit
-		took    ResponseT
-		errFTS  error
+		ftsHits  []Hit
+		semHits  []Hit
+		took     ResponseT
+		errFTS   error
+		degraded bool
 	)
 	t0 := time.Now()
 	if req.Mode == "fts" || req.Mode == "hybrid" {
@@ -186,7 +290,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	if (req.Mode == "semantic" || req.Mode == "hybrid") && h.Semantic != nil {
 		t1 := time.Now()
-		semHits, _ = h.Semantic.Search(r.Context(), req.Q, req.Limit, req.Filters)
+		semHits, degraded = h.runSemantic(r.Context(), req.Q, req.Limit, req.Filters)
 		took.Semantic = time.Since(t1).Milliseconds()
 	}
 
@@ -209,7 +313,8 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	took.Fusion = time.Since(t2).Milliseconds()
 
 	common.WriteJSON(w, r, http.StatusOK, Response{
-		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode, Filters: req.Filters,
+		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode,
+		Filters: req.Filters, Degraded: degraded,
 	})
 }
 
@@ -498,53 +603,105 @@ func RRFuse(a, b []Hit, k int) []Hit {
 }
 
 // highlightSnippet wraps each occurrence of q in s with “<mark>...</mark>“
-// and trims to maxLen with an ellipsis around the first match. Search
-// is case-insensitive.
+// and trims to maxLen with an ellipsis around the first match. Search is
+// case-insensitive.
+//
+// All windowing and truncation are performed on a []rune view so the
+// snippet is never cut mid-rune — Arabic code points are multi-byte in
+// UTF-8 and a byte-offset slice would split a rune and emit invalid
+// UTF-8 (Story 5.4 "Arabic grapheme-aware" highlighting AC). Match
+// wrapping reuses byte offsets, but only inside an already rune-aligned
+// excerpt against a (lower-cased) needle, so it stays UTF-8-safe.
 func highlightSnippet(s, q string, maxLen int) string {
 	if s == "" || q == "" {
 		return s
 	}
+	runes := []rune(s)
 	lower := strings.ToLower(s)
 	ql := strings.ToLower(q)
-	idx := strings.Index(lower, ql)
-	if idx == -1 {
-		if len(s) > maxLen {
-			return s[:maxLen] + "…"
+	byteIdx := strings.Index(lower, ql)
+	if byteIdx == -1 {
+		if len(runes) > maxLen {
+			return string(runes[:maxLen]) + "…"
 		}
 		return s
 	}
-	// Build snippet around the match.
-	start := idx - 60
+	// Translate the byte offset of the first match to a rune offset so
+	// the surrounding window is computed in runes, not bytes.
+	matchRuneStart := utf8.RuneCountInString(lower[:byteIdx])
+	matchRuneLen := utf8.RuneCountInString(ql)
+
+	start := matchRuneStart - 60
 	if start < 0 {
 		start = 0
 	}
-	end := idx + len(q) + maxLen - (idx - start)
-	if end > len(s) {
-		end = len(s)
+	end := matchRuneStart + matchRuneLen + maxLen - (matchRuneStart - start)
+	if end > len(runes) {
+		end = len(runes)
 	}
-	excerpt := s[start:end]
+	excerpt := string(runes[start:end])
 	// Replace each (case-insensitive) occurrence with <mark>...</mark>.
+	// The needle is matched in *folded* space (excerptLower vs ql), but
+	// the marked text must be sliced from the *original-case* excerpt.
+	// For case-folds that change byte length (Turkish dotted-İ U+0130
+	// 2B→1B, uppercase-ẞ U+1E9E 3B→2B) the folded match-span byte length
+	// (len(ql)) is NOT the original-case span length, so wrapping/advancing
+	// with len(ql) against `excerpt` mis-places <mark> (e.g. trailing
+	// "L" left outside the mark for "İSTANBUL"). Instead the loop walks
+	// `excerpt` and `excerptLower` rune-by-rune in lockstep, keeping the
+	// two byte cursors (orig / fold) aligned at rune boundaries. The
+	// folded match offsets returned by strings.Index are translated to
+	// original-case byte offsets via that lockstep walk, so the mark
+	// wraps EXACTLY the original-case matched text. This makes NO
+	// rune-count-preserving assumption about strings.ToLower: even a
+	// hypothetical length- or rune-count-changing fold cannot mis-place
+	// the mark or split a rune, because every boundary is rune-aligned
+	// by construction.
 	var out strings.Builder
 	excerptLower := strings.ToLower(excerpt)
-	i := 0
-	for i < len(excerpt) {
-		j := strings.Index(excerptLower[i:], ql)
+	orig, fold := 0, 0 // byte cursors into excerpt / excerptLower (rune-aligned)
+	for fold < len(excerptLower) {
+		j := strings.Index(excerptLower[fold:], ql)
 		if j < 0 {
-			out.WriteString(excerpt[i:])
+			out.WriteString(excerpt[orig:])
+			orig = len(excerpt) // tail emitted; suppress the post-loop guard
 			break
 		}
-		out.WriteString(excerpt[i : i+j])
+		foldMatchStart := fold + j
+		foldMatchEnd := foldMatchStart + len(ql)
+		// Advance the lockstep cursors to the folded match start,
+		// emitting the un-marked original-case prefix.
+		origMatchStart := orig
+		for fold < foldMatchStart {
+			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
+			_, ow := utf8.DecodeRuneInString(excerpt[origMatchStart:])
+			fold += fw
+			origMatchStart += ow
+		}
+		out.WriteString(excerpt[orig:origMatchStart])
+		// Advance to the folded match end, capturing the original-case
+		// span [origMatchStart, origMatchEnd).
+		origMatchEnd := origMatchStart
+		for fold < foldMatchEnd {
+			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
+			_, ow := utf8.DecodeRuneInString(excerpt[origMatchEnd:])
+			fold += fw
+			origMatchEnd += ow
+		}
 		out.WriteString("<mark>")
-		out.WriteString(excerpt[i+j : i+j+len(q)])
+		out.WriteString(excerpt[origMatchStart:origMatchEnd])
 		out.WriteString("</mark>")
-		i += j + len(q)
+		orig = origMatchEnd
+	}
+	if orig < len(excerpt) {
+		out.WriteString(excerpt[orig:])
 	}
 	prefix := ""
 	if start > 0 {
 		prefix = "…"
 	}
 	suffix := ""
-	if end < len(s) {
+	if end < len(runes) {
 		suffix = "…"
 	}
 	return prefix + out.String() + suffix

@@ -2,9 +2,18 @@
 //
 //	POST /api/pairing/request   — TV/desktop requests a code (auth required)
 //	GET  /api/pairing/status    — TV polls; 200 when consumed
-//	POST /api/pairing/exchange  — phone redeems the code into a device token
+//	POST /api/pairing/exchange  — phone redeems the code into device tokens
 //
-// QR payload is `maktaba://pair?code=ABCD-1234&host=...`.
+// QR payload is `maktaba://pair?code=ABCD-1234`.
+//
+// Exchange now mints a real device-bound access JWT + opaque refresh
+// token (Epic 15 Story 15.5 AC: "pairing exchanges a device-bound
+// refresh token"). Before this change Exchange returned only
+// `{user_id, expires_at}` and the flow dead-ended — a paired phone was
+// never authenticated. The token mint is behind the TokenMinter seam
+// so the handler stays unit-testable without a live Postgres / key set
+// (mirrors the interface-seam convention used by subscriptions and
+// authz).
 package discovery
 
 import (
@@ -21,13 +30,49 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
+// MintedTokens is what TokenMinter returns: the credentials a freshly
+// paired device uses to authenticate. AccessToken is a short-lived
+// RS256 JWT; RefreshToken is the opaque, device-bound, 30-day-default
+// refresh secret.
+type MintedTokens struct {
+	AccessToken      string
+	AccessExpiresIn  int
+	RefreshToken     string
+	RefreshExpiresIn int
+	UserID           string
+}
+
+// TokenMinter turns a consumed pairing ticket into device credentials.
+// Production wires a refresh.Store + jwt key set + users.Store backed
+// implementation (see NewTokenMinter). Tests pass a fake.
+type TokenMinter interface {
+	// Mint issues an access JWT + refresh token for userID, binding the
+	// refresh token to a device described by kind/label.
+	Mint(ctx context.Context, userID, deviceKind, deviceLabel string) (MintedTokens, error)
+}
+
 // Handler bundles deps. Store is the persistence interface from the
 // discovery package; main wires a Postgres-backed implementation,
-// tests use discovery.MemoryPairingStore.
+// tests use discovery.MemoryPairingStore. Minter is required for
+// Exchange to issue tokens; when nil, Exchange degrades to the legacy
+// `{user_id, expires_at}` body and signals that device login is not
+// configured (503) rather than silently dead-ending.
 type Handler struct {
 	Store   discovery.PairingStore
+	Minter  TokenMinter
 	TTL     time.Duration
 	NowFunc func() time.Time
+
+	// Audit, when set, records pair.code-issued / pair.code-claimed.
+	// Optional: nil disables audit (the no-DB dev path).
+	Audit AuditSink
+}
+
+// AuditSink is the minimal slice of securityaudit.Writer the pairing
+// path needs. Kept as an interface so the handler does not import the
+// audit package transitively into tests.
+type AuditSink interface {
+	WritePairEvent(ctx context.Context, claimed bool, actorUserID, code string)
 }
 
 // Mount attaches the pairing routes to r.
@@ -70,6 +115,9 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("store ticket"))
 		return
 	}
+	if h.Audit != nil {
+		h.Audit.WritePairEvent(r.Context(), false, p.UserID, discovery.NormalizeCode(code))
+	}
 	common.WriteJSON(w, r, http.StatusCreated, requestResponse{
 		Code:      code,
 		ExpiresAt: now.Add(ttl),
@@ -101,14 +149,33 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// exchangeRequest is the phone-side body.
+// exchangeRequest is the phone-side body. device_kind / device_label
+// describe the device being paired so the issued refresh token's
+// client_meta records what was authorised.
 type exchangeRequest struct {
-	Code string `json:"code"`
+	Code        string `json:"code"`
+	DeviceKind  string `json:"device_kind,omitempty"`
+	DeviceLabel string `json:"device_label,omitempty"`
 }
 
-// Exchange consumes the ticket and returns the linked user id. The
-// caller is expected to follow up with POST /api/devices/register to
-// obtain a device-scoped access token.
+// exchangeResponse is the credentials the paired device uses from here
+// on. This is the fix for the headline gap: the flow used to return
+// only {user_id, expires_at} and a paired phone was never logged in.
+type exchangeResponse struct {
+	AccessToken      string `json:"access_token"`
+	AccessExpiresIn  int    `json:"access_expires_in"`
+	RefreshToken     string `json:"refresh_token"`
+	RefreshExpiresIn int    `json:"refresh_expires_in"`
+	UserID           string `json:"user_id"`
+}
+
+// Exchange consumes the ticket and mints device credentials.
+//
+// Ordering: the ticket is consumed FIRST (one-time guarantee), then
+// tokens are minted. If minting fails the code is already burned —
+// that is the safe failure direction (a burned code is recoverable by
+// re-requesting; a re-usable code is a replay hole). The caller gets a
+// 500 and simply re-runs the pairing flow.
 func (h *Handler) Exchange(w http.ResponseWriter, r *http.Request) {
 	var req exchangeRequest
 	if e := common.ReadJSON(r, &req, 1<<10); e != nil {
@@ -122,14 +189,32 @@ func (h *Handler) Exchange(w http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
+	if h.Minter == nil {
+		// No key set / refresh store wired — device login is not
+		// configured. Fail loudly rather than dead-end with a body that
+		// can't authenticate anything.
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
 	t, err := h.Store.Consume(r.Context(), code)
 	if err != nil {
 		writePairingError(w, r, err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{
-		"user_id":    t.UserID,
-		"expires_at": t.ExpiresAt,
+	tok, err := h.Minter.Mint(r.Context(), t.UserID, req.DeviceKind, req.DeviceLabel)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("mint device tokens"))
+		return
+	}
+	if h.Audit != nil {
+		h.Audit.WritePairEvent(r.Context(), true, t.UserID, code)
+	}
+	common.WriteJSON(w, r, http.StatusOK, exchangeResponse{
+		AccessToken:      tok.AccessToken,
+		AccessExpiresIn:  tok.AccessExpiresIn,
+		RefreshToken:     tok.RefreshToken,
+		RefreshExpiresIn: tok.RefreshExpiresIn,
+		UserID:           t.UserID,
 	})
 }
 

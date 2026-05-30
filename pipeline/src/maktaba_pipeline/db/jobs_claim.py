@@ -206,7 +206,8 @@ def _row_to_job(row: Any) -> Job:
     """
     return Job(
         id=int(row["id"]),
-        video_id=_to_uuid(row["video_id"]),
+        video_id=_optional_uuid(row["video_id"]),
+        library_id=_optional_uuid(_row_get(row, "library_id")),
         stage=Stage(row["stage"]),
         state=JobState(row["state"]),
         priority=int(row["priority"]),
@@ -238,10 +239,29 @@ def _row_to_job(row: Any) -> Job:
     )
 
 
-def _to_uuid(value: Any) -> UUID:
+def _optional_uuid(value: Any) -> UUID | None:
+    """Decode a nullable UUID column (slot 0058 made both scope columns
+    nullable: ``video_id`` is null on scan rows, ``library_id`` is null
+    on per-video rows)."""
+    if value is None:
+        return None
     if isinstance(value, UUID):
         return value
     return UUID(str(value))
+
+
+def _row_get(row: Any, key: str) -> Any:
+    """Read ``key`` from a driver row, tolerating older fakes / rows
+    that predate the slot 0058 ``library_id`` column.
+
+    asyncpg/aiosqlite rows raise ``KeyError`` for an absent column;
+    ``RETURNING *`` on a migrated table always includes ``library_id``,
+    but a hand-rolled test row or a pre-migration fixture might not.
+    Treat a missing column as ``NULL`` rather than crashing the claim."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
 
 
 def _to_datetime(value: Any) -> datetime | None:

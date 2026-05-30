@@ -9,10 +9,12 @@ import (
 )
 
 // statusCapture wraps an http.ResponseWriter so SLogLogger can capture
-// the status code emitted by the handler. The shape mirrors
-// guardedWriter but is intentionally separate — chaining the two would
-// require interface negotiation for hijack/flush that isn't worth the
-// complexity for the skeleton.
+// the status code emitted by the handler. Only WriteHeader is
+// overridden; an implicit-200 (handler wrote bytes without calling
+// WriteHeader) leaves status==0 and is normalised to 200 at log-emit.
+// Deliberately no Write override — a transparent byte passthrough
+// adds no value and creates a CodeQL go/reflected-xss false-positive
+// sink for every handler whose body carries request-derived data.
 type statusCapture struct {
 	http.ResponseWriter
 	status int
@@ -21,13 +23,6 @@ type statusCapture struct {
 func (s *statusCapture) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusCapture) Write(b []byte) (int, error) {
-	if s.status == 0 {
-		s.status = http.StatusOK
-	}
-	return s.ResponseWriter.Write(b)
 }
 
 // SLogLogger emits one structured log line per request. Story 7.1 AC-2
@@ -45,10 +40,14 @@ func SLogLogger(next http.Handler) http.Handler {
 		next.ServeHTTP(sw, r)
 		dur := time.Since(t0)
 
+		status := sw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
 		mlog.From(ctx).Info("http_request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"status", sw.status,
+			"status", status,
 			"duration_ms", dur.Milliseconds(),
 			"event", "http_request",
 		)

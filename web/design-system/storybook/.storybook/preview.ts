@@ -4,7 +4,10 @@
 // `parameters.direction = "rtl"` and the decorator applies it.
 
 import type { Preview } from "@storybook/react";
-import "@maktaba/design-system/dist/css/tokens.css";
+// Generated token layer (run `node ../build/build-tokens.mjs` first).
+// Path is relative to this preview file: storybook/.storybook ->
+// design-system/build/dist/tokens.css.
+import "../../build/dist/tokens.css";
 
 const preview: Preview = {
   parameters: {

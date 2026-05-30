@@ -5,7 +5,12 @@ Runs across the video catalog (nightly or on-demand) and writes one
 
 * file_present — does the path still resolve?
 * size_bytes  — current file size
-* content_hash — sha256 of the first 16 MiB (matches the scanner's hash)
+* content_hash — the canonical content identity
+  (``BLAKE3(head 4 MiB ‖ tail 4 MiB ‖ u64_le(size))``), the *same*
+  digest the SCAN stage writes to ``videos.content_hash`` via
+  :func:`maktaba_pipeline.identity.hash_file`. Comparing the live
+  digest against the stored row hash is what makes genuine corruption
+  detectable.
 * segments_count — number of transcript_segments rows
 * transcripts_ok — at least one active transcript
 * error — non-empty when any of the above fail
@@ -17,12 +22,9 @@ index to surface broken videos in the admin UI.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import pathlib
 
-# Match the scanner's identity hash window (16 MiB) so verifier output
-# can be compared against the row hash in `videos.content_hash`.
-HASH_WINDOW_BYTES = 16 * 1024 * 1024
+from ..identity import hash_file as _canonical_hash_file
 
 
 @dataclasses.dataclass
@@ -39,17 +41,16 @@ class IntegrityResult:
 
 
 def hash_file(path: pathlib.Path) -> str:
-    """sha256 of the first 16 MiB of the file. Stable across renames."""
-    h = hashlib.sha256()
-    remaining = HASH_WINDOW_BYTES
-    with path.open("rb") as f:
-        while remaining > 0:
-            chunk = f.read(min(remaining, 1 << 20))
-            if not chunk:
-                break
-            h.update(chunk)
-            remaining -= len(chunk)
-    return h.hexdigest()
+    """The canonical content identity for ``path``.
+
+    Delegates to :func:`maktaba_pipeline.identity.hash_file` — the
+    *single* implementation the SCAN stage uses when it writes
+    ``videos.content_hash`` — so a verifier digest is byte-for-byte
+    comparable against the stored row hash. (Previously this computed a
+    sha256 of the first 16 MiB, which could never equal the BLAKE3
+    head‖tail‖size identity, so corruption detection never fired.)
+    """
+    return _canonical_hash_file(path).content_hash
 
 
 def verify_video(
@@ -91,9 +92,16 @@ def verify_video(
             transcripts_ok=transcripts_ok,
             error=f"size mismatch: expected {expected_size}, got {size}",
         )
+    # TOCTOU note: the size stat above and the re-stat inside
+    # hash_file are deliberately not locked — this is a best-effort
+    # nightly sweeper, so a future reader should not add a lock here.
     try:
         digest = hash_file(p)
-    except OSError as e:
+    except (OSError, ValueError) as e:
+        # ValueError: canonical hasher rejects non-regular files
+        # (FIFO/socket/block device/symlink-to-non-regular) — mirror
+        # scanner/service.py's proven (OSError, ValueError) defence so
+        # one bad path is recorded, not crashed on.
         return IntegrityResult(
             file_present=True,
             size_bytes=size,

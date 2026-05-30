@@ -29,16 +29,37 @@ from typing import Any
 
 from . import __version__
 from .db.jobs import Stage
+from .handlers import build_real_dispatch
 from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
 
+# Only stages with a REAL handler in handlers.build_real_dispatch()
+# (SCAN, PROBE, EXTRACT, TRANSCRIBE, SUBTITLE_GEN, INDEX) belong here.
+# THUMBNAIL only gets the runtime's no-op placeholder (it has no
+# implementing module at all), so a default worker claiming a THUMBNAIL
+# job would silently mark it ``done`` without doing the work (the
+# silent-drain foot-gun). It stays out of the defaults until its real
+# adapter lands — see the defaults-vs-real-handlers invariant in
+# tests/pipeline/test_real_dispatch_wiring.py.
+#
+# Gap-closure (HLB-257/255): SCAN now has a real library-scoped
+# adapter (`handlers.scan_handler`, registered in `build_real_dispatch`)
+# backed by slot 0058 + `SqlScanStore`, so it is safe in the defaults —
+# a default worker claiming a SCAN job runs the real walk + per-video
+# PROBE enqueue, not the silent no-op drain. SCAN leads the tuple
+# because it is the pipeline's entry stage (it produces the videos every
+# later stage consumes); the per-video PROBE -> EXTRACT -> TRANSCRIBE
+# chain follows, then TRANSCRIBE fans out to SUBTITLE_GEN + INDEX in
+# parallel (the order between those two is functionally irrelevant —
+# both consume the same activated transcript and share the replay-
+# guarded TRANSCRIBED -> INDEXED FSM edge).
 _DEFAULT_STAGES = (
+    Stage.SCAN,
     Stage.PROBE,
     Stage.EXTRACT,
     Stage.TRANSCRIBE,
     Stage.SUBTITLE_GEN,
     Stage.INDEX,
-    Stage.THUMBNAIL,
 )
 
 
@@ -115,7 +136,15 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             log.warning("pipeline_grpc_disabled", reason=str(exc))
 
     try:
-        return await run(cfg, db=database)
+        # Track R1: feed the real per-stage adapter map. The six stages
+        # with a thin-wrapper adapter (SCAN, PROBE, EXTRACT, TRANSCRIBE,
+        # SUBTITLE_GEN, INDEX) are in the map; THUMBNAIL has no
+        # implementing module at all, so it is absent from the map and
+        # keeps the runtime's placeholder handler until its real
+        # orchestration lands — it is also kept out of _DEFAULT_STAGES so
+        # a default worker never silently no-op-drains it — see
+        # maktaba_pipeline.handlers.
+        return await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
     finally:
         if grpc_server is not None:
             await grpc_server.stop(grace=1.0)

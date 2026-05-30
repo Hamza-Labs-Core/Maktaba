@@ -9,8 +9,10 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -29,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
@@ -40,6 +43,24 @@ type P6Deps struct {
 	SearchSemantic  search.SemanticClient
 	URLSigner       streaming.URLSigner
 	EventHub        *ws.Hub
+
+	// PerfRegistry, when set, receives the named hot-path caches MountP6
+	// instantiates (e.g. the search embedding cache, Story 18.2 AC2 /
+	// HLB-333) so the admin flush endpoint can drop them by name
+	// (Story 18.8 AC4 / HLB-346). Nil → caches still work, just aren't
+	// admin-flushable.
+	PerfRegistry *perfpkg.Registry
+
+	// BusCtx / BusDSN enable the cross-replica WS event bus (Epic 19
+	// Story 19.2). When both are set MountP6 stands up an
+	// eventbus.Bus over the slot-0061 `events` table + LISTEN/NOTIFY:
+	// a per-replica LISTEN loop fans events out to this replica's hub,
+	// the WS handler replays missed events on reconnect, and a pruner
+	// enforces 7-day retention. Both zero → single-process hub only
+	// (dev/test path; behaviour unchanged). Lifetime is tied to
+	// BusCtx so a graceful shutdown stops the loop.
+	BusCtx context.Context
+	BusDSN string
 }
 
 // MountP6 attaches every Phase 6 handler onto r. Safe to call with a
@@ -55,7 +76,14 @@ func MountP6(r chi.Router, d P6Deps) {
 		hub = ws.NewHub()
 	}
 
-	libHandler := &libraries.Handler{DB: d.DB}
+	// Story 9.6 AC-1: inject the concrete library-scoped scan
+	// enqueuer so POST /api/libraries/{id}/scan actually creates a
+	// pending SCAN job (slot-0058 contract, mirrors pipeline
+	// enqueue_scan) instead of soft-failing with an empty job_id.
+	libHandler := &libraries.Handler{
+		DB:          d.DB,
+		JobEnqueuer: &libraries.PostgresJobEnqueuer{DB: d.DB},
+	}
 	libHandler.Mount(r)
 	// Phase 8 / Story 9.17: surfaced library audit feed.
 	libHandler.MountAudit(r)
@@ -63,7 +91,21 @@ func MountP6(r chi.Router, d P6Deps) {
 	videoHandler := &videos.Handler{DB: d.DB}
 	videoHandler.Mount(r)
 
-	searchHandler := &search.Handler{DB: d.DB, Semantic: d.SearchSemantic}
+	// Story 18.2 AC2/AC4 (HLB-333): the search handler gets an
+	// in-process embedding-result cache (reusing the orphaned generic
+	// perf.Cache — HLB-346, no second cache impl) and the default hard
+	// per-request semantic deadline. The cache is registered so
+	// POST /admin/cache/search_embed/flush actually drops it (Story
+	// 18.8 AC4) instead of 404-ing on an empty registry.
+	embedCache := perfpkg.NewCache[[]search.Hit]("search_embed", 10000, 10*time.Minute)
+	if d.PerfRegistry != nil {
+		d.PerfRegistry.Register(embedCache)
+	}
+	searchHandler := &search.Handler{
+		DB:         d.DB,
+		Semantic:   d.SearchSemantic,
+		EmbedCache: embedCache,
+	}
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}
@@ -100,11 +142,25 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	devHandler := &devices.Handler{DB: d.DB}
 	devHandler.Mount(r)
+	// Story 12.11 downloaded-flag sync routes (slot 0063).
+	devHandler.MountDownloads(r)
 
 	wsHandler := &ws.Handler{Hub: hub}
+	// Cross-replica WS event bus (Epic 19 Story 19.2 / HLB-353).
+	// When a DSN + ctx are supplied, every replica appends events to
+	// the durable slot-0061 `events` table; the slot-0061 trigger
+	// fires pg_notify('ws.events',…); this replica's LISTEN loop fans
+	// them out to `hub`, so a client whose socket is on *this* replica
+	// receives an event published on *any* replica. The handler also
+	// replays missed events on reconnect.
+	wireEventBus(d, hub, wsHandler)
 	wsHandler.Mount(r)
 
-	// GraphQL — schema endpoint + SDL.
-	r.Method(http.MethodPost, "/graphql", graphql.Handler{})
-	r.Method(http.MethodGet, "/graphql/schema", graphql.Handler{})
+	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
+	// clients (Epic 14). Resolvers reuse the recommendations + search
+	// DB logic so REST and GraphQL return identical data; other root
+	// fields still answer the honest schema-only 501.
+	gqlHandler := graphql.Handler{Resolvers: graphql.NewResolvers(d.DB)}
+	r.Method(http.MethodPost, "/graphql", gqlHandler)
+	r.Method(http.MethodGet, "/graphql/schema", gqlHandler)
 }

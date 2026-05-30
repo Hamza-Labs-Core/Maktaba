@@ -1,0 +1,16 @@
+{
+  "_fixture": "Story 20.2 EC1 — video stream with no audio track. The probe layer must surface audio_codec=\"\" and audio_channels=0 without erroring; downstream transcription must skip (no audio to transcribe) rather than fail.",
+  "content_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+  "container": "mp4",
+  "video_codec": "h264",
+  "audio_codec": "",
+  "hdr": "",
+  "height": 720,
+  "width": 1280,
+  "duration_sec": 12.0,
+  "bitrate_kbps": 1500,
+  "audio_channels": 0,
+  "mime_type": "video/mp4",
+  "size": 2250000,
+  "probed": true
+}

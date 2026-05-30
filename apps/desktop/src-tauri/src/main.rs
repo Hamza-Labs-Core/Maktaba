@@ -1,20 +1,10 @@
 // Tauri 2 desktop entry point (Stories 13.1 / 13.2 / 13.3).
 //
-// Wires:
-//   - native menu bar (Story 13.4 prep)
-//   - file dialog plugin (Story 13.6 drag-drop / open file)
-//   - window state plugin (Story 13.1 AC: persist window position)
-//   - updater plugin (Story 13.8)
-//
-// The frontend is the shared web/dist bundle; everything below is the
-// native shell.
+// All native wiring (menu bar + handler, tray, close-to-tray, mDNS
+// discovery, updater) lives in `lib.rs` so the mobile shim can reuse
+// it. This binary is a thin trampoline; keep it import-free to avoid
+// the dead-import drift the gap audit flagged.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
-};
 
 fn main() {
     maktaba_desktop_lib::run();

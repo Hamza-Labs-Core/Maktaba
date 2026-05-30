@@ -76,6 +76,99 @@ func TestMemoryPairingStoreExpiry(t *testing.T) {
 	}
 }
 
+// TestSweepSelectionLogic is the Story 15.6 reaper regression. Sweep
+// selects the union of two index-aligned predicates that
+// SQLPairingStore.Sweep splits across two DELETEs (so the planner can
+// use the slot-0055 partial index pairing_tickets_reaper for the
+// growth-dominant unconsumed-expired case):
+//
+//   - unconsumed AND expired before the cutoff  → reaped
+//   - consumed before the cutoff                → reaped
+//   - everything else (live, recently expired,
+//     recently consumed)                        → retained
+//
+// MemoryPairingStore mirrors that union exactly; this test pins it so a
+// regression on either store's selection fails loudly. Validated without
+// an embedded Postgres (the refresh/subscriptions interface-seam
+// convention). The SQL column list is bound to the slot-0055 migration
+// text by TestMigrationFiles_Slot0055_PairingTicketsStoreColumns in
+// migrate_test.go.
+func TestSweepSelectionLogic(t *testing.T) {
+	store := NewMemoryPairingStore()
+	base := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	consumedOld := base.Add(-8 * 24 * time.Hour) // past 7d horizon
+	consumedNew := base.Add(-1 * time.Hour)      // inside retention
+
+	// STALE: unconsumed, expired 8 days ago — past retention → reaped via
+	// the consumed_at-IS-NULL partial-index-aligned predicate.
+	_ = store.Put(context.Background(), PairingTicket{
+		Code: "STALE", UserID: "u1",
+		IssuedAt: base.Add(-9 * 24 * time.Hour), ExpiresAt: base.Add(-8 * 24 * time.Hour),
+	})
+	// RECENT: unconsumed, expired only 1 h ago — still inside retention,
+	// must survive (the spec's expire-flip-before-7d-hard-delete).
+	_ = store.Put(context.Background(), PairingTicket{
+		Code: "RECENT", UserID: "u2",
+		IssuedAt: base.Add(-2 * time.Hour), ExpiresAt: base.Add(-1 * time.Hour),
+	})
+	// LIVE: unconsumed, not yet expired — must survive.
+	_ = store.Put(context.Background(), PairingTicket{
+		Code: "LIVE", UserID: "u3",
+		IssuedAt: base, ExpiresAt: base.Add(5 * time.Minute),
+	})
+	// CONSUMED_STALE: redeemed 8 days ago — past retention → reaped via
+	// the consumed_at predicate (note its expires_at is still in the
+	// future, proving the reaper keys on consumed_at, not expires_at,
+	// for already-consumed rows).
+	_ = store.Put(context.Background(), PairingTicket{
+		Code: "CONSUMED_STALE", UserID: "u4",
+		IssuedAt: base.Add(-9 * 24 * time.Hour), ExpiresAt: base.Add(10 * time.Minute),
+		ConsumedAt: &consumedOld,
+	})
+	// CONSUMED_RECENT: redeemed 1 h ago — inside retention, must survive.
+	_ = store.Put(context.Background(), PairingTicket{
+		Code: "CONSUMED_RECENT", UserID: "u5",
+		IssuedAt: base.Add(-2 * time.Hour), ExpiresAt: base.Add(10 * time.Minute),
+		ConsumedAt: &consumedNew,
+	})
+
+	cutoff := base.Add(-7 * 24 * time.Hour) // mirrors main.pairingRetention horizon
+	n, err := store.Sweep(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("Sweep removed %d rows, want 2 (STALE + CONSUMED_STALE)", n)
+	}
+
+	store.now = func() time.Time { return base }
+	if _, err := store.Get(context.Background(), "STALE"); !errors.Is(err, ErrCodeNotFound) {
+		t.Fatalf("STALE should be hard-deleted, got %v", err)
+	}
+	if _, err := store.Get(context.Background(), "CONSUMED_STALE"); !errors.Is(err, ErrCodeNotFound) {
+		t.Fatalf("CONSUMED_STALE should be hard-deleted, got %v", err)
+	}
+	// RECENT is expired-but-retained: present in the table, surfaces a
+	// precise expired status (the spec's expire-flip-before-delete).
+	if _, err := store.Get(context.Background(), "RECENT"); !errors.Is(err, ErrCodeExpired) {
+		t.Fatalf("RECENT should be retained+expired, got %v", err)
+	}
+	if _, err := store.Get(context.Background(), "LIVE"); err != nil {
+		t.Fatalf("LIVE should survive untouched, got %v", err)
+	}
+	if _, err := store.Get(context.Background(), "CONSUMED_RECENT"); err != nil {
+		t.Fatalf("CONSUMED_RECENT should survive (inside retention), got %v", err)
+	}
+}
+
+// TestSweepInterfaceContract proves both PairingStore implementations
+// satisfy the Sweep seam the boot reaper (main.runPairingSweep) drives.
+// A signature drift on either fails the build here.
+func TestSweepInterfaceContract(_ *testing.T) {
+	var _ PairingStore = (*MemoryPairingStore)(nil)
+	var _ PairingStore = (*SQLPairingStore)(nil)
+}
+
 func TestNoopPublisherCapturesService(t *testing.T) {
 	p := &NoopPublisher{}
 	svc := Service{

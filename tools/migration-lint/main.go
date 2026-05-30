@@ -22,6 +22,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -60,6 +62,15 @@ func main() {
 	files, err := listMigrations(abs)
 	if err != nil {
 		fail("list migrations: %v", err)
+	}
+
+	// Story 22.4 AC4: a legitimately-safe long-running DDL can be
+	// exempted via shared/db/migrations/meta/lints.json. Each exemption
+	// is keyed by file basename + rule and carries a mandatory expiry
+	// so a stale exemption fails closed instead of lingering forever.
+	exemptions, err := loadExemptions(filepath.Join(abs, "meta", "lints.json"))
+	if err != nil {
+		fail("load lints.json: %v", err)
 	}
 
 	if !skipGit {
@@ -94,6 +105,11 @@ func main() {
 			}
 			if dialect == "postgres" {
 				for _, v := range longRunningCheck(f, st) {
+					if reason, ok := exemptions.exempt(v.File, v.Rule); ok {
+						fmt.Fprintf(os.Stderr, "%s: [%s] EXEMPT — %s\n",
+							filepath.Base(v.File), v.Rule, reason)
+						continue
+					}
 					violations++
 					report(v)
 				}
@@ -126,6 +142,81 @@ func report(v violation) {
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "migration-lint: "+format+"\n", args...)
 	os.Exit(2)
+}
+
+// ---------------------------------------------------------------------------
+// lints.json exemption system (Story 22.4 AC4)
+// ---------------------------------------------------------------------------
+
+// exemption is one entry in shared/db/migrations/meta/lints.json. It
+// suppresses a single long-running rule for a single migration file
+// until `expires` passes; an expired or malformed entry fails closed
+// (the violation reappears) so an exemption can never silently outlive
+// its justification.
+type exemption struct {
+	File    string `json:"file"`    // basename, e.g. "0042_backfill.sql"
+	Rule    string `json:"rule"`    // e.g. "long-running-set-not-null"
+	Reason  string `json:"reason"`  // why this DDL is safe (audit trail)
+	Expires string `json:"expires"` // RFC3339 date; required, must be future
+}
+
+type exemptionSet struct {
+	now   time.Time
+	byKey map[string]exemption // "<file>\x00<rule>" -> entry
+}
+
+func exemptKey(file, rule string) string {
+	return filepath.Base(file) + "\x00" + rule
+}
+
+// loadExemptions reads meta/lints.json if present. A missing file is
+// not an error (no exemptions). A present-but-malformed file is fatal
+// so a typo can't accidentally disable the guard.
+func loadExemptions(path string) (*exemptionSet, error) {
+	set := &exemptionSet{now: time.Now().UTC(), byKey: map[string]exemption{}}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return set, nil
+		}
+		return nil, err
+	}
+	var doc struct {
+		Doc        string      `json:"_doc"`
+		Exemptions []exemption `json:"exemptions"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	for i, e := range doc.Exemptions {
+		if e.File == "" || e.Rule == "" || e.Reason == "" || e.Expires == "" {
+			return nil, fmt.Errorf("exemptions[%d]: file, rule, reason, expires are all required", i)
+		}
+		if _, err := time.Parse(time.RFC3339, e.Expires); err != nil {
+			return nil, fmt.Errorf("exemptions[%d].expires %q: not RFC3339: %w", i, e.Expires, err)
+		}
+		set.byKey[exemptKey(e.File, e.Rule)] = e
+	}
+	return set, nil
+}
+
+// exempt reports whether (file, rule) has a live (non-expired)
+// exemption, returning the recorded reason for the audit log line.
+func (s *exemptionSet) exempt(file, rule string) (string, bool) {
+	e, ok := s.byKey[exemptKey(file, rule)]
+	if !ok {
+		return "", false
+	}
+	exp, err := time.Parse(time.RFC3339, e.Expires)
+	if err != nil {
+		return "", false // unreachable: validated at load
+	}
+	if !s.now.Before(exp) {
+		return "", false // expired -> fails closed, violation reappears
+	}
+	return e.Reason, true
 }
 
 // ---------------------------------------------------------------------------

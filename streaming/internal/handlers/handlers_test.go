@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -377,6 +378,285 @@ func TestStaticHandler_PosterMissing404(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != 404 {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+// Story 23.5 AC-2: a symlink planted inside the session HLS dir that
+// points OUTSIDE the cache root must not be followed. Router path
+// cleaning cannot defend this — only the canonicalizer can. Result is
+// an indistinguishable-from-missing 404.
+func TestManifestHandler_ServeSegment_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	layout := cache.New(dir)
+	_ = layout.EnsureTiers()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sessID := uuid.New()
+	hlsDir := layout.HLSDir(sessID.String())
+	if err := os.MkdirAll(hlsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink: {hlsDir}/v0 -> {secretDir}. A request for
+	// /stream/SID/v0/passwd would, without the canonicalizer, read
+	// the secret.
+	if err := os.Symlink(secretDir, filepath.Join(hlsDir, "v0")); err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+		sessID: {ID: sessID, Format: session.FormatHLS},
+	}}
+	h := &ManifestHandler{Sessions: store, Layout: layout}
+	r := chi.NewRouter()
+	r.With(injectSubject(sessID.String())).
+		Get("/stream/{session_id}/{rendition}/{segment}", h.ServeSegment)
+	req := httptest.NewRequest("GET", "/stream/"+sessID.String()+"/v0/passwd", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("symlink escape leaked the secret file")
+	}
+}
+
+// Story 23.5 AC-2: a `..` traversal in the poster video_id must not
+// escape the posters dir. Indistinguishable-from-missing 404.
+func TestStaticHandler_ServePoster_RejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "posters"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/posters/*", h.ServePoster)
+	// chi splat keeps the encoded traversal out of router cleaning.
+	req := httptest.NewRequest("GET", "/stream/posters/..%2Fsecret.txt", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("traversal status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("poster traversal leaked the secret file")
+	}
+}
+
+// Story 23.5 AC-2: a symlink planted in the posters dir that points
+// OUTSIDE the cache root must not be followed.
+func TestStaticHandler_ServePoster_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	postersDir := filepath.Join(dir, "posters")
+	if err := os.MkdirAll(postersDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// {posters}/leak.jpg -> {secretDir}/passwd
+	if err := os.Symlink(filepath.Join(secretDir, "passwd"), filepath.Join(postersDir, "leak.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/posters/{video_id}", h.ServePoster)
+	req := httptest.NewRequest("GET", "/stream/posters/leak.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("poster symlink escape leaked the secret file")
+	}
+}
+
+// Regression: a legitimate poster still serves with the canonicalizer
+// in the path.
+func TestStaticHandler_ServePoster_LegitStillServes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "posters"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "posters", "vid.jpg"), []byte("JPEGBYTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/posters/{video_id}", h.ServePoster)
+	req := httptest.NewRequest("GET", "/stream/posters/vid.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("legit poster status=%d want 200 body=%s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Equal(rec.Body.Bytes(), []byte("JPEGBYTES")) {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+// Story 23.5 AC-2: a `..` traversal in the sprite video_id must not
+// escape the sprites dir.
+func TestStaticHandler_ServeSprite_RejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "secret.webp"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sprites"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/sprites/*", h.ServeSprite)
+	req := httptest.NewRequest("GET", "/stream/sprites/..%2Fsecret.webp", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("traversal status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("sprite traversal leaked the secret file")
+	}
+}
+
+// Story 23.5 AC-2: a symlink planted in the sprites dir that points
+// OUTSIDE the cache root must not be followed.
+func TestStaticHandler_ServeSprite_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spritesDir := filepath.Join(dir, "sprites")
+	if err := os.MkdirAll(spritesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// {sprites}/leak.webp -> {secretDir}/passwd
+	if err := os.Symlink(filepath.Join(secretDir, "passwd"), filepath.Join(spritesDir, "leak.webp")); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/sprites/{video_id}", h.ServeSprite)
+	req := httptest.NewRequest("GET", "/stream/sprites/leak.webp", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("sprite symlink escape leaked the secret file")
+	}
+}
+
+// Regression: a legitimate sprite still serves with the canonicalizer
+// in the path.
+func TestStaticHandler_ServeSprite_LegitStillServes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sprites"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sprites", "vid.webp"), []byte("WEBPBYTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/sprites/{video_id}", h.ServeSprite)
+	req := httptest.NewRequest("GET", "/stream/sprites/vid.webp", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("legit sprite status=%d want 200 body=%s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Type") != "image/webp" {
+		t.Fatalf("ct=%s", rec.Header().Get("Content-Type"))
+	}
+	if !bytes.Equal(rec.Body.Bytes(), []byte("WEBPBYTES")) {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+// Story 23.5 AC-2: a symlinked thumb name must not escape the thumbs
+// dir.
+func TestStaticHandler_ServeThumb_RejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on windows")
+	}
+	dir := t.TempDir()
+	secretDir := filepath.Join(filepath.Dir(dir), "secret")
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "passwd"), []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	thumbDir := filepath.Join(dir, "thumbs", "vid")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(secretDir, "passwd"), filepath.Join(thumbDir, "leak.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/thumbs/{video_id}/{name}", h.ServeThumb)
+	req := httptest.NewRequest("GET", "/stream/thumbs/vid/leak.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("symlink escape status=%d want 404", rec.Code)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("TOPSECRET")) {
+		t.Fatal("symlink escape leaked the secret file")
+	}
+}
+
+// Regression: a legitimate thumb still serves after the canonicalizer
+// is in the path.
+func TestStaticHandler_ServeThumb_LegitStillServes(t *testing.T) {
+	dir := t.TempDir()
+	thumbDir := filepath.Join(dir, "thumbs", "vid")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(thumbDir, "t1.jpg"), []byte("THUMBJPEG"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &StaticHandler{Resolver: &fakeResolver{root: dir}, Files: OSFileOpener{}}
+	r := chi.NewRouter()
+	r.Get("/stream/thumbs/{video_id}/{name}", h.ServeThumb)
+	req := httptest.NewRequest("GET", "/stream/thumbs/vid/t1.jpg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("legit thumb status=%d want 200", rec.Code)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), []byte("THUMBJPEG")) {
+		t.Fatalf("body=%q", rec.Body.String())
 	}
 }
 

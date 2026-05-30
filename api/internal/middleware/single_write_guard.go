@@ -27,6 +27,13 @@ func (g *guardedWriter) WriteHeader(code int) {
 	g.ResponseWriter.WriteHeader(code)
 }
 
+// Write must flip g.written on the implicit-200 path (handler wrote
+// bytes without calling WriteHeader) so a subsequent double-write can
+// be detected and dropped. Removing the override would defeat the
+// wrapper's whole purpose. CodeQL's go/reflected-xss flags this as a
+// sink because handler bytes flow through, but a generic io.Writer
+// passthrough is not an XSS sink — responses on this path are
+// application/problem+json via httperror.Write.
 func (g *guardedWriter) Write(b []byte) (int, error) {
 	if !g.written {
 		g.WriteHeader(http.StatusOK)

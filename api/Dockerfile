@@ -38,6 +38,7 @@ ENV CGO_ENABLED=0 \
 # replace targets without pulling in the full shared/ source tree.
 COPY api/go.mod api/go.sum ./api/
 COPY tools/healthcheck/go.mod ./tools/healthcheck/
+COPY shared/errrpt/go/go.mod  ./shared/errrpt/go/
 COPY shared/health/go/go.mod  ./shared/health/go/
 COPY shared/log/go/go.mod     ./shared/log/go/
 COPY shared/metrics/go/go.mod ./shared/metrics/go/

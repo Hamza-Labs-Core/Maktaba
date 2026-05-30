@@ -1,0 +1,16 @@
+{
+  "_fixture": "Story 20.2 EC2 — MP4 with an unreadable/truncated moov atom. The probe layer must NOT mark the row probed=true; it must record probed=false so the orchestrator quarantines the file instead of serving a zero-duration stream.",
+  "content_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+  "container": "mp4",
+  "video_codec": "",
+  "audio_codec": "",
+  "hdr": "",
+  "height": 0,
+  "width": 0,
+  "duration_sec": 0.0,
+  "bitrate_kbps": 0,
+  "audio_channels": 0,
+  "mime_type": "video/mp4",
+  "size": 1048576,
+  "probed": false
+}

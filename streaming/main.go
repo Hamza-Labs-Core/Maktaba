@@ -15,12 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"google.golang.org/grpc"
 
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -29,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
@@ -96,6 +100,10 @@ func runServe() error {
 	if adminAddr == "" {
 		adminAddr = ":9101"
 	}
+	grpcAddr := os.Getenv("MAKTABA_STREAMING_GRPC_ADDR")
+	if grpcAddr == "" {
+		grpcAddr = ":9050"
+	}
 
 	checks := buildChecks()
 	warm := warmPeriod()
@@ -117,7 +125,7 @@ func runServe() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
 		errCh <- publicSrv.ListenAndServe()
@@ -127,24 +135,94 @@ func runServe() error {
 		errCh <- adminSrv.ListenAndServe()
 	}()
 
+	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
+	// matching the api streaming client's wire convention.
+	grpcServer := grpcsrv.NewGRPCServer(buildGRPCServer(logger))
+	grpcLis, grpcErr := net.Listen("tcp", grpcAddr)
+	if grpcErr != nil {
+		logger.Warn("grpc listen failed; grpc surface disabled",
+			"addr", grpcAddr, "err", grpcErr.Error(), "event", "grpc_listen_failed")
+	} else {
+		go func() {
+			logger.Info("listening", "addr", grpcAddr, "kind", "grpc", "event", "grpc_listen")
+			errCh <- grpcServer.Serve(grpcLis)
+		}()
+	}
+
+	stopGRPC := func() {
+		if grpcErr == nil {
+			grpcServer.GracefulStop()
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		logger.Info("shutting down", "event", "http_shutdown")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		stopGRPC()
 		errPublic := publicSrv.Shutdown(shutdownCtx)
 		errAdmin := adminSrv.Shutdown(shutdownCtx)
 		return errors.Join(errPublic, errAdmin)
 	case err := <-errCh:
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		stopGRPC()
 		_ = publicSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && err != http.ErrServerClosed && !errors.Is(err, grpc.ErrServerStopped) {
 			return err
 		}
 		return nil
 	}
+}
+
+// buildGRPCServer constructs the in-process streaming Server backing
+// the gRPC surface. It mirrors buildPublicHandler's in-memory store
+// wiring (Postgres-backed stores land with the API's JWKS URL); the
+// API drives OpenSession / CloseSession / EvictHashCache /
+// GetCapabilities / HealthCheck over this.
+//
+// NOTE (deferred residuals, tracked):
+//   - HLB-334 / HLB-338: the session + probe stores below are still the
+//     in-memory fakes. A Postgres-backed session.Store + probe.Backend
+//     (same interfaces, mirroring the api lib/pq store pattern) plus a
+//     spec-correct streaming_sessions migration that the Streaming
+//     service owns are NOT done here: the streaming go.mod carries no
+//     DB driver, so that is a net-new dependency + schema-ownership
+//     change best landed as its own change. HLB-328 (FFmpeg never
+//     spawned) is closed below via srv.Transcode.
+func buildGRPCServer(logger *slog.Logger) *grpcsrv.Server {
+	cfg := config.Load()
+	store := session.NewMemoryStore(5 * time.Second)
+	allocator := slots.NewAllocator(slots.AllocatorConfig{
+		MaxTranscode: cfg.Transcode.MaxConcurrent,
+		QueueDepth:   cfg.Transcode.QueueDepth,
+	})
+	probeCache := probe.NewCache(probe.NewFakeBackend(), 4096)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	hw, err := ffmpeg.Default().Detect(ctx)
+	if err != nil {
+		logger.Info("hwaccel probe failed; using software",
+			"err", err.Error(), "event", "hwaccel_software_fallback")
+	}
+
+	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
+	srv.HWAccel = hw
+
+	// HLB-328: wire the real ffmpeg-spawning orchestrator so
+	// OpenSession actually transcodes. The output dir must match the
+	// manifest handler's HLSDir so the player's manifest/segment GETs
+	// resolve to what FFmpeg writes.
+	layout := cache.New(cfg.Cache.Root)
+	if lerr := layout.EnsureTiers(); lerr != nil {
+		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
+	}
+	srv.Transcode = ffmpeg.DefaultOrchestrator(ffmpeg.DefaultBinary())
+	srv.ResolveDir = layout.HLSDir
+	return srv
 }
 
 // buildChecks assembles the readiness check set for streaming. The

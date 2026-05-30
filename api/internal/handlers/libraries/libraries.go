@@ -35,6 +35,12 @@ import (
 // Library is the over-the-wire shape returned by every endpoint here.
 // Settings is kept as raw JSON so a PATCH can deep-merge without
 // imposing a Go schema on user-configurable knobs.
+//
+// Warnings carries non-fatal config-validation findings (unknown keys
+// that round-trip forward-compat) so the caller is told about a typo'd
+// key per the canonical config contract. It is additive and
+// `omitempty`: a clean config — and the List/Get reads, which never set
+// it — emit no `warnings` key, so existing consumers are unaffected.
 type Library struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
@@ -42,6 +48,7 @@ type Library struct {
 	Settings  json.RawMessage `json:"settings"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
+	Warnings  []string        `json:"warnings,omitempty"`
 }
 
 // CreateRequest is the POST body — name + roots are required.
@@ -128,7 +135,13 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Patch("/api/libraries/{id}", h.Patch)
 	r.Delete("/api/libraries/{id}", h.Delete)
 	r.Post("/api/libraries/{id}/scan", h.Scan)
-	r.Get("/api/libraries/{id}/stats", h.Stats)
+	// Story 9.7 AC-1: the cache-first StatsCached handler is the
+	// AC-compliant one (full by_content_type/storage/jobs/last_sweep
+	// shape, processed_pct=null for empty libraries). The Phase-3
+	// `Stats` handler (libraries.go) is kept as a legacy direct-from-
+	// videos fallback for environments where library_stats_cache has
+	// not been migrated, but production mounts StatsCached.
+	r.Get("/api/libraries/{id}/stats", h.StatsCached)
 }
 
 // List returns every library the principal can read. For an admin /
@@ -213,6 +226,27 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if len(settings) == 0 {
 		settings = []byte(`{}`)
 	}
+	// Story 9.1 AC-1: same schema gate as PATCH — a create that ships a
+	// malformed `settings` blob is a 422 with the offending path.
+	// Unknown keys are not fatal (forward-compat: they round-trip) but
+	// the validator's warnings are surfaced to the caller in the
+	// response so a typo'd key is not silently accepted.
+	var settingsWarnings []string
+	if len(req.Settings) > 0 {
+		var decoded map[string]any
+		if jErr := json.Unmarshal(settings, &decoded); jErr != nil {
+			httperror.Write(w, r, httperror.BadRequest("settings is not a JSON object"))
+			return
+		}
+		fieldErrs, warnings := ValidateLibrarySettings(decoded)
+		if len(fieldErrs) > 0 {
+			e := httperror.Unprocessable(fieldErrs)
+			e.Type = "https://maktaba.dev/problems/library-settings-invalid"
+			httperror.Write(w, r, e)
+			return
+		}
+		settingsWarnings = warnings
+	}
 	id := uuid.NewString()
 	now := h.now()
 	_, err := h.DB.ExecContext(r.Context(), `
@@ -236,7 +270,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "/api/libraries/"+id)
 	common.WriteJSON(w, r, http.StatusCreated, Library{
 		ID: id, Name: req.Name, Roots: roots, Settings: settings,
-		CreatedAt: now, UpdatedAt: now,
+		CreatedAt: now, UpdatedAt: now, Warnings: settingsWarnings,
 	})
 }
 
@@ -340,6 +374,27 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		merged = newSettings
+
+		// Story 9.1 AC-1: validate the *merged* effective settings —
+		// a PATCH that introduces e.g. stt.backend="invalid" is a 422
+		// with the offending JSON path, not a silent 200. Unknown keys
+		// are not fatal (forward-compat: they round-trip) — but the
+		// validator's warnings ARE surfaced in the success response so a
+		// typo'd key like stt.bakend is reported to the caller per the
+		// canonical config contract, not silently swallowed.
+		var decoded map[string]any
+		if jErr := json.Unmarshal(merged, &decoded); jErr != nil {
+			httperror.Write(w, r, httperror.BadRequest("settings is not a JSON object"))
+			return
+		}
+		fieldErrs, warnings := ValidateLibrarySettings(decoded)
+		if len(fieldErrs) > 0 {
+			e := httperror.Unprocessable(fieldErrs)
+			e.Type = "https://maktaba.dev/problems/library-settings-invalid"
+			httperror.Write(w, r, e)
+			return
+		}
+		cur.Warnings = warnings
 	}
 	cur.Settings = merged
 

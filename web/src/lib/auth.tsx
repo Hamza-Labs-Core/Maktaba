@@ -9,6 +9,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "./api";
+import { purgeApiCacheOnLogout } from "./sw";
 
 export interface User {
   id: string;
@@ -69,6 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // cookie is HttpOnly and will get cleared by the next 401.
           console.warn("auth: logout call failed", e);
         }
+        // Scrub any cached authenticated API responses so the next
+        // user on a shared browser cannot be served this user's data.
+        await purgeApiCacheOnLogout();
         setUser(null);
       },
       async logoutAll() {
@@ -77,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           console.warn("auth: logout-all call failed", e);
         }
+        await purgeApiCacheOnLogout();
         setUser(null);
       },
     }),

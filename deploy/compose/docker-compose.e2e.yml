@@ -1,0 +1,27 @@
+# E2E overlay (Story 20.5, Track V).
+#
+# The canonical docker-compose.yml deliberately does NOT host-publish
+# the api's public listener — in a prod-like run all host traffic goes
+# through Caddy (ports 80/443), and Caddy does not proxy /healthz (it
+# routes / to web). The e2e suite, however, runs pytest ON THE RUNNER
+# HOST and probes {base}/healthz + {base}/api/libraries directly, so it
+# needs the api's public :8080 reachable from the host.
+#
+# This overlay publishes api:8080 on host port 18080 (chosen high to
+# avoid colliding with anything the canonical stack already binds:
+# 80/443 Caddy, 5432 postgres, 8000 chroma). Layer it on top of the
+# canonical file ONLY for the e2e gate:
+#
+#   docker compose -f deploy/compose/docker-compose.yml \
+#                  -f deploy/compose/docker-compose.e2e.yml up -d --wait
+#
+# and point the suite at it via MAKTABA_E2E_BASE_URL=http://localhost:18080
+# (the env var read by tests/e2e/conftest.py). The canonical file is
+# left untouched so prod-like / Mac-overlay runs are unaffected.
+
+name: maktaba
+
+services:
+  api:
+    ports:
+      - "18080:8080"
