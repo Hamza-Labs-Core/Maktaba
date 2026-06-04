@@ -26,12 +26,19 @@ loop.
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import json
+import os
+import tempfile
+import time
+import wave
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .log import get_logger
 from .models.service import ModelService
+from .stt.protocol import Segment, TranscriptionHints
 from .stt.registry import BackendRegistry
 
 __all__ = [
@@ -54,6 +61,63 @@ def _identity_deserializer(value: bytes) -> bytes:
     return value
 
 
+async def _segment_stream(
+    backend: Any, audio: str, language: str | None
+) -> Any:
+    """Iterate a backend's transcription, tolerating both shapes.
+
+    The canonical caller (``stt.transcribe``) calls
+    ``backend.transcribe(...)`` and iterates the result directly, but
+    some backends define ``transcribe`` as an async function returning
+    the iterator. Awaiting only when needed handles both without the
+    caller caring which.
+    """
+    stream = backend.transcribe(audio, language, TranscriptionHints())
+    if inspect.isawaitable(stream):
+        stream = await stream
+    async for seg in stream:
+        yield seg
+
+
+def _segment_to_dict(seg: Segment) -> dict[str, Any]:
+    """Flatten a Segment onto the wire shape the Go client decodes.
+
+    ``final`` is always True here: the JSON shim delivers the whole
+    transcript at once, so every segment is final by the time the Go
+    client sees it.
+    """
+    return {
+        "seq": seg.seq,
+        "start_sec": seg.start_sec,
+        "end_sec": seg.end_sec,
+        "text": seg.text,
+        "speaker": seg.speaker or "",
+        "final": True,
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def _bundled_sample_path() -> str:
+    """Return a path to a 5-second mono 16 kHz WAV sample for STTTest.
+
+    Rather than ship a binary fixture, we synthesise 5 s of silence with
+    the stdlib ``wave`` module (no ffmpeg dependency) the first time
+    STTTest runs, then cache the path for the process lifetime. The
+    sample's purpose is to prove the backend decodes + runs end to end,
+    not to assert recognised words, so silence is sufficient.
+    """
+    fd, path = tempfile.mkstemp(prefix="maktaba_stt_sample_", suffix=".wav")
+    os.close(fd)
+    frame_rate = 16000
+    seconds = 5
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)  # 16-bit PCM
+        w.setframerate(frame_rate)
+        w.writeframes(b"\x00\x00" * frame_rate * seconds)
+    return path
+
+
 class PipelineService:
     """Pure-Python service implementation used by the gRPC handlers.
 
@@ -68,11 +132,17 @@ class PipelineService:
         embedder: Callable[[str], Awaitable[list[float]]] | None = None,
         stt_registry: BackendRegistry | None = None,
         subtitle_extractor: Callable[[str, int], Awaitable[str]] | None = None,
+        transcriber: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         model_service: ModelService | None = None,
     ) -> None:
         self._embedder = embedder
         self._stt_registry = stt_registry if stt_registry is not None else BackendRegistry()
         self._subtitle_extractor = subtitle_extractor
+        # transcriber overrides the default registry-driven STT walk so
+        # unit tests can return canned segments without a model; the
+        # default path (``_default_transcribe``) selects a ready backend
+        # from ``stt_registry`` and streams its segments.
+        self._transcriber = transcriber
         self.model_service = model_service if model_service is not None else ModelService()
 
     async def embed(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +186,80 @@ class PipelineService:
             raise RuntimeError("subtitle extractor not configured")
         body = await self._subtitle_extractor(path, stream_index)
         return {"body": body}
+
+    # --- transcription (Story 3.x / 7.18) -------------------------------
+    #
+    # ``transcribe`` runs the configured STT backend over an audio
+    # source and returns the segments in one flat list. The Go client
+    # fans this list into a channel of TranscribeEvent, so the wire
+    # stays unary JSON even though the Go surface is "streaming". The
+    # ``video_id`` key is accepted as an alias for ``path`` because the
+    # Go client passes the id through positionally (same convention
+    # ExtractEmbeddedSubtitle uses).
+
+    async def transcribe(self, payload: dict[str, Any]) -> dict[str, Any]:
+        path = payload.get("path") or payload.get("video_id")
+        if not isinstance(path, str) or not path:
+            raise ValueError("transcribe: path is required")
+        language = payload.get("language")
+        if language is not None and not isinstance(language, str):
+            raise ValueError("transcribe: language must be a string")
+
+        if self._transcriber is not None:
+            segments = await self._transcriber(path, language)
+        else:
+            segments = await self._default_transcribe(path, language)
+        return {"segments": segments}
+
+    async def _default_transcribe(
+        self, path: str, language: str | None
+    ) -> list[dict[str, Any]]:
+        ready = await self._stt_registry.list_ready()
+        if not ready:
+            raise RuntimeError("transcribe: no STT backend ready")
+        backend = ready[0]
+        out: list[dict[str, Any]] = []
+        async for seg in _segment_stream(backend, path, language):
+            out.append(_segment_to_dict(seg))
+        return out
+
+    async def stt_test(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run a short transcription smoke test (Story 7.x AC-5).
+
+        Picks the named backend (or the first ready one) and runs it
+        over a bundled 5-second audio sample, reporting wall latency and
+        any text the backend produced. A backend that is registered but
+        not ready still gets exercised — the point is to surface a
+        configuration/model error to the operator, so we let the
+        backend's own failure propagate as the in-band ``{"error": ...}``.
+        """
+        backend_name = payload.get("backend")
+        if backend_name is not None and not isinstance(backend_name, str):
+            raise ValueError("stt_test: backend must be a string")
+
+        if backend_name:
+            backend = self._stt_registry.get(backend_name)
+            if backend is None:
+                raise ValueError(f"stt_test: unknown backend {backend_name!r}")
+        else:
+            ready = await self._stt_registry.list_ready()
+            backend = ready[0] if ready else None
+            if backend is None:
+                raise RuntimeError("stt_test: no STT backend available")
+
+        sample_path = _bundled_sample_path()
+        start = time.monotonic()
+        texts: list[str] = []
+        async for seg in _segment_stream(backend, sample_path, None):
+            texts.append(seg.text)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "ok": True,
+            "backend": backend.name,
+            "latency_ms": latency_ms,
+            "sample_text": " ".join(t.strip() for t in texts if t and t.strip()),
+            "segments": len(texts),
+        }
 
     # --- model management (Story 7.x) -----------------------------------
     #
@@ -163,7 +307,7 @@ class PipelineService:
 
 
 def _build_generic_handler(service: PipelineService) -> Any:
-    """Return a :class:`grpc.GenericRpcHandler` exposing the three RPCs."""
+    """Return a :class:`grpc.GenericRpcHandler` exposing the pipeline RPCs."""
 
     import grpc  # type: ignore[import-untyped]  # noqa: PLC0415
 
@@ -175,6 +319,12 @@ def _build_generic_handler(service: PipelineService) -> Any:
 
     async def _extract(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.extract_embedded_subtitle)
+
+    async def _transcribe(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.transcribe)
+
+    async def _stt_test(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.stt_test)
 
     async def _list_models(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.list_models)
@@ -205,6 +355,8 @@ def _build_generic_handler(service: PipelineService) -> Any:
         "Embed": _h(_embed),
         "ListBackends": _h(_list_backends),
         "ExtractEmbeddedSubtitle": _h(_extract),
+        "Transcribe": _h(_transcribe),
+        "STTTest": _h(_stt_test),
         "ListModels": _h(_list_models),
         "DownloadModel": _h(_download_model),
         "DownloadProgress": _h(_download_progress),

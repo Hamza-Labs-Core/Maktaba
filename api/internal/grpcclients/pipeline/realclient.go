@@ -12,10 +12,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/jsoncodec"
 )
 
-// ErrNotImplemented is returned by the real client for surfaces whose
-// server side does not exist yet. Transcribe (server-streaming) and
-// STTTest have no pipeline server implementation; they stay stubbed
-// until their epic wave.
+// ErrNotImplemented is retained for parity with the interface's
+// fail-soft contract; every method now has a server-side implementation.
 var ErrNotImplemented = errors.New("pipeline gRPC client: not implemented")
 
 // Pipeline service / method paths — must match
@@ -26,6 +24,8 @@ const (
 	methodEmbed        = "/" + pipelineService + "/Embed"
 	methodListBackends = "/" + pipelineService + "/ListBackends"
 	methodExtractSub   = "/" + pipelineService + "/ExtractEmbeddedSubtitle"
+	methodTranscribe   = "/" + pipelineService + "/Transcribe"
+	methodSTTTest      = "/" + pipelineService + "/STTTest"
 
 	methodListModels       = "/" + pipelineService + "/ListModels"
 	methodDownloadModel    = "/" + pipelineService + "/DownloadModel"
@@ -156,11 +156,51 @@ func (c *realClient) Embed(ctx context.Context, text string) ([]float32, error) 
 	return vec, nil
 }
 
-// Transcribe is server-streaming and has no pipeline server
-// implementation.
-// deferred: Epic 03/07 wave
-func (c *realClient) Transcribe(_ context.Context, _ string) (<-chan TranscribeEvent, error) {
-	return nil, ErrNotImplemented
+// Transcribe runs the pipeline's STT backend over videoID's audio and
+// fans the returned segments into a channel. The pipeline surface is a
+// unary JSON RPC (it returns the whole transcript at once); we adapt
+// that to the streaming-shaped Go interface by pushing every segment
+// then closing the channel, so callers can range over it exactly as
+// they would a true server stream.
+func (c *realClient) Transcribe(ctx context.Context, videoID string) (<-chan TranscribeEvent, error) {
+	if c.conn == nil {
+		return nil, fmt.Errorf("pipeline gRPC client: not connected (%s)", c.detail)
+	}
+	if c.cfg.TranscribeTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.cfg.TranscribeTimeout)
+		// The unary call below blocks until the full transcript is back,
+		// so it is safe to cancel once invoke returns — the channel we
+		// hand back is already fully populated.
+		defer cancel()
+	}
+	var resp map[string]any
+	// The pipeline accepts video_id as the audio-source alias (same
+	// positional convention ExtractEmbeddedSubtitle uses).
+	if err := c.invoke(ctx, methodTranscribe, map[string]any{"video_id": videoID}, &resp); err != nil {
+		return nil, err
+	}
+	raw, ok := resp["segments"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("pipeline Transcribe: malformed response (missing segments)")
+	}
+	ch := make(chan TranscribeEvent, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		ch <- TranscribeEvent{
+			SegmentID: asInt64(m["seq"]),
+			Seq:       asInt(m["seq"]),
+			StartSec:  asFloat(m["start_sec"]),
+			EndSec:    asFloat(m["end_sec"]),
+			Text:      asString(m["text"]),
+			Final:     asBool(m["final"]),
+		}
+	}
+	close(ch)
+	return ch, nil
 }
 
 func (c *realClient) ExtractEmbeddedSubtitle(ctx context.Context, videoID string, streamIndex int) (string, error) {
@@ -205,10 +245,24 @@ func (c *realClient) ListBackends(ctx context.Context) ([]Backend, error) {
 	return out, nil
 }
 
-// STTTest has no pipeline server implementation.
-// deferred: Epic 03/07 wave
-func (c *realClient) STTTest(_ context.Context, _ string, _ map[string]any) (any, error) {
-	return nil, ErrNotImplemented
+// STTTest runs the pipeline's short backend smoke test and returns the
+// decoded result map verbatim (OK / backend / latency_ms / sample_text
+// / segments). The settings adapter narrows it to STTTestResult; we
+// keep the raw map here so the wire shape can grow without a client
+// change.
+func (c *realClient) STTTest(ctx context.Context, backend string, config map[string]any) (any, error) {
+	req := map[string]any{}
+	if backend != "" {
+		req["backend"] = backend
+	}
+	if config != nil {
+		req["config"] = config
+	}
+	var resp map[string]any
+	if err := c.invoke(ctx, methodSTTTest, req, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // HealthCheck reports reachability. The pipeline server exposes no

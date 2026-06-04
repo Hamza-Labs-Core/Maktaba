@@ -57,14 +57,24 @@ func (a pipelineSettingsAdapter) STTTest(ctx context.Context, backend string, co
 	// success result with the data field stringified.
 	if m, ok := res.(map[string]any); ok {
 		out := settings.STTTestResult{OK: true}
-		if v, ok := m["latency_ms"].(int64); ok {
+		// The JSON codec decodes numbers as float64, so accept both that
+		// and a pre-coerced int64 for latency_ms.
+		switch v := m["latency_ms"].(type) {
+		case int64:
 			out.LatencyMs = v
+		case float64:
+			out.LatencyMs = int64(v)
 		}
 		if v, ok := m["sample_text"].(string); ok {
 			out.SampleText = v
 		}
+		// The pipeline reports a per-test failure as ok=false; honour
+		// either an explicit error string or a false ok flag.
 		if v, ok := m["error"].(string); ok && v != "" {
 			out.Error = v
+			out.OK = false
+		}
+		if v, ok := m["ok"].(bool); ok && !v {
 			out.OK = false
 		}
 		return out, nil

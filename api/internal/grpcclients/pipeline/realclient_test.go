@@ -39,6 +39,8 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 			{MethodName: "Embed", Handler: mk(handlers["Embed"])},
 			{MethodName: "ListBackends", Handler: mk(handlers["ListBackends"])},
 			{MethodName: "ExtractEmbeddedSubtitle", Handler: mk(handlers["ExtractEmbeddedSubtitle"])},
+			{MethodName: "Transcribe", Handler: mk(handlers["Transcribe"])},
+			{MethodName: "STTTest", Handler: mk(handlers["STTTest"])},
 			{MethodName: "ListModels", Handler: mk(handlers["ListModels"])},
 			{MethodName: "DownloadModel", Handler: mk(handlers["DownloadModel"])},
 			{MethodName: "DownloadProgress", Handler: mk(handlers["DownloadProgress"])},
@@ -206,13 +208,78 @@ func TestRealClient_HealthCheck_Unconnected(t *testing.T) {
 	}
 }
 
-func TestRealClient_DeferredRPCs(t *testing.T) {
-	c := NewRealClient(Config{Addr: "127.0.0.1:1"}).(*realClient)
-	if _, err := c.Transcribe(context.Background(), "v"); err != ErrNotImplemented {
-		t.Errorf("Transcribe err=%v want ErrNotImplemented", err)
+func TestRealClient_Transcribe(t *testing.T) {
+	var gotReq map[string]any
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"Transcribe": func(req map[string]any) map[string]any {
+			gotReq = req
+			return map[string]any{"segments": []any{
+				map[string]any{"seq": 0.0, "start_sec": 0.0, "end_sec": 1.0, "text": "Bismillah", "final": true},
+				map[string]any{"seq": 1.0, "start_sec": 1.0, "end_sec": 2.5, "text": "ar-Rahman", "final": true},
+			}}
+		},
+	})
+	ch, err := c.Transcribe(context.Background(), "vid-123")
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
 	}
-	if _, err := c.STTTest(context.Background(), "b", nil); err != ErrNotImplemented {
-		t.Errorf("STTTest err=%v want ErrNotImplemented", err)
+	// The video id is forwarded as the audio-source alias.
+	if gotReq["video_id"] != "vid-123" {
+		t.Fatalf("expected video_id forwarded, got %v", gotReq)
+	}
+	var events []TranscribeEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].Text != "Bismillah" || events[0].Seq != 0 || !events[0].Final {
+		t.Fatalf("first event malformed: %+v", events[0])
+	}
+	if events[1].Seq != 1 || events[1].EndSec != 2.5 {
+		t.Fatalf("second event malformed: %+v", events[1])
+	}
+}
+
+func TestRealClient_Transcribe_InBandError(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"Transcribe": func(map[string]any) map[string]any {
+			return map[string]any{"error": "no STT backend ready"}
+		},
+	})
+	if _, err := c.Transcribe(context.Background(), "v"); err == nil {
+		t.Fatal("expected in-band error to surface")
+	}
+}
+
+func TestRealClient_STTTest(t *testing.T) {
+	var gotReq map[string]any
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"STTTest": func(req map[string]any) map[string]any {
+			gotReq = req
+			return map[string]any{
+				"ok":          true,
+				"backend":     "whisper",
+				"latency_ms":  42.0,
+				"sample_text": "Bismillah",
+				"segments":    2.0,
+			}
+		},
+	})
+	res, err := c.STTTest(context.Background(), "whisper", map[string]any{"model": "tiny"})
+	if err != nil {
+		t.Fatalf("STTTest: %v", err)
+	}
+	if gotReq["backend"] != "whisper" {
+		t.Fatalf("expected backend forwarded, got %v", gotReq)
+	}
+	m, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", res)
+	}
+	if m["backend"] != "whisper" || m["sample_text"] != "Bismillah" {
+		t.Fatalf("result map malformed: %v", m)
 	}
 }
 
