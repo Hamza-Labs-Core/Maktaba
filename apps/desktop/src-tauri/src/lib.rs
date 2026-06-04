@@ -24,6 +24,18 @@ use tauri::{
     tray::TrayIconBuilder,
     Emitter, Manager, WindowEvent,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
+
+/// Bring the main window forward (show + focus). Shared by the tray, the
+/// single-instance relaunch handler, and deep links so a `maktaba://`
+/// open always surfaces the app even if it was hidden to tray.
+fn focus_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
 
 #[tauri::command]
 fn app_version() -> String {
@@ -81,13 +93,55 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // single-instance is desktop-only and MUST be the first plugin
+    // registered (Tauri requirement). On a second launch — e.g. the OS
+    // spawning a new process to deliver a `maktaba://` URL on
+    // Windows/Linux — this focuses the already-running window instead of
+    // opening a new one; the `deep-link` feature forwards the URL to
+    // on_open_url.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _argv, _cwd| {
+                focus_main(app);
+            },
+        ));
+    }
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Deep links (`maktaba://…`, Story 13.x). At runtime we
+            // register the scheme (no-op when the bundle already owns it
+            // via tauri.conf.json; required for `cargo tauri dev` on
+            // Linux) and forward every opened URL to the frontend as a
+            // `deep-link` event. The shared web shell maps it to an SPA
+            // route via deepLinkToPath() (web/src/lib/native.ts), reusing
+            // the exact same parser the Capacitor shell uses.
+            {
+                let handle = app.handle().clone();
+                // Runtime scheme registration is a desktop concern (on
+                // mobile the scheme is declared in the manifest). Best-
+                // effort: dev builds may lack registration rights.
+                #[cfg(desktop)]
+                let _ = app.deep_link().register_all();
+                app.deep_link().on_open_url(move |event| {
+                    let urls: Vec<String> =
+                        event.urls().iter().map(|u| u.to_string()).collect();
+                    if !urls.is_empty() {
+                        focus_main(&handle);
+                        let _ = handle.emit("deep-link", urls);
+                    }
+                });
+            }
+
             // Menu bar (Story 13.1 AC-1 / Story 13.7).
             let handle = app.handle();
             let menu = build_menu(handle)?;
@@ -102,7 +156,14 @@ pub fn run() {
                 let _ = app.emit("menu", id);
             });
 
-            // System tray (Story 13.4).
+            // System tray (Story 13.4) — transport controls + window
+            // management. Play / Pause drive the active player without
+            // focusing the window: they emit the "menu" event with the
+            // `media-play` / `media-pause` ids, which the web shell maps
+            // to a `media-control` action (web/src/lib/desktop.ts). Quit
+            // exits the app (close-to-tray, below, keeps it running).
+            let tray_play = MenuItem::with_id(handle, "media-play", "Play", true, None::<&str>)?;
+            let tray_pause = MenuItem::with_id(handle, "media-pause", "Pause", true, None::<&str>)?;
             let tray_show = MenuItem::with_id(handle, "show", "Show Maktaba", true, None::<&str>)?;
             let tray_hide = MenuItem::with_id(handle, "hide", "Hide", true, None::<&str>)?;
             let tray_settings = MenuItem::with_id(
@@ -116,6 +177,9 @@ pub fn run() {
             let tray_menu = Menu::with_items(
                 handle,
                 &[
+                    &tray_play,
+                    &tray_pause,
+                    &PredefinedMenuItem::separator(handle)?,
                     &tray_show,
                     &tray_hide,
                     &PredefinedMenuItem::separator(handle)?,
@@ -130,6 +194,14 @@ pub fn run() {
                 .on_menu_event(|app, event| {
                     let id = event.id().as_ref();
                     match id {
+                        // Transport controls: forward through the "menu"
+                        // channel so the web shell's media-control router
+                        // drives the active player. No window focus — the
+                        // point is to play/pause without leaving whatever
+                        // you're doing.
+                        "media-play" | "media-pause" => {
+                            let _ = app.emit("menu", id.to_string());
+                        }
                         "show" => {
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.show();

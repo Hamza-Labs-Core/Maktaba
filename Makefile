@@ -430,6 +430,36 @@ build-tokens:  ## Story 17.1 — generate CSS/TS/Swift/Kotlin/JSON outputs from 
 test-tokens:  ## Story 17.1 — assert the design-tokens build pipeline is green.
 	@node $(WEB_DIR)/design-system/build/verify-tokens.mjs
 
+# ---------------------------------------------------------------------------
+# Native app shells (Epics 12/13) — Capacitor (iOS/Android) + Tauri (desktop)
+# ---------------------------------------------------------------------------
+#
+# All three wrap the SAME web/dist bundle. The shells' own build scripts
+# own the web build + platform sync so the Make targets stay thin wrappers
+# (the Story 22.8 "no logic CI and devs must keep in sync" rule). Native
+# toolchains (Xcode+CocoaPods, Android SDK+JDK, Rust) are NOT prerequisites
+# for the rest of the repo, so these targets are intentionally out of the
+# default `build` graph.
+
+##@ Native apps
+
+MOBILE_DIR  := apps/mobile
+DESKTOP_DIR := apps/desktop
+
+.PHONY: mobile-build
+mobile-build:  ## Build the Capacitor iOS+Android apps (web build + cap sync). Needs Xcode/Android SDK.
+	@bash $(MOBILE_DIR)/scripts/build.sh
+
+.PHONY: desktop-build
+desktop-build:  ## Build the Tauri desktop app for the host OS. Needs the Rust toolchain.
+	@bash $(DESKTOP_DIR)/scripts/build.sh
+
+.PHONY: native-sync
+native-sync: build-web  ## Rebuild web/dist and sync it into the native platforms (Capacitor cap sync).
+	@echo "==> syncing web/dist into Capacitor platforms"
+	@pnpm -C $(MOBILE_DIR) exec cap sync
+	@echo "==> Tauri reads web/dist at build time (run 'make desktop-build')"
+
 .PHONY: build-all
 build-all:  ## Cross-compile Go binaries for every supported $(CROSS_PLATFORMS).
 	@for platform in $(CROSS_PLATFORMS); do \

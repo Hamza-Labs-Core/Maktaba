@@ -1,6 +1,22 @@
+# --- JS / Tauri CLI ---
 node_modules/
-target/
-gen/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# --- Rust / Cargo build output ---
+target/
+**/*.rs.bk
+
+# --- Tauri generated (schemas, mobile projects, bundles) ---
+gen/
+src-tauri/target/
+src-tauri/gen/
+
+# Note: bundle icons (src-tauri/icons/*) ARE required by the build and,
+# once real artwork is generated via `pnpm exec tauri icon ./logo.png`,
+# SHOULD be committed — they are intentionally NOT ignored here.
+
+# Updater signing keys — NEVER commit the private key.
+*.key
+*.pem

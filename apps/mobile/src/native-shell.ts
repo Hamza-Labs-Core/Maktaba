@@ -9,6 +9,7 @@ import { Network, type ConnectionStatus } from '@capacitor/network';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { Preferences } from '@capacitor/preferences';
+import { SecureStorage } from '@aparajita/capacitor-secure-storage';
 import {
   Haptics,
   ImpactStyle,
@@ -220,8 +221,10 @@ export async function tapHaptic(): Promise<void> {
 }
 
 /**
- * Persist a small key/value to the native secure store. Used by the
- * SPA's auth bridge for the refresh token on the native build.
+ * Persist a small NON-SECRET key/value to the native preferences store
+ * (@capacitor/preferences → UserDefaults / SharedPreferences, NOT
+ * encrypted). Use for UI prefs (theme, last library) only. Secrets
+ * (auth tokens) must go through {@link nativeSecureStore} below.
  */
 export const nativePrefs = {
   async get(key: string): Promise<string | null> {
@@ -233,5 +236,29 @@ export const nativePrefs = {
   },
   async remove(key: string): Promise<void> {
     await Preferences.remove({ key });
+  },
+};
+
+/**
+ * Hardware-backed secure storage (Story 12.4 / auth) — Keychain on iOS,
+ * EncryptedSharedPreferences via the Android Keystore. The SPA's auth
+ * bridge persists the refresh token here so it is never written to the
+ * plaintext preferences store or the WebView's localStorage.
+ *
+ * `@aparajita/capacitor-secure-storage` returns typed values (string |
+ * number | boolean | object | null); we constrain the surface to
+ * strings to match the web localStorage-shaped contract the auth bridge
+ * already targets, so the same calling code works on web and native.
+ */
+export const nativeSecureStore = {
+  async get(key: string): Promise<string | null> {
+    const v = await SecureStorage.get(key);
+    return typeof v === 'string' ? v : v == null ? null : String(v);
+  },
+  async set(key: string, value: string): Promise<void> {
+    await SecureStorage.set(key, value);
+  },
+  async remove(key: string): Promise<void> {
+    await SecureStorage.remove(key);
   },
 };

@@ -1,5 +1,32 @@
+# --- JS / Capacitor ---
 node_modules/
-ios/
-android/
 dist/
 .DS_Store
+
+# Generated native projects (created by `npx cap add`; not checked in —
+# they require the platform toolchain and are reproducible from config).
+ios/
+android/
+
+# --- iOS / Xcode (in case ios/ is ever partially committed) ---
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/build/
+ios/App/App/public/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.ipa
+
+# --- Android / Gradle ---
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+*.keystore
+*.jks
+google-services.json

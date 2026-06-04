@@ -111,6 +111,32 @@ troubleshooting, and pre-commit setup.
 
 ---
 
+## Native apps
+
+The same `web/` SPA bundle is wrapped natively for every platform — no
+per-platform UI fork. The shells live under [`apps/`](apps/) and serve
+`web/dist`:
+
+| Target | Stack | Build |
+|---|---|---|
+| iOS + Android | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) | `make mobile-build` |
+| macOS / Windows / Linux | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) | `make desktop-build` |
+| tvOS / Android TV | Swift / Kotlin ([`apps/tv/`](apps/tv/)) | per-platform |
+
+```sh
+make mobile-build    # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
+make desktop-build   # Tauri build for the host OS (needs the Rust toolchain)
+make native-sync     # rebuild web/dist and cap sync it into the native platforms
+```
+
+Both wrappers share `com.hamzalabs.maktaba` as the app/bundle identifier
+and the `maktaba://` deep-link scheme. The generated native projects
+(`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`) and
+signing material are not checked in — see each shell's README for the
+toolchain prerequisites and signing/credential setup.
+
+---
+
 ## Project structure
 
 ```

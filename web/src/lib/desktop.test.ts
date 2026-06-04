@@ -62,6 +62,17 @@ describe("resolveMenuAction", () => {
     });
   });
 
+  it("maps tray media-play / media-pause → media-control", () => {
+    expect(resolveMenuAction("media-play")).toEqual({
+      kind: "media-control",
+      command: "play",
+    });
+    expect(resolveMenuAction("media-pause")).toEqual({
+      kind: "media-control",
+      command: "pause",
+    });
+  });
+
   it("maps open-docs → external link", () => {
     const a = resolveMenuAction("open-docs");
     expect(a).not.toBeNull();
@@ -118,6 +129,8 @@ describe("resolveMenuAction", () => {
         "new-window",
         "new-private",
         "open-docs",
+        "media-play",
+        "media-pause",
       ].sort()
     );
   });

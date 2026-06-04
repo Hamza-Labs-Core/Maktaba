@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "build:web": "pnpm --filter maktaba-web build",
+    "build": "bash ./scripts/build.sh",
     "sync": "cap sync",
+    "add:ios": "cap add ios",
+    "add:android": "cap add android",
     "ios:open": "cap open ios",
     "android:open": "cap open android",
     "ios:run": "cap run ios",
@@ -14,6 +17,7 @@
     "doctor": "cap doctor"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^6.0.1",
     "@capacitor/android": "^6.1.2",
     "@capacitor/app": "^6.0.1",
     "@capacitor/core": "^6.1.2",
@@ -27,7 +31,9 @@
     "@capacitor/status-bar": "^6.0.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.1.2"
+    "@capacitor/cli": "^6.1.2",
+    "@types/node": "^20.14.0",
+    "typescript": "5.7.3"
   },
   "engines": {
     "node": ">=20"

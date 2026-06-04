@@ -21,6 +21,8 @@
 // pulls @tauri-apps/* into the graph (those packages are devDeps of
 // apps/desktop, intentionally not web/ deps).
 
+import { deepLinkToPath } from "./native";
+
 export function isDesktop(): boolean {
   if (typeof window === "undefined") return false;
   const w = window as unknown as Record<string, unknown>;
@@ -37,6 +39,7 @@ export type MenuAction =
   | { kind: "scan" }
   | { kind: "new-window"; private?: boolean }
   | { kind: "open-server-picker" }
+  | { kind: "media-control"; command: "play" | "pause" }
   | { kind: "external"; url: string };
 
 const DOCS_URL = "https://maktaba.dev/docs";
@@ -61,6 +64,11 @@ export const KNOWN_MENU_IDS = [
   "new-window",
   "new-private",
   "open-docs",
+  // System-tray transport controls (Story 13.4) — emitted through the
+  // same "menu" channel so the player can be driven without focusing
+  // the window.
+  "media-play",
+  "media-pause",
 ] as const;
 
 /**
@@ -96,6 +104,10 @@ export function resolveMenuAction(id: string): MenuAction | null {
       return { kind: "new-window", private: true };
     case "switch-server":
       return { kind: "open-server-picker" };
+    case "media-play":
+      return { kind: "media-control", command: "play" };
+    case "media-pause":
+      return { kind: "media-control", command: "pause" };
     case "open-docs":
       return { kind: "external", url: DOCS_URL };
     default:
@@ -121,6 +133,37 @@ export async function registerMenuRouter(
     return () => unlisten();
   } catch {
     // @tauri-apps/api unavailable (e.g. unexpected env) — fail inert.
+    return () => {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deep links — `maktaba://` (Story 13.x)
+// ---------------------------------------------------------------------------
+
+/**
+ * Subscribe to the native "deep-link" event the Rust shell emits when a
+ * `maktaba://…` URL is opened (incl. the cold-launch / single-instance
+ * relaunch cases). Each URL is mapped to an in-app path via the SAME
+ * `deepLinkToPath` parser the Capacitor shell uses, so desktop and
+ * mobile resolve `maktaba://watch/123?t=42` identically. Unknown /
+ * foreign URLs resolve to null and are skipped. Returns a disposer;
+ * a no-op in the browser build.
+ */
+export async function registerDeepLinkRouter(
+  onNavigate: (path: string) => void
+): Promise<() => void> {
+  if (!isDesktop()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<string[]>("deep-link", (event) => {
+      for (const url of event.payload ?? []) {
+        const path = deepLinkToPath(url);
+        if (path) onNavigate(path);
+      }
+    });
+    return () => unlisten();
+  } catch {
     return () => {};
   }
 }
