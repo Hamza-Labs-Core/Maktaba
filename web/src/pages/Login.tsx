@@ -1,12 +1,13 @@
 // Login page (Story 10.2 cookie flow).
 import { type FormEvent, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { ApiError } from "../lib/api";
 
 interface LocationState {
   from?: string;
+  reset?: boolean;
 }
 
 export function Login() {
@@ -48,6 +49,11 @@ export function Login() {
     <main className="mkt-login">
       <form className="mkt-login__form" onSubmit={onSubmit} aria-label={t("login.submit")}>
         <h1 className="mkt-login__title">{t("app.title")}</h1>
+        {(location.state as LocationState | null)?.reset && (
+          <div className="mkt-alert mkt-alert--success" role="status">
+            {t("reset.success")}
+          </div>
+        )}
         <label className="mkt-field">
           <span className="mkt-field__label">{t("login.username")}</span>
           <input
@@ -77,6 +83,14 @@ export function Login() {
         <button type="submit" className="mkt-btn mkt-btn--primary" disabled={submitting}>
           {submitting ? t("common.loading") : t("login.submit")}
         </button>
+        <div className="mkt-login__links">
+          <Link to="/forgot-password" className="mkt-login__link">
+            {t("login.forgot")}
+          </Link>
+          <Link to="/register" className="mkt-login__link">
+            {t("login.register")}
+          </Link>
+        </div>
       </form>
     </main>
   );

@@ -142,7 +142,7 @@ func TestApplySecurity_GatesBusinessRoutes(t *testing.T) {
 		_, _ = w.Write([]byte("business-ok"))
 	})
 	// cookieAuth + csrf nil: the bearer path alone must still gate + admit.
-	stack := st.applySecurity(business, nil, nil)
+	stack := st.applySecurity(business, nil, nil, nil)
 
 	// Anonymous business route → 401.
 	rec := httptest.NewRecorder()
@@ -192,6 +192,7 @@ func TestApplySecurity_HSTSDefaultsOnWithoutEnv(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
 		nil,
 		nil,
+		nil,
 	)
 	rec := httptest.NewRecorder()
 	stack.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/version", nil))
@@ -216,6 +217,7 @@ func TestApplySecurity_HSTSExplicitOptOut(t *testing.T) {
 	}
 	stack := st.applySecurity(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+		nil,
 		nil,
 		nil,
 	)
@@ -246,6 +248,7 @@ func TestApplySecurity_AuthRouteRateLimitWired(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}),
+		nil,
 		nil,
 		nil,
 	)
@@ -357,7 +360,7 @@ func TestApplySecurity_CSRFWiredForCookieSessions(t *testing.T) {
 		})
 	}
 	h := &auth.Handler{}
-	stack := st.applySecurity(business, cookieAuth, h.CSRF)
+	stack := st.applySecurity(business, cookieAuth, h.CSRF, nil)
 
 	// Unsafe cookie request, no CSRF header → 403.
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", nil)

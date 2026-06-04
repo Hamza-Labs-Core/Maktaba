@@ -897,3 +897,92 @@ mark {
 .mkt-billing__actions {
   margin-top: var(--space-3);
 }
+
+/* ---- web-pages-batch2: auth links, sessions, ACL, tokens, account, cloud ---- */
+
+/* Auth page extras (Register / Forgot / Reset reuse .mkt-login) */
+.mkt-login__hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-login__links {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.mkt-login__link {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+.mkt-login__link:hover {
+  text-decoration: underline;
+}
+.mkt-alert--success {
+  background: var(--color-success);
+}
+
+/* Library ACL matrix */
+.mkt-acl__scroll {
+  overflow-x: auto;
+}
+.mkt-acl__table th[scope="row"] {
+  text-align: start;
+  white-space: nowrap;
+  position: sticky;
+  inset-inline-start: 0;
+  background: var(--color-bg);
+}
+.mkt-acl__table td {
+  min-width: 8rem;
+}
+
+/* Account page two-column form grid */
+.mkt-account__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* API token reveal */
+.mkt-token-reveal {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.mkt-token-reveal__value {
+  flex: 1;
+  word-break: break-all;
+  font-size: var(--font-size-sm);
+}
+.mkt-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Muted (revoked) table rows */
+.mkt-row--muted {
+  opacity: 0.55;
+}
+
+/* Cloud setup steps */
+.mkt-cloud-setup {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-fg);
+}

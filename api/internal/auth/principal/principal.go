@@ -26,6 +26,11 @@ const (
 	// SourceCookie is a web-session cookie (Story 10.2). Stories 10.2
 	// and onward fill this in.
 	SourceCookie Source = "cookie"
+
+	// SourcePAT is a personal access token (web-pages-batch2). The
+	// principal is the token's owner; library access is resolved from
+	// the DB ACL at request time, same as the cookie path.
+	SourcePAT Source = "pat"
 )
 
 // Principal is the authenticated identity for a single request.

@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/passwordreset"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
@@ -87,6 +88,15 @@ type Handler struct {
 	Audit         *securityaudit.Writer
 	AccessTTL     time.Duration
 
+	// DB backs the self-service surface (web-pages-batch2): the
+	// open-registration settings read in Register. Nil ⇒ Register treats
+	// registration as closed (safe default).
+	DB *sql.DB
+
+	// PasswordReset backs the forgot/reset-password flow
+	// (web-pages-batch2). Nil ⇒ those endpoints return 503.
+	PasswordReset *passwordreset.Store
+
 	// ACL snapshots the user's readable libraries into the access
 	// token's `lib[]` claim at mint time. Streaming's claims guard
 	// errors on an empty `lib` (streaming/internal/auth/claims.go), so
@@ -130,6 +140,18 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/auth/refresh", h.Refresh)
 	r.Post("/api/auth/logout", h.Logout)
 	r.Post("/api/auth/logout-all", h.LogoutAll)
+	// web-pages-batch2 — public self-service auth endpoints. These are
+	// also added to DefaultPublicAllowlist so the global gate lets
+	// anonymous callers through.
+	r.Post("/api/auth/register", h.Register)
+	r.Post("/api/auth/forgot-password", h.ForgotPassword)
+	r.Post("/api/auth/reset-password", h.ResetPassword)
+	// web-pages-batch2 — authenticated self-service (behind the gate).
+	r.Get("/api/me", h.GetMe)
+	r.Get("/api/me/sessions", h.MeSessions)
+	r.Delete("/api/me/sessions/{id}", h.RevokeMeSession)
+	r.Patch("/api/me", h.UpdateMe)
+	r.Post("/api/me/change-password", h.ChangePassword)
 	// /api/auth/me is NOT in the public allowlist, so the global
 	// RequireAuthExcept gate already 401s anonymous callers; Me
 	// re-checks defensively so it stays correct if mounted standalone.
@@ -842,6 +864,10 @@ func NewHandler(d Deps) *Handler {
 		AccessTTL:     d.AccessTTL,
 		SecureCookies: d.SecureCookies,
 		ACL:           &authz.ACLStore{DB: d.DB},
+		// web-pages-batch2 self-service: DB powers the open-registration
+		// settings read; PasswordReset backs forgot/reset-password.
+		DB:            d.DB,
+		PasswordReset: passwordreset.New(d.DB),
 		// Same store instance backs the brute-force counter so the
 		// (previously dead) IncrementFailedAttempt is driven live.
 		FailedLogins: us,

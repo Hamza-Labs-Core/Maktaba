@@ -21,6 +21,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
 }
@@ -60,6 +61,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       async login(username, password) {
         const res = await api.post<{ user: User }>("/api/auth/login", { username, password });
+        setUser(res.user);
+      },
+      async register(username, email, password) {
+        // The server signs the new user in (web cookie flow) and returns
+        // {user}, mirroring login — so the SPA is authenticated on return.
+        const res = await api.post<{ user: User }>("/api/auth/register", {
+          username,
+          email,
+          password,
+        });
         setUser(res.user);
       },
       async logout() {

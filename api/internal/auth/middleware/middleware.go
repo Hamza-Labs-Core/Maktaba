@@ -167,6 +167,11 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/.well-known/security.txt":  {},
 		"/api/auth/login":            {},
 		"/api/auth/refresh":          {},
+		// web-pages-batch2 — self-service entry points the caller reaches
+		// before holding any credential.
+		"/api/auth/register":        {},
+		"/api/auth/forgot-password": {},
+		"/api/auth/reset-password":  {},
 	}
 }
 

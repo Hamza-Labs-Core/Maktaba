@@ -146,6 +146,7 @@ func (a *authState) applySecurity(
 	next http.Handler,
 	cookieAuth func(http.Handler) http.Handler,
 	csrf func(http.Handler) http.Handler,
+	patAuth func(http.Handler) http.Handler,
 ) http.Handler {
 	stack := next
 	if csrf != nil {
@@ -154,6 +155,13 @@ func (a *authState) applySecurity(
 	stack = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(stack)
 	if cookieAuth != nil {
 		stack = cookieAuth(stack)
+	}
+	// PAT credential middleware runs just before cookie-auth and after
+	// JWT (request order: JWT → PAT → cookie). It no-ops when a principal
+	// is already attached and when the bearer isn't a `pat_` token, so it
+	// composes cleanly with the other credential middlewares.
+	if patAuth != nil {
+		stack = patAuth(stack)
 	}
 	stack = middleware.JWTBearer(a.keys, "api")(stack)
 	stack = middleware.AdminToken(a.adminToken)(stack)

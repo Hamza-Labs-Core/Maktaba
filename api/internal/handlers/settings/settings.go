@@ -83,6 +83,8 @@ var runtimeKeys = map[string]struct{}{
 	"session.url_ttl_sec":       {},
 	"pause.grace_sec":           {},
 	"ws.heartbeat_interval_sec": {},
+	// web-pages-batch2 — admins toggle self-service registration here.
+	"auth.open_registration": {},
 }
 
 // Read returns the merged effective config with secrets redacted.

@@ -27,7 +27,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -250,6 +253,11 @@ func runServe() error {
 	// the auth gate. Nil when the auth surface is unwired (no DB/keys).
 	var cookieAuth func(http.Handler) http.Handler
 	var csrf func(http.Handler) http.Handler
+	// patAuth is the personal-access-token credential middleware
+	// (web-pages-batch2). Built once a DB is available and installed in
+	// the security chain alongside JWT/cookie. Nil when the auth surface
+	// is unwired (no DB).
+	var patAuth func(http.Handler) http.Handler
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := sql.Open("postgres", dsn)
 		if dbErr != nil {
@@ -351,6 +359,14 @@ func runServe() error {
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 
+			// web-pages-batch2 — admin Library-ACL + self-service PAT
+			// route handlers, plus the PAT credential middleware wired
+			// into the security chain below.
+			router.MountP11(r, router.P11Deps{DB: appDB})
+			patAuth = pat.Middleware(pat.New(appDB), users.New(appDB), &authz.ACLStore{DB: appDB})
+			logger.Info("p11: library-acl + api-token handlers mounted",
+				"event", "p11_mounted")
+
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and
 			// hard-deletes them past the 7-day retention horizon so
@@ -373,7 +389,7 @@ func runServe() error {
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           auth.applySecurity(publicMux, cookieAuth, csrf),
+		Handler:           auth.applySecurity(publicMux, cookieAuth, csrf, patAuth),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{

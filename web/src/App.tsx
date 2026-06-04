@@ -25,7 +25,15 @@ import { SystemHealth } from "./pages/Admin/SystemHealth";
 import { CloudDevices } from "./pages/Cloud/Devices";
 import { Billing } from "./pages/Cloud/Billing";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
+import { Sessions } from "./pages/Profile/Sessions";
+import { APITokens } from "./pages/Profile/APITokens";
+import { Account } from "./pages/Profile/Account";
+import { LibraryACL } from "./pages/Admin/LibraryACL";
+import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
+import { Register } from "./pages/Auth/Register";
+import { ForgotPassword } from "./pages/Auth/ForgotPassword";
+import { ResetPassword } from "./pages/Auth/ResetPassword";
 import { NotFound } from "./pages/NotFound";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
@@ -50,6 +58,9 @@ export function App() {
               <ShortcutProvider>
                 <Routes>
                   <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
                   <Route
                     element={
                       <RequireAuth>
@@ -65,9 +76,14 @@ export function App() {
                     <Route path="/search" element={<Search />} />
                     <Route path="/queue" element={<ProcessingQueue />} />
                     <Route path="/settings/*" element={<Settings />} />
+                    <Route path="/account" element={<Account />} />
                     <Route path="/account/devices" element={<ConnectedDevices />} />
+                    <Route path="/account/sessions" element={<Sessions />} />
+                    <Route path="/account/tokens" element={<APITokens />} />
                     <Route path="/billing" element={<Billing />} />
+                    <Route path="/cloud/status" element={<ServerStatus />} />
                     <Route path="/admin/users" element={<AdminUsers />} />
+                    <Route path="/admin/library-acl" element={<LibraryACL />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />
                     <Route path="/admin/devices" element={<CloudDevices />} />

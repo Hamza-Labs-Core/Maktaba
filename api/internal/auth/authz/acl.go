@@ -51,6 +51,46 @@ func (s *ACLStore) Revoke(ctx context.Context, userID, libraryID string) error {
 	return err
 }
 
+// Grant is one (user, library, role) row — the shape the admin ACL
+// matrix reads and writes (web-pages-batch2, slot 0072 added `role`).
+type Grant struct {
+	UserID    string `json:"user_id"`
+	LibraryID string `json:"library_id"`
+	Role      string `json:"role"`
+}
+
+// AllGrants returns every (user, library, role) mapping, ordered for
+// stable rendering. Powers GET /api/admin/library-acl.
+func (s *ACLStore) AllGrants(ctx context.Context) ([]Grant, error) {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT user_id, library_id, role FROM library_acl ORDER BY user_id, library_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Grant{}
+	for rows.Next() {
+		var g Grant
+		if err := rows.Scan(&g.UserID, &g.LibraryID, &g.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// SetRole upserts the role for (user_id, library_id). It reuses the
+// slot-0030 presence semantics (a row == at least read) while the
+// slot-0072 `role` carries the finer level. Idempotent via the
+// (user_id, library_id) primary key.
+func (s *ACLStore) SetRole(ctx context.Context, userID, libraryID, role string) error {
+	_, err := s.DB.ExecContext(ctx,
+		`INSERT INTO library_acl (user_id, library_id, role) VALUES ($1, $2, $3)
+		   ON CONFLICT (user_id, library_id) DO UPDATE SET role = EXCLUDED.role`,
+		userID, libraryID, role)
+	return err
+}
+
 // HasLibrary reports whether (user_id, library_id) exists. Cheaper
 // than LibrariesFor when we only need a yes/no for one library.
 func (s *ACLStore) HasLibrary(ctx context.Context, userID, libraryID string) (bool, error) {

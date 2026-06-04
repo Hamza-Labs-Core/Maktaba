@@ -23,14 +23,19 @@ const NAV = [
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
 // these surfaces are reachable by every authenticated user.
 const SECONDARY = [
+  { to: "/account", key: "nav.account", icon: "◐" },
   { to: "/account/devices", key: "nav.devices", icon: "▢" },
+  { to: "/account/sessions", key: "nav.sessions", icon: "⧉" },
+  { to: "/account/tokens", key: "nav.tokens", icon: "⚿" },
   { to: "/billing", key: "nav.billing", icon: "◈" },
+  { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
 ] as const;
 
 // Admin nav is sidebar-only and rendered only for admins. The pages
 // re-check the principal server-side, so this is purely a UX affordance.
 const ADMIN = [
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
+  { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
   { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },

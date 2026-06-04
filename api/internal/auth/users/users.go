@@ -89,6 +89,11 @@ var (
 	// this to 409 `type: last-admin`.
 	ErrLastAdmin = errors.New("operation would leave the system with no admin")
 
+	// ErrEmailExists is returned by Create / UpdateProfile when the
+	// case-insensitive email collides with an existing row. Handlers map
+	// this to 409 `type: email-exists` (web-pages-batch2).
+	ErrEmailExists = errors.New("email already exists")
+
 	// ErrNotFound is returned when the user_id has no row.
 	ErrNotFound = errors.New("user not found")
 
@@ -111,12 +116,18 @@ func New(db *sql.DB) *Store {
 }
 
 // CreateInput is the public CRUD shape used by the admin-create
-// handler (Story 10.1 AC-3) and by the `adduser` CLI (AC-4). When
-// `IsAdmin` is true the row is inserted with admin privileges.
+// handler (Story 10.1 AC-3), the `adduser` CLI (AC-4), and the web
+// self-service Register flow (web-pages-batch2). When `IsAdmin` is true
+// the row is inserted with admin privileges. Email and DisplayName are
+// optional self-service profile fields (slot 0068); empty strings are
+// stored as SQL NULL so they don't collide on the partial-unique email
+// index.
 type CreateInput struct {
-	Username string
-	Password string
-	IsAdmin  bool
+	Username    string
+	Password    string
+	IsAdmin     bool
+	Email       string
+	DisplayName string
 }
 
 // Create inserts a user row. Validates and casefolds username; hashes
@@ -134,10 +145,11 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*User, error) {
 		return nil, err
 	}
 	id := uuid.NewString()
-	const q = `INSERT INTO users (id, username, pw_hash, is_admin)
-	             VALUES ($1, $2, $3, $4)
+	const q = `INSERT INTO users (id, username, pw_hash, is_admin, email, display_name)
+	             VALUES ($1, $2, $3, $4, $5, $6)
 	           RETURNING id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at`
-	row := s.DB.QueryRowContext(ctx, q, id, in.Username, hash, in.IsAdmin)
+	row := s.DB.QueryRowContext(ctx, q, id, in.Username, hash, in.IsAdmin,
+		nullIfEmpty(in.Email), nullIfEmpty(in.DisplayName))
 	u, err := scanUser(row)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -398,6 +410,105 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	var n int
 	err := s.DB.QueryRowContext(ctx, q, "<unsalted-disabled>").Scan(&n)
 	return n, err
+}
+
+// Profile is the self-service projection of a user's editable profile
+// (web-pages-batch2 Account page). Email / DisplayName are nullable in
+// the schema; empty string here means "unset".
+type Profile struct {
+	ID          string
+	Username    string
+	Email       string
+	DisplayName string
+	IsAdmin     bool
+}
+
+// GetProfile returns the self-service profile fields for id.
+func (s *Store) GetProfile(ctx context.Context, id string) (*Profile, error) {
+	const q = `SELECT id, username, email, display_name, is_admin FROM users WHERE id = $1`
+	var (
+		p     Profile
+		email sql.NullString
+		dn    sql.NullString
+	)
+	err := s.DB.QueryRowContext(ctx, q, id).Scan(&p.ID, &p.Username, &email, &dn, &p.IsAdmin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.Email = email.String
+	p.DisplayName = dn.String
+	return &p, nil
+}
+
+// IDByEmail returns the user id owning the case-insensitive email, or
+// ErrNotFound. Used by the forgot-password flow and the register
+// pre-check. Never reveals the result to the client directly (the
+// forgot-password handler always responds 200).
+func (s *Store) IDByEmail(ctx context.Context, email string) (string, error) {
+	const q = `SELECT id FROM users WHERE email IS NOT NULL AND lower(email) = lower($1)`
+	var id string
+	err := s.DB.QueryRowContext(ctx, q, email).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return id, err
+}
+
+// ProfileUpdate is the partial-update shape for UpdateProfile. nil
+// pointers leave the field unchanged; a non-nil empty string clears it
+// (sets SQL NULL).
+type ProfileUpdate struct {
+	Email       *string
+	DisplayName *string
+}
+
+// UpdateProfile applies a partial profile update. Maps an email
+// uniqueness collision to ErrEmailExists so the handler can return a
+// precise 409.
+func (s *Store) UpdateProfile(ctx context.Context, id string, in ProfileUpdate) error {
+	if in.Email == nil && in.DisplayName == nil {
+		return nil
+	}
+	sets := []string{}
+	args := []any{}
+	idx := 1
+	if in.Email != nil {
+		sets = append(sets, fmt.Sprintf("email = $%d", idx))
+		args = append(args, nullIfEmpty(*in.Email))
+		idx++
+	}
+	if in.DisplayName != nil {
+		sets = append(sets, fmt.Sprintf("display_name = $%d", idx))
+		args = append(args, nullIfEmpty(*in.DisplayName))
+		idx++
+	}
+	sets = append(sets, "updated_at = now()")
+	args = append(args, id)
+	q := fmt.Sprintf(`UPDATE users SET %s WHERE id = $%d`, strings.Join(sets, ", "), idx)
+	res, err := s.DB.ExecContext(ctx, q, args...)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrEmailExists
+		}
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// nullIfEmpty maps "" → SQL NULL so optional unique columns (email)
+// don't collide across rows that simply left the field blank.
+func nullIfEmpty(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }
 
 // validateUsername enforces a small set of rules: non-empty, ≤64 byes,
