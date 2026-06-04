@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
+GO_MODULES := api streaming cmd/maktaba-server shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
@@ -74,6 +74,7 @@ BUILD_DATE    := $(SOURCE_DATE_EPOCH)
 # under the module's own import path.
 API_VERSION_PKG       := github.com/Hamza-Labs-Core/Maktaba/api/internal/version
 STREAMING_VERSION_PKG := github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version
+SERVER_VERSION_PKG    := github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version
 
 GO_LDFLAGS_BASE := -buildid= -s -w
 GO_BUILD_FLAGS  ?= -trimpath
@@ -87,6 +88,11 @@ streaming_ldflags = $(GO_LDFLAGS_BASE) \
 	-X $(STREAMING_VERSION_PKG).Version=$(VERSION) \
 	-X $(STREAMING_VERSION_PKG).Commit=$(COMMIT) \
 	-X $(STREAMING_VERSION_PKG).BuildDate=$(BUILD_DATE)
+
+server_ldflags = $(GO_LDFLAGS_BASE) \
+	-X $(SERVER_VERSION_PKG).Version=$(VERSION) \
+	-X $(SERVER_VERSION_PKG).Commit=$(COMMIT) \
+	-X $(SERVER_VERSION_PKG).BuildDate=$(BUILD_DATE)
 
 # Cross-compile matrix for `build-all`. Linux for servers + containers,
 # darwin/arm64 for maintainer laptops. Windows + darwin/amd64 land with
@@ -387,6 +393,29 @@ build-go-streaming:
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 \
 		go build $(GO_BUILD_FLAGS) -ldflags='$(streaming_ldflags)' \
 			-o bin/$(BIN_SUBDIR)maktaba-streaming .
+
+.PHONY: server
+server: build-web  ## Build the unified maktaba-server binary with the embedded web UI.
+	@mkdir -p cmd/maktaba-server/bin/$(BIN_SUBDIR)
+	@echo "==> embedding web UI into maktaba-server"
+	@rm -rf cmd/maktaba-server/internal/webui/dist
+	@mkdir -p cmd/maktaba-server/internal/webui/dist
+	@cp -R $(WEB_DIR)/dist/. cmd/maktaba-server/internal/webui/dist/
+	@touch cmd/maktaba-server/internal/webui/dist/.gitkeep
+	@echo "==> building maktaba-server for $(GOOS)/$(GOARCH) (version=$(VERSION))"
+	@cd cmd/maktaba-server && \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 \
+		go build $(GO_BUILD_FLAGS) -tags embed_web -ldflags='$(server_ldflags)' \
+			-o bin/$(BIN_SUBDIR)maktaba-server .
+	@echo "==> built cmd/maktaba-server/bin/$(BIN_SUBDIR)maktaba-server"
+
+.PHONY: server-dev
+server-dev:  ## Build maktaba-server WITHOUT the embedded web UI (fast dev compile).
+	@mkdir -p cmd/maktaba-server/bin/$(BIN_SUBDIR)
+	@cd cmd/maktaba-server && \
+		CGO_ENABLED=0 go build $(GO_BUILD_FLAGS) -ldflags='$(server_ldflags)' \
+			-o bin/$(BIN_SUBDIR)maktaba-server .
+	@echo "==> built (no embed) cmd/maktaba-server/bin/$(BIN_SUBDIR)maktaba-server"
 
 .PHONY: build-web
 build-web: build-tokens

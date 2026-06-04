@@ -1,0 +1,32 @@
+[Unit]
+Description=Maktaba unified server (API + streaming + pipeline + web)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+# One binary supervises every role and reads server.toml. Override the
+# config location with MAKTABA_CONFIG if it lives elsewhere.
+Environment=MAKTABA_CONFIG=/etc/maktaba/server.toml
+ExecStart=/usr/bin/maktaba-server serve
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Hardening (Story 23 — defence in depth). The supervisor forks the api
+# and streaming binaries plus the python pipeline, so it needs exec of
+# those siblings; the rest of the lockdown mirrors the per-service units.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/maktaba /var/log/maktaba
+
+[Install]
+WantedBy=multi-user.target

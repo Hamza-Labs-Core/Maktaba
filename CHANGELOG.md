@@ -11,6 +11,15 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- Unified `maktaba-server` binary (`cmd/maktaba-server`): one executable
+  that supervises the API, streaming, and pipeline roles, serves the
+  embedded web UI (build tag `embed_web`), advertises `_maktaba._tcp`
+  over mDNS, and carries the installer CLI — `setup` (first-run wizard),
+  `serve --role`, `update`/`--check` (self-update), `uninstall`/`--purge`,
+  `models` (Whisper model management), and `migrate`/`adduser`/`keys`
+  (delegated to `maktaba-api`). Driven by a single `server.toml`; SQLite
+  (`sqlite://`) and Postgres (`postgres://`) DSNs both supported. New
+  `make server` / `make server-dev` targets.
 - TV apps: tvOS (SwiftUI) and Android TV (Compose-TV) shells, GraphQL
   client stubs, pairing flow.
 - Discovery: mDNS service advertisement, QR pairing, LAN probe.
