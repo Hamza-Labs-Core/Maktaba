@@ -240,47 +240,36 @@ def _sha256_file(path: Path) -> str:
 def http_fetcher(url: str, *, resume_from: int = 0) -> Fetch:  # pragma: no cover - network
     """Default fetcher: stream ``url`` over HTTPS, honoring Range resume.
 
-    Uses ``huggingface_hub``'s authenticated session when available so
-    gated repos and the HF CDN work transparently; falls back to a plain
-    ``urllib`` request otherwise. Never exercised by unit tests (the
-    suite injects a fake), hence the no-cover pragma.
+    Resolves the Hugging Face auth token via ``huggingface_hub`` so gated
+    repos (e.g. pyannote) work, then streams the bytes with stdlib
+    ``urllib``. Never exercised by unit tests (the suite injects a fake),
+    hence the no-cover pragma.
     """
+    import urllib.request  # noqa: PLC0415
+
     headers: dict[str, str] = {}
     if resume_from:
         headers["Range"] = f"bytes={resume_from}-"
 
-    try:
-        from huggingface_hub.utils import (  # type: ignore[import-not-found]  # noqa: PLC0415
-            build_hf_headers,
-            get_session,
-        )
+    from huggingface_hub import get_token  # noqa: PLC0415
 
-        headers.update(build_hf_headers())
-        resp = get_session().get(url, headers=headers, stream=True, timeout=60)
-        resp.raise_for_status()
-        start = resume_from if resp.status_code == 206 else 0
-        total = _total_from_headers(dict(resp.headers), start)
+    token = get_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
-        def _iter() -> Iterable[bytes]:
-            yield from resp.iter_content(chunk_size=_CHUNK_SIZE)
+    req = urllib.request.Request(url, headers=headers)  # noqa: S310 - https model URL
+    resp = urllib.request.urlopen(req, timeout=60)  # noqa: S310
+    start = resume_from if resp.status == 206 else 0
+    total = _total_from_headers(dict(resp.headers), start)
 
-        return Fetch(total_size=total, chunks=_iter(), start_byte=start)
-    except ImportError:
-        import urllib.request  # noqa: PLC0415
+    def _iter() -> Iterable[bytes]:
+        while True:
+            chunk = resp.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            yield chunk
 
-        req = urllib.request.Request(url, headers=headers)  # noqa: S310 - https model URL
-        resp = urllib.request.urlopen(req, timeout=60)  # noqa: S310
-        start = resume_from if resp.status == 206 else 0
-        total = _total_from_headers(dict(resp.headers), start)
-
-        def _iter_urllib() -> Iterable[bytes]:
-            while True:
-                chunk = resp.read(_CHUNK_SIZE)
-                if not chunk:
-                    break
-                yield chunk
-
-        return Fetch(total_size=total, chunks=_iter_urllib(), start_byte=start)
+    return Fetch(total_size=total, chunks=_iter(), start_byte=start)
 
 
 def _total_from_headers(headers: dict[str, str], start: int) -> int:  # pragma: no cover
