@@ -7,91 +7,99 @@
 //	PATCH  /api/models/{id}/activate  — set active for its type
 //	POST   /api/models/{id}/test      — quick smoke test
 //
-// The catalog is hardcoded for now (no DB table exists yet). Mutable
-// runtime state — what's downloaded, what's downloading (+progress),
-// and which model is active per type — lives in an in-memory,
-// mutex-guarded store on the Handler. Downloads run in a goroutine and
-// advance a simulated progress counter; this keeps the surface honest
-// (no fake DB schema) while giving the UI a real async lifecycle to
-// render.
+// The real model lifecycle lives in the Python pipeline (where the
+// Whisper / embedding / diarization models actually run); this handler
+// is a thin proxy over the pipeline's gRPC model service. List overlays
+// the pipeline's live status (installed / active / in-flight progress);
+// download/delete/activate/test forward to the pipeline.
+//
+// When the pipeline is unavailable (not configured, or not running) the
+// handler degrades gracefully: List returns a static fallback catalog so
+// the UI still renders the known models as "available", and the mutating
+// operations return 503 "pipeline offline".
 package models
 
 import (
+	"context"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// Model is one catalog entry. The trailing four fields are runtime
-// status overlaid from the Handler's state store on read.
-type Model struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"` // stt | embedding | diarization
-	Name     string `json:"name"`
-	Size     string `json:"size"`
-	Platform string `json:"platform"`
-
-	// Runtime status (overlaid, not part of the static catalog):
-	Status   string      `json:"status"`   // active | downloaded | downloading | available
-	Progress int         `json:"progress"` // 0..100, only meaningful while downloading
-	Active   bool        `json:"active"`   // active for its type
-	LastTest *TestResult `json:"last_test,omitempty"`
+// Pipeline is the subset of the pipeline gRPC client this handler needs.
+// Defined locally so tests can inject a hand-rolled fake without a gRPC
+// stack.
+type Pipeline interface {
+	ListModels(ctx context.Context) ([]grpcpipeline.ModelInfo, error)
+	DownloadModel(ctx context.Context, id string) (jobID string, err error)
+	DeleteModel(ctx context.Context, id string) (deleted bool, err error)
+	ActivateModel(ctx context.Context, id, modelType string) (grpcpipeline.ModelActivation, error)
+	TestModel(ctx context.Context, id string) (grpcpipeline.ModelTestResult, error)
 }
 
-// TestResult is returned by POST .../test and cached as LastTest.
+// modelView is the JSON shape returned by GET /api/models. The field set
+// matches the web Settings page's Model interface; extra fields
+// (size_bytes, installed, gated) are additive and ignored by older
+// clients.
+type modelView struct {
+	ID        string      `json:"id"`
+	Type      string      `json:"type"` // stt | embedding | diarization
+	Name      string      `json:"name"`
+	Size      string      `json:"size"`
+	SizeBytes int64       `json:"size_bytes,omitempty"`
+	Platform  string      `json:"platform"`
+	Gated     bool        `json:"gated,omitempty"`
+	Installed bool        `json:"installed"`
+	Active    bool        `json:"active"`
+	Status    string      `json:"status"`   // active | downloaded | downloading | available
+	Progress  int         `json:"progress"` // 0..100
+	LastTest  *TestResult `json:"last_test,omitempty"`
+}
+
+// TestResult is returned by POST .../test.
 type TestResult struct {
 	OK        bool   `json:"ok"`
 	LatencyMs int64  `json:"latency_ms"`
 	Detail    string `json:"detail,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
-// catalog is the static set of known models.
-var catalog = []Model{
-	{ID: "mlx-whisper-large-v3", Type: "stt", Name: "MLX Whisper Large v3", Size: "3.1 GB", Platform: "apple-silicon"},
-	{ID: "faster-whisper-large-v3", Type: "stt", Name: "Faster Whisper Large v3", Size: "2.9 GB", Platform: "cuda,cpu"},
-	{ID: "faster-whisper-medium", Type: "stt", Name: "Faster Whisper Medium", Size: "1.5 GB", Platform: "cuda,cpu"},
-	{ID: "openai-api", Type: "stt", Name: "OpenAI Whisper API", Size: "0", Platform: "cloud"},
-	{ID: "all-minilm-l6-v2", Type: "embedding", Name: "all-MiniLM-L6-v2", Size: "80 MB", Platform: "any"},
-	{ID: "multilingual-e5-large", Type: "embedding", Name: "Multilingual E5 Large", Size: "1.1 GB", Platform: "any"},
-	{ID: "pyannote-diarization-3.1", Type: "diarization", Name: "Pyannote Speaker Diarization", Size: "420 MB", Platform: "any"},
+// fallbackCatalog is the static set of known models, mirroring the
+// pipeline registry. Used only when the pipeline is unreachable, so the
+// Settings page still renders the catalog (all "available") instead of
+// an empty list.
+var fallbackCatalog = []modelView{
+	{ID: "mlx-whisper-large-v3", Type: "stt", Name: "MLX Whisper Large v3", Size: "3.0 GB", Platform: "apple-silicon", Status: "available"},
+	{ID: "faster-whisper-large-v3", Type: "stt", Name: "Faster Whisper Large v3", Size: "2.9 GB", Platform: "cuda,cpu", Status: "available"},
+	{ID: "all-minilm-l6-v2", Type: "embedding", Name: "all-MiniLM-L6-v2", Size: "90.0 MB", Platform: "any", Status: "available"},
+	{ID: "multilingual-e5-large", Type: "embedding", Name: "Multilingual E5 Large", Size: "2.1 GB", Platform: "any", Status: "available"},
+	{ID: "pyannote-diarization-3.1", Type: "diarization", Name: "Pyannote Speaker Diarization 3.1", Size: "26.0 MB", Platform: "any", Gated: true, Status: "available"},
 }
 
-// modelState is the mutable per-model runtime status.
-type modelState struct {
-	status   string // downloaded | downloading | available
-	progress int
-	lastTest *TestResult
-}
+// knownIDs is the set of catalog ids, used to 404 unknown models before
+// reaching the pipeline.
+var knownIDs = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(fallbackCatalog))
+	for _, e := range fallbackCatalog {
+		m[e.ID] = struct{}{}
+	}
+	return m
+}()
 
-// Handler bundles the in-memory state store. Cloud models (the OpenAI
-// API) are always "downloaded" — there's nothing to fetch — so they're
-// seeded that way.
+// Handler proxies model management to the pipeline. A nil pipeline means
+// "offline": List degrades to the fallback catalog, mutations 503.
 type Handler struct {
-	mu     sync.RWMutex
-	state  map[string]*modelState // by model ID
-	active map[string]string      // type -> active model ID
+	pipeline Pipeline
 }
 
-// New constructs a Handler with seeded state.
-func New() *Handler {
-	h := &Handler{
-		state:  make(map[string]*modelState),
-		active: make(map[string]string),
-	}
-	for _, m := range catalog {
-		st := &modelState{status: "available"}
-		// Cloud-backed models have nothing local to download.
-		if m.Platform == "cloud" {
-			st.status = "downloaded"
-		}
-		h.state[m.ID] = st
-	}
-	return h
+// New constructs a Handler. Pass nil (or a nil-valued client) to run in
+// the degraded, pipeline-offline mode.
+func New(p Pipeline) *Handler {
+	return &Handler{pipeline: p}
 }
 
 // Mount wires the routes onto r.
@@ -103,163 +111,142 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/models/{id}/test", h.Test)
 }
 
-// find returns the catalog entry for id, or false.
-func find(id string) (Model, bool) {
-	for _, m := range catalog {
-		if m.ID == id {
-			return m, true
-		}
-	}
-	return Model{}, false
+// offline reports whether no usable pipeline client is wired.
+func (h *Handler) offline() bool {
+	return h.pipeline == nil
 }
 
-// snapshot overlays runtime state onto a catalog entry. Caller holds
-// at least an RLock.
-func (h *Handler) snapshot(m Model) Model {
-	st := h.state[m.ID]
-	if st == nil {
-		m.Status = "available"
-		return m
-	}
-	m.Status = st.status
-	m.Progress = st.progress
-	m.LastTest = st.lastTest
-	if h.active[m.Type] == m.ID {
-		m.Active = true
-		m.Status = "active"
-	}
-	return m
+// pipelineOffline is the 503 returned by mutating ops when the pipeline
+// isn't reachable.
+func pipelineOffline() *httperror.Error {
+	e := httperror.Unavailable(5)
+	e.Detail = "pipeline offline"
+	return e
 }
 
-// List returns the full catalog with overlaid status.
+func known(id string) bool {
+	_, ok := knownIDs[id]
+	return ok
+}
+
+// List returns the catalog with the pipeline's live status overlaid.
+// When the pipeline is unreachable it falls back to the static catalog
+// so the UI still renders (degraded, not failed).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	out := make([]Model, 0, len(catalog))
-	for _, m := range catalog {
-		out = append(out, h.snapshot(m))
+	if h.offline() {
+		common.WriteJSON(w, r, http.StatusOK, fallbackCatalog)
+		return
+	}
+	infos, err := h.pipeline.ListModels(r.Context())
+	if err != nil {
+		// Pipeline configured but unreachable/erroring — degrade to the
+		// static catalog rather than 5xx the Settings page.
+		common.WriteJSON(w, r, http.StatusOK, fallbackCatalog)
+		return
+	}
+	out := make([]modelView, 0, len(infos))
+	for _, m := range infos {
+		out = append(out, modelView{
+			ID:        m.ID,
+			Type:      m.Type,
+			Name:      m.Name,
+			Size:      m.Size,
+			SizeBytes: m.SizeBytes,
+			Platform:  m.Platform,
+			Gated:     m.Gated,
+			Installed: m.Installed,
+			Active:    m.Active,
+			Status:    m.Status,
+			Progress:  m.Progress,
+		})
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-// Download triggers an async fetch. Returns 202 immediately; the UI
-// polls List for progress. Idempotent: re-downloading something already
-// downloaded or in-flight is a no-op.
+// Download forwards to the pipeline and returns 202 + {job_id}.
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	m, ok := find(id)
-	if !ok {
+	if !known(id) {
 		httperror.Write(w, r, httperror.NotFound("unknown model: "+id))
 		return
 	}
-	h.mu.Lock()
-	st := h.state[id]
-	if st.status == "downloaded" || st.status == "downloading" {
-		snap := h.snapshot(m)
-		h.mu.Unlock()
-		common.WriteJSON(w, r, http.StatusOK, snap)
+	if h.offline() {
+		httperror.Write(w, r, pipelineOffline())
 		return
 	}
-	st.status = "downloading"
-	st.progress = 0
-	snap := h.snapshot(m)
-	h.mu.Unlock()
-
-	go h.runDownload(id)
-
-	common.WriteJSON(w, r, http.StatusAccepted, snap)
+	jobID, err := h.pipeline.DownloadModel(r.Context(), id)
+	if err != nil {
+		httperror.Write(w, r, httperror.BadGateway("pipeline download failed: "+err.Error()))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
 
-// runDownload simulates a fetch by advancing progress to 100 over a
-// short window, then flips status to downloaded.
-func (h *Handler) runDownload(id string) {
-	for p := 10; p <= 100; p += 10 {
-		time.Sleep(150 * time.Millisecond)
-		h.mu.Lock()
-		st := h.state[id]
-		if st == nil || st.status != "downloading" {
-			h.mu.Unlock()
-			return // cancelled (e.g. deleted mid-flight)
-		}
-		st.progress = p
-		h.mu.Unlock()
-	}
-	h.mu.Lock()
-	if st := h.state[id]; st != nil && st.status == "downloading" {
-		st.status = "downloaded"
-		st.progress = 100
-	}
-	h.mu.Unlock()
-}
-
-// Delete removes a downloaded model. Cloud models can't be deleted
-// (nothing local); deleting the active model clears the active slot.
+// Delete forwards to the pipeline. A model the pipeline didn't have is a
+// 404; success is 204.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	m, ok := find(id)
-	if !ok {
+	if !known(id) {
 		httperror.Write(w, r, httperror.NotFound("unknown model: "+id))
 		return
 	}
-	if m.Platform == "cloud" {
-		httperror.Write(w, r, httperror.BadRequest("cloud models have nothing to delete"))
+	if h.offline() {
+		httperror.Write(w, r, pipelineOffline())
 		return
 	}
-	h.mu.Lock()
-	st := h.state[id]
-	st.status = "available"
-	st.progress = 0
-	if h.active[m.Type] == id {
-		delete(h.active, m.Type)
+	deleted, err := h.pipeline.DeleteModel(r.Context(), id)
+	if err != nil {
+		httperror.Write(w, r, httperror.BadGateway("pipeline delete failed: "+err.Error()))
+		return
 	}
-	h.mu.Unlock()
+	if !deleted {
+		httperror.Write(w, r, httperror.NotFound("model not installed: "+id))
+		return
+	}
 	common.WriteNoContent(w)
 }
 
-// Activate sets the model as active for its type. The model must be
-// downloaded first.
+// Activate forwards to the pipeline; the pipeline enforces "must be
+// installed first" and infers the type from its catalog.
 func (h *Handler) Activate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	m, ok := find(id)
-	if !ok {
+	if !known(id) {
 		httperror.Write(w, r, httperror.NotFound("unknown model: "+id))
 		return
 	}
-	h.mu.Lock()
-	st := h.state[id]
-	if st.status != "downloaded" {
-		h.mu.Unlock()
-		httperror.Write(w, r, httperror.BadRequest("model must be downloaded before activation"))
+	if h.offline() {
+		httperror.Write(w, r, pipelineOffline())
 		return
 	}
-	h.active[m.Type] = id
-	snap := h.snapshot(m)
-	h.mu.Unlock()
-	common.WriteJSON(w, r, http.StatusOK, snap)
+	act, err := h.pipeline.ActivateModel(r.Context(), id, "")
+	if err != nil {
+		// The pipeline rejects activating a not-yet-installed model.
+		httperror.Write(w, r, httperror.BadRequest("pipeline activate failed: "+err.Error()))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, act)
 }
 
-// Test runs a quick smoke test. The model must be downloaded. The
-// result is cached as LastTest so List surfaces it.
+// Test forwards to the pipeline and returns the smoke-test result.
 func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	m, ok := find(id)
-	if !ok {
+	if !known(id) {
 		httperror.Write(w, r, httperror.NotFound("unknown model: "+id))
 		return
 	}
-	h.mu.RLock()
-	downloaded := h.state[id].status == "downloaded" || h.active[m.Type] == id
-	h.mu.RUnlock()
-	if !downloaded {
-		httperror.Write(w, r, httperror.BadRequest("model must be downloaded before testing"))
+	if h.offline() {
+		httperror.Write(w, r, pipelineOffline())
 		return
 	}
-
-	res := &TestResult{OK: true, LatencyMs: 42, Detail: "ok"}
-
-	h.mu.Lock()
-	h.state[id].lastTest = res
-	h.mu.Unlock()
-
-	common.WriteJSON(w, r, http.StatusOK, res)
+	res, err := h.pipeline.TestModel(r.Context(), id)
+	if err != nil {
+		httperror.Write(w, r, httperror.BadGateway("pipeline test failed: "+err.Error()))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, TestResult{
+		OK:        res.OK,
+		LatencyMs: res.LatencyMs,
+		Detail:    res.Detail,
+		Error:     res.Error,
+	})
 }

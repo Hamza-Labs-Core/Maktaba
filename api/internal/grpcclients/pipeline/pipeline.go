@@ -54,6 +54,48 @@ type Status struct {
 	Detail  string
 }
 
+// ModelInfo is one entry from Pipeline.ListModels: catalog metadata
+// overlaid with runtime status (installed / active / in-flight progress).
+type ModelInfo struct {
+	ID        string
+	Type      string
+	Name      string
+	Size      string
+	SizeBytes int64
+	Platform  string
+	Gated     bool
+	Installed bool
+	Active    bool
+	Status    string // active | downloaded | downloading | available
+	Progress  int    // 0..100
+}
+
+// DownloadStatus mirrors Pipeline.DownloadProgress.
+type DownloadStatus struct {
+	JobID      string
+	ModelID    string
+	Status     string // queued | downloading | done | error
+	Progress   int
+	Downloaded int64
+	Total      int64
+	Error      string
+}
+
+// ModelActivation mirrors Pipeline.ActivateModel.
+type ModelActivation struct {
+	ID     string
+	Type   string
+	Active bool
+}
+
+// ModelTestResult mirrors Pipeline.TestModel.
+type ModelTestResult struct {
+	OK        bool
+	LatencyMs int64
+	Detail    string
+	Error     string
+}
+
 // Client is the wrapped interface that handlers consume. Tests inject a
 // fake; production injects a concrete *RealClient that wraps the
 // generated proto client.
@@ -64,6 +106,14 @@ type Client interface {
 	ListBackends(ctx context.Context) ([]Backend, error)
 	STTTest(ctx context.Context, backend string, config map[string]any) (any, error)
 	HealthCheck(ctx context.Context) (Status, error)
+
+	// Model management (backs the Settings → Model Management surface).
+	ListModels(ctx context.Context) ([]ModelInfo, error)
+	DownloadModel(ctx context.Context, id string) (jobID string, err error)
+	DownloadProgress(ctx context.Context, jobID string) (DownloadStatus, error)
+	DeleteModel(ctx context.Context, id string) (deleted bool, err error)
+	ActivateModel(ctx context.Context, id, modelType string) (ModelActivation, error)
+	TestModel(ctx context.Context, id string) (ModelTestResult, error)
 }
 
 // Config bundles dial + retry knobs.

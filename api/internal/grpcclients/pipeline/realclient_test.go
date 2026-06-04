@@ -39,6 +39,12 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 			{MethodName: "Embed", Handler: mk(handlers["Embed"])},
 			{MethodName: "ListBackends", Handler: mk(handlers["ListBackends"])},
 			{MethodName: "ExtractEmbeddedSubtitle", Handler: mk(handlers["ExtractEmbeddedSubtitle"])},
+			{MethodName: "ListModels", Handler: mk(handlers["ListModels"])},
+			{MethodName: "DownloadModel", Handler: mk(handlers["DownloadModel"])},
+			{MethodName: "DownloadProgress", Handler: mk(handlers["DownloadProgress"])},
+			{MethodName: "DeleteModel", Handler: mk(handlers["DeleteModel"])},
+			{MethodName: "ActivateModel", Handler: mk(handlers["ActivateModel"])},
+			{MethodName: "TestModel", Handler: mk(handlers["TestModel"])},
 		},
 	}
 	var impl any = struct{}{}
@@ -220,5 +226,137 @@ func TestRealClient_EmbedTimeoutWired(t *testing.T) {
 	c.cfg.EmbedTimeout = 1 * time.Millisecond
 	if _, err := c.Embed(context.Background(), "x"); err == nil {
 		t.Fatal("expected deadline to fire with 1ms EmbedTimeout")
+	}
+}
+
+func TestRealClient_ListModels(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"ListModels": func(_ map[string]any) map[string]any {
+			return map[string]any{"models": []any{
+				map[string]any{
+					"id": "all-minilm-l6-v2", "type": "embedding",
+					"name": "all-MiniLM-L6-v2", "size": "90.0 MB",
+					"size_bytes": float64(94371840), "platform": "any",
+					"gated": false, "installed": true, "active": true,
+					"status": "active", "progress": float64(100),
+				},
+			}}
+		},
+	})
+	ms, err := c.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(ms) != 1 {
+		t.Fatalf("got %d models, want 1", len(ms))
+	}
+	m := ms[0]
+	if m.ID != "all-minilm-l6-v2" || m.Type != "embedding" || m.Size != "90.0 MB" ||
+		m.SizeBytes != 94371840 || !m.Installed || !m.Active ||
+		m.Status != "active" || m.Progress != 100 {
+		t.Fatalf("model mismatch: %+v", m)
+	}
+}
+
+func TestRealClient_DownloadModel(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"DownloadModel": func(req map[string]any) map[string]any {
+			if req["id"] != "mlx-whisper-large-v3" {
+				t.Errorf("id=%v", req["id"])
+			}
+			return map[string]any{"job_id": "job-123"}
+		},
+	})
+	jobID, err := c.DownloadModel(context.Background(), "mlx-whisper-large-v3")
+	if err != nil {
+		t.Fatalf("DownloadModel: %v", err)
+	}
+	if jobID != "job-123" {
+		t.Fatalf("job_id=%q", jobID)
+	}
+}
+
+func TestRealClient_DownloadProgress(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"DownloadProgress": func(req map[string]any) map[string]any {
+			if req["job_id"] != "job-123" {
+				t.Errorf("job_id=%v", req["job_id"])
+			}
+			return map[string]any{
+				"job_id": "job-123", "model_id": "mlx-whisper-large-v3",
+				"status": "downloading", "progress": float64(42),
+				"downloaded": float64(1000), "total": float64(2380),
+				"error": nil,
+			}
+		},
+	})
+	st, err := c.DownloadProgress(context.Background(), "job-123")
+	if err != nil {
+		t.Fatalf("DownloadProgress: %v", err)
+	}
+	if st.Status != "downloading" || st.Progress != 42 || st.Downloaded != 1000 ||
+		st.Total != 2380 || st.ModelID != "mlx-whisper-large-v3" {
+		t.Fatalf("status mismatch: %+v", st)
+	}
+}
+
+func TestRealClient_DeleteModel(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"DeleteModel": func(_ map[string]any) map[string]any {
+			return map[string]any{"deleted": true}
+		},
+	})
+	ok, err := c.DeleteModel(context.Background(), "all-minilm-l6-v2")
+	if err != nil {
+		t.Fatalf("DeleteModel: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected deleted=true")
+	}
+}
+
+func TestRealClient_ActivateModel(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"ActivateModel": func(req map[string]any) map[string]any {
+			if req["id"] != "pyannote-diarization-3.1" {
+				t.Errorf("id=%v", req["id"])
+			}
+			return map[string]any{
+				"id": "pyannote-diarization-3.1", "type": "diarization", "active": true,
+			}
+		},
+	})
+	act, err := c.ActivateModel(context.Background(), "pyannote-diarization-3.1", "")
+	if err != nil {
+		t.Fatalf("ActivateModel: %v", err)
+	}
+	if act.Type != "diarization" || !act.Active || act.ID != "pyannote-diarization-3.1" {
+		t.Fatalf("activation mismatch: %+v", act)
+	}
+}
+
+func TestRealClient_TestModel(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"TestModel": func(_ map[string]any) map[string]any {
+			return map[string]any{"ok": true, "latency_ms": float64(42), "detail": "ran sample"}
+		},
+	})
+	res, err := c.TestModel(context.Background(), "all-minilm-l6-v2")
+	if err != nil {
+		t.Fatalf("TestModel: %v", err)
+	}
+	if !res.OK || res.LatencyMs != 42 || res.Detail != "ran sample" {
+		t.Fatalf("test result mismatch: %+v", res)
+	}
+}
+
+func TestRealClient_ListModels_ServerError(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"ListModels": func(_ map[string]any) map[string]any {
+			return map[string]any{"error": "boom"}
+		},
+	})
+	if _, err := c.ListModels(context.Background()); err == nil {
+		t.Fatal("expected in-band error to surface")
 	}
 }

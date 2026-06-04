@@ -98,6 +98,13 @@ func Internal(detail string) *Error {
 	return &Error{Type: TypeInternal, Title: "internal error", Status: http.StatusInternalServerError, Detail: detail}
 }
 
+// BadGateway is for upstream-dependency failures — e.g. a proxied call
+// to the pipeline gRPC service that errored. It signals the request was
+// well-formed but a downstream service let us down (502).
+func BadGateway(detail string) *Error {
+	return &Error{Type: TypeBadGateway, Title: "bad gateway", Status: http.StatusBadGateway, Detail: detail}
+}
+
 // Unavailable returns a 503 carrying a `retry_after_sec` extra. Callers
 // should ALSO set the Retry-After response header before Write fires —
 // the extras only surface in the JSON body.

@@ -23,6 +23,7 @@ const (
 	TypeConfirmationReq      = "https://maktaba.dev/problems/confirmation-required"
 	TypeInternal             = "https://maktaba.dev/problems/internal"
 	TypeUnavailable          = "https://maktaba.dev/problems/unavailable"
+	TypeBadGateway           = "https://maktaba.dev/problems/bad-gateway"
 	TypeForbidden            = "https://maktaba.dev/problems/forbidden"
 	TypeConflict             = "https://maktaba.dev/problems/conflict"
 	TypeBodyTooLarge         = "https://maktaba.dev/problems/body-too-large"

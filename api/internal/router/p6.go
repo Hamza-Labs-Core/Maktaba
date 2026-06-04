@@ -64,6 +64,17 @@ type P6Deps struct {
 	BusDSN string
 }
 
+// modelPipelineClient adapts the gRPC pipeline.Client to the models
+// handler's Pipeline interface. A nil client (pipeline address unset)
+// yields a nil interface so the handler runs in offline mode rather than
+// holding a typed-nil that would slip past its nil check.
+func modelPipelineClient(c grpcpipeline.Client) models.Pipeline {
+	if c == nil {
+		return nil
+	}
+	return c
+}
+
 // MountP6 attaches every Phase 6 handler onto r. Safe to call with a
 // nil DB — handlers gracefully degrade (returning 503 or empty lists
 // where appropriate), keeping the dev/test path runnable without a
@@ -139,8 +150,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	settingsHandler.Mount(r)
 
 	// Model Management surface for the Settings page (catalog + async
-	// download/activate/test). State is in-memory; no DB dep.
-	modelsHandler := models.New()
+	// download/activate/test). Proxies to the pipeline's model service;
+	// a nil client degrades to the static fallback catalog + "pipeline
+	// offline" on mutations.
+	modelsHandler := models.New(modelPipelineClient(d.PipelineClient))
 	modelsHandler.Mount(r)
 
 	recHandler := &recommendations.Handler{DB: d.DB}
