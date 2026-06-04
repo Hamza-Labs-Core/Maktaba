@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.maktaba.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/maktaba-server</string>
+    <string>serve</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/maktaba/server.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/maktaba/server.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>/usr/local/var/maktaba</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MAKTABA_CONFIG</key>
+    <string>/usr/local/etc/maktaba/server.toml</string>
+  </dict>
+</dict>
+</plist>

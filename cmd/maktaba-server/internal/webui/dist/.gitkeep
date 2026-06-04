@@ -1,0 +1,3 @@
+# Placeholder so `//go:embed all:dist` always has a directory to embed.
+# `make server` copies web/dist/* here before building with -tags embed_web.
+# The real SPA assets are git-ignored (see cmd/maktaba-server/.gitignore).

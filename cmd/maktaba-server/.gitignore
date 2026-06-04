@@ -1,0 +1,14 @@
+# The built SPA is copied into internal/webui/dist by `make server`
+# (build tag embed_web) and must not be committed — only the .gitkeep
+# placeholder is tracked so the non-embed build always compiles.
+#
+# The repo-root .gitignore has a global `dist/` rule, so we must first
+# re-include this specific dist directory (git can't un-ignore a file
+# whose parent directory is excluded), then ignore its contents, then
+# re-include the .gitkeep placeholder.
+!internal/webui/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Build outputs
+/bin/
