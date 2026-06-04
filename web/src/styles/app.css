@@ -366,6 +366,74 @@ input[type="search"]:focus {
   border-radius: var(--radius-md);
 }
 
+/* Settings → Models */
+.mkt-models__error {
+  color: var(--color-danger, #c0392b);
+}
+
+.mkt-models__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.mkt-models__apikey {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.mkt-models__group {
+  margin-top: var(--space-4);
+}
+
+.mkt-models__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.mkt-models__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.mkt-models__card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mkt-models__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.mkt-models__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.mkt-models__test-ok {
+  color: var(--color-success, #2e7d32);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.mkt-models__test-fail {
+  color: var(--color-danger, #c0392b);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
 /* Loading */
 .mkt-loading {
   display: flex;

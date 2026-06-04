@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/devices"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/jobs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/models"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/settings"
@@ -136,6 +137,11 @@ func MountP6(r chi.Router, d P6Deps) {
 		FileEnvCfg: map[string]any{},
 	}
 	settingsHandler.Mount(r)
+
+	// Model Management surface for the Settings page (catalog + async
+	// download/activate/test). State is in-memory; no DB dep.
+	modelsHandler := models.New()
+	modelsHandler.Mount(r)
 
 	recHandler := &recommendations.Handler{DB: d.DB}
 	recHandler.Mount(r)

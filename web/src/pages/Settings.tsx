@@ -22,6 +22,7 @@ import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
 import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
+import { ModelsSection } from "./Settings/ModelsSection";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -54,12 +55,14 @@ export function Settings() {
         <Link to="">{t("settings.section.account")}</Link>
         <Link to="sessions">{t("settings.section.sessions")}</Link>
         <Link to="appearance">{t("settings.section.appearance")}</Link>
+        <Link to="models">{t("settings.section.models")}</Link>
         <Link to="about">{t("settings.section.about")}</Link>
       </nav>
       <Routes>
         <Route index element={<AccountTab />} />
         <Route path="sessions" element={<SessionsTab />} />
         <Route path="appearance" element={<AppearanceTab />} />
+        <Route path="models" element={<ModelsSection />} />
         <Route path="about" element={<AboutTab />} />
       </Routes>
     </section>
