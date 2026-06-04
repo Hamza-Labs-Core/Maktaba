@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from .embedder import ChromaCollection, EmbeddingFunction, SegmentDoc
@@ -252,12 +252,18 @@ async def commit_index(
        leaves it (the explicit ``== TRANSCRIBED`` guard), so the order
        of the two does not matter and neither double-advances.
 
-    No follow-on enqueue: INDEX's FSM successor is ``THUMBNAIL``
-    (``INDEXED --THUMBNAIL--OK--> THUMBNAILED``) but THUMBNAIL has no
-    implementing module yet (mirrors SUBTITLE_GEN, which also does not
-    enqueue a successor). Wiring THUMBNAIL is a SEPARATE story — not
-    invented here.
+    Follow-on enqueue: INDEX's FSM successor is ``THUMBNAIL``
+    (``INDEXED --THUMBNAIL--OK--> THUMBNAILED``). INDEX runs for every
+    video (TRANSCRIBE fans out INDEX + SUBTITLE_GEN in parallel) and
+    always finishes with the row at ``INDEXED`` — either it drove the
+    convergence or SUBTITLE_GEN did and INDEX observed it. So enqueuing
+    THUMBNAIL here whenever ``new_state == INDEXED`` fires exactly once
+    per video regardless of the INDEX/SUBTITLE_GEN ordering; the
+    ``enqueue`` ``ON CONFLICT (video_id, stage)`` unique-live index
+    makes a concurrent/replayed repeat a no-op. (Previously deferred
+    because THUMBNAIL had no implementing module — now it does.)
     """
+    from ..db.jobs import DBConn, Stage, enqueue  # noqa: PLC0415
     from ..domain.states import Outcome, State, Trigger  # noqa: PLC0415
     from ..log import get_logger  # noqa: PLC0415
     from ..orchestrator.advance import advance_after_stage  # noqa: PLC0415
@@ -279,6 +285,14 @@ async def commit_index(
         # row where it is. The FSM has no INDEX edge out of INDEXED (or
         # any later state), mirroring the commit_transcribe replay guard.
         new_state = current_state
+
+    # Enqueue the THUMBNAIL successor once the row has reached INDEXED.
+    # Guarding on the *resulting* state (not the advance branch) makes
+    # this order-independent vs SUBTITLE_GEN and replay-safe: a video
+    # already past INDEXED (thumbnailed/ready) yields new_state != INDEXED
+    # and is skipped.
+    if new_state == State.INDEXED:
+        await enqueue(cast("DBConn", db), video_id=video_id, stage=Stage.THUMBNAIL)
 
     log.info(
         "index_committed",

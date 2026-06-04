@@ -1,7 +1,9 @@
 package system
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -211,5 +213,88 @@ func TestAggregator_SnapshotShapeIsStable(t *testing.T) {
 	}
 	if got.Services["api"].Checks["db"].Reason != "connection refused" {
 		t.Fatalf("did not pass through check reason: %+v", got.Services["api"])
+	}
+}
+
+// TestAggregator_StatsPopulated confirms the disk-free + queue-depth
+// seams flow into the response body. The seams are injected directly
+// (this is an internal test) so no real Postgres or syscall is needed.
+func TestAggregator_StatsPopulated(t *testing.T) {
+	t.Parallel()
+	agg := NewAggregator(nil)
+	agg.diskFreeFn = func() (uint64, error) { return 4096, nil }
+	agg.queueDepthFn = func(context.Context) (int, error) { return 7, nil }
+
+	rr := httptest.NewRecorder()
+	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+
+	var got Health
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DiskFreeBytes != 4096 {
+		t.Fatalf("disk_free_bytes = %d, want 4096", got.DiskFreeBytes)
+	}
+	if got.QueueDepth != 7 {
+		t.Fatalf("queue_depth = %d, want 7", got.QueueDepth)
+	}
+	// Self-hosted mode never bills, so the budget stays empty/omitted.
+	if got.BudgetUSDLeft != "" {
+		t.Fatalf("budget should stay empty in self-hosted mode, got %q", got.BudgetUSDLeft)
+	}
+}
+
+// TestAggregator_StatProbeFailureIsZero confirms a probe error degrades
+// to the zero value rather than corrupting the response.
+func TestAggregator_StatProbeFailureIsZero(t *testing.T) {
+	t.Parallel()
+	agg := NewAggregator(nil)
+	agg.diskFreeFn = func() (uint64, error) { return 999, errors.New("statfs failed") }
+	agg.queueDepthFn = func(context.Context) (int, error) { return 999, errors.New("db down") }
+
+	rr := httptest.NewRecorder()
+	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+
+	var got Health
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DiskFreeBytes != 0 || got.QueueDepth != 0 {
+		t.Fatalf("failed probes must yield zero, got disk=%d depth=%d", got.DiskFreeBytes, got.QueueDepth)
+	}
+	// A failed probe must not break the roll-up status.
+	if got.Status != "ok" {
+		t.Fatalf("status = %q, want ok (no services configured)", got.Status)
+	}
+}
+
+// TestDiskFreeBytes_RealPath exercises the actual syscall against the
+// test's temp dir — it should report a positive figure on any unix CI.
+func TestDiskFreeBytes_RealPath(t *testing.T) {
+	t.Parallel()
+	free, err := diskFreeBytes(t.TempDir())
+	if err != nil {
+		t.Fatalf("diskFreeBytes: %v", err)
+	}
+	if free == 0 {
+		t.Fatalf("expected positive free bytes on the temp volume")
+	}
+}
+
+// TestNewAggregatorWithStats_WiresSeams confirms the production
+// constructor binds both seams when given a data dir + DB, and leaves
+// them nil otherwise.
+func TestNewAggregatorWithStats_WiresSeams(t *testing.T) {
+	t.Parallel()
+	none := NewAggregatorWithStats(nil, StatsConfig{})
+	if none.diskFreeFn != nil || none.queueDepthFn != nil {
+		t.Fatalf("empty config should leave both seams nil")
+	}
+	withDir := NewAggregatorWithStats(nil, StatsConfig{DataDir: t.TempDir()})
+	if withDir.diskFreeFn == nil {
+		t.Fatalf("DataDir should wire diskFreeFn")
+	}
+	if withDir.queueDepthFn != nil {
+		t.Fatalf("nil DB should leave queueDepthFn nil")
 	}
 }

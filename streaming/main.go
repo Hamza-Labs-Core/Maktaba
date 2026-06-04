@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
@@ -109,7 +110,17 @@ func runServe() error {
 	warm := warmPeriod()
 	adminMux := health.AdminMux("streaming", checks, warm)
 
-	publicHandler := buildPublicHandler(logger)
+	// Real read stores. When DATABASE_URL is set the probe backend and
+	// transcript streamer are Postgres-backed (the production path);
+	// otherwise we fall back to the in-memory FakeBackend so a local
+	// `serve` against no DB still answers liveness. The pool is shared
+	// across the public and gRPC surfaces and closed on shutdown.
+	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	probeBackend, transcripts, closeStores := buildProbeStores(backendCtx, logger)
+	backendCancel()
+	defer closeStores()
+
+	publicHandler := buildPublicHandler(logger, probeBackend, transcripts)
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
@@ -137,7 +148,7 @@ func runServe() error {
 
 	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
 	// matching the api streaming client's wire convention.
-	grpcServer := grpcsrv.NewGRPCServer(buildGRPCServer(logger))
+	grpcServer := grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
 	grpcLis, grpcErr := net.Listen("tcp", grpcAddr)
 	if grpcErr != nil {
 		logger.Warn("grpc listen failed; grpc surface disabled",
@@ -183,23 +194,26 @@ func runServe() error {
 // API drives OpenSession / CloseSession / EvictHashCache /
 // GetCapabilities / HealthCheck over this.
 //
-// NOTE (deferred residuals, tracked):
-//   - HLB-334 / HLB-338: the session + probe stores below are still the
-//     in-memory fakes. A Postgres-backed session.Store + probe.Backend
-//     (same interfaces, mirroring the api lib/pq store pattern) plus a
-//     spec-correct streaming_sessions migration that the Streaming
-//     service owns are NOT done here: the streaming go.mod carries no
-//     DB driver, so that is a net-new dependency + schema-ownership
-//     change best landed as its own change. HLB-328 (FFmpeg never
-//     spawned) is closed below via srv.Transcode.
-func buildGRPCServer(logger *slog.Logger) *grpcsrv.Server {
+// The probe backend is injected (Postgres-backed in production, the
+// in-memory FakeBackend for a no-DB local `serve`) so OpenSession reads
+// real media_info rows. HLB-328 (FFmpeg never spawned) is closed below
+// via srv.Transcode.
+//
+// NOTE (deferred residual, tracked): HLB-334 / HLB-338 — the session
+// store is still the in-memory MemoryStore. A Postgres-backed
+// session.Store plus the streaming_sessions migration the Streaming
+// service would own are a net-new schema-ownership change best landed
+// on their own; until then sessions live in-process (lost on restart,
+// not shared across replicas), which is acceptable for the v1
+// single-replica deploy.
+func buildGRPCServer(logger *slog.Logger, backend probe.Backend) *grpcsrv.Server {
 	cfg := config.Load()
 	store := session.NewMemoryStore(5 * time.Second)
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
 		QueueDepth:   cfg.Transcode.QueueDepth,
 	})
-	probeCache := probe.NewCache(probe.NewFakeBackend(), 4096)
+	probeCache := probe.NewCache(backend, 4096)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -270,10 +284,12 @@ func warmPeriod() time.Duration {
 // require auth will surface signed-URL-bad-signature errors — the
 // /healthz endpoint stays open so compose's healthcheck still passes.
 //
-// Production wiring (Postgres-backed probe + session stores) lands when
-// the API's JWKS URL is set; until then the in-memory stores keep the
-// service operable for smoke tests.
-func buildPublicHandler(logger *slog.Logger) http.Handler {
+// The probe backend and transcript streamer are injected: Postgres in
+// production, the in-memory FakeBackend / nil streamer for a no-DB
+// local `serve`. The session store is still in-memory (see
+// buildGRPCServer's note); Postgres-backed sessions are a tracked
+// follow-up.
+func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer) http.Handler {
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -296,7 +312,7 @@ func buildPublicHandler(logger *slog.Logger) http.Handler {
 		QueueDepth:   cfg.Transcode.QueueDepth,
 	})
 
-	probeCache := probe.NewCache(probe.NewFakeBackend(), 4096)
+	probeCache := probe.NewCache(backend, 4096)
 
 	// Hwaccel detection — non-fatal on failure; we fall through to
 	// software encoding (Story 8.7 AC-1 fallback path).
@@ -327,13 +343,39 @@ func buildPublicHandler(logger *slog.Logger) http.Handler {
 	_ = hw
 
 	return server.New(server.Deps{
-		Cfg:      cfg,
-		JWKS:     jwks,
-		Probe:    probeCache,
-		Profiles: capability.NewRegistry(),
-		Sessions: store,
-		Layout:   layout,
-		Files:    handlers.OSFileOpener{},
-		Now:      time.Now,
+		Cfg:         cfg,
+		JWKS:        jwks,
+		Probe:       probeCache,
+		Profiles:    capability.NewRegistry(),
+		Sessions:    store,
+		Layout:      layout,
+		Files:       handlers.OSFileOpener{},
+		Transcripts: transcripts,
+		Now:         time.Now,
 	})
+}
+
+// buildProbeStores constructs the probe Backend + transcript streamer
+// the read path consumes, plus a cleanup func the caller defers. When
+// DATABASE_URL is set both are Postgres-backed (sharing one pgx pool);
+// otherwise the probe backend is the in-memory FakeBackend and there
+// is no transcript streamer (auto.vtt is simply not wired). A pool that
+// fails to open/ping is fatal-soft: we log and fall back to the fake so
+// liveness still answers, matching the JWKS/hwaccel boot-warn pattern.
+func buildProbeStores(ctx context.Context, logger *slog.Logger) (probe.Backend, handlers.TranscriptStreamer, func()) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		logger.Info("probe: DATABASE_URL unset; using in-memory FakeBackend",
+			"event", "probe_fake_backend")
+		return probe.NewFakeBackend(), nil, func() {}
+	}
+	backend, pool, err := probe.ConnectPG(ctx, dsn)
+	if err != nil {
+		logger.Warn("probe: postgres connect failed; falling back to FakeBackend",
+			"err", err.Error(), "event", "probe_pg_connect_failed")
+		return probe.NewFakeBackend(), nil, func() {}
+	}
+	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
+	streamer := transcripts.NewPGStreamer(pool)
+	return backend, streamer, func() { pool.Close() }
 }

@@ -30,6 +30,7 @@
 package router
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -63,6 +64,13 @@ type Deps struct {
 	// AggregatorServices is the fan-out target list for
 	// /api/system/health (Story 21.4).
 	AggregatorServices []system.Service
+
+	// StatsDataDir / StatsDB back the /api/system/health stats block:
+	// free space on the data volume (syscall.Statfs) and the live
+	// processing-job count. Empty/nil leaves the corresponding stat
+	// unwired (zero value), so a bare-Deps unit test is unaffected.
+	StatsDataDir string
+	StatsDB      *sql.DB
 
 	// ErrorReporter is the shared errrpt surface the Recoverer uses to
 	// report recovered panics (HLB-300 live path). nil keeps the
@@ -131,7 +139,10 @@ func mountSystemRoutes(r chi.Router, d Deps) {
 		r.Use(mw.BodyLimit(mw.DefaultBodyLimit))
 
 		r.Method(http.MethodGet, "/api/system/health",
-			system.NewAggregator(d.AggregatorServices))
+			system.NewAggregatorWithStats(d.AggregatorServices, system.StatsConfig{
+				DataDir: d.StatsDataDir,
+				DB:      d.StatsDB,
+			}))
 		r.Method(http.MethodGet, "/api/system/version",
 			system.VersionHandler(d.SchemaRev))
 	})

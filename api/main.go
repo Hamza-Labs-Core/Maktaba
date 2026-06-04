@@ -223,12 +223,20 @@ func runServe() error {
 	go idemSweep()
 	defer idemClose()
 
+	// Health-aggregator stats: a dedicated small pool for the live
+	// queue-depth count (isolated from the handler + readiness pools,
+	// same rationale as P6) and the data volume for the free-disk stat.
+	statsDataDir, statsDB, statsClose := buildAggregatorStats(logger)
+	defer statsClose()
+
 	r := router.New(router.Deps{
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
 		AggregatorServices: buildAggregatorServices(),
+		StatsDataDir:       statsDataDir,
+		StatsDB:            statsDB,
 		ErrorReporter:      errReporter,
 	})
 
@@ -621,6 +629,41 @@ func buildChecks(logger *slog.Logger) []health.Check {
 	}
 
 	return checks
+}
+
+// buildAggregatorStats resolves the inputs for the /api/system/health
+// stats block: the data volume whose free space the UI shows and a
+// dedicated small Postgres pool for the live queue-depth count. The
+// pool is isolated from the handler/readiness pools (same rationale as
+// the idempotency + P6 wiring) and returned alongside a cleanup the
+// caller defers. When DATABASE_URL is unset the DB is nil and the
+// queue-depth stat is simply omitted (zero).
+func buildAggregatorStats(logger *slog.Logger) (string, *sql.DB, func()) {
+	dataDir := os.Getenv("MAKTABA_DATA_DIR")
+	if dataDir == "" {
+		// The canonical data volume across the deploy configs
+		// (server.toml, systemd units, Prometheus disk alert).
+		dataDir = "/var/lib/maktaba"
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return dataDir, nil, func() {}
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		logger.Warn("health stats: sql.Open failed; queue depth unwired",
+			"err", err, "event", "health_stats_db_open_failed")
+		return dataDir, nil, func() {}
+	}
+	db.SetMaxOpenConns(envIntDefault("MAKTABA_HEALTH_DB_MAX_OPEN", 2))
+	db.SetMaxIdleConns(1)
+	return dataDir, db, func() {
+		if cerr := db.Close(); cerr != nil {
+			logger.Warn("health stats: closing pool failed",
+				"err", cerr, "event", "health_stats_db_close_failed")
+		}
+	}
 }
 
 func buildAggregatorServices() []system.Service {

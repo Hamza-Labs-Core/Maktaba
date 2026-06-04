@@ -14,6 +14,7 @@ package system
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -43,11 +44,12 @@ type CheckStatus struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// Health is the aggregator's response envelope. Stats fields
-// (DiskFreeBytes, QueueDepth, BudgetUSDLeft) are placeholders until the
-// stories that own them land — Story 21.7 wires the queue depth, Story
-// 19.7 the transcribe budget. Until then we surface zero values so the
-// UI can render a stable JSON shape.
+// Health is the aggregator's response envelope. DiskFreeBytes is the
+// free space on the data volume (syscall.Statfs) and QueueDepth is the
+// count of live processing_jobs; both are best-effort and fall back to
+// zero when their probe is unwired or fails, keeping the JSON shape
+// stable. BudgetUSDLeft stays empty in self-hosted mode (no billing) —
+// Story 19.7's cloud transcribe budget would populate it.
 type Health struct {
 	Status        string              `json:"status"`
 	Services      map[string]Snapshot `json:"services"`
@@ -63,6 +65,12 @@ type Aggregator struct {
 	services []Service
 	client   *http.Client
 	timeout  time.Duration
+
+	// Stats seams — nil means "unwired", which surfaces as the zero
+	// value (a no-DB / no-data-dir unit test gets a stable, empty-stats
+	// response). Production wires both via NewAggregatorWithStats.
+	diskFreeFn   func() (uint64, error)
+	queueDepthFn func(ctx context.Context) (int, error)
 }
 
 // NewAggregator builds an Aggregator. The default per-service timeout
@@ -75,6 +83,45 @@ func NewAggregator(services []Service) *Aggregator {
 		client:   &http.Client{Timeout: time.Second},
 		timeout:  time.Second,
 	}
+}
+
+// StatsConfig wires the optional self-hosted stats. DataDir is the path
+// whose free space the UI shows; DB backs the queue-depth count. Either
+// may be empty/nil to leave that stat unwired (zero value).
+type StatsConfig struct {
+	DataDir string
+	DB      *sql.DB
+}
+
+// NewAggregatorWithStats is NewAggregator plus the disk-free and
+// queue-depth probes. The probes are bound here so ServeHTTP stays a
+// thin caller and the unit suite can inject fakes via the exported
+// WithStatsFns test seam.
+func NewAggregatorWithStats(services []Service, cfg StatsConfig) *Aggregator {
+	a := NewAggregator(services)
+	if cfg.DataDir != "" {
+		dir := cfg.DataDir
+		a.diskFreeFn = func() (uint64, error) { return diskFreeBytes(dir) }
+	}
+	if cfg.DB != nil {
+		db := cfg.DB
+		a.queueDepthFn = func(ctx context.Context) (int, error) { return queueDepth(ctx, db) }
+	}
+	return a
+}
+
+// queueDepthSQL counts work that is waiting or in flight. The schema's
+// canonical "not-yet-done, not-failed" live states are pending /
+// claimed / running (migration 0002); 'pending' is the slot a freshly
+// enqueued job lands in — the operator-facing "queue depth".
+const queueDepthSQL = `SELECT count(*) FROM processing_jobs WHERE state IN ('pending','claimed','running')`
+
+func queueDepth(ctx context.Context, db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRowContext(ctx, queueDepthSQL).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // ServeHTTP implements http.Handler. It probes every configured
@@ -114,6 +161,22 @@ func (a *Aggregator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	res.Status = deriveStatus(res.Services)
+
+	// Best-effort self-hosted stats. A probe failure leaves the field
+	// at its zero value rather than failing the whole health response —
+	// the UI must always get a renderable body.
+	if a.diskFreeFn != nil {
+		if free, err := a.diskFreeFn(); err == nil {
+			res.DiskFreeBytes = free
+		}
+	}
+	if a.queueDepthFn != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), a.timeout)
+		if depth, err := a.queueDepthFn(ctx); err == nil {
+			res.QueueDepth = depth
+		}
+		cancel()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

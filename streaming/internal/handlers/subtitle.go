@@ -34,9 +34,12 @@ type TranscriptStreamer interface {
 // Pipeline-side; we just serve the cached file).
 type SubtitleHandler struct {
 	Transcripts TranscriptStreamer
-	// SidecarReader converts a sidecar SRT (path on disk) to VTT.
-	// Used by the {lang}.vtt path.
-	SidecarReader func(path string) ([]byte, error)
+	// SidecarReader resolves the sidecar subtitle for the request's
+	// video in the given language and returns it as VTT bytes. It is
+	// context-aware because the on-disk location depends on the video
+	// the session points at; server.go wires the probe + filesystem
+	// lookup here. Used by the /subs/sidecar/{lang}.vtt path.
+	SidecarReader func(ctx context.Context, lang string) ([]byte, error)
 }
 
 // ServeAuto handles GET /stream/{session_id}/subs/auto.vtt.
@@ -84,9 +87,11 @@ func (h *SubtitleHandler) ServeAuto(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ServeSidecar handles GET /stream/{session_id}/subs/{lang}.vtt where
-// {lang} maps to a sidecar SRT next to the source. The conversion
-// happens once and is cached at the path returned by SidecarReader.
+// ServeSidecar handles GET /stream/{session_id}/subs/sidecar/{lang}.vtt
+// where {lang} selects a sidecar subtitle (an .srt or .vtt file living
+// next to the source media). The probe + filesystem lookup and the
+// SRT→VTT conversion are wired by SidecarReader (server.go); this
+// handler is the thin HTTP shim around it.
 func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 	lang := chiURLParam(r, "lang")
 	if lang == "" {
@@ -97,7 +102,7 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "sidecar reader not wired", http.StatusInternalServerError)
 		return
 	}
-	bytes, err := h.SidecarReader(lang + ".srt")
+	body, err := h.SidecarReader(r.Context(), lang)
 	if err != nil {
 		http.Error(w, "sidecar not found", http.StatusNotFound)
 		return
@@ -105,7 +110,7 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(bytes)
+	_, _ = w.Write(body)
 }
 
 // writeCue emits one VTT cue. Cue identifiers are 1-based for

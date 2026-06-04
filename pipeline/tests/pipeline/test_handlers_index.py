@@ -160,11 +160,14 @@ def test_index_handler_loads_segments_indexes_and_advances() -> None:
     assert call["embeddings"] == _deterministic_embed(["bismillah", "al-hamdu", "lillah"])
     # FSM advanced TRANSCRIBED -> INDEXED.
     assert stage_db.videos[video_id].state == "indexed"
-    # INDEX has no follow-on enqueue (THUMBNAIL has no module yet).
+    # INDEX enqueues its FSM successor THUMBNAIL once the video reaches
+    # INDEXED (the only follow-on; SUBTITLE_GEN is a sibling fanned out
+    # by TRANSCRIBE, not enqueued here).
+    assert [
+        pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.THUMBNAIL.value
+    ], "INDEX should enqueue a THUMBNAIL job at INDEXED"
     assert not [
-        pj
-        for pj in stage_db.processing_jobs.values()
-        if pj.stage in (Stage.THUMBNAIL.value, Stage.SUBTITLE_GEN.value)
+        pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.SUBTITLE_GEN.value
     ]
     # the INDEX job itself is done.
     assert stage_db.processing_jobs[40].state == "done"
