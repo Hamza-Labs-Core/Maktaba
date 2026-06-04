@@ -86,9 +86,22 @@ func New(deps Deps) http.Handler {
 		sub.Get("/manifest.mpd", manifestHandler.ServeMaster)
 		sub.Get("/{rendition}/index.m3u8", manifestHandler.ServeRenditionIndex)
 		sub.Get("/{rendition}/{segment}", manifestHandler.ServeSegment)
-		// Story 8.11 — subtitles
+		// Story 8.11 — subtitles. auto.vtt streams transcript_segments;
+		// the sidecar path serves .srt/.vtt files sitting next to the
+		// source media. Both hang off the same handler so the wiring is
+		// shared; each route registers only when its dependency is set.
+		subs := &handlers.SubtitleHandler{Transcripts: deps.Transcripts}
+		if deps.Files != nil {
+			subs.SidecarReader = func(ctx context.Context, lang string) ([]byte, error) {
+				path, err := sessionVideoPath(ctx, deps.Sessions, deps.Probe)
+				if err != nil {
+					return nil, err
+				}
+				return handlers.ReadSidecar(path, lang, deps.Files)
+			}
+			sub.Get("/subs/sidecar/{lang}.vtt", subs.ServeSidecar)
+		}
 		if deps.Transcripts != nil {
-			subs := &handlers.SubtitleHandler{Transcripts: deps.Transcripts}
 			sub.Get("/subs/auto.vtt", func(w http.ResponseWriter, req *http.Request) {
 				videoID, _ := videoIDForSession(req.Context(), deps.Sessions)
 				ctx := handlers.WithVideoID(req.Context(), videoID)
@@ -199,6 +212,27 @@ func videoIDForSession(ctx context.Context, s session.Store) (string, error) {
 		return "", errors.New("session not found")
 	}
 	return row.VideoID.String(), nil
+}
+
+// sessionVideoPath resolves the session (the SignedURL subject for
+// session-scoped routes) to the source media path on disk, via the
+// session store then the probe row. Used by the sidecar subtitle
+// reader, which needs the directory the source file lives in.
+func sessionVideoPath(ctx context.Context, s session.Store, p *probe.Cache) (string, error) {
+	sid := auth.SubjectFromContext(ctx)
+	id, err := uuid.Parse(sid)
+	if err != nil {
+		return "", err
+	}
+	row, ok, err := s.Get(ctx, id)
+	if err != nil || !ok {
+		return "", errors.New("session not found")
+	}
+	probeRow, err := p.Lookup(ctx, row.VideoID)
+	if err != nil {
+		return "", err
+	}
+	return probeRow.Path, nil
 }
 
 // EnsureCacheRoot creates the cache root if it doesn't exist. Called
