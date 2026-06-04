@@ -19,11 +19,10 @@ adapters that
    :mod:`maktaba_pipeline.db.jobs_state` helpers.
 
 :func:`build_real_dispatch` returns the override map the daemon entry
-point feeds to :func:`maktaba_pipeline.runtime.run`. Only stages with a
-genuine thin-wrapper mapping are registered; every other stage is left
-on the placeholder until its real wiring lands (tracked in the
-gap-closure plan). In particular ``THUMBNAIL`` has no implementing
-module at all and stays on the placeholder.
+point feeds to :func:`maktaba_pipeline.runtime.run`. Every stage now has
+a genuine thin-wrapper mapping, ``THUMBNAIL`` included — its adapter
+lives in :mod:`maktaba_pipeline.thumbnail.handler` and drives the FFmpeg
+poster/sprite/chapter generator.
 """
 
 from __future__ import annotations
@@ -42,6 +41,7 @@ from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .log import get_logger
 from .scanner import Scanner, ScanStore, SqlScanStore
+from .thumbnail.handler import thumbnail_handler
 
 if TYPE_CHECKING:
     from .audio.extract import _ExtractDB
@@ -62,6 +62,7 @@ __all__ = [
     "probe_handler",
     "scan_handler",
     "subtitle_handler",
+    "thumbnail_handler",
     "transcribe_handler",
 ]
 
@@ -928,11 +929,10 @@ async def index_handler(
 def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
 
-    Only stages with a genuine thin-wrapper adapter are registered.
-    Every unregistered stage keeps the runtime's placeholder handler
-    until its real orchestration lands — see the module docstring and
-    the gap-closure plan's Track R1/R2/R3/R4 concerns. ``THUMBNAIL`` has
-    no implementing module at all and stays on the placeholder.
+    Every stage now has a genuine thin-wrapper adapter and is
+    registered — including ``THUMBNAIL`` (see the Track-THUMBNAIL note
+    below). See the module docstring and the gap-closure plan's Track
+    R1/R2/R3/R4 concerns.
 
     Track R2: EXTRACT now has a real adapter and joins the map. Because
     it is in the map, ``_DEFAULT_STAGES`` listing EXTRACT is safe — a
@@ -977,8 +977,15 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
     leaf (no follow-on enqueue): TRANSCRIBE already fanned it out in
     parallel with INDEX, and the shared ``TRANSCRIBED -> INDEXED`` FSM
     edge is replay-guarded so the second of the two parallel stages
-    no-ops the advance. ``THUMBNAIL`` (INDEX's nominal FSM successor)
-    has no implementing module yet and stays on the placeholder.
+    no-ops the advance.
+
+    Track THUMBNAIL: THUMBNAIL now has a real thin-wrapper adapter
+    (:func:`maktaba_pipeline.thumbnail.handler.thumbnail_handler` →
+    ``generate_thumbnails`` for the poster/sprite/chapter frames, then
+    ``commit_thumbnails`` persists ``videos.poster_path`` /
+    ``sprite_path`` and advances ``INDEXED -> THUMBNAILED``), so it joins
+    the override map and is safe in ``_DEFAULT_STAGES``. INDEX enqueues
+    the THUMBNAIL job once the video reaches INDEXED.
     """
 
     return {
@@ -988,4 +995,5 @@ def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]
         Stage.TRANSCRIBE: transcribe_handler,
         Stage.INDEX: index_handler,
         Stage.SUBTITLE_GEN: subtitle_handler,
+        Stage.THUMBNAIL: thumbnail_handler,
     }

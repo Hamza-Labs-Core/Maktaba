@@ -33,9 +33,11 @@ These guard the two integration seams the per-stage adapters need:
   replay-guarded FSM ``TRANSCRIBED -> INDEXED``. TRANSCRIBE fans them
   out in parallel, so a default worker claiming either job runs the
   real work instead of the silent no-op drain.
-- Only THUMBNAIL remains placeholder-only — it has no implementing
-  module — and is therefore in NEITHER the override map nor the
-  defaults.
+- THUMBNAIL now has a real adapter too (``thumbnail_handler`` — FFmpeg
+  poster/sprite/chapter generation + ``commit_thumbnails``), so it joins
+  both the override map and the defaults. INDEX enqueues the THUMBNAIL
+  job once the video reaches INDEXED. Every canonical stage is now
+  wired.
 """
 
 from __future__ import annotations
@@ -51,13 +53,14 @@ from maktaba_pipeline.handlers import (
     probe_handler,
     scan_handler,
     subtitle_handler,
+    thumbnail_handler,
     transcribe_handler,
 )
 
 pytestmark = pytest.mark.unit
 
 
-def test_build_real_dispatch_binds_all_six_real_stages() -> None:
+def test_build_real_dispatch_binds_all_real_stages() -> None:
     overrides = build_real_dispatch()
     # Gap-closure: SCAN now has a real library-scoped thin-wrapper
     # adapter (slot 0058 + SqlScanStore + Story 1.1 orchestrator).
@@ -85,10 +88,12 @@ def test_build_real_dispatch_binds_all_six_real_stages() -> None:
     # via search.embedder.index_segments, and advances the FSM
     # TRANSCRIBED -> INDEXED), so it joins the override map too.
     assert overrides[Stage.INDEX] is index_handler
-    # THUMBNAIL has no implementing module at all — it must stay on the
-    # runtime placeholder (registering a half-built handler would be
-    # worse than the no-op drain).
-    assert Stage.THUMBNAIL not in overrides
+    # Track THUMBNAIL: THUMBNAIL now has a real thin-wrapper adapter
+    # (thumbnail_handler → generate_thumbnails for the poster/sprite/
+    # chapter frames, then commit_thumbnails persists poster_path/
+    # sprite_path and advances INDEXED -> THUMBNAILED), so it joins the
+    # override map. INDEX enqueues the THUMBNAIL job at INDEXED.
+    assert overrides[Stage.THUMBNAIL] is thumbnail_handler
 
 
 def test_default_stages_subset_of_real_handlers() -> None:
@@ -117,6 +122,7 @@ def test_default_stages_subset_of_real_handlers() -> None:
         Stage.TRANSCRIBE,
         Stage.SUBTITLE_GEN,
         Stage.INDEX,
+        Stage.THUMBNAIL,
     )
     assert _DEFAULT_STAGES[0] is Stage.SCAN
     assert Stage.SCAN in overrides
@@ -126,7 +132,8 @@ def test_default_stages_subset_of_real_handlers() -> None:
     assert Stage.SUBTITLE_GEN in overrides
     assert Stage.INDEX in overrides
 
-    # The full canonical pipeline is now present in the defaults.
+    # The full canonical pipeline — THUMBNAIL included — is now present
+    # in the defaults.
     assert set(_DEFAULT_STAGES) >= {
         Stage.SCAN,
         Stage.PROBE,
@@ -134,13 +141,13 @@ def test_default_stages_subset_of_real_handlers() -> None:
         Stage.TRANSCRIBE,
         Stage.SUBTITLE_GEN,
         Stage.INDEX,
+        Stage.THUMBNAIL,
     }
 
-    # THUMBNAIL has no real handler (only the runtime placeholder) and
-    # no implementing module at all — it must be excluded from both the
-    # override map and the defaults until its adapter lands.
-    assert Stage.THUMBNAIL not in overrides
-    assert Stage.THUMBNAIL not in _DEFAULT_STAGES
+    # THUMBNAIL now has a real handler and is in both the override map
+    # and the defaults.
+    assert Stage.THUMBNAIL in overrides
+    assert Stage.THUMBNAIL in _DEFAULT_STAGES
 
 
 def test_real_dispatch_is_runtime_compatible() -> None:
