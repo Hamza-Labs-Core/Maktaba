@@ -26,6 +26,13 @@ const (
 	methodEmbed        = "/" + pipelineService + "/Embed"
 	methodListBackends = "/" + pipelineService + "/ListBackends"
 	methodExtractSub   = "/" + pipelineService + "/ExtractEmbeddedSubtitle"
+
+	methodListModels       = "/" + pipelineService + "/ListModels"
+	methodDownloadModel    = "/" + pipelineService + "/DownloadModel"
+	methodDownloadProgress = "/" + pipelineService + "/DownloadProgress"
+	methodDeleteModel      = "/" + pipelineService + "/DeleteModel"
+	methodActivateModel    = "/" + pipelineService + "/ActivateModel"
+	methodTestModel        = "/" + pipelineService + "/TestModel"
 )
 
 // requestIDKey is the metadata key the pipeline expects inbound
@@ -218,9 +225,125 @@ func (c *realClient) HealthCheck(ctx context.Context) (Status, error) {
 	return Status{Healthy: true, Detail: "reachable"}, nil
 }
 
+// ListModels returns the model catalog with runtime status overlaid.
+func (c *realClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodListModels, map[string]any{}, &resp); err != nil {
+		return nil, err
+	}
+	raw, ok := resp["models"].([]any)
+	if !ok {
+		// A pipeline with an empty catalog still returns {"models": []};
+		// a missing key is a malformed reply, treated as empty.
+		return []ModelInfo{}, nil
+	}
+	out := make([]ModelInfo, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, ModelInfo{
+			ID:        asString(m["id"]),
+			Type:      asString(m["type"]),
+			Name:      asString(m["name"]),
+			Size:      asString(m["size"]),
+			SizeBytes: asInt64(m["size_bytes"]),
+			Platform:  asString(m["platform"]),
+			Gated:     asBool(m["gated"]),
+			Installed: asBool(m["installed"]),
+			Active:    asBool(m["active"]),
+			Status:    asString(m["status"]),
+			Progress:  asInt(m["progress"]),
+		})
+	}
+	return out, nil
+}
+
+// DownloadModel starts an async download and returns the job ID.
+func (c *realClient) DownloadModel(ctx context.Context, id string) (string, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodDownloadModel, map[string]any{"id": id}, &resp); err != nil {
+		return "", err
+	}
+	jobID, ok := resp["job_id"].(string)
+	if !ok || jobID == "" {
+		return "", fmt.Errorf("pipeline DownloadModel: malformed response (missing job_id)")
+	}
+	return jobID, nil
+}
+
+// DownloadProgress polls a download job by ID.
+func (c *realClient) DownloadProgress(ctx context.Context, jobID string) (DownloadStatus, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodDownloadProgress, map[string]any{"job_id": jobID}, &resp); err != nil {
+		return DownloadStatus{}, err
+	}
+	return DownloadStatus{
+		JobID:      asString(resp["job_id"]),
+		ModelID:    asString(resp["model_id"]),
+		Status:     asString(resp["status"]),
+		Progress:   asInt(resp["progress"]),
+		Downloaded: asInt64(resp["downloaded"]),
+		Total:      asInt64(resp["total"]),
+		Error:      asString(resp["error"]),
+	}, nil
+}
+
+// DeleteModel removes a model's files. Returns false if it wasn't present.
+func (c *realClient) DeleteModel(ctx context.Context, id string) (bool, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodDeleteModel, map[string]any{"id": id}, &resp); err != nil {
+		return false, err
+	}
+	return asBool(resp["deleted"]), nil
+}
+
+// ActivateModel sets a model active for its type. An empty modelType
+// lets the pipeline infer it from the catalog.
+func (c *realClient) ActivateModel(ctx context.Context, id, modelType string) (ModelActivation, error) {
+	req := map[string]any{"id": id}
+	if modelType != "" {
+		req["type"] = modelType
+	}
+	var resp map[string]any
+	if err := c.invoke(ctx, methodActivateModel, req, &resp); err != nil {
+		return ModelActivation{}, err
+	}
+	return ModelActivation{
+		ID:     asString(resp["id"]),
+		Type:   asString(resp["type"]),
+		Active: asBool(resp["active"]),
+	}, nil
+}
+
+// TestModel runs a short sample through the model.
+func (c *realClient) TestModel(ctx context.Context, id string) (ModelTestResult, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodTestModel, map[string]any{"id": id}, &resp); err != nil {
+		return ModelTestResult{}, err
+	}
+	return ModelTestResult{
+		OK:        asBool(resp["ok"]),
+		LatencyMs: asInt64(resp["latency_ms"]),
+		Detail:    asString(resp["detail"]),
+		Error:     asString(resp["error"]),
+	}, nil
+}
+
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func asInt(v any) int {
+	f, _ := v.(float64)
+	return int(f)
+}
+
+func asInt64(v any) int64 {
+	f, _ := v.(float64)
+	return int64(f)
 }
 
 func asBool(v any) bool {

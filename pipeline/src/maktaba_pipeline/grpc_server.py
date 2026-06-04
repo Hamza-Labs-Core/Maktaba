@@ -31,6 +31,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .log import get_logger
+from .models.service import ModelService
 from .stt.registry import BackendRegistry
 
 __all__ = [
@@ -67,10 +68,12 @@ class PipelineService:
         embedder: Callable[[str], Awaitable[list[float]]] | None = None,
         stt_registry: BackendRegistry | None = None,
         subtitle_extractor: Callable[[str, int], Awaitable[str]] | None = None,
+        model_service: ModelService | None = None,
     ) -> None:
         self._embedder = embedder
         self._stt_registry = stt_registry if stt_registry is not None else BackendRegistry()
         self._subtitle_extractor = subtitle_extractor
+        self.model_service = model_service if model_service is not None else ModelService()
 
     async def embed(self, payload: dict[str, Any]) -> dict[str, Any]:
         text = payload.get("text")
@@ -114,6 +117,50 @@ class PipelineService:
         body = await self._subtitle_extractor(path, stream_index)
         return {"body": body}
 
+    # --- model management (Story 7.x) -----------------------------------
+    #
+    # These delegate to the ModelService. Each returns a flat dict; the
+    # Go API's model handler matches the wire shapes. Application errors
+    # (unknown model / job, not installed) propagate to _dispatch, which
+    # turns them into an in-band {"error": ...}.
+
+    async def list_models(self, _payload: dict[str, Any]) -> dict[str, Any]:
+        return {"models": await self.model_service.list_models()}
+
+    async def download_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = payload.get("id")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("download_model: id is required")
+        job_id = await self.model_service.download_model(model_id)
+        return {"job_id": job_id}
+
+    async def download_progress(self, payload: dict[str, Any]) -> dict[str, Any]:
+        job_id = payload.get("job_id")
+        if not isinstance(job_id, str) or not job_id:
+            raise ValueError("download_progress: job_id is required")
+        return await self.model_service.download_progress(job_id)
+
+    async def delete_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = payload.get("id")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("delete_model: id is required")
+        deleted = await self.model_service.delete_model(model_id)
+        return {"deleted": deleted}
+
+    async def activate_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = payload.get("id")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("activate_model: id is required")
+        model_type = payload.get("type")
+        type_arg = model_type if isinstance(model_type, str) and model_type else None
+        return await self.model_service.activate_model(model_id, type_arg)
+
+    async def test_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        model_id = payload.get("id")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("test_model: id is required")
+        return await self.model_service.test_model(model_id)
+
 
 def _build_generic_handler(service: PipelineService) -> Any:
     """Return a :class:`grpc.GenericRpcHandler` exposing the three RPCs."""
@@ -129,22 +176,41 @@ def _build_generic_handler(service: PipelineService) -> Any:
     async def _extract(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.extract_embedded_subtitle)
 
+    async def _list_models(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.list_models)
+
+    async def _download_model(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.download_model)
+
+    async def _download_progress(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.download_progress)
+
+    async def _delete_model(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.delete_model)
+
+    async def _activate_model(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.activate_model)
+
+    async def _test_model(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.test_model)
+
+    def _h(fn: Callable[[bytes, Any], Awaitable[bytes]]) -> Any:
+        return grpc.unary_unary_rpc_method_handler(
+            fn,
+            request_deserializer=_identity_deserializer,
+            response_serializer=_identity_serializer,
+        )
+
     handlers = {
-        "Embed": grpc.unary_unary_rpc_method_handler(
-            _embed,
-            request_deserializer=_identity_deserializer,
-            response_serializer=_identity_serializer,
-        ),
-        "ListBackends": grpc.unary_unary_rpc_method_handler(
-            _list_backends,
-            request_deserializer=_identity_deserializer,
-            response_serializer=_identity_serializer,
-        ),
-        "ExtractEmbeddedSubtitle": grpc.unary_unary_rpc_method_handler(
-            _extract,
-            request_deserializer=_identity_deserializer,
-            response_serializer=_identity_serializer,
-        ),
+        "Embed": _h(_embed),
+        "ListBackends": _h(_list_backends),
+        "ExtractEmbeddedSubtitle": _h(_extract),
+        "ListModels": _h(_list_models),
+        "DownloadModel": _h(_download_model),
+        "DownloadProgress": _h(_download_progress),
+        "DeleteModel": _h(_delete_model),
+        "ActivateModel": _h(_activate_model),
+        "TestModel": _h(_test_model),
     }
     return grpc.method_handlers_generic_handler(PIPELINE_SERVICE_NAME, handlers)
 
@@ -159,7 +225,9 @@ async def _dispatch(
         return json.dumps({"error": f"invalid request: {exc}"}).encode("utf-8")
     try:
         result = await handler(payload)
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, KeyError) as exc:
+        # KeyError covers the model registry/job lookups (UnknownModel,
+        # UnknownJob), whose __str__ is already clean (no extra quoting).
         return json.dumps({"error": str(exc)}).encode("utf-8")
     return json.dumps(result).encode("utf-8")
 
