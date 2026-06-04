@@ -19,6 +19,12 @@ import { VideoPlayer } from "./pages/VideoPlayer";
 import { Search } from "./pages/Search";
 import { ProcessingQueue } from "./pages/ProcessingQueue";
 import { Settings } from "./pages/Settings";
+import { AdminUsers } from "./pages/Admin/Users";
+import { AdminAuditLog } from "./pages/Admin/AuditLog";
+import { SystemHealth } from "./pages/Admin/SystemHealth";
+import { CloudDevices } from "./pages/Cloud/Devices";
+import { Billing } from "./pages/Cloud/Billing";
+import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
 import { Login } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
 
@@ -59,6 +65,12 @@ export function App() {
                     <Route path="/search" element={<Search />} />
                     <Route path="/queue" element={<ProcessingQueue />} />
                     <Route path="/settings/*" element={<Settings />} />
+                    <Route path="/account/devices" element={<ConnectedDevices />} />
+                    <Route path="/billing" element={<Billing />} />
+                    <Route path="/admin/users" element={<AdminUsers />} />
+                    <Route path="/admin/audit" element={<AdminAuditLog />} />
+                    <Route path="/admin/health" element={<SystemHealth />} />
+                    <Route path="/admin/devices" element={<CloudDevices />} />
                     <Route path="*" element={<NotFound />} />
                   </Route>
                 </Routes>

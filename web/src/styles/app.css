@@ -756,3 +756,144 @@ mark {
     overflow-x: auto;
   }
 }
+
+/* ── Batch-1 admin / cloud / profile pages ───────────────────────────
+ * Layout-only styles built on the shared tokens (no hard-coded colours).
+ */
+.mkt-admin__note {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  max-width: 70ch;
+}
+
+.mkt-nav-group {
+  display: block;
+  padding: var(--space-4) var(--space-3) var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+
+/* Form layout inside modals */
+.mkt-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.mkt-form hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-1) 0;
+}
+
+/* Filter bar (audit log) */
+.mkt-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  align-items: end;
+}
+
+.mkt-audit__payload {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stat / service cards (system health) */
+.mkt-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-service-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-service-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.mkt-service-card__check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.mkt-badge--sm {
+  font-size: 11px;
+  padding: 0 var(--space-1);
+}
+
+.mkt-health__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+/* Key/value lists used across health + billing */
+.mkt-kv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-kv > li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Device cards (connected devices) */
+.mkt-device-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+.mkt-device-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-device-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.mkt-device-card__icon {
+  font-size: 28px;
+  line-height: 1;
+}
+.mkt-device-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+}
+.mkt-device-card__meta dt {
+  font-size: var(--font-size-sm);
+}
+.mkt-device-card__meta dd {
+  margin: 0;
+}
+
+/* Billing */
+.mkt-plan-card__tier {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-lg);
+}
+.mkt-billing__actions {
+  margin-top: var(--space-3);
+}

@@ -20,6 +20,22 @@ const NAV = [
   { to: "/settings", key: "nav.settings", icon: "☰" },
 ] as const;
 
+// Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
+// these surfaces are reachable by every authenticated user.
+const SECONDARY = [
+  { to: "/account/devices", key: "nav.devices", icon: "▢" },
+  { to: "/billing", key: "nav.billing", icon: "◈" },
+] as const;
+
+// Admin nav is sidebar-only and rendered only for admins. The pages
+// re-check the principal server-side, so this is purely a UX affordance.
+const ADMIN = [
+  { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
+  { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
+  { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
+  { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
+] as const;
+
 export function AppShell() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
@@ -113,6 +129,29 @@ export function AppShell() {
               <span className="mkt-nav-link__label">{t(item.key)}</span>
             </NavLink>
           ))}
+          {SECONDARY.map((item) => (
+            <NavLink key={item.to} to={item.to} className="mkt-nav-link">
+              <span className="mkt-nav-link__icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="mkt-nav-link__label">{t(item.key)}</span>
+            </NavLink>
+          ))}
+          {user?.is_admin && (
+            <>
+              <span className="mkt-nav-group" aria-hidden="true">
+                {t("nav.admin")}
+              </span>
+              {ADMIN.map((item) => (
+                <NavLink key={item.to} to={item.to} className="mkt-nav-link">
+                  <span className="mkt-nav-link__icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="mkt-nav-link__label">{t(item.key)}</span>
+                </NavLink>
+              ))}
+            </>
+          )}
         </nav>
         <main className="mkt-shell__main" role="main" id="mkt-main" tabIndex={-1}>
           <Outlet />
