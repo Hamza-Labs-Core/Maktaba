@@ -114,8 +114,8 @@ func ValidatePaginationCursor(field, s string) error {
 		return ValidationError{Field: field, Message: "must be ≤ 256 bytes"}
 	}
 	for _, r := range s {
-		if !(('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') ||
-			('0' <= r && r <= '9') || r == '-' || r == '_' || r == '=' || r == '.') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '-' && r != '_' && r != '=' && r != '.' {
 			return ValidationError{Field: field, Message: "must be base64url"}
 		}
 	}

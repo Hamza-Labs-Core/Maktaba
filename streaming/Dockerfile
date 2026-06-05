@@ -12,7 +12,7 @@
 #   docker build -f streaming/Dockerfile \
 #     --build-arg VERSION=... -t ghcr.io/maktaba/streaming:dev .
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.25
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src

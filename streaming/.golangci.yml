@@ -1,34 +1,49 @@
-# golangci-lint v1.62 config for the Maktaba streaming server.
+# golangci-lint v2 config for the Maktaba streaming server.
 # Story 22.1 sets a sensible default; Story 21.1 added the forbidigo
 # rule that bans bare `fmt.Print(ln)?` and the Go `print(ln)?` builtins
 # in production code so server output goes through the structured logger.
-
-run:
-  timeout: 5m
-
+# Migrated from the v1 schema when the modules moved to Go 1.25.
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
+    - forbidigo
     - govet
     - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
-    - forbidigo
-
-linters-settings:
-  forbidigo:
-    forbid:
-      - p: '^fmt\.Print(ln|f)?$'
-        msg: 'use the shared/log/go logger instead of fmt.Print*; pipe operator output through fmt.Fprint* against an explicit writer.'
-      - p: '^print$'
-        msg: 'use the shared/log/go logger instead of the print builtin.'
-      - p: '^println$'
-        msg: 'use the shared/log/go logger instead of the println builtin.'
-    analyze-types: false
-    exclude-godoc-examples: true
+    - staticcheck
+    - unused
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(ln|f)?$
+          msg: use the shared/log/go logger instead of fmt.Print*; pipe operator output through fmt.Fprint* against an explicit writer.
+        - pattern: ^print$
+          msg: use the shared/log/go logger instead of the print builtin.
+        - pattern: ^println$
+          msg: use the shared/log/go logger instead of the println builtin.
+      exclude-godoc-examples: true
+      analyze-types: false
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

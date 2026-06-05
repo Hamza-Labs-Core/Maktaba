@@ -6,7 +6,7 @@
 -- vocabulary is enforced identically.
 --
 ALTER TABLE library_acl
-    ADD COLUMN role TEXT NOT NULL DEFAULT 'read'
+    ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'read'
     CHECK (role IN ('read', 'write', 'admin'));
 -- +goose StatementEnd
 

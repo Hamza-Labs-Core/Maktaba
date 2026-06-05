@@ -6,11 +6,11 @@
 -- DOES support `CREATE UNIQUE INDEX ... WHERE`, so the case-insensitive
 -- partial-unique contract is preserved with lower(email).
 --
-ALTER TABLE users ADD COLUMN email TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE users ADD COLUMN display_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

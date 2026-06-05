@@ -101,7 +101,9 @@ export function Sessions() {
             {sessions.map((s) => (
               <tr key={s.id}>
                 <td>
-                  <span className="mkt-truncate">{s.user_agent || t("sessions.unknownDevice")}</span>
+                  <span className="mkt-truncate">
+                    {s.user_agent || t("sessions.unknownDevice")}
+                  </span>
                   {s.current && (
                     <>
                       {" "}

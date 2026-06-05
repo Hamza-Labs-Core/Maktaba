@@ -74,13 +74,7 @@ export function Account() {
   );
 }
 
-function ProfileForm({
-  profile,
-  onSaved,
-}: {
-  profile: Profile;
-  onSaved: (p: Profile) => void;
-}) {
+function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Profile) => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const [displayName, setDisplayName] = useState(profile.display_name);

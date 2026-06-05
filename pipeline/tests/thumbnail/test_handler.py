@@ -67,8 +67,7 @@ class ThumbDB(StageDB):
         if s.startswith("SELECT seq, start_sec FROM chapters"):
             vid = args[0]
             return [
-                _Row({"seq": seq, "start_sec": start})
-                for seq, start in self.chapters.get(vid, [])
+                _Row({"seq": seq, "start_sec": start}) for seq, start in self.chapters.get(vid, [])
             ]
 
         if s.startswith("UPDATE videos SET poster_path"):

@@ -14,14 +14,14 @@ var ErrSidecarNotFound = errors.New("sidecar subtitle not found")
 // ReadSidecar locates a sidecar subtitle for videoPath in the given
 // language and returns it as VTT bytes. Sidecars live in the same
 // directory as the source media; we accept both the language-suffixed
-// convention players use (``movie.en.srt``) and a bare ``en.srt`` next
-// to the file. ``.vtt`` is served verbatim; ``.srt`` is converted via
+// convention players use (“movie.en.srt“) and a bare “en.srt“ next
+// to the file. “.vtt“ is served verbatim; “.srt“ is converted via
 // SrtToVtt (which HTML-escapes cue text, AC-1).
 //
 // The candidate order prefers VTT (no conversion, exact) over SRT, and
 // the movie-prefixed name over the bare-lang name (the former is what
 // scrapers and ripping tools emit). lang is sanitised to a single path
-// segment so a crafted ``../`` can't escape the media directory.
+// segment so a crafted “../“ can't escape the media directory.
 func ReadSidecar(videoPath, lang string, open FileOpener) ([]byte, error) {
 	lang = filepath.Base(strings.TrimSpace(lang))
 	if lang == "" || lang == "." || lang == ".." || strings.ContainsAny(lang, `/\`) {

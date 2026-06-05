@@ -135,7 +135,7 @@ func (s *WebhookSink) Send(ctx context.Context, r Report) error {
 	if err != nil {
 		return fmt.Errorf("errrpt: webhook post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("errrpt: webhook returned %d", resp.StatusCode)
 	}

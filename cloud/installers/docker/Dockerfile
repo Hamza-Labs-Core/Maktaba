@@ -1,7 +1,7 @@
 # Multi-stage build of the maktaba-server on-prem image. We build the
 # binary statically against musl-friendly Go (CGO disabled) so the
 # final layer is tiny — ~25 MB compressed.
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.25
 FROM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src
 

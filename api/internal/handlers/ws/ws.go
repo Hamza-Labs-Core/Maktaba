@@ -195,7 +195,7 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		if last := parseLastEventID(r); last > 0 {
 			if evs, err := h.Replay.Replay(ctx, channel, last); err == nil {
 				for _, e := range evs {
-					frame, _ := json.Marshal(Event{Type: e.Type, At: e.At, Payload: e.Payload})
+					frame, _ := json.Marshal(Event(e))
 					_, _ = w.Write([]byte("data: "))
 					_, _ = w.Write(frame)
 					_, _ = w.Write([]byte("\n\n"))

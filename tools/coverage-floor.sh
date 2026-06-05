@@ -83,14 +83,18 @@ done
 # --- Python pipeline: pytest -m unit --cov ---
 # pytest-cov is pulled in ephemerally via `uv run --with` so the
 # pipeline lockfile does not have to change for the gate to work.
+# `--all-extras` is required because the test deps (pytest-asyncio et al.)
+# live in the `dev` optional-dependency group — a bare `uv run` re-syncs
+# to the default group and drops them, breaking collection of the async
+# test modules.
 if [[ -d "$REPO_ROOT/$pipeline_dir" ]]; then
   echo "==> coverage ($pipeline_dir)"
   covxml="$covdir/pipeline.cov.txt"
   set +e
   ( cd "$REPO_ROOT/$pipeline_dir" && \
-    uv run --with pytest-cov pytest -m unit \
+    uv run --all-extras --with pytest-cov pytest -m unit \
       --cov=src/maktaba_pipeline --cov-report= -q >/dev/null 2>&1 && \
-    uv run --with pytest-cov coverage report --format=total > "$covxml" 2>/dev/null )
+    uv run --all-extras --with pytest-cov coverage report --format=total > "$covxml" 2>/dev/null )
   py_rc=$?
   set -e
   if [[ $py_rc -ne 0 || ! -s "$covxml" ]]; then

@@ -163,9 +163,9 @@ def test_index_handler_loads_segments_indexes_and_advances() -> None:
     # INDEX enqueues its FSM successor THUMBNAIL once the video reaches
     # INDEXED (the only follow-on; SUBTITLE_GEN is a sibling fanned out
     # by TRANSCRIBE, not enqueued here).
-    assert [
-        pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.THUMBNAIL.value
-    ], "INDEX should enqueue a THUMBNAIL job at INDEXED"
+    assert [pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.THUMBNAIL.value], (
+        "INDEX should enqueue a THUMBNAIL job at INDEXED"
+    )
     assert not [
         pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.SUBTITLE_GEN.value
     ]

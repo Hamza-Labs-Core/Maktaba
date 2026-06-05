@@ -4,7 +4,7 @@ import "testing"
 
 func TestBidiIsolate(t *testing.T) {
 	got := bidiIsolate("hello")
-	if got != "⁨hello⁩" {
+	if got != "\u2068hello\u2069" {
 		t.Errorf("expected isolate wrap, got %q", got)
 	}
 }

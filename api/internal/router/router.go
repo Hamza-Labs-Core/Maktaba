@@ -87,7 +87,13 @@ type Deps struct {
 func New(d Deps) chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(chimw.RealIP)
+	// SA1019: RealIP is deprecated because it trusts client-supplied
+	// X-Forwarded-For / X-Real-IP headers. Maktaba is a self-hosted
+	// server expected to sit behind a trusted reverse proxy that sets
+	// those headers, which is exactly RealIP's intended deployment, so
+	// we keep it deliberately. Operators exposing the API directly must
+	// strip inbound forwarding headers at their edge.
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
 	r.Use(mw.RequestID)
 	// Recoverer carries the central HLB-300 error-report hook. With a
 	// nil d.ErrorReporter this is exactly the old mw.Recoverer (no

@@ -4,7 +4,7 @@
 # image just provides the toolchain (Go) plus `air` for live reload.
 # The production multi-stage Dockerfile is owned by Story 22.3.
 
-FROM golang:1.23-alpine
+FROM golang:1.25-alpine
 
 ENV CGO_ENABLED=0 \
     GO111MODULE=on \

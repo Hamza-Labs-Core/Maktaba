@@ -1,4 +1,4 @@
-# golangci-lint config for the unified maktaba-server binary.
+# golangci-lint v2 config for the unified maktaba-server binary.
 #
 # Mirrors api/.golangci.yml's linter set with ONE deliberate exception:
 # forbidigo is omitted. The api/streaming configs ban bare `fmt.Print*`
@@ -6,20 +6,36 @@
 # is an interactive CLI + installer (setup wizard, models list, update
 # prompts) where printing to stdout/stderr IS the user-facing contract,
 # so the forbidigo rule would be actively wrong here.
-
-run:
-  timeout: 5m
-
+# Migrated from the v1 schema when the modules moved to Go 1.25.
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
+    - staticcheck
+    - unused
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

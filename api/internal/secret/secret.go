@@ -150,7 +150,7 @@ func nameLooksSensitive(name string) bool {
 func RedactSettings(in any) map[string]any {
 	out := map[string]any{}
 	v := reflect.ValueOf(in)
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return out
 		}
@@ -193,7 +193,7 @@ func RedactSettings(in any) map[string]any {
 
 			// Recurse into nested structs/pointers.
 			fk := fv.Kind()
-			if fk == reflect.Struct || (fk == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct) {
+			if fk == reflect.Struct || (fk == reflect.Pointer && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct) {
 				out[name] = RedactSettings(fv.Interface())
 				continue
 			}
@@ -236,7 +236,7 @@ func isPresent(v reflect.Value) bool {
 	switch v.Kind() {
 	case reflect.String:
 		return v.Len() > 0
-	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice:
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
 		return !v.IsNil()
 	default:
 		return !v.IsZero()

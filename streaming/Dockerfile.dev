@@ -1,6 +1,6 @@
 # Dev image for the streaming service (Story 22.8). Mirrors api/Dockerfile.dev.
 
-FROM golang:1.23-alpine
+FROM golang:1.25-alpine
 
 ENV CGO_ENABLED=0 \
     GO111MODULE=on \

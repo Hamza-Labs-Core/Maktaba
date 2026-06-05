@@ -61,9 +61,7 @@ def _identity_deserializer(value: bytes) -> bytes:
     return value
 
 
-async def _segment_stream(
-    backend: Any, audio: str, language: str | None
-) -> Any:
+async def _segment_stream(backend: Any, audio: str, language: str | None) -> Any:
     """Iterate a backend's transcription, tolerating both shapes.
 
     The canonical caller (``stt.transcribe``) calls
@@ -211,9 +209,7 @@ class PipelineService:
             segments = await self._default_transcribe(path, language)
         return {"segments": segments}
 
-    async def _default_transcribe(
-        self, path: str, language: str | None
-    ) -> list[dict[str, Any]]:
+    async def _default_transcribe(self, path: str, language: str | None) -> list[dict[str, Any]]:
         ready = await self._stt_registry.list_ready()
         if not ready:
             raise RuntimeError("transcribe: no STT backend ready")

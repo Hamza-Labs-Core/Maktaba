@@ -203,7 +203,7 @@ func bidiIsolate(s string) string {
 	if s == "" {
 		return s
 	}
-	return "⁨" + s + "⁩"
+	return "\u2068" + s + "\u2069"
 }
 
 // Subtitle is one row in the GET /api/videos/{id}/subtitles response

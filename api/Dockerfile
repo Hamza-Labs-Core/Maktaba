@@ -16,7 +16,7 @@
 #     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 #     -t ghcr.io/maktaba/api:dev .
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.25
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src

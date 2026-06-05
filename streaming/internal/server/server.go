@@ -47,7 +47,13 @@ type Deps struct {
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// SA1019: RealIP is deprecated because it trusts client-supplied
+	// X-Forwarded-For / X-Real-IP headers. The streaming server is
+	// expected to sit behind a trusted reverse proxy that sets those
+	// headers — RealIP's intended deployment — so we keep it
+	// deliberately. Operators exposing it directly must strip inbound
+	// forwarding headers at their edge.
+	r.Use(middleware.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
 	r.Use(middleware.Recoverer)
 
 	leeway := deps.Cfg.LeewayDuration()
