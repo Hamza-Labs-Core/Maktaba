@@ -113,27 +113,33 @@ troubleshooting, and pre-commit setup.
 
 ## Native apps
 
-The same `web/` SPA bundle is wrapped natively for every platform — no
-per-platform UI fork. The shells live under [`apps/`](apps/) and serve
-`web/dist`:
+Phones and desktops wrap the same `web/` SPA bundle natively — no
+per-platform UI fork. **TV is different**: the 10-foot UI (D-pad focus,
+poster rows, big-text) can't be a reused web view, so tvOS and Android TV
+are *native* apps that talk to the same API. All shells live under
+[`apps/`](apps/):
 
 | Target | Stack | Build |
 |---|---|---|
-| iOS + Android | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) | `make mobile-build` |
-| macOS / Windows / Linux | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) | `make desktop-build` |
-| tvOS / Android TV | Swift / Kotlin ([`apps/tv/`](apps/tv/)) | per-platform |
+| iOS + Android | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) — wraps `web/dist` | `make mobile-build` |
+| macOS / Windows / Linux | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) — wraps `web/dist` | `make desktop-build` |
+| tvOS | **SwiftUI + AVKit** ([`apps/tv/tvos/`](apps/tv/tvos/)) — native 10-foot UI | `make tv-build-ios` |
+| Android TV | **Compose-for-TV + Media3** ([`apps/tv/android/`](apps/tv/android/)) — native 10-foot UI | `make tv-build-android` |
 
 ```sh
-make mobile-build    # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
-make desktop-build   # Tauri build for the host OS (needs the Rust toolchain)
-make native-sync     # rebuild web/dist and cap sync it into the native platforms
+make mobile-build      # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
+make desktop-build     # Tauri build for the host OS (needs the Rust toolchain)
+make native-sync       # rebuild web/dist and cap sync it into the native platforms
+make tv-build-ios      # tvOS core (swift build); device builds via xcodebuild
+make tv-build-android  # Android TV debug APK (needs the Android SDK)
 ```
 
-Both wrappers share `com.hamzalabs.maktaba` as the app/bundle identifier
-and the `maktaba://` deep-link scheme. The generated native projects
-(`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`) and
-signing material are not checked in — see each shell's README for the
-toolchain prerequisites and signing/credential setup.
+The mobile/desktop wrappers share `com.hamzalabs.maktaba` as the
+app/bundle identifier and the `maktaba://` deep-link scheme; the TV apps
+use `com.hamzalabs.maktaba.tv`. Generated native projects
+(`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`, the
+TV build outputs) and signing material are not checked in — see each
+shell's README for the toolchain prerequisites and signing setup.
 
 ---
 

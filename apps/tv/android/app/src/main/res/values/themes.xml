@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fullscreen, no action bar — the Compose-for-TV UI draws
+         everything, including its own top bar. Parented to the platform
+         DeviceDefault theme to avoid pulling in the phone Material
+         components library. -->
+    <style name="Theme.MaktabaTV" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:colorBackground">@color/background</item>
+    </style>
+</resources>

@@ -1,4 +1,12 @@
-apps/tv/tvos/.build/
-apps/tv/tvos/Package.resolved
-apps/tv/android/.gradle/
-apps/tv/android/build/
+# Paths here are anchored to this directory (apps/tv/).
+
+# tvOS / SwiftPM build artifacts
+tvos/.build/
+tvos/.swiftpm/
+tvos/Package.resolved
+
+# Android / Gradle build artifacts (see also android/.gitignore)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

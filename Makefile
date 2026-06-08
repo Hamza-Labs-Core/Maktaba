@@ -445,6 +445,8 @@ test-tokens:  ## Story 17.1 — assert the design-tokens build pipeline is green
 
 MOBILE_DIR  := apps/mobile
 DESKTOP_DIR := apps/desktop
+TVOS_DIR    := apps/tv/tvos
+ANDROID_TV_DIR := apps/tv/android
 
 .PHONY: mobile-build
 mobile-build:  ## Build the Capacitor iOS+Android apps (web build + cap sync). Needs Xcode/Android SDK.
@@ -453,6 +455,17 @@ mobile-build:  ## Build the Capacitor iOS+Android apps (web build + cap sync). N
 .PHONY: desktop-build
 desktop-build:  ## Build the Tauri desktop app for the host OS. Needs the Rust toolchain.
 	@bash $(DESKTOP_DIR)/scripts/build.sh
+
+# The TV apps are NATIVE shells (not web wrappers): SwiftUI on tvOS,
+# Compose on Android TV. Like the other native targets they are out of
+# the default `build` graph — they need Xcode / the Android SDK.
+.PHONY: tv-build-ios
+tv-build-ios:  ## Build the tvOS app's host-compilable core (swift build). Device builds use xcodebuild — see apps/tv/tvos/README.md.
+	cd $(TVOS_DIR) && swift build
+
+.PHONY: tv-build-android
+tv-build-android:  ## Assemble the Android TV debug APK via the Gradle wrapper. Needs the Android SDK.
+	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleDebug
 
 .PHONY: native-sync
 native-sync: build-web  ## Rebuild web/dist and sync it into the native platforms (Capacitor cap sync).

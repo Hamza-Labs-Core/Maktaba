@@ -1,6 +1,8 @@
-// Root Gradle config for the Maktaba Android TV app.
+// Root Gradle config for the Maktaba Android TV app. Plugins are
+// declared (not applied) here and applied per-module; versions come
+// from the `gradle/libs.versions.toml` version catalog.
 plugins {
-    id("com.android.application") version "8.2.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
-    id("com.apollographql.apollo3") version "3.8.2" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
 }

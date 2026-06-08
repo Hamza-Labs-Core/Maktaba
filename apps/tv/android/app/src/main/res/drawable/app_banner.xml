@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder TV banner (320x180dp). Replace with branded artwork
+     before release; Play Store rejects TV apps with a generic banner. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#0B0B0F"
+        android:pathData="M0,0 H320 V180 H0 Z" />
+    <!-- A simple stylized open book in the brand gold. -->
+    <path
+        android:fillColor="#E8B04B"
+        android:pathData="M96,72 L156,84 L156,128 L96,116 Z" />
+    <path
+        android:fillColor="#E8B04B"
+        android:pathData="M224,72 L164,84 L164,128 L224,116 Z" />
+</vector>
