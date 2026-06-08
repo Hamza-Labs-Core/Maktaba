@@ -37,5 +37,13 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "tar@<7.5.11": ">=7.5.11"
+    },
+    "patchedDependencies": {
+      "@capacitor/cli@6.2.1": "patches/@capacitor__cli@6.2.1.patch"
+    }
   }
 }

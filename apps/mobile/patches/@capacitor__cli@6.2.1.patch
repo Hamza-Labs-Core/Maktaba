@@ -1,0 +1,12 @@
+diff --git a/dist/util/template.js b/dist/util/template.js
+index 5d41a32dac66b3988189c7067eee84c875c5cc21..1da4af1ecc27348d509a1816ab4af4d98eafc263 100644
+--- a/dist/util/template.js
++++ b/dist/util/template.js
+@@ -6,6 +6,6 @@ const utils_fs_1 = require("@ionic/utils-fs");
+ const tar_1 = tslib_1.__importDefault(require("tar"));
+ async function extractTemplate(src, dir) {
+     await (0, utils_fs_1.mkdirp)(dir);
+-    await tar_1.default.extract({ file: src, cwd: dir });
++    await (tar_1.default ?? tar_1).extract({ file: src, cwd: dir });
+ }
+ exports.extractTemplate = extractTemplate;
