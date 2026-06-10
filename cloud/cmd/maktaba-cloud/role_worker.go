@@ -16,15 +16,15 @@ import (
 // traffic — they only host the control port at 127.0.0.1:9090 for the
 // LB health checks, and run periodic tasks (bandwidth roll-ups,
 // expired-token cleanup, account-deletion purges).
-func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
+func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migrator, _ server.BuildInfo) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","role":"worker"}`))
 	})
 	srv := &http.Server{Addr: "127.0.0.1:9090", Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
 	go func() { _ = srv.ListenAndServe() }()
-	defer srv.Shutdown(context.Background())
+	defer func() { _ = srv.Shutdown(context.Background()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

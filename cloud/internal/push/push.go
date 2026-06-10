@@ -26,9 +26,9 @@ type Notification struct {
 // Dispatcher writes to push_dispatch_log and routes to the correct
 // platform driver based on `push_devices.platform`.
 type Dispatcher struct {
-	DB    *sql.DB
-	APNs  Driver
-	FCM   Driver
+	DB   *sql.DB
+	APNs Driver
+	FCM  Driver
 }
 
 // Driver is the per-platform send interface. APNsDriver and FCMDriver
@@ -120,7 +120,7 @@ type FakeDriver struct {
 }
 
 func (f *FakeDriver) Name() string { return "fake" }
-func (f *FakeDriver) Send(ctx context.Context, token string, n Notification) error {
+func (f *FakeDriver) Send(_ context.Context, _ string, n Notification) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Sent = append(f.Sent, n)

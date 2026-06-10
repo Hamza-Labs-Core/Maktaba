@@ -19,22 +19,22 @@ import (
 // FCMDriver speaks Firebase Cloud Messaging's HTTP v1 API. Auth is via
 // a Google service-account OAuth2 token; we cache it for ~50 minutes.
 type FCMDriver struct {
-	ProjectID         string
+	ProjectID          string
 	ServiceAccountPath string
-	HTTP              *http.Client
+	HTTP               *http.Client
 
-	mu        sync.Mutex
-	token     string
-	tokenAt   time.Time
+	mu          sync.Mutex
+	token       string
+	tokenAt     time.Time
 	clientEmail string
 	privateKey  *rsa.PrivateKey
 }
 
 func NewFCMDriver(projectID, saPath string) *FCMDriver {
 	return &FCMDriver{
-		ProjectID:         projectID,
+		ProjectID:          projectID,
 		ServiceAccountPath: saPath,
-		HTTP:              &http.Client{Timeout: 10 * time.Second},
+		HTTP:               &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -47,9 +47,9 @@ func (f *FCMDriver) Send(ctx context.Context, deviceToken string, n Notification
 	}
 	body, _ := json.Marshal(map[string]any{
 		"message": map[string]any{
-			"token": deviceToken,
+			"token":        deviceToken,
 			"notification": map[string]string{"title": n.Title, "body": n.Body},
-			"data": n.Data,
+			"data":         n.Data,
 		},
 	})
 	url := fmt.Sprintf("https://fcm.googleapis.com/v1/projects/%s/messages:send", f.ProjectID)

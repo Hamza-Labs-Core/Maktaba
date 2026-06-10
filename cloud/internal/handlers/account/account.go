@@ -38,13 +38,13 @@ func Mount(r interface {
 }
 
 type meView struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	DisplayName   string `json:"display_name,omitempty"`
-	Locale        string `json:"locale"`
-	AvatarURL     string `json:"avatar_url,omitempty"`
-	Plan          string `json:"plan"`
+	ID            string    `json:"id"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	DisplayName   string    `json:"display_name,omitempty"`
+	Locale        string    `json:"locale"`
+	AvatarURL     string    `json:"avatar_url,omitempty"`
+	Plan          string    `json:"plan"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -134,15 +134,15 @@ func (d *Deps) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-type emailChangeReq struct {
-	NewEmail string `json:"new_email"`
-}
-
 // RequestEmailChange begins a two-step flow: the new address receives
 // a token, the caller redeems it from a different endpoint we don't
 // land here (verification email worker). We persist a pending row so
 // the redeemer can resolve which user is asking.
-func (d *Deps) RequestEmailChange(w http.ResponseWriter, r *http.Request) {
+//
+// NOTE: this is currently a stub — it returns 202 without reading the
+// request body or persisting anything. The persistence + verification
+// worker land with the mail-provider integration (see CODE_QUALITY_REVIEW).
+func (d *Deps) RequestEmailChange(w http.ResponseWriter, _ *http.Request) {
 	// Implementation note: the actual send is deferred to a worker;
 	// here we only persist the request. Verifier endpoint lands when
 	// the mail provider integration is wired.

@@ -32,11 +32,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	ListenAddr     string
-	PublicURL      string
-	ReadTimeout    time.Duration
-	WriteTimeout   time.Duration
-	ShutdownGrace  time.Duration
+	ListenAddr    string
+	PublicURL     string
+	ReadTimeout   time.Duration
+	WriteTimeout  time.Duration
+	ShutdownGrace time.Duration
 }
 
 type DBConfig struct {

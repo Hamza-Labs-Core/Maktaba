@@ -18,10 +18,10 @@ import (
 
 // AppleConfig is the runtime configuration loaded from cloud.toml.
 type AppleConfig struct {
-	TeamID   string
-	KeyID    string
-	ClientID string
-	KeyPath  string
+	TeamID      string
+	KeyID       string
+	ClientID    string
+	KeyPath     string
 	RedirectURL string
 }
 

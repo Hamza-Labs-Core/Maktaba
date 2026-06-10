@@ -21,13 +21,13 @@ var ErrNotFound = errors.New("sessions: not found")
 
 // Session is the row shape exposed to handlers.
 type Session struct {
-	ID         string
-	UserID     string
-	UserAgent  string
-	IP         string
-	ExpiresAt  time.Time
-	RevokedAt  *time.Time
-	CreatedAt  time.Time
+	ID        string
+	UserID    string
+	UserAgent string
+	IP        string
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
 }
 
 // Store persists sessions. We hash the refresh token at rest and

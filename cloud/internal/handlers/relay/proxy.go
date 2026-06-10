@@ -18,9 +18,9 @@ import (
 )
 
 type Deps struct {
-	Registry  *relaypkg.Registry
-	Servers   *stores.Servers
-	Meter     *billing.Meter
+	Registry   *relaypkg.Registry
+	Servers    *stores.Servers
+	Meter      *billing.Meter
 	PublicHost string // e.g. "relay.maktaba.app"
 }
 

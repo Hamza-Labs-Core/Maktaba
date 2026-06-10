@@ -105,7 +105,12 @@ func (d *Deps) federate(r *http.Request, provider string, id oauth.Identity) (st
 	if u, err := d.Users.UserByOAuth(r.Context(), provider, id.Subject); err == nil {
 		return u, nil
 	}
-	if id.Email != "" {
+	// Auto-link to an existing local account by email ONLY when the
+	// provider asserts the address is verified. Linking on an unverified
+	// email would let anyone who can mint an identity with a victim's
+	// address (a provider that does not verify, or a relay/alias) take
+	// over that account. Unverified identities fall through to Create.
+	if id.Email != "" && id.EmailVerified {
 		if u, err := d.Users.ByEmail(r.Context(), id.Email); err == nil {
 			_ = d.Users.LinkOAuth(r.Context(), u.ID, provider, id.Subject, id.Email)
 			return u, nil

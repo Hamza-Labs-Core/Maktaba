@@ -6,13 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"math/big"
 	"strings"
 	"time"
 )
 
 // signES256 produces the Apple-style client_secret JWT. Format:
-//   base64url(JSON header).base64url(JSON payload).base64url(ECDSA r||s)
+//
+//	base64url(JSON header).base64url(JSON payload).base64url(ECDSA r||s)
+//
 // We avoid jwt-go because the input space is tiny and constant.
 func signES256(key *ecdsa.PrivateKey, teamID, keyID, clientID string, now time.Time) (string, error) {
 	header := map[string]string{"alg": "ES256", "kid": keyID, "typ": "JWT"}
@@ -50,10 +51,6 @@ func jwtURLDecode(seg string) ([]byte, error) {
 	}
 	return base64.RawURLEncoding.DecodeString(seg)
 }
-
-// bigFromBytes is a helper kept for symmetry — not used today but is
-// the natural decoder when we add JWKS verification.
-func bigFromBytes(b []byte) *big.Int { return new(big.Int).SetBytes(b) }
 
 // SignAPNsToken produces the JWT used in the APNs `authorization`
 // header. APNs requires the same ES256+kid+iss(teamID) shape as the

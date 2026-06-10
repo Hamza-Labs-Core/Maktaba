@@ -174,7 +174,10 @@ func (s *stream) push(f Frame) {
 	}
 }
 
-func (s *stream) fail(err error) {
+// fail closes the stream. The cause is currently advisory only — the
+// reader surfaces its own "stream closed before response" error — so the
+// argument is accepted for call-site clarity but not propagated.
+func (s *stream) fail(_ error) {
 	if s.closed.CompareAndSwap(false, true) {
 		close(s.frames)
 	}

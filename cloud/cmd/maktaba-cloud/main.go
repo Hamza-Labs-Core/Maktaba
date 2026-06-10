@@ -4,11 +4,11 @@
 // The subcommand surface mirrors the on-prem `api` binary so operator
 // muscle memory carries over:
 //
-//   maktaba-cloud serve --role api      # default
-//   maktaba-cloud migrate up
-//   maktaba-cloud migrate down 1
-//   maktaba-cloud migrate status
-//   maktaba-cloud version
+//	maktaba-cloud serve --role api      # default
+//	maktaba-cloud migrate up
+//	maktaba-cloud migrate down 1
+//	maktaba-cloud migrate status
+//	maktaba-cloud version
 package main
 
 import (
@@ -54,7 +54,7 @@ func main() {
 }
 
 func runVersion() {
-	fmt.Printf("maktaba-cloud %s\n  commit  %s\n  built   %s\n  go      %s\n", Version, Commit, BuiltAt, runtime.Version())
+	fmt.Fprintf(os.Stdout, "maktaba-cloud %s\n  commit  %s\n  built   %s\n  go      %s\n", Version, Commit, BuiltAt, runtime.Version())
 }
 
 func runServe(args []string) {
@@ -157,7 +157,7 @@ func runMigrate(args []string) {
 			logger.Error("migrate status", "err", err)
 			os.Exit(1)
 		}
-		fmt.Println("at_head:", ok)
+		fmt.Fprintln(os.Stdout, "at_head:", ok)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown migrate subcommand:", sub)
 		os.Exit(2)

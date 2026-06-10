@@ -18,7 +18,7 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  64 * 1024,
 	WriteBufferSize: 64 * 1024,
-	CheckOrigin: func(r *http.Request) bool {
+	CheckOrigin: func(_ *http.Request) bool {
 		return true // server-to-cloud auth is via the AUTH frame; no Origin gate.
 	},
 }

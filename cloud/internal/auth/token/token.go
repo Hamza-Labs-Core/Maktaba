@@ -39,7 +39,7 @@ var (
 // without a separate API call.
 type Claims struct {
 	Iss   string `json:"iss"`
-	Sub   string `json:"sub"`           // user id (UUID)
+	Sub   string `json:"sub"` // user id (UUID)
 	Email string `json:"email,omitempty"`
 	Plan  string `json:"plan,omitempty"`
 	IAT   int64  `json:"iat"`

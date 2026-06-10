@@ -42,9 +42,9 @@ type GoogleConfig struct {
 
 // GoogleFlow encapsulates the OAuth-code/PKCE flow. The flow operates
 // in two stages:
-//   1) AuthURL — returned to the browser to begin the dance.
-//   2) Exchange — server-side, swaps the code for tokens, then verifies
-//      the id_token via GoogleVerifier and returns Identity.
+//  1. AuthURL — returned to the browser to begin the dance.
+//  2. Exchange — server-side, swaps the code for tokens, then verifies
+//     the id_token via GoogleVerifier and returns Identity.
 type GoogleFlow struct {
 	Config   GoogleConfig
 	Verifier GoogleVerifier
@@ -100,6 +100,13 @@ func (g *GoogleFlow) Exchange(ctx context.Context, code string) (Identity, error
 	}
 	if tr.IDToken == "" {
 		return Identity{}, errors.New("google oauth: empty id_token")
+	}
+	// Guard against a missing verifier: production wiring must supply a
+	// JWKS-backed GoogleVerifier. Without it we cannot trust the id_token,
+	// so fail closed with a clear error instead of panicking on a nil
+	// interface call.
+	if g.Verifier == nil {
+		return Identity{}, errors.New("google oauth: id_token verifier not configured")
 	}
 	return g.Verifier.Verify(ctx, tr.IDToken)
 }

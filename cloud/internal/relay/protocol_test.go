@@ -27,7 +27,7 @@ func TestFrameRoundTrip(t *testing.T) {
 		if got.Kind != f.Kind || got.StreamID != f.StreamID {
 			t.Errorf("kind/stream mismatch: got=%v want=%v", got, f)
 		}
-		if !bytes.Equal(got.Payload, f.Payload) && !(len(got.Payload) == 0 && len(f.Payload) == 0) {
+		if !bytes.Equal(got.Payload, f.Payload) && (len(got.Payload) != 0 || len(f.Payload) != 0) {
 			t.Errorf("payload mismatch: %q vs %q", got.Payload, f.Payload)
 		}
 	}

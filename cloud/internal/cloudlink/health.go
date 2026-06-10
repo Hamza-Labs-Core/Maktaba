@@ -29,13 +29,13 @@ type LinkState struct {
 // Backoff computes exponential backoff with a cap. attempt is 1-based.
 // Story 25.7 requires "exponential-backoff reconnect"; we cap at 30s so
 // a long cloud outage does not strand the box for minutes.
-func Backoff(attempt int, base, max time.Duration) time.Duration {
+func Backoff(attempt int, base, maxDelay time.Duration) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
 	d := float64(base) * math.Pow(2, float64(attempt-1))
-	if d > float64(max) || math.IsInf(d, 1) {
-		return max
+	if d > float64(maxDelay) || math.IsInf(d, 1) {
+		return maxDelay
 	}
 	return time.Duration(d)
 }

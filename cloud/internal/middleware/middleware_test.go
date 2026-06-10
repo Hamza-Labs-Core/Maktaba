@@ -10,7 +10,7 @@ import (
 
 func TestRequestID_MintsWhenAbsent(t *testing.T) {
 	var got string
-	h := RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = GetRequestID(r.Context())
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -32,7 +32,7 @@ func TestRequestID_ReusesValidInput(t *testing.T) {
 	u, _ := uuid.NewV7()
 	want := u.String()
 	var got string
-	h := RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = GetRequestID(r.Context())
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -46,7 +46,7 @@ func TestRequestID_ReusesValidInput(t *testing.T) {
 func TestRequestID_RejectsNonV7(t *testing.T) {
 	u := uuid.Must(uuid.NewRandom()) // v4
 	var got string
-	h := RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = GetRequestID(r.Context())
 	}))
 	req := httptest.NewRequest("GET", "/", nil)

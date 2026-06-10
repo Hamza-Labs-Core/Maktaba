@@ -94,7 +94,7 @@ func (d *SubdomainDeps) Claim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "txn_failed", err.Error())
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var owner string
 	if err := tx.QueryRowContext(r.Context(), `SELECT owner_user_id FROM servers WHERE id = $1`, req.ServerID).Scan(&owner); err != nil {

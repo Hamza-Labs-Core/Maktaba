@@ -17,16 +17,16 @@ import (
 type Deps struct{ DB *sql.DB }
 
 type serverStatus struct {
-	ID              string    `json:"id"`
-	Slug            string    `json:"slug"`
-	Name            string    `json:"name"`
-	Online          bool      `json:"online"`
+	ID              string     `json:"id"`
+	Slug            string     `json:"slug"`
+	Name            string     `json:"name"`
+	Online          bool       `json:"online"`
 	LastSeen        *time.Time `json:"last_seen_at,omitempty"`
-	RelayLatencyMS  int       `json:"relay_latency_ms"`
-	DirectLatencyMS int       `json:"direct_latency_ms"`
-	CPUPct          float32   `json:"cpu_pct"`
-	MemPct          float32   `json:"mem_pct"`
-	StoragePct      float32   `json:"storage_pct"`
+	RelayLatencyMS  int        `json:"relay_latency_ms"`
+	DirectLatencyMS int        `json:"direct_latency_ms"`
+	CPUPct          float32    `json:"cpu_pct"`
+	MemPct          float32    `json:"mem_pct"`
+	StoragePct      float32    `json:"storage_pct"`
 }
 
 func (d *Deps) Mount(r interface {

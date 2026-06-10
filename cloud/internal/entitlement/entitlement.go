@@ -3,7 +3,9 @@
 // features without a round-trip to the cloud on every action.
 //
 // Token format:
-//   <base64url(payload)>.<base64url(ed25519 sig)>
+//
+//	<base64url(payload)>.<base64url(ed25519 sig)>
+//
 // Payload is JSON. We do NOT use the JWT layout here: callers on the
 // server side are tiny embedded binaries (Raspberry Pi, NAS) and the
 // extra parsing complexity of JWT isn't worth it.

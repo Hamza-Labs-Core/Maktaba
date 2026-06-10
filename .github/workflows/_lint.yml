@@ -77,6 +77,13 @@ jobs:
           working-directory: streaming
           args: --timeout=5m
 
+      - name: golangci-lint (cloud)
+        uses: golangci/golangci-lint-action@v9.2.1
+        with:
+          version: v2.12.2
+          working-directory: cloud
+          args: --timeout=5m
+
       - name: golangci-lint (shared/health/go)
         uses: golangci/golangci-lint-action@v9.2.1
         with:

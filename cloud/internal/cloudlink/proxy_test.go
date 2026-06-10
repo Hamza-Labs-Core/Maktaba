@@ -72,24 +72,24 @@ func TestProxyServe_StreamsResponseFrames(t *testing.T) {
 	head.WriteString("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
 	asm := &reqAssembly{head: head.Bytes()}
 
-	cap := &captureSink{}
+	sink := &captureSink{}
 	p := &LocalProxy{BaseURL: local.URL}
-	if err := p.serve(context.Background(), 7, asm, cap); err != nil {
+	if err := p.serve(context.Background(), 7, asm, sink); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 
-	if len(cap.frames) < 2 {
-		t.Fatalf("expected >=2 frames, got %d", len(cap.frames))
+	if len(sink.frames) < 2 {
+		t.Fatalf("expected >=2 frames, got %d", len(sink.frames))
 	}
-	if cap.frames[0].Kind != KindResponseHead || cap.frames[0].StreamID != 7 {
-		t.Fatalf("frame[0] = kind %#x stream %d, want RESPONSE_HEAD/7", cap.frames[0].Kind, cap.frames[0].StreamID)
+	if sink.frames[0].Kind != KindResponseHead || sink.frames[0].StreamID != 7 {
+		t.Fatalf("frame[0] = kind %#x stream %d, want RESPONSE_HEAD/7", sink.frames[0].Kind, sink.frames[0].StreamID)
 	}
-	last := cap.frames[len(cap.frames)-1]
+	last := sink.frames[len(sink.frames)-1]
 	if last.Kind != KindResponseBody || len(last.Payload) != 0 {
 		t.Fatalf("last frame = kind %#x len %d, want empty RESPONSE_BODY (EOF)", last.Kind, len(last.Payload))
 	}
 	var bodyBuf bytes.Buffer
-	for _, f := range cap.frames[1:] {
+	for _, f := range sink.frames[1:] {
 		if f.Kind == KindResponseBody {
 			bodyBuf.Write(f.Payload)
 		}
@@ -124,7 +124,7 @@ func TestProxyServe_StalledBodyAbandonedOnContextDeadline(t *testing.T) {
 	head.WriteString("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
 	asm := &reqAssembly{head: head.Bytes()}
 
-	cap := &captureSink{}
+	sink := &captureSink{}
 	p := &LocalProxy{BaseURL: local.URL}
 
 	// A short bound stands in for the production serveTimeout const so
@@ -136,7 +136,7 @@ func TestProxyServe_StalledBodyAbandonedOnContextDeadline(t *testing.T) {
 
 	doneCh := make(chan error, 1)
 	start := time.Now()
-	go func() { doneCh <- p.serve(ctx, 7, asm, cap) }()
+	go func() { doneCh <- p.serve(ctx, 7, asm, sink) }()
 
 	select {
 	case err := <-doneCh:
@@ -151,10 +151,10 @@ func TestProxyServe_StalledBodyAbandonedOnContextDeadline(t *testing.T) {
 		t.Fatalf("serve took %v, want ~%v (bounded by ctx)", elapsed, testBound)
 	}
 
-	if len(cap.frames) == 0 {
+	if len(sink.frames) == 0 {
 		t.Fatalf("no frames emitted; cloud stream would hang")
 	}
-	last := cap.frames[len(cap.frames)-1]
+	last := sink.frames[len(sink.frames)-1]
 	if last.Kind != KindCloseStream {
 		t.Fatalf("last frame kind = %#x, want CLOSE_STREAM so the cloud frees its stream", last.Kind)
 	}
@@ -163,15 +163,15 @@ func TestProxyServe_StalledBodyAbandonedOnContextDeadline(t *testing.T) {
 func TestProxyServe_BadGatewayOnLoopbackFailure(t *testing.T) {
 	var head bytes.Buffer
 	head.WriteString("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
-	cap := &captureSink{}
+	sink := &captureSink{}
 	p := &LocalProxy{BaseURL: "http://127.0.0.1:1", Client: &http.Client{}}
-	if err := p.serve(context.Background(), 1, &reqAssembly{head: head.Bytes()}, cap); err != nil {
+	if err := p.serve(context.Background(), 1, &reqAssembly{head: head.Bytes()}, sink); err != nil {
 		t.Fatalf("serve returned err (should emit 502 frame instead): %v", err)
 	}
-	if cap.frames[0].Kind != KindResponseHead || !bytes.Contains(cap.frames[0].Payload, []byte("502")) {
-		t.Fatalf("expected 502 RESPONSE_HEAD, got %q", string(cap.frames[0].Payload))
+	if sink.frames[0].Kind != KindResponseHead || !bytes.Contains(sink.frames[0].Payload, []byte("502")) {
+		t.Fatalf("expected 502 RESPONSE_HEAD, got %q", string(sink.frames[0].Payload))
 	}
-	if cap.frames[len(cap.frames)-1].Kind != KindCloseStream {
+	if sink.frames[len(sink.frames)-1].Kind != KindCloseStream {
 		t.Fatalf("expected trailing CLOSE_STREAM on failure")
 	}
 }

@@ -45,7 +45,7 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("maktaba-cloudlink %s\n  commit %s\n  built  %s\n  go     %s\n",
+		fmt.Fprintf(os.Stdout, "maktaba-cloudlink %s\n  commit %s\n  built  %s\n  go     %s\n",
 			Version, Commit, BuiltAt, runtime.Version())
 		return
 	}

@@ -20,12 +20,13 @@ import (
 // REST API. We only use two endpoints:
 //   - POST /v1/checkout/sessions       — create a checkout session
 //   - POST /v1/billing_portal/sessions — open the customer portal
+//
 // Doing this by hand avoids pulling in stripe-go (large transitive deps)
 // for what amounts to two POSTs.
 type StripeClient struct {
-	SecretKey   string
-	HTTP        *http.Client
-	APIBase     string // override in tests; "" → live API
+	SecretKey string
+	HTTP      *http.Client
+	APIBase   string // override in tests; "" → live API
 }
 
 func NewStripeClient(secret string) *StripeClient {

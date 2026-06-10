@@ -28,12 +28,12 @@ import (
 // closure rather than embedding into a struct because the handler set
 // is small and a struct adds no clarity here.
 type Deps struct {
-	Users    *stores.Users
-	Sessions *sessions.Store
-	Signer   *token.Signer
-	Logger   *slog.Logger
-	Google   *oauth.GoogleFlow
-	Apple    *oauth.AppleFlow
+	Users        *stores.Users
+	Sessions     *sessions.Store
+	Signer       *token.Signer
+	Logger       *slog.Logger
+	Google       *oauth.GoogleFlow
+	Apple        *oauth.AppleFlow
 	CookieDomain string
 	Secure       bool
 }
@@ -59,8 +59,8 @@ type registerReq struct {
 }
 
 type authResp struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"`
+	AccessToken string   `json:"access_token"`
+	ExpiresIn   int      `json:"expires_in"`
 	User        userView `json:"user"`
 }
 

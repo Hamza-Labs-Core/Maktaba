@@ -64,9 +64,9 @@ func (d *Deps) Fleet(w http.ResponseWriter, r *http.Request) {
 	_ = d.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM servers`).Scan(&totalServers)
 	_ = d.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM server_health WHERE online`).Scan(&onlineServers)
 	writeJSON(w, 200, map[string]int{
-		"users_total":     totalUsers,
-		"servers_total":   totalServers,
-		"servers_online":  onlineServers,
+		"users_total":    totalUsers,
+		"servers_total":  totalServers,
+		"servers_online": onlineServers,
 	})
 }
 

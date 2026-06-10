@@ -33,7 +33,7 @@ func TestSupervisor_AcceptThenDropStorm_NoZeroDelayLoop_NoLeak(t *testing.T) {
 	base := goroutineCountStable(runtime.NumGoroutine(), 500*time.Millisecond)
 
 	var dials int64
-	dial := func(ctx context.Context) (DialResult, error) {
+	dial := func(_ context.Context) (DialResult, error) {
 		atomic.AddInt64(&dials, 1)
 		clientEnd, cloudEnd := newPipe()
 		// Accept-then-instant-drop: close the cloud end immediately so the

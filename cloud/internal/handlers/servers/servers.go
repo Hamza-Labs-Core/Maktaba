@@ -1,10 +1,10 @@
 // Package servers exposes the server-registration HTTP surface:
 //
-//   POST /v1/servers/claims           — user mints an 8-char token
-//   POST /v1/servers/claims/redeem    — server agent presents the token
-//   GET  /v1/servers                  — list user's servers
-//   GET  /v1/servers/{id}             — one-server detail
-//   POST /v1/servers/{id}/heartbeat   — server agent updates health
+//	POST /v1/servers/claims           — user mints an 8-char token
+//	POST /v1/servers/claims/redeem    — server agent presents the token
+//	GET  /v1/servers                  — list user's servers
+//	GET  /v1/servers/{id}             — one-server detail
+//	POST /v1/servers/{id}/heartbeat   — server agent updates health
 package servers
 
 import (

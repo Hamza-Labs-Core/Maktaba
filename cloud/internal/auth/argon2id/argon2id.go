@@ -41,9 +41,9 @@ func DefaultParams() Params {
 }
 
 var (
-	ErrMismatch   = errors.New("argon2id: password mismatch")
-	ErrTooLong    = errors.New("argon2id: password exceeds max length")
-	ErrBadFormat  = errors.New("argon2id: not a PHC argon2id string")
+	ErrMismatch       = errors.New("argon2id: password mismatch")
+	ErrTooLong        = errors.New("argon2id: password exceeds max length")
+	ErrBadFormat      = errors.New("argon2id: not a PHC argon2id string")
 	ErrUnsupportedVer = errors.New("argon2id: unsupported version")
 )
 

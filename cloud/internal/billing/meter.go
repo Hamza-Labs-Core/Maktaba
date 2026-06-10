@@ -21,15 +21,15 @@ import (
 // that has just blown its cap is rejected immediately without waiting
 // for the flush.
 type Meter struct {
-	DB              *sql.DB
-	FlushInterval   time.Duration
-	now             func() time.Time
+	DB            *sql.DB
+	FlushInterval time.Duration
+	now           func() time.Time
 
 	mu       sync.Mutex
 	counters map[string]*counter // keyed by server id
 
-	stop  chan struct{}
-	once  sync.Once
+	stop       chan struct{}
+	once       sync.Once
 	flushCount atomic.Int64
 }
 
@@ -78,7 +78,7 @@ func (m *Meter) Close() { close(m.stop) }
 
 // Record adds to the in-memory counters. Called from the relay handler
 // after each proxied request.
-func (m *Meter) Record(ctx context.Context, sv stores.Server, in, out int64) {
+func (m *Meter) Record(_ context.Context, sv stores.Server, in, out int64) {
 	if in == 0 && out == 0 {
 		return
 	}
@@ -111,8 +111,8 @@ func (m *Meter) Allow(ctx context.Context, sv stores.Server) error {
 		monthBytes += c.BytesIn + c.BytesOut
 	}
 	m.mu.Unlock()
-	cap := tier.BandwidthBytesPerMo + FreeOverageGrace
-	if monthBytes > cap {
+	limit := tier.BandwidthBytesPerMo + FreeOverageGrace
+	if monthBytes > limit {
 		return ErrOverLimit
 	}
 	return nil
@@ -155,7 +155,7 @@ func (m *Meter) flush(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for id, c := range snapshot {
 		if _, err := tx.ExecContext(ctx, `
             INSERT INTO bandwidth_samples (server_id, bucket_start, bytes_in, bytes_out)

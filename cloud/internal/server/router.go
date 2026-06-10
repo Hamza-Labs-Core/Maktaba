@@ -21,11 +21,11 @@ import (
 // BuildInfo is the static metadata bundled into the binary at link time
 // (or stubbed when running from `go run`).
 type BuildInfo struct {
-	Version  string
-	Commit   string
-	BuiltAt  string
-	Role     string
-	GoVer    string
+	Version string
+	Commit  string
+	BuiltAt string
+	Role    string
+	GoVer   string
 }
 
 // NewRouter returns a chi router with the standard middleware stack
@@ -45,7 +45,7 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 }
 
 func healthzHandler(build BuildInfo) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":   "ok",
@@ -78,7 +78,7 @@ func readyzHandler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
 }
 
 func versionHandler(build BuildInfo) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"version":  build.Version,
@@ -91,7 +91,7 @@ func versionHandler(build BuildInfo) http.HandlerFunc {
 
 // DefaultOrigins is the locked allow-list used by all roles unless the
 // operator passes their own through config in a future story.
-func DefaultOrigins(cfg config.Config) []string {
+func DefaultOrigins(_ config.Config) []string {
 	return []string{
 		"https://app.maktaba.app",
 		"https://web.maktaba.app",

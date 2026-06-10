@@ -1,8 +1,9 @@
 // Package billing (handlers) wires the billing HTTP surface:
-//   POST /v1/billing/checkout    — start a Stripe checkout
-//   POST /v1/billing/webhook     — receive Stripe webhooks
-//   GET  /v1/billing/plans       — plan comparison
-//   GET  /v1/billing/me          — current subscription state
+//
+//	POST /v1/billing/checkout    — start a Stripe checkout
+//	POST /v1/billing/webhook     — receive Stripe webhooks
+//	GET  /v1/billing/plans       — plan comparison
+//	GET  /v1/billing/me          — current subscription state
 package billing
 
 import (
@@ -20,11 +21,11 @@ import (
 )
 
 type Deps struct {
-	DB             *sql.DB
-	Stripe         *billingpkg.StripeClient
-	Users          *stores.Users
-	WebhookSecret  string
-	PublicURL      string
+	DB                 *sql.DB
+	Stripe             *billingpkg.StripeClient
+	Users              *stores.Users
+	WebhookSecret      string
+	PublicURL          string
 	PriceIDProMonth    string
 	PriceIDFamilyMonth string
 }
@@ -36,22 +37,27 @@ func Mount(r interface {
 	r.Get("/v1/billing/plans", d.Plans)
 	r.Get("/v1/billing/me", d.Me)
 	r.Post("/v1/billing/checkout", d.Checkout)
-	r.Post("/v1/billing/webhook", d.Webhook)
+	// NOTE: /v1/billing/webhook is intentionally NOT registered here.
+	// Stripe does not carry our bearer token, so the webhook must be
+	// mounted OUTSIDE the RequireUser group (see cmd/maktaba-cloud/
+	// role_api.go). Registering it here too previously relied on chi's
+	// last-registration-wins behaviour to dodge the auth middleware — a
+	// reorder would have silently routed Stripe through RequireUser → 401.
 }
 
 // Plans returns the static catalog from billing.Tiers. We deliberately
 // surface a public-friendly subset and omit internal-only fields.
-func (d *Deps) Plans(w http.ResponseWriter, r *http.Request) {
+func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 	type viewTier struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		PriceCents int    `json:"price_cents"`
-		Bandwidth  int64  `json:"bandwidth_bytes_per_month"`
-		MaxServers int    `json:"max_servers"`
-		MaxStreams int    `json:"max_concurrent_streams"`
-		RelayQoS   string `json:"relay_qos"`
-		Transcoding bool  `json:"includes_transcoding"`
-		FamilySeats int   `json:"family_seats"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		PriceCents  int    `json:"price_cents"`
+		Bandwidth   int64  `json:"bandwidth_bytes_per_month"`
+		MaxServers  int    `json:"max_servers"`
+		MaxStreams  int    `json:"max_concurrent_streams"`
+		RelayQoS    string `json:"relay_qos"`
+		Transcoding bool   `json:"includes_transcoding"`
+		FamilySeats int    `json:"family_seats"`
 	}
 	out := []viewTier{}
 	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {

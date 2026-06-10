@@ -14,16 +14,16 @@ import (
 
 // Server mirrors the `servers` row.
 type Server struct {
-	ID            string
-	OwnerUserID   string
-	Name          string
-	Slug          string
-	Plan          string
-	Version       sql.NullString
-	LastSeenAt    sql.NullTime
-	DirectIP      sql.NullString
-	DirectPort    sql.NullInt64
-	CreatedAt     time.Time
+	ID          string
+	OwnerUserID string
+	Name        string
+	Slug        string
+	Plan        string
+	Version     sql.NullString
+	LastSeenAt  sql.NullTime
+	DirectIP    sql.NullString
+	DirectPort  sql.NullInt64
+	CreatedAt   time.Time
 }
 
 var (
@@ -154,7 +154,8 @@ func looksLikeUUID(s string) bool {
 			}
 			continue
 		}
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+		if !isHex {
 			return false
 		}
 	}

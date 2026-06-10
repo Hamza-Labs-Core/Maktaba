@@ -11,7 +11,7 @@ import (
 
 func TestBackoff_Exponential_Capped(t *testing.T) {
 	base := 1 * time.Second
-	max := 30 * time.Second
+	maxWait := 30 * time.Second
 	cases := []struct {
 		attempt int
 		want    time.Duration
@@ -25,7 +25,7 @@ func TestBackoff_Exponential_Capped(t *testing.T) {
 		{0, 1 * time.Second},   // clamps to attempt 1
 	}
 	for _, c := range cases {
-		if got := Backoff(c.attempt, base, max); got != c.want {
+		if got := Backoff(c.attempt, base, maxWait); got != c.want {
 			t.Errorf("Backoff(%d) = %v, want %v", c.attempt, got, c.want)
 		}
 	}
@@ -49,7 +49,7 @@ func TestSupervisor_ReconnectsAfterDrop(t *testing.T) {
 	// Inject a fake dialer via the test seam: replace Dialer.WS path by
 	// swapping Dial through a function field is not exported, so we
 	// drive the lower-level pieces directly here instead.
-	dial := func(ctx context.Context) (DialResult, error) {
+	dial := func(_ context.Context) (DialResult, error) {
 		attempts++
 		if attempts < 3 {
 			return DialResult{}, context.DeadlineExceeded

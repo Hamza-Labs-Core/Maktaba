@@ -20,9 +20,9 @@ const (
 )
 
 var (
-	ErrTooShort = errors.New("password: minimum length is 10")
-	ErrTooLong  = errors.New("password: exceeds 256 chars")
-	ErrLeaked   = errors.New("password: appears in breach corpus")
+	ErrTooShort   = errors.New("password: minimum length is 10")
+	ErrTooLong    = errors.New("password: exceeds 256 chars")
+	ErrLeaked     = errors.New("password: appears in breach corpus")
 	ErrWhitespace = errors.New("password: cannot start or end with whitespace")
 )
 
