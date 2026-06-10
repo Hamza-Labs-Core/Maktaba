@@ -23,6 +23,8 @@ import { useAuth } from "../lib/auth";
 import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
+import { useToast } from "@ds/components/Toast/Toast";
+import { downloadBlob, ApiError } from "../lib/api";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -92,6 +94,41 @@ function AccountTab() {
       <hr />
       {/* 11.13 deferred — no backend endpoint. */}
       <p className="mkt-muted">{t("settings.tokens.deferred")}</p>
+      <hr />
+      <DiagnosticsSection />
+    </div>
+  );
+}
+
+// DiagnosticsSection lets any authenticated user download a support
+// bundle scoped to their own activity (GET /api/diagnostics/export).
+// Admins get the full cross-service bundle from the admin Logs page.
+function DiagnosticsSection() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mkt-settings__diagnostics">
+      <h2>{t("settings.diagnostics.title")}</h2>
+      <p className="mkt-muted">{t("settings.diagnostics.hint")}</p>
+      <Button
+        variant="secondary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await downloadBlob("/api/diagnostics/export", "maktaba-diagnostics.tar.gz");
+            toast.show({ tone: "success", message: t("settings.diagnostics.success") });
+          } catch (e) {
+            const detail = e instanceof ApiError ? e.message : t("common.error");
+            toast.show({ tone: "error", message: `${t("settings.diagnostics.error")}: ${detail}` });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? t("settings.diagnostics.running") : t("settings.diagnostics.collect")}
+      </Button>
     </div>
   );
 }

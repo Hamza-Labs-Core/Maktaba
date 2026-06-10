@@ -986,3 +986,115 @@ mark {
   gap: var(--space-2);
   color: var(--color-fg);
 }
+
+/* ── Admin log viewer (troubleshooting surface) ───────────────────── */
+.mkt-logs__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+.mkt-logs__filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.mkt-logs__filter--grow {
+  flex: 1 1 12rem;
+}
+.mkt-logs__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+}
+.mkt-logs__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-logs__viewport {
+  padding: 0;
+}
+.mkt-logs__scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: var(--font-size-sm);
+}
+.mkt-logs__empty {
+  padding: var(--space-5);
+  text-align: center;
+}
+.mkt-logs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mkt-logs__row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+  border-inline-start: 3px solid transparent;
+}
+.mkt-logs__row--error {
+  border-inline-start-color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 6%, transparent);
+}
+.mkt-logs__row--warn {
+  border-inline-start-color: var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 6%, transparent);
+}
+.mkt-logs__row--accent {
+  border-inline-start-color: var(--color-accent);
+}
+.mkt-logs__row--neutral {
+  border-inline-start-color: var(--color-neutral-300);
+  color: var(--color-muted);
+}
+.mkt-logs__ts {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.mkt-logs__service {
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+.mkt-logs__msg {
+  overflow-wrap: anywhere;
+}
+.mkt-logs__attrs > summary {
+  cursor: pointer;
+  list-style: none;
+  width: 1rem;
+  text-align: center;
+  color: var(--color-muted);
+}
+.mkt-logs__attrs > summary::after {
+  content: "⋯";
+}
+.mkt-logs__attrs[open] > summary::after {
+  content: "×";
+}
+.mkt-logs__attrs pre {
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  background: var(--color-subtle);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.mkt-settings__diagnostics {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}

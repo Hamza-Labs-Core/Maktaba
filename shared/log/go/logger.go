@@ -45,6 +45,11 @@ type Options struct {
 	Output io.Writer
 	// RedactedFields overrides DefaultRedactedFields. nil means use defaults.
 	RedactedFields []string
+	// RingCapacity sizes the in-memory ring-buffer sink installed by
+	// Init (the troubleshooting-export buffer). Zero means
+	// DefaultRingCapacity; a negative value disables the ring entirely.
+	// NewLogger never installs a ring regardless of this field.
+	RingCapacity int
 }
 
 var (
@@ -61,7 +66,16 @@ var (
 // in the story.
 func Init(opts Options) *slog.Logger {
 	initOnce.Do(func() {
-		Default = build(opts)
+		// Install the process-wide ring sink unless explicitly disabled
+		// (RingCapacity < 0). The export endpoint drains from globalRing.
+		if opts.RingCapacity >= 0 {
+			capacity := opts.RingCapacity
+			if capacity == 0 {
+				capacity = DefaultRingCapacity
+			}
+			globalRing = NewRingBuffer(capacity)
+		}
+		Default = build(opts, globalRing)
 		slog.SetDefault(Default)
 		installSIGUSR1()
 	})
@@ -70,8 +84,9 @@ func Init(opts Options) *slog.Logger {
 
 // build constructs a logger from opts without touching the global. Used
 // by Init and exposed (via NewLogger) for tests that need an isolated
-// logger.
-func build(opts Options) *slog.Logger {
+// logger. When ring is non-nil the returned logger tees every record
+// into it (as JSON) in addition to the primary stderr/stdout handler.
+func build(opts Options, ring *RingBuffer) *slog.Logger {
 	if opts.Service == "" {
 		opts.Service = "unknown"
 	}
@@ -118,6 +133,13 @@ func build(opts Options) *slog.Logger {
 		h = slog.NewTextHandler(out, hopts)
 	}
 
+	// Tee into the ring buffer as JSON regardless of the primary
+	// format, so the buffer is always structured for the export bundle.
+	// Reusing hopts keeps the same level floor + redaction ReplaceAttr.
+	if ring != nil {
+		h = fanoutHandler{handlers: []slog.Handler{h, slog.NewJSONHandler(ring, hopts)}}
+	}
+
 	return slog.New(h).With(
 		"service", opts.Service,
 		"version", opts.Version,
@@ -128,7 +150,16 @@ func build(opts Options) *slog.Logger {
 // NewLogger builds an isolated logger for tests. It does not touch the
 // global Default and does not install signal handlers.
 func NewLogger(opts Options) *slog.Logger {
-	return build(opts)
+	return build(opts, nil)
+}
+
+// NewLoggerWithRing builds an isolated logger that tees every record
+// into the supplied ring buffer (as JSON) in addition to its primary
+// handler. It does not touch the global Default or install signal
+// handlers, so tests and embedders can wire a dedicated buffer without
+// the process-wide Init.
+func NewLoggerWithRing(opts Options, ring *RingBuffer) *slog.Logger {
+	return build(opts, ring)
 }
 
 // SetLevel changes the active log level at runtime. Used by the SIGUSR1

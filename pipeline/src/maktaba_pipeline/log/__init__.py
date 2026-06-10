@@ -95,12 +95,18 @@ def init(
     version: str = "unknown",
     redacted_fields: tuple[str, ...] | None = None,
     level: int = logging.INFO,
+    ring_capacity: int | None = None,
 ) -> Any:
     """Configure the global structlog instance and return a logger.
 
     Calling :func:`init` again is allowed and re-applies the
     configuration; this matches the Go ``Init`` contract closely enough
     for tests and re-init scenarios.
+
+    ``ring_capacity`` sizes the in-memory ring sink used by the
+    troubleshooting log export: ``None``/``0`` installs the default
+    (:data:`~maktaba_pipeline.log.ring.DEFAULT_RING_CAPACITY`); a
+    negative value disables the ring entirely.
     """
     fields = redacted_fields if redacted_fields is not None else DEFAULT_REDACTED_FIELDS
     redact_set = frozenset(f.lower() for f in fields)
@@ -116,10 +122,27 @@ def init(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
+
+    # Ring sink for the diagnostics export. Installed unless explicitly
+    # disabled (negative capacity). The capture processor runs just
+    # before the terminal renderer so the buffered copy is already
+    # redacted + truncated.
+    ring = None
+    if ring_capacity is None or ring_capacity >= 0:
+        from .ring import DEFAULT_RING_CAPACITY, LogRingBuffer, make_ring_processor, set_ring
+
+        cap = ring_capacity if ring_capacity else DEFAULT_RING_CAPACITY
+        ring = LogRingBuffer(cap)
+        set_ring(ring)
+
     if env == "prod":
         processors.append(_rename_event_to_msg)
+        if ring is not None:
+            processors.append(make_ring_processor(ring))
         processors.append(structlog.processors.JSONRenderer())
     else:
+        if ring is not None:
+            processors.append(make_ring_processor(ring))
         processors.append(structlog.dev.ConsoleRenderer())
 
     structlog.configure(

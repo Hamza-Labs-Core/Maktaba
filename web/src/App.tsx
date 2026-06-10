@@ -22,6 +22,7 @@ import { Settings } from "./pages/Settings";
 import { AdminUsers } from "./pages/Admin/Users";
 import { AdminAuditLog } from "./pages/Admin/AuditLog";
 import { SystemHealth } from "./pages/Admin/SystemHealth";
+import { AdminLogs } from "./pages/Admin/Logs";
 import { CloudDevices } from "./pages/Cloud/Devices";
 import { Billing } from "./pages/Cloud/Billing";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
@@ -86,6 +87,7 @@ export function App() {
                     <Route path="/admin/library-acl" element={<LibraryACL />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />
+                    <Route path="/admin/logs" element={<AdminLogs />} />
                     <Route path="/admin/devices" element={<CloudDevices />} />
                     <Route path="*" element={<NotFound />} />
                   </Route>

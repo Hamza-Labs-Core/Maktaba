@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -73,6 +74,9 @@ func initLogger() *slog.Logger {
 		Service: "streaming",
 		Env:     env(),
 		Version: version.Version,
+		// In-memory ring sink so the API's diagnostics export can proxy
+		// this service's recent logs via /logs/recent on the admin port.
+		RingCapacity: envIntDefault("MAKTABA_LOG_RING_CAPACITY", 0),
 	})
 }
 
@@ -81,6 +85,20 @@ func env() string {
 		return v
 	}
 	return "dev"
+}
+
+// envIntDefault reads an integer env var, falling back to def when unset
+// or unparseable.
+func envIntDefault(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // runServe stands up two HTTP servers (mirrors api/main.go):
@@ -109,6 +127,10 @@ func runServe() error {
 	checks := buildChecks()
 	warm := warmPeriod()
 	adminMux := health.AdminMux("streaming", checks, warm)
+
+	// Recent-logs endpoint on the admin port (already firewalled in
+	// production), drained by the API's diagnostics-export proxy.
+	adminMux.Handle("/logs/recent", mlog.RecentHandler(mlog.Ring()))
 
 	// Real read stores. When DATABASE_URL is set the probe backend and
 	// transcript streamer are Postgres-backed (the production path);

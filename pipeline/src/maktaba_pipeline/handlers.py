@@ -376,6 +376,12 @@ async def scan_handler(
     here.
     """
     factory = make_store or _default_scan_store
+    _log.info(
+        "stage_started",
+        stage=Stage.SCAN.value,
+        job_id=job.id,
+        library_id=str(job.library_id) if job.library_id is not None else None,
+    )
     try:
         if job.library_id is None:
             await mark_failed_or_retry(
@@ -489,6 +495,12 @@ async def transcribe_handler(
     )
 
     pick = select_backend or default_select_backend
+    _log.info(
+        "stage_started",
+        stage=Stage.TRANSCRIBE.value,
+        job_id=job.id,
+        video_id=str(job.video_id) if job.video_id is not None else None,
+    )
     try:
         if job.video_id is None:
             # Per-video stage with no video_id — impossible under the
@@ -794,6 +806,12 @@ async def index_handler(
     )
 
     resolve = resolve_target or default_index_target
+    _log.info(
+        "stage_started",
+        stage=Stage.INDEX.value,
+        job_id=job.id,
+        video_id=str(job.video_id) if job.video_id is not None else None,
+    )
     try:
         if job.video_id is None:
             # Per-video stage with no video_id — impossible under the

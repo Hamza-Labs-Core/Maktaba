@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -102,6 +103,10 @@ func initLogger() *slog.Logger {
 		Service: "api",
 		Env:     env(),
 		Version: version.Version,
+		// In-memory ring sink for the diagnostics export. Operators can
+		// size it via $MAKTABA_LOG_RING_CAPACITY; 0/unset uses the
+		// package default (10k lines).
+		RingCapacity: envIntDefault("MAKTABA_LOG_RING_CAPACITY", 0),
 	})
 }
 
@@ -142,6 +147,7 @@ Commands:
 // drains them together.
 func runServe() error {
 	logger := initLogger()
+	processStart := time.Now()
 
 	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
 	// the HTTP servers bind. The dev/e2e compose stacks set this so
@@ -206,6 +212,12 @@ func runServe() error {
 	}
 	adminMux.Handle("/metrics", mh)
 
+	// Recent-logs endpoint on the admin port, mirroring the streaming
+	// service. The public-facing viewer/export use /api/admin/logs/*
+	// (auth-gated); this internal one is for symmetric cross-service
+	// proxying and is bound to the firewalled admin port.
+	adminMux.Handle("/logs/recent", mlog.RecentHandler(mlog.Ring()))
+
 	// Auth bootstrap (Stories 10.6/10.9/10.15) — keys, admin-token,
 	// CORS, security headers. Tolerates fully-unset env (dev stub).
 	auth, err := initAuth(logger)
@@ -242,6 +254,23 @@ func runServe() error {
 		StatsDB:            statsDB,
 		ErrorReporter:      errReporter,
 	})
+
+	// Diagnostics / log-collection surface (/api/admin/logs/* +
+	// /api/diagnostics/export). Mounted independent of the P6 app-DB
+	// block: it works off the in-memory ring buffer even with no DB, and
+	// reuses the dedicated stats pool for the connection/job sections so
+	// it never contends with handler traffic. Peer log URLs let the
+	// bundle proxy the streaming + pipeline ring buffers.
+	router.MountLogs(r, router.LogsDeps{
+		DB:                 statsDB,
+		DataDir:            statsDataDir,
+		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
+		StartTime:          processStart,
+		AggregatorServices: buildAggregatorServices(),
+		StatsDB:            statsDB,
+		Peers:              buildLogPeers(),
+	})
+	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
 	// admin-port readiness check and the handler DB pool are
@@ -680,6 +709,35 @@ func buildAggregatorStats(logger *slog.Logger) (string, *sql.DB, func()) {
 				"err", cerr, "event", "health_stats_db_close_failed")
 		}
 	}
+}
+
+// buildLogPeers resolves the downstream services whose /logs/recent
+// endpoints the diagnostics bundle proxies. Configured via
+// $MAKTABA_LOG_PEERS as "name=url" pairs (comma-separated), e.g.
+// "streaming=http://streaming:9101/logs/recent,pipeline=http://pipeline:9102/logs/recent".
+// Unset yields no peers — the bundle then carries this service's logs
+// only.
+func buildLogPeers() []logs.PeerLog {
+	raw := os.Getenv("MAKTABA_LOG_PEERS")
+	if raw == "" {
+		return nil
+	}
+	out := []logs.PeerLog{}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, url, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		out = append(out, logs.PeerLog{
+			Service: strings.TrimSpace(name),
+			URL:     strings.TrimSpace(url),
+		})
+	}
+	return out
 }
 
 func buildAggregatorServices() []system.Service {
