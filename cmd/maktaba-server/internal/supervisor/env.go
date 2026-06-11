@@ -51,12 +51,23 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	case RoleAPI:
 		add("MAKTABA_HTTP_ADDR", cfg.Server.Listen)
 		add("MAKTABA_ADMIN_ADDR", cfg.Server.AdminAddr)
+		// Diagnostics export: the api proxies the streaming + pipeline
+		// ring buffers into the bundle. Streaming serves /logs/recent on
+		// its admin port (9101); the pipeline on its dedicated logs port
+		// (9102, set below). Without this the bundle would carry api logs
+		// only.
+		add("MAKTABA_LOG_PEERS",
+			"streaming=http://127.0.0.1:9101/logs/recent,"+
+				"pipeline=http://127.0.0.1:9102/logs/recent")
 	case RoleStreaming:
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", ":9101")
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", "127.0.0.1:9090")
+		// Recent-logs HTTP endpoint drained by the api's diagnostics
+		// export proxy (see MAKTABA_LOG_PEERS on the api role).
+		add("MAKTABA_PIPELINE_LOGS_ADDR", "127.0.0.1:9102")
 	}
 
 	return env

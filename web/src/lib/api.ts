@@ -33,6 +33,14 @@ export class ApiError extends Error {
   }
 }
 
+// logApiError surfaces every failed API call to the browser console so
+// troubleshooting (and the diagnostics export) has a client-side trail.
+// Kept to console.error with a stable "[api]" prefix so it is greppable
+// in a captured console log.
+function logApiError(method: string, path: string, status: number, detail: string): void {
+  console.error(`[api] ${method} ${path} failed (${status}): ${detail}`);
+}
+
 function csrfToken(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)mkt_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : null;
@@ -68,13 +76,21 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     }
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...opts,
-    method,
-    headers,
-    body,
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...opts,
+      method,
+      headers,
+      body,
+      credentials: "include",
+    });
+  } catch (e) {
+    // Network-level failure (offline, DNS, CORS) never reaches the
+    // status-based branch below — log it so it isn't swallowed.
+    logApiError(method, path, 0, e instanceof Error ? e.message : "network error");
+    throw e;
+  }
 
   if (res.status === 204) {
     return undefined as T;
@@ -86,24 +102,65 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (!res.ok) {
     if (ct.includes("problem+json") || ct.includes("json")) {
       try {
-        throw new ApiError(JSON.parse(text) as Problem);
+        const err = new ApiError(JSON.parse(text) as Problem);
+        logApiError(method, path, err.status, err.message);
+        throw err;
       } catch (e) {
         if (e instanceof ApiError) throw e;
         // fall through to generic
       }
     }
-    throw new ApiError({
+    const err = new ApiError({
       type: "about:blank",
       title: res.statusText || "request failed",
       status: res.status,
       detail: text.slice(0, 256),
     });
+    logApiError(method, path, err.status, err.message);
+    throw err;
   }
 
   if (ct.includes("json")) {
     return JSON.parse(text) as T;
   }
   return text as unknown as T;
+}
+
+// downloadBlob fetches a binary endpoint (e.g. the diagnostics .tar.gz
+// bundle) with the session cookie and triggers a browser download. The
+// filename is taken from the response's Content-Disposition when
+// present, else the fallbackName. Errors are logged like any other API
+// call and rethrown so the caller can surface a toast.
+export async function downloadBlob(path: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { credentials: "include", headers: { Accept: "*/*" } });
+  } catch (e) {
+    logApiError("GET", path, 0, e instanceof Error ? e.message : "network error");
+    throw e;
+  }
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 256);
+    logApiError("GET", path, res.status, detail);
+    throw new ApiError({
+      type: "about:blank",
+      title: res.statusText || "download failed",
+      status: res.status,
+      detail,
+    });
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const name = match ? match[1] : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {

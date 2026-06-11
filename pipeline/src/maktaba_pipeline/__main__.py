@@ -74,10 +74,15 @@ def _doctor(log: Any) -> int:
 
 
 def _bootstrap_log() -> Any:
+    ring_cap_raw = os.getenv("MAKTABA_LOG_RING_CAPACITY")
+    ring_capacity = (
+        int(ring_cap_raw) if ring_cap_raw and ring_cap_raw.lstrip("-").isdigit() else None
+    )
     return init_log(
         service="pipeline",
         env=os.getenv("MAKTABA_ENV", "dev"),
         version=__version__,
+        ring_capacity=ring_capacity,
     )
 
 
@@ -123,6 +128,19 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
     )
     database = await Database.connect(cfg.database_url)
 
+    # Recent-logs HTTP endpoint (/logs/recent) on a daemon thread so the
+    # API's diagnostics export can proxy this service's ring buffer.
+    # Opt-in via --logs-addr / $MAKTABA_PIPELINE_LOGS_ADDR.
+    log_server: Any = None
+    if args.logs_addr:
+        try:
+            from .log.http import start_log_server
+
+            log_server = start_log_server(args.logs_addr)
+            log.info("pipeline_logs_listening", addr=args.logs_addr)
+        except Exception as exc:  # noqa: BLE001 — startup-only branch
+            log.warning("pipeline_logs_disabled", reason=str(exc))
+
     grpc_addr = args.grpc_addr
     grpc_task: asyncio.Task[None] | None = None
     grpc_server: Any = None
@@ -152,6 +170,8 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
                 await asyncio.wait_for(grpc_task, timeout=2.0)
             except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
                 grpc_task.cancel()
+        if log_server is not None:
+            log_server.shutdown()
         await database.close()
 
 
@@ -207,6 +227,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--grpc-addr",
         default=os.getenv("MAKTABA_PIPELINE_GRPC_ADDR"),
         help="If set, bind the in-process gRPC server (architecture §9.9) on this host:port.",
+    )
+    run_p.add_argument(
+        "--logs-addr",
+        default=os.getenv("MAKTABA_PIPELINE_LOGS_ADDR"),
+        help="If set, bind the recent-logs HTTP endpoint (/logs/recent) on this host:port.",
     )
 
     subparsers.add_parser("doctor", help="Probe-only startup check.")
