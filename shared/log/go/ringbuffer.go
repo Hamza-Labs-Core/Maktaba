@@ -321,7 +321,14 @@ func RecentHandler(rb *RingBuffer) http.Handler {
 // RecentHandler and the API export endpoint.
 func FilterFromQuery(r *http.Request) Filter {
 	q := r.URL.Query()
-	f := Filter{MinLevel: ParseLevel(q.Get("level"))}
+	// Absent level means "no floor" (debug and up), matching the
+	// documented default — the diagnostics bundle wants debug lines.
+	// ParseLevel("") would otherwise floor at info and silently drop
+	// them.
+	f := Filter{MinLevel: slog.LevelDebug}
+	if lvl := strings.TrimSpace(q.Get("level")); lvl != "" {
+		f.MinLevel = ParseLevel(lvl)
+	}
 	if v := strings.TrimSpace(q.Get("since")); v != "" {
 		if ts, err := time.Parse(time.RFC3339, v); err == nil {
 			f.Since = ts

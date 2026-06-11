@@ -150,10 +150,18 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 	errSummary := errorSummary(h.scopedEntries(mlog.Filter{MinLevel: 0}, scopeUserID))
 
 	// Peer logs are best-effort: a down service yields an empty file
-	// with an inline note rather than failing the whole export.
+	// with an inline note rather than failing the whole export. On a
+	// user-scoped export the peers cannot pre-filter by user (their
+	// /logs/recent has no user filter), so we apply the same per-user
+	// scope to the proxied JSONL here — otherwise the bundle would leak
+	// other users' streaming/pipeline lines.
 	peerLogs := map[string][]byte{}
 	for _, peer := range h.Peers {
-		peerLogs[peer.Service] = h.fetchPeerLogs(ctx, peer, r.URL.RawQuery)
+		data := h.fetchPeerLogs(ctx, peer, r.URL.RawQuery)
+		if scopeUserID != "" {
+			data = scopeJSONL(data, scopeUserID)
+		}
+		peerLogs[peer.Service] = data
 	}
 
 	files := map[string][]byte{
@@ -179,7 +187,7 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 }
 
 // systemInfo assembles the host/version/resource snapshot.
-func (h *Handler) systemInfo(ctx context.Context, scoped bool) SystemInfo {
+func (h *Handler) systemInfo(_ context.Context, scoped bool) SystemInfo {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 

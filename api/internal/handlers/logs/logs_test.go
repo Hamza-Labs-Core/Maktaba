@@ -167,6 +167,50 @@ func TestUserExportScopesToOwnLogs(t *testing.T) {
 	}
 }
 
+// TestUserExportScopesPeerLogs guards the cross-service leak: the
+// proxied streaming/pipeline logs must also be filtered to the
+// requesting user, since the peer endpoints cannot pre-filter by user.
+func TestUserExportScopesPeerLogs(t *testing.T) {
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w,
+			`{"ts":"2026-06-10T00:00:00Z","level":"info","service":"streaming","msg":"alice stream","user_id":"u-alice"}`+"\n"+
+				`{"ts":"2026-06-10T00:00:01Z","level":"error","service":"streaming","msg":"bob stream","user_id":"u-bob"}`+"\n"+
+				`{"ts":"2026-06-10T00:00:02Z","level":"info","service":"streaming","msg":"system tick"}`+"\n")
+	}))
+	defer peer.Close()
+
+	h := &Handler{Ring: seedRing(t), Peers: []PeerLog{{Service: "streaming", URL: peer.URL}}}
+	r := chi.NewRouter()
+	h.Mount(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/diagnostics/export?format=json", nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(),
+		&principal.Principal{UserID: "u-alice", IsAdmin: false}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var bundle map[string]json.RawMessage
+	_ = json.Unmarshal(rec.Body.Bytes(), &bundle)
+	var peerLogs string
+	if err := json.Unmarshal(bundle["streaming-logs.jsonl"], &peerLogs); err != nil {
+		t.Fatalf("streaming-logs: %v", err)
+	}
+	if strings.Contains(peerLogs, "u-bob") || strings.Contains(peerLogs, "bob stream") {
+		t.Errorf("alice's scoped export leaked bob's peer lines:\n%s", peerLogs)
+	}
+	if !strings.Contains(peerLogs, "alice stream") {
+		t.Errorf("alice's own peer line missing:\n%s", peerLogs)
+	}
+	// Un-attributed peer system lines stay (consistent with local scope).
+	if !strings.Contains(peerLogs, "system tick") {
+		t.Errorf("un-attributed peer system line missing:\n%s", peerLogs)
+	}
+}
+
 // --- helpers ---
 
 func tarballEntries(t *testing.T, body []byte) map[string][]byte {
