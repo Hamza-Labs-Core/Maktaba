@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
@@ -31,10 +33,12 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
@@ -138,11 +142,11 @@ func runServe() error {
 	// `serve` against no DB still answers liveness. The pool is shared
 	// across the public and gRPC surfaces and closed on shutdown.
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	probeBackend, transcripts, closeStores := buildProbeStores(backendCtx, logger)
+	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
 	backendCancel()
 	defer closeStores()
 
-	publicHandler := buildPublicHandler(logger, probeBackend, transcripts)
+	publicHandler := buildPublicHandler(logger, probeBackend, transcripts, pool)
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
@@ -311,7 +315,7 @@ func warmPeriod() time.Duration {
 // local `serve`. The session store is still in-memory (see
 // buildGRPCServer's note); Postgres-backed sessions are a tracked
 // follow-up.
-func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer) http.Handler {
+func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool) http.Handler {
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -362,7 +366,41 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	go reaper.Run(context.Background())
 
 	_ = allocator
-	_ = hw
+
+	// Epic 27 — live channels (Story 27.3) + HDHomeRun emulation (Story
+	// 27.5). Wired only with a real Postgres pool (the schedule lives in
+	// channel_programs); the no-DB local `serve` skips them entirely.
+	var extraMounts []func(chi.Router)
+	if pool != nil {
+		hostname, _ := os.Hostname()
+		chRepo := channel.NewPGRepo(pool, hostname)
+		runner := channel.NewExecRunner(ffmpeg.DefaultBinary())
+		engine := channel.NewEngine(chRepo, runner, layout, cfg.Transcode.MaxConcurrent, time.Now)
+		engine.Ladder = ffmpeg.DefaultLadder(6000)
+		engine.HWAccel = string(hw)
+		engine.Host = hostname
+		engine.TS = runner
+		chHandler := &channel.HTTPHandler{Engine: engine}
+		extraMounts = append(extraMounts, chHandler.Mount)
+
+		// Reap idle channel encoders on the same cadence as the session
+		// reaper (warm grace + zero viewers → teardown).
+		go func() {
+			t := time.NewTicker(30 * time.Second)
+			defer t.Stop()
+			for range t.C {
+				engine.ReapIdle(context.Background())
+			}
+		}()
+
+		// HDHomeRun emulation (Story 27.5) — off until the operator
+		// enables hdhr_device.enabled; the handler 404s and SSDP stays
+		// silent while disabled.
+		hdhrRepo := hdhr.NewPGRepo(pool)
+		hdhrHandler := hdhr.New(hdhrRepo, engine)
+		extraMounts = append(extraMounts, hdhrHandler.Mount)
+		startSSDPIfEnabled(logger, hdhrRepo)
+	}
 
 	return server.New(server.Deps{
 		Cfg:         cfg,
@@ -374,7 +412,33 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		Files:       handlers.OSFileOpener{},
 		Transcripts: transcripts,
 		Now:         time.Now,
+		ExtraMounts: extraMounts,
 	})
+}
+
+// startSSDPIfEnabled launches the HDHomeRun SSDP responder in the
+// background when the feature is enabled (AC1/AC9). When disabled it does
+// nothing, so the LAN sees no advertisement.
+func startSSDPIfEnabled(logger *slog.Logger, repo *hdhr.PGRepo) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	dev, err := repo.Device(ctx)
+	cancel()
+	if err != nil || !dev.Enabled {
+		return
+	}
+	// LocationBase is the http base advertised in the SSDP LOCATION
+	// header; set it from MAKTABA_PUBLIC_BASE_URL when the box's
+	// reachable address is known (SSDP can't cross Docker bridges — see
+	// deploy notes). Empty is tolerated: discovery clients that probe the
+	// device directly still resolve /device.xml.
+	resp := &hdhr.Responder{DeviceUUID: dev.UUID, LocationBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL")}
+	go func() {
+		if err := resp.Run(context.Background()); err != nil {
+			logger.Warn("hdhr ssdp responder stopped",
+				"err", err.Error(), "event", "hdhr_ssdp_stopped")
+		}
+	}()
+	logger.Info("hdhr: SSDP responder started", "event", "hdhr_ssdp_started")
 }
 
 // buildProbeStores constructs the probe Backend + transcript streamer
@@ -384,20 +448,20 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 // is no transcript streamer (auto.vtt is simply not wired). A pool that
 // fails to open/ping is fatal-soft: we log and fall back to the fake so
 // liveness still answers, matching the JWKS/hwaccel boot-warn pattern.
-func buildProbeStores(ctx context.Context, logger *slog.Logger) (probe.Backend, handlers.TranscriptStreamer, func()) {
+func buildProbeStores(ctx context.Context, logger *slog.Logger) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, func()) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		logger.Info("probe: DATABASE_URL unset; using in-memory FakeBackend",
 			"event", "probe_fake_backend")
-		return probe.NewFakeBackend(), nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, func() {}
 	}
 	backend, pool, err := probe.ConnectPG(ctx, dsn)
 	if err != nil {
 		logger.Warn("probe: postgres connect failed; falling back to FakeBackend",
 			"err", err.Error(), "event", "probe_pg_connect_failed")
-		return probe.NewFakeBackend(), nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, func() {}
 	}
 	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
 	streamer := transcripts.NewPGStreamer(pool)
-	return backend, streamer, func() { pool.Close() }
+	return backend, streamer, pool, func() { pool.Close() }
 }
