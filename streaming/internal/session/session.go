@@ -26,6 +26,10 @@ const (
 	ModeRemux          Mode = "remux"
 	ModeTranscode      Mode = "transcode"
 	ModeDirectDegraded Mode = "direct-degraded"
+	// ModeChannel is a long-lived virtual session whose input is a
+	// channel schedule rather than one video (Epic 27 / Story 27.3,
+	// slot 0083 widens the streaming_sessions.mode CHECK to admit it).
+	ModeChannel Mode = "channel"
 )
 
 // Format mirrors the streaming_sessions.format column.

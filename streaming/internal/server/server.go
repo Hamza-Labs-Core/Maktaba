@@ -41,6 +41,13 @@ type Deps struct {
 	Chapters     handlers.ChapterReader
 	StaticAssets handlers.StaticAssetResolver
 	Now          func() time.Time
+
+	// ExtraMounts are additional route registrars applied after the
+	// built-in routes — used to mount the Epic 27 live-channel HLS
+	// routes (Story 27.3) and the HDHomeRun protocol surface (Story
+	// 27.5) without this package importing them. Each is called with the
+	// public mux. Nil/empty is a no-op (the no-DB local path).
+	ExtraMounts []func(chi.Router)
 }
 
 // New builds the chi router for the public byte-pumping mux.
@@ -143,6 +150,15 @@ func New(deps Deps) http.Handler {
 			sub.Use(auth.SignedURL(verifier, auth.AudStatic, "video_id"))
 			sub.Get("/{video_id}/{name}", static.ServeThumb)
 		})
+	}
+
+	// Epic 27 live-channel + HDHomeRun routes (Stories 27.3 / 27.5),
+	// mounted via injected registrars so this package stays decoupled
+	// from the channel/hdhr packages.
+	for _, mount := range deps.ExtraMounts {
+		if mount != nil {
+			mount(r)
+		}
 	}
 
 	// Fallback — anything else is a 404 problem+json.

@@ -396,6 +396,12 @@ func runServe() error {
 			logger.Info("p11: library-acl + api-token handlers mounted",
 				"event", "p11_mounted")
 
+			// Epic 27 (Live Channels) — channel definition CRUD (27.1)
+			// and the EPG / guide + XMLTV/M3U read surface (27.4).
+			router.MountP27(r, router.P27Deps{DB: appDB})
+			logger.Info("p27: live-channel + guide handlers mounted",
+				"event", "p27_mounted")
+
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and
 			// hard-deletes them past the 7-day retention horizon so
