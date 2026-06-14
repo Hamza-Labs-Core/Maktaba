@@ -146,6 +146,91 @@ To lock it down, either:
   ([caddy-dns](https://github.com/caddy-dns)) and replace the catch-all
   block with a `*.{$RELAY_DOMAIN}` site using `tls { dns <provider> }`.
 
+## CI/CD
+
+The relay has its own pipeline at
+[`.github/workflows/relay.yml`](../../.github/workflows/relay.yml),
+separate from the repo-wide `ci.yml` so it can build, publish, sign, and
+roll out the `maktaba-cloud` image on its own triggers.
+
+**Triggers**
+
+| Event | What runs |
+|---|---|
+| PR touching `cloud/**` or `deploy/cloud-relay/**` | `lint` + `test` + `build` |
+| Push to `main` (same paths) | the above, then `docker` build + push (`:edge`, `:sha-<short>`) |
+| Tag `v*` | the above with `:vX.Y.Z` + `:latest`, then `sign` (cosign) and `deploy` |
+| Manual `workflow_dispatch` | `deploy` only, of a chosen (or `latest`) tag |
+
+**Jobs**
+
+- **lint** — `golangci-lint` over the `cloud` module.
+- **test** — `go test ./...` against a Postgres service container
+  (`MAKTABA_CLOUD_DB_URL` points at it); runs the unit then the
+  integration-tagged tier.
+- **build** — cross-compiles the relay binary for `linux/amd64` and
+  `linux/arm64` with the reproducibility envelope.
+- **docker** — builds [`cloud/Dockerfile`](../../cloud/Dockerfile) as a
+  **multi-arch** image (amd64 + arm64, so it runs on x86 droplets *and*
+  arm64 Ampere/Graviton VPSes) and pushes to
+  `ghcr.io/hamza-labs-core/maktaba-cloud`. Push events only.
+- **sign** — keyless [cosign](https://docs.sigstore.dev/) over the pushed
+  image digest, via the workflow's OIDC identity (no key to provision).
+  Tags only. Verify with:
+  ```bash
+  cosign verify ghcr.io/hamza-labs-core/maktaba-cloud:vX.Y.Z \
+    --certificate-identity-regexp 'https://github.com/.+/Maktaba/.github/workflows/relay.yml@.*' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+- **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS. Gated by the
+  `production` GitHub Environment (a manual approval gate — configure
+  required reviewers in **Settings → Environments → production**). Runs
+  on a `v*` tag or a manual dispatch.
+
+The repo's [`release.yml`](../../.github/workflows/release.yml) *also*
+builds + signs the `cloud` binary and image as part of the full release
+matrix (single-arch image, multi-arch binaries); `relay.yml` is the
+relay-focused, multi-arch, deploy-capable leg.
+
+### Required GitHub secrets & variables
+
+Set these under **Settings → Secrets and variables → Actions** (the SSH
+secrets belong to the `production` environment so only approved deploys
+can read them):
+
+| Name | Kind | Purpose |
+|---|---|---|
+| `RELAY_SSH_HOST` | secret | VPS hostname or IP for the deploy SSH |
+| `RELAY_SSH_USER` | secret | SSH login user (must be in the `docker` group) |
+| `RELAY_SSH_KEY` | secret | Private key **contents** (PEM) for that user |
+| `REGISTRY_TOKEN` | secret | *Optional* — only if pushing to a non-GHCR registry; otherwise the auto-provisioned `GITHUB_TOKEN` is used |
+| `MAKTABA_REGISTRY` | variable | *Optional* — override the default `ghcr.io/hamza-labs-core` registry |
+| `RELAY_PUBLIC_URL` | variable | *Optional* — shown as the deployment URL on the environment |
+
+### Deploying by hand
+
+`deploy.sh` is the single source of truth — CI and a laptop run the same
+script. Roll out a specific tag:
+
+```bash
+RELAY_SSH_HOST=relay.example.com \
+RELAY_SSH_USER=maktaba \
+MAKTABA_CLOUD_TAG=v1.2.3 \
+make relay-deploy
+```
+
+It SSHes in, pulls the image, runs migrations in a throwaway container,
+swaps the stack (`docker compose up -d --wait`), verifies health, and
+**rolls back to the previous tag if the health check fails**. Override the
+target dir with `DEPLOY_DIR=` and add a public probe with
+`HEALTH_URL=https://relay.example.com/readyz` if desired.
+
+Run the PR gates locally before pushing:
+
+```bash
+make relay-ci      # lint + test + build (mirrors relay.yml)
+```
+
 ## Operations
 
 ```bash

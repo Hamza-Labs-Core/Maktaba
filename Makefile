@@ -591,6 +591,50 @@ compose-mac-down:  ## Tear down the Mac-overlay compose stack.
 image-size-guard:  ## Fail if any image exceeds the AC4 size cap.
 	bash tools/image-size-guard.sh
 
+# ---------------------------------------------------------------------------
+# Cloud Relay CI/CD (deploy/cloud-relay/, .github/workflows/relay.yml)
+# ---------------------------------------------------------------------------
+#
+# `relay-ci` mirrors the relay.yml PR gates (lint + test + build) so a
+# developer reproduces CI locally; `relay-deploy` is a thin wrapper over
+# the single-source-of-truth deploy script (also called by the CI deploy
+# job). Both keep the Story 22.8 "no logic CI and devs must keep in sync"
+# rule — the deploy logic lives in deploy.sh, not here.
+
+CLOUD_DIR := cloud
+RELAY_DEPLOY_SCRIPT := deploy/cloud-relay/deploy.sh
+
+.PHONY: relay-ci
+relay-ci: relay-lint relay-test relay-build  ## Run the relay PR gates locally (lint + test + build), mirroring relay.yml.
+
+.PHONY: relay-lint
+relay-lint:  ## golangci-lint over the cloud module.
+	@echo "==> golangci-lint (cloud)"
+	cd $(CLOUD_DIR) && golangci-lint run --timeout=5m
+
+.PHONY: relay-test
+relay-test:  ## Run the cloud module tests (needs a Postgres at MAKTABA_CLOUD_DB_URL for the integration tier).
+	@echo "==> go test (cloud, unit)"
+	cd $(CLOUD_DIR) && go test -short -count=1 ./...
+	@echo "==> go test (cloud, integration — needs MAKTABA_CLOUD_DB_URL)"
+	cd $(CLOUD_DIR) && go test -tags=integration -count=1 ./...
+
+.PHONY: relay-build
+relay-build:  ## Cross-compile the maktaba-cloud relay binary for linux/{amd64,arm64}.
+	@for arch in amd64 arm64; do \
+		echo "==> building maktaba-cloud for linux/$$arch"; \
+		mkdir -p dist; \
+		(cd $(CLOUD_DIR) && \
+			GOOS=linux GOARCH=$$arch CGO_ENABLED=0 \
+			go build -trimpath \
+				-ldflags "-buildid= -s -w -X main.Version=$(VERSION) -X main.Commit=$(COMMIT)" \
+				-o "../dist/maktaba-cloud-linux-$$arch" ./cmd/maktaba-cloud); \
+	done
+
+.PHONY: relay-deploy
+relay-deploy:  ## Roll a new relay image onto the VPS via deploy.sh (set RELAY_SSH_HOST/USER + MAKTABA_CLOUD_TAG).
+	@bash $(RELAY_DEPLOY_SCRIPT)
+
 .PHONY: clean
 clean:
 	rm -rf api/bin streaming/bin $(WEB_DIR)/dist $(ARTIFACT_DIR)

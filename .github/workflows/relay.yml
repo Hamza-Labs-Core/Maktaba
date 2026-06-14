@@ -1,0 +1,319 @@
+# Maktaba Cloud Relay — dedicated CI/CD pipeline.
+#
+# Scope: the `cloud` Go module (the single `maktaba-cloud` binary that
+# runs the api/relay/worker roles) and its VPS deploy stack under
+# deploy/cloud-relay/. The repo-wide `ci.yml` already gates the cloud
+# module as part of the monorepo unit/integration tiers; THIS workflow
+# is the relay-focused leg that additionally builds + publishes the
+# `maktaba-cloud` image and (optionally, behind a manual approval gate)
+# rolls it out to the production VPS.
+#
+# Flow:
+#   lint   golangci-lint over cloud/ (mirrors `make relay-ci`)
+#   test   go test ./... against a Postgres service container
+#   build  cross-compile the relay binary for linux/{amd64,arm64}
+#   docker build cloud/Dockerfile + push to GHCR  (main + tags only)
+#   sign   keyless cosign over the pushed image digest  (tags only)
+#   deploy SSH to the VPS + roll the stack          (dispatch/tags only)
+#
+# The reusable `make relay-ci` target runs lint+test+build locally so a
+# developer reproduces this workflow's PR gates without GitHub.
+
+name: Relay CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloud/**'
+      - 'deploy/cloud-relay/**'
+      - '.github/workflows/relay.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'cloud/**'
+      - 'deploy/cloud-relay/**'
+      - '.github/workflows/relay.yml'
+  # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
+  # run the deploy job behind the `production` environment approval gate.
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (e.g. v1.2.3). Blank = latest.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# A new push to a branch/PR supersedes in-flight runs for that ref;
+# tag pushes are never cancelled (each tag is its own immutable run).
+concurrency:
+  group: relay-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # Mirrors release.yml: forks pushing elsewhere set the MAKTABA_REGISTRY
+  # repo variable; otherwise GHCR under the org namespace.
+  REGISTRY: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}
+  IMAGE_NAME: maktaba-cloud
+
+jobs:
+  lint:
+    name: lint (cloud)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache-dependency-path: cloud/go.sum
+
+      - name: golangci-lint (cloud)
+        uses: golangci/golangci-lint-action@v9.2.1
+        with:
+          version: v2.12.2
+          working-directory: cloud
+          args: --timeout=5m
+
+  test:
+    name: test (cloud + postgres)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    # The relay persists durable state (server registry, billing meter)
+    # in Postgres; its store + migration tests need a live DB. Tag pinned
+    # to match _integration.yml (bumped via Renovate, not by hand).
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache-dependency-path: cloud/go.sum
+
+      - name: Wait for Postgres
+        # pg_isready flips healthy before the DB accepts non-loopback
+        # connections; poll once more (belt-and-braces, mirrors
+        # _integration.yml).
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1; then
+              echo "postgres ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Postgres not ready after 60s"; exit 1
+
+      - name: Unit tests (cloud)
+        working-directory: cloud
+        run: go test -short -count=1 ./...
+
+      # The relay/api stores + embedded migrations are the integration
+      # surface; the binary applies migrations on connect, so the tagged
+      # tests run against the live service container.
+      - name: Integration tests (cloud)
+        working-directory: cloud
+        run: go test -tags=integration -count=1 ./...
+
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache-dependency-path: cloud/go.sum
+
+      # Same reproducibility envelope as release.yml's cloud binary leg
+      # (-trimpath, -buildid=, -s -w, -X main.*). VERSION is the tag on a
+      # tag build, else `git describe`.
+      - name: Build maktaba-cloud
+        working-directory: cloud
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ver="${VERSION:-$(git describe --tags --dirty --always 2>/dev/null || echo dev)}"
+          mkdir -p ../dist
+          go build -trimpath \
+            -ldflags "-buildid= -s -w \
+              -X main.Version=${ver} \
+              -X main.Commit=${COMMIT}" \
+            -o "../dist/maktaba-cloud-${GOOS}-${GOARCH}" ./cmd/maktaba-cloud
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-cloud-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7
+
+  docker:
+    name: docker build + push
+    needs: [lint, test, build]
+    # Publish only on main pushes and tags — never on PRs (no secrets,
+    # no registry write) and never on manual dispatch (deploy uses an
+    # already-published image).
+    if: github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: docker/setup-qemu-action@v3.6.0
+
+      - uses: docker/setup-buildx-action@v4.1.0
+
+      - name: Registry login
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Tag policy:
+      #   main push  -> :edge + :sha-<short>
+      #   v* tag      -> :vX.Y.Z + :latest
+      - name: Derive image tags
+        uses: docker/metadata-action@v5.7.0
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      # The relay runs on whatever the operator's VPS is (x86 droplets,
+      # arm64 Ampere/Graviton), so the image is multi-arch — unlike
+      # release.yml's single-arch app images. The build matrix above
+      # already proved both arches compile.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: .
+          file: cloud/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
+            COMMIT=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  sign:
+    name: sign image (cosign)
+    needs: [docker]
+    # Sign release images only — keyless cosign over the immutable digest
+    # via the workflow's OIDC identity (no key to provision).
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Registry login
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Sign image (keyless)
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+  deploy:
+    name: deploy to VPS
+    needs: [docker]
+    # Manual rollout, or automatically after a tag's image is published.
+    # `always()` lets a workflow_dispatch run (which skips `docker`)
+    # still reach deploy, while gating on docker success when it ran.
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) &&
+      (needs.docker.result == 'success' || needs.docker.result == 'skipped')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    # The `production` environment carries the manual approval gate
+    # (required reviewers, configured in repo Settings → Environments).
+    # The deploy waits here until a maintainer approves.
+    environment:
+      name: production
+      url: ${{ vars.RELAY_PUBLIC_URL }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # Pick the tag to roll out: explicit dispatch input wins, else the
+      # pushed tag, else `latest`.
+      - name: Resolve image tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_TAG}" ]; then
+            echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        env:
+          RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          MAKTABA_CLOUD_TAG: ${{ steps.tag.outputs.tag }}
+        run: bash deploy/cloud-relay/deploy.sh
