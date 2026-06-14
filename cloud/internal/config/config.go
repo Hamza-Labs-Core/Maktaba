@@ -29,6 +29,7 @@ type Config struct {
 	Entitlement EntitlementConfig
 	Telemetry   TelemetryConfig
 	Relay       RelayConfig
+	Auth        AuthConfig
 }
 
 type ServerConfig struct {
@@ -37,6 +38,14 @@ type ServerConfig struct {
 	ReadTimeout   time.Duration
 	WriteTimeout  time.Duration
 	ShutdownGrace time.Duration
+}
+
+// AuthConfig holds the HMAC secret used to sign short-lived access
+// tokens (cloud/internal/auth/token). The secret never appears in the
+// TOML file — it is injected via MAKTABA_CLOUD_TOKEN_SECRET so it can be
+// sourced from a secrets manager / Docker secret at runtime.
+type AuthConfig struct {
+	TokenSecret string // env: MAKTABA_CLOUD_TOKEN_SECRET
 }
 
 type DBConfig struct {
@@ -164,6 +173,14 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET"); v != "" {
 		c.Stripe.WebhookSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
+		c.Auth.TokenSecret = v
+	}
+	// Relay public host is operator-specific (their own domain), so the
+	// VPS deploy can drive it purely from env without a config file.
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PUBLIC_HOST"); v != "" {
+		c.Relay.PublicHost = v
 	}
 }
 

@@ -1,0 +1,125 @@
+# Maktaba Cloud Relay — production compose stack for a single VPS.
+#
+#   maktaba-cloud (relay)  the relay binary, role=relay, listens :8443
+#   postgres 16            durable state (server registry, billing meter)
+#   redis 7                rate-limit + ephemeral coordination
+#   caddy 2                reverse proxy + automatic Let's Encrypt TLS
+#
+# Bring up:  docker compose --env-file .env up -d
+# (setup.sh wires this into a systemd unit on the host.)
+#
+# TLS terminates at Caddy; the relay speaks plain HTTP on :8443 behind
+# it and does Host-based subdomain routing in user space (see
+# cloud/cmd/maktaba-cloud/role_relay.go). Only Caddy publishes ports
+# (80/443) to the host — postgres/redis/relay stay on the internal
+# network and are never exposed. The host firewall (UFW, see setup.sh)
+# enforces the same at the kernel level.
+
+name: maktaba-relay
+
+x-restart: &restart unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-maktaba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-maktaba}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-maktaba} -d $${POSTGRES_DB:-maktaba}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # No `ports:` — reachable only on the internal compose network.
+
+  redis:
+    image: redis:7-alpine
+    restart: *restart
+    # appendonly => rate-limit / coordination state survives restarts.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  maktaba-cloud:
+    image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
+    restart: *restart
+    command: ["serve", "--role", "relay"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # --- Core relay config (env is the single source of truth) ---
+      MAKTABA_CLOUD_LISTEN_ADDR: ${MAKTABA_CLOUD_LISTEN_ADDR:-0.0.0.0:8443}
+      MAKTABA_CLOUD_DB_URL: ${MAKTABA_CLOUD_DB_URL}
+      MAKTABA_CLOUD_REDIS_URL: ${MAKTABA_CLOUD_REDIS_URL:-redis://redis:6379/0}
+      MAKTABA_CLOUD_PUBLIC_URL: ${MAKTABA_CLOUD_PUBLIC_URL}
+      MAKTABA_CLOUD_RELAY_PUBLIC_HOST: ${RELAY_DOMAIN}
+      MAKTABA_CLOUD_TOKEN_SECRET: ${MAKTABA_CLOUD_TOKEN_SECRET}
+      # --- api-role secrets that have env overrides (ignored by relay,
+      #     wired here so the same stack can run --role api unchanged) ---
+      MAKTABA_CLOUD_STRIPE_SECRET: ${STRIPE_SECRET_KEY:-}
+      MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Probe target (also baked into the image; set explicitly so it
+      # tracks MAKTABA_CLOUD_LISTEN_ADDR if that changes).
+      HEALTHCHECK_URL: http://127.0.0.1:8443/healthz
+    volumes:
+      # Optional: drop a cloud.toml here to supply the id/path-based
+      # settings that have no env override (oauth client ids, apns/fcm
+      # key paths, entitlement key path). Required only for --role api.
+      - ./cloud.toml:/etc/maktaba/cloud/cloud.toml:ro
+      # Key material referenced by ENTITLEMENT_KEY_PATH / APNS_KEY_PATH /
+      # FCM_SERVICE_ACCOUNT_PATH. setup.sh generates the entitlement key
+      # here. Mounted read-only; never world-readable on the host.
+      - ./secrets:/etc/maktaba/cloud/secrets:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: *restart
+    depends_on:
+      maktaba-cloud:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # issued certs + ACME account (persist!)
+      - caddy_config:/config
+    healthcheck:
+      # Caddy's local admin API (127.0.0.1:2019) returns 200 once the
+      # config is loaded — avoids chasing the :80 -> :443 redirect.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

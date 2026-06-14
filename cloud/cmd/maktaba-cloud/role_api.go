@@ -31,9 +31,12 @@ import (
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
-	// Token signer for access tokens. The env var is required; we fail
+	// Token signer for access tokens. The secret is required; we fail
 	// loud on missing because the api role can't function without it.
-	secret, err := token.SecretFromEnv(os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"))
+	// config.Load layers MAKTABA_CLOUD_TOKEN_SECRET into cfg.Auth, so
+	// the env var remains the injection point but config is the single
+	// source of truth.
+	secret, err := token.SecretFromEnv(cfg.Auth.TokenSecret)
 	if err != nil {
 		logger.Error("token secret", "err", err)
 		os.Exit(2)

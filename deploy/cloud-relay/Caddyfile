@@ -1,0 +1,52 @@
+# Maktaba Cloud Relay — Caddy reverse proxy with automatic Let's Encrypt.
+#
+# Caddy terminates TLS and proxies cleartext to the relay on :8443. The
+# relay routes by Host header (apex = control plane + WebSocket; each
+# <slug>.<RELAY_DOMAIN> = a tunnelled self-hosted server), so Caddy must
+# preserve the inbound Host — which it does by default for reverse_proxy.
+#
+# RELAY_DOMAIN and ACME_EMAIL are injected from the environment (compose
+# passes them through from .env). Caddy substitutes {$VAR} at load time.
+
+{
+	email {$ACME_EMAIL}
+
+	# On-demand TLS issues a Let's Encrypt cert the first time a given
+	# <slug>.<RELAY_DOMAIN> is requested (HTTP-01). This is what makes
+	# the dynamic per-server subdomains work with the stock Caddy image
+	# and a single wildcard DNS A record (*.RELAY_DOMAIN -> this VPS).
+	#
+	# `ask` is queried before issuance: Caddy only requests a cert when
+	# the endpoint returns 2xx. We point it at the relay's /healthz,
+	# which 200s for any host.
+	#
+	# HARDENING: /healthz allows issuance for ANY hostname that resolves
+	# to this box. In practice only *.RELAY_DOMAIN does (your wildcard
+	# record), and Let's Encrypt rate limits cap abuse — but for a
+	# locked-down deployment either (a) replace this with a real
+	# allow-list endpoint that 200s only for known server slugs, or
+	# (b) switch to a DNS-01 wildcard cert (see README "Wildcard TLS").
+	on_demand_tls {
+		ask http://maktaba-cloud:8443/healthz
+		interval 2m
+		burst 5
+	}
+}
+
+# Apex relay host: control plane + the /v1/relay/ws WebSocket endpoint
+# that self-hosted servers dial out to. Cert via standard HTTP-01.
+{$RELAY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy maktaba-cloud:8443
+}
+
+# Catch-all for the per-server subdomains (*.RELAY_DOMAIN and anything
+# else pointed here). on_demand gates issuance through the `ask` above.
+# The apex block is more specific, so it always wins for RELAY_DOMAIN.
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+	reverse_proxy maktaba-cloud:8443
+}

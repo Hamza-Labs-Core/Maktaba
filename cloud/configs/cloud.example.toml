@@ -31,6 +31,11 @@ key_id    = ""
 client_id = ""
 key_path  = ""
 
+[auth]
+# Access-token HMAC secret. Env-only (never written to this file):
+#   MAKTABA_CLOUD_TOKEN_SECRET  (>= 32 bytes; e.g. `openssl rand -base64 48`)
+# Required by the `api` role; ignored by `relay` and `worker`.
+
 [stripe]
 # Both come from env: MAKTABA_CLOUD_STRIPE_SECRET, MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET.
 publishable_key = ""

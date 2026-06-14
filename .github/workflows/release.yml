@@ -73,6 +73,7 @@ jobs:
           cache-dependency-path: |
             api/go.sum
             streaming/go.sum
+            cloud/go.sum
 
       - name: Set up pnpm
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -102,6 +103,29 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ github.ref_name }}
         run: make build-go
+
+      # The maktaba-cloud (relay) binary is server-only, so it ships for
+      # linux/{amd64,arm64} only — the VPS deploy targets (no darwin
+      # relay). Version-stamped with the same reproducibility envelope as
+      # the other binaries; main.{Version,Commit,BuiltAt} live in
+      # cloud/cmd/maktaba-cloud.
+      - name: Build + stage cloud (relay) binary
+        if: matrix.goos == 'linux'
+        working-directory: cloud
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist
+          go build -trimpath \
+            -ldflags "-buildid= -s -w \
+              -X main.Version=${VERSION} \
+              -X main.Commit=${COMMIT}" \
+            -o "../dist/maktaba-cloud-${GOOS}-${GOARCH}" ./cmd/maktaba-cloud
 
       - name: Build web bundle
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -146,7 +170,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        svc: [api, streaming, pipeline, web]
+        svc: [api, streaming, pipeline, web, cloud]
     # NOTE: job-level `outputs` are NOT merged across matrix legs by
     # GitHub Actions (the map resolves from a single leg), so the
     # immutable per-image digest is handed off via a per-leg artifact
@@ -313,6 +337,7 @@ jobs:
           DIGEST_STREAMING="$(digest_of streaming)"
           DIGEST_PIPELINE="$(digest_of pipeline)"
           DIGEST_WEB="$(digest_of web)"
+          DIGEST_CLOUD="$(digest_of cloud)"
           # TODO(HLB-337 follow-up): derive schema_rev from migration set;
           # hardcoded 1 until then. rollback_* stay empty/0 until the
           # rollback-tracking story lands (same follow-up).
@@ -326,7 +351,8 @@ jobs:
               "api":       {"image": "${REGISTRY}/maktaba-api:${TAG}",       "sha256": "${DIGEST_API}"},
               "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
               "pipeline":  {"image": "${REGISTRY}/maktaba-pipeline:${TAG}",  "sha256": "${DIGEST_PIPELINE}"},
-              "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"}
+              "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"},
+              "cloud":     {"image": "${REGISTRY}/maktaba-cloud:${TAG}",     "sha256": "${DIGEST_CLOUD}"}
             },
             "rollback_to": "",
             "rollback_schema_rev": 0

@@ -34,6 +34,7 @@ jobs:
           cache-dependency-path: |
             api/go.sum
             streaming/go.sum
+            cloud/go.sum
 
       # Web bundle is platform-neutral; only build it once on linux/amd64
       # to keep the matrix focused on the Go cross-compile signal.
@@ -63,6 +64,21 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: make build-go
 
+      # The cloud module is outside `make build-go`'s graph. Cross-compile
+      # the maktaba-cloud (relay) binary here on every matrix arch so a
+      # change that breaks the relay on linux/arm64 fails the gate with
+      # the offending arch named (mirrors the AC3/TC2 contract).
+      - name: Build cloud (relay) binary
+        working-directory: cloud
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p bin
+          go build -trimpath -ldflags "-buildid= -s -w" \
+            -o bin/maktaba-cloud ./cmd/maktaba-cloud
+
       - name: Build web bundle
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: make build-web
@@ -74,6 +90,7 @@ jobs:
           path: |
             api/bin/maktaba-api
             streaming/bin/maktaba-streaming
+            cloud/bin/maktaba-cloud
           retention-days: 14
 
       - name: Upload web bundle

@@ -59,6 +59,19 @@ func TestLoad_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoad_TokenSecretEnvOverride(t *testing.T) {
+	// MAKTABA_CLOUD_TOKEN_SECRET is env-only (no TOML key) — config is
+	// the single source of truth the api role reads from.
+	t.Setenv("MAKTABA_CLOUD_TOKEN_SECRET", "this-is-at-least-32-bytes-long!!")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.TokenSecret != "this-is-at-least-32-bytes-long!!" {
+		t.Errorf("token secret env override not applied: %q", c.Auth.TokenSecret)
+	}
+}
+
 func TestValidate_RoleAPI(t *testing.T) {
 	c := Config{}
 	if err := Validate(c, RoleAPI); err == nil {

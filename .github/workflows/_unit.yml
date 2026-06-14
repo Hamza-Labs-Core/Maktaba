@@ -21,6 +21,7 @@ jobs:
           cache-dependency-path: |
             api/go.sum
             streaming/go.sum
+            cloud/go.sum
 
       - uses: actions/setup-python@v6.2.0
         with:
@@ -52,3 +53,10 @@ jobs:
 
       - name: Run unit tier
         run: make test-unit
+
+      # The cloud module is a separate Go module outside the Makefile's
+      # GO_MODULES set, so `make test-unit` does not reach it. Run its
+      # unit tier explicitly so the relay/api/worker code is gated too.
+      - name: Run cloud unit tests
+        working-directory: cloud
+        run: go test -short -count=1 ./...

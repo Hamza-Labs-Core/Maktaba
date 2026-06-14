@@ -54,6 +54,7 @@ jobs:
           cache-dependency-path: |
             api/go.sum
             streaming/go.sum
+            cloud/go.sum
 
       - uses: actions/setup-python@v6.2.0
         with:
@@ -95,3 +96,15 @@ jobs:
 
       - name: Run integration tier
         run: make test-integration
+
+      # The cloud module lives outside the Makefile's GO_MODULES set, so
+      # `make test-integration` skips it. Run its integration-tagged
+      # tests explicitly against the Postgres service container. The
+      # relay/api stores + migrations are the integration surface; this
+      # gate compiles the `integration` build tag and runs any such
+      # tests (a no-op until they land) so the wiring is in place.
+      - name: Run cloud integration tests
+        working-directory: cloud
+        env:
+          MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+        run: go test -tags=integration -count=1 ./...

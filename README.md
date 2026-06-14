@@ -111,6 +111,32 @@ troubleshooting, and pre-commit setup.
 
 ---
 
+## Deploying the Cloud Relay
+
+The optional hosted layer (`cloud/`) ships as a single `maktaba-cloud`
+binary that runs an `api`, `relay`, or `worker` role. To stand up the
+**relay** — the public ingress self-hosted servers tunnel out to — on a
+fresh Ubuntu 22.04/24.04 VPS:
+
+```sh
+git clone https://github.com/Hamza-Labs-Core/Maktaba.git
+cd Maktaba/deploy/cloud-relay
+sudo ./setup.sh                       # Docker, secrets, firewall, systemd
+sudo -e /opt/maktaba-relay/.env       # set RELAY_DOMAIN + ACME_EMAIL
+sudo systemctl enable --now maktaba-relay
+```
+
+This brings up the relay behind Caddy (automatic Let's Encrypt TLS),
+with Postgres 16 and Redis 7, managed by systemd. The full guide —
+DNS records, wildcard TLS, the `api` role, entitlement key
+provisioning, and operations — is in
+[`deploy/cloud-relay/README.md`](deploy/cloud-relay/README.md). The
+`maktaba-cloud` image is published to
+`ghcr.io/hamza-labs-core/maktaba-cloud` (cosign-signed) by the
+[release workflow](.github/workflows/release.yml).
+
+---
+
 ## Native apps
 
 Phones and desktops wrap the same `web/` SPA bundle natively — no

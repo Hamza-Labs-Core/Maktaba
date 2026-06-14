@@ -68,6 +68,48 @@ Each role shares the migrator, pool, config validator, and `/healthz`
 `migrations_at_head` so an LB doesn't route to a pod whose schema is
 behind its binary.
 
+## Deployment
+
+A turnkey **relay** deployment for a single VPS (relay + Postgres +
+Redis + Caddy auto-TLS, behind systemd) lives in
+[`deploy/cloud-relay/`](../deploy/cloud-relay/) — see its
+[README](../deploy/cloud-relay/README.md) for DNS, TLS, and operations.
+The image is built from [`cloud/Dockerfile`](Dockerfile) and published
+to `ghcr.io/hamza-labs-core/maktaba-cloud` (cosign-signed) by the
+[release workflow](../.github/workflows/release.yml).
+
+### Secrets
+
+Two runtime secrets are injected via the environment (never the TOML
+file), layered into `Config` by [`config.Load`](internal/config/config.go):
+
+- **`MAKTABA_CLOUD_TOKEN_SECRET`** — HMAC secret for access tokens,
+  ≥ 32 bytes. Required by the `api` role. Generate with
+  `openssl rand -base64 48`.
+- **`MAKTABA_CLOUD_RELAY_PUBLIC_HOST`** — the relay's public apex
+  domain (drives per-server subdomain routing).
+
+### Entitlement key provisioning
+
+The `api` role signs offline feature-gate **entitlement tokens** with an
+Ed25519 private key, loaded from `entitlement.private_key_path` (TOML)
+by [`entitlement.LoadSignerFromFile`](internal/entitlement/entitlement.go).
+The loader accepts the key as raw 32-byte seed / 64-byte expanded form,
+**or** base64 / hex of either. Because an Ed25519 seed is just 32
+uniformly random bytes, no PEM/DER tooling is needed:
+
+```sh
+# 32-byte seed, base64-encoded:
+openssl rand 32 | base64 > entitlement.key
+```
+
+Mount it read-only (`0600`, in a `0700` dir) and point
+`entitlement.private_key_path` at it. **Back it up** — the public key is
+derived deterministically from the seed, so rotating the key
+invalidates every entitlement token signed with the old one. The VPS
+[`setup.sh`](../deploy/cloud-relay/setup.sh) generates this key
+automatically.
+
 ## Story coverage
 
 | Story | Surface | Where |
