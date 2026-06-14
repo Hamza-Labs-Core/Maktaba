@@ -37,37 +37,50 @@ describe("LibraryBrowser", () => {
   });
 
   it("requests /api/videos with sort+limit and renders items", async () => {
-    get.mockResolvedValue({
-      items: [{ id: "v1", title: "أهلا", filename: "a.mp4", state: "ready", duration_sec: 65 }],
-      next: null,
-    });
+    // The home screen also mounts the "What's On Now" rail, which reads
+    // /api/channels/now — route it to an empty payload so it hides.
+    get.mockImplementation((url: string) =>
+      url.includes("/api/channels/now")
+        ? Promise.resolve({ server_time: "", items: [] })
+        : Promise.resolve({
+            items: [
+              { id: "v1", title: "أهلا", filename: "a.mp4", state: "ready", duration_sec: 65 },
+            ],
+            next: null,
+          })
+    );
     renderLib();
     await waitFor(() => expect(get).toHaveBeenCalled());
-    const url = get.mock.calls[0][0] as string;
-    expect(url).toContain("/api/videos?");
+    const url = get.mock.calls.map((c) => c[0] as string).find((u) => u.includes("/api/videos?"));
+    expect(url).toBeDefined();
     expect(url).toContain("sort=updated_at");
     expect(url).toContain("limit=60");
     await waitFor(() => expect(screen.getByText("أهلا")).toBeInTheDocument());
   });
 
   it("paginates using the server `next` cursor (not next_cursor)", async () => {
-    get
-      .mockResolvedValueOnce({
-        items: [{ id: "v1", filename: "a.mp4", state: "ready" }],
-        next: "CURSOR_2",
-      })
-      .mockResolvedValueOnce({
-        items: [{ id: "v2", filename: "b.mp4", state: "ready" }],
-        next: null,
-      });
+    // Route the rail's /api/channels/now to empty; serve the videos pages
+    // by whether the request carries the cursor (the rail call would
+    // otherwise consume one of the sequential once-mocks).
+    get.mockImplementation((url: string) => {
+      if (url.includes("/api/channels/now")) {
+        return Promise.resolve({ server_time: "", items: [] });
+      }
+      if (url.includes("cursor=CURSOR_2")) {
+        return Promise.resolve({ items: [{ id: "v2", filename: "b.mp4", state: "ready" }], next: null });
+      }
+      return Promise.resolve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: "CURSOR_2" });
+    });
     renderLib();
     const more = await screen.findByRole("button", { name: /load more/i });
     await act(async () => {
       more.click();
     });
     await waitFor(() => {
-      const second = get.mock.calls[1][0] as string;
-      expect(second).toContain("cursor=CURSOR_2");
+      const cursorCall = get.mock.calls
+        .map((c) => c[0] as string)
+        .find((u) => u.includes("cursor=CURSOR_2"));
+      expect(cursorCall).toBeDefined();
     });
     await waitFor(() => expect(screen.getByText("b.mp4")).toBeInTheDocument());
   });

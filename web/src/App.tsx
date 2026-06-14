@@ -14,6 +14,9 @@ import { AuthProvider, RequireAuth } from "./lib/auth";
 import { ShortcutProvider } from "./lib/keyboard/shortcuts";
 import { applyResolvedTheme, readMode, watchSystemTheme } from "./lib/theme";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
+import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
+import { SeriesDetail } from "./pages/Library/SeriesDetail";
+import { AdminEnrichment } from "./pages/Admin/Enrichment";
 import { VideoDetail } from "./pages/VideoDetail";
 import { VideoPlayer } from "./pages/VideoPlayer";
 import { Search } from "./pages/Search";
@@ -30,6 +33,9 @@ import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
+import { Channels } from "./pages/Admin/Channels";
+import { Guide } from "./pages/LiveTV/Guide";
+import { Player } from "./pages/LiveTV/Player";
 import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
@@ -72,9 +78,13 @@ export function App() {
                     <Route index element={<Navigate to="/library" replace />} />
                     <Route path="/library" element={<LibraryBrowser />} />
                     <Route path="/library/:libraryId" element={<LibraryBrowser />} />
+                    <Route path="/series" element={<SeriesBrowser />} />
+                    <Route path="/series/:id" element={<SeriesDetail />} />
                     <Route path="/videos/:videoId" element={<VideoDetail />} />
                     <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
                     <Route path="/search" element={<Search />} />
+                    <Route path="/guide" element={<Guide />} />
+                    <Route path="/live/:number" element={<Player />} />
                     <Route path="/queue" element={<ProcessingQueue />} />
                     <Route path="/settings/*" element={<Settings />} />
                     <Route path="/account" element={<Account />} />
@@ -85,6 +95,8 @@ export function App() {
                     <Route path="/cloud/status" element={<ServerStatus />} />
                     <Route path="/admin/users" element={<AdminUsers />} />
                     <Route path="/admin/library-acl" element={<LibraryACL />} />
+                    <Route path="/admin/enrichment" element={<AdminEnrichment />} />
+                    <Route path="/admin/channels" element={<Channels />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />
                     <Route path="/admin/logs" element={<AdminLogs />} />

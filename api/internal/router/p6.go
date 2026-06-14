@@ -20,12 +20,16 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/contextcard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/devices"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/enrichment"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/filler"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/jobs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/models"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
+	seriesh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/series"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/settings"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/speakers"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
@@ -139,6 +143,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	tagsHandler := &tags.Handler{DB: d.DB}
 	tagsHandler.Mount(r)
 
+	// Story 27.10 — filler & bumper pools/items (Epic 27 receiver batch).
+	fillerHandler := &filler.Handler{DB: d.DB}
+	fillerHandler.Mount(r)
+
 	speakerHandler := &speakers.Handler{DB: d.DB}
 	speakerHandler.Mount(r)
 
@@ -158,6 +166,18 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	recHandler := &recommendations.Handler{DB: d.DB}
 	recHandler.Mount(r)
+
+	// Epic 26 — Content Intelligence (batch 2). Enrichment review
+	// (26.6), the web context card (26.9), and the cross-library series
+	// browser (26.10). All degrade gracefully with a nil DB.
+	enrichHandler := &enrichment.Handler{DB: d.DB}
+	enrichHandler.Mount(r)
+
+	contextHandler := &contextcard.Handler{DB: d.DB}
+	contextHandler.Mount(r)
+
+	seriesHandler := &seriesh.Handler{DB: d.DB}
+	seriesHandler.Mount(r)
 
 	devHandler := &devices.Handler{DB: d.DB}
 	devHandler.Mount(r)

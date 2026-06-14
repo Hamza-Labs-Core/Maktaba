@@ -21,6 +21,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
+import { WhatsOnNow } from "../components/WhatsOnNow";
 
 type View = "grid" | "list";
 type SortField = "updated_at" | "title" | "duration_sec";
@@ -216,6 +217,8 @@ export function LibraryBrowser() {
           </div>
         </div>
       </header>
+
+      <WhatsOnNow />
 
       {languages.length > 0 && (
         <div className="mkt-chips" role="group" aria-label={t("library.filter.language")}>

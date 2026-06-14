@@ -1098,3 +1098,455 @@ mark {
   align-items: flex-start;
   gap: var(--space-2);
 }
+
+/* ─── Epic 27 — Live Channels (EPG guide, live player, home rail, admin) ─
+ * Logical properties (inset-inline-start / inline-size) throughout so the
+ * grid, now-line and overlays mirror correctly under [dir="rtl"]. */
+
+/* 27.6 — EPG grid */
+.mkt-guide__scroll {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block-end: var(--space-3);
+}
+.mkt-guide__timeaxis {
+  position: relative;
+  height: 24px;
+  margin-inline-start: 160px;
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-guide__tick {
+  position: absolute;
+  inset-block-start: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  transform: translateX(-50%);
+}
+.mkt-guide__row {
+  display: flex;
+  align-items: stretch;
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-guide__chanhead {
+  flex: 0 0 160px;
+  width: 160px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  position: sticky;
+  inset-inline-start: 0;
+  background: var(--color-bg);
+  z-index: 1;
+}
+.mkt-guide__channum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+.mkt-guide__channame {
+  font-weight: 500;
+}
+.mkt-guide__track {
+  position: relative;
+  height: 56px;
+}
+.mkt-guide__cell {
+  position: absolute;
+  inset-block: 4px;
+  overflow: hidden;
+  text-align: start;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-subtle);
+  color: var(--color-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mkt-guide__cell--airing {
+  border-color: var(--color-accent);
+  background: var(--color-brand-50);
+}
+.mkt-guide__cell--filler {
+  background: transparent;
+  color: var(--color-muted);
+  font-style: italic;
+}
+.mkt-guide__cell--empty {
+  position: relative;
+  inset-block: auto;
+  color: var(--color-muted);
+  cursor: default;
+}
+.mkt-guide__celltitle {
+  font-size: var(--font-size-sm);
+}
+.mkt-guide__cellprogress {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  block-size: 3px;
+  background: var(--color-accent);
+}
+.mkt-guide__nowline {
+  position: absolute;
+  inset-block: 24px 0;
+  inline-size: 2px;
+  background: var(--color-error);
+  z-index: 2;
+  pointer-events: none;
+}
+.mkt-guide__nowline--axis {
+  inset-block: 0;
+}
+.mkt-guide__nowgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+.mkt-guide__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-guide__poster {
+  max-width: 160px;
+  border-radius: var(--radius-md);
+}
+
+/* now-card (compact "what's on now" list, shared shape with the rail) */
+.mkt-nowcard__btn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: start;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.mkt-nowcard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-nowcard__next,
+.mkt-won__next {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+/* 27.7 — live player */
+.mkt-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  outline: none;
+}
+.mkt-live__stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+}
+.mkt-live__video {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mkt-live__slate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-neutral-300);
+}
+.mkt-live__badge {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-start: var(--space-3);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-error);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.mkt-live__tuning {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.4);
+}
+.mkt-live__numentry {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-h2);
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-sm);
+}
+.mkt-live__banner {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  color: #fff;
+}
+.mkt-live__banner-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-live__logo,
+.mkt-won__logo {
+  height: 32px;
+  width: auto;
+}
+.mkt-live__banner-prog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+.mkt-live__miniguide {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: min(360px, 80%);
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+.mkt-live__miniguide header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--space-2);
+}
+.mkt-live__miniguide ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mkt-live__miniguide button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.mkt-live__miniguide button.is-current {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+}
+.mkt-live__mg-prog {
+  color: var(--color-neutral-300);
+  font-size: var(--font-size-sm);
+}
+.mkt-live__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 27.9 — "What's On Now" home rail */
+.mkt-won {
+  margin-block: var(--space-5);
+}
+.mkt-won__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-end: var(--space-2);
+}
+.mkt-won__rail {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-2);
+}
+.mkt-won__item {
+  flex: 0 0 220px;
+}
+.mkt-won__btn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: start;
+}
+.mkt-won__poster {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-subtle);
+}
+.mkt-won__poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mkt-won__poster-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mkt-won__poster .mkt-won__logo {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+}
+.mkt-won__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-won__chan {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-won__cta {
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+/* 27.8 — channel admin */
+.mkt-channels__reorder {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-channels__reorder button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--color-muted);
+}
+.mkt-channels__reorder button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.mkt-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.mkt-form__warn {
+  color: var(--color-warn);
+  font-size: var(--font-size-sm);
+}
+.mkt-rule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.mkt-preview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.mkt-preview li {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-preview__filler {
+  color: var(--color-muted);
+  font-style: italic;
+}
+.mkt-preview__time {
+  flex: 0 0 11rem;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-filler {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-filler__create,
+.mkt-filler__additem {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.mkt-filler__pool header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mkt-filler__items {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+}
+.mkt-filler__items li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+.mkt-filler__items button {
+  margin-inline-start: auto;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--color-muted);
+}
+
+/* mobile: the guide defaults to the vertical "now" view; the rail and
+ * live controls reflow. */
+@media (max-width: 640px) {
+  .mkt-won__item {
+    flex-basis: 70%;
+  }
+}
