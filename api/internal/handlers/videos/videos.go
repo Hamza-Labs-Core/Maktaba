@@ -320,14 +320,19 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update only known fields.
+	// Update only known fields. `edited` tracks the columns the user
+	// changed so we can stamp `media_field_provenance(origin='user')`
+	// after the write (Epic 26 Story 26.6: a user edit makes a field
+	// user-owned, so a later enrichment accept skips it).
 	sets := []string{}
 	args := []any{}
+	edited := map[string]string{}
 	if raw["title"] != nil {
 		var s string
 		if err := json.Unmarshal(raw["title"], &s); err == nil {
 			sets = append(sets, "title = "+pidx(len(args)+1))
 			args = append(args, s)
+			edited["title"] = s
 		}
 	}
 	if raw["description"] != nil {
@@ -335,17 +340,20 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(raw["description"], &s); err == nil {
 			sets = append(sets, "description = "+pidx(len(args)+1))
 			args = append(args, s)
+			edited["description"] = s
 		}
 	}
 	if len(sets) > 0 {
+		now := h.now()
 		sets = append(sets, "updated_at = "+pidx(len(args)+1))
-		args = append(args, h.now())
+		args = append(args, now)
 		args = append(args, id)
 		q := "UPDATE videos SET " + strings.Join(sets, ", ") + " WHERE id = " + pidx(len(args))
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
 			httperror.Write(w, r, httperror.Internal("update video"))
 			return
 		}
+		h.recordUserProvenance(r.Context(), id, edited, now)
 	}
 
 	// Tags replace — AC-3 "a flat tags array on PATCH replaces the set".
@@ -532,6 +540,21 @@ func (h *Handler) loadVideo(ctx context.Context, id string) (Video, error) {
 		FROM videos WHERE id = $1
 	`, id)
 	return scanVideoRow(row)
+}
+
+// recordUserProvenance stamps each user-edited field as user-owned in
+// `media_field_provenance` (Epic 26 Story 26.6). Best-effort: a failure
+// here (e.g. the slot-0078 table not yet migrated) must never fail the
+// PATCH, so errors are swallowed.
+func (h *Handler) recordUserProvenance(ctx context.Context, videoID string, edited map[string]string, now time.Time) {
+	for field := range edited {
+		_, _ = h.DB.ExecContext(ctx, `
+			INSERT INTO media_field_provenance (video_id, field, origin, set_at)
+			VALUES ($1, $2, 'user', $3)
+			ON CONFLICT (video_id, field) DO UPDATE
+			  SET origin = 'user', set_at = EXCLUDED.set_at
+		`, videoID, field, now)
+	}
 }
 
 // canRead returns nil if the principal may read the library_id.
