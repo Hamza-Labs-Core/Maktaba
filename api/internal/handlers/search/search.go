@@ -78,6 +78,21 @@ type Request struct {
 	Mode    string  `json:"mode,omitempty"` // hybrid (default), fts, semantic
 	Limit   int     `json:"limit,omitempty"`
 	Filters Filters `json:"filters,omitempty"`
+
+	// Include opts into augmentation blocks (Story 26.8). Today the only
+	// value is "youtube"; absent ⇒ the response is byte-identical to the
+	// pre-26.8 shape (no YouTube key, no `youtube` field).
+	Include []string `json:"include,omitempty"`
+}
+
+// includes reports whether the request opted into the named block.
+func (r Request) includes(name string) bool {
+	for _, v := range r.Include {
+		if v == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Hit is a single segment-level result; the API maps unit→segment per
@@ -104,6 +119,12 @@ type Response struct {
 	// (Story 18.2 AC4 / HLB-333). Clients surface a "results may be
 	// incomplete" banner. Omitted on the happy path.
 	Degraded bool `json:"degraded,omitempty"`
+
+	// YouTube is the optional "From YouTube" augmentation block (Story
+	// 26.8). Present only when the caller passed include=["youtube"];
+	// omitted otherwise so the default response is byte-identical to the
+	// pre-26.8 shape.
+	YouTube *YTBlock `json:"youtube,omitempty"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -135,6 +156,11 @@ type Handler struct {
 	// error) so operators see a metric-able breadcrumb instead of the
 	// previously-silent `semHits, _ = ...` swallow. Nil → slog default.
 	Logger *slog.Logger
+
+	// YouTube is the optional "From YouTube" search adapter (Story 26.8).
+	// Nil ⇒ the feature is off: include=youtube yields an empty block
+	// with reason "disabled" and never blocks or alters local results.
+	YouTube YouTubeSearcher
 }
 
 // semanticBudget returns the effective per-request semantic deadline.
@@ -214,6 +240,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/search/save", h.SaveSearch)
 	r.Get("/api/search/saved", h.ListSaved)
 	r.Delete("/api/search/saved/{id}", h.DeleteSaved)
+	// Story 26.8 — also expose YouTube search as a GET proxy and the
+	// import endpoint that copies a YouTube match onto a local video.
+	r.Get("/api/search/youtube", h.SearchYouTube)
+	r.Post("/api/videos/{id}/import-youtube", h.ImportYouTube)
 }
 
 // Search implements POST /api/search.
@@ -312,10 +342,18 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	took.Fusion = time.Since(t2).Milliseconds()
 
-	common.WriteJSON(w, r, http.StatusOK, Response{
+	resp := Response{
 		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode,
 		Filters: req.Filters, Degraded: degraded,
-	})
+	}
+	// Story 26.8: the YouTube augmentation is purely additive and never
+	// blocks or mutates the local results computed above. It runs only
+	// when the caller opted in via include=["youtube"]; otherwise the
+	// response is byte-identical to the pre-26.8 shape.
+	if req.includes("youtube") {
+		resp.YouTube = h.fetchYouTube(r.Context(), req.Q)
+	}
+	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
 // runFTS issues a single FTS query against transcript_segments using

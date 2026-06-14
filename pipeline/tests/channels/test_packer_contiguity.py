@@ -18,7 +18,7 @@ def _program(ms: int) -> PlanItem:
     return PlanItem(video_id=uuid4(), duration_ms=ms, snapshot={"title": "x"})
 
 
-def test_contiguous_no_gaps_no_overlaps():
+def test_contiguous_no_gaps_no_overlaps() -> None:
     items = [_program(30 * 60_000), _program(45 * 60_000), _program(15 * 60_000)]
     start = dt("2026-06-14T20:00:00")
     until = start + timedelta(hours=2)
@@ -29,7 +29,7 @@ def test_contiguous_no_gaps_no_overlaps():
         assert a.end_at == b.start_at
 
 
-def test_seq_is_monotonic_from_base():
+def test_seq_is_monotonic_from_base() -> None:
     items = [_program(10 * 60_000) for _ in range(5)]
     start = dt("2026-06-14T00:00:00")
     blocks = packer.pack(
@@ -39,7 +39,7 @@ def test_seq_is_monotonic_from_base():
     assert seqs == list(range(100, 100 + len(seqs)))
 
 
-def test_tail_padded_to_horizon_with_slate_when_no_filler():
+def test_tail_padded_to_horizon_with_slate_when_no_filler() -> None:
     # One 10-minute program then a 50-minute gap to the 1h horizon.
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
@@ -48,7 +48,7 @@ def test_tail_padded_to_horizon_with_slate_when_no_filler():
     assert blocks[-1].end_at == until
 
 
-def test_tail_padded_with_filler_when_available():
+def test_tail_padded_with_filler_when_available() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
     blocks = packer.pack(
@@ -65,7 +65,7 @@ def test_tail_padded_with_filler_when_available():
     assert tail.end_at == until
 
 
-def test_program_crossing_horizon_is_trimmed():
+def test_program_crossing_horizon_is_trimmed() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(minutes=30)
     blocks = packer.pack([_program(60 * 60_000)], channel_id=uuid4(), start_at=start, until=until)
@@ -74,7 +74,7 @@ def test_program_crossing_horizon_is_trimmed():
     assert blocks[0].source_duration == 30 * 60_000
 
 
-def test_pad_item_filled_inline():
+def test_pad_item_filled_inline() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
     items = [
@@ -90,7 +90,7 @@ def test_pad_item_filled_inline():
 
 
 @pytest.mark.parametrize("seed", range(8))
-def test_random_inputs_stay_contiguous(seed):
+def test_random_inputs_stay_contiguous(seed: int) -> None:
     rng = random.Random(seed)
     items = [_program(rng.randint(1, 90) * 60_000) for _ in range(rng.randint(1, 40))]
     start = dt("2026-06-14T12:00:00")

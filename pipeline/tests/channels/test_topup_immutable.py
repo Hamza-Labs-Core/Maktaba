@@ -14,7 +14,7 @@ from .helpers import FakeRepo, dt, mk_channel, mk_content
 
 
 @pytest.mark.asyncio
-async def test_generation_is_contiguous_and_covers_horizon():
+async def test_generation_is_contiguous_and_covers_horizon() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     repo = FakeRepo(ch, mk_content(6, dur_ms=20 * 60_000))
     now = dt("2026-06-14T20:00:00")
@@ -29,7 +29,7 @@ async def test_generation_is_contiguous_and_covers_horizon():
 
 
 @pytest.mark.asyncio
-async def test_topup_does_not_rewrite_past_or_current():
+async def test_topup_does_not_rewrite_past_or_current() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     repo = FakeRepo(ch, mk_content(6, dur_ms=20 * 60_000))
 
@@ -39,10 +39,12 @@ async def test_topup_does_not_rewrite_past_or_current():
     before = sorted(repo.blocks, key=lambda b: b.start_at)
     # Snapshot the blocks that are in the past/current at the top-up time.
     t1 = dt("2026-06-14T19:00:00")  # 1h later
+    hu = repo.state.horizon_until
+    assert hu is not None
     frozen = [
         (b.seq, b.start_at, b.end_at, b.video_id)
         for b in before
-        if b.start_at < repo.state.horizon_until and b.end_at <= t1 or b.start_at <= t1 < b.end_at
+        if b.start_at < hu and b.end_at <= t1 or b.start_at <= t1 < b.end_at
     ]
 
     # Top-up at T1: extend horizon. Past/current blocks must be byte-identical.
@@ -53,7 +55,7 @@ async def test_topup_does_not_rewrite_past_or_current():
 
 
 @pytest.mark.asyncio
-async def test_empty_library_yields_single_slate_never_raises():
+async def test_empty_library_yields_single_slate_never_raises() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     repo = FakeRepo(ch, [])  # degenerate: no content
     now = dt("2026-06-14T20:00:00")
@@ -65,7 +67,7 @@ async def test_empty_library_yields_single_slate_never_raises():
 
 
 @pytest.mark.asyncio
-async def test_disabled_channel_skipped():
+async def test_disabled_channel_skipped() -> None:
     import dataclasses
 
     ch = dataclasses.replace(mk_channel(ChannelMode.SHUFFLE), enabled=False)
@@ -76,7 +78,7 @@ async def test_disabled_channel_skipped():
 
 
 @pytest.mark.asyncio
-async def test_topup_all_touches_due_channel():
+async def test_topup_all_touches_due_channel() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     repo = FakeRepo(ch, mk_content(4))
     now = dt("2026-06-14T20:00:00")

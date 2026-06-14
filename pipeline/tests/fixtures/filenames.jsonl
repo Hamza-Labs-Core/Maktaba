@@ -1,0 +1,358 @@
+{"filename": "Breaking.Bad.S01E01.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Breaking Bad", "season": 1, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S01E04.720p.x265-CMRG.mkv", "expect": {"show_name": "Breaking Bad", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S01E09.720p.x265-FLUX.mkv", "expect": {"show_name": "Breaking Bad", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Breaking.Bad.S02E01.1080p.h264-RARBG.mkv", "expect": {"show_name": "Breaking Bad", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S02E04.1080p.x264-CMRG.mkv", "expect": {"show_name": "Breaking Bad", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S02E09.1080p.x264-FLUX.mkv", "expect": {"show_name": "Breaking Bad", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Breaking.Bad.S03E01.720p.x264-RARBG.mkv", "expect": {"show_name": "Breaking Bad", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S03E04.2160p.hevc-CMRG.mkv", "expect": {"show_name": "Breaking Bad", "season": 3, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Breaking.Bad.S03E09.2160p.hevc-FLUX.mkv", "expect": {"show_name": "Breaking Bad", "season": 3, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Office.S01E01.1080p.h264-NTb.mkv", "expect": {"show_name": "The Office", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Office.S01E04.1080p.x264-SPARKS.mkv", "expect": {"show_name": "The Office", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Office.S01E09.1080p.x264-CMRG.mkv", "expect": {"show_name": "The Office", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Office.S02E01.720p.x264-NTb.mkv", "expect": {"show_name": "The Office", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Office.S02E04.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "The Office", "season": 2, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Office.S02E09.2160p.hevc-CMRG.mkv", "expect": {"show_name": "The Office", "season": 2, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Office.S03E01.720p.x265-NTb.mkv", "expect": {"show_name": "The Office", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Office.S03E04.1080p.h264-SPARKS.mkv", "expect": {"show_name": "The Office", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Office.S03E09.1080p.h264-CMRG.mkv", "expect": {"show_name": "The Office", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Planet.Earth.S01E01.720p.x264-FLUX.mkv", "expect": {"show_name": "Planet Earth", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Planet.Earth.S01E04.2160p.hevc-GRP.mkv", "expect": {"show_name": "Planet Earth", "season": 1, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Planet.Earth.S01E09.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "Planet Earth", "season": 1, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Planet.Earth.S02E01.720p.x265-FLUX.mkv", "expect": {"show_name": "Planet Earth", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Planet.Earth.S02E04.1080p.h264-GRP.mkv", "expect": {"show_name": "Planet Earth", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Planet.Earth.S02E09.1080p.h264-SPARKS.mkv", "expect": {"show_name": "Planet Earth", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Planet.Earth.S03E01.1080p.x264-FLUX.mkv", "expect": {"show_name": "Planet Earth", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Planet.Earth.S03E04.720p.x264-GRP.mkv", "expect": {"show_name": "Planet Earth", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Planet.Earth.S03E09.720p.x264-SPARKS.mkv", "expect": {"show_name": "Planet Earth", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S01E01.720p.x265-CMRG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S01E04.1080p.h264-RARBG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S01E09.1080p.h264-GRP.mkv", "expect": {"show_name": "Game Of Thrones", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S02E01.1080p.x264-CMRG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S02E04.720p.x264-RARBG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S02E09.720p.x264-GRP.mkv", "expect": {"show_name": "Game Of Thrones", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S03E01.2160p.hevc-CMRG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 3, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S03E04.720p.x265-RARBG.mkv", "expect": {"show_name": "Game Of Thrones", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S03E09.720p.x265-GRP.mkv", "expect": {"show_name": "Game Of Thrones", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S01E01.1080p.x264-SPARKS.mkv", "expect": {"show_name": "Better Call Saul", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S01E04.720p.x264-NTb.mkv", "expect": {"show_name": "Better Call Saul", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S01E09.720p.x264-RARBG.mkv", "expect": {"show_name": "Better Call Saul", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S02E01.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "Better Call Saul", "season": 2, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S02E04.720p.x265-NTb.mkv", "expect": {"show_name": "Better Call Saul", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S02E09.720p.x265-RARBG.mkv", "expect": {"show_name": "Better Call Saul", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S03E01.1080p.h264-SPARKS.mkv", "expect": {"show_name": "Better Call Saul", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S03E04.1080p.x264-NTb.mkv", "expect": {"show_name": "Better Call Saul", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Better.Call.Saul.S03E09.1080p.x264-RARBG.mkv", "expect": {"show_name": "Better Call Saul", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "The.Wire.S01E01.2160p.hevc-GRP.mkv", "expect": {"show_name": "The Wire", "season": 1, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Wire.S01E04.720p.x265-FLUX.mkv", "expect": {"show_name": "The Wire", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Wire.S01E09.720p.x265-NTb.mkv", "expect": {"show_name": "The Wire", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Wire.S02E01.1080p.h264-GRP.mkv", "expect": {"show_name": "The Wire", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Wire.S02E04.1080p.x264-FLUX.mkv", "expect": {"show_name": "The Wire", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Wire.S02E09.1080p.x264-NTb.mkv", "expect": {"show_name": "The Wire", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Wire.S03E01.720p.x264-GRP.mkv", "expect": {"show_name": "The Wire", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Wire.S03E04.2160p.hevc-FLUX.mkv", "expect": {"show_name": "The Wire", "season": 3, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Wire.S03E09.2160p.hevc-NTb.mkv", "expect": {"show_name": "The Wire", "season": 3, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Mad.Men.S01E01.1080p.h264-RARBG.mkv", "expect": {"show_name": "Mad Men", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mad.Men.S01E04.1080p.x264-CMRG.mkv", "expect": {"show_name": "Mad Men", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mad.Men.S01E09.1080p.x264-FLUX.mkv", "expect": {"show_name": "Mad Men", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Mad.Men.S02E01.720p.x264-RARBG.mkv", "expect": {"show_name": "Mad Men", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mad.Men.S02E04.2160p.hevc-CMRG.mkv", "expect": {"show_name": "Mad Men", "season": 2, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mad.Men.S02E09.2160p.hevc-FLUX.mkv", "expect": {"show_name": "Mad Men", "season": 2, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Mad.Men.S03E01.720p.x265-RARBG.mkv", "expect": {"show_name": "Mad Men", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mad.Men.S03E04.1080p.h264-CMRG.mkv", "expect": {"show_name": "Mad Men", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mad.Men.S03E09.1080p.h264-FLUX.mkv", "expect": {"show_name": "Mad Men", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Crown.S01E01.720p.x264-NTb.mkv", "expect": {"show_name": "The Crown", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Crown.S01E04.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "The Crown", "season": 1, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Crown.S01E09.2160p.hevc-CMRG.mkv", "expect": {"show_name": "The Crown", "season": 1, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Crown.S02E01.720p.x265-NTb.mkv", "expect": {"show_name": "The Crown", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Crown.S02E04.1080p.h264-SPARKS.mkv", "expect": {"show_name": "The Crown", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Crown.S02E09.1080p.h264-CMRG.mkv", "expect": {"show_name": "The Crown", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Crown.S03E01.1080p.x264-NTb.mkv", "expect": {"show_name": "The Crown", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Crown.S03E04.720p.x264-SPARKS.mkv", "expect": {"show_name": "The Crown", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Crown.S03E09.720p.x264-CMRG.mkv", "expect": {"show_name": "The Crown", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Stranger.Things.S01E01.720p.x265-FLUX.mkv", "expect": {"show_name": "Stranger Things", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Stranger.Things.S01E04.1080p.h264-GRP.mkv", "expect": {"show_name": "Stranger Things", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Stranger.Things.S01E09.1080p.h264-SPARKS.mkv", "expect": {"show_name": "Stranger Things", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Stranger.Things.S02E01.1080p.x264-FLUX.mkv", "expect": {"show_name": "Stranger Things", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Stranger.Things.S02E04.720p.x264-GRP.mkv", "expect": {"show_name": "Stranger Things", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Stranger.Things.S02E09.720p.x264-SPARKS.mkv", "expect": {"show_name": "Stranger Things", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Stranger.Things.S03E01.2160p.hevc-FLUX.mkv", "expect": {"show_name": "Stranger Things", "season": 3, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Stranger.Things.S03E04.720p.x265-GRP.mkv", "expect": {"show_name": "Stranger Things", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Stranger.Things.S03E09.720p.x265-SPARKS.mkv", "expect": {"show_name": "Stranger Things", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "True.Detective.S01E01.1080p.x264-CMRG.mkv", "expect": {"show_name": "True Detective", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "True.Detective.S01E04.720p.x264-RARBG.mkv", "expect": {"show_name": "True Detective", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "True.Detective.S01E09.720p.x264-GRP.mkv", "expect": {"show_name": "True Detective", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "True.Detective.S02E01.2160p.hevc-CMRG.mkv", "expect": {"show_name": "True Detective", "season": 2, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "True.Detective.S02E04.720p.x265-RARBG.mkv", "expect": {"show_name": "True Detective", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "True.Detective.S02E09.720p.x265-GRP.mkv", "expect": {"show_name": "True Detective", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "True.Detective.S03E01.1080p.h264-CMRG.mkv", "expect": {"show_name": "True Detective", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "True.Detective.S03E04.1080p.x264-RARBG.mkv", "expect": {"show_name": "True Detective", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "True.Detective.S03E09.1080p.x264-GRP.mkv", "expect": {"show_name": "True Detective", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S01E01.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "Peaky Blinders", "season": 1, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S01E04.720p.x265-NTb.mkv", "expect": {"show_name": "Peaky Blinders", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S01E09.720p.x265-RARBG.mkv", "expect": {"show_name": "Peaky Blinders", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S02E01.1080p.h264-SPARKS.mkv", "expect": {"show_name": "Peaky Blinders", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S02E04.1080p.x264-NTb.mkv", "expect": {"show_name": "Peaky Blinders", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S02E09.1080p.x264-RARBG.mkv", "expect": {"show_name": "Peaky Blinders", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S03E01.720p.x264-SPARKS.mkv", "expect": {"show_name": "Peaky Blinders", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S03E04.2160p.hevc-NTb.mkv", "expect": {"show_name": "Peaky Blinders", "season": 3, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Peaky.Blinders.S03E09.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Peaky Blinders", "season": 3, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "The.Sopranos.S01E01.1080p.h264-GRP.mkv", "expect": {"show_name": "The Sopranos", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Sopranos.S01E04.1080p.x264-FLUX.mkv", "expect": {"show_name": "The Sopranos", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Sopranos.S01E09.1080p.x264-NTb.mkv", "expect": {"show_name": "The Sopranos", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Sopranos.S02E01.720p.x264-GRP.mkv", "expect": {"show_name": "The Sopranos", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Sopranos.S02E04.2160p.hevc-FLUX.mkv", "expect": {"show_name": "The Sopranos", "season": 2, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Sopranos.S02E09.2160p.hevc-NTb.mkv", "expect": {"show_name": "The Sopranos", "season": 2, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Sopranos.S03E01.720p.x265-GRP.mkv", "expect": {"show_name": "The Sopranos", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Sopranos.S03E04.1080p.h264-FLUX.mkv", "expect": {"show_name": "The Sopranos", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Sopranos.S03E09.1080p.h264-NTb.mkv", "expect": {"show_name": "The Sopranos", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Black.Mirror.S01E01.720p.x264-RARBG.mkv", "expect": {"show_name": "Black Mirror", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Black.Mirror.S01E04.2160p.hevc-CMRG.mkv", "expect": {"show_name": "Black Mirror", "season": 1, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Black.Mirror.S01E09.2160p.hevc-FLUX.mkv", "expect": {"show_name": "Black Mirror", "season": 1, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Black.Mirror.S02E01.720p.x265-RARBG.mkv", "expect": {"show_name": "Black Mirror", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Black.Mirror.S02E04.1080p.h264-CMRG.mkv", "expect": {"show_name": "Black Mirror", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Black.Mirror.S02E09.1080p.h264-FLUX.mkv", "expect": {"show_name": "Black Mirror", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Black.Mirror.S03E01.1080p.x264-RARBG.mkv", "expect": {"show_name": "Black Mirror", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Black.Mirror.S03E04.720p.x264-CMRG.mkv", "expect": {"show_name": "Black Mirror", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Black.Mirror.S03E09.720p.x264-FLUX.mkv", "expect": {"show_name": "Black Mirror", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Mandalorian.S01E01.720p.x265-NTb.mkv", "expect": {"show_name": "The Mandalorian", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Mandalorian.S01E04.1080p.h264-SPARKS.mkv", "expect": {"show_name": "The Mandalorian", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Mandalorian.S01E09.1080p.h264-CMRG.mkv", "expect": {"show_name": "The Mandalorian", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Mandalorian.S02E01.1080p.x264-NTb.mkv", "expect": {"show_name": "The Mandalorian", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Mandalorian.S02E04.720p.x264-SPARKS.mkv", "expect": {"show_name": "The Mandalorian", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Mandalorian.S02E09.720p.x264-CMRG.mkv", "expect": {"show_name": "The Mandalorian", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "The.Mandalorian.S03E01.2160p.hevc-NTb.mkv", "expect": {"show_name": "The Mandalorian", "season": 3, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Mandalorian.S03E04.720p.x265-SPARKS.mkv", "expect": {"show_name": "The Mandalorian", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "The.Mandalorian.S03E09.720p.x265-CMRG.mkv", "expect": {"show_name": "The Mandalorian", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Fargo.S01E01.1080p.x264-FLUX.mkv", "expect": {"show_name": "Fargo", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Fargo.S01E04.720p.x264-GRP.mkv", "expect": {"show_name": "Fargo", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Fargo.S01E09.720p.x264-SPARKS.mkv", "expect": {"show_name": "Fargo", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Fargo.S02E01.2160p.hevc-FLUX.mkv", "expect": {"show_name": "Fargo", "season": 2, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Fargo.S02E04.720p.x265-GRP.mkv", "expect": {"show_name": "Fargo", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Fargo.S02E09.720p.x265-SPARKS.mkv", "expect": {"show_name": "Fargo", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Fargo.S03E01.1080p.h264-FLUX.mkv", "expect": {"show_name": "Fargo", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Fargo.S03E04.1080p.x264-GRP.mkv", "expect": {"show_name": "Fargo", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Fargo.S03E09.1080p.x264-SPARKS.mkv", "expect": {"show_name": "Fargo", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Sherlock.S01E01.2160p.hevc-CMRG.mkv", "expect": {"show_name": "Sherlock", "season": 1, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Sherlock.S01E04.720p.x265-RARBG.mkv", "expect": {"show_name": "Sherlock", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Sherlock.S01E09.720p.x265-GRP.mkv", "expect": {"show_name": "Sherlock", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Sherlock.S02E01.1080p.h264-CMRG.mkv", "expect": {"show_name": "Sherlock", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Sherlock.S02E04.1080p.x264-RARBG.mkv", "expect": {"show_name": "Sherlock", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Sherlock.S02E09.1080p.x264-GRP.mkv", "expect": {"show_name": "Sherlock", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Sherlock.S03E01.720p.x264-CMRG.mkv", "expect": {"show_name": "Sherlock", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Sherlock.S03E04.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Sherlock", "season": 3, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Sherlock.S03E09.2160p.hevc-GRP.mkv", "expect": {"show_name": "Sherlock", "season": 3, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Westworld.S01E01.1080p.h264-SPARKS.mkv", "expect": {"show_name": "Westworld", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Westworld.S01E04.1080p.x264-NTb.mkv", "expect": {"show_name": "Westworld", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Westworld.S01E09.1080p.x264-RARBG.mkv", "expect": {"show_name": "Westworld", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Westworld.S02E01.720p.x264-SPARKS.mkv", "expect": {"show_name": "Westworld", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Westworld.S02E04.2160p.hevc-NTb.mkv", "expect": {"show_name": "Westworld", "season": 2, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Westworld.S02E09.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Westworld", "season": 2, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Westworld.S03E01.720p.x265-SPARKS.mkv", "expect": {"show_name": "Westworld", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Westworld.S03E04.1080p.h264-NTb.mkv", "expect": {"show_name": "Westworld", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Westworld.S03E09.1080p.h264-RARBG.mkv", "expect": {"show_name": "Westworld", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "The.Boys.S01E01.720p.x264-GRP.mkv", "expect": {"show_name": "The Boys", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Boys.S01E04.2160p.hevc-FLUX.mkv", "expect": {"show_name": "The Boys", "season": 1, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Boys.S01E09.2160p.hevc-NTb.mkv", "expect": {"show_name": "The Boys", "season": 1, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Boys.S02E01.720p.x265-GRP.mkv", "expect": {"show_name": "The Boys", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Boys.S02E04.1080p.h264-FLUX.mkv", "expect": {"show_name": "The Boys", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Boys.S02E09.1080p.h264-NTb.mkv", "expect": {"show_name": "The Boys", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "The.Boys.S03E01.1080p.x264-GRP.mkv", "expect": {"show_name": "The Boys", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "The.Boys.S03E04.720p.x264-FLUX.mkv", "expect": {"show_name": "The Boys", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "The.Boys.S03E09.720p.x264-NTb.mkv", "expect": {"show_name": "The Boys", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Chernobyl.S01E01.720p.x265-RARBG.mkv", "expect": {"show_name": "Chernobyl", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Chernobyl.S01E04.1080p.h264-CMRG.mkv", "expect": {"show_name": "Chernobyl", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Chernobyl.S01E09.1080p.h264-FLUX.mkv", "expect": {"show_name": "Chernobyl", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Chernobyl.S02E01.1080p.x264-RARBG.mkv", "expect": {"show_name": "Chernobyl", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Chernobyl.S02E04.720p.x264-CMRG.mkv", "expect": {"show_name": "Chernobyl", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Chernobyl.S02E09.720p.x264-FLUX.mkv", "expect": {"show_name": "Chernobyl", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Chernobyl.S03E01.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Chernobyl", "season": 3, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Chernobyl.S03E04.720p.x265-CMRG.mkv", "expect": {"show_name": "Chernobyl", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Chernobyl.S03E09.720p.x265-FLUX.mkv", "expect": {"show_name": "Chernobyl", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Succession.S01E01.1080p.x264-NTb.mkv", "expect": {"show_name": "Succession", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Succession.S01E04.720p.x264-SPARKS.mkv", "expect": {"show_name": "Succession", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Succession.S01E09.720p.x264-CMRG.mkv", "expect": {"show_name": "Succession", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Succession.S02E01.2160p.hevc-NTb.mkv", "expect": {"show_name": "Succession", "season": 2, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Succession.S02E04.720p.x265-SPARKS.mkv", "expect": {"show_name": "Succession", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Succession.S02E09.720p.x265-CMRG.mkv", "expect": {"show_name": "Succession", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Succession.S03E01.1080p.h264-NTb.mkv", "expect": {"show_name": "Succession", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Succession.S03E04.1080p.x264-SPARKS.mkv", "expect": {"show_name": "Succession", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Succession.S03E09.1080p.x264-CMRG.mkv", "expect": {"show_name": "Succession", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "House.Of.Cards.S01E01.2160p.hevc-FLUX.mkv", "expect": {"show_name": "House Of Cards", "season": 1, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "House.Of.Cards.S01E04.720p.x265-GRP.mkv", "expect": {"show_name": "House Of Cards", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "House.Of.Cards.S01E09.720p.x265-SPARKS.mkv", "expect": {"show_name": "House Of Cards", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "House.Of.Cards.S02E01.1080p.h264-FLUX.mkv", "expect": {"show_name": "House Of Cards", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "House.Of.Cards.S02E04.1080p.x264-GRP.mkv", "expect": {"show_name": "House Of Cards", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "House.Of.Cards.S02E09.1080p.x264-SPARKS.mkv", "expect": {"show_name": "House Of Cards", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "House.Of.Cards.S03E01.720p.x264-FLUX.mkv", "expect": {"show_name": "House Of Cards", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "House.Of.Cards.S03E04.2160p.hevc-GRP.mkv", "expect": {"show_name": "House Of Cards", "season": 3, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "House.Of.Cards.S03E09.2160p.hevc-SPARKS.mkv", "expect": {"show_name": "House Of Cards", "season": 3, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Narcos.S01E01.1080p.h264-CMRG.mkv", "expect": {"show_name": "Narcos", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Narcos.S01E04.1080p.x264-RARBG.mkv", "expect": {"show_name": "Narcos", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Narcos.S01E09.1080p.x264-GRP.mkv", "expect": {"show_name": "Narcos", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Narcos.S02E01.720p.x264-CMRG.mkv", "expect": {"show_name": "Narcos", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Narcos.S02E04.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Narcos", "season": 2, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Narcos.S02E09.2160p.hevc-GRP.mkv", "expect": {"show_name": "Narcos", "season": 2, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Narcos.S03E01.720p.x265-CMRG.mkv", "expect": {"show_name": "Narcos", "season": 3, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Narcos.S03E04.1080p.h264-RARBG.mkv", "expect": {"show_name": "Narcos", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Narcos.S03E09.1080p.h264-GRP.mkv", "expect": {"show_name": "Narcos", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Ozark.S01E01.720p.x264-SPARKS.mkv", "expect": {"show_name": "Ozark", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Ozark.S01E04.2160p.hevc-NTb.mkv", "expect": {"show_name": "Ozark", "season": 1, "episode": 4, "resolution": "2160p", "video_codec": "hevc", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Ozark.S01E09.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Ozark", "season": 1, "episode": 9, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Ozark.S02E01.720p.x265-SPARKS.mkv", "expect": {"show_name": "Ozark", "season": 2, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Ozark.S02E04.1080p.h264-NTb.mkv", "expect": {"show_name": "Ozark", "season": 2, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Ozark.S02E09.1080p.h264-RARBG.mkv", "expect": {"show_name": "Ozark", "season": 2, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Ozark.S03E01.1080p.x264-SPARKS.mkv", "expect": {"show_name": "Ozark", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "SPARKS", "kind": "episode"}}
+{"filename": "Ozark.S03E04.720p.x264-NTb.mkv", "expect": {"show_name": "Ozark", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Ozark.S03E09.720p.x264-RARBG.mkv", "expect": {"show_name": "Ozark", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Dark.S01E01.720p.x265-GRP.mkv", "expect": {"show_name": "Dark", "season": 1, "episode": 1, "resolution": "720p", "video_codec": "x265", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Dark.S01E04.1080p.h264-FLUX.mkv", "expect": {"show_name": "Dark", "season": 1, "episode": 4, "resolution": "1080p", "video_codec": "h264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Dark.S01E09.1080p.h264-NTb.mkv", "expect": {"show_name": "Dark", "season": 1, "episode": 9, "resolution": "1080p", "video_codec": "h264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Dark.S02E01.1080p.x264-GRP.mkv", "expect": {"show_name": "Dark", "season": 2, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Dark.S02E04.720p.x264-FLUX.mkv", "expect": {"show_name": "Dark", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Dark.S02E09.720p.x264-NTb.mkv", "expect": {"show_name": "Dark", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Dark.S03E01.2160p.hevc-GRP.mkv", "expect": {"show_name": "Dark", "season": 3, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "GRP", "kind": "episode"}}
+{"filename": "Dark.S03E04.720p.x265-FLUX.mkv", "expect": {"show_name": "Dark", "season": 3, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Dark.S03E09.720p.x265-NTb.mkv", "expect": {"show_name": "Dark", "season": 3, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "NTb", "kind": "episode"}}
+{"filename": "Mindhunter.S01E01.1080p.x264-RARBG.mkv", "expect": {"show_name": "Mindhunter", "season": 1, "episode": 1, "resolution": "1080p", "video_codec": "x264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mindhunter.S01E04.720p.x264-CMRG.mkv", "expect": {"show_name": "Mindhunter", "season": 1, "episode": 4, "resolution": "720p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mindhunter.S01E09.720p.x264-FLUX.mkv", "expect": {"show_name": "Mindhunter", "season": 1, "episode": 9, "resolution": "720p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Mindhunter.S02E01.2160p.hevc-RARBG.mkv", "expect": {"show_name": "Mindhunter", "season": 2, "episode": 1, "resolution": "2160p", "video_codec": "hevc", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mindhunter.S02E04.720p.x265-CMRG.mkv", "expect": {"show_name": "Mindhunter", "season": 2, "episode": 4, "resolution": "720p", "video_codec": "x265", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mindhunter.S02E09.720p.x265-FLUX.mkv", "expect": {"show_name": "Mindhunter", "season": 2, "episode": 9, "resolution": "720p", "video_codec": "x265", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Mindhunter.S03E01.1080p.h264-RARBG.mkv", "expect": {"show_name": "Mindhunter", "season": 3, "episode": 1, "resolution": "1080p", "video_codec": "h264", "release_group": "RARBG", "kind": "episode"}}
+{"filename": "Mindhunter.S03E04.1080p.x264-CMRG.mkv", "expect": {"show_name": "Mindhunter", "season": 3, "episode": 4, "resolution": "1080p", "video_codec": "x264", "release_group": "CMRG", "kind": "episode"}}
+{"filename": "Mindhunter.S03E09.1080p.x264-FLUX.mkv", "expect": {"show_name": "Mindhunter", "season": 3, "episode": 9, "resolution": "1080p", "video_codec": "x264", "release_group": "FLUX", "kind": "episode"}}
+{"filename": "Breaking Bad - 01x02 - Lost And Found.mp4", "expect": {"show_name": "Breaking Bad", "season": 1, "episode": 2, "episode_title": "Lost And Found", "kind": "episode"}}
+{"filename": "Breaking Bad - 01x07 - Aftermath.mp4", "expect": {"show_name": "Breaking Bad", "season": 1, "episode": 7, "episode_title": "Aftermath", "kind": "episode"}}
+{"filename": "The Office - 01x02 - The Reckoning.mp4", "expect": {"show_name": "The Office", "season": 1, "episode": 2, "episode_title": "The Reckoning", "kind": "episode"}}
+{"filename": "The Office - 01x07 - First Contact.mp4", "expect": {"show_name": "The Office", "season": 1, "episode": 7, "episode_title": "First Contact", "kind": "episode"}}
+{"filename": "Planet Earth - 01x02 - Homecoming.mp4", "expect": {"show_name": "Planet Earth", "season": 1, "episode": 2, "episode_title": "Homecoming", "kind": "episode"}}
+{"filename": "Planet Earth - 01x07 - The Long Goodbye.mp4", "expect": {"show_name": "Planet Earth", "season": 1, "episode": 7, "episode_title": "The Long Goodbye", "kind": "episode"}}
+{"filename": "Game Of Thrones - 01x02 - Endgame.mp4", "expect": {"show_name": "Game Of Thrones", "season": 1, "episode": 2, "episode_title": "Endgame", "kind": "episode"}}
+{"filename": "Game Of Thrones - 01x07 - The Beginning.mp4", "expect": {"show_name": "Game Of Thrones", "season": 1, "episode": 7, "episode_title": "The Beginning", "kind": "episode"}}
+{"filename": "Better Call Saul - 01x02 - The Trial.mp4", "expect": {"show_name": "Better Call Saul", "season": 1, "episode": 2, "episode_title": "The Trial", "kind": "episode"}}
+{"filename": "Better Call Saul - 01x07 - A New Dawn.mp4", "expect": {"show_name": "Better Call Saul", "season": 1, "episode": 7, "episode_title": "A New Dawn", "kind": "episode"}}
+{"filename": "The Wire - 01x02 - Aftermath.mp4", "expect": {"show_name": "The Wire", "season": 1, "episode": 2, "episode_title": "Aftermath", "kind": "episode"}}
+{"filename": "The Wire - 01x07 - Lost And Found.mp4", "expect": {"show_name": "The Wire", "season": 1, "episode": 7, "episode_title": "Lost And Found", "kind": "episode"}}
+{"filename": "Mad Men - 01x02 - First Contact.mp4", "expect": {"show_name": "Mad Men", "season": 1, "episode": 2, "episode_title": "First Contact", "kind": "episode"}}
+{"filename": "Mad Men - 01x07 - The Reckoning.mp4", "expect": {"show_name": "Mad Men", "season": 1, "episode": 7, "episode_title": "The Reckoning", "kind": "episode"}}
+{"filename": "The Crown - 01x02 - The Long Goodbye.mp4", "expect": {"show_name": "The Crown", "season": 1, "episode": 2, "episode_title": "The Long Goodbye", "kind": "episode"}}
+{"filename": "The Crown - 01x07 - Homecoming.mp4", "expect": {"show_name": "The Crown", "season": 1, "episode": 7, "episode_title": "Homecoming", "kind": "episode"}}
+{"filename": "Stranger Things - 01x02 - The Beginning.mp4", "expect": {"show_name": "Stranger Things", "season": 1, "episode": 2, "episode_title": "The Beginning", "kind": "episode"}}
+{"filename": "Stranger Things - 01x07 - Endgame.mp4", "expect": {"show_name": "Stranger Things", "season": 1, "episode": 7, "episode_title": "Endgame", "kind": "episode"}}
+{"filename": "True Detective - 01x02 - A New Dawn.mp4", "expect": {"show_name": "True Detective", "season": 1, "episode": 2, "episode_title": "A New Dawn", "kind": "episode"}}
+{"filename": "True Detective - 01x07 - The Trial.mp4", "expect": {"show_name": "True Detective", "season": 1, "episode": 7, "episode_title": "The Trial", "kind": "episode"}}
+{"filename": "Peaky Blinders - 01x02 - Lost And Found.mp4", "expect": {"show_name": "Peaky Blinders", "season": 1, "episode": 2, "episode_title": "Lost And Found", "kind": "episode"}}
+{"filename": "Peaky Blinders - 01x07 - Aftermath.mp4", "expect": {"show_name": "Peaky Blinders", "season": 1, "episode": 7, "episode_title": "Aftermath", "kind": "episode"}}
+{"filename": "The Sopranos - 01x02 - The Reckoning.mp4", "expect": {"show_name": "The Sopranos", "season": 1, "episode": 2, "episode_title": "The Reckoning", "kind": "episode"}}
+{"filename": "The Sopranos - 01x07 - First Contact.mp4", "expect": {"show_name": "The Sopranos", "season": 1, "episode": 7, "episode_title": "First Contact", "kind": "episode"}}
+{"filename": "Black Mirror - 01x02 - Homecoming.mp4", "expect": {"show_name": "Black Mirror", "season": 1, "episode": 2, "episode_title": "Homecoming", "kind": "episode"}}
+{"filename": "Black Mirror - 01x07 - The Long Goodbye.mp4", "expect": {"show_name": "Black Mirror", "season": 1, "episode": 7, "episode_title": "The Long Goodbye", "kind": "episode"}}
+{"filename": "The Mandalorian - 01x02 - Endgame.mp4", "expect": {"show_name": "The Mandalorian", "season": 1, "episode": 2, "episode_title": "Endgame", "kind": "episode"}}
+{"filename": "The Mandalorian - 01x07 - The Beginning.mp4", "expect": {"show_name": "The Mandalorian", "season": 1, "episode": 7, "episode_title": "The Beginning", "kind": "episode"}}
+{"filename": "Fargo - 01x02 - The Trial.mp4", "expect": {"show_name": "Fargo", "season": 1, "episode": 2, "episode_title": "The Trial", "kind": "episode"}}
+{"filename": "Fargo - 01x07 - A New Dawn.mp4", "expect": {"show_name": "Fargo", "season": 1, "episode": 7, "episode_title": "A New Dawn", "kind": "episode"}}
+{"filename": "The Matrix (1990).mkv", "expect": {"year": 1990, "kind": "movie", "title": "The Matrix"}}
+{"filename": "The.Matrix.1990.720p.x265.mkv", "expect": {"year": 1990, "kind": "movie", "resolution": "720p", "video_codec": "x265", "title": "The Matrix"}}
+{"filename": "Inception (1992).mkv", "expect": {"year": 1992, "kind": "movie", "title": "Inception"}}
+{"filename": "Inception.1992.1080p.x264.mkv", "expect": {"year": 1992, "kind": "movie", "resolution": "1080p", "video_codec": "x264", "title": "Inception"}}
+{"filename": "Interstellar (1994).mkv", "expect": {"year": 1994, "kind": "movie", "title": "Interstellar"}}
+{"filename": "Interstellar.1994.2160p.hevc.mkv", "expect": {"year": 1994, "kind": "movie", "resolution": "2160p", "video_codec": "hevc", "title": "Interstellar"}}
+{"filename": "Blade Runner (1996).mkv", "expect": {"year": 1996, "kind": "movie", "title": "Blade Runner"}}
+{"filename": "Blade.Runner.1996.1080p.h264.mkv", "expect": {"year": 1996, "kind": "movie", "resolution": "1080p", "video_codec": "h264", "title": "Blade Runner"}}
+{"filename": "The Godfather (1998).mkv", "expect": {"year": 1998, "kind": "movie", "title": "The Godfather"}}
+{"filename": "The.Godfather.1998.720p.x264.mkv", "expect": {"year": 1998, "kind": "movie", "resolution": "720p", "video_codec": "x264", "title": "The Godfather"}}
+{"filename": "Pulp Fiction (2000).mkv", "expect": {"year": 2000, "kind": "movie", "title": "Pulp Fiction"}}
+{"filename": "Pulp.Fiction.2000.720p.x265.mkv", "expect": {"year": 2000, "kind": "movie", "resolution": "720p", "video_codec": "x265", "title": "Pulp Fiction"}}
+{"filename": "Fight Club (2002).mkv", "expect": {"year": 2002, "kind": "movie", "title": "Fight Club"}}
+{"filename": "Fight.Club.2002.1080p.x264.mkv", "expect": {"year": 2002, "kind": "movie", "resolution": "1080p", "video_codec": "x264", "title": "Fight Club"}}
+{"filename": "Forrest Gump (2004).mkv", "expect": {"year": 2004, "kind": "movie", "title": "Forrest Gump"}}
+{"filename": "Forrest.Gump.2004.2160p.hevc.mkv", "expect": {"year": 2004, "kind": "movie", "resolution": "2160p", "video_codec": "hevc", "title": "Forrest Gump"}}
+{"filename": "The Departed (2006).mkv", "expect": {"year": 2006, "kind": "movie", "title": "The Departed"}}
+{"filename": "The.Departed.2006.1080p.h264.mkv", "expect": {"year": 2006, "kind": "movie", "resolution": "1080p", "video_codec": "h264", "title": "The Departed"}}
+{"filename": "Gladiator (2008).mkv", "expect": {"year": 2008, "kind": "movie", "title": "Gladiator"}}
+{"filename": "Gladiator.2008.720p.x264.mkv", "expect": {"year": 2008, "kind": "movie", "resolution": "720p", "video_codec": "x264", "title": "Gladiator"}}
+{"filename": "Whiplash (2010).mkv", "expect": {"year": 2010, "kind": "movie", "title": "Whiplash"}}
+{"filename": "Whiplash.2010.720p.x265.mkv", "expect": {"year": 2010, "kind": "movie", "resolution": "720p", "video_codec": "x265", "title": "Whiplash"}}
+{"filename": "Parasite (2012).mkv", "expect": {"year": 2012, "kind": "movie", "title": "Parasite"}}
+{"filename": "Parasite.2012.1080p.x264.mkv", "expect": {"year": 2012, "kind": "movie", "resolution": "1080p", "video_codec": "x264", "title": "Parasite"}}
+{"filename": "Dune (2014).mkv", "expect": {"year": 2014, "kind": "movie", "title": "Dune"}}
+{"filename": "Dune.2014.2160p.hevc.mkv", "expect": {"year": 2014, "kind": "movie", "resolution": "2160p", "video_codec": "hevc", "title": "Dune"}}
+{"filename": "Oppenheimer (2016).mkv", "expect": {"year": 2016, "kind": "movie", "title": "Oppenheimer"}}
+{"filename": "Oppenheimer.2016.1080p.h264.mkv", "expect": {"year": 2016, "kind": "movie", "resolution": "1080p", "video_codec": "h264", "title": "Oppenheimer"}}
+{"filename": "Arrival (2018).mkv", "expect": {"year": 2018, "kind": "movie", "title": "Arrival"}}
+{"filename": "Arrival.2018.720p.x264.mkv", "expect": {"year": 2018, "kind": "movie", "resolution": "720p", "video_codec": "x264", "title": "Arrival"}}
+{"filename": "Sicario (2020).mkv", "expect": {"year": 2020, "kind": "movie", "title": "Sicario"}}
+{"filename": "Sicario.2020.720p.x265.mkv", "expect": {"year": 2020, "kind": "movie", "resolution": "720p", "video_codec": "x265", "title": "Sicario"}}
+{"filename": "Joker (2022).mkv", "expect": {"year": 2022, "kind": "movie", "title": "Joker"}}
+{"filename": "Joker.2022.1080p.x264.mkv", "expect": {"year": 2022, "kind": "movie", "resolution": "1080p", "video_codec": "x264", "title": "Joker"}}
+{"filename": "Tenet (2024).mkv", "expect": {"year": 2024, "kind": "movie", "title": "Tenet"}}
+{"filename": "Tenet.2024.2160p.hevc.mkv", "expect": {"year": 2024, "kind": "movie", "resolution": "2160p", "video_codec": "hevc", "title": "Tenet"}}
+{"filename": "Drive (1991).mkv", "expect": {"year": 1991, "kind": "movie", "title": "Drive"}}
+{"filename": "Drive.1991.1080p.h264.mkv", "expect": {"year": 1991, "kind": "movie", "resolution": "1080p", "video_codec": "h264", "title": "Drive"}}
+{"filename": "Prisoners (1993).mkv", "expect": {"year": 1993, "kind": "movie", "title": "Prisoners"}}
+{"filename": "Prisoners.1993.720p.x264.mkv", "expect": {"year": 1993, "kind": "movie", "resolution": "720p", "video_codec": "x264", "title": "Prisoners"}}
+{"filename": "Breaking.Bad.S02E01-E03.mkv", "expect": {"show_name": "Breaking Bad", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "The.Office.S02E01-E03.mkv", "expect": {"show_name": "The Office", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "Planet.Earth.S02E01-E03.mkv", "expect": {"show_name": "Planet Earth", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "Game.Of.Thrones.S02E01-E03.mkv", "expect": {"show_name": "Game Of Thrones", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "Better.Call.Saul.S02E01-E03.mkv", "expect": {"show_name": "Better Call Saul", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "The.Wire.S02E01-E03.mkv", "expect": {"show_name": "The Wire", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "Mad.Men.S02E01-E03.mkv", "expect": {"show_name": "Mad Men", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "The.Crown.S02E01-E03.mkv", "expect": {"show_name": "The Crown", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "Stranger.Things.S02E01-E03.mkv", "expect": {"show_name": "Stranger Things", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "True.Detective.S02E01-E03.mkv", "expect": {"show_name": "True Detective", "season": 2, "episode": 1, "episode_end": 3, "kind": "episode"}}
+{"filename": "باب الحارة - الحلقة 1.mp4", "expect": {"show_name": "باب الحارة", "episode": 1, "kind": "episode"}}
+{"filename": "باب الحارة - الحلقة 8.mp4", "expect": {"show_name": "باب الحارة", "episode": 8, "kind": "episode"}}
+{"filename": "باب الحارة - الحلقة 12.mp4", "expect": {"show_name": "باب الحارة", "episode": 12, "kind": "episode"}}
+{"filename": "الهيبة - الحلقة 1.mp4", "expect": {"show_name": "الهيبة", "episode": 1, "kind": "episode"}}
+{"filename": "الهيبة - الحلقة 8.mp4", "expect": {"show_name": "الهيبة", "episode": 8, "kind": "episode"}}
+{"filename": "الهيبة - الحلقة 12.mp4", "expect": {"show_name": "الهيبة", "episode": 12, "kind": "episode"}}
+{"filename": "الاجتياح - الحلقة 1.mp4", "expect": {"show_name": "الاجتياح", "episode": 1, "kind": "episode"}}
+{"filename": "الاجتياح - الحلقة 8.mp4", "expect": {"show_name": "الاجتياح", "episode": 8, "kind": "episode"}}
+{"filename": "الاجتياح - الحلقة 12.mp4", "expect": {"show_name": "الاجتياح", "episode": 12, "kind": "episode"}}
+{"filename": "ضيعة ضايعة - الحلقة 1.mp4", "expect": {"show_name": "ضيعة ضايعة", "episode": 1, "kind": "episode"}}
+{"filename": "ضيعة ضايعة - الحلقة 8.mp4", "expect": {"show_name": "ضيعة ضايعة", "episode": 8, "kind": "episode"}}
+{"filename": "ضيعة ضايعة - الحلقة 12.mp4", "expect": {"show_name": "ضيعة ضايعة", "episode": 12, "kind": "episode"}}
+{"filename": "سيلفي - الحلقة 1.mp4", "expect": {"show_name": "سيلفي", "episode": 1, "kind": "episode"}}
+{"filename": "سيلفي - الحلقة 8.mp4", "expect": {"show_name": "سيلفي", "episode": 8, "kind": "episode"}}
+{"filename": "سيلفي - الحلقة 12.mp4", "expect": {"show_name": "سيلفي", "episode": 12, "kind": "episode"}}
+{"filename": "غدا نلتقي - الحلقة 1.mp4", "expect": {"show_name": "غدا نلتقي", "episode": 1, "kind": "episode"}}
+{"filename": "غدا نلتقي - الحلقة 8.mp4", "expect": {"show_name": "غدا نلتقي", "episode": 8, "kind": "episode"}}
+{"filename": "غدا نلتقي - الحلقة 12.mp4", "expect": {"show_name": "غدا نلتقي", "episode": 12, "kind": "episode"}}
+{"filename": "ترجمان الأشواق - الحلقة 1.mp4", "expect": {"show_name": "ترجمان الأشواق", "episode": 1, "kind": "episode"}}
+{"filename": "ترجمان الأشواق - الحلقة 8.mp4", "expect": {"show_name": "ترجمان الأشواق", "episode": 8, "kind": "episode"}}
+{"filename": "ترجمان الأشواق - الحلقة 12.mp4", "expect": {"show_name": "ترجمان الأشواق", "episode": 12, "kind": "episode"}}
+{"filename": "العراب - الحلقة 1.mp4", "expect": {"show_name": "العراب", "episode": 1, "kind": "episode"}}
+{"filename": "العراب - الحلقة 8.mp4", "expect": {"show_name": "العراب", "episode": 8, "kind": "episode"}}
+{"filename": "العراب - الحلقة 12.mp4", "expect": {"show_name": "العراب", "episode": 12, "kind": "episode"}}
+{"filename": "رسائل - الحلقة 1.mp4", "expect": {"show_name": "رسائل", "episode": 1, "kind": "episode"}}
+{"filename": "رسائل - الحلقة 8.mp4", "expect": {"show_name": "رسائل", "episode": 8, "kind": "episode"}}
+{"filename": "رسائل - الحلقة 12.mp4", "expect": {"show_name": "رسائل", "episode": 12, "kind": "episode"}}
+{"filename": "الخربة - الحلقة 1.mp4", "expect": {"show_name": "الخربة", "episode": 1, "kind": "episode"}}
+{"filename": "الخربة - الحلقة 8.mp4", "expect": {"show_name": "الخربة", "episode": 8, "kind": "episode"}}
+{"filename": "الخربة - الحلقة 12.mp4", "expect": {"show_name": "الخربة", "episode": 12, "kind": "episode"}}
+{"filename": "باب الحارة الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "باب الحارة", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "الهيبة الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "الهيبة", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "الاجتياح الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "الاجتياح", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "ضيعة ضايعة الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "ضيعة ضايعة", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "سيلفي الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "سيلفي", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "غدا نلتقي الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "غدا نلتقي", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "ترجمان الأشواق الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "ترجمان الأشواق", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "العراب الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "العراب", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "رسائل الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "رسائل", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "الخربة الموسم 2 الحلقة 5.mkv", "expect": {"show_name": "الخربة", "season": 2, "episode": 5, "kind": "episode"}}
+{"filename": "الرسالة (1969).mkv", "expect": {"year": 1969, "kind": "movie"}}
+{"filename": "المومياء (1976).mkv", "expect": {"year": 1976, "kind": "movie"}}
+{"filename": "عمارة يعقوبيان (1983).mkv", "expect": {"year": 1983, "kind": "movie"}}
+{"filename": "الكيت كات (1990).mkv", "expect": {"year": 1990, "kind": "movie"}}
+{"filename": "اشتباك (1997).mkv", "expect": {"year": 1997, "kind": "movie"}}
+{"filename": "Breaking.Bad.2024.03.10.Topic.mp4", "expect": {"show_name": "Breaking Bad", "airdate": "2024-03-10", "kind": "episode"}}
+{"filename": "The.Office.2024.03.11.Topic.mp4", "expect": {"show_name": "The Office", "airdate": "2024-03-11", "kind": "episode"}}
+{"filename": "Planet.Earth.2024.03.12.Topic.mp4", "expect": {"show_name": "Planet Earth", "airdate": "2024-03-12", "kind": "episode"}}
+{"filename": "Game.Of.Thrones.2024.03.13.Topic.mp4", "expect": {"show_name": "Game Of Thrones", "airdate": "2024-03-13", "kind": "episode"}}
+{"filename": "Better.Call.Saul.2024.03.14.Topic.mp4", "expect": {"show_name": "Better Call Saul", "airdate": "2024-03-14", "kind": "episode"}}
+{"filename": "The.Wire.2024.03.15.Topic.mp4", "expect": {"show_name": "The Wire", "airdate": "2024-03-15", "kind": "episode"}}
+{"filename": "Mad.Men.2024.03.16.Topic.mp4", "expect": {"show_name": "Mad Men", "airdate": "2024-03-16", "kind": "episode"}}
+{"filename": "The.Crown.2024.03.17.Topic.mp4", "expect": {"show_name": "The Crown", "airdate": "2024-03-17", "kind": "episode"}}

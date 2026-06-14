@@ -10,7 +10,7 @@ from maktaba_pipeline.channels.planner.shuffle import ShufflePlanner
 from .helpers import dt, mk_channel, mk_content
 
 
-def test_covers_horizon():
+def test_covers_horizon() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     content = mk_content(5, dur_ms=10 * 60_000)
     p = ShufflePlanner(ch, seed=1)
@@ -19,7 +19,7 @@ def test_covers_horizon():
     assert sum(i.duration_ms for i in items) >= 2 * 60 * 60_000
 
 
-def test_no_adjacent_repeat():
+def test_no_adjacent_repeat() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     content = mk_content(6, dur_ms=10 * 60_000)
     p = ShufflePlanner(ch, seed=7)
@@ -30,7 +30,7 @@ def test_no_adjacent_repeat():
         assert a != b, "shuffle produced an adjacent repeat"
 
 
-def test_fair_bag_every_item_before_repeat():
+def test_fair_bag_every_item_before_repeat() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     content = mk_content(4, dur_ms=10 * 60_000)
     p = ShufflePlanner(ch, seed=3)
@@ -41,7 +41,7 @@ def test_fair_bag_every_item_before_repeat():
     assert len(set(ids)) == 4, "first bag should draw each item once"
 
 
-def test_cursor_continues_across_topup():
+def test_cursor_continues_across_topup() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     content = mk_content(5, dur_ms=10 * 60_000)
     start = dt("2026-06-14T00:00:00")
@@ -66,7 +66,7 @@ def test_cursor_continues_across_topup():
     assert combined[: len(full_ids)] == full_ids
 
 
-def test_empty_content_yields_nothing():
+def test_empty_content_yields_nothing() -> None:
     ch = mk_channel(ChannelMode.SHUFFLE)
     p = ShufflePlanner(ch, seed=1)
     start = dt("2026-06-14T00:00:00")

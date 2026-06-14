@@ -11,11 +11,11 @@ from maktaba_pipeline.channels.base import BlockKind, PlanItem
 from .helpers import dt, mk_filler
 
 
-def _program(ms: int):
+def _program(ms: int) -> PlanItem:
     return PlanItem(video_id=uuid4(), duration_ms=ms, snapshot={"title": "x"})
 
 
-def test_gap_coalesced_into_single_filler_block():
+def test_gap_coalesced_into_single_filler_block() -> None:
     # A 55-minute gap filled by 1-minute bumpers must NOT shred into 55
     # rows — it coalesces into ONE looping filler block (EC8).
     start = dt("2026-06-14T00:00:00")
@@ -32,7 +32,7 @@ def test_gap_coalesced_into_single_filler_block():
     assert filler_blocks[0].source_duration == 55 * 60_000
 
 
-def test_slate_when_no_filler():
+def test_slate_when_no_filler() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
     blocks = packer.pack([_program(5 * 60_000)], channel_id=uuid4(), start_at=start, until=until)
@@ -40,7 +40,7 @@ def test_slate_when_no_filler():
     assert blocks[-1].title_snapshot.get("title")
 
 
-def test_no_pad_when_programs_fill_exactly():
+def test_no_pad_when_programs_fill_exactly() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
     blocks = packer.pack(
@@ -53,7 +53,7 @@ def test_no_pad_when_programs_fill_exactly():
     assert all(b.kind == BlockKind.PROGRAM for b in blocks)
 
 
-def test_empty_items_all_slate():
+def test_empty_items_all_slate() -> None:
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=2)
     blocks = packer.pack([], channel_id=uuid4(), start_at=start, until=until)

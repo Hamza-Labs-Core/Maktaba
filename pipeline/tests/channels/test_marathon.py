@@ -20,7 +20,7 @@ def _episodes() -> list[ContentItem]:
     ]
 
 
-def test_plays_in_episode_order():
+def test_plays_in_episode_order() -> None:
     eps = _episodes()
     ch = mk_channel(ChannelMode.MARATHON, mode_config={"loop": True})
     p = MarathonPlanner(ch)
@@ -30,7 +30,7 @@ def test_plays_in_episode_order():
     assert titles == ["S1E1", "S1E2", "S2E1"]
 
 
-def test_loop_wraps_to_start():
+def test_loop_wraps_to_start() -> None:
     eps = _episodes()
     ch = mk_channel(ChannelMode.MARATHON, mode_config={"loop": True})
     p = MarathonPlanner(ch)
@@ -41,7 +41,7 @@ def test_loop_wraps_to_start():
     assert titles[:4] == ["S1E1", "S1E2", "S2E1", "S1E1"]
 
 
-def test_no_loop_stops_after_last():
+def test_no_loop_stops_after_last() -> None:
     eps = _episodes()
     ch = mk_channel(ChannelMode.MARATHON, mode_config={"loop": False})
     p = MarathonPlanner(ch)
@@ -51,7 +51,7 @@ def test_no_loop_stops_after_last():
     assert len(items) == 3
 
 
-def test_cursor_resumes_position():
+def test_cursor_resumes_position() -> None:
     eps = _episodes()
     ch = mk_channel(ChannelMode.MARATHON, mode_config={"loop": True})
     start = dt("2026-06-14T00:00:00")

@@ -19,6 +19,8 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { api, ApiError } from "../lib/api";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
+import { MediaContextCard } from "../components/MediaContextCard";
+import { EnrichmentPanel } from "../components/EnrichmentPanel";
 
 interface Video {
   id: string;
@@ -114,8 +116,15 @@ export function VideoDetail() {
           <Link to={`/videos/${video.id}/watch`} className="mkt-btn mkt-btn--primary">
             ▶ {t("video.play")}
           </Link>
+          {/* Story 26.9 — web context card (rating/cast/summary + related). */}
+          <MediaContextCard videoId={videoId} />
         </div>
       ),
+    },
+    {
+      id: "enrichment",
+      label: t("video.tab.metadata"),
+      content: <EnrichmentPanel videoId={videoId} />,
     },
     {
       id: "transcript",

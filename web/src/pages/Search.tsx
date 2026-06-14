@@ -15,8 +15,10 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
+import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 
@@ -33,9 +35,24 @@ interface ServerHit {
   snippet: string;
   score: number;
 }
+interface YTItem {
+  youtube_id: string;
+  title: string;
+  channel: string;
+  description_snippet: string;
+  thumbnail: string;
+  published_at?: string;
+  view_count?: number;
+  match: { state: string; video_id?: string };
+}
+interface YTBlock {
+  items: YTItem[];
+  reason?: string;
+}
 interface SearchResponse {
   hits: ServerHit[];
   total: number;
+  youtube?: YTBlock;
 }
 interface SavedSearch {
   id: string;
@@ -95,6 +112,8 @@ export function Search() {
   const [q, setQ] = useState(params.get("q") ?? "");
   const [mode, setMode] = useState<Mode>(readMode);
   const [hits, setHits] = useState<ServerHit[] | null>(null);
+  const [youtube, setYoutube] = useState<YTBlock | null>(null);
+  const [withYouTube, setWithYouTube] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -120,7 +139,7 @@ export function Search() {
   }, []);
 
   const runSearch = useMemo(
-    () => async (term: string, m: Mode) => {
+    () => async (term: string, m: Mode, includeYouTube: boolean) => {
       const query = term.trim();
       if (!query) return;
       setPending(true);
@@ -130,8 +149,11 @@ export function Search() {
           q: query,
           mode: m,
           limit: SEARCH_LIMIT,
+          // Story 26.8: additive opt-in; absent ⇒ local-only behaviour.
+          ...(includeYouTube ? { include: ["youtube"] } : {}),
         });
         setHits(res.hits ?? []);
+        setYoutube(includeYouTube ? (res.youtube ?? { items: [] }) : null);
       } catch (e) {
         setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
         setHits([]);
@@ -150,8 +172,8 @@ export function Search() {
     if (didSeed.current) return;
     didSeed.current = true;
     const seeded = params.get("q");
-    if (seeded) void runSearch(seeded, mode);
-  }, [params, mode, runSearch]);
+    if (seeded) void runSearch(seeded, mode, withYouTube);
+  }, [params, mode, withYouTube, runSearch]);
 
   function onChangeQuery(value: string) {
     setQ(value);
@@ -175,7 +197,7 @@ export function Search() {
     if (q.trim()) nextParams.set("q", q.trim());
     else nextParams.delete("q");
     setParams(nextParams, { replace: true });
-    void runSearch(q, mode);
+    void runSearch(q, mode, withYouTube);
   }
 
   function saveCurrent() {
@@ -222,6 +244,14 @@ export function Search() {
             <Button type="button" variant="secondary" onClick={saveCurrent}>
               {t("search.save")}
             </Button>
+            <label className="mkt-search__yt-toggle">
+              <input
+                type="checkbox"
+                checked={withYouTube}
+                onChange={(e) => setWithYouTube(e.target.checked)}
+              />
+              {t("search.youtube.toggle")}
+            </label>
           </form>
 
           {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
@@ -244,6 +274,8 @@ export function Search() {
               ))}
             </ul>
           )}
+
+          {youtube && <YouTubeSection block={youtube} onImported={() => {}} />}
         </div>
 
         <aside className="mkt-search__side" aria-label={t("search.saved")}>
@@ -260,7 +292,7 @@ export function Search() {
                     onClick={() => {
                       setQ(s.q);
                       setMode(s.mode as Mode);
-                      void runSearch(s.q, s.mode as Mode);
+                      void runSearch(s.q, s.mode as Mode, withYouTube);
                     }}
                   >
                     {s.q}
@@ -284,6 +316,77 @@ export function Search() {
           )}
         </aside>
       </div>
+    </section>
+  );
+}
+
+// YouTubeSection renders the "From YouTube" augmentation (Story 26.8),
+// visually distinct from local results. Each card links out to YouTube
+// (rel="noopener noreferrer"); a match badge links an already-in-library
+// result to the local video, or offers an import to a chosen video. A
+// non-empty `reason` renders a quiet inline note, never an error toast.
+function YouTubeSection({ block, onImported }: { block: YTBlock; onImported: () => void }) {
+  const { t, n } = useI18n();
+  const toast = useToast();
+
+  async function importTo(it: YTItem) {
+    const target = window.prompt(t("search.youtube.importPrompt"));
+    if (!target) return;
+    try {
+      await api.post(`/api/videos/${encodeURIComponent(target.trim())}/import-youtube`, {
+        youtube_id: it.youtube_id,
+      });
+      toast.show({ message: t("search.youtube.imported"), tone: "success" });
+      onImported();
+    } catch (e) {
+      toast.show({
+        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+        tone: "error",
+      });
+    }
+  }
+
+  return (
+    <section className="mkt-yt-section" aria-label={t("search.youtube.heading")}>
+      <h2 className="mkt-yt-section__title">{t("search.youtube.heading")}</h2>
+      {block.items.length === 0 ? (
+        <p className="mkt-muted">
+          {block.reason ? t(`search.youtube.reason.${block.reason}`) : t("search.youtube.none")}
+        </p>
+      ) : (
+        <ul className="mkt-yt-list" role="list">
+          {block.items.map((it) => (
+            <li key={it.youtube_id} className="mkt-yt-card">
+              <a
+                href={`https://www.youtube.com/watch?v=${encodeURIComponent(it.youtube_id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mkt-yt-card__link"
+              >
+                {it.thumbnail && <img src={it.thumbnail} alt="" loading="lazy" />}
+                <span className="mkt-yt-card__title" dir="auto">
+                  {it.title}
+                </span>
+                <span className="mkt-yt-card__channel mkt-muted" dir="auto">
+                  {it.channel}
+                  {typeof it.view_count === "number" ? ` · ${n(it.view_count)}` : ""}
+                </span>
+              </a>
+              <div className="mkt-yt-card__match">
+                {it.match.state === "in_library" && it.match.video_id ? (
+                  <Link to={`/videos/${it.match.video_id}`}>
+                    <Badge tone="success">{t("search.youtube.inLibrary")}</Badge>
+                  </Link>
+                ) : (
+                  <Button size="sm" variant="secondary" onClick={() => importTo(it)}>
+                    {t("search.youtube.import")}
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

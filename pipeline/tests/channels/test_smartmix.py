@@ -18,7 +18,7 @@ def _classified(genre: str, n: int) -> list[ContentItem]:
     ]
 
 
-def test_falls_back_to_shuffle_without_classification():
+def test_falls_back_to_shuffle_without_classification() -> None:
     ch = mk_channel(ChannelMode.SMART_MIX)
     content = mk_content(5, dur_ms=20 * 60_000)  # no genre fields
     p = SmartMixPlanner(ch, seed=1)
@@ -30,7 +30,7 @@ def test_falls_back_to_shuffle_without_classification():
     assert "fallback" in state  # fallback bag persisted for continuity
 
 
-def test_balances_genres_toward_uniform_target():
+def test_balances_genres_toward_uniform_target() -> None:
     ch = mk_channel(ChannelMode.SMART_MIX)
     content = _classified("comedy", 10) + _classified("drama", 10)
     p = SmartMixPlanner(ch, seed=2)
@@ -43,7 +43,7 @@ def test_balances_genres_toward_uniform_target():
     assert abs(comedy - drama) <= 2, f"comedy={comedy} drama={drama}"
 
 
-def test_weights_bias_distribution():
+def test_weights_bias_distribution() -> None:
     ch = mk_channel(ChannelMode.SMART_MIX, mode_config={"weights": {"comedy": 3, "drama": 1}})
     content = _classified("comedy", 10) + _classified("drama", 10)
     p = SmartMixPlanner(ch, seed=2)
@@ -53,7 +53,7 @@ def test_weights_bias_distribution():
     assert genres.count("comedy") > genres.count("drama")
 
 
-def test_empty_content_yields_nothing():
+def test_empty_content_yields_nothing() -> None:
     ch = mk_channel(ChannelMode.SMART_MIX)
     p = SmartMixPlanner(ch, seed=1)
     start = dt("2026-06-14T00:00:00")
