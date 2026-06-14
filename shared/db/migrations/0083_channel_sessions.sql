@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS channel_runtime (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS channel_runtime_state_idx ON channel_runtime (state, last_segment_at);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS channel_runtime_state_idx ON channel_runtime (state, last_segment_at);
 -- +goose StatementEnd
 
 -- +goose Down

@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS hdhr_tuner_leases (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS hdhr_tuner_leases_active_idx ON hdhr_tuner_leases (last_seen);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS hdhr_tuner_leases_active_idx ON hdhr_tuner_leases (last_seen);
 -- +goose StatementEnd
 
 -- +goose Down

@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -46,11 +47,17 @@ CREATE TABLE IF NOT EXISTS channels (
 -- +goose StatementBegin
 -- Number + slug unique within scope: a fixed sentinel UUID stands in for
 -- the multi-library (null) bucket so the partial index covers it too (D3).
-CREATE UNIQUE INDEX IF NOT EXISTS channels_scope_number_uniq
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS channels_scope_number_uniq
     ON channels (COALESCE(library_id, '00000000-0000-0000-0000-000000000000'::uuid), number);
-CREATE UNIQUE INDEX IF NOT EXISTS channels_scope_slug_uniq
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS channels_scope_slug_uniq
     ON channels (COALESCE(library_id, '00000000-0000-0000-0000-000000000000'::uuid), slug);
-CREATE INDEX IF NOT EXISTS channels_enabled_idx ON channels (enabled, sort_order, number);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS channels_enabled_idx ON channels (enabled, sort_order, number);
 -- +goose StatementEnd
 
 -- +goose Down

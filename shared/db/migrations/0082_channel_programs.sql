@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -35,9 +36,12 @@ CREATE TABLE IF NOT EXISTS channel_programs (
 
 -- +goose StatementBegin
 -- Time-range lookups (guide + "what's on now" + live join) are the hot path.
-CREATE INDEX IF NOT EXISTS channel_programs_channel_time_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS channel_programs_channel_time_idx
     ON channel_programs (channel_id, start_at, end_at);
-CREATE UNIQUE INDEX IF NOT EXISTS channel_programs_channel_seq_uniq
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS channel_programs_channel_seq_uniq
     ON channel_programs (channel_id, seq);
 -- +goose StatementEnd
 

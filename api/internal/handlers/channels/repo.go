@@ -45,7 +45,6 @@ func (rp *repo) list(ctx context.Context, f listFilter) ([]Channel, error) {
 	if f.enabled != nil {
 		conds = append(conds, "enabled = $"+itoa(i))
 		args = append(args, *f.enabled)
-		i++
 	}
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")

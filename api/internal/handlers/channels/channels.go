@@ -406,22 +406,22 @@ func (h *Handler) uniqueSlug(ctx context.Context, libraryID *string, name string
 // nextNumber returns the lowest unused dial position in scope (defaults
 // to 1 on an empty/missing scope).
 func (h *Handler) nextNumber(ctx context.Context, libraryID *string) (int, error) {
-	var max sql.NullInt64
+	var maxNum sql.NullInt64
 	var err error
 	if libraryID == nil {
 		err = h.DB.QueryRowContext(ctx,
-			`SELECT max(number) FROM channels WHERE library_id IS NULL`).Scan(&max)
+			`SELECT max(number) FROM channels WHERE library_id IS NULL`).Scan(&maxNum)
 	} else {
 		err = h.DB.QueryRowContext(ctx,
-			`SELECT max(number) FROM channels WHERE library_id = $1`, *libraryID).Scan(&max)
+			`SELECT max(number) FROM channels WHERE library_id = $1`, *libraryID).Scan(&maxNum)
 	}
 	if err != nil {
 		return 0, err
 	}
-	if !max.Valid {
+	if !maxNum.Valid {
 		return 1, nil
 	}
-	return int(max.Int64) + 1, nil
+	return int(maxNum.Int64) + 1, nil
 }
 
 // markStale flips channel_schedule_state.stale; best-effort (27.2 may not

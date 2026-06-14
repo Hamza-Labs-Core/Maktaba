@@ -70,7 +70,7 @@ func TestToBlock_Liveness(t *testing.T) {
 }
 
 func TestCollapseFiller(t *testing.T) {
-	blocks := []GuideBlock{
+	blocks := []Block{
 		{ChannelID: "c", Kind: "program", Title: "Movie", Start: "T0", Stop: "T1"},
 		{ChannelID: "c", Kind: "bumper", Title: "ID", Start: "T1", Stop: "T1b"},
 		{ChannelID: "c", Kind: "filler", Title: "Promo", Start: "T1b", Stop: "T2", IsLive: true, Progress: 0.3},

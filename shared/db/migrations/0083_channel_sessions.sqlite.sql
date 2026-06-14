@@ -13,7 +13,7 @@ ALTER TABLE streaming_sessions RENAME TO streaming_sessions_old_0083;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TABLE streaming_sessions (
+CREATE TABLE IF NOT EXISTS streaming_sessions (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     video_id        TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
@@ -45,7 +45,7 @@ SELECT id, user_id, video_id, client_profile, mode, audio_track_id,
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TABLE streaming_sessions_old_0083;
+DROP TABLE IF EXISTS streaming_sessions_old_0083;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -83,7 +83,7 @@ ALTER TABLE streaming_sessions RENAME TO streaming_sessions_old_0083;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TABLE streaming_sessions (
+CREATE TABLE IF NOT EXISTS streaming_sessions (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     video_id        TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
@@ -111,7 +111,7 @@ SELECT id, user_id, video_id, client_profile, mode, audio_track_id,
        subtitle_lang, start_sec, max_bitrate_kbps, burn_subs, metadata,
        opened_at, closed_at, last_seen_at
   FROM streaming_sessions_old_0083;
-DROP TABLE streaming_sessions_old_0083;
+DROP TABLE IF EXISTS streaming_sessions_old_0083;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

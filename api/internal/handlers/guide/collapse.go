@@ -1,9 +1,9 @@
 package guide
 
-// GuideBlock is the per-program payload returned by the JSON guide grid.
+// Block is the per-program payload returned by the JSON guide grid.
 // Fields mirror the Story 27.4 contract; most come from the block's
 // Snapshot so a read never joins the library.
-type GuideBlock struct {
+type Block struct {
 	ChannelID string  `json:"channel_id"`
 	Kind      string  `json:"kind"`
 	Start     string  `json:"start"` // ISO-8601 absolute
@@ -31,8 +31,8 @@ func isFiller(kind string) bool {
 // a single "Up Next" placeholder so the guide isn't littered with
 // 15-second rows (AC10 / TC9). Program blocks pass through untouched.
 // Input is assumed time-ordered for one channel.
-func collapseFiller(blocks []GuideBlock) []GuideBlock {
-	out := make([]GuideBlock, 0, len(blocks))
+func collapseFiller(blocks []Block) []Block {
+	out := make([]Block, 0, len(blocks))
 	i := 0
 	for i < len(blocks) {
 		b := blocks[i]
@@ -47,7 +47,7 @@ func collapseFiller(blocks []GuideBlock) []GuideBlock {
 		for j < len(blocks) && isFiller(blocks[j].Kind) {
 			j++
 		}
-		merged := GuideBlock{
+		merged := Block{
 			ChannelID: b.ChannelID,
 			Kind:      "filler",
 			Start:     b.Start,

@@ -10,22 +10,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 )
 
-// execRunner is the production Runner + TSRunner: it spawns ffmpeg with
+// ExecRunner is the production Runner + TSRunner: it spawns ffmpeg with
 // the concat-demuxer input. main.go wires this; tests swap in fakes.
-type execRunner struct {
+type ExecRunner struct {
 	Bin ffmpeg.Binary
 }
 
 // NewExecRunner returns the real ffmpeg-spawning runner (Runner +
 // TSRunner).
-func NewExecRunner(bin ffmpeg.Binary) *execRunner { return &execRunner{Bin: bin} }
+func NewExecRunner(bin ffmpeg.Binary) *ExecRunner { return &ExecRunner{Bin: bin} }
 
 // StartHLS spawns the live-window encoder. The master playlist is written
 // up front so the player's first manifest GET resolves to a 200 while the
 // first variant segment is still being produced (mirrors the VOD
 // orchestrator). The encoder is parented to a session-scoped context
 // (NOT the request ctx) so it outlives the tune RPC — HLB-328.
-func (e *execRunner) StartHLS(_ context.Context, job Job) (Controller, error) {
+func (e *ExecRunner) StartHLS(_ context.Context, job Job) (Controller, error) {
 	if job.MasterName == "" {
 		job.MasterName = defaultMasterName
 	}
@@ -49,7 +49,7 @@ func (e *execRunner) StartHLS(_ context.Context, job Job) (Controller, error) {
 // StreamMPEGTS runs the continuous MPEG-TS mux, piping ffmpeg's stdout
 // straight to `w`. It blocks until ffmpeg exits or `ctx` is cancelled
 // (the HDHomeRun tuner disconnecting), matching real tuner semantics.
-func (e *execRunner) StreamMPEGTS(ctx context.Context, concatPath string, w io.Writer) error {
+func (e *ExecRunner) StreamMPEGTS(ctx context.Context, concatPath string, w io.Writer) error {
 	bin := e.Bin.FFmpeg
 	if bin == "" {
 		bin = "ffmpeg"

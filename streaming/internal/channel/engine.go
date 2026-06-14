@@ -72,9 +72,9 @@ type Engine struct {
 
 // NewEngine builds an Engine with the per-host cap and clock. A nil clock
 // uses time.Now; cap ≤ 0 uses DefaultPerHostCap.
-func NewEngine(repo Repo, runner Runner, layout Layout, cap int, now func() time.Time) *Engine {
-	if cap <= 0 {
-		cap = DefaultPerHostCap
+func NewEngine(repo Repo, runner Runner, layout Layout, perHostCap int, now func() time.Time) *Engine {
+	if perHostCap <= 0 {
+		perHostCap = DefaultPerHostCap
 	}
 	if now == nil {
 		now = time.Now
@@ -85,7 +85,7 @@ func NewEngine(repo Repo, runner Runner, layout Layout, cap int, now func() time
 		Layout:    layout,
 		Lookahead: DefaultLookahead,
 		WarmGrace: DefaultWarmGrace,
-		reg:       newRegistry(cap, now),
+		reg:       newRegistry(perHostCap, now),
 		now:       now,
 	}
 }
@@ -177,7 +177,7 @@ func (e *Engine) Touch(channelID uuid.UUID) {
 
 // ReapIdle stops channels idle past the warm grace window and clears
 // their runtime rows. Called from the streaming reaper Sweep.
-func (e *Engine) ReapIdle(ctx context.Context) []uuid.UUID {
+func (e *Engine) ReapIdle(_ context.Context) []uuid.UUID {
 	return e.reg.reapIdle(e.WarmGrace)
 }
 

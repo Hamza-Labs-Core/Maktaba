@@ -108,7 +108,7 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := h.now()
-	byChan := map[string][]GuideBlock{}
+	byChan := map[string][]Block{}
 	for _, pr := range rows {
 		byChan[pr.ChannelID] = append(byChan[pr.ChannelID], toBlock(pr, now))
 	}
@@ -119,7 +119,7 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 	}
 	type chanGuide struct {
 		Channel ChannelHeader `json:"channel"`
-		Blocks  []GuideBlock  `json:"blocks"`
+		Blocks  []Block       `json:"blocks"`
 	}
 	out := make([]chanGuide, 0, len(chans))
 	for _, c := range chans {
@@ -128,7 +128,7 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 			blocks = collapseFiller(blocks)
 		}
 		if blocks == nil {
-			blocks = []GuideBlock{}
+			blocks = []Block{}
 		}
 		out = append(out, chanGuide{Channel: toHeader(c), Blocks: blocks})
 	}
@@ -168,7 +168,7 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := h.now()
-	blocks := make([]GuideBlock, 0, len(rows))
+	blocks := make([]Block, 0, len(rows))
 	for _, pr := range rows {
 		blocks = append(blocks, toBlock(pr, now))
 	}
@@ -200,8 +200,8 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	type nowEntry struct {
 		Channel ChannelHeader `json:"channel"`
-		Current *GuideBlock   `json:"current"`
-		Next    *GuideBlock   `json:"next"`
+		Current *Block        `json:"current"`
+		Next    *Block        `json:"next"`
 	}
 	out := make([]nowEntry, 0, len(chans))
 	for _, c := range chans {
@@ -242,8 +242,8 @@ func toHeader(c ChannelMeta) ChannelHeader {
 
 // toBlock maps a channel_programs row to the guide payload, computing
 // is_live / progress from the shared clock (AC3/AC7).
-func toBlock(p ProgramRow, now time.Time) GuideBlock {
-	b := GuideBlock{
+func toBlock(p ProgramRow, now time.Time) Block {
+	b := Block{
 		ChannelID: p.ChannelID,
 		Kind:      p.Kind,
 		Start:     p.StartAt.UTC().Format(time.RFC3339),
