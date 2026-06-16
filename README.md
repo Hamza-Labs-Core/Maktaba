@@ -111,6 +111,38 @@ troubleshooting, and pre-commit setup.
 
 ---
 
+## Install the home server
+
+The home server ships as the single `maktaba-server` binary (with the API,
+streaming, and pipeline roles plus the web UI). Pick the method for your OS —
+every artifact is checksummed and signed with keyless cosign:
+
+```sh
+# Linux / macOS — one-line installer (detects OS + arch, verifies checksum)
+curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
+
+# Debian / Ubuntu — native package (systemd unit, maktaba user, migrations)
+sudo apt install ./maktaba-server_<ver>-1_amd64.deb
+
+# Fedora / RHEL / CentOS
+sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
+
+# macOS — Homebrew
+brew install hamza-labs-core/tap/maktaba
+```
+
+Windows and manual installs: download the matching `.tar.gz` / `.zip` from the
+[latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest).
+After installing, run `maktaba-server setup` (or edit
+`/etc/maktaba/server.toml`), then `sudo systemctl start maktaba-server` — the
+web UI is on port `8088`. Packaging details, install paths, and the full
+artifact list are in [`deploy/packaging/`](deploy/packaging/README.md).
+
+Prefer containers? `docker compose -f deploy/compose/docker-compose.yml up`
+runs the same stack from the multi-arch GHCR images.
+
+---
+
 ## Deploying the Cloud Relay
 
 The optional hosted layer (`cloud/`) ships as a single `maktaba-cloud`

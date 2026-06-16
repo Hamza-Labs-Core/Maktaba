@@ -1,0 +1,124 @@
+# nfpm config for the Maktaba home server native packages.
+#
+# Produces a .deb (Debian/Ubuntu) and a .rpm (Fedora/RHEL/CentOS) for one
+# architecture per invocation. The release workflow runs nfpm four times
+# — {deb,rpm} x {amd64,arm64} — exporting ARCH and VERSION first:
+#
+#   export ARCH=amd64 VERSION=1.2.3       # VERSION has no leading "v"
+#   nfpm package -f deploy/packaging/nfpm.yaml -p deb -t dist/
+#   nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t dist/
+#
+# nfpm expands ${ENV} in scalar fields (arch/version) but NOT in
+# contents[].src globs, so the per-arch binary is staged to a FIXED path
+# (pkgroot/) by the release job before each invocation — copy the right
+# dist/<name>-linux-${ARCH} into pkgroot/<name> first.
+#
+# Ships all three Go binaries because the unified `maktaba-server`
+# supervises (forks) the api and streaming binaries as siblings on PATH;
+# a maktaba-server-only package would start but fail to spawn its roles.
+
+name: maktaba-server
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: "1"
+section: net
+priority: optional
+maintainer: Hamza Labs <maktaba@hamzalabs.dev>
+description: |
+  Maktaba self-hosted Islamic / Arabic media server.
+  One unified binary (maktaba-server) supervises the API, streaming, and
+  pipeline roles, serves the embedded web UI, transcribes with Whisper,
+  and provides full-text + semantic search over your library.
+vendor: Hamza Labs
+homepage: https://maktaba.dev
+license: MIT
+
+# Runtime dependencies. ffmpeg is required for media probing/transcoding;
+# python3 backs the transcription pipeline. Names are shared across deb
+# and rpm here — both families call the packages "ffmpeg" / "python3".
+depends:
+  - ffmpeg
+  - python3
+
+contents:
+  # Unified server binary (primary entry point). Staged to a fixed path
+  # because nfpm does not env-expand src globs (see header).
+  - src: ./pkgroot/maktaba-server
+    dst: /usr/bin/maktaba-server
+    file_info:
+      mode: 0755
+
+  # Sibling role binaries the supervisor forks at runtime.
+  - src: ./pkgroot/maktaba-api
+    dst: /usr/bin/maktaba-api
+    file_info:
+      mode: 0755
+  - src: ./pkgroot/maktaba-streaming
+    dst: /usr/bin/maktaba-streaming
+    file_info:
+      mode: 0755
+
+  # systemd unit.
+  - src: ./deploy/packaging/systemd/maktaba-server.service
+    dst: /usr/lib/systemd/system/maktaba-server.service
+    file_info:
+      mode: 0644
+
+  # Default config — marked config|noreplace so operator edits survive
+  # upgrades (dpkg conffile / rpm %config(noreplace)).
+  - src: ./deploy/packaging/etc/maktaba-server.toml
+    dst: /etc/maktaba/server.toml
+    type: "config|noreplace"
+    file_info:
+      mode: 0644
+
+  # Docs.
+  - src: ./README.md
+    dst: /usr/share/doc/maktaba-server/README.md
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/doc/maktaba-server/LICENSE
+    file_info:
+      mode: 0644
+
+  # State + log dirs (owned/created by postinstall; declared so a purge
+  # removes the empty trees).
+  - dst: /var/lib/maktaba
+    type: dir
+    file_info:
+      mode: 0750
+      owner: maktaba
+      group: maktaba
+  - dst: /var/log/maktaba
+    type: dir
+    file_info:
+      mode: 0750
+      owner: maktaba
+      group: maktaba
+
+scripts:
+  postinstall: ./deploy/packaging/scripts/postinstall.sh
+  preremove: ./deploy/packaging/scripts/preremove.sh
+  postremove: ./deploy/packaging/scripts/postremove.sh
+
+# Per-format overrides. RHEL's ffmpeg lives in RPM Fusion, so we don't
+# hard-require it there (the postinstall and runtime degrade gracefully
+# with a clear error); Debian/Ubuntu ship ffmpeg in main.
+overrides:
+  rpm:
+    depends:
+      - python3
+  deb:
+    depends:
+      - ffmpeg
+      - python3
+
+rpm:
+  group: Applications/Multimedia
+
+deb:
+  fields:
+    Bugs: https://github.com/Hamza-Labs-Core/Maktaba/issues

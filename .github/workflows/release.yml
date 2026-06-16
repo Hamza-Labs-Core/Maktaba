@@ -5,21 +5,28 @@
 # blocks the `ci-success` merge gate. A self-hoster gets a versioned,
 # signed release from one `git tag vX.Y.Z && git push --tags`.
 #
-# Flow (tag -> rebuild-from-tag -> sign -> publish):
-#   1. build-artifacts  cross-compile the three Go targets + web bundle
-#                        from the tagged tree (multi-arch binaries:
-#                        linux/amd64, linux/arm64, darwin/arm64 — same
-#                        reproducibility envelope as CI's
-#                        _build-artifacts.yml).
-#   2. build-images      build + push the four container images to GHCR
-#                        with OCI version labels and a per-image digest.
-#                        Images are linux/amd64 ONLY (single-arch,
-#                        mirroring _build-artifacts.yml's container
-#                        scope); only the binaries are multi-arch.
-#   3. sign-and-release  checksum every binary, keyless-cosign-sign the
+# Flow (tag -> rebuild-from-tag -> package -> sign -> publish):
+#   1. build-artifacts  cross-compile the api/streaming (+cloud relay) Go
+#                        targets + web bundle from the tagged tree, for
+#                        linux/{amd64,arm64}, darwin/{amd64,arm64}, and
+#                        windows/amd64.
+#   2. build-server      cross-compile the unified maktaba-server binary
+#                        (web UI embedded) for all five OS/arch targets on
+#                        one runner, reusing the web bundle from step 1.
+#   3. build-images      build + push the five container images to GHCR,
+#                        multi-arch (linux/amd64,linux/arm64) via QEMU +
+#                        buildx, with OCI version labels and a per-image
+#                        manifest-list digest.
+#   4. package-archives  pack per-platform .tar.gz (linux/macOS) and .zip
+#                        (windows) of the server binaries + README +
+#                        LICENSE + sample config (+ systemd unit on Linux).
+#   5. package-nfpm      build native .deb (Debian/Ubuntu) and .rpm
+#                        (Fedora/RHEL) for linux/{amd64,arm64} with nfpm.
+#   6. sign-and-release  checksum every artifact, keyless-cosign-sign the
 #                        checksums file AND each pushed image digest,
-#                        then attach binaries + checksums + signatures
-#                        to a GitHub Release.
+#                        generate the Homebrew formula, then attach
+#                        archives + packages + checksums + signatures to a
+#                        GitHub Release.
 #
 # Signing identity: keyless cosign via the workflow's OIDC token
 # (`id-token: write`). No long-lived private key, no repo secret to
@@ -59,9 +66,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, goos: linux,  goarch: amd64 }
-          - { os: ubuntu-22.04, goos: linux,  goarch: arm64 }
-          - { os: macos-14,     goos: darwin, goarch: arm64 }
+          - { os: ubuntu-22.04, goos: linux,   goarch: amd64 }
+          - { os: ubuntu-22.04, goos: linux,   goarch: arm64 }
+          - { os: macos-14,     goos: darwin,  goarch: arm64 }
+          # darwin/amd64 cross-compiles from the arm64 macOS runner
+          # (CGO_ENABLED=0); windows/amd64 cross-compiles from ubuntu.
+          - { os: macos-14,     goos: darwin,  goarch: amd64 }
+          - { os: ubuntu-22.04, goos: windows, goarch: amd64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -158,11 +169,78 @@ jobs:
           path: web/dist
           retention-days: 7
 
+  # The unified maktaba-server binary embeds the (platform-independent)
+  # web bundle, so it cross-compiles for every OS/arch on a single runner
+  # once the bundle exists — no per-platform Node toolchain needed. Same
+  # reproducibility envelope (-trimpath, pinned SOURCE_DATE_EPOCH, version
+  # stamped from the tag) as the Makefile `server` target.
+  build-server:
+    name: build maktaba-server (all platforms)
+    needs: [build-artifacts]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            cmd/maktaba-server/go.sum
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-web-bundle
+          path: web/dist
+
+      - name: Cross-compile maktaba-server
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PKG="github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+          # Pin the build timestamp to the tagged commit for reproducibility.
+          SDE="$(git log -1 --pretty=%ct)"
+          # Stage the prebuilt web bundle into the embed directory.
+          EMBED="cmd/maktaba-server/internal/webui/dist"
+          rm -rf "${EMBED}"
+          mkdir -p "${EMBED}"
+          cp -R web/dist/. "${EMBED}/"
+          touch "${EMBED}/.gitkeep"
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          LDFLAGS="-buildid= -s -w \
+            -X ${PKG}.Version=${VERSION} \
+            -X ${PKG}.Commit=${COMMIT} \
+            -X ${PKG}.BuildDate=${SDE}"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            out="${GITHUB_WORKSPACE}/dist/maktaba-server-${os}-${arch}"
+            [ "${os}" = windows ] && out="${out}.exe"
+            echo "==> maktaba-server ${os}/${arch}"
+            ( cd cmd/maktaba-server && \
+              GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 SOURCE_DATE_EPOCH="${SDE}" \
+              go build -trimpath -tags embed_web -ldflags "${LDFLAGS}" -o "${out}" . )
+          done
+          ls -l "${GITHUB_WORKSPACE}/dist"
+
+      - name: Upload maktaba-server binaries
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-server
+          path: dist/*
+          retention-days: 7
+
   build-images:
     name: image (${{ matrix.svc }})
     needs: [build-artifacts]
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # Multi-arch raises the ceiling: the Go images cross-compile via
+    # TARGETARCH (cheap), but the web (node) and pipeline (python) images
+    # build their arm64 leg under QEMU emulation, which is slow.
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -177,6 +255,12 @@ jobs:
     # (`digest-<svc>`) that sign-and-release downloads and assembles.
     steps:
       - uses: actions/checkout@v6.0.2
+
+      # QEMU registers binfmt handlers so buildx can emulate linux/arm64
+      # on the amd64 runner for the non-cross-compiling image legs.
+      - uses: docker/setup-qemu-action@v3.6.0
+        with:
+          platforms: arm64
 
       - uses: docker/setup-buildx-action@v4.1.0
 
@@ -197,9 +281,10 @@ jobs:
         id: build
         uses: docker/build-push-action@v7.2.0
         with:
-          # All four Dockerfiles take the repo root as build context.
+          # All Dockerfiles take the repo root as build context.
           context: .
           file: ${{ matrix.svc }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           provenance: true
           sbom: true
@@ -241,9 +326,139 @@ jobs:
           path: digest-out/${{ matrix.svc }}
           retention-days: 7
 
+  # Per-platform distributable archives: each holds the unified server
+  # plus the api/streaming siblings it forks, the docs, a sample config,
+  # and (on Linux) the systemd unit. .tar.gz for linux/macOS, .zip for
+  # windows. install.sh + the Homebrew formula consume these.
+  package-archives:
+    name: package archives
+    needs: [build-artifacts, build-server]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download maktaba-server binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: srv
+
+      - name: Download api/streaming binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: bins
+          merge-multiple: true
+
+      - name: Assemble archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          sde="$(git log -1 --pretty=%ct)"
+          mkdir -p out
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            ext=""; [ "${os}" = windows ] && ext=".exe"
+            stage="$(mktemp -d)"
+            cp "srv/maktaba-server-${os}-${arch}${ext}" "${stage}/maktaba-server${ext}"
+            # api/streaming binaries are staged without an .exe suffix by
+            # the build matrix; give them one inside windows archives.
+            cp "bins/maktaba-api-${os}-${arch}"       "${stage}/maktaba-api${ext}"
+            cp "bins/maktaba-streaming-${os}-${arch}" "${stage}/maktaba-streaming${ext}"
+            # Artifact download drops the +x bit (artifacts are re-zipped),
+            # so restore it before archiving.
+            chmod 0755 "${stage}/maktaba-server${ext}" \
+                       "${stage}/maktaba-api${ext}" \
+                       "${stage}/maktaba-streaming${ext}"
+            cp README.md LICENSE "${stage}/"
+            cp deploy/server.toml.example "${stage}/server.toml.example"
+            if [ "${os}" = linux ]; then
+              cp deploy/packaging/systemd/maktaba-server.service "${stage}/"
+            fi
+            base="maktaba-server-${ver}-${os}-${arch}"
+            if [ "${os}" = windows ]; then
+              ( cd "${stage}" && zip -qr - . ) > "out/${base}.zip"
+            else
+              # Deterministic tar: sorted names, pinned mtime, no uid/gid.
+              tar --sort=name --mtime="@${sde}" \
+                  --owner=0 --group=0 --numeric-owner \
+                  -C "${stage}" -czf "out/${base}.tar.gz" .
+            fi
+            rm -rf "${stage}"
+          done
+          ls -l out
+
+      - name: Upload archives
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-archives
+          path: out/*
+          retention-days: 7
+
+  # Native Linux packages via nfpm: {.deb,.rpm} x {amd64,arm64}. nfpm
+  # expands ${ARCH}/${VERSION} in nfpm.yaml from the exported env; the
+  # referenced binaries must be staged under ./dist first.
+  package-nfpm:
+    name: package deb + rpm
+    needs: [build-artifacts, build-server]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      - name: Download maktaba-server binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: dist
+
+      - name: Download api/streaming binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: dist
+          merge-multiple: true
+
+      - name: Build .deb and .rpm
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p out pkgroot
+          for arch in amd64 arm64; do
+            # nfpm doesn't env-expand contents[].src, so stage this arch's
+            # binaries to the fixed pkgroot/ paths nfpm.yaml references.
+            install -m 0755 "dist/maktaba-server-linux-${arch}"    pkgroot/maktaba-server
+            install -m 0755 "dist/maktaba-api-linux-${arch}"       pkgroot/maktaba-api
+            install -m 0755 "dist/maktaba-streaming-linux-${arch}" pkgroot/maktaba-streaming
+            export ARCH="${arch}" VERSION="${TAG#v}"
+            echo "==> nfpm ${arch}"
+            nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out/
+            nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t out/
+          done
+          ls -l out
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-packages
+          path: out/*
+          retention-days: 7
+
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-images]
+    needs: [build-artifacts, build-server, build-images, package-archives, package-nfpm]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -261,6 +476,18 @@ jobs:
           pattern: release-bin-*
           path: staged
           merge-multiple: true
+
+      - name: Download platform archives
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-archives
+          path: staged/archives
+
+      - name: Download native packages
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-packages
+          path: staged/packages
 
       - name: Download web bundle
         uses: actions/download-artifact@v8.0.1
@@ -283,11 +510,68 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Flatten binaries.
-          find staged -maxdepth 1 -type f -name 'maktaba-*' -exec cp {} dist/ \;
+          # Per-platform server archives (.tar.gz / .zip) and native
+          # packages (.deb / .rpm) are the primary download artifacts; the
+          # server/api/streaming binaries live inside them, not loose.
+          cp staged/archives/* dist/
+          cp staged/packages/* dist/
+          # The cloud (relay) binary ships loose — it's a separate VPS
+          # deploy target, not part of the home-server archives. Restore
+          # the +x bit dropped by artifact download.
+          find staged -maxdepth 1 -type f -name 'maktaba-cloud-*' -exec cp {} dist/ \;
+          chmod 0755 dist/maktaba-cloud-* 2>/dev/null || true
           # Tar the web bundle so the Release has one downloadable asset.
           tar -C staged/web-dist -czf "dist/maktaba-web-${TAG}.tar.gz" .
           ls -l dist
+
+      # Fill the Homebrew formula template with this release's version and
+      # the SHA-256 of each macOS archive, then publish it as a release
+      # asset. If a tap repo + token are configured, also push it there.
+      - name: Generate Homebrew formula
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          sha_arm="$(sha256sum "dist/maktaba-server-${ver}-darwin-arm64.tar.gz" | awk '{print $1}')"
+          sha_amd="$(sha256sum "dist/maktaba-server-${ver}-darwin-amd64.tar.gz" | awk '{print $1}')"
+          sed -e "s/__VERSION__/${ver}/g" \
+              -e "s/__SHA256_DARWIN_ARM64__/${sha_arm}/g" \
+              -e "s/__SHA256_DARWIN_AMD64__/${sha_amd}/g" \
+              deploy/packaging/homebrew/maktaba.rb > dist/maktaba.rb
+          echo "----- generated dist/maktaba.rb -----"
+          cat dist/maktaba.rb
+
+      # Optional: commit the formula to a separate homebrew-tap repo so
+      # `brew install <owner>/tap/maktaba` works. No-op unless both the
+      # HOMEBREW_TAP_REPO repo variable (e.g. "owner/homebrew-tap") and a
+      # HOMEBREW_TAP_TOKEN secret (a PAT with `contents:write` on the tap)
+      # are set — so the default repo's release still succeeds without it.
+      - name: Publish formula to tap
+        if: ${{ vars.HOMEBREW_TAP_REPO != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_REPO set but HOMEBREW_TAP_TOKEN secret missing; skipping tap push." >&2
+            exit 0
+          fi
+          tmp="$(mktemp -d)"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" "${tmp}"
+          mkdir -p "${tmp}/Formula"
+          cp dist/maktaba.rb "${tmp}/Formula/maktaba.rb"
+          git -C "${tmp}" config user.name "maktaba-release-bot"
+          git -C "${tmp}" config user.email "maktaba@hamzalabs.dev"
+          git -C "${tmp}" add Formula/maktaba.rb
+          if git -C "${tmp}" diff --cached --quiet; then
+            echo "Formula already up to date in tap."
+          else
+            git -C "${tmp}" commit -m "maktaba ${TAG}"
+            git -C "${tmp}" push origin HEAD
+          fi
 
       - name: Generate checksums
         working-directory: dist
@@ -367,6 +651,14 @@ jobs:
         run: |
           set -euo pipefail
           notes="Automated release for ${TAG}.
+
+          ### Install
+
+          - **Linux/macOS (script):** \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY:-Hamza-Labs-Core/Maktaba}/${TAG}/deploy/packaging/install.sh | bash\`
+          - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`
+          - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
+          - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
+          - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
 
           Artifacts are signed with keyless cosign (Sigstore). Verify the
           checksums manifest:

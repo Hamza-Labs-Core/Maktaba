@@ -1,0 +1,46 @@
+# Maktaba unified server configuration (native-package default).
+#
+# Installed by the .deb / .rpm package to /etc/maktaba/server.toml and
+# read by the systemd unit via MAKTABA_CONFIG=/etc/maktaba/server.toml.
+# It is marked as a config file, so your edits survive package upgrades.
+#
+# This default is tuned for a single-host home server using SQLite. Run
+# `maktaba-server setup` for an interactive wizard, or edit by hand and
+# `systemctl restart maktaba-server`. Every field is documented in
+# deploy/server.toml.example.
+
+[server]
+# Public API bind address.
+listen = "0.0.0.0:8080"
+# Writable state root: SQLite database, downloaded models, caches.
+# Owned by the `maktaba` system user the package creates.
+data_dir = "/var/lib/maktaba"
+# Embedded web UI bind (the unified binary serves the SPA here and
+# reverse-proxies /api to the API service for a single-origin app).
+web_listen = "0.0.0.0:8088"
+# API admin/metrics bind (health, /metrics).
+admin_addr = ":9100"
+# Streaming service public bind.
+stream_addr = ":8081"
+
+[database]
+# SQLite (default, great for libraries under ~5 TB):
+url = "sqlite:///var/lib/maktaba/maktaba.db"
+# Postgres (recommended for large/multi-user libraries over ~5 TB):
+# url = "postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable"
+
+[media]
+# One or more library roots scanned for media. Point these at your
+# existing collections; the `maktaba` user needs read access.
+roots = ["/var/lib/maktaba/media"]
+
+[transcription]
+# Whisper backend: "mlx-whisper" (Apple Silicon), "faster-whisper"
+# (CUDA/CPU), or "openai". Linux servers default to faster-whisper.
+backend = "faster-whisper"
+model = "large-v3"
+
+[cloud]
+# Optional cloud-link enrolment.
+enabled = false
+# claim_code = "ABCD1234"
