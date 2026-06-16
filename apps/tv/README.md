@@ -59,3 +59,29 @@ See [`tvos/README.md`](tvos/README.md) and
 [`android/README.md`](android/README.md) for the directory layout, build
 prerequisites, and the not-yet-scaffolded follow-ups (Siri / Assistant
 voice intents, Top Shelf / recommendation channels, branded artwork).
+
+## CI build & packaging
+
+[`.github/workflows/tv-release.yml`](../../.github/workflows/tv-release.yml)
+runs on every `v*` tag. The TV apps are fully native (no `web/dist`), so
+the two jobs are independent:
+
+| Job | Runner | Steps | Artifact |
+|---|---|---|---|
+| `android-tv` | `ubuntu-22.04` | JDK 17 + Android SDK → `gradlew :app:assembleRelease` | `maktaba-tv-<version>.apk` (attached to the Release) |
+| `tvos` | `macos-latest` | `swift build` (compile check) | *manual* — see below |
+
+**Android TV signing** reuses the same secrets as the mobile workflow
+(`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`)
+and signs with `apksigner` when they're present; otherwise it ships the
+unsigned release APK. Build it locally with `make package-tv-android`.
+
+**tvOS distribution is manual.** Apple does not allow unsigned tvOS app
+distribution, and a shippable `.ipa` needs a full Xcode app target (not
+just the SwiftPM core), an Apple Distribution certificate, and a tvOS
+provisioning profile. CI therefore only compiles the SwiftUI sources
+(`swift build`, the same check as `make tv-build-ios`); a maintainer
+produces and uploads the release build in Xcode (**Product ▸ Archive ▸
+Distribute App ▸ TestFlight**). When an Xcode target + signing material
+are provisioned, the `xcodebuild archive`/`exportArchive` steps can be
+added to the `tvos` job to automate it.

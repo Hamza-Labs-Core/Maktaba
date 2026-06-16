@@ -169,6 +169,39 @@ shell's README for the toolchain prerequisites and signing setup.
 
 ---
 
+## Downloads
+
+Every `git tag vX.Y.Z && git push --tags` fans out to per-client
+packaging workflows that attach installable artifacts to the
+[GitHub Release](https://github.com/Hamza-Labs-Core/Maktaba/releases) for
+that tag. Server binaries, container images, and the web bundle come from
+[`release.yml`](.github/workflows/release.yml); the client apps come from
+the workflows below.
+
+| Platform | Artifact(s) | Workflow |
+|---|---|---|
+| **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
+| **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Windows** | `.msi` + NSIS `.exe` + portable `.zip` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Linux** | `.deb` + `.AppImage` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
+| **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
+| **TV — Android TV** | `maktaba-tv-<version>.apk` | [`tv-release.yml`](.github/workflows/tv-release.yml) |
+| **TV — tvOS** | *manual* via Xcode ▸ Archive ▸ TestFlight | [`tv-release.yml`](.github/workflows/tv-release.yml) (compile check) |
+
+**Signing status.** Desktop installers and the iOS/tvOS builds are
+currently **unsigned** — code-signing certificates (Apple Developer ID,
+Windows Authenticode, the Tauri updater key) are wired in as documented
+TODOs in each workflow and land once provisioned. Android signs
+automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
+`ANDROID_KEY_PASSWORD` secrets are set, and ships unsigned otherwise.
+
+To build any client package locally, mirror CI with the `make package-*`
+targets (`package-desktop`, `package-mobile-android`,
+`package-mobile-ios`, `package-tv-android`, or `package-all`).
+
+---
+
 ## Project structure
 
 ```

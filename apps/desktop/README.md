@@ -56,6 +56,36 @@ Tauri does **not** cross-compile the native shell, so each OS is built on
 its own runner; `scripts/build.sh` refuses a target that doesn't match the
 host. Installers land in `src-tauri/target/release/bundle/`.
 
+## CI build & packaging
+
+[`.github/workflows/desktop-release.yml`](../../.github/workflows/desktop-release.yml)
+runs on every `v*` tag and builds the installers on all three native
+runners in parallel, attaching them to the GitHub Release for the tag:
+
+| Runner | Bundles |
+|---|---|
+| `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
+| `windows-latest` | `.msi` + NSIS `.exe`, plus a portable `.zip` of the raw `Maktaba.exe` |
+| `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
+
+The build uses the official
+[`tauri-apps/tauri-action@v0`](https://github.com/tauri-apps/tauri-action).
+Because the repo has **no pnpm workspace**, the config's
+`beforeBuildCommand` (`pnpm --filter maktaba-web build`) can't resolve in
+CI — so the workflow builds `web/dist` itself (install → design tokens →
+`vite build`) and passes
+`--config {"build":{"beforeBuildCommand":""}}` so `tauri build` just
+bundles the already-built frontend.
+
+**Signing is deferred.** These bundles are unsigned. When certificates are
+provisioned, wire them into `tauri-action` via the secrets documented at
+the top of the workflow (`APPLE_*` for Developer ID + notarisation,
+`WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
+the auto-updater).
+
+Build the same installers locally for the host OS with `make
+package-desktop` (= `scripts/build.sh`).
+
 ## Native surface (`src-tauri/src/lib.rs`)
 
 | Feature | Notes |

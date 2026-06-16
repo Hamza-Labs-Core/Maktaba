@@ -1,0 +1,138 @@
+# Maktaba TV client packaging (client-packaging epic).
+#
+# Triggered on `v*` tags. Unlike mobile/desktop, the TV apps are FULLY
+# NATIVE (a 10-foot D-pad UI can't reuse the web view) — so there is no
+# web bundle to build here. Two independent native builds:
+#
+#   Android TV  →  maktaba-tv-<version>.apk   (Compose-for-TV + Media3)
+#   tvOS        →  swift build (compile check) — a distributable .ipa is
+#                  produced + shipped MANUALLY via Xcode/TestFlight (see
+#                  the tvOS job notes).
+#
+# Bundle / application id on both: com.hamzalabs.maktaba.tv
+#
+# SIGNING
+# -------
+# Android TV: `assembleRelease` yields an UNSIGNED apk unless a keystore is
+# provided. Signing runs only when the secrets are present (forks without
+# them still get a green "assembles" run). Reuses the same secret names as
+# the mobile workflow:
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+# tvOS: App Store / TestFlight distribution requires an Apple Developer
+# account + Xcode app target; CI only compiles the SwiftPM core. See notes.
+name: TV Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  android-tv:
+    name: android-tv (apk)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: write # gh release upload
+    # Hoisted to job level so the "Sign" step's `if:` can read them.
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Assemble release APK
+        working-directory: apps/tv/android
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Sign APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: apps/tv/android
+        run: |
+          set -euo pipefail
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/maktaba-tv.keystore"
+          BUILD_TOOLS="$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)"
+          "${BUILD_TOOLS}/apksigner" sign \
+            --ks "${RUNNER_TEMP}/maktaba-tv.keystore" \
+            --ks-key-alias "${ANDROID_KEY_ALIAS}" \
+            --ks-pass "pass:${ANDROID_KEY_PASSWORD}" \
+            --key-pass "pass:${ANDROID_KEY_PASSWORD}" \
+            --out "app/build/outputs/apk/release/app-release-signed.apk" \
+            "app/build/outputs/apk/release/app-release-unsigned.apk"
+
+      - name: Collect artifact
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p out
+          apk_dir="apps/tv/android/app/build/outputs/apk/release"
+          if [ -f "${apk_dir}/app-release-signed.apk" ]; then
+            cp "${apk_dir}/app-release-signed.apk" "out/maktaba-tv-${version}.apk"
+          else
+            cp "${apk_dir}/app-release-unsigned.apk" "out/maktaba-tv-${version}.apk"
+          fi
+          ( cd out && sha256sum "maktaba-tv-${version}.apk" > "maktaba-tv-${version}.apk.sha256" )
+          ls -l out
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-tv-android
+          path: out/*
+          retention-days: 14
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" out/* --clobber
+          else
+            gh release create "${TAG}" --title "${TAG}" --generate-notes --verify-tag out/*
+          fi
+
+  tvos:
+    name: tvos (compile check — distribution manual)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # The SwiftPM manifest exists so the app sources compile on CI even
+      # without a tvOS SDK target (see apps/tv/tvos/Package.swift). This is
+      # the same check `make tv-build-ios` runs locally.
+      - name: Compile tvOS core (swift build)
+        working-directory: apps/tv/tvos
+        run: swift build
+
+      # DISTRIBUTION IS MANUAL. A shippable tvOS .ipa needs an Xcode app
+      # target (not just the SwiftPM core), an Apple Distribution cert +
+      # tvOS provisioning profile, and upload to App Store Connect /
+      # TestFlight — Apple does not allow unsigned tvOS app distribution.
+      # Until that Xcode target + signing material is provisioned, the
+      # release artifact for tvOS is produced by a maintainer in Xcode
+      # (Product ▸ Archive ▸ Distribute App ▸ TestFlight). This job only
+      # guards that the SwiftUI sources still compile.
+      - name: Note manual tvOS distribution
+        run: |
+          echo "::notice::tvOS sources compiled. A distributable .ipa is built + uploaded MANUALLY via Xcode/TestFlight (Apple requires signed App Store/TestFlight distribution for tvOS) — see apps/tv/tvos/README.md."

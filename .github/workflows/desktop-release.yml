@@ -1,0 +1,161 @@
+# Maktaba desktop client packaging (client-packaging epic) — Tauri 2.
+#
+# Triggered on `v*` tags. Builds the desktop installers for all three
+# desktop OSes on their native runners (Tauri does NOT cross-compile the
+# native shell) and attaches them to the GitHub Release for that tag:
+#
+#   macOS     →  .dmg            (universal: arm64 + x86_64 in one binary)
+#   Windows   →  .msi + .exe     (NSIS) + a portable .zip of the raw exe
+#   Linux     →  .deb + .AppImage
+#
+# WEB FRONTEND
+# ------------
+# All three wrap the SAME `web/dist` SPA bundle. The repo has no pnpm
+# workspace, so the config's `beforeBuildCommand` (`pnpm --filter
+# maktaba-web build`) cannot resolve in CI. We therefore build `web/dist`
+# ourselves in a step and then blank `build.beforeBuildCommand` in
+# `tauri.conf.json` in place (a tiny cross-platform Node rewrite) so
+# `tauri build` just bundles the already-built frontend. (We rewrite the
+# file rather than pass `--config '{...}'` because tauri-action's arg
+# splitter mangles the JSON's quotes.)
+#
+# CODE SIGNING — DEFERRED
+# -----------------------
+# Notarised/signed installers need an Apple Developer ID (macOS), an EV /
+# Authenticode cert (Windows), and the Tauri updater private key. None are
+# provisioned yet, so these builds are UNSIGNED. When certs land, wire them
+# into tauri-action via the documented secrets:
+#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID            (notarisation)
+#   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD   (Authenticode)
+#   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD (updater)
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: desktop (${{ matrix.label }})
+    permissions:
+      contents: write # tauri-action upserts the Release + uploads bundles
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-universal
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            # Universal binary; app+dmg only (skip the macOS .app tarball).
+            args: '--target universal-apple-darwin --bundles app,dmg'
+          - label: windows
+            os: windows-latest
+            rust-targets: ''
+            args: '--bundles msi,nsis'
+          - label: linux
+            os: ubuntu-22.04
+            rust-targets: ''
+            args: '--bundles deb,appimage'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # Linux GUI build deps for Tauri 2 (webkit2gtk 4.1, appindicator,
+      # rsvg, patchelf for AppImage). No-op on macOS/Windows.
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # Build the shared web bundle that the Tauri shell wraps. Cross-OS
+      # safe (no `make`, which is absent on the Windows runner): install,
+      # generate design tokens, then `vite build` → web/dist.
+      - name: Build web bundle
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          node design-system/build/build-tokens.mjs
+          pnpm build
+
+      - name: Install desktop deps (Tauri CLI + API bindings)
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      # Blank `beforeBuildCommand` so `tauri build` does NOT try to rebuild
+      # the frontend via the workspace-`--filter` command (no workspace in
+      # CI). web/dist was already built above. Cross-platform (bash on the
+      # Windows runner is git-bash; Node is on PATH from setup-node).
+      - name: Neutralise in-config frontend rebuild
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const f='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.build.beforeBuildCommand='';fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');"
+
+      - name: Build + upload Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          # Attach to the Release for the pushed tag (upsert by tag, so it
+          # coexists with release.yml / the other client workflows — they
+          # upload disjoint asset names).
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          args: ${{ matrix.args }}
+
+      # Windows "portable" deliverable: zip the raw built executable so
+      # users who can't run an installer get a self-contained .zip. Runs
+      # only on the Windows leg.
+      - name: Package Windows portable .zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:TAG -replace '^v', ''
+          $exe = Get-ChildItem -Path 'apps/desktop/src-tauri/target/release' -Filter 'Maktaba.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error 'Maktaba.exe not found under target/release — did the Tauri build succeed?'
+          }
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          $zip = "out/maktaba-windows-portable-$version.zip"
+          Compress-Archive -Path $exe.FullName -DestinationPath $zip -Force
+          gh release upload $env:TAG $zip --clobber

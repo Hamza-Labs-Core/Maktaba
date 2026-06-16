@@ -473,6 +473,39 @@ native-sync: build-web  ## Rebuild web/dist and sync it into the native platform
 	@pnpm -C $(MOBILE_DIR) exec cap sync
 	@echo "==> Tauri reads web/dist at build time (run 'make desktop-build')"
 
+# Packaging targets — local mirrors of the `*-release.yml` CI workflows.
+# They produce the SAME installable artifacts CI ships, on this host, for
+# smoke-testing a release before tagging. Native toolchains required (Rust
+# / Android SDK+JDK17 / Xcode+CocoaPods); these stay out of `build`.
+
+.PHONY: package-desktop
+package-desktop:  ## Build the Tauri desktop installers for the host OS (.dmg / .msi+.exe / .deb+.AppImage). Needs Rust.
+	@bash $(DESKTOP_DIR)/scripts/build.sh
+
+.PHONY: package-mobile-android
+package-mobile-android: native-sync  ## Build the Android release APK + AAB (web build + cap sync + gradle). Needs Android SDK + JDK17.
+	@echo "==> assembling Android release APK + AAB"
+	@cd $(MOBILE_DIR)/android && ./gradlew --no-daemon assembleRelease bundleRelease
+	@echo "==> outputs under $(MOBILE_DIR)/android/app/build/outputs/{apk,bundle}/release/"
+
+.PHONY: package-mobile-ios
+package-mobile-ios: native-sync  ## Archive the iOS app (unsigned — see workflow TODO for signed .ipa). Needs macOS + Xcode + CocoaPods.
+	@echo "==> installing CocoaPods + archiving iOS (unsigned)"
+	@cd $(MOBILE_DIR)/ios/App && pod install
+	@cd $(MOBILE_DIR)/ios/App && xcodebuild -workspace App.xcworkspace -scheme App \
+		-configuration Release -sdk iphoneos -archivePath build/Maktaba.xcarchive \
+		archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+	@echo "==> archive at $(MOBILE_DIR)/ios/App/build/Maktaba.xcarchive (a signed .ipa needs Apple certs)"
+
+.PHONY: package-tv-android
+package-tv-android:  ## Assemble the Android TV release APK. Needs the Android SDK + JDK17.
+	@cd $(ANDROID_TV_DIR) && ./gradlew --no-daemon :app:assembleRelease
+	@echo "==> output under $(ANDROID_TV_DIR)/app/build/outputs/apk/release/"
+
+.PHONY: package-all
+package-all: package-desktop package-mobile-android package-mobile-ios package-tv-android  ## Build every client package (desktop + mobile iOS/Android + Android TV). tvOS .ipa is distributed manually via Xcode/TestFlight.
+	@echo "==> all client packages built. tvOS distribution is manual (Xcode ▸ Archive ▸ TestFlight)."
+
 .PHONY: build-all
 build-all:  ## Cross-compile Go binaries for every supported $(CROSS_PLATFORMS).
 	@for platform in $(CROSS_PLATFORMS); do \

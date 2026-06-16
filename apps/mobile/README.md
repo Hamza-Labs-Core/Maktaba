@@ -104,3 +104,39 @@ config above. The config, bridge, and web wiring are real and buildable
 today; signing certs, push credentials (FCM `google-services.json`, APNs
 key + entitlements), and store metadata are provisioned per-platform
 outside version control.
+
+## CI build & packaging
+
+[`.github/workflows/mobile-release.yml`](../../.github/workflows/mobile-release.yml)
+runs on every `v*` tag. Because `ios/` and `android/` are gitignored, each
+job **scaffolds the native project at CI time** (`npx cap add`), syncs the
+freshly built `web/dist` into it (`cap sync`), then drives the platform
+build tool:
+
+| Job | Runner | Steps | Artifacts |
+|---|---|---|---|
+| `android` | `ubuntu-22.04` | Node + pnpm + JDK 17 + Android SDK → `cap add/sync android` → `gradlew assembleRelease bundleRelease` | `maktaba-<version>.apk` (sideload) + `maktaba-<version>.aab` (Play Store) |
+| `ios` | `macos-latest` | Node + pnpm + Xcode + CocoaPods → `cap add/sync ios` → `pod install` → `xcodebuild archive` | unsigned `.xcarchive` (compile check) |
+
+**Android signing** runs only when the keystore secrets are present, so
+forks without them still get a green "assembles" run (with *unsigned*
+outputs):
+
+| Secret | Purpose |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | base64 of the `.jks` / `.keystore` |
+| `ANDROID_KEY_ALIAS` | key alias inside the store |
+| `ANDROID_KEY_PASSWORD` | key + store password |
+
+The APK is signed with `apksigner` and the AAB with `jarsigner` (both from
+the Android SDK build-tools).
+
+**iOS signing is deferred** (documented TODO in the workflow). A
+distributable `.ipa` needs an Apple Distribution certificate + provisioning
+profile + `ExportOptions.plist`; until those are provisioned the iOS job
+archives with `CODE_SIGNING_ALLOWED=NO` to prove the project compiles and
+packs, and the signed `exportArchive` → `.ipa` step is left as a guarded
+TODO.
+
+Mirror CI locally with `make package-mobile-android` /
+`make package-mobile-ios`.

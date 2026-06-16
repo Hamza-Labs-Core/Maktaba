@@ -1,0 +1,111 @@
+# Maktaba web client packaging (client-packaging epic).
+#
+# WHY THIS IS `workflow_dispatch` AND NOT `on: push: tags: v*`
+# -----------------------------------------------------------
+# The automatic `v*`-tag path for the web SPA already lives in
+# `release.yml` — it builds `web/dist` and attaches
+# `maktaba-web-<tag>.tar.gz` to the GitHub Release (see the
+# "Assemble release tree" / web tarball steps there). Adding a second
+# `v*`-triggered workflow that produces the same asset would double-upload
+# `maktaba-web-<version>.tar.gz` to the same Release and race on
+# `gh release upload`.
+#
+# So this workflow is the ON-DEMAND counterpart: a maintainer can rebuild
+# and (optionally) attach the web bundle for an existing tag without
+# cutting a full server release — useful for re-publishing the SPA after a
+# CDN/static-host change. It never fires automatically, so it cannot
+# collide with `release.yml`.
+name: Web Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing release tag to attach the web bundle to (e.g. v1.2.3).
+          Leave blank to only build + upload the tarball as a CI artifact.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  web-bundle:
+    name: build + package web SPA
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # gh release upload (only when an input tag is given)
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      # `make build-web` = build design tokens THEN `vite build`. The web
+      # sources import the generated token files, so a bare `pnpm build`
+      # without the tokens step would fail — go through the Makefile so CI
+      # and local builds stay identical (the Story 22.8 rule).
+      - name: Build web bundle
+        run: make build-web
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG}"
+          if [ -n "${tag}" ]; then
+            version="${tag#v}"
+          else
+            version="$(git rev-parse --short HEAD)"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Package dist/ as tarball
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          tar -C web/dist -czf "out/maktaba-web-${VERSION}.tar.gz" .
+          ( cd out && sha256sum "maktaba-web-${VERSION}.tar.gz" > "maktaba-web-${VERSION}.tar.gz.sha256" )
+          ls -l out
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-web-${{ steps.ver.outputs.version }}
+          path: out/*
+          retention-days: 14
+
+      # Only attach to a GitHub Release when the maintainer passed a tag.
+      - name: Attach to GitHub Release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" out/* --clobber
+          else
+            echo "::error::Release ${TAG} does not exist. Create it first (cut a v* release via release.yml), then re-run." >&2
+            exit 1
+          fi
