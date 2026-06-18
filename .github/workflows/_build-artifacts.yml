@@ -68,6 +68,10 @@ jobs:
       # the maktaba-cloud (relay) binary here on every matrix arch so a
       # change that breaks the relay on linux/arm64 fails the gate with
       # the offending arch named (mirrors the AC3/TC2 contract).
+      # Version-stamped like the api/streaming binaries (make build-go
+      # stamps them from `git describe`); the cloud module is outside that
+      # graph so it stamps main.Version/main.Commit here too (Story 28.1),
+      # keeping every CI binary self-describing.
       - name: Build cloud (relay) binary
         working-directory: cloud
         env:
@@ -75,8 +79,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
+          set -euo pipefail
           mkdir -p bin
-          go build -trimpath -ldflags "-buildid= -s -w" \
+          ver="$(git describe --tags --dirty --always 2>/dev/null || echo dev)"
+          sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+          go build -trimpath \
+            -ldflags "-buildid= -s -w -X main.Version=${ver} -X main.Commit=${sha}" \
             -o bin/maktaba-cloud ./cmd/maktaba-cloud
 
       - name: Build web bundle

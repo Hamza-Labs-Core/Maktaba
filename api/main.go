@@ -272,6 +272,16 @@ func runServe() error {
 	})
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
+	// Epic 28 (Auto-Update) — the update-check service (Story 28.2) and
+	// the admin self-update endpoint (Story 28.3). Mounted independent of
+	// the app-DB block: it needs no DB, only the build version + network.
+	// The background poller runs for the process lifetime; the admin
+	// route's auth rides the principal middleware applySecurity installs.
+	updater := buildUpdater(logger)
+	go updater.Run(context.Background())
+	router.MountP28(r, router.P28Deps{Updater: updater})
+	logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
+
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
 	// admin-port readiness check and the handler DB pool are
 	// independent — a starved readiness pool can't take down user
@@ -615,6 +625,30 @@ func envIntDefault(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// buildUpdater constructs the Epic 28 update-check service from env. The
+// channel defaults to the running build's channel (version.Channel());
+// MAKTABA_UPDATE_INTERVAL_SEC tunes the poll cadence (0 disables the
+// background loop), MAKTABA_UPDATE_DISABLE is the no-network kill switch,
+// MAKTABA_UPDATE_REPO retargets a fork, and MAKTABA_GITHUB_TOKEN raises
+// the GitHub rate limit.
+func buildUpdater(logger *slog.Logger) *system.Updater {
+	interval := time.Duration(envIntDefault("MAKTABA_UPDATE_INTERVAL_SEC",
+		int(system.DefaultCheckInterval/time.Second))) * time.Second
+	disabled := func() bool {
+		v := os.Getenv("MAKTABA_UPDATE_DISABLE")
+		return v == "1" || strings.EqualFold(v, "true")
+	}()
+	return system.NewUpdater(system.UpdaterConfig{
+		Repo:           os.Getenv("MAKTABA_UPDATE_REPO"),
+		CurrentVersion: version.Version,
+		Channel:        version.Channel(),
+		Interval:       interval,
+		Disabled:       disabled,
+		Token:          os.Getenv("MAKTABA_GITHUB_TOKEN"),
+		Logger:         logger,
+	})
 }
 
 // cookiesSecure reports whether the Set-Cookie response should include

@@ -72,7 +72,10 @@
       "pubkey": "REPLACE_WITH_PUBKEY",
       "endpoints": [
         "https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/latest.json"
-      ]
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

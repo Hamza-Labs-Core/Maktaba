@@ -24,7 +24,7 @@ import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
 import { useToast } from "@ds/components/Toast/Toast";
-import { downloadBlob, ApiError } from "../lib/api";
+import { api, downloadBlob, ApiError } from "../lib/api";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -197,14 +197,205 @@ function AppearanceTab() {
   );
 }
 
+// VersionInfo mirrors GET /api/system/version (Epic 28 fields included).
+interface VersionInfo {
+  version: string;
+  commit?: string;
+  build_date?: string;
+  channel?: string;
+}
+
+// UpdateStatus mirrors GET /api/system/updates (Story 28.2).
+interface UpdateStatus {
+  available: boolean;
+  disabled?: boolean;
+  current_version: string;
+  latest_version?: string;
+  channel: string;
+  release_url?: string;
+  release_notes?: string;
+  checked_at: string;
+}
+
+type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "rolled_back";
+
+// AboutTab is the version + update section (Stories 28.1/28.2/28.3/28.6).
+// It shows the running build, the update channel and last-check time, an
+// "available" card with release notes, and — for admins on a self-
+// updatable install — a one-click "Update now" button. Docker/deb
+// installs surface the package-manager instruction returned by the 409
+// instead of a button that can't work.
 function AboutTab() {
   const { t } = useI18n();
-  const version = import.meta.env?.VITE_APP_VERSION ?? "0.1.0";
+  const { user } = useAuth();
+  const toast = useToast();
+  const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
+
+  const [ver, setVer] = useState<VersionInfo | null>(null);
+  const [upd, setUpd] = useState<UpdateStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [phase, setPhase] = useState<UpdatePhase>("idle");
+  const [dockerHint, setDockerHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<VersionInfo>("/api/system/version")
+      .then(setVer)
+      .catch(() => {});
+    api
+      .get<UpdateStatus>("/api/system/updates")
+      .then(setUpd)
+      .catch(() => {});
+  }, []);
+
+  const checkNow = async () => {
+    setChecking(true);
+    try {
+      setUpd(await api.get<UpdateStatus>("/api/system/updates?refresh=true"));
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.message : t("common.error");
+      toast.show({ tone: "error", message: detail });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const runUpdate = async () => {
+    setPhase("downloading");
+    setDockerHint(null);
+    try {
+      await api.post("/api/admin/system/update", { confirm: true });
+      setPhase("restarting");
+      // The server re-execs; poll /api/system/version until it answers
+      // with a different version (or the rolled-back original).
+      const newVer = await pollVersionUntilChanged(ver?.version ?? "");
+      setVer(newVer);
+      setPhase("done");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // Docker/package-manager install: surface the instruction.
+        const hint =
+          (e.problem as unknown as { instructions?: string }).instructions ?? e.problem.detail;
+        if (hint) {
+          setDockerHint(hint);
+          setPhase("idle");
+          return;
+        }
+      }
+      setPhase("error");
+    }
+  };
+
+  const version = ver?.version ?? buildVersion;
+  const channel = ver?.channel ?? upd?.channel ?? "stable";
+  const showUpdateButton = user?.is_admin && upd?.available && phase !== "done" && !dockerHint;
+
   return (
-    <div className="mkt-settings__panel">
-      <p>
-        {t("settings.about.version")}: <strong>{String(version)}</strong>
-      </p>
+    <div className="mkt-settings__panel mkt-settings__about">
+      <dl className="mkt-about__meta">
+        <div>
+          <dt>{t("update.current")}</dt>
+          <dd>
+            <strong>{version}</strong>
+          </dd>
+        </div>
+        {ver?.commit && ver.commit !== "unknown" && (
+          <div>
+            <dt>{t("update.commit")}</dt>
+            <dd>
+              <code>{ver.commit.slice(0, 10)}</code>
+            </dd>
+          </div>
+        )}
+        {ver?.build_date && ver.build_date !== "unknown" && (
+          <div>
+            <dt>{t("update.buildDate")}</dt>
+            <dd>{ver.build_date}</dd>
+          </div>
+        )}
+        <div>
+          <dt>{t("update.channel")}</dt>
+          <dd>{t(`update.channel.${channel}`)}</dd>
+        </div>
+        {upd?.checked_at && (
+          <div>
+            <dt>{t("update.lastChecked")}</dt>
+            <dd>{new Date(upd.checked_at).toLocaleString()}</dd>
+          </div>
+        )}
+      </dl>
+
+      <div className="mkt-about__actions">
+        <Button variant="secondary" disabled={checking} onClick={checkNow}>
+          {checking ? t("update.checking") : t("update.checkNow")}
+        </Button>
+      </div>
+
+      {upd?.disabled && <p className="mkt-muted">{t("update.disabled")}</p>}
+
+      {upd && !upd.disabled && !upd.available && (
+        <p className="mkt-muted">{t("update.upToDate")}</p>
+      )}
+
+      {upd?.available && upd.latest_version && (
+        <div className="mkt-about__update" role="region" aria-label={t("update.section.title")}>
+          <h2>{t("update.available", { version: upd.latest_version })}</h2>
+          {upd.release_notes && (
+            <details className="mkt-about__notes">
+              <summary>{t("update.viewRelease")}</summary>
+              {/* Plain-text render — never inject release-note HTML. */}
+              <pre className="mkt-about__notes-body">{upd.release_notes}</pre>
+            </details>
+          )}
+          {upd.release_url && (
+            <p>
+              <a href={upd.release_url} target="_blank" rel="noreferrer">
+                {t("update.viewRelease")}
+              </a>
+            </p>
+          )}
+
+          {dockerHint && (
+            <div className="mkt-about__docker">
+              <p>{t("update.docker.instructions")}</p>
+              <pre>{dockerHint}</pre>
+            </div>
+          )}
+
+          {showUpdateButton && (
+            <Button variant="primary" disabled={phase !== "idle"} onClick={runUpdate}>
+              {phase === "idle" ? t("update.updateNow") : t(`update.phase.${phase}`)}
+            </Button>
+          )}
+
+          {phase === "downloading" && <p className="mkt-muted">{t("update.phase.downloading")}</p>}
+          {phase === "restarting" && <p className="mkt-muted">{t("update.phase.restarting")}</p>}
+          {phase === "done" && (
+            <p className="mkt-success">{t("update.phase.done", { version: upd.latest_version })}</p>
+          )}
+          {phase === "error" && <p className="mkt-error">{t("update.phase.error")}</p>}
+        </div>
+      )}
     </div>
   );
+}
+
+// pollVersionUntilChanged re-fetches /api/system/version until it reports
+// a version different from `from` (the server re-execs after a self-
+// update), or until a bounded number of attempts elapse.
+async function pollVersionUntilChanged(from: string): Promise<VersionInfo> {
+  const ATTEMPTS = 30;
+  const DELAY_MS = 2000;
+  let last: VersionInfo = { version: from };
+  for (let i = 0; i < ATTEMPTS; i++) {
+    await new Promise((r) => setTimeout(r, DELAY_MS));
+    try {
+      const v = await api.get<VersionInfo>("/api/system/version");
+      last = v;
+      if (v.version && v.version !== from) return v;
+    } catch {
+      /* server mid-restart — keep polling */
+    }
+  }
+  return last;
 }

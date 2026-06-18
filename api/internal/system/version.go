@@ -18,6 +18,15 @@ type VersionInfo struct {
 	BuildTime string `json:"build_time"`
 	GoVersion string `json:"go_version"`
 	SchemaRev int    `json:"schema_revision"`
+	// Channel is the update channel this build tracks (stable|beta),
+	// derived from the version string or the MAKTABA_UPDATE_CHANNEL
+	// override (Story 28.1). Additive field — older clients ignore it.
+	Channel string `json:"channel"`
+	// Commit mirrors BuildSHA under the field name the auto-update UI
+	// (Epic 28) and version.json expect; both are the same git SHA.
+	Commit string `json:"commit"`
+	// BuildDate mirrors BuildTime under the auto-update field name.
+	BuildDate string `json:"build_date"`
 }
 
 // VersionHandler returns a handler for GET /api/system/version. The
@@ -32,6 +41,9 @@ func VersionHandler(schemaRev int) http.Handler {
 			BuildTime: version.BuildDate,
 			GoVersion: runtime.Version(),
 			SchemaRev: schemaRev,
+			Channel:   version.Channel(),
+			Commit:    version.Commit,
+			BuildDate: version.BuildDate,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

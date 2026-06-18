@@ -121,15 +121,29 @@ jobs:
       # the frontend via the workspace-`--filter` command (no workspace in
       # CI). web/dist was already built above. Cross-platform (bash on the
       # Windows runner is git-bash; Node is on PATH from setup-node).
-      - name: Neutralise in-config frontend rebuild
+      # Blank beforeBuildCommand (no workspace in CI) AND stamp the
+      # product version from the pushed tag (Story 28.1): the Tauri
+      # updater compares the app's own version against latest.json, so a
+      # hardcoded "0.1.0" would mis-compare. Strip the leading "v".
+      - name: Neutralise in-config frontend rebuild + stamp version
         shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          node -e "const fs=require('fs');const f='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.build.beforeBuildCommand='';fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');"
+          node -e "const fs=require('fs');const f='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.build.beforeBuildCommand='';c.version=(process.env.TAG||'').replace(/^v/,'')||c.version;fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');"
 
+      # tauri-action signs each bundle and emits latest.json (the updater
+      # feed) when the signing key secrets are present (Story 28.4). A
+      # fork without TAURI_SIGNING_* still produces UNSIGNED installers
+      # and skips updater-artifact generation — the secrets resolve empty,
+      # so the build stays green (matching the deferred Apple/Windows
+      # cert posture).
       - name: Build + upload Tauri bundles
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           # Attach to the Release for the pushed tag (upsert by tag, so it

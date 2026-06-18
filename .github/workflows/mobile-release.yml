@@ -102,6 +102,27 @@ jobs:
           fi
           npx --no-install cap sync android
 
+      # Stamp versionName (= tag) and a monotonic versionCode from the tag
+      # (Story 28.1). The native project is scaffolded by `cap add`, so we
+      # patch the generated build.gradle here. versionCode derivation
+      # MAJOR*1_000_000 + MINOR*1_000 + PATCH stays well inside int32.
+      - name: Stamp Android version from tag
+        working-directory: apps/mobile/android
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          core="${ver%%-*}"
+          IFS='.' read -r MA MI PA <<EOF
+          ${core}
+          EOF
+          code=$(( ${MA:-0} * 1000000 + ${MI:-0} * 1000 + ${PA:-0} ))
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${ver}\"/" app/build.gradle
+          sed -i "s/versionCode [0-9][0-9]*/versionCode ${code}/" app/build.gradle
+          echo "versionName=${ver} versionCode=${code}"
+          grep -E "versionName|versionCode" app/build.gradle
+
       - name: Assemble release APK + AAB
         working-directory: apps/mobile/android
         run: |

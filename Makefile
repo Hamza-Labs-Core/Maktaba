@@ -104,6 +104,11 @@ CROSS_PLATFORMS := linux/amd64 linux/arm64 darwin/arm64
 export TZ := UTC
 export LANG := C.UTF-8
 export SOURCE_DATE_EPOCH
+# Export the build stamp so the web build (vite.config.ts) can emit
+# dist/version.json + bake VITE_APP_VERSION (Epic 28, Story 28.1). The Go
+# builds pass these via -ldflags; the web build reads them from the env.
+export VERSION
+export COMMIT
 
 .PHONY: help
 help:  ## Show this help.
