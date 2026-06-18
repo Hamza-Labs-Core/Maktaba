@@ -35,6 +35,7 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -411,6 +412,20 @@ func runServe() error {
 			router.MountP27(r, router.P27Deps{DB: appDB})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
+
+			// Epic 29 (Watch Analytics) — session lifecycle + history +
+			// activity (29.1/29.2/29.4), admin dashboard + per-video
+			// stats + export (29.3/29.5/29.6). The session reaper is a
+			// boot goroutine (interrupted-session reap every minute +
+			// daily retention purge), mirroring runPairingSweep.
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres"})
+			go (&watch.Reaper{
+				DB:            appDB,
+				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
+				Logger:        logger,
+			}).Run(context.Background())
+			logger.Info("p29: watch-analytics handlers mounted + reaper started",
+				"event", "p29_mounted")
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and

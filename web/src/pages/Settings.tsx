@@ -23,8 +23,10 @@ import { useAuth } from "../lib/auth";
 import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
+import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
+import { analyticsApi, formatPercent, formatWatchTime, type HistoryItem } from "../lib/analytics";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -57,6 +59,7 @@ export function Settings() {
         <Link to="">{t("settings.section.account")}</Link>
         <Link to="sessions">{t("settings.section.sessions")}</Link>
         <Link to="appearance">{t("settings.section.appearance")}</Link>
+        <Link to="privacy">{t("settings.section.privacy")}</Link>
         <Link to="models">{t("settings.section.models")}</Link>
         <Link to="about">{t("settings.section.about")}</Link>
       </nav>
@@ -64,6 +67,7 @@ export function Settings() {
         <Route index element={<AccountTab />} />
         <Route path="sessions" element={<SessionsTab />} />
         <Route path="appearance" element={<AppearanceTab />} />
+        <Route path="privacy" element={<PrivacyTab />} />
         <Route path="models" element={<ModelsSection />} />
         <Route path="about" element={<AboutTab />} />
       </Routes>
@@ -398,4 +402,102 @@ async function pollVersionUntilChanged(from: string): Promise<VersionInfo> {
     }
   }
   return last;
+}
+
+// PrivacyTab — Story 29.4 watch-history & privacy. A switch that pauses
+// analytics collection (the /api/watch/start handler stops writing rows
+// when off), plus a compact view of the user's own recent history with a
+// per-item remove (which also clears the resume point — Continue Watching
+// and history stay in lockstep).
+function PrivacyTab() {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [tracking, setTracking] = useState<boolean | null>(null);
+  const [history, setHistory] = useState<HistoryItem[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    analyticsApi
+      .getPrivacy()
+      .then((p) => setTracking(p.track_enabled))
+      .catch(() => setTracking(true));
+    analyticsApi
+      .history({ limit: 20 })
+      .then((r) => setHistory(r.items))
+      .catch(() => setHistory([]));
+  }, []);
+
+  async function toggle() {
+    if (tracking === null || busy) return;
+    setBusy(true);
+    const next = !tracking;
+    try {
+      const res = await analyticsApi.setPrivacy(next);
+      setTracking(res.track_enabled);
+      toast.show({ tone: "success", message: t("settings.privacy.saved") });
+    } catch (e) {
+      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(videoId: string) {
+    try {
+      await analyticsApi.deleteHistory(videoId);
+      setHistory((h) => (h ? h.filter((it) => it.video_id !== videoId) : h));
+    } catch (e) {
+      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+    }
+  }
+
+  return (
+    <div className="mkt-settings__panel mkt-settings__privacy">
+      <h2>{t("settings.privacy.title")}</h2>
+      <p className="mkt-muted">{t("settings.privacy.hint")}</p>
+      {tracking !== null && (
+        <Toggle
+          checked={tracking}
+          disabled={busy}
+          onChange={() => void toggle()}
+          label={tracking ? t("settings.privacy.on") : t("settings.privacy.off")}
+        />
+      )}
+
+      <hr />
+      <h2>{t("settings.privacy.history")}</h2>
+      {history === null ? (
+        <p className="mkt-loading">{t("common.loading")}</p>
+      ) : history.length === 0 ? (
+        <p className="mkt-muted">{t("common.empty")}</p>
+      ) : (
+        <table className="mkt-table" aria-label={t("settings.privacy.history")}>
+          <thead>
+            <tr>
+              <th>{t("analytics.col.video")}</th>
+              <th>{t("settings.privacy.progress")}</th>
+              <th>{t("settings.privacy.watched")}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((h) => (
+              <tr key={h.video_id}>
+                <td dir="auto">
+                  <Link to={`/videos/${h.video_id}`}>{h.title}</Link>
+                </td>
+                <td>{formatPercent(h.best_percent)}</td>
+                <td>{formatWatchTime(h.total_watch_sec)}</td>
+                <td>
+                  <Button size="sm" variant="ghost" onClick={() => void remove(h.video_id)}>
+                    {t("settings.privacy.remove")}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }

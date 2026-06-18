@@ -34,6 +34,7 @@ import { APITokens } from "./pages/Profile/APITokens";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
 import { Channels } from "./pages/Admin/Channels";
+import { AdminAnalytics } from "./pages/Admin/Analytics";
 import { Guide } from "./pages/LiveTV/Guide";
 import { Player } from "./pages/LiveTV/Player";
 import { ServerStatus } from "./pages/Cloud/ServerStatus";
@@ -97,6 +98,7 @@ export function App() {
                     <Route path="/admin/library-acl" element={<LibraryACL />} />
                     <Route path="/admin/enrichment" element={<AdminEnrichment />} />
                     <Route path="/admin/channels" element={<Channels />} />
+                    <Route path="/admin/analytics" element={<AdminAnalytics />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />
                     <Route path="/admin/logs" element={<AdminLogs />} />

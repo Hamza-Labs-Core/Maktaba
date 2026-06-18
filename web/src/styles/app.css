@@ -1829,3 +1829,130 @@ mark {
 .mkt-yt-card__title {
   font-weight: 600;
 }
+
+/* ── Epic 29 — Watch analytics dashboard ──────────────────────────── */
+.mkt-analytics__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.mkt-analytics__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.mkt-analytics__live {
+  margin-bottom: var(--space-4);
+}
+.mkt-analytics__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.mkt-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+.mkt-kpi__value {
+  font-size: var(--font-size-h2);
+  font-weight: 700;
+  color: var(--color-fg);
+}
+.mkt-kpi__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-analytics__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Charts */
+.mkt-chart {
+  width: 100%;
+  height: auto;
+  color: var(--color-accent);
+}
+.mkt-chart__tick,
+.mkt-chart__empty {
+  fill: var(--color-muted);
+  font-size: 11px;
+}
+.mkt-barlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-barlist__row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 2fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.mkt-barlist__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mkt-barlist__track {
+  height: 8px;
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.mkt-barlist__fill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: var(--radius-sm);
+}
+.mkt-barlist__value {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Peak-hours heatmap */
+.mkt-heatmap__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mkt-heatmap__row {
+  display: grid;
+  grid-template-columns: 2.5rem repeat(24, 1fr);
+  gap: 2px;
+  align-items: center;
+}
+.mkt-heatmap__day {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.mkt-heatmap__cell {
+  aspect-ratio: 1 / 1;
+  min-height: 10px;
+  background: var(--color-accent);
+  border-radius: 2px;
+}
+
+/* Per-video stats + settings privacy reuse the KPI grid */
+.mkt-video__stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.mkt-video__viewers summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}

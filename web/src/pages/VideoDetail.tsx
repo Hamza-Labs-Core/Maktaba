@@ -21,6 +21,14 @@ import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
+import { useAuth } from "../lib/auth";
+import {
+  analyticsApi,
+  formatPercent,
+  formatPercentRatio,
+  formatWatchTime,
+  type VideoStats,
+} from "../lib/analytics";
 
 interface Video {
   id: string;
@@ -145,6 +153,11 @@ export function VideoDetail() {
       id: "processing",
       label: t("video.tab.processing"),
       content: <ProcessingTab videoId={videoId} />,
+    },
+    {
+      id: "stats",
+      label: t("video.tab.stats"),
+      content: <StatsTab videoId={videoId} />,
     },
   ];
 
@@ -315,5 +328,86 @@ function ProcessingTab({ videoId }: { videoId: string }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+// StatsTab — Story 29.5 playback statistics. Everyone sees the aggregate
+// cards; admins additionally get the per-viewer breakdown table (the API
+// only returns `viewers` for admins, so the table is gated on its
+// presence rather than re-checking the role here).
+function StatsTab({ videoId }: { videoId: string }) {
+  const { t } = useI18n();
+  const { user } = useAuth();
+  const [stats, setStats] = useState<VideoStats | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    analyticsApi
+      .videoStats(videoId)
+      .then((s) => alive && setStats(s))
+      .catch((e) => alive && setErr(e instanceof ApiError ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [videoId]);
+
+  if (err) return <ErrorState kind="server" title={t("common.error")} description={err} />;
+  if (!stats) return <p className="mkt-loading">{t("common.loading")}</p>;
+
+  return (
+    <div className="mkt-video__stats">
+      <div className="mkt-analytics__kpis">
+        <StatCard label={t("video.stats.views")} value={String(stats.total_views)} />
+        <StatCard label={t("video.stats.uniqueViewers")} value={String(stats.unique_viewers)} />
+        <StatCard
+          label={t("video.stats.avgCompletion")}
+          value={formatPercent(stats.avg_completion)}
+        />
+        <StatCard
+          label={t("video.stats.avgWatch")}
+          value={formatWatchTime(Math.round(stats.avg_watch_sec))}
+        />
+        <StatCard
+          label={t("video.stats.completionRate")}
+          value={formatPercentRatio(stats.completion_rate)}
+        />
+      </div>
+
+      {user?.is_admin && stats.viewers && stats.viewers.length > 0 && (
+        <details className="mkt-video__viewers">
+          <summary>{t("video.stats.perUser")}</summary>
+          <table className="mkt-table" aria-label={t("video.stats.perUser")}>
+            <thead>
+              <tr>
+                <th>{t("analytics.col.user")}</th>
+                <th>{t("video.stats.times")}</th>
+                <th>{t("video.stats.totalWatch")}</th>
+                <th>{t("video.stats.best")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.viewers.map((v) => (
+                <tr key={v.user_id}>
+                  <td dir="auto">{v.username}</td>
+                  <td>{v.times_watched}</td>
+                  <td>{formatWatchTime(v.total_watch_sec)}</td>
+                  <td>{formatPercent(v.best_percent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mkt-kpi mk-card mk-card--e1">
+      <span className="mkt-kpi__value">{value}</span>
+      <span className="mkt-kpi__label">{label}</span>
+    </div>
   );
 }

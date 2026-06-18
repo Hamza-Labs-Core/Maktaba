@@ -39,6 +39,7 @@ const ADMIN = [
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },
+  { to: "/admin/analytics", key: "nav.admin.analytics", icon: "▰" },
   { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
   { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
   { to: "/admin/logs", key: "nav.admin.logs", icon: "≣" },
