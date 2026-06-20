@@ -1,8 +1,11 @@
 // Thin fetch wrapper that:
 //
 //   - sends credentials: 'include' so the `mkt_sess` cookie rides
-//   - echoes `mkt_csrf` into the `X-CSRF-Token` header on mutating verbs
-//     (Story 10.10 double-submit pattern)
+//   - echoes `mkt_csrf` into the `X-Maktaba-CSRF` header on mutating verbs
+//     (Story 10.10 double-submit pattern). The header name MUST match the
+//     server constant `auth.CSRFHeader` and the CORS allow-list, both of
+//     which are `X-Maktaba-CSRF` — a mismatch silently 403s every
+//     cookie-authenticated mutation (constant-time compare in csrf.go).
 //   - decodes RFC 9457 problem+json responses into a structured ApiError
 //
 // No global state: every call takes the absolute path. The base URL is
@@ -10,6 +13,9 @@
 // production build both work without ifdefs.
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
+
+// Must equal the server's `auth.CSRFHeader` and the CORS allow-list.
+const CSRF_HEADER = "X-Maktaba-CSRF";
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -72,7 +78,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (MUTATING.has(method)) {
     const tok = csrfToken();
     if (tok) {
-      headers.set("X-CSRF-Token", tok);
+      headers.set(CSRF_HEADER, tok);
     }
   }
 
@@ -161,6 +167,34 @@ export async function downloadBlob(path: string, fallbackName: string): Promise<
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// postBeacon sends a fire-and-forget POST that survives page unload.
+//
+// We deliberately use `fetch(..., { keepalive: true })` rather than
+// `navigator.sendBeacon`: the beacon API cannot set request headers, so
+// it can never carry the `X-Maktaba-CSRF` token a cookie-authenticated
+// mutation requires (it would 403). keepalive fetch keeps the request
+// alive past document teardown AND lets us attach the CSRF header +
+// credentials, so the watch-session `stop` actually lands on `pagehide`.
+// Body is capped well under the 64 KB keepalive limit.
+export function postBeacon(path: string, body: unknown): void {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const tok = csrfToken();
+  if (tok) headers.set(CSRF_HEADER, tok);
+  try {
+    void fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      credentials: "include",
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // Some engines throw synchronously when keepalive+body exceeds the
+    // limit or during teardown — non-fatal, the heartbeat already
+    // captured most of the watch time.
+  }
 }
 
 export const api = {

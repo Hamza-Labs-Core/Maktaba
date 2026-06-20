@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatPercent, formatPercentRatio, formatWatchTime } from "./analytics";
+import {
+  formatPercent,
+  formatPercentRatio,
+  formatWatchTime,
+  platformFromUA,
+} from "./analytics";
 
 describe("formatWatchTime", () => {
   it("renders zero and sub-minute as 0m", () => {
@@ -27,5 +32,17 @@ describe("percent formatters", () => {
     expect(formatPercentRatio(0)).toBe("0%");
     expect(formatPercentRatio(0.4)).toBe("40%");
     expect(formatPercentRatio(1)).toBe("100%");
+  });
+});
+
+describe("platformFromUA", () => {
+  it("classifies the common shells", () => {
+    expect(platformFromUA("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe("ios");
+    expect(platformFromUA("Mozilla/5.0 (iPad; CPU OS 17_0)")).toBe("ios");
+    expect(platformFromUA("Mozilla/5.0 (Linux; Android 14; Pixel)")).toBe("android");
+    expect(platformFromUA("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)")).toBe("macos");
+    expect(platformFromUA("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("windows");
+    expect(platformFromUA("Mozilla/5.0 (X11; Linux x86_64)")).toBe("linux");
+    expect(platformFromUA("something weird")).toBe("browser");
   });
 });

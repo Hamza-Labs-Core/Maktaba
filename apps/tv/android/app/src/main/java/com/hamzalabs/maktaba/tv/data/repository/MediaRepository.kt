@@ -9,6 +9,9 @@ import com.hamzalabs.maktaba.tv.data.models.LoginRequest
 import com.hamzalabs.maktaba.tv.data.models.Media
 import com.hamzalabs.maktaba.tv.data.models.MediaRail
 import com.hamzalabs.maktaba.tv.data.models.SearchResult
+import com.hamzalabs.maktaba.tv.data.models.WatchHeartbeatRequest
+import com.hamzalabs.maktaba.tv.data.models.WatchStartRequest
+import com.hamzalabs.maktaba.tv.data.models.WatchStopRequest
 
 /**
  * Single entry point the UI uses for data. Wraps the Retrofit [api] and
@@ -58,4 +61,25 @@ class MediaRepository(
     /** Absolute HLS manifest URL for a video id. */
     fun hlsUrl(videoId: String): String =
         "${settings.serverUrl.trimEnd('/')}/api/stream/$videoId/index.m3u8"
+
+    // Watch analytics (Story 29.1). Failures are swallowed into Result so
+    // a dropped beat never interrupts playback.
+
+    /** Open a watch session. Returns null when tracking is paused. */
+    suspend fun watchStart(videoId: String): Result<String?> = runCatching {
+        val r = api.watchStart(WatchStartRequest(videoId, "tv", "androidtv", "auto"))
+        if (r.tracking) r.sessionId else null
+    }
+
+    /** Advance an open session with the current position (seconds). */
+    suspend fun watchHeartbeat(sessionId: String, positionSec: Long): Result<Unit> = runCatching {
+        api.watchHeartbeat(WatchHeartbeatRequest(sessionId, positionSec))
+        Unit
+    }
+
+    /** Close a session with a final position (seconds). Idempotent. */
+    suspend fun watchStop(sessionId: String, positionSec: Long): Result<Unit> = runCatching {
+        api.watchStop(WatchStopRequest(sessionId, positionSec))
+        Unit
+    }
 }

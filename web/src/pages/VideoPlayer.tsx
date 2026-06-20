@@ -19,6 +19,7 @@ import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { createWatchSession } from "../lib/watchSession";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -123,6 +124,33 @@ export function VideoPlayer() {
       el.removeEventListener("loadedmetadata", onLoaded);
     };
   }, [session, startAt]);
+
+  // Watch-analytics lifecycle (Story 29.1). Independent of the streaming
+  // session above: keyed on the video itself, it opens a watch session on
+  // play, beats every 30 s, and closes it on pause/end/unmount/unload.
+  // The same wiring covers the Tauri desktop and Capacitor mobile shells,
+  // which load this exact bundle — detectClient() tags which one.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !videoId) return;
+    const watch = createWatchSession({
+      videoId,
+      getPosition: () => el.currentTime,
+      quality: session?.mode || "auto",
+    });
+    const onPlay = () => watch.start();
+    const onPause = () => watch.stop();
+    const onEnded = () => watch.stop();
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnded);
+    return () => {
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnded);
+      watch.dispose();
+    };
+  }, [videoId, session?.mode]);
 
   const changeSpeed = useCallback((dir: number) => {
     setSpeed((cur) => {

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -22,6 +24,12 @@ type Deps struct {
 	Servers    *stores.Servers
 	Meter      *billing.Meter
 	PublicHost string // e.g. "relay.maktaba.app"
+
+	// Collector records aggregate-only traffic metrics (Epic 30). Nil
+	// disables relay analytics collection. CountryHeader names the edge
+	// header carrying the request's country ("" ⇒ CF-IPCountry).
+	Collector     *metricspkg.Collector
+	CountryHeader string
 }
 
 // Handler returns the http.Handler mounted by the relay role at "/".
@@ -76,11 +84,26 @@ func (d *Deps) Handler() http.Handler {
 		w.WriteHeader(resp.StatusCode)
 		n, _ := io.Copy(w, resp.Body)
 
+		in := int64(reqBytes(r))
 		if d.Meter != nil {
-			d.Meter.Record(ctx, sv, int64(reqBytes(r)), n)
+			d.Meter.Record(ctx, sv, in, n)
+		}
+		// Aggregate-only relay analytics (Epic 30): country derived from
+		// the edge header, IP never read or stored (Story 30.2). No server
+		// id, no user id.
+		if d.Collector != nil {
+			d.Collector.RecordBandwidth(in, n)
+			d.Collector.RecordRequest(privacy.CountryFromRequest(r, d.CountryHeader))
 		}
 	})
 }
+
+// SlugFromHost is the exported view of slug extraction. The relay role
+// uses it to tell tenant requests (a `<slug>.relay…` host, which must be
+// proxied to the home server) from bare-relay-host control requests, so
+// the relay's /metrics and /privacy endpoints never shadow a home
+// server's own paths.
+func SlugFromHost(host, publicHost string) string { return slugFromHost(host, publicHost) }
 
 func slugFromHost(host, publicHost string) string {
 	if i := strings.Index(host, ":"); i >= 0 {

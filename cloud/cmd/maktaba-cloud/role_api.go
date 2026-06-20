@@ -22,8 +22,11 @@ import (
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
+	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
+	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
@@ -124,6 +127,17 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 		pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 		adminh.Mount(g, adminh.Deps{DB: pool.DB, Users: users, AllowedDomain: cfg.Admin.AllowedEmailDomain})
+
+		// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
+		// Reads the relay_metrics_* tables the relay role writes (same DB);
+		// the api role owns auth, so the operator-gated surface lives here.
+		metricsh.Mount(g, metricsh.Deps{
+			DB:            pool.DB,
+			Users:         users,
+			AllowedDomain: cfg.Admin.AllowedEmailDomain,
+			Store:         metricspkg.NewStore(pool.DB),
+			Deletion:      privacy.NewDataSubjectService(pool.DB),
+		})
 	})
 
 	// The Stripe webhook must NOT require auth — Stripe doesn't carry

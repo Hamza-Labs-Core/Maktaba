@@ -7,6 +7,11 @@ import com.hamzalabs.maktaba.tv.data.models.Recommendations
 import com.hamzalabs.maktaba.tv.data.models.RefreshRequest
 import com.hamzalabs.maktaba.tv.data.models.SearchResponse
 import com.hamzalabs.maktaba.tv.data.models.User
+import com.hamzalabs.maktaba.tv.data.models.WatchHeartbeatRequest
+import com.hamzalabs.maktaba.tv.data.models.WatchSessionView
+import com.hamzalabs.maktaba.tv.data.models.WatchStartRequest
+import com.hamzalabs.maktaba.tv.data.models.WatchStartResponse
+import com.hamzalabs.maktaba.tv.data.models.WatchStopRequest
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -39,4 +44,15 @@ interface MaktabaApi {
 
     @GET("api/search")
     suspend fun search(@Query("q") query: String): SearchResponse
+
+    // Watch analytics (Story 29.1). Bearer auth ⇒ CSRF does not apply.
+
+    @POST("api/watch/start")
+    suspend fun watchStart(@Body body: WatchStartRequest): WatchStartResponse
+
+    @POST("api/watch/heartbeat")
+    suspend fun watchHeartbeat(@Body body: WatchHeartbeatRequest): WatchSessionView
+
+    @POST("api/watch/stop")
+    suspend fun watchStop(@Body body: WatchStopRequest): WatchSessionView
 }

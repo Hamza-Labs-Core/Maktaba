@@ -60,6 +60,42 @@ actor APIClient {
         baseURL.appendingPathComponent("api/stream/\(videoID)/index.m3u8")
     }
 
+    // MARK: - Watch analytics (Story 29.1)
+
+    /// Opens a watch session. Returns the server's session id, or `nil`
+    /// when the user has paused tracking (Story 29.4) — in which case the
+    /// caller must NOT send heartbeats. Bearer auth means CSRF does not
+    /// apply to these mutations.
+    func watchStart(videoID: String, quality: String) async throws -> String? {
+        let r: WatchStartResponse = try await post(
+            "/api/watch/start",
+            body: [
+                "video_id": videoID,
+                "device_type": "tv",
+                "platform": "tvos",
+                "quality": quality,
+            ]
+        )
+        return r.tracking ? r.sessionID : nil
+    }
+
+    /// Advances an open session with the current position. The server
+    /// derives percent-complete and caps credited time per beat.
+    func watchHeartbeat(sessionID: String, positionSec: Int) async throws {
+        let _: WatchSessionView = try await post(
+            "/api/watch/heartbeat",
+            body: ["session_id": sessionID, "position_sec": positionSec]
+        )
+    }
+
+    /// Closes a session with a final position. Idempotent server-side.
+    func watchStop(sessionID: String, positionSec: Int) async throws {
+        let _: WatchSessionView = try await post(
+            "/api/watch/stop",
+            body: ["session_id": sessionID, "position_sec": positionSec]
+        )
+    }
+
     // MARK: - Plumbing
 
     private func makeRequest(_ path: String, method: String, query: [String: String] = [:]) -> URLRequest {
@@ -113,6 +149,30 @@ actor APIClient {
         refreshing = true
         defer { refreshing = false }
         return try await refresher()
+    }
+}
+
+/// `POST /api/watch/start` response. `session_id` is absent when
+/// tracking is paused.
+struct WatchStartResponse: Decodable {
+    let sessionID: String?
+    let tracking: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case tracking
+    }
+}
+
+/// `POST /api/watch/{heartbeat,stop}` response. We only need it to
+/// satisfy the decoder; the player ignores the body.
+struct WatchSessionView: Decodable {
+    let sessionID: String
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case state
     }
 }
 

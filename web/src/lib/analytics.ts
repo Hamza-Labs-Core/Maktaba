@@ -5,7 +5,9 @@
 // drives (29.1), the per-user history (29.2) and activity/privacy (29.4),
 // the admin dashboard (29.3), the per-video stats (29.5) and the export
 // (29.6). One place to reconcile against the Go handlers.
-import { api, request } from "./api";
+import { api, request, postBeacon } from "./api";
+import { isDesktop } from "./desktop";
+import { isNativeRuntime } from "./native";
 
 // ─── Watch-session lifecycle (29.1) ────────────────────────────────────
 
@@ -149,6 +151,11 @@ export const analyticsApi = {
     api.post<SessionView>("/api/watch/heartbeat", body),
   stop: (body: { session_id: string; position_sec?: number }) =>
     api.post<SessionView>("/api/watch/stop", body),
+  // stopBeacon is the page-unload variant of stop(): a keepalive POST
+  // that still rides the session cookie + CSRF header, so the final
+  // position lands even as the tab is closing (see api.postBeacon).
+  stopBeacon: (body: { session_id: string; position_sec?: number }) =>
+    postBeacon("/api/watch/stop", body),
 
   // history
   history: (params: { limit?: number; offset?: number; from?: string; to?: string } = {}) =>
@@ -207,4 +214,39 @@ export function formatPercentRatio(ratio: number): string {
 }
 export function formatPercent(pct: number): string {
   return `${Math.round(pct)}%`;
+}
+
+// ─── client fingerprint for watch sessions (29.1) ──────────────────────
+
+export interface ClientInfo {
+  device_type: string; // "desktop" | "mobile" | "web"
+  platform: string; // "macos" | "windows" | "linux" | "ios" | "android" | "browser"
+}
+
+// platformFromUA derives a coarse OS label from a user-agent string.
+// Exported (and pure) so it is unit-testable without a real navigator.
+export function platformFromUA(ua: string): string {
+  const s = ua.toLowerCase();
+  if (/iphone|ipad|ipod/.test(s)) return "ios";
+  if (/android/.test(s)) return "android";
+  if (/mac os|macintosh/.test(s)) return "macos";
+  if (/windows/.test(s)) return "windows";
+  if (/linux/.test(s)) return "linux";
+  return "browser";
+}
+
+// detectClient classifies the runtime so the dashboard can split watch
+// time by shell. The same web bundle runs in three shells:
+//   - Tauri desktop  → device_type "desktop"  (isDesktop)
+//   - Capacitor mobile → device_type "mobile" (isNativeRuntime)
+//   - plain browser  → device_type "web"
+// The OS label comes from the UA in every case. Values are kept short:
+// the server truncates device_type/platform to 32 chars.
+export function detectClient(): ClientInfo {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const platform = platformFromUA(ua);
+  let device_type = "web";
+  if (isDesktop()) device_type = "desktop";
+  else if (isNativeRuntime()) device_type = "mobile";
+  return { device_type, platform };
 }

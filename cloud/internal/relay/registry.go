@@ -55,6 +55,15 @@ func (r *Registry) Lookup(slug string) (*Tunnel, error) {
 	return t, nil
 }
 
+// Len returns the number of live tunnels. Used by the metrics collector
+// (Epic 30) to sample the connected-server / active-tunnel gauges
+// without allocating the full slug slice on the hot sampling path.
+func (r *Registry) Len() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.conns)
+}
+
 // Slugs returns the connected slugs, for diagnostics.
 func (r *Registry) Slugs() []string {
 	r.mu.RLock()
