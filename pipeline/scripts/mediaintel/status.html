@@ -87,7 +87,7 @@ h2 { font-size: 15px; font-weight: 600; }
 .work-row { display: grid; gap: 6px; }
 .work-row .hd { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s2); }
 .work-row .rate { font-family: var(--f-data); font-size: 12px; color: var(--muted); }
-.chart { width: 100%; height: 190px; display: block; }
+.chart { width: 100%; height: auto; display: block; }
 .chart text { fill: var(--muted); font: 11px var(--f-data); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 6px; vertical-align: -1px; }
@@ -119,6 +119,18 @@ td.lib { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spac
 details summary { cursor: pointer; font-family: var(--f-display); font-weight: 600; font-size: 15px; }
 pre { margin: var(--s3) 0 0; font: 12px/1.5 var(--f-data); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; color: var(--muted); }
 .err td { color: var(--bad); }
+.gauges { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s3); }
+.gauge { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: var(--s3) var(--s3) var(--s2); display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.gauge svg { width: 100%; max-width: 170px; height: auto; display: block; }
+.gauge .track { stroke: var(--track); }
+.gauge .val { transition: stroke-dashoffset .8s ease; }
+.gauge .pct { fill: var(--ink); font: 600 22px var(--f-data); }
+.gauge .ticks text { fill: var(--muted); font: 9px var(--f-data); }
+.gauge .name { font-size: 12px; font-weight: 600; text-align: center; }
+.gauge .sub { font: 11px var(--f-data); color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+@media (max-width: 1000px) { .gauges { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .gauge .val { transition: none; } }
 .btn { font: 600 13px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
 .btn:hover { border-color: var(--lapis); }
 .btn.primary { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
@@ -165,6 +177,8 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
     </div>
   </header>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="gauges" id="gauges" aria-label="Progress gauges"></section>
 
   <section class="panel wizard" id="wizard">
     <div class="top"><h2>Start a run</h2><span class="muted" id="wiz-note">Every step is saved per file, so a new run only does what is left.</span></div>
@@ -215,7 +229,7 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
     </div>
     <div class="panel">
       <div class="top"><h2>Throughput</h2><span class="label">items per minute, this session</span></div>
-      <svg class="chart" id="thru" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Items finished per minute"></svg>
+      <svg class="chart" id="thru" viewBox="0 0 520 190" role="img" aria-label="Items finished per minute"></svg>
       <div class="legend" id="thru-legend"></div>
     </div>
   </section>
@@ -296,6 +310,62 @@ function spark(vals) {
   return `<svg viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--lapis)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
+// ---- gauges and counters
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const shown = {};   // last value drawn per counter, for count-up animation
+function countTo(el, key, value, digits) {
+  const from = shown[key] ?? value; shown[key] = value;
+  const show = v => el.textContent = digits ? v.toFixed(digits) : Math.round(v).toLocaleString();
+  if (reduceMotion || from === value) { show(value); return; }
+  const t0 = performance.now(), d = 700;
+  (function step(t) { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3);
+    show(from + (value - from) * e); if (k < 1) requestAnimationFrame(step); })(t0);
+}
+function gauge(id, name, pct, sub, state) {
+  // a 240° dial: 0% at lower left, 100% at lower right, ticks every 25%
+  const R = 52, C = 64, A0 = 150, SWEEP = 240, len = 2 * Math.PI * R * SWEEP / 360;
+  const pt = (deg, r) => [C + r * Math.cos(deg * Math.PI / 180), C + r * Math.sin(deg * Math.PI / 180)];
+  const [x0, y0] = pt(A0, R), [x1, y1] = pt(A0 + SWEEP, R);
+  const arc = `M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 1 1 ${x1.toFixed(1)},${y1.toFixed(1)}`;
+  const color = state === "done" || pct >= 99.95 ? "var(--ok)" : state === "running" ? "var(--saffron)" : "var(--lapis)";
+  const p = Math.max(0, Math.min(100, pct || 0));
+  let card = document.getElementById("g-" + id);
+  if (!card) {
+    card = document.createElement("div"); card.className = "gauge"; card.id = "g-" + id;
+    const ticks = [0, 25, 50, 75, 100].map(v => { const [tx, ty] = pt(A0 + SWEEP * v / 100, R + 11);
+      return `<text x="${tx.toFixed(1)}" y="${(ty + 3).toFixed(1)}" text-anchor="middle">${v}</text>`; }).join("");
+    card.innerHTML = `<svg viewBox="0 -12 128 124" role="img" aria-label="${esc(name)}">
+      <path class="track" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round"/>
+      <path class="val" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${len.toFixed(1)}"/>
+      <g class="ticks">${ticks}</g>
+      <text class="pct" x="${C}" y="${C + 6}" text-anchor="middle"><tspan class="n">0</tspan><tspan font-size="13">%</tspan></text>
+    </svg><div class="name">${esc(name)}</div><div class="sub"></div>`;
+    $("gauges").appendChild(card);
+  }
+  const val = card.querySelector(".val");
+  val.setAttribute("stroke", color);
+  val.setAttribute("stroke-dashoffset", (len * (1 - p / 100)).toFixed(1));
+  countTo(card.querySelector(".n"), "g-" + id, p, p > 0 && p < 10 ? 1 : 0);
+  card.querySelector(".sub").textContent = sub;
+}
+function drawGauges(s, cur, steps) {
+  const doneSteps = steps.filter(x => x.state === "done").length;
+  const p = s.progress, stepFrac = cur && p && p.total ? Math.min(1, p.done / p.total) : 0;
+  const runPct = steps.length ? 100 * (doneSteps + stepFrac) / steps.length : 0;
+  gauge("run", "Whole run", runPct, `${doneSteps} of ${steps.length} steps done`, cur ? "running" : doneSteps ? "done" : "");
+  gauge("step", cur ? `Step ${cur.n}: ${cur.title}` : "Current step", cur && p && p.total ? 100 * stepFrac : (cur ? 0 : 100),
+        cur && p ? (p.total ? `${fmt(p.done)} of ${fmt(p.total)} ${p.unit}` : `${fmt(p.done)} ${p.unit}`) : "no step running", cur ? "running" : "done");
+  const st = Object.fromEntries((s.stages || []).map(x => [x.stage, x]));
+  const one = (id, key, name) => { const x = st[key]; if (!x) return;
+    const of = Math.max(x.of, x.done + x.failed); gauge(id, name, of ? 100 * x.done / of : 0, `${fmt(x.done)} of ${fmt(of)}`, ""); };
+  one("len", "Length measured", "Lengths known");
+  one("thumb", "Thumbnail fingerprint", "Thumbnails");
+  one("sig", "Intro/end-song + frame fingerprint", "Intro fingerprints");
+  const withSeasons = (s.libraries || []).filter(r => r.seasons), inPlex = withSeasons.filter(r => r.collections);
+  gauge("plex", "Libraries in Plex", withSeasons.length ? 100 * inPlex.length / withSeasons.length : 0,
+        `${inPlex.length} of ${withSeasons.length} libraries with seasons so far`, "");
+}
+
 function render(s) {
   last = s;
   const t = s.now;
@@ -345,7 +415,9 @@ function render(s) {
   const series = k => samples.map(x => x.v[k] || 0);
   const kp = [["Files found", v.files, "files"], ["Length known", v.known, "known"],
               ["Seasons found", v.seasons, "seasons"], ["Plex collections", v.cols, "cols"]];
-  $("kpis").innerHTML = kp.map(([l, n, k]) => `<div class="kpi"><span class="label">${l}</span><span class="v">${fmt(n)}</span>${spark(series(k))}</div>`).join("");
+  if (!$("kpis").children.length) $("kpis").innerHTML = kp.map(([l, , k]) => `<div class="kpi"><span class="label">${l}</span><span class="v" id="kv-${k}">0</span><span id="ks-${k}"></span></div>`).join("");
+  kp.forEach(([, n, k]) => { countTo($("kv-" + k), "kv-" + k, n || 0, 0); $("ks-" + k).innerHTML = spark(series(k)); });
+  drawGauges(s, cur, steps);
 
   // step rail
   $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" ? "✓" : x.n}</span>
@@ -355,7 +427,7 @@ function render(s) {
   $("work").innerHTML = s.stages.length ? s.stages.map(st => {
     const of = Math.max(st.of, st.done + st.failed), d = of ? 100 * st.done / of : 0, f = of ? 100 * st.failed / of : 0;
     const r = st.per_min ?? rateOf("st:" + st.stage), left = of - st.done - st.failed;
-    return `<div class="work-row"><div class="hd"><span>${esc(st.stage)}</span>
+    return `<div class="work-row"><div class="hd"><span>${esc(st.stage)} <b class="num">${of ? (100 * st.done / of).toFixed(st.done / of < 0.1 ? 1 : 0) : 0}%</b></span>
       <span class="num">${fmt(st.done)} <span class="muted">of ${fmt(of)}</span>${st.failed ? ` · <span style="color:var(--bad)">${fmt(st.failed)} failed</span>` : ""}</span></div>
       <div class="bar"><i class="done" style="width:${d}%"></i><i class="fail" style="width:${f}%"></i></div>
       ${st.note ? `<div class="rate">${esc(st.note)}</div>` : ""}<div class="rate">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min over the last 10 min · ${left > 0 ? dur(left / r * 60) + " left at this rate" : "done"}` : left > 0 ? "nothing finished in the last 10 min" : "complete"}</div></div>`;
@@ -374,14 +446,15 @@ function render(s) {
 }
 
 function drawThroughput(stages) {
-  const svg = $("thru"), W = 520, H = 190, L = 40, B = 22, T = 10, R = 8;
+  const svg = $("thru"), W = 520, H = 190, L = 48, B = 22, T = 10, R = 8;
   const pts = samples.slice(-120);
-  if (pts.length < 3) { svg.innerHTML = `<text x="${L}" y="${H / 2}">Collecting a few minutes of samples…</text>`; $("thru-legend").innerHTML = ""; return; }
+  if (pts.length < 3 || pts.every((_, i) => i === 0 || pts[i].t - pts[i - 1].t < 10)) { svg.innerHTML = `<text x="${L}" y="${H / 2}">Collecting a few minutes of samples…</text>`; $("thru-legend").innerHTML = ""; return; }
   const lines = stages.map(st => {
     const k = "st:" + st, out = [];
     for (let i = 1; i < pts.length; i++) {
       const dt = (pts[i].t - pts[i - 1].t) / 60;
-      out.push([pts[i].t, dt > 0 ? Math.max(0, ((pts[i].v[k] || 0) - (pts[i - 1].v[k] || 0)) / dt) : 0]);
+      if (dt < 10 / 60 || dt > 30) continue;  // too short to measure, or a gap while the page was closed
+      out.push([pts[i].t, Math.max(0, ((pts[i].v[k] || 0) - (pts[i - 1].v[k] || 0)) / dt)]);
     }
     return {st, out};
   });
@@ -391,7 +464,7 @@ function drawThroughput(stages) {
   const x = tt => L + (tt - t0) / ((t1 - t0) || 1) * (W - L - R), y = val => H - B - val / top * (H - B - T);
   let g = "";
   for (let i = 0; i <= 4; i++) { const val = top * i / 4, yy = y(val);
-    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${val >= 1000 ? (val / 1000).toFixed(1) + "k" : Math.round(val)}</text>`; }
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${val >= 1000 ? (val / 1000).toFixed(val >= 10000 ? 0 : 1) + "k" : val >= 10 ? Math.round(val) : val.toFixed(1)}</text>`; }
   [t0, (t0 + t1) / 2, t1].forEach((tt, i) => g += `<text x="${x(tt)}" y="${H - 6}" text-anchor="${["start","middle","end"][i]}">${new Date(tt * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</text>`);
   lines.forEach((l, i) => {
     if (!l.out.some(p => p[1] > 0)) return;
