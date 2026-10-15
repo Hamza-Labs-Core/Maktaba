@@ -60,7 +60,11 @@ STEPS: list[tuple[str, str, str]] = [
         "Fingerprint intros, end songs and frames",
         "only a few episodes per season and the unplaced videos that could still join one",
     ),
-    ("detect again", "Find seasons again", "with the fingerprints as extra evidence"),
+    (
+        "detect again",
+        "Place leftover episodes by intro and end song",
+        "unplaced videos join the season whose intro, end song or frames they match",
+    ),
     ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     ("scan-visual", "Rate production style", "talk / produced / cinematic, from sampled frames"),
