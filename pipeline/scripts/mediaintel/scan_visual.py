@@ -74,6 +74,10 @@ TIERS = {"static": 0, "talk": 1, "produced": 2, "cinematic": 3}
 RESAMPLE_EPISODES = 8
 
 
+#: reads at once over the share: above about 4 a busy NAS starts failing reads over SMB
+NAS_READS = 2
+
+
 def set_override(conn: sqlite3.Connection, library: str, series: str, style: str | None) -> None:
     """Pin (or with ``style=None`` clear) a series' style; applied on every run."""
     conn.executescript(SCHEMA)
@@ -257,10 +261,15 @@ def _sample(
         elif jobs.needed(conn, path, "visual_style", STYLE_VERSION, size, mtime):
             todo.append(_Job(path, dur))
 
+    workers = min(workers, NAS_READS)
+    print(f"sampling {len(todo)} files ({workers} reads at a time)", flush=True)
     started = time.monotonic()
     with ThreadPoolExecutor(max(1, workers)) as pool:
         results = pool.map(lambda j: sample_file(j.path, j.duration_s), todo)
-        for job, m in zip(todo, results, strict=True):
+        for n, (job, m) in enumerate(zip(todo, results, strict=True), 1):
+            if n % 25 == 0 or n == len(todo):
+                rate = n / max(1e-6, time.monotonic() - started) * 60
+                print(f"  [{n}/{len(todo)}] {rate:.0f} per minute", flush=True)
             size, mtime = stamp[job.path]
             if m is None:
                 stats["failed"] += 1

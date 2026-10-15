@@ -87,7 +87,9 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         if not m:
             continue
         head = m.group(1)
-        idx = next((k for k, (pre, _, _) in enumerate(STEPS) if head.startswith(pre)), None)
+        # longest matching name wins: "detect again …" is step 8, not "detect" (step 6)
+        hits = [k for k, (pre, _, _) in enumerate(STEPS) if head.startswith(pre)]
+        idx = max(hits, key=lambda k: len(STEPS[k][0])) if hits else None
         if idx is not None:
             t = _TIME_RE.search(head)
             seen.append((idx, t.group(1) if t else "", i))
@@ -111,6 +113,16 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         head = _STEP_RE.match(lines[at]).group(1)  # type: ignore[union-attr]
         total_m = _COUNT_RE.search(head)
         body = lines[at + 1 :]
+        n_lib = next((int(m.group(1)) for ln in lines if (m := _COUNT_RE.search(ln))), None)
+        name = STEPS[current][0]
+        if name in ("detect", "detect again", "scan-youtube --exact", "tag", "report"):
+            mark = {"tag": lambda ln: ln.startswith("=== tags"),
+                    "report": lambda ln: ln.rstrip().endswith(".html")}.get(
+                name, lambda ln: ln.startswith("=== "))  # fmt: skip
+            n = sum(1 for ln in body if mark(ln))
+            return out, {"done": n, "total": n_lib, "unit": "libraries"}
+        if name == "scan-visual":
+            return out, _sampled_progress(body, "visual_style")
         if STEPS[current][0].startswith("scan-local"):
             n = sum(1 for ln in body if ": {'videos'" in ln and ln.count("/") <= 2)
             unit = "libraries"
@@ -125,10 +137,21 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             unit = "channels"
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
-        else:
-            n, unit = len(body), "log lines"
+        else:  # no counter: say so instead of counting log lines
+            return out, {"done": 0, "total": None, "unit": "",
+                         "phase": "working (this step has no counter)"}  # fmt: skip
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
+
+
+def _sampled_progress(body: list[str], stage: str) -> dict[str, Any]:
+    """A one-pass "sampling N files" step with [n/N] lines (production style)."""
+    tot = [int(m.group(1)) for ln in body if (m := re.match(r"^sampling (\d+) files", ln))]
+    done = [int(d.group(1)) for ln in body if (d := _SIG_DONE_RE.match(ln))]
+    if not tot:
+        return {"done": 0, "total": None, "unit": "files", "phase": "choosing what to read"}
+    return {"done": done[-1] if done else 0, "total": tot[-1], "unit": "files",
+            "left": tot[-1] - (done[-1] if done else 0), "db_stage": stage}  # fmt: skip
 
 
 def _sig_progress(body: list[str]) -> dict[str, Any]:
@@ -160,6 +183,7 @@ def _sig_progress(body: list[str]) -> dict[str, Any]:
         f"{cur[-1] if cur else 0:,} of {int(m.group(2)):,}",
         "left": int(m.group(2)) - (cur[-1] if cur else 0),
         "passes": plist,
+        "db_stage": "signature",
     }
 
 
@@ -174,30 +198,33 @@ def live(db_path: str, log_path: Path, base: dict[str, Any]) -> dict[str, Any]:
     out["steps"], prog = _steps(lines)
     out["log_age_s"] = time.time() - log_path.stat().st_mtime
     out["last_line"] = next((ln.strip() for ln in reversed(lines) if ln.strip()), "")
-    if prog and prog.get("passes"):
+    if prog and prog.get("db_stage") and prog.get("total"):
+        stage = prog["db_stage"]
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
         try:
-            k = next((i for i, x in enumerate(prog["passes"]) if x["state"] == "running"), None)
-            if k is not None:
-                cur = prog["passes"][k]
-                key = (k, cur["done"])
-                if base.get("key") != key:
-                    base["key"] = key
-                    base["since"] = conn.execute(
-                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
-                    ).fetchone()[0]
-                extra = conn.execute(
-                    "SELECT COUNT(*) FROM index_jobs WHERE stage = 'signature' AND updated_at > ?",
-                    (base["since"],),
+            passes = prog.get("passes") or []
+            k = next((i for i, x in enumerate(passes) if x["state"] == "running"), None)
+            cur = passes[k] if k is not None else prog
+            key = (stage, k, cur["done"])
+            if base.get("key") != key:
+                base["key"] = key
+                base["since"] = conn.execute(
+                    "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
                 ).fetchone()[0]
-                extra = max(0, min(extra, (cur["total"] or 0) - cur["done"]))
+            extra = conn.execute(
+                "SELECT COUNT(*) FROM index_jobs WHERE stage = ? AND updated_at > ?",
+                (stage, base["since"]),
+            ).fetchone()[0]
+            extra = max(0, min(extra, (cur["total"] or 0) - cur["done"]))
+            if cur is not prog:
                 cur["done"] += extra
-                prog["done"] += extra
-                prog["left"] -= extra
+            prog["done"] += extra
+            prog["left"] = prog.get("left", 0) - extra
             prog["per_min"] = (
                 conn.execute(
-                    """SELECT COUNT(*) FROM index_jobs WHERE stage = 'signature'
-                       AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')"""
+                    """SELECT COUNT(*) FROM index_jobs WHERE stage = ?
+                       AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')""",
+                    (stage,),
                 ).fetchone()[0]
                 / 10
             )
