@@ -21,11 +21,12 @@ import (
 //   - Bus.Pruner: 7-day retention sweep (Story 19.2 AC3).
 //   - wsHandler.Replay: on-(re)connect catch-up via the bus.
 //
-// The Run/Pruner goroutines are bound to d.BusCtx so a graceful
+// It returns the bus (nil when not wired) so handlers can Publish durable
+// events (plan-06-11 F8). The Run/Pruner goroutines are bound to d.BusCtx so a graceful
 // shutdown stops them.
-func wireEventBus(d P6Deps, hub *ws.Hub, wsHandler *ws.Handler) {
+func wireEventBus(d P6Deps, hub *ws.Hub, wsHandler *ws.Handler) *eventbus.Bus {
 	if d.BusCtx == nil || d.BusDSN == "" || d.DB == nil {
-		return
+		return nil
 	}
 	backend := eventbus.NewPostgresBackend(d.DB, d.BusDSN, slog.Default())
 	bus := eventbus.New(backend, hub, slog.Default())
@@ -39,6 +40,7 @@ func wireEventBus(d P6Deps, hub *ws.Hub, wsHandler *ws.Handler) {
 	go bus.Pruner(d.BusCtx, eventbus.DefaultRetention, eventbus.DefaultPruneEvery)
 
 	wsHandler.Replay = busReplayAdapter{bus: bus}
+	return bus
 }
 
 // busReplayAdapter maps eventbus.Bus onto the ws.Replayer seam (ws

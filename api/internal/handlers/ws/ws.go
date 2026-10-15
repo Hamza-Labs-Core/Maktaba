@@ -76,6 +76,13 @@ func (h *Hub) Subscribe(channel string) *Subscriber {
 	return s
 }
 
+// SubscriberCount returns how many subscribers are attached to channel.
+func (h *Hub) SubscriberCount(channel string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.subscribers[channel])
+}
+
 // Unsubscribe drops a subscriber, closes its Done.
 func (h *Hub) Unsubscribe(channel string, s *Subscriber) {
 	h.mu.Lock()
@@ -136,6 +143,10 @@ type Handler struct {
 	// Last-Event-ID so missed cross-replica events are re-delivered
 	// before the live stream resumes.
 	Replay Replayer
+	// Initial, when set, may return a first frame for a channel which
+	// is written right after connect (the /ws/queues snapshot). It is
+	// sent before replay and live events; nil -> nothing extra.
+	Initial func(ctx context.Context, channel string) *Event
 }
 
 // Mount wires the SSE routes. WebSocket is intentionally absent here;
@@ -143,6 +154,7 @@ type Handler struct {
 // choice.
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/ws/jobs", h.serveSSE("jobs"))
+	r.Get("/ws/queues", h.serveSSE("queues"))
 	r.Get("/ws/library/{id}", func(w http.ResponseWriter, r *http.Request) {
 		ch := "library:" + chi.URLParam(r, "id")
 		h.sseChannel(ch, w, r)
@@ -185,6 +197,13 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 
 	ctx := r.Context()
 
+	if h.Initial != nil {
+		if ev := h.Initial(ctx, channel); ev != nil {
+			writeFrame(w, *ev)
+			flusher.Flush()
+		}
+	}
+
 	// Replay-on-connect (Story 19.2 AC3): re-deliver every event the
 	// client missed since the id it last processed. Last-Event-ID is
 	// the standard SSE reconnect header; ?last_event_id= is the WS
@@ -195,10 +214,7 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		if last := parseLastEventID(r); last > 0 {
 			if evs, err := h.Replay.Replay(ctx, channel, last); err == nil {
 				for _, e := range evs {
-					frame, _ := json.Marshal(Event(e))
-					_, _ = w.Write([]byte("data: "))
-					_, _ = w.Write(frame)
-					_, _ = w.Write([]byte("\n\n"))
+					writeFrame(w, Event(e))
 				}
 				flusher.Flush()
 			}
@@ -218,13 +234,39 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 			_, _ = w.Write([]byte(": ping\n\n"))
 			flusher.Flush()
 		case e := <-sub.C:
-			frame, _ := json.Marshal(e)
-			_, _ = w.Write([]byte("data: "))
-			_, _ = w.Write(frame)
-			_, _ = w.Write([]byte("\n\n"))
+			writeFrame(w, e)
 			flusher.Flush()
 		}
 	}
+}
+
+// writeFrame writes one SSE frame. When the event carries a bus id
+// (payload "_event_id") it is emitted as an "id:" line so the browser
+// remembers it and sends Last-Event-ID on reconnect, which drives the
+// replay path (plan-06-11 F9). Ephemeral events have no id.
+func writeFrame(w http.ResponseWriter, e Event) {
+	frame, _ := json.Marshal(e)
+	if id, ok := eventID(e.Payload); ok {
+		_, _ = w.Write([]byte("id: " + strconv.FormatInt(id, 10) + "\n"))
+	}
+	_, _ = w.Write([]byte("data: "))
+	_, _ = w.Write(frame)
+	_, _ = w.Write([]byte("\n\n"))
+}
+
+func eventID(p map[string]any) (int64, bool) {
+	switch v := p["_event_id"].(type) {
+	case int64:
+		return v, v > 0
+	case int:
+		return int64(v), v > 0
+	case float64:
+		return int64(v), v > 0
+	case json.Number:
+		n, err := v.Int64()
+		return n, err == nil && n > 0
+	}
+	return 0, false
 }
 
 // parseLastEventID extracts the client's reconnect cursor from the
