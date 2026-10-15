@@ -140,8 +140,10 @@ def scan_channel(
 
     if playlists:
         pl = _extract(ydl, base + "/playlists")
-        for p in (pl or {}).get("entries") or []:
+        pl_entries = (pl or {}).get("entries") or []
+        for k, p in enumerate(pl_entries, 1):
             pid = p.get("id")
+            print(f"    {channel}: playlist {k}/{len(pl_entries)}", flush=True)
             if not isinstance(pid, str):
                 continue
             items = _extract(ydl, f"https://www.youtube.com/playlist?list={pid}")
