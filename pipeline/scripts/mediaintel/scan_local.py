@@ -13,6 +13,7 @@ files.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -43,6 +44,7 @@ from maktaba_pipeline.thumbnail.dhash import (
 )
 
 from . import jobs
+from .bins import FFMPEG, FFPROBE
 
 VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".m4v", ".mov", ".avi")
 # yt-dlp leaves per-format pieces ("<title>.f251.webm") when a merge didn't finish
@@ -53,7 +55,7 @@ def _probe(path: str) -> tuple[float | None, int | None, int | None]:
     """(duration seconds, width, height) of the first video stream."""
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+            [FFPROBE, "-v", "error", "-select_streams", "v:0",
              "-show_entries", "format=duration:stream=width,height", "-of", "json", path],
             capture_output=True, timeout=120, check=False,
         )  # fmt: skip
@@ -70,7 +72,9 @@ def _probe(path: str) -> tuple[float | None, int | None, int | None]:
 
 def _thumb_dhash(path: str) -> str | None:
     try:
-        out = subprocess.run(ffmpeg_gray_args(path), capture_output=True, timeout=60, check=False)
+        out = subprocess.run(
+            ffmpeg_gray_args(path, binary=FFMPEG), capture_output=True, timeout=60, check=False
+        )
         return f"{dhash_from_gray(out.stdout):016x}"
     except (ValueError, subprocess.TimeoutExpired, OSError):
         return None
@@ -82,7 +86,7 @@ def _signature(path: str, duration_s: float) -> tuple[str | None, str | None, st
     for which, start, length in windows(duration_s):
         try:
             out = subprocess.run(
-                ffmpeg_chromaprint_args(path, start, length),
+                ffmpeg_chromaprint_args(path, start, length, binary=FFMPEG),
                 capture_output=True, timeout=180, check=False,
             )  # fmt: skip
             fp = parse_raw(out.stdout)
@@ -93,7 +97,10 @@ def _signature(path: str, duration_s: float) -> tuple[str | None, str | None, st
     for t in frame_times(duration_s):
         try:
             raw += subprocess.run(
-                ffmpeg_frame_args(path, t), capture_output=True, timeout=60, check=False
+                ffmpeg_frame_args(path, t, binary=FFMPEG),
+                capture_output=True,
+                timeout=60,
+                check=False,
             ).stdout[:72]
         except (subprocess.TimeoutExpired, OSError):
             continue
@@ -154,7 +161,7 @@ def scan_folder(
 ) -> dict[str, int]:
     """``probe=False`` records files without ffprobe (``scan-plex`` can fill length and
     size from Plex; a second pass probes only what is still missing)."""
-    folder_s = str(folder)
+    folder_s = folder.as_posix()  # stored with '/' on every OS (Windows accepts it)
     jobs.ensure(conn)
     try:
         dir_mtime = folder.stat().st_mtime
@@ -167,7 +174,10 @@ def scan_folder(
         # nothing added, removed or renamed since a complete scan: skip the per-file stats
         return {"videos": 0, "skipped": 1}
     try:
-        names = sorted(p.name for p in folder.iterdir() if p.is_file())
+        with os.scandir(folder) as it:
+            # DirEntry.stat() is served from the listing on Windows (no round-trip per file)
+            entries = {e.name: e for e in it if e.is_file(follow_symlinks=False)}
+        names = sorted(entries)
     except OSError:
         return {"videos": 0}
     name_set = set(names)
@@ -182,7 +192,7 @@ def scan_folder(
         and not _FORMAT_PIECE_RE.search(n)
     ]
     # forget files that are gone (or were format pieces counted by an older scan)
-    present = {str(folder / n) for n in videos}
+    present = {(folder / n).as_posix() for n in videos}
     gone = [
         (p,)
         for (p,) in conn.execute("SELECT path FROM files WHERE folder=?", (folder_s,))
@@ -232,24 +242,24 @@ def scan_folder(
         p = folder / n
         stem, ext = n.rsplit(".", 1)
         try:
-            st = p.stat()
+            st = entries[n].stat()
         except OSError:
             continue
         stats["videos"] += 1
         thumb = next((stem + e for e in THUMB_EXTS if stem + e in name_set), None)
-        thumb_path = str(folder / thumb) if thumb else None
+        thumb_path = (folder / thumb).as_posix() if thumb else None
         row = conn.execute(
             "SELECT probed_size, probed_mtime, thumb_path, thumb_dhash, width, duration_s FROM files WHERE path=?",
-            (str(p),),
+            (p.as_posix(),),
         ).fetchone()
         conn.execute(
             """INSERT INTO files (path, folder, stem, ext, size, mtime, thumb_path) VALUES (?,?,?,?,?,?,?)
                ON CONFLICT (path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime,
                  thumb_path=excluded.thumb_path""",
-            (str(p), folder_s, stem, ext.lower(), st.st_size, st.st_mtime, thumb_path),
+            (p.as_posix(), folder_s, stem, ext.lower(), st.st_size, st.st_mtime, thumb_path),
         )
-        if probe and jobs.needed(conn, str(p), "probe", 1, st.st_size, st.st_mtime):
-            todo_probe.append(str(p))
+        if probe and jobs.needed(conn, p.as_posix(), "probe", 1, st.st_size, st.st_mtime):
+            todo_probe.append(p.as_posix())
         # a fingerprint only matters next to a season's other thumbnails (a series' shared
         # design), so: not while just listing, and never for shorts (never episodes)
         too_short = row is not None and row["duration_s"] is not None and row["duration_s"] < 180
@@ -257,9 +267,9 @@ def scan_folder(
             probe
             and thumb_path
             and not too_short
-            and jobs.needed(conn, str(p), "thumbnail", 1, st.st_size, st.st_mtime)
+            and jobs.needed(conn, p.as_posix(), "thumbnail", 1, st.st_size, st.st_mtime)
         ):
-            todo_thumb.append((str(p), thumb_path))
+            todo_thumb.append((p.as_posix(), thumb_path))
         if stem + ".info.json" in name_set:
             info = parse_info_json(
                 (folder / (stem + ".info.json")).read_text(encoding="utf-8", errors="replace")
@@ -269,7 +279,7 @@ def scan_folder(
                 _upsert_video_info(conn, info)
                 conn.execute(
                     "UPDATE files SET youtube_id=?, link_method='info_json' WHERE path=?",
-                    (info.youtube_id, str(p)),
+                    (info.youtube_id, p.as_posix()),
                 )
 
     # probing is slow (network share): don't hold the write lock through it; every
@@ -336,6 +346,24 @@ def scan_folder(
     return stats
 
 
+def _walk_dirs(root: Path) -> list[Path]:
+    """``root`` and every folder below it. Uses ``os.scandir`` (the directory listing
+    already says what is a folder) instead of ``Path.rglob`` + ``is_dir``, which costs
+    one extra network round-trip per *file* on a share."""
+    out: list[Path] = []
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        out.append(d)
+        try:
+            with os.scandir(d) as it:
+                subs = sorted(Path(e.path) for e in it if e.is_dir(follow_symlinks=False))
+        except OSError:
+            continue
+        stack.extend(reversed(subs))
+    return out
+
+
 def scan_roots(
     conn: sqlite3.Connection,
     roots: list[Path],
@@ -351,9 +379,7 @@ def scan_roots(
 
     from .db import connect
 
-    folders = [
-        f for root in roots for f in [root, *sorted(p for p in root.rglob("*") if p.is_dir())]
-    ]
+    folders = [f for root in roots for f in _walk_dirs(root)]
     if parallel <= 1:
         for folder in folders:
             st = scan_folder(conn, folder, workers=workers, probe=probe)

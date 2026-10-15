@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from datetime import date
@@ -17,6 +16,8 @@ from maktaba_pipeline.classify.series_detector import (
     VideoFacts,
     detect,
 )
+
+from .db import series_id
 
 
 def load_facts(
@@ -74,9 +75,7 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
     )
     for ser in det.series:
         for se in ser.seasons:
-            sid = hashlib.sha1(f"{folder}|{ser.key}|{ser.kind}|{se.number}".encode()).hexdigest()[
-                :16
-            ]
+            sid = series_id(folder, ser.key, ser.kind, se.number)
             meta = {
                 "series_key": ser.key, "kind": ser.kind, "season": se.number,
                 "season_count": len(ser.seasons), "playlists": se.playlists,

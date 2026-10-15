@@ -36,6 +36,7 @@ from maktaba_pipeline.classify.production_style import (
 )
 
 from . import jobs  # noqa: E402
+from .bins import FFMPEG  # noqa: E402
 
 SCHEMA = """
 -- Per-file visual metrics (production_style.StyleMetrics as JSON), cached on size/mtime.
@@ -107,7 +108,7 @@ def sample_file(
     for start, length in sample_windows(duration_s, count=windows, length_s=window_s):
         try:
             out = subprocess.run(
-                ffmpeg_sample_args(path, start, length),
+                ffmpeg_sample_args(path, start, length, binary=FFMPEG),
                 capture_output=True, timeout=300, check=False,
             )  # fmt: skip
         except (subprocess.TimeoutExpired, OSError):

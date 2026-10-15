@@ -224,6 +224,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
 
     a = ap.parse_args(argv)
+    # paths are stored with '/' on every OS: accept either separator on the command line
+    if getattr(a, "folder", None):
+        a.folder = a.folder.replace("\\", "/")
+    if getattr(a, "roots", None):
+        a.roots = [Path(str(r).replace("\\", "/")) for r in a.roots]
     conn = db.connect(a.db)
     maps: list[tuple[str, str]] = [
         (s, d) for s, d in (m.split("=", 1) for m in getattr(a, "path_map", []))

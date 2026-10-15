@@ -59,7 +59,7 @@ def load_server(dizquetv_db: Path | None, uri: str | None, token: str | None) ->
 def map_path(plex_path: str, path_map: list[tuple[str, str]]) -> str | None:
     for src, dst in path_map:
         if plex_path.startswith(src):
-            return str(Path(dst) / Path(*plex_path[len(src) :].split("/")))
+            return dst.rstrip("/") + "/" + plex_path[len(src) :].lstrip("/")
     return None
 
 

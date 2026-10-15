@@ -50,7 +50,7 @@ def run(
         scan_plex.scan_plex(conn, server, path_map, None)
     _step(f"scan-local ({len(roots)} folders)")
     scan_local.scan_roots(conn, roots, workers=workers)
-    folders = [str(r) for r in roots]
+    folders = [r.as_posix() for r in roots]
     if youtube:
         from . import scan_youtube  # optional yt-dlp extra
 

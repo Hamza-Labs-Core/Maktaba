@@ -27,9 +27,11 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from collections.abc import Callable
 from typing import Any
 
 from ..log import get_logger
+from .signals import install_shutdown_handlers
 
 __all__ = [
     "DEFAULT_SHUTDOWN_GRACE_SEC",
@@ -127,22 +129,28 @@ class ShutdownOrchestrator:
         self.shutdown_event = asyncio.Event()
         self._signal_count = 0
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._uninstall: Callable[[], None] | None = None
 
     # ---- signal wiring ----------------------------------------------------
 
     def install(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
-        """Wire SIGTERM and SIGINT to :meth:`_on_signal`.
+        """Wire the platform's shutdown signals to :meth:`_on_signal`.
 
-        Re-installing replaces the existing handler. Falls back to
-        :func:`signal.signal` on platforms without
-        :meth:`asyncio.AbstractEventLoop.add_signal_handler`.
+        SIGTERM and SIGINT on POSIX; SIGINT, SIGBREAK and SIGTERM on
+        Windows (see :mod:`maktaba_pipeline.pipeline.signals`). Signals
+        the platform lacks are skipped and installation never blocks.
+        Re-installing replaces the existing handlers; :meth:`uninstall`
+        restores the previous ones.
         """
+        self.uninstall()
         self._loop = loop or asyncio.get_event_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                self._loop.add_signal_handler(sig, self._on_signal, sig)
-            except (NotImplementedError, RuntimeError):
-                signal.signal(sig, lambda *_args, _s=sig: self._on_signal(_s))
+        self._uninstall = install_shutdown_handlers(self._loop, self._on_signal)
+
+    def uninstall(self) -> None:
+        """Restore the signal handlers that were active before :meth:`install`."""
+        uninstall, self._uninstall = self._uninstall, None
+        if uninstall is not None:
+            uninstall()
 
     def _on_signal(self, sig: signal.Signals) -> None:
         self._signal_count += 1

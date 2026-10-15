@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from .bins import FFMPEG
+
 CSS = """
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--mute:#6b675f;--line:#e2ded6;--acc:#2f6f5e;--warn:#a5532a;--att:#7a5aa8}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#21201d;--ink:#ecebe6;--mute:#a19d93;--line:#33312c;--acc:#6fbfa6;--warn:#e0956b;--att:#b59ae0}}
@@ -49,7 +51,7 @@ def _make_thumbs(srcs: list[str], out_dir: Path, workers: int = 8) -> None:
 
     def one(src: str) -> None:
         subprocess.run(
-            ["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", src, "-vf", "scale=320:-2",
+            [FFMPEG, "-v", "error", "-nostdin", "-y", "-i", src, "-vf", "scale=320:-2",
              "-frames:v", "1", "-q:v", "5", str(out_dir / _thumb_name(src))],
             capture_output=True, timeout=60, check=False,
         )  # fmt: skip
