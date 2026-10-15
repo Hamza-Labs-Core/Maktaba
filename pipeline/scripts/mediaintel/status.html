@@ -93,6 +93,8 @@ h2 { font-size: 15px; font-weight: 600; }
 .rail li.done .dot { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
 .rail li.running .dot { border-color: var(--saffron); color: var(--saffron); box-shadow: 0 0 0 4px var(--saffron-soft); }
 .rail li.waiting .t { color: var(--muted); }
+.rail li.skipped .t, .rail li.skipped .dot { color: var(--muted); }
+.rail li.skipped .dot { border-style: dashed; }
 .rail li.running .t { font-weight: 600; }
 .rail .w { font-size: 11px; color: var(--muted); }
 
@@ -366,7 +368,7 @@ function gauge(id, name, pct, sub, state) {
   card.querySelector(".sub").textContent = sub;
 }
 function drawGauges(s, cur, steps) {
-  const doneSteps = steps.filter(x => x.state === "done").length;
+  const doneSteps = steps.filter(x => x.state === "done" || x.state === "skipped").length;
   const p = s.progress, stepFrac = cur && p && p.total ? Math.min(1, p.done / p.total) : 0;
   const runPct = steps.length ? 100 * (doneSteps + stepFrac) / steps.length : 0;
   gauge("run", "Whole run", runPct, `${doneSteps} of ${steps.length} steps done`, cur ? "running" : doneSteps ? "done" : "");
@@ -393,7 +395,7 @@ function render(s) {
     samples.push({t, v}); samples = samples.filter(x => t - x.t < 6 * 3600);
     try { sessionStorage.setItem("mi-samples", JSON.stringify(samples)); } catch (e) {}
   }
-  $("when").textContent = "updated " + new Date(t * 1000).toLocaleTimeString();
+  $("when").textContent = (liveOn ? "live · " : "") + "updated " + new Date(t * 1000).toLocaleTimeString();
 
   // status + hero
   const steps = s.steps || [], cur = steps.find(x => x.state === "running");
@@ -414,7 +416,8 @@ function render(s) {
                                     : `Last activity ${ago}: ${s.last_line || ""}`;
     $("beat-t").title = s.last_line || "";
   }
-  $("run-count").textContent = `${steps.filter(x => x.state === "done").length} of ${steps.length} done`;
+  const nSkip = steps.filter(x => x.state === "skipped").length;
+  $("run-count").textContent = `${steps.filter(x => x.state === "done").length} of ${steps.length} done` + (nSkip ? ` · ${nSkip} skipped` : "");
   if (cur) {
     $("stepno").textContent = `Step ${cur.n} of ${steps.length}`;
     $("step-title").textContent = cur.title;
@@ -461,8 +464,8 @@ function render(s) {
   drawGauges(s, cur, steps);
 
   // step rail
-  $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" ? "✓" : x.n}</span>
-    <span><span class="t">${esc(x.title)}</span><br><span class="w">${x.started ? "started " + esc(x.started) : esc(x.what)}</span></span></li>`).join("");
+  $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" ? "✓" : x.state === "skipped" ? "–" : x.n}</span>
+    <span><span class="t">${esc(x.title)}</span><br><span class="w">${x.started ? "started " + esc(x.started) : x.state === "skipped" ? "skipped this run (earlier results are used)" : esc(x.what)}</span></span></li>`).join("");
 
   // per-file work
   $("work").innerHTML = s.stages.length ? s.stages.map(st => {
@@ -614,6 +617,22 @@ async function tick() {
   catch (e) { $("state").className = "pill idle"; $("state-t").textContent = "Status server not reachable"; }
 }
 tick(); setInterval(tick, 5000);
+
+// live push: steps, heartbeat and the current step's count, about once a second
+let liveOn = false;
+if (window.EventSource) {
+  const es = new EventSource("api/live");
+  es.onmessage = e => {
+    const ev = JSON.parse(e.data); liveOn = true;
+    if (!last) return;
+    if (ev.steps) last.steps = ev.steps;
+    if ("progress" in ev) last.progress = ev.progress;
+    if ("log_age_s" in ev) { last.log_age_s = ev.log_age_s; last.last_line = ev.last_line; }
+    last.now = ev.now;
+    render(last);
+  };
+  es.onerror = () => { liveOn = false; };  // the browser reconnects on its own
+}
 </script>
 </body>
 </html>

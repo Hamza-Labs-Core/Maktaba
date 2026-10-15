@@ -96,9 +96,13 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
     started = {idx: t for idx, t, _ in seen}
     out = []
     for k, (_, title, what) in enumerate(STEPS):
+        later = any(i > k for i in started)  # a later step ran: this one was left out
         state = (
-            "done" if k in started and k != current else "running" if k == current else "waiting"
-        )
+            "done" if k in started and k != current
+            else "running" if k == current
+            else "skipped" if later
+            else "waiting"
+        )  # fmt: skip
         out.append({"n": k + 1, "title": title, "what": what, "state": state,
                     "started": started.get(k, "")})  # fmt: skip
     progress = None
@@ -157,6 +161,50 @@ def _sig_progress(body: list[str]) -> dict[str, Any]:
         "left": int(m.group(2)) - (cur[-1] if cur else 0),
         "passes": plist,
     }
+
+
+def live(db_path: str, log_path: Path, base: dict[str, Any]) -> dict[str, Any]:
+    """The small, fast update pushed about once a second: steps, heartbeat, and the
+    current step's progress. The fingerprint step logs every 25 videos, so its count
+    adds the results saved since that line (``base`` keeps that baseline)."""
+    out: dict[str, Any] = {"now": time.time()}
+    if not log_path.exists():
+        return out
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    out["steps"], prog = _steps(lines)
+    out["log_age_s"] = time.time() - log_path.stat().st_mtime
+    out["last_line"] = next((ln.strip() for ln in reversed(lines) if ln.strip()), "")
+    if prog and prog.get("passes"):
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            k = next((i for i, x in enumerate(prog["passes"]) if x["state"] == "running"), None)
+            if k is not None:
+                cur = prog["passes"][k]
+                key = (k, cur["done"])
+                if base.get("key") != key:
+                    base["key"] = key
+                    base["since"] = conn.execute(
+                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+                    ).fetchone()[0]
+                extra = conn.execute(
+                    "SELECT COUNT(*) FROM index_jobs WHERE stage = 'signature' AND updated_at > ?",
+                    (base["since"],),
+                ).fetchone()[0]
+                extra = max(0, min(extra, (cur["total"] or 0) - cur["done"]))
+                cur["done"] += extra
+                prog["done"] += extra
+                prog["left"] -= extra
+            prog["per_min"] = (
+                conn.execute(
+                    """SELECT COUNT(*) FROM index_jobs WHERE stage = 'signature'
+                       AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')"""
+                ).fetchone()[0]
+                / 10
+            )
+        finally:
+            conn.close()
+    out["progress"] = prog
+    return out
 
 
 PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
@@ -429,6 +477,21 @@ def serve(
                     st = dict(cache["st"])
                 st["running_pid"] = _running_pid(db_path)
                 self._json(200, st)
+            elif url.path == "/api/live":
+                # Server-Sent Events: one small update a second, until the page closes
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                base: dict[str, Any] = {}
+                try:
+                    while True:
+                        ev = json.dumps(live(db_path, log, base), ensure_ascii=False)
+                        self.wfile.write(f"data: {ev}\n\n".encode())
+                        self.wfile.flush()
+                        time.sleep(1)
+                except OSError:  # the page went away
+                    return
             elif url.path == "/api/explain":
                 from . import explain
 
@@ -498,4 +561,6 @@ def serve(
             return
 
     print(f"mediaintel control centre on http://localhost:{port}/  (Ctrl+C to stop)", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_threads = True  # open live streams must not keep the process alive
+    server.serve_forever()
