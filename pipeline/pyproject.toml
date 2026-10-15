@@ -15,6 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Media-intelligence tools (scripts/mediaintel): YouTube metadata via yt-dlp.
+mediaintel = [
+    "yt-dlp>=2025.11.12",
+]
 dev = [
     "grpcio-tools>=1.68",
     "mypy>=1.11",
@@ -53,7 +57,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "T20"]
 # Ad-hoc scripts and notebooks are exempt from the print ban — they are
 # not production code paths. None today; placeholder for when scripts/
 # arrives.
-"scripts/**" = ["T20"]
+# scripts/mediaintel are CLI tools: they print by design and embed SQL/CSS
+# literals that read worse wrapped.
+"scripts/**" = ["T20", "E501"]
 
 [tool.mypy]
 strict = true
