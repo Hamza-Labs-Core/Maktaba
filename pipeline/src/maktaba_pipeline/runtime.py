@@ -106,6 +106,8 @@ class Database:
     """
 
     dialect: str
+    #: lets ``db/jobs_state`` call into ``engine/hooks`` (error_cause, job_events, follow-ups)
+    engine_hooks = True
 
     def __init__(self, *, dialect: str, conn: Any = None, pool: Any = None, dsn: str = "") -> None:
         self.dialect = dialect
@@ -381,6 +383,9 @@ def _rewrite_for_sqlite(sql: str, args: tuple[Any, ...]) -> tuple[str, tuple[Any
     whereas SQLite needs one ``?`` per slot. The rewrite duplicates
     args as needed so callers can stay dialect-agnostic.
     """
+
+    if not _PG_PLACEHOLDER_RE.search(sql):
+        return sql, args  # already uses ``?`` placeholders (the SQLite twins of jobs_state)
 
     new_args: list[Any] = []
 

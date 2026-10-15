@@ -422,6 +422,9 @@ class GraphBuilder:
     def __init__(self, base: tuple[StageDef, ...]) -> None:
         self._stages: dict[str, StageDef] = {s.name: s for s in base}
 
+    def has_stage(self, name: str) -> bool:
+        return name in self._stages
+
     def add_stage(self, stage: StageDef) -> None:
         if stage.name in self._stages:
             raise GraphError(f"stage {stage.name!r} already defined")
