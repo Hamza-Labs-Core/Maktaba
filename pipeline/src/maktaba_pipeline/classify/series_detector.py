@@ -405,7 +405,22 @@ def _attach_score(
         title_s = 0.75 if best_j >= 0.6 else 0.0
     # same intro / end song, or the same title card / set: the season's signature.
     # Evidence only — a missing match proves nothing (intros get cut on upload).
-    sig = _signature_match(v, p) if title_s < 1.0 else 0.0
+    # comparing fingerprints is the costly part: skip it when the length or the air date
+    # already vetoes this season (the same vetoes as below, so the score cannot change)
+    vetoed = (
+        v.duration_s is not None
+        and p.core_s is not None
+        and abs(math.log(v.duration_s / p.core_s)) > 0.7
+    ) or (
+        v.air_date is not None
+        and p.first is not None
+        and p.last is not None
+        and not season_match
+        and episode_number(v.title) is None
+        and _days_outside(v.air_date, p.first, p.last)
+        > (cfg.date_window_days if v.date_exact and p.dates_exact else cfg.approx_window_days)
+    )
+    sig = _signature_match(v, p) if title_s < 1.0 and not vetoed else 0.0
     if sig:
         title_s = max(title_s, sig)
     # same branded thumbnail: the title just doesn't name the series
