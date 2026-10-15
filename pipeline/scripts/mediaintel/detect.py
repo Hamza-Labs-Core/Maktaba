@@ -117,7 +117,13 @@ def run(
     for folder in folders:
         videos, playlists, presenter = load_facts(conn, folder)
         cfg = DetectorConfig(min_episode_s=min_episode_minutes * 60)
-        det = detect(videos, playlists, presenter_words=presenter, config=cfg)
+        name = Path(folder).name
+        print(f"  … {name}: matching {len(videos)} videos against its seasons", flush=True)
+        det = detect(
+            videos, playlists, presenter_words=presenter, config=cfg,
+            progress=lambda n, total, name=name: print(
+                f"  [{n}/{total}] {name}: videos checked", flush=True),
+        )  # fmt: skip
         lib = conn.execute(
             "SELECT plex_library FROM files WHERE folder=? AND plex_library IS NOT NULL LIMIT 1",
             (folder,),

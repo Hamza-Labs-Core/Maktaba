@@ -200,3 +200,42 @@ def test_title_season_number_wins_over_late_date_and_vetoes_other_seasons() -> N
     assert "s1" not in seasons[3].episodes and "s1" not in seasons[4].episodes
     assert title_season("مشاهد1 حلقة 20 لقاء", "مشاهد") == 1
     assert title_season("قصة وآية 3 | يوسف", "قصه وايه") == 3
+
+
+def _weekly(prefix: str, n: int, start: date, minutes: float, title: str) -> list[VideoFacts]:
+    return [
+        VideoFacts(
+            key=f"{prefix}{i}",
+            title=title.format(i=i),
+            duration_s=minutes * 60 + i % 7,
+            air_date=start + timedelta(weeks=i - 1),
+            date_exact=True,
+        )
+        for i in range(1, n + 1)
+    ]
+
+
+def test_weekly_show_over_years_is_ongoing_with_a_season_per_year() -> None:
+    eps = _weekly("w", 120, date(2015, 1, 2), 12, "على ما تفرج {i}")
+    late = VideoFacts("late", "على ما تفرج 140", 12 * 60, date(2018, 3, 2), True)
+    det = detect([*eps, late], [_pl("PLw", "على ما تفرج", eps)])
+    (ser,) = det.series
+    assert ser.kind == "ongoing"
+    assert [se.number for se in ser.seasons] == [2015, 2016, 2017, 2018]
+    assert ser.seasons[0].episodes[:2] == ["w1", "w2"]  # air order inside a year
+    # an episode after the playlist ends is the next episode, not a new season
+    assert "late" in ser.seasons[-1].episodes
+    assert ser.episode_count == 121
+
+
+def test_yearly_ramadan_program_keeps_its_seasons() -> None:
+    s1 = _season("a", 30, date(2022, 4, 2), 25, "قصة وآية {i}")
+    s2 = _season("b", 30, date(2023, 3, 23), 25, "قصة وآية 2 الحلقة {i}")
+    s3 = _season("c", 30, date(2024, 3, 11), 25, "قصة وآية 3 الحلقة {i}")
+    det = detect(
+        [*s1, *s2, *s3],
+        [_pl("P1", "قصة وآية", s1), _pl("P2", "قصة وآية 2", s2), _pl("P3", "قصة وآية 3", s3)],
+    )
+    (ser,) = [s for s in det.series if s.episode_count == 90]
+    assert ser.kind == "episodic"  # bursts once a year: seasons, not an ongoing show
+    assert [se.number for se in ser.seasons] == [1, 2, 3]

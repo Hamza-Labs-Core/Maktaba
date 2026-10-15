@@ -381,8 +381,8 @@ function drawGauges(s, cur, steps) {
   one("thumb", "Thumbnail fingerprint", "Thumbnails");
   one("sig", "Intro/end-song + frame fingerprint", "Intro fingerprints");
   const withSeasons = (s.libraries || []).filter(r => r.seasons), inPlex = withSeasons.filter(r => r.collections);
-  gauge("plex", "Libraries in Plex", withSeasons.length ? 100 * inPlex.length / withSeasons.length : 0,
-        `${inPlex.length} of ${withSeasons.length} libraries with seasons so far`, "");
+  gauge("plex", "Season collections in Plex", withSeasons.length ? 100 * inPlex.length / withSeasons.length : 0,
+        `${inPlex.length} of ${withSeasons.length} libraries with seasons have them (written in step 13)`, "");
 }
 
 function render(s) {
@@ -428,6 +428,7 @@ function render(s) {
       const pct = Math.min(100, 100 * p.done / p.total), r = p.per_min || rateOf("step");
       const ps = $("step-passes");
       ps.hidden = !p.passes;
+      $("step-what").textContent = cur.what + (p.phase && !p.passes ? " · " + p.phase : "");
       if (p.passes) ps.innerHTML = p.passes.map((x, i) => {
         const frac = x.total ? Math.min(1, x.done / x.total) : 0;
         const tail = x.state === "done" ? "done"

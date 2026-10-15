@@ -17,6 +17,10 @@ channels, e.g. a Ramadan program per year):
   and a 35-minute drama in 2025 both titled ``الحبيب``. Name alone is
   never enough — duration band and air dates must agree.
 - Promos and trailers air *during* a season and share its name.
+- Some shows never close a season: a weekly program or a lecture series that
+  keeps going for years (kind ``ongoing``). They are split into one season per
+  year (Plex's convention for daily and weekly shows), episodes in air order, and
+  a late upload is simply a new episode, not a new season.
 - Many episodes are not in any playlist; they are recognised by the
   season's title structure, duration band, air-date window and thumbnail
   branding.
@@ -48,12 +52,12 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..audio.chromaprint import MATCH as AUDIO_MATCH
-from ..audio.chromaprint import similarity as audio_similarity
+from ..audio.chromaprint import matches as audio_matches
 from ..text.arabic import fold
 from ..thumbnail.dhash import hamming
 from .title_template import (
@@ -127,8 +131,16 @@ class DetectorConfig:
     attach_threshold: float = 0.62
     date_window_days: int = 45
     approx_window_days: int = 400
+    #: fingerprints are compared only within this length band (|log ratio|) and date window
+    sig_length_band: float = 0.35
+    sig_window_days: int = 180
     dhash_close_bits: int = 10
     min_season_size: int = 3
+    #: "ongoing": at least this many episodes over at least this many days, with
+    #: something released in at least this share of the months between first and last
+    ongoing_min_episodes: int = 12
+    ongoing_min_span_days: int = 300
+    ongoing_month_coverage: float = 0.5
     #: anything shorter is a short (clip, promo, YouTube Short) and never an episode
     min_episode_s: float = 180.0
 
@@ -151,7 +163,7 @@ class Series:
     name: str  # display name (from playlist titles)
     key: str  # folded identity key
     seasons: list[Season]
-    kind: str = "episodic"  # episodic | short-form | clips
+    kind: str = "episodic"  # episodic | ongoing | short-form | clips
 
     @property
     def episode_count(self) -> int:
@@ -331,6 +343,10 @@ class _Profile:
     numbers: frozenset[int] = frozenset()  # explicit episode numbers already in the season
     audio: list[tuple[tuple[int, ...], tuple[int, ...]]] = field(default_factory=list)
     frame_hashes: list[int] = field(default_factory=list)
+    #: the weekday most episodes come out on (0 = Monday), when one clearly dominates
+    weekday: int | None = None
+    #: the series keeps going: a later air date is a new episode, not another show
+    ongoing: bool = False
 
 
 def _content_words(title: str, stop: frozenset[str]) -> frozenset[str]:
@@ -345,6 +361,8 @@ def _profile(
     facts: dict[str, VideoFacts],
     seg_df: Counter[str],
     stop: frozenset[str],
+    *,
+    ongoing: bool = False,
 ) -> _Profile:
     seg_counts: Counter[str] = Counter()
     for k in eps:
@@ -359,6 +377,9 @@ def _profile(
     # prefer exact dates for the span when there are enough of them
     dates_exact = len(exact) >= max(3, len(eps) // 3)
     f, l_ = _date_span(exact if dates_exact else eps, facts)
+    days = Counter(d.weekday() for k in exact if (d := facts[k].air_date))
+    top = days.most_common(1)
+    weekday = top[0][0] if top and len(exact) >= 4 and top[0][1] >= 0.7 * len(exact) else None
     return _Profile(
         key_words=key.split(),
         distinctive=distinctive,
@@ -376,6 +397,8 @@ def _profile(
             if facts[k].audio_head or facts[k].audio_tail
         ][:6],
         frame_hashes=[h for k in eps for h in facts[k].frames],
+        weekday=weekday,
+        ongoing=ongoing,
     )
 
 
@@ -405,22 +428,11 @@ def _attach_score(
         title_s = 0.75 if best_j >= 0.6 else 0.0
     # same intro / end song, or the same title card / set: the season's signature.
     # Evidence only — a missing match proves nothing (intros get cut on upload).
-    # comparing fingerprints is the costly part: skip it when the length or the air date
-    # already vetoes this season (the same vetoes as below, so the score cannot change)
-    vetoed = (
-        v.duration_s is not None
-        and p.core_s is not None
-        and abs(math.log(v.duration_s / p.core_s)) > 0.7
-    ) or (
-        v.air_date is not None
-        and p.first is not None
-        and p.last is not None
-        and not season_match
-        and episode_number(v.title) is None
-        and _days_outside(v.air_date, p.first, p.last)
-        > (cfg.date_window_days if v.date_exact and p.dates_exact else cfg.approx_window_days)
-    )
-    sig = _signature_match(v, p) if title_s < 1.0 and not vetoed else 0.0
+    # comparing fingerprints is the costly part, so it is only done where the cheap facts
+    # already point at this season: about the same length, released within half a year of
+    # it, and on its usual weekday (±1) when it has one. Evidence only, so being strict
+    # here can only miss a match, never make a wrong one.
+    sig = _signature_match(v, p) if title_s < 1.0 and _fingerprint_worth_it(v, p, cfg) else 0.0
     if sig:
         title_s = max(title_s, sig)
     # same branded thumbnail: the title just doesn't name the series
@@ -444,6 +456,8 @@ def _attach_score(
         # the tolerance follows the weaker of the two dates being compared
         window = cfg.date_window_days if v.date_exact and p.dates_exact else cfg.approx_window_days
         out = _days_outside(v.air_date, p.first, p.last)
+        if p.ongoing and v.air_date > p.last:
+            out = 0  # an ongoing show has no last episode yet
         date_s = 1.0 if out == 0 else 0.7 if out <= window else 0.0
         # a late upload of a numbered episode the season is missing ("#26" months after
         # the playlist, "الحلقة الأخيرة" re-uploaded a year on) still names its season;
@@ -479,13 +493,31 @@ def _attach_score(
     return 0.45 * title_s + 0.2 * dur_s + 0.2 * date_s + 0.15 * thumb_s
 
 
+def _fingerprint_worth_it(v: VideoFacts, p: _Profile, cfg: DetectorConfig) -> bool:
+    if not (v.audio_head or v.audio_tail or v.frames):
+        return False
+    if v.duration_s and p.core_s and abs(math.log(v.duration_s / p.core_s)) > cfg.sig_length_band:
+        return False
+    if v.air_date and p.first and p.last:
+        out = _days_outside(v.air_date, p.first, p.last)
+        if p.ongoing and v.air_date > p.last:
+            out = 0
+        if out > cfg.sig_window_days:
+            return False
+        if p.weekday is not None and v.date_exact:
+            off = (v.air_date.weekday() - p.weekday) % 7
+            if min(off, 7 - off) > 1:
+                return False
+    return True
+
+
 def _signature_match(v: VideoFacts, p: _Profile) -> float:
     """0.8 when the opening or closing music matches a season member's, 0.6 when two of
     the video's frames match the season's frames, else 0."""
     if (v.audio_head or v.audio_tail) and p.audio:
         for head, tail in p.audio:
             for a, b in ((v.audio_head, head), (v.audio_tail, tail), (v.audio_head, tail)):
-                if a and b and audio_similarity(a, b, step=4) >= AUDIO_MATCH:
+                if a and b and audio_matches(a, b, threshold=AUDIO_MATCH):
                     return 0.8
     if v.frames and p.frame_hashes:
         hits = sum(1 for f in v.frames if min(hamming(f, h) for h in p.frame_hashes) <= 6)
@@ -524,6 +556,49 @@ def _promo_score(v: VideoFacts, p: _Profile, cfg: DetectorConfig) -> float:
 # --------------------------------------------------------------------------- ordering
 
 
+def _is_ongoing(keys: Sequence[str], facts: dict[str, VideoFacts], cfg: DetectorConfig) -> bool:
+    """Released steadily over a long time (most months between first and last have an
+    episode), unlike a seasonal program that airs in bursts (a Ramadan season a year)."""
+    ds = sorted(d for k in keys if (d := facts[k].air_date))
+    if len(ds) < cfg.ongoing_min_episodes or (ds[-1] - ds[0]).days < cfg.ongoing_min_span_days:
+        return False
+    months = {(d.year, d.month) for d in ds}
+    total = (ds[-1].year - ds[0].year) * 12 + ds[-1].month - ds[0].month + 1
+    return len(months) / total >= cfg.ongoing_month_coverage
+
+
+def _by_year(seasons: Sequence[Season], facts: dict[str, VideoFacts]) -> list[Season]:
+    """An ongoing show's episodes regrouped as one season per year (season number = year).
+    Undated episodes go with the year most episodes have."""
+    eps = [k for se in seasons for k in se.episodes]
+    years = Counter(d.year for k in eps if (d := facts[k].air_date))
+    if not years:
+        return list(seasons)
+    common = years.most_common(1)[0][0]
+
+    def year(k: str) -> int:
+        d = facts[k].air_date
+        return d.year if d else common
+
+    out: dict[int, Season] = {}
+    playlists = [pl for se in seasons for pl in se.playlists]
+
+    def season(k: str) -> Season:
+        y = year(k)
+        return out.setdefault(y, Season(number=y, episodes=[], playlists=list(playlists)))
+
+    attached = {k for se in seasons for k in se.attached}
+    for k in eps:
+        season(k).episodes.append(k)
+        if k in attached:
+            season(k).attached.append(k)
+    for k in (x for se in seasons for x in se.extras):
+        season(k).extras.append(k)
+    for k in (x for se in seasons for x in se.duplicates):
+        season(k).duplicates.append(k)
+    return [out[y] for y in sorted(out) if out[y].episodes]
+
+
 def _late_seasons(
     videos: Sequence[VideoFacts],
     assigned: set[str],
@@ -542,6 +617,8 @@ def _late_seasons(
         # the season's end *after* attaching (late episodes already joined it)
         _, end = _date_span(se.episodes, facts)
         cur = latest.get(id(ser))
+        if ser.kind == "ongoing":
+            continue  # a late upload of an ongoing show is just its next episode
         if end and (cur is None or end > cur[2]):
             latest[id(ser)] = (ser, prof, end)
     found: dict[int, list[VideoFacts]] = defaultdict(list)
@@ -773,8 +850,11 @@ def detect(
     *,
     presenter_words: Iterable[str] = (),
     config: DetectorConfig | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> Detection:
-    """Group one channel's videos into series/seasons. See module docstring."""
+    """Group one channel's videos into series/seasons. See module docstring.
+    ``progress(done, total)`` is called now and then while loose videos are matched
+    against the seasons, the slow part on a large channel."""
     cfg = config or DetectorConfig()
     # shorts never become episodes: drop them before anything else looks at the channel
     shorts = sorted(v.key for v in videos if is_short(v, cfg))
@@ -924,14 +1004,25 @@ def detect(
             )
             assigned.update(keys)
 
+    # 3c. ongoing shows: steady releases over a long time, no closed seasons
+    for ser in series:
+        if ser.kind == "episodic" and _is_ongoing(
+            [k for se in ser.seasons for k in se.episodes], facts, cfg
+        ):
+            ser.kind = "ongoing"
+
     # 4. attach unlisted videos
     profiles: list[tuple[Series, Season, _Profile]] = []
     for ser in series:
         if ser.kind == "clips":
             continue
         for se in ser.seasons:
-            profiles.append((ser, se, _profile(se.episodes, ser.key, facts, seg_df, stop)))
-    for v in videos:
+            ongoing = ser.kind == "ongoing"
+            prof = _profile(se.episodes, ser.key, facts, seg_df, stop, ongoing=ongoing)
+            profiles.append((ser, se, prof))
+    for i_v, v in enumerate(videos, 1):
+        if progress is not None and (i_v % 250 == 0 or i_v == len(videos)):
+            progress(i_v, len(videos))
         if v.key in assigned:
             continue
         cands: list[tuple[float, str, Series, Season, _Profile]] = []
@@ -977,12 +1068,23 @@ def detect(
             se.duplicates = dups
             se.attached = [k for k in se.attached if k not in dups]
 
+    # 5b. attaching can reveal an ongoing show; ongoing shows get a season per year
+    for ser in series:
+        if ser.kind == "episodic" and _is_ongoing(
+            [k for se in ser.seasons for k in se.episodes], facts, cfg
+        ):
+            ser.kind = "ongoing"
+        if ser.kind == "ongoing":
+            ser.seasons = _by_year(ser.seasons, facts)
+
     # 6. order + stats
     positions = positions_of(playlists)
     for ser in series:
         for se in ser.seasons:
-            se.episodes = _order(
-                se.episodes, positions, facts, multi_playlist=len(se.playlists) > 1
+            se.episodes = (
+                sorted(se.episodes, key=lambda k: (facts[k].air_date or date.max, facts[k].title))
+                if ser.kind == "ongoing"
+                else _order(se.episodes, positions, facts, multi_playlist=len(se.playlists) > 1)
             )
             se.extras = sorted(
                 set(se.extras), key=lambda k: (facts[k].air_date or date.max, facts[k].title)

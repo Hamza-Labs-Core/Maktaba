@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS plex_collections (
 
 def _title(library: str, series: str, season: int, season_count: int) -> str:
     base = f"{library} - {series}"
+    if season >= 1900:  # an ongoing show's season is its year: "<lib> - X - 2016"
+        return f"{base} - {season}"
     return base if season_count == 1 else f"{base} - الموسم {season}"
 
 

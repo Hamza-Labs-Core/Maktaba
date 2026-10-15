@@ -113,6 +113,7 @@ class SeasonCandidate:
     ``tags`` maps ``namespace:name`` → score (0..1). ``tier`` is the
     production tier (0 static, 1 talk, 2 produced, 3 cinematic) or ``None``
     when the style pass has not classified it. ``kind`` is ``episodic``,
+    ``ongoing`` (a show that keeps going; one season per year),
     ``clips`` (highlight-clip playlists) or ``loose`` (a synthetic run of
     unassigned uploads, see :func:`suggest_channels`).
     """
@@ -443,6 +444,8 @@ class ProgramUnit:
 
     @property
     def label(self) -> str:
+        if self.season >= 1900:  # an ongoing show: its season is the year
+            return f"{self.name} {self.season}"
         return (
             self.name
             if self.season <= 1 and self.kind != "loose"

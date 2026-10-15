@@ -29,6 +29,7 @@ __all__ = [
     "decode",
     "encode",
     "ffmpeg_chromaprint_args",
+    "matches",
     "parse_raw",
     "similarity",
     "windows",
@@ -97,3 +98,26 @@ def similarity(
             n += 1
         best = max(best, 1.0 - bits / (32 * n))
     return best
+
+
+def matches(a: Sequence[int], b: Sequence[int], *, threshold: float = MATCH, step: int = 4) -> bool:
+    """``similarity(a, b, step=step) >= threshold``, cheaper on the usual "no": a coarse
+    pass reads every 4th item the full pass reads (same alignments; still ~650 bits per
+    alignment, so its estimate is within ~0.04) and stops when even the best alignment
+    is 0.1 short of ``threshold``. Different music sits near 0.5, far below 0.6."""
+    if not a or not b:
+        return False
+    max_shift = int(12.0 / _ITEM_S)
+    coarse = 0.0
+    for s in range(-max_shift, max_shift + 1, step):
+        lo, hi = max(0, -s), min(len(a), len(b) - s)
+        if hi - lo < int(3.0 / _ITEM_S):
+            continue
+        idx = range(lo, hi, step * 4)
+        bits = sum((a[i] ^ b[i + s]).bit_count() for i in idx)
+        coarse = max(coarse, 1.0 - bits / (32 * len(idx)))
+        if coarse >= threshold - 0.1:
+            break
+    if coarse < threshold - 0.1:
+        return False
+    return similarity(a, b, step=step) >= threshold

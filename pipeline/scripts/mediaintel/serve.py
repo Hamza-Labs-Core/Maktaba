@@ -29,6 +29,7 @@ _STEP_RE = re.compile(r"^##### (.+)$")
 _TIME_RE = re.compile(r"\((\d\d:\d\d:\d\d)\)\s*$")
 _SIG_RE = re.compile(r"^(?:(.+): )?fingerprinting (\d+) videos")
 _SIG_DONE_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] \d+ per minute")
+_INNER_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] (.+): videos checked")
 _COUNT_RE = re.compile(r"\((\d+) (?:folders|libraries)\)")
 
 #: the run's steps in order: (log heading prefix, plain title, what it does)
@@ -124,7 +125,16 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                     "report": lambda ln: ln.rstrip().endswith(".html")}.get(
                 name, lambda ln: ln.startswith("=== "))  # fmt: skip
             n = sum(1 for ln in body if mark(ln))
-            return out, {"done": n, "total": n_lib, "unit": "libraries"}
+            prog = {"done": n, "total": n_lib, "unit": "libraries"}
+            # inside a large library: "[n/N] name: videos checked" (detect prints these)
+            last_lib = max((i for i, ln in enumerate(body) if mark(ln)), default=-1)
+            inner = [m for ln in body[last_lib + 1 :] if (m := _INNER_RE.match(ln))]
+            if inner:
+                m = inner[-1]
+                prog["phase"] = (
+                    f"now {m.group(3)}: {int(m.group(1)):,} of {int(m.group(2)):,} videos checked"
+                )
+            return out, prog
         if name == "scan-visual":
             return out, _sampled_progress(body, "visual_style")
         if STEPS[current][0].startswith("scan-local"):
