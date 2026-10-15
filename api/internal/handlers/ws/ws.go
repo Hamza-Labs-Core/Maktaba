@@ -188,6 +188,7 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	flusher.Flush() // send headers immediately so the client sees the stream open
 
 	// Subscribe BEFORE replay so an event that lands while we are
 	// catching up is buffered on the live channel rather than lost in
