@@ -113,7 +113,12 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         elif STEPS[current][0] == "export-plex":
             n, unit = sum(1 for ln in body if ln.startswith("=== ")), "libraries"
         elif STEPS[current][0].startswith("scan-youtube"):
-            n, unit = sum(1 for ln in body if ": scanning" in ln or ": cached" in ln), "channels"
+            n = sum(
+                1
+                for ln in body
+                if ": cached (" in ln or (ln.startswith("  ") and ": {'videos'" in ln)
+            )
+            unit = "channels"
         else:
             n, unit = len(body), "log lines"
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
@@ -273,6 +278,8 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
     if log_path and log_path.exists():
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
         out["steps"], out["progress"] = _steps(lines)
+        out["log_age_s"] = time.time() - log_path.stat().st_mtime
+        out["last_line"] = next((ln.strip() for ln in reversed(lines) if ln.strip()), "")
         # fingerprints are made only for selected videos: the step says how many
         sel = [int(m.group(1)) for ln in lines if (m := _SIG_RE.match(ln))]
         done_now = [int(m.group(1)) for ln in lines if (m := _SIG_DONE_RE.match(ln))]
@@ -287,6 +294,9 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
                     st["of"] = st["done"]
                     st["note"] = "selected after the first season detection"
         out["log"] = lines[-40:]
+        prog = out["progress"]
+        if prog and prog["total"] is None and prog["unit"] == "channels":
+            prog["total"] = len(out["libraries"])
     return out
 
 

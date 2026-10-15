@@ -57,6 +57,12 @@ h2 { font-size: 15px; font-weight: 600; }
 /* hero */
 .hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--s5); align-items: stretch; }
 .now-step { display: grid; gap: var(--s3); }
+.beat { display: flex; gap: 8px; align-items: baseline; font-size: 13px; min-width: 0; }
+.beat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; transform: translateY(-1px); }
+.beat.live .beat-dot { animation: pulse 1.2s ease-in-out infinite; }
+.beat.stale .beat-dot { background: var(--bad); }
+.beat.stale { color: var(--bad); }
+#beat-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .now-step .stepno { font-family: var(--f-data); color: var(--saffron); font-size: 13px; }
 .now-step .title { font-family: var(--f-display); font-size: 26px; font-weight: 700; line-height: 1.25; }
 .bar { height: 10px; background: var(--track); border-radius: 6px; overflow: hidden; display: flex; }
@@ -205,6 +211,7 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
       <div class="stepno" id="stepno">—</div>
       <div class="title" id="step-title">Waiting for the first update</div>
       <div class="muted" id="step-what"></div>
+      <div class="beat" id="beat"><span class="beat-dot"></span><span id="beat-t">—</span></div>
       <div class="bar" id="step-bar"><i class="run" style="width:0"></i></div>
       <div class="meta-row">
         <div><span class="label">Progress</span><span class="v" id="step-prog">—</span></div>
@@ -387,6 +394,16 @@ function render(s) {
   review();
   $("state").className = "pill " + (cur ? "running" : finished ? "done" : "idle");
   $("state-t").textContent = cur ? "Running" : finished ? "Finished" : "Not running";
+  const age = s.log_age_s ?? null, beat = $("beat");
+  if (age === null || (!cur && !running)) { beat.className = "beat"; $("beat-t").textContent = "No run in progress"; }
+  else {
+    const ago = age < 60 ? `${Math.round(age)} s ago` : `${Math.round(age / 60)} min ago`;
+    const stale = age > 600;
+    beat.className = "beat " + (stale ? "stale" : "live");
+    $("beat-t").textContent = stale ? `No activity for ${ago}. The run may be stuck or stopped; check the log below.`
+                                    : `Last activity ${ago}: ${s.last_line || ""}`;
+    $("beat-t").title = s.last_line || "";
+  }
   $("run-count").textContent = `${steps.filter(x => x.state === "done").length} of ${steps.length} done`;
   if (cur) {
     $("stepno").textContent = `Step ${cur.n} of ${steps.length}`;
