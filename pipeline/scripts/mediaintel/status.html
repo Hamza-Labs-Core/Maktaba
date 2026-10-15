@@ -6,177 +6,8 @@
 <title>Library Control Centre</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
-<style>
-/* Layout: a run console. Status hero → step rail → per-file work with live rates → library table.
-   Lapis marks progress, saffron marks the step in motion; semantic green/red only for done/failed. */
-:root {
-  --paper: #f3f5f8; --surface: #ffffff; --ink: #16202b; --muted: #5b6878; --line: #dbe2ea;
-  --lapis: #2d58cf; --lapis-soft: #dfe7fb; --saffron: #b97c0c; --saffron-soft: #f7ecd5;
-  --ok: #2c7a52; --bad: #b0352a; --track: #e9edf2;
-  --f-display: "Noto Kufi Arabic", "IBM Plex Sans Arabic", "Segoe UI", system-ui, sans-serif;
-  --f-body: "IBM Plex Sans Arabic", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --f-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #8d9aab; --line: #253141;
-    --lapis: #7f9dff; --lapis-soft: #1d2a4a; --saffron: #e2a73c; --saffron-soft: #3a2c12;
-    --ok: #5cbf88; --bad: #f08176; --track: #1f2833; color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --paper: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #8d9aab; --line: #253141;
-  --lapis: #7f9dff; --lapis-soft: #1d2a4a; --saffron: #e2a73c; --saffron-soft: #3a2c12;
-  --ok: #5cbf88; --bad: #f08176; --track: #1f2833; color-scheme: dark;
-}
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
-html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--f-body); }
-.wrap { max-width: 1180px; margin: 0 auto; padding-block: var(--s5) var(--s6);
-  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: var(--s5); }
-h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
-h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
-h2 { font-size: 15px; font-weight: 600; }
-.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
-.muted { color: var(--muted); }
-.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: var(--s4) var(--s5); min-width: 0; }
-.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.pill.running { background: var(--saffron-soft); color: var(--saffron); }
-.pill.done { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
-.pill.idle { background: var(--track); color: var(--muted); }
-.pill .pulse { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.pill.running .pulse { animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .35; } }
-
-/* hero */
-.hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--s5); align-items: stretch; }
-.now-step { display: grid; gap: var(--s3); }
-.beat { display: flex; gap: 8px; align-items: baseline; font-size: 13px; min-width: 0; }
-.beat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; transform: translateY(-1px); }
-.beat.live .beat-dot { animation: pulse 1.2s ease-in-out infinite; }
-.beat.stale .beat-dot { background: var(--bad); }
-.beat.stale { color: var(--bad); }
-#beat-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.now-step .stepno { font-family: var(--f-data); color: var(--saffron); font-size: 13px; }
-.now-step .title { font-family: var(--f-display); font-size: 26px; font-weight: 700; line-height: 1.25; }
-.bar { height: 10px; background: var(--track); border-radius: 6px; overflow: hidden; display: flex; }
-.bar > i { display: block; height: 100%; }
-.bar .done { background: var(--lapis); } .bar .fail { background: var(--bad); } .bar .run { background: var(--saffron); }
-.passes { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--s2); }
-.pass { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; display: grid; gap: 2px; color: var(--muted); }
-.pass.running { color: var(--ink); border-color: var(--saffron); background: var(--saffron-soft); }
-.pass.done .pn { color: var(--ok); }
-.pass.done { color: var(--ink); }
-.pass .pn { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
-.pass .pv { font-family: var(--f-data); font-size: 14px; }
-.pass .bar { margin: 4px 0 0; }
-.pass .pr { font-size: 12px; color: var(--muted); }
-.meta-row { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); }
-.meta-row div { display: grid; }
-.meta-row .v { font-family: var(--f-data); font-size: 15px; }
-.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
-.kpi { display: grid; gap: 2px; padding: var(--s3); border-radius: 8px; background: var(--paper); }
-.kpi .v { font-family: var(--f-data); font-size: 20px; font-weight: 500; }
-.kpi svg { width: 100%; height: 26px; display: block; }
-
-/* step rail */
-.rail { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s3) var(--s2); }
-.rail li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s2); align-items: start; font-size: 13px; }
-.rail .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--f-data);
-  border: 1.5px solid var(--line); color: var(--muted); background: var(--surface); }
-.rail li.done .dot { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
-.rail li.running .dot { border-color: var(--saffron); color: var(--saffron); box-shadow: 0 0 0 4px var(--saffron-soft); }
-.rail li.waiting .t { color: var(--muted); }
-.rail li.skipped .t, .rail li.skipped .dot { color: var(--muted); }
-.rail li.skipped .dot { border-style: dashed; }
-.rail li.running .t { font-weight: 600; }
-.rail .w { font-size: 11px; color: var(--muted); }
-
-/* work + charts */
-.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s5); }
-.work { display: grid; gap: var(--s4); }
-.work-row { display: grid; gap: 6px; }
-.work-row .hd { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s2); }
-.work-row .rate { font-family: var(--f-data); font-size: 12px; color: var(--muted); }
-.chart { width: 100%; height: auto; display: block; }
-.chart text { fill: var(--muted); font: 11px var(--f-data); }
-.legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12px; color: var(--muted); }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 6px; vertical-align: -1px; }
-.mix { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--s4); align-items: center; }
-.donut { width: 150px; height: 150px; }
-.donut text { fill: var(--ink); font: 600 20px var(--f-data); }
-.donut .sub { fill: var(--muted); font: 11px var(--f-body); }
-.hbar { display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 38px; gap: var(--s2); align-items: center; font-size: 13px; }
-.hbar .track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
-.hbar .track i { display: block; height: 100%; background: var(--lapis); }
-.empty { color: var(--muted); font-size: 13px; padding: var(--s3) 0; }
-
-/* table */
-.tools { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; justify-content: space-between; }
-input[type="search"] { font: 14px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--line);
-  border-radius: 8px; padding: 7px 10px; min-width: 0; width: 260px; max-width: 100%; }
-input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--lapis); outline-offset: 2px; }
-.scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: start; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; cursor: pointer; user-select: none; }
-th[aria-sort] { color: var(--ink); }
-td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-td.n { text-align: end; font-family: var(--f-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
-td.lib { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mini { width: 90px; height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-inline-end: 6px; }
-.mini i { display: block; height: 100%; background: var(--lapis); }
-.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-family: var(--f-data); background: var(--track); color: var(--muted); }
-.chip.on { background: var(--lapis-soft); color: var(--lapis); }
-details summary { cursor: pointer; font-family: var(--f-display); font-weight: 600; font-size: 15px; }
-pre { margin: var(--s3) 0 0; font: 12px/1.5 var(--f-data); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; color: var(--muted); }
-.err td { color: var(--bad); }
-.gauges { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s3); }
-.gauge { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: var(--s3) var(--s3) var(--s2); display: grid; justify-items: center; gap: 2px; min-width: 0; }
-.gauge svg { width: 100%; max-width: 170px; height: auto; display: block; }
-.gauge .track { stroke: var(--track); }
-.gauge .val { transition: stroke-dashoffset .8s ease; }
-.gauge .pct { fill: var(--ink); font: 600 22px var(--f-data); }
-.gauge .ticks text { fill: var(--muted); font: 9px var(--f-data); }
-.gauge .name { font-size: 12px; font-weight: 600; text-align: center; }
-.gauge .sub { font: 11px var(--f-data); color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
-@media (max-width: 1000px) { .gauges { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 520px) { .gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (prefers-reduced-motion: reduce) { .gauge .val { transition: none; } }
-.btn { font: 600 13px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
-.btn:hover { border-color: var(--lapis); }
-.btn.primary { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
-.btn.danger { background: var(--bad); border-color: var(--bad); color: var(--surface); }
-.btn.ghost { background: transparent; }
-.btn.sm { padding: 3px 10px; font-size: 12px; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.confirm { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
-.toast { padding: 10px 14px; border-radius: 8px; background: var(--lapis-soft); color: var(--ink); font-size: 13px; }
-.toast.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); }
-.wsteps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5); }
-.wsteps li { display: grid; gap: 8px; align-content: start; padding-top: 10px; border-top: 2px solid var(--lapis-soft); }
-.opt { display: flex; gap: 8px; align-items: baseline; font-size: 13px; cursor: pointer; }
-.row { display: flex; gap: 8px; flex-wrap: wrap; }
-.row input { flex: 1 1 200px; width: auto; }
-.stack { display: grid; gap: 10px; }
-.field { display: grid; gap: 4px; }
-select, input[type="text"] { font: 14px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
-.out { min-height: 120px; color: var(--ink); background: var(--paper); border-radius: 8px; padding: 10px; }
-td.act { white-space: nowrap; }
-td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
-@media (max-width: 860px) {
-  .wsteps { grid-template-columns: minmax(0, 1fr); }
-  .hero, .grid2 { grid-template-columns: minmax(0, 1fr); }
-  .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 460px) { .rail { grid-template-columns: minmax(0, 1fr); } .mix { grid-template-columns: minmax(0, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .pill.running .pulse { animation: none; } }
-</style>
+<link rel="stylesheet" href="common.css">
+<script src="common.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -188,12 +19,20 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
     <div class="top" style="gap:12px">
       <span class="pill idle" id="state"><span class="pulse"></span><span id="state-t">Connecting</span></span>
       <span class="muted num" id="when"></span>
+      <div class="seg" id="theme" role="group" aria-label="Colour theme"><button type="button" data-mode="light" aria-pressed="false">Light</button><button type="button" data-mode="dark" aria-pressed="false">Dark</button><button type="button" data-mode="system" aria-pressed="true">System</button></div>
       <button class="btn" id="stop" hidden>Stop run</button>
       <span id="stop-confirm" hidden class="confirm">Stop the run? Finished work is kept and the next run continues from it.
         <button class="btn danger" id="stop-yes">Stop</button><button class="btn ghost" id="stop-no">Keep running</button></span>
     </div>
   </header>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="health" id="health" aria-label="Health"></section>
+
+  <section class="panel" id="attn-panel" hidden>
+    <div class="top" style="margin-bottom:8px"><h2>Needs attention</h2><span class="muted" id="attn-sub"></span></div>
+    <div class="attn-list" id="attn"></div>
+  </section>
 
   <section class="gauges" id="gauges" aria-label="Progress gauges"></section>
 
@@ -238,6 +77,11 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
   <section class="panel">
     <div class="top" style="margin-bottom:12px"><h2>Run steps</h2><span class="muted" id="run-count"></span></div>
     <ol class="rail" id="rail"></ol>
+  </section>
+
+  <section>
+    <div class="top" style="margin-bottom:8px"><h2>Per-file stages</h2><span class="label">open one for its detail</span></div>
+    <div class="stage-cards" id="stage-cards"></div>
   </section>
 
   <section class="grid2">
@@ -297,13 +141,13 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
     <details id="fails"><summary>Failures <span class="chip" id="fail-n">0</span></summary><div class="scroll"><table id="errs"></table></div></details>
   </section>
   <section class="panel">
-    <details id="logbox"><summary>Log</summary><pre id="log"></pre></details>
+    <details id="logbox"><summary>Log</summary>
+      <div class="logfilter" style="margin-top:8px"><label class="label" for="log-filter">Show</label>
+        <select id="log-filter" aria-label="Filter the log by stage"><option value="">Everything</option><option value="probe">Length (probe)</option><option value="thumbnail">Thumbnails</option><option value="signature">Fingerprints</option><option value="visual_style">Production style</option><option value="errors">Errors only</option></select></div>
+      <pre id="log"></pre></details>
   </section>
 </div>
 <script>
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const fmt = n => Number(n || 0).toLocaleString();
 const SERIES_COLORS = ["var(--lapis)", "var(--saffron)", "var(--ok)", "var(--muted)"];
 const STYLE_ORDER = [["static","Still picture + audio"],["talk","Studio / lecture"],["produced","Produced"],["cinematic","Cinematic / AI"]];
 const STYLE_COLORS = {static:"var(--muted)", talk:"var(--lapis)", produced:"var(--ok)", cinematic:"var(--saffron)"};
@@ -311,11 +155,6 @@ let samples = [];
 try { samples = JSON.parse(sessionStorage.getItem("mi-samples") || "[]"); } catch (e) { samples = []; }
 let sortKey = "files", sortDir = -1, last = null;
 
-function dur(sec) {
-  if (!isFinite(sec) || sec <= 0) return "—";
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.round((sec % 3600) / 60);
-  return d ? `${fmt(d)} days ${h} h` : h ? `${h} h ${m} min` : `${Math.max(1, m)} min`;
-}
 function rateOf(key) {           // items per minute over the last ~10 minutes of samples
   const now = samples[samples.length - 1]; if (!now) return 0;
   const old = samples.find(x => now.t - x.t <= 600) || samples[0];
@@ -487,7 +326,67 @@ function render(s) {
   $("errs").innerHTML = s.errors.length ? `<tr><th>work</th><th>file</th><th>error</th><th>tries</th></tr>` + s.errors.map(r =>
     `<tr class="err"><td>${esc(r.stage)}</td><td class="lib" dir="auto">${esc(r.file)}</td><td>${esc(r.error)}</td><td class="n">${r.attempts}</td></tr>`).join("")
     : `<tr><td class="empty">No failures.</td></tr>`;
-  $("log").textContent = (s.log || []).join("\n");
+  drawLog();
+  drawHealth(s, cur);
+  drawAttention(s);
+  drawStageCards(s);
+}
+
+// ---- health strip, needs-attention, stage cards, log filter
+const LOG_FILTERS = {probe: /ffprobe|probe|videos'|scan-local/i, thumbnail: /thumb/i,
+  signature: /fingerprint|signature|per minute/i, visual_style: /sampling|style|visual|per minute/i, errors: /fail|error|traceback|timed? ?out/i};
+function drawLog() {
+  const f = $("log-filter").value, re = LOG_FILTERS[f];
+  $("log").textContent = ((last && last.log) || []).filter(ln => !re || re.test(ln)).join("\n");
+}
+$("log-filter").addEventListener("change", drawLog);
+function tile(label, value, sub, cls) {
+  return `<div class="tile ${cls || ""}"><span class="label">${esc(label)}</span><span class="v">${value}</span><span class="s">${sub}</span></div>`;
+}
+function minuteBars(vals) {
+  const max = Math.max(1, ...vals), w = 100 / vals.length;
+  return `<svg class="bars" viewBox="0 0 100 34" preserveAspectRatio="none" role="img" aria-label="Files finished per minute, last hour">` +
+    vals.map((v, i) => `<rect x="${(i * w).toFixed(2)}" y="${(34 - 32 * v / max).toFixed(1)}" width="${(w * 0.8).toFixed(2)}" height="${(32 * v / max + (v ? 1 : 0.5)).toFixed(1)}"/>`).join("") + `</svg>`;
+}
+function drawHealth(s, cur) {
+  const h = s.health; if (!h) return;
+  const nas = h.nas, smb = h.smb, age = s.log_age_s;
+  const failBad = nas.failed_10m > 0;
+  const smbV = !smb.available ? "not available" : smb.n === null ? "checking…" : fmt(smb.n);
+  const smbCls = smb.available && smb.n > 0 ? "bad" : "";
+  const stale = age != null && age > 600 && running;
+  const ago = age == null ? "no log" : age < 60 ? `${Math.round(age)} s ago` : `${Math.round(age / 60)} min ago`;
+  const stepName = cur ? `Step ${cur.n}: ${cur.title}` : (running ? "Between steps" : "Not running");
+  const total = h.per_minute.reduce((a, b) => a + b, 0);
+  $("health").innerHTML =
+    tile("NAS reads", `${nas.at_once} at once`, `${fmt(nas.saved_10m)} saved · <span style="${failBad ? "color:var(--bad)" : ""}">${fmt(nas.failed_10m)} failed</span> in the last 10 min`, failBad ? "warn" : "") +
+    tile("SMB timeouts, 10 min", smbV, smb.available ? "Windows SMB client events 30807 and 30809" : "Windows event log only", smbCls) +
+    tile("Run state", `<span style="font-size:14px;font-family:var(--f-body);font-weight:600">${esc(stepName)}</span>`, `last log activity ${ago}`, stale ? "bad" : "") +
+    `<div class="tile"><span class="label">Files done per minute</span>${minuteBars(h.per_minute)}<span class="s">${fmt(total)} in the last hour</span></div>`;
+}
+let attnGroups = [];
+function drawAttention(s) {
+  attnGroups = s.attention || [];
+  $("attn-panel").hidden = !attnGroups.length;
+  const failed = attnGroups.reduce((a, g) => a + g.count, 0), retry = attnGroups.reduce((a, g) => a + g.retrying, 0);
+  $("attn-sub").textContent = `${fmt(failed)} failed files in ${attnGroups.length} ${attnGroups.length === 1 ? "group" : "groups"} · ${fmt(retry)} will retry`;
+  if (!$("attn").contains(document.activeElement)) $("attn").innerHTML = attnGroups.map(attnRow).join("");
+}
+wireRetry($("attn"), () => attnGroups, () => tick());
+function ring(frac, color) {
+  const R = 26, C = 2 * Math.PI * R;
+  return `<svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="${R}" fill="none" stroke-width="7"/>
+    <circle cx="32" cy="32" r="${R}" fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/>
+    <text x="32" y="37" text-anchor="middle">${Math.round(frac * 100)}</text></svg>`;
+}
+function drawStageCards(s) {
+  $("stage-cards").innerHTML = (s.stages || []).filter(st => st.key).map(st => {
+    const of = Math.max(st.of, st.done + st.failed), frac = of ? st.done / of : 0, r = st.per_min || 0, left = of - st.done - st.failed;
+    return `<a class="scard" href="stage?name=${encodeURIComponent(st.key)}" aria-label="${esc(st.stage)}, open detail">${ring(frac, frac >= 0.9995 ? "var(--ok)" : "var(--lapis)")}
+      <div><div class="nm">${esc(st.stage)}</div><div class="ln">${fmt(st.done)} of ${fmt(of)}</div>
+      <div class="ln">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min · ${left > 0 ? dur(left / r * 60) + " left" : "done"}` : left > 0 ? "idle (10 min)" : "complete"}</div>
+      ${st.failed ? `<div class="ln bad">${fmt(st.failed)} failed</div>` : ""}</div></a>`;
+  }).join("");
 }
 
 function drawThroughput(stages) {
@@ -547,8 +446,10 @@ function drawGenres(genres) {
     <span class="track"><i style="width:${100 * g.seasons / max}%"></i></span><span class="num" style="text-align:end">${g.seasons}</span></div>`).join("") + `</div>`;
 }
 
-const COLS = [["name", "Library"], ["files", "Files"], ["probed", "Length known"], ["signatures", "Fingerprinted"], ["seasons", "Seasons"], ["episodes", "Episodes"], ["collections", "In Plex"]];
+const COLS = [["name", "Library"], ["files", "Files"], ["probed", "Length known"], ["signatures", "Fingerprinted"], ["seasons", "Seasons"], ["ongoing", "Ongoing"], ["episodes", "Episodes"], ["collections", "In Plex"]];
 const selected = new Set(); let reports = new Set(), running = false;
+const KIND_ORDER = ["episodic", "ongoing", "short-form", "clips"];
+const kindTip = k => KIND_ORDER.filter(x => (k || {})[x]).map(x => `${k[x]} ${x}`).join(", ") || "no series yet";
 function drawLibs(libs) {
   const q = $("q").value.trim().toLowerCase();
   const rows = libs.filter(r => !q || r.name.toLowerCase().includes(q))
@@ -558,24 +459,18 @@ function drawLibs(libs) {
       const pk = r.files ? 100 * r.probed / r.files : 0, sg = r.long ? 100 * r.signatures / r.long : 0;
       const rep = reports.has(r.name + ".html") ? `<a href="reports/${encodeURIComponent(r.name)}.html" target="_blank" rel="noopener">Review page</a>` : "";
       return `<tr><td><input type="checkbox" class="pick" data-f="${esc(r.folder)}" aria-label="Select ${esc(r.name)}" ${selected.has(r.folder) ? "checked" : ""}></td>
-        <td class="lib" dir="auto" title="${esc(r.name)}">${esc(r.name)}</td><td class="n">${fmt(r.files)}</td>
+        <td class="lib" dir="auto" title="${esc(r.name)}"><a href="item?folder=${encodeURIComponent(r.folder)}">${esc(r.name)}</a></td><td class="n">${fmt(r.files)}</td>
         <td class="n"><span class="mini"><i style="width:${pk}%"></i></span>${Math.round(pk)}%</td>
         <td class="n">${r.long ? `<span class="mini"><i style="width:${sg}%"></i></span>${fmt(r.signatures)}/${fmt(r.long)}` : "—"}</td>
-        <td class="n">${r.seasons || "—"}</td><td class="n">${r.episodes ? fmt(r.episodes) : "—"}</td>
+        <td class="n" title="${esc(kindTip(r.kinds))}">${r.seasons || "—"}</td><td class="n" title="${esc(kindTip(r.kinds))}">${r.ongoing ? fmt(r.ongoing) : "—"}</td><td class="n">${r.episodes ? fmt(r.episodes) : "—"}</td>
         <td class="n"><span class="chip ${r.collections ? "on" : ""}">${r.collections}</span></td>
         <td class="act"><button class="btn sm run1" data-f="${esc(r.folder)}" ${running ? "disabled" : ""}>Run</button>${rep}</td></tr>`;
-    }).join("") : `<tr><td class="empty" colspan="9">No library matches “${esc(q)}”.</td></tr>`);
+    }).join("") : `<tr><td class="empty" colspan="10">No library matches “${esc(q)}”.</td></tr>`);
   const libSel = $("st-lib");
   if (libSel.options.length !== libs.length) libSel.innerHTML = libs.map(r => `<option dir="auto">${esc(r.name)}</option>`).join("");
 }
 
 // ---- controls
-function toast(msg, bad) { const t = $("toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 6000); }
-async function post(path, body) {
-  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
-  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `The server answered ${r.status}.`); return j;
-}
 function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked}; }
 function review() {
   const o = options(), sel = $("scope-sel").checked;

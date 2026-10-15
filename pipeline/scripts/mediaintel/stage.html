@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stage detail - Library Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<script src="common.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="./">Control centre</a><span aria-hidden="true">/</span><span>Stages</span><span aria-hidden="true">/</span><b id="crumb">…</b></nav>
+    <div class="top" style="gap:12px">
+      <span class="pill idle" id="state"><span class="pulse"></span><span id="state-t">Connecting</span></span>
+      <span class="muted num" id="beat"></span>
+      <div class="seg" id="theme" role="group" aria-label="Colour theme"><button type="button" data-mode="light" aria-pressed="false">Light</button><button type="button" data-mode="dark" aria-pressed="false">Dark</button><button type="button" data-mode="system" aria-pressed="true">System</button></div>
+    </div>
+  </header>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section>
+    <h1 id="title">Stage</h1>
+    <div class="muted" id="what"></div>
+  </section>
+
+  <section class="kgrid" id="kpis" aria-label="Key numbers"></section>
+
+  <section class="panel">
+    <div class="label" style="margin-bottom:8px">Where it sits in the run</div>
+    <div class="flow" id="flow"></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2>Finished per 10 minutes</h2><span class="label">last 6 hours, failures stacked</span></div>
+    <svg class="chart" id="chart" viewBox="0 0 640 200" role="img" aria-label="Files finished per 10 minutes, last 6 hours"></svg>
+    <div class="legend"><span><i style="background:var(--lapis)"></i>done</span><span><i style="background:var(--bad)"></i>failed</span></div>
+  </section>
+
+  <section class="panel" id="attn-panel" hidden>
+    <div class="top" style="margin-bottom:8px"><h2>Failures by cause</h2><span class="muted" id="attn-sub"></span></div>
+    <div class="attn-list" id="attn"></div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Recently finished</h2><span class="label">last 20 files</span></div>
+      <ul class="list" id="recent"></ul>
+    </div>
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>From the run log</h2><span class="label">this stage's lines</span></div>
+      <pre id="log" dir="auto"></pre>
+    </div>
+  </section>
+</div>
+<script>
+const name = new URLSearchParams(location.search).get("name") || "";
+let data = null, liveOn = false;
+
+function kbox(label, value, sub, cls) {
+  return `<div class="kbox"><span class="label">${esc(label)}</span><span class="v ${cls || ""}">${value}</span><span class="muted" style="font-size:12px">${sub || ""}</span></div>`;
+}
+function drawChart(buckets) {
+  const svg = $("chart"), W = 640, H = 200, L = 40, B = 24, T = 10, R = 6;
+  const max = Math.max(1, ...buckets.map(b => b.done + b.failed));
+  const nice = Math.pow(10, Math.floor(Math.log10(max))), top = Math.ceil(max / nice) * nice;
+  const bw = (W - L - R) / buckets.length, y = v => H - B - v / top * (H - B - T);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const v = top * i / 4;
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v)}</text>`; }
+  buckets.forEach((b, i) => {
+    const x = L + i * bw + 1, w = Math.max(1, bw - 2), hd = (H - B - T) * b.done / top, hf = (H - B - T) * b.failed / top;
+    const when = new Date(b.t + ":00Z").toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+    g += `<g><title>${esc(when)}: ${b.done} done, ${b.failed} failed</title>`
+       + (b.done ? `<rect class="d" x="${x.toFixed(1)}" y="${(H - B - hd).toFixed(1)}" width="${w.toFixed(1)}" height="${hd.toFixed(1)}"/>` : "")
+       + (b.failed ? `<rect class="f" x="${x.toFixed(1)}" y="${(H - B - hd - hf).toFixed(1)}" width="${w.toFixed(1)}" height="${hf.toFixed(1)}"/>` : "") + `</g>`;
+  });
+  [0, Math.floor(buckets.length / 2), buckets.length - 1].forEach((i, k) => {
+    const when = new Date(buckets[i].t + ":00Z").toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+    g += `<text x="${L + i * bw + bw / 2}" y="${H - 6}" text-anchor="${["start", "middle", "end"][k]}">${esc(when)}</text>`; });
+  svg.innerHTML = g;
+}
+let groups = [];
+function render(d) {
+  data = d;
+  document.title = d.title + " - Library Control Centre";
+  $("crumb").textContent = d.title; $("title").textContent = d.title; $("what").textContent = d.what;
+  const rate = d.rate_10m || d.rate_1h, left = d.waiting > 0 && rate ? dur(d.waiting / rate * 60) : d.waiting > 0 ? "—" : "done";
+  $("kpis").innerHTML =
+    kbox("Done", fmt(d.done), `of ${fmt(d.total)} files`) +
+    kbox("Waiting", fmt(d.waiting), d.waiting_note || "not read yet") +
+    kbox("Rate, 10 min", rate_(d.rate_10m), "files per minute") +
+    kbox("Rate, last hour", rate_(d.rate_1h), "files per minute") +
+    kbox("Time left", left, "at the 10 min rate") +
+    kbox("Failed", fmt(d.failed), `${fmt(d.retrying)} will retry · ${fmt(d.given_up)} gave up`, d.failed ? "bad" : "");
+  $("flow").innerHTML = `<span class="node">${esc(d.flow.before)}</span><span aria-hidden="true">→</span><span class="node me">${esc(d.flow.step)}</span><span aria-hidden="true">→</span><span class="node">${esc(d.flow.after)}</span>`;
+  drawChart(d.buckets);
+  groups = d.groups;
+  $("attn-panel").hidden = !groups.length;
+  $("attn-sub").textContent = `${fmt(d.failed)} failed files in ${groups.length} ${groups.length === 1 ? "cause" : "causes"}`;
+  if (!$("attn").contains(document.activeElement)) $("attn").innerHTML = groups.map(attnRow).join("");
+  $("recent").innerHTML = d.recent.length ? d.recent.map(r => `<li><span><div class="nm" dir="auto" title="${esc(r.name)}">${esc(r.name)}</div><div class="sub" dir="auto">${esc(r.library)}</div></span><span class="num muted">${esc(new Date(r.at).toLocaleTimeString())}</span></li>`).join("")
+    : `<li class="muted">Nothing finished yet.</li>`;
+  $("log").textContent = d.log.length ? d.log.join("\n") : "No lines for this stage in the run log.";
+  const run = !!d.running_pid;
+  $("state").className = "pill " + (run ? "running" : "idle"); $("state-t").textContent = run ? "Running" : "Not running";
+}
+const rate_ = r => r ? (r < 10 ? r.toFixed(1) : r.toFixed(0)) : "0";
+wireRetry($("attn"), () => groups, () => load());
+async function load() {
+  try {
+    const r = await fetch("api/stage?name=" + encodeURIComponent(name), {cache: "no-store"});
+    if (!r.ok) { $("title").textContent = "Unknown stage"; $("what").textContent = "Pick a stage from the control centre."; return; }
+    render(await r.json());
+  } catch (e) { $("state-t").textContent = "Status server not reachable"; }
+}
+load(); setInterval(load, 5000);
+if (window.EventSource) {
+  const es = new EventSource("api/live");
+  es.onmessage = e => { const ev = JSON.parse(e.data); const age = ev.log_age_s;
+    $("beat").textContent = age == null ? "" : `live · log activity ${age < 60 ? Math.round(age) + " s" : Math.round(age / 60) + " min"} ago`; };
+}
+</script>
+</body>
+</html>

@@ -84,6 +84,39 @@ STAGE_NAMES = {
 }
 
 
+#: per-file stages and the files each applies to (SQL over ``files f``)
+STAGE_APPLIES = {
+    "probe": "1",
+    "thumbnail": "f.thumb_path IS NOT NULL AND (f.duration_s IS NULL OR f.duration_s >= 180)",
+    "signature": "f.duration_s >= 180",
+}
+
+#: for the stage page: what it does, the run steps (indexes into STEPS) before / at / after it,
+#: and a pattern for its lines in the run log
+STAGE_INFO: dict[str, dict[str, Any]] = {
+    "probe": {
+        "what": "Measures each video's length with ffprobe, for the files Plex did not already measure.",
+        "flow": (1, 2, 5),
+        "log": r"ffprobe|probe|scan-local",
+    },
+    "thumbnail": {
+        "what": "Makes a small thumbnail fingerprint of each episode-length video, to find look-alikes.",
+        "flow": (1, 2, 5),
+        "log": r"thumb",
+    },
+    "signature": {
+        "what": "Fingerprints the intro, end song and sampled frames of a few episodes per season.",
+        "flow": (5, 6, 7),
+        "log": r"fingerprint|^\s*\[\d+/\d+\] \d+ per minute",
+    },
+    "visual_style": {
+        "what": "Rates each season's production style (talk, produced, cinematic) from sampled frames.",
+        "flow": (9, 10, 11),
+        "log": r"sampling|^\s*\[\d+/\d+\] \d+ per minute|style",
+    },
+}
+
+
 def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """The step list with state, and progress inside the current step."""
     seen: list[tuple[int, str, int]] = []  # (step index, start time, log line)
@@ -248,6 +281,390 @@ def live(db_path: str, log_path: Path, base: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_QUOTED_RE = re.compile(r"""(['"]).*?\1""")
+_PATH_RE = re.compile(
+    r"(?:[A-Za-z]:)?[\\/][^\s,;]*|\S+\.(?:mkv|mp4|avi|mov|webm|m4v|ts|wmv|flv|mp3|m4a)\b"
+)
+_FRAMES_RE = re.compile(r"\b\d+ frames?\b")
+_NUM_RE = re.compile(r"\d+(?:[.,]\d+)*")
+
+#: stages that read the NAS for the sampled fingerprints and production style
+NAS_READ_STAGES = ("signature", "visual_style")
+NAS_READS_AT_ONCE = 2
+
+
+def normalize_cause(error: str | None) -> str:
+    """A short cause key for a failure message: file names, paths and numbers are
+    removed, so "read failed: 1 frames" and "read failed: 2 frames" share the key
+    "read failed: frames short" while "read failed: tail" stays its own cause."""
+    lines = (error or "").strip().splitlines()
+    text = lines[0] if lines else ""
+    text = _QUOTED_RE.sub("", text)
+    text = _PATH_RE.sub("", text)
+    text = _FRAMES_RE.sub("frames short", text)
+    text = _NUM_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    text = re.sub(r"\s+([,:;])", r"\1", text)
+    text = re.sub(r"([:,;])(?:\s*[:,;])+", r"\1", text).strip(" :,;")
+    return text[:80] or "unknown error"
+
+
+def attention_groups(rows: list[tuple[str, str | None, int, int | None]]) -> list[dict[str, Any]]:
+    """Merge ``(stage, error, count, retrying)`` rows into groups by stage and cause,
+    biggest first. ``retrying`` is how many of ``count`` still have tries left."""
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for stage, error, n, retrying in rows:
+        key = (stage, normalize_cause(error))
+        g = groups.setdefault(
+            key,
+            {"stage": stage, "cause": key[1], "count": 0, "retrying": 0, "example": error or ""},
+        )
+        g["count"] += n
+        g["retrying"] += retrying or 0
+    out = sorted(groups.values(), key=lambda g: (-g["count"], g["stage"], g["cause"]))
+    for g in out:
+        g["given_up"] = g["count"] - g["retrying"]
+    return out
+
+
+def retry_failures(db_path: str, stage: str, cause: str) -> int:
+    """Set ``attempts = 0`` on the failed rows of ``stage`` whose normalized cause is
+    ``cause``, so the next run retries them. Returns the number of rows reset.
+    One short transaction per distinct message; waits up to 60 s for the run's writes."""
+    conn = sqlite3.connect(db_path, timeout=60)
+    try:
+        conn.execute("PRAGMA busy_timeout = 60000")
+        rows = conn.execute(
+            "SELECT DISTINCT error FROM index_jobs WHERE state = 'failed' AND stage = ?", (stage,)
+        ).fetchall()
+        reset = 0
+        for (err,) in rows:
+            if normalize_cause(err) != cause:
+                continue
+            with conn:
+                cur = conn.execute(
+                    """UPDATE index_jobs SET attempts = 0
+                       WHERE state = 'failed' AND stage = ? AND error IS ? AND attempts <> 0""",
+                    (stage, err),
+                )
+                reset += cur.rowcount
+        return reset
+    finally:
+        conn.close()
+
+
+_smb: dict[str, Any] = {"at": 0.0, "n": None, "busy": False}
+_smb_lock = threading.Lock()
+_SMB_PS = (
+    "$ErrorActionPreference='SilentlyContinue';"
+    "@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-SMBClient/Connectivity';"
+    "Id=30809,30807;StartTime=(Get-Date).AddMinutes(-10)}).Count"
+)
+
+
+def _smb_query() -> int | None:
+    try:
+        r = subprocess.run(  # noqa: S603 — fixed argv
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _SMB_PS],  # noqa: S607
+            capture_output=True, text=True, timeout=45, check=False,
+        )  # fmt: skip
+        return int(r.stdout.strip().splitlines()[-1])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+def smb_timeouts() -> dict[str, Any]:
+    """SMB client timeouts (events 30809, 30807) in the last 10 min, Windows only.
+    The event-log query is slow, so it runs in a background thread and its answer is
+    reused for 60 s; until the first answer arrives ``n`` is None."""
+    if sys.platform != "win32":
+        return {"available": False, "n": None}
+    with _smb_lock:
+        stale = time.time() - _smb["at"] > 60 and not _smb["busy"]
+        if stale:
+            _smb["busy"] = True
+
+    def work() -> None:
+        n = _smb_query()
+        with _smb_lock:
+            _smb.update(n=n, at=time.time(), busy=False)
+
+    if stale:
+        threading.Thread(target=work, daemon=True).start()
+    with _smb_lock:
+        return {"available": True, "n": _smb["n"], "pending": _smb["at"] == 0.0}
+
+
+def health(conn: sqlite3.Connection) -> dict[str, Any]:
+    """NAS read counts, failures and files done per minute (last hour) from ``index_jobs``."""
+    marks = ",".join("?" * len(NAS_READ_STAGES))
+    saved, failed = conn.execute(
+        f"""SELECT COALESCE(SUM(state = 'done'), 0), COALESCE(SUM(state = 'failed'), 0)
+            FROM index_jobs WHERE stage IN ({marks})
+            AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')""",  # noqa: S608
+        NAS_READ_STAGES,
+    ).fetchone()
+    per_minute = {
+        r[0]: r[1]
+        for r in conn.execute(
+            """SELECT substr(updated_at, 1, 16), COUNT(*) FROM index_jobs
+               WHERE state = 'done'
+               AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-60 minutes')
+               GROUP BY 1"""
+        )
+    }
+    now = time.time()
+    keys = [time.strftime("%Y-%m-%dT%H:%M", time.gmtime(now - 60 * k)) for k in range(59, -1, -1)]
+    return {
+        "nas": {"at_once": NAS_READS_AT_ONCE, "saved_10m": saved, "failed_10m": failed},
+        "smb": smb_timeouts(),
+        "per_minute": [per_minute.get(k, 0) for k in keys],
+    }
+
+
+def kind_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
+    """Distinct series per folder and kind (series rows are per season): one grouped query."""
+    out: dict[str, dict[str, int]] = {}
+    for folder, kind, n in conn.execute(
+        """SELECT json_extract(metadata, '$.folder'), json_extract(metadata, '$.kind'),
+                  COUNT(DISTINCT COALESCE(json_extract(metadata, '$.series_key'), id))
+           FROM series GROUP BY 1, 2"""
+    ):
+        out.setdefault(folder, {})[kind or "unknown"] = n
+    return out
+
+
+def bucket_keys(now: float, n: int, width_s: int = 600) -> list[str]:
+    """The last ``n`` time buckets (oldest first) as ISO prefixes of ``updated_at``:
+    10-minute buckets are ``YYYY-MM-DDTHH:M`` (15 characters, the tens digit of the minute)."""
+    out = []
+    for k in range(n - 1, -1, -1):
+        t = time.gmtime(now - width_s * k)
+        out.append(time.strftime("%Y-%m-%dT%H:", t) + str(t.tm_min // 10))
+    return out
+
+
+def fill_buckets(counts: dict[tuple[str, str], int], keys: list[str]) -> list[dict[str, Any]]:
+    """``{(bucket, state): n}`` laid onto ``keys``: one ``{t, done, failed}`` per bucket."""
+    return [
+        {"t": k + "0", "done": counts.get((k, "done"), 0), "failed": counts.get((k, "failed"), 0)}
+        for k in keys
+    ]
+
+
+def _leaf(folder: str) -> str:
+    return folder.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def stage_detail(
+    conn: sqlite3.Connection, name: str, log_lines: list[str], now: float | None = None
+) -> dict[str, Any] | None:
+    """Everything the stage page shows for one per-file stage, or None for an unknown name."""
+    if name not in STAGE_INFO:
+        return None
+    now = now or time.time()
+    info = STAGE_INFO[name]
+    cond = STAGE_APPLIES.get(name)
+    done, failed = conn.execute(
+        "SELECT COALESCE(SUM(state = 'done'), 0), COALESCE(SUM(state = 'failed'), 0) "
+        "FROM index_jobs WHERE stage = ?",
+        (name,),
+    ).fetchone()
+    note = ""
+    selective = {"signature": ("##### signatures", _sig_progress),
+                 "visual_style": ("##### scan-visual", lambda b: _sampled_progress(b, name))}  # fmt: skip
+    if name in selective:
+        # only selected files are read: the waiting count is what the run picked, not every file
+        head, parse = selective[name]
+        at = next((i for i in range(len(log_lines) - 1, -1, -1)
+                   if log_lines[i].startswith(head)), None)  # fmt: skip
+        sp = parse(log_lines[at:]) if at is not None else {"total": None}
+        total = done + failed + max(0, sp.get("left", 0) if sp.get("total") else 0)
+        note = (
+            "the files this run picked"
+            if sp.get("total")
+            else "only selected files are read; chosen when the run reaches this step"
+        )
+    elif cond:
+        total = conn.execute(f"SELECT COUNT(*) FROM files f WHERE {cond}").fetchone()[0]  # noqa: S608
+    else:
+        total = done + failed
+    rate = {
+        w: conn.execute(
+            "SELECT COUNT(*) FROM index_jobs WHERE stage = ? AND state = 'done' "
+            f"AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-{w} minutes')",  # noqa: S608
+            (name,),
+        ).fetchone()[0]
+        / w
+        for w in (10, 60)
+    }
+    counts = {
+        (r[0], r[1]): r[2]
+        for r in conn.execute(
+            """SELECT substr(updated_at, 1, 15), state, COUNT(*) FROM index_jobs
+               WHERE stage = ?
+               AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-370 minutes')
+               GROUP BY 1, 2""",
+            (name,),
+        )
+    }
+    recent = [
+        {"name": Path(r[0]).stem, "library": _leaf(r[2] or ""), "at": r[1]}
+        for r in conn.execute(
+            """SELECT j.path, j.updated_at, f.folder FROM index_jobs j
+               LEFT JOIN files f ON f.path = j.path
+               WHERE j.stage = ? AND j.state = 'done' ORDER BY j.updated_at DESC LIMIT 20""",
+            (name,),
+        )
+    ]
+    groups = attention_groups(
+        [
+            (r[0], r[1], r[2], r[3])
+            for r in conn.execute(
+                """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts) FROM index_jobs
+                   WHERE state = 'failed' AND stage = ? GROUP BY stage, error""",
+                (name,),
+            )
+        ]
+    )
+    pat = re.compile(info["log"], re.I)
+    before, step, after = (STEPS[i][1] for i in info["flow"])
+    return {
+        "key": name,
+        "title": STAGE_NAMES.get(name, name),
+        "what": info["what"],
+        "done": done,
+        "failed": failed,
+        "total": total,
+        "waiting": max(0, total - done - failed),
+        "waiting_note": note,
+        "rate_10m": rate[10],
+        "rate_1h": rate[60],
+        "retrying": sum(g["retrying"] for g in groups),
+        "given_up": sum(g["given_up"] for g in groups),
+        "flow": {"before": before, "step": step, "after": after},
+        "buckets": fill_buckets(counts, bucket_keys(now, 36)),
+        "recent": recent,
+        "groups": groups,
+        "log": [ln for ln in log_lines if pat.search(ln)][-30:],
+        "now": now,
+    }
+
+
+def group_series(
+    rows: list[tuple[str, str, str]], episodes: dict[str, int], collections: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Fold per-season ``series`` rows ``(id, name, metadata JSON)`` into one entry per
+    series key, with its seasons, episode counts, air span and Plex collection titles."""
+    by_key: dict[str, dict[str, Any]] = {}
+    for sid, name, meta_json in rows:
+        meta = json.loads(meta_json or "{}")
+        key = meta.get("series_key") or name
+        g = by_key.setdefault(
+            key,
+            {"key": key, "name": name, "kind": meta.get("kind") or "unknown", "seasons": [],
+             "episodes": 0, "first_air": None, "last_air": None},
+        )  # fmt: skip
+        n = episodes.get(sid, 0)
+        g["seasons"].append(
+            {
+                "season": meta.get("season"),
+                "episodes": n,
+                "first_air": meta.get("first_air"),
+                "last_air": meta.get("last_air"),
+                "collection": collections.get(sid),
+            }
+        )
+        g["episodes"] += n
+        for field, pick in (("first_air", min), ("last_air", max)):
+            v = meta.get(field)
+            if v:
+                g[field] = pick(g[field], v) if g[field] else v
+    out = list(by_key.values())
+    for g in out:
+        g["seasons"].sort(key=lambda x: (x["season"] is None, x["season"] or 0))
+    return sorted(out, key=lambda g: (-g["episodes"], g["name"]))
+
+
+def item_detail(
+    conn: sqlite3.Connection, folder: str, series_key: str | None = None
+) -> dict[str, Any] | None:
+    """The library page: counts, series with where they appear, stage status and history."""
+    head = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(duration_s >= 180), 0) FROM files WHERE folder = ?",
+        (folder,),
+    ).fetchone()
+    if not head[0]:
+        return None
+    rows = [
+        (r[0], r[1], r[2])
+        for r in conn.execute(
+            "SELECT id, name, metadata FROM series WHERE json_extract(metadata, '$.folder') = ?",
+            (folder,),
+        )
+    ]
+    episodes = dict(
+        conn.execute(
+            """SELECT e.series_id, COUNT(*) FROM series_episodes e
+               JOIN series s ON s.id = e.series_id
+               WHERE json_extract(s.metadata, '$.folder') = ? GROUP BY 1""",
+            (folder,),
+        ).fetchall()
+    )
+    collections = dict(
+        conn.execute(
+            """SELECT c.series_id, c.title FROM plex_collections c
+               JOIN series s ON s.id = c.series_id
+               WHERE json_extract(s.metadata, '$.folder') = ?""",
+            (folder,),
+        ).fetchall()
+    )
+    series = group_series(rows, episodes, collections)
+    kinds: dict[str, int] = {}
+    for g in series:
+        kinds[g["kind"]] = kinds.get(g["kind"], 0) + 1
+    stages: dict[str, dict[str, int]] = {}
+    for stage, state, n in conn.execute(
+        """SELECT j.stage, j.state, COUNT(*) FROM index_jobs j JOIN files f ON f.path = j.path
+           WHERE f.folder = ? GROUP BY 1, 2""",
+        (folder,),
+    ):
+        stages.setdefault(stage, {"done": 0, "failed": 0})[state] = n
+    history = [
+        {"at": r[0], "stage": r[1], "file": Path(r[2]).name, "state": r[3], "error": r[4]}
+        for r in conn.execute(
+            """SELECT j.updated_at, j.stage, j.path, j.state, j.error FROM index_jobs j
+               JOIN files f ON f.path = j.path WHERE f.folder = ?
+               ORDER BY j.updated_at DESC LIMIT 50""",
+            (folder,),
+        )
+    ]
+    return {
+        "folder": folder,
+        "name": _leaf(folder),
+        "files": head[0],
+        "long": head[1],
+        "seasons": len(rows),
+        "series": len(series),
+        "ongoing": kinds.get("ongoing", 0),
+        "shorts": kinds.get("short-form", 0),
+        "kinds": kinds,
+        "list": [g for g in series if series_key in (None, g["key"])],
+        "focus": series_key,
+        "stages": stages,
+        "history": history,
+    }
+
+
+def _read_asset(name: str) -> bytes:
+    """A page or asset file beside this module, read per request so edits show on reload."""
+    return (Path(__file__).with_name(name)).read_bytes()
+
+
+_PAGES = {"/stage": "stage.html", "/item": "item.html"}
+_ASSETS = {"/common.css": "text/css; charset=utf-8", "/common.js": "text/javascript; charset=utf-8"}
+
+
 PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
 
 
@@ -280,11 +697,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         # each stage over the files it applies to, "done" counted within that same set:
         #   probe: every file; thumbnail: files with a thumbnail that are not known shorts;
         #   signature: episode-length files (length known); visual_style: sampled episodes
-        applies = {
-            "probe": "1",
-            "thumbnail": "f.thumb_path IS NOT NULL AND (f.duration_s IS NULL OR f.duration_s >= 180)",
-            "signature": "f.duration_s >= 180",
-        }
+        applies = STAGE_APPLIES
         for stage, cond in applies.items():
             r = conn.execute(
                 f"""SELECT COUNT(*) total,
@@ -300,6 +713,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
             ).fetchone()[0]
             out["stages"].append(
                 {
+                    "key": stage,
                     "stage": STAGE_NAMES.get(stage, stage),
                     "per_min": recent / 10,
                     "done": r["done"] or 0,
@@ -313,6 +727,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         if r["d"] or r["f"]:
             out["stages"].append(
                 {
+                    "key": "visual_style",
                     "stage": "visual_style",
                     "done": r["d"] or 0,
                     "failed": r["f"] or 0,
@@ -321,6 +736,16 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
             )
         unknown = conn.execute("SELECT COUNT(*) FROM files WHERE duration_s IS NULL").fetchone()[0]
         out["totals"]["length not known yet"] = unknown
+        out["attention"] = attention_groups(
+            [
+                (r[0], r[1], r[2], r[3])
+                for r in conn.execute(
+                    """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts)
+                       FROM index_jobs WHERE state = 'failed' GROUP BY stage, error"""
+                )
+            ]
+        )
+        out["health"] = health(conn)
         out["errors"] = [
             {
                 "stage": r["stage"],
@@ -358,6 +783,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
            JOIN series s ON s.id = c.series_id GROUP BY 1""",
         "plex_collections",
     )
+    kinds = kind_counts(conn) if has("series") else {}
     for r in conn.execute(
         """SELECT folder, COUNT(*) n, SUM(duration_s IS NOT NULL) probed,
                   SUM(duration_s >= 180) long
@@ -375,6 +801,8 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
                 "seasons": seasons.get(fo, 0),
                 "episodes": eps.get(fo, 0),
                 "collections": cols.get(fo, 0),
+                "kinds": kinds.get(fo, {}),
+                "ongoing": kinds.get(fo, {}).get("ongoing", 0),
             }
         )
     out["styles"] = (
@@ -494,6 +922,7 @@ def serve(
     log = log_path or Path(db_path + ".run.log")
     cache: dict[str, Any] = {"at": 0.0, "st": {}}
     cache_lock = threading.Lock()
+    detail_cache: dict[tuple[str, str, str | None], tuple[float, dict[str, Any] | None]] = {}
     pipeline_dir = Path(__file__).resolve().parents[2]
 
     class Handler(BaseHTTPRequestHandler):
@@ -507,6 +936,35 @@ def serve(
         def _json(self, code: int, obj: Any) -> None:
             data = json.dumps(obj, ensure_ascii=False).encode()
             self._send(code, data, "application/json; charset=utf-8")
+
+        def _detail(self, path: str, qs: dict[str, list[str]]) -> None:
+            """/api/stage?name= and /api/item?folder=[&series=], each cached for 10 s."""
+            arg = (qs.get("name" if path == "/api/stage" else "folder") or [""])[0]
+            extra = (qs.get("series") or [None])[0] if path == "/api/item" else None
+            key = (path, arg, extra)
+            with cache_lock:
+                hit = detail_cache.get(key)
+                if hit and time.time() - hit[0] < 10:
+                    data = hit[1]
+                else:
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+                    try:
+                        if path == "/api/stage":
+                            lines = (
+                                log.read_text(encoding="utf-8", errors="replace").splitlines()
+                                if log.exists()
+                                else []
+                            )
+                            data = stage_detail(conn, arg, lines)
+                        else:
+                            data = item_detail(conn, arg, extra)
+                    finally:
+                        conn.close()
+                    detail_cache[key] = (time.time(), data)
+            if data is None:
+                self._json(404, {"error": "Unknown stage or library."})
+            else:
+                self._json(200, {**data, "running_pid": _running_pid(db_path)})
 
         def do_GET(self) -> None:  # noqa: N802 — http.server API
             url = urllib.parse.urlsplit(self.path)
@@ -557,6 +1015,12 @@ def serve(
                 self._json(200, {"reports": names})
             elif url.path in ("/", "/index.html"):
                 self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            elif url.path in _PAGES:  # the stage and library pages sit beside this module
+                self._send(200, _read_asset(_PAGES[url.path]), "text/html; charset=utf-8")
+            elif url.path in _ASSETS:
+                self._send(200, _read_asset(url.path[1:]), _ASSETS[url.path])
+            elif url.path in ("/api/stage", "/api/item"):
+                self._detail(url.path, qs)
             else:
                 self.send_error(404)
 
@@ -578,6 +1042,19 @@ def serve(
                         args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
                     )
                 self._json(202, {"started": True, "command": args[3:]})
+            elif self.path == "/api/retry":
+                stage, cause = body.get("stage"), body.get("cause")
+                if not isinstance(stage, str) or not isinstance(cause, str) or not stage:
+                    self._json(400, {"error": 'Send {"stage": "...", "cause": "..."}.'})
+                    return
+                try:
+                    reset = retry_failures(db_path, stage, cause)
+                except sqlite3.Error as e:
+                    self._json(503, {"error": f"The database is busy: {e}"})
+                    return
+                with cache_lock:
+                    cache["at"] = 0.0  # show the new counts on the next poll
+                self._json(200, {"reset": reset})
             elif self.path == "/api/stop":
                 pid = _running_pid(db_path)
                 if not pid:
