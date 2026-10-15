@@ -136,10 +136,12 @@ class DetectorConfig:
     sig_window_days: int = 180
     dhash_close_bits: int = 10
     min_season_size: int = 3
-    #: "ongoing": at least this many episodes over at least this many days, with
-    #: something released in at least this share of the months between first and last
+    #: "ongoing": at least this many episodes, and either numbers that climb past any
+    #: season's size, or exact air dates spread steadily (this share of months) over
+    #: at least this many days
     ongoing_min_episodes: int = 12
-    ongoing_min_span_days: int = 300
+    ongoing_min_number: int = 60
+    ongoing_min_span_days: int = 730
     ongoing_month_coverage: float = 0.5
     #: anything shorter is a short (clip, promo, YouTube Short) and never an episode
     min_episode_s: float = 180.0
@@ -556,10 +558,38 @@ def _promo_score(v: VideoFacts, p: _Profile, cfg: DetectorConfig) -> float:
 # --------------------------------------------------------------------------- ordering
 
 
-def _is_ongoing(keys: Sequence[str], facts: dict[str, VideoFacts], cfg: DetectorConfig) -> bool:
-    """Released steadily over a long time (most months between first and last have an
-    episode), unlike a seasonal program that airs in bursts (a Ramadan season a year)."""
-    ds = sorted(d for k in keys if (d := facts[k].air_date))
+def _number_after_key(title: str, key: str) -> int | None:
+    """The number right after the show's name: "على ما تفرج ١٣٥ - …" → 135."""
+    words = key.split()
+    if not words:
+        return None
+    m = re.search(re.escape(words[-1]) + r"\s+(\d{1,4})\b", fold(title))
+    return int(m.group(1)) if m else None
+
+
+def _is_ongoing(
+    keys: Sequence[str], facts: dict[str, VideoFacts], cfg: DetectorConfig, key: str = ""
+) -> bool:
+    """A show that keeps going (a weekly program, a lecture series) rather than closed
+    seasons. A closed numbered run (1..30) or numbering that restarts is seasons, even
+    when it was released slowly; otherwise numbers climbing past any season's size, or
+    exact air dates spread steadily over years, mean ongoing."""
+    if len(keys) < cfg.ongoing_min_episodes:
+        return False
+    nums = []
+    for k in keys:
+        n = episode_number(facts[k].title)
+        n = n if n is not None and n < 9000 else _number_after_key(facts[k].title, key)
+        if n is not None:
+            nums.append(n)
+    if len(nums) >= 0.6 * len(keys):
+        if len(nums) - len(set(nums)) > max(2, len(nums) // 10):
+            return False  # numbers restart: seasons
+        if max(nums) <= cfg.ongoing_min_number:
+            return False  # a closed run
+    if len(set(nums)) >= cfg.ongoing_min_episodes and max(nums) > cfg.ongoing_min_number:
+        return True
+    ds = sorted(d for k in keys if facts[k].date_exact and (d := facts[k].air_date))
     if len(ds) < cfg.ongoing_min_episodes or (ds[-1] - ds[0]).days < cfg.ongoing_min_span_days:
         return False
     months = {(d.year, d.month) for d in ds}
@@ -1007,7 +1037,7 @@ def detect(
     # 3c. ongoing shows: steady releases over a long time, no closed seasons
     for ser in series:
         if ser.kind == "episodic" and _is_ongoing(
-            [k for se in ser.seasons for k in se.episodes], facts, cfg
+            [k for se in ser.seasons for k in se.episodes], facts, cfg, ser.key
         ):
             ser.kind = "ongoing"
 
@@ -1071,7 +1101,7 @@ def detect(
     # 5b. attaching can reveal an ongoing show; ongoing shows get a season per year
     for ser in series:
         if ser.kind == "episodic" and _is_ongoing(
-            [k for se in ser.seasons for k in se.episodes], facts, cfg
+            [k for se in ser.seasons for k in se.episodes], facts, cfg, ser.key
         ):
             ser.kind = "ongoing"
         if ser.kind == "ongoing":

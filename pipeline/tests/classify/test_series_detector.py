@@ -239,3 +239,12 @@ def test_yearly_ramadan_program_keeps_its_seasons() -> None:
     (ser,) = [s for s in det.series if s.episode_count == 90]
     assert ser.kind == "episodic"  # bursts once a year: seasons, not an ongoing show
     assert [se.number for se in ser.seasons] == [1, 2, 3]
+
+
+def test_closed_numbered_run_released_weekly_is_not_ongoing() -> None:
+    # السيرة النبوية: episodes 1..30, one a week for most of a year, then it ends
+    eps = _weekly("s", 30, date(2014, 11, 7), 40, "السيرة النبوية الحلقة {i}")
+    det = detect(eps, [_pl("PLs", "السيرة النبوية", eps)])
+    (ser,) = det.series
+    assert ser.kind == "episodic"
+    assert [se.number for se in ser.seasons] == [1]
