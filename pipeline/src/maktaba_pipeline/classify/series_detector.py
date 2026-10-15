@@ -121,6 +121,10 @@ class DetectorConfig:
         )
     )  # fmt: skip
     clip_playlist_re: str = r"^(مقاطع|مقطع|مختارات|مقتطفات|بثوث|بث مباشر|shorts|clips|highlights)"
+    #: catch-all playlists ("جميع اللقاءات والبرامج", "منوعات", "all videos") group unrelated
+    #: videos; from this size they never define a show, they are only evidence
+    catch_all_re: str = r"(^|\s)(جميع|كل ال|كافه|منوعات|متنوعه|المتنوعه|all videos|uploads)"
+    catch_all_min: int = 40
     #: a seed's members farther than this factor from its core median are extras
     core_band: float = 2.2
     #: two seeds of one key are the same show only if their core medians are this close
@@ -158,6 +162,9 @@ class Season:
     median_duration_s: float | None = None
     attached: list[str] = field(default_factory=list)  # keys added from outside playlists
     duplicates: list[str] = field(default_factory=list)  # second uploads of an episode
+    #: episode number of each episode, same order: from the titles when the season is
+    #: numbered consistently ("كنوز السيرة 31" → 31, gaps kept), else 1..n
+    numbers: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -846,6 +853,62 @@ _SEP_SPLIT_RE = re.compile(r"\s*(?:[|｜/⧸:：–—]|\s-\s|^-|-$)\s*")
 _NAME_DROP = frozenset(fold(w) for w in ("برنامج", "حلقات", "hd", "سلسلة", "الشيخ", "للشيخ", "د"))
 
 
+_TITLE_NUM_RE = re.compile(r"(?<!\d)(\d{1,3})(?!\d)")
+
+
+def _title_number(title: str) -> int | None:
+    n = episode_number(title)
+    if n is not None and n < 9000:
+        return n
+    m = _TITLE_NUM_RE.search(fold(title))  # fold turns ٣١ into 31
+    return int(m.group(1)) if m and int(m.group(1)) > 0 else None
+
+
+def title_numbers(eps: Sequence[str], facts: dict[str, VideoFacts]) -> list[int]:
+    """Episode numbers for an ordered season: the numbers in the titles when most titles
+    carry one and they rise strictly in order (a missing one takes the next free number),
+    otherwise positions 1..n."""
+    raw = [_title_number(facts[k].title) for k in eps]
+    have = [n for n in raw if n is not None]
+    if (
+        len(have) >= 0.7 * len(eps)
+        and len(set(have)) == len(have)
+        and all(a < b for a, b in zip(have, have[1:], strict=False))
+    ):
+        out: list[int] = []
+        for i, n in enumerate(raw):
+            if n is None:
+                nxt = next((x for x in raw[i + 1 :] if x is not None), None)
+                n = (out[-1] if out else 0) + 1
+                if nxt is not None and n >= nxt:
+                    break
+            out.append(n)
+        else:
+            return out
+    return list(range(1, len(eps) + 1))
+
+
+def _title_name(
+    eps: Sequence[str], facts: dict[str, VideoFacts], drop: frozenset[str]
+) -> str | None:
+    """The show's name as its episode titles write it: the words before the episode
+    number, presenter and generic words left out, shared by most titles."""
+    names: Counter[str] = Counter()
+    for k in eps:
+        words = []
+        for w in facts[k].title.replace("|", " ").replace("-", " ").split():
+            if _TITLE_NUM_RE.search(fold(w)):
+                break
+            if fold(w) not in drop and len(fold(w)) > 1:
+                words.append(w)
+        if words:
+            names[" ".join(words)] += 1
+    if not names:
+        return None
+    name, n = names.most_common(1)[0]
+    return name if n >= 0.6 * len(eps) and any(len(fold(w)) > 2 for w in name.split()) else None
+
+
 def _display_name(titles: Sequence[str], presenter: frozenset[str], generic: frozenset[str]) -> str:
     """Human name for a series from its playlist titles (original spelling kept).
 
@@ -906,6 +969,8 @@ def detect(
         s = _make_seed(p, facts, stop, cfg)
         if s is None or len(set(s.members) - s.extras) < cfg.min_season_size:
             continue  # too small to define a season; its videos can still attach (step 4)
+        if len(s.members) >= cfg.catch_all_min and re.search(cfg.catch_all_re, fold(p.title)):
+            continue  # a catch-all list of unrelated videos is not a show
         (clip_seeds if clip_re.search(fold(p.title)) else seeds).append(s)
 
     # merge overlapping seeds (one playlist inside another) → same season
@@ -958,6 +1023,20 @@ def detect(
     for v in videos:
         seg_df.update(set(segments(v.title)))
 
+    # a video that is an episode in several playlists belongs to the most specific one:
+    # the playlist whose name its title carries most, then the smaller playlist
+    def _fit(sd: _Seed, k: str) -> tuple[float, int]:
+        words = [w for w in sd.key.split() if len(w) > 2]
+        t = fold(facts[k].title)
+        return (sum(w in t for w in words) / len(words) if words else 0.0, -len(sd.members))
+
+    owner: dict[str, _Seed] = {}
+    for g in groups:
+        for sd in g:
+            for k in sd.members:
+                if k not in sd.extras and (k not in owner or _fit(sd, k) > _fit(owner[k], k)):
+                    owner[k] = sd
+
     assigned: set[str] = set()
     series: list[Series] = []
     season_of_seed: dict[int, Season] = {}
@@ -973,7 +1052,12 @@ def detect(
                     next_free += 1
                 s.season = next_free
                 used_numbers.add(next_free)
-            eps = [k for k in s.members if k not in s.extras and k not in assigned]
+            eps = [
+                k
+                for k in s.members
+                if k not in s.extras and owner.get(k) is s and k not in assigned
+            ]
+            own_extras = sorted(k for k in s.extras if k not in owner)  # an episode elsewhere wins
             if (
                 len(eps) < cfg.min_season_size
                 and len(g) == 1
@@ -983,13 +1067,13 @@ def detect(
             same = next((x for x in seasons if x.number == s.season), None)
             if same:
                 same.episodes += [k for k in eps if k not in same.episodes]
-                same.extras += [k for k in s.extras if k not in same.extras]
+                same.extras += [k for k in own_extras if k not in same.extras]
                 same.playlists += s.playlists
                 season_of_seed[id(s)] = same
                 assigned.update(eps)
                 continue
             se = Season(
-                number=s.season, episodes=eps, extras=sorted(s.extras), playlists=list(s.playlists)
+                number=s.season, episodes=eps, extras=own_extras, playlists=list(s.playlists)
             )
             seasons.append(se)
             season_of_seed[id(s)] = se
@@ -1107,6 +1191,17 @@ def detect(
         if ser.kind == "ongoing":
             ser.seasons = _by_year(ser.seasons, facts)
 
+    # 5c. one place per video: a video in two playlists can be an episode of one season
+    #     and fall outside another playlist's length band (an "extra" there). The episode
+    #     wins; an extra, a duplicate upload or a clip belongs to one season only.
+    as_episode = {k for ser in series for se in ser.seasons for k in se.episodes}
+    placed: set[str] = set(as_episode)
+    for ser in series:
+        for se in ser.seasons:
+            se.extras = [k for k in dict.fromkeys(se.extras) if k not in placed]
+            placed.update(se.extras)
+            se.duplicates = [k for k in dict.fromkeys(se.duplicates) if k not in as_episode]
+
     # 6. order + stats
     positions = positions_of(playlists)
     for ser in series:
@@ -1119,9 +1214,18 @@ def detect(
             se.extras = sorted(
                 set(se.extras), key=lambda k: (facts[k].air_date or date.max, facts[k].title)
             )
+            se.numbers = title_numbers(se.episodes, facts)
             se.first_air, se.last_air = _date_span(se.episodes, facts)
             se.median_duration_s = _median([d for k in se.episodes if (d := facts[k].duration_s)])
         ser.seasons.sort(key=lambda x: x.number)
+        # a playlist named apart from its episodes ("سيرة الرسول ﷺ" holding "كنوز السيرة N")
+        # is named the way the episode titles name the show
+        eps_all = [k for se in ser.seasons for k in se.episodes]
+        own = [w for w in fold(ser.name).split() if len(w) > 2]
+        if ser.kind != "clips" and eps_all and own:
+            carried = sum(all(w in fold(facts[k].title) for w in own) for k in eps_all)
+            if carried < 0.3 * len(eps_all):
+                ser.name = _title_name(eps_all, facts, presenter | cfg.generic_words) or ser.name
 
     unassigned = sorted(k for k in facts if k not in assigned)
     series = [s for s in series if s.episode_count > 0]

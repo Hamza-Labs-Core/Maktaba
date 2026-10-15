@@ -248,3 +248,21 @@ def test_closed_numbered_run_released_weekly_is_not_ongoing() -> None:
     (ser,) = det.series
     assert ser.kind == "episodic"
     assert [se.number for se in ser.seasons] == [1]
+
+
+def test_video_in_two_playlists_is_an_episode_once_never_also_an_extra() -> None:
+    # "إن هذان لساحران" is a core episode of one series' playlist and, being much
+    # longer than the other playlist's episodes, would be an "extra" there
+    a = _season("a", 10, date(2020, 1, 1), 20, "كشف أكاذيب القمص {i}")
+    b = _season("b", 10, date(2020, 1, 1), 5, "افتراءات وردود {i}")
+    shared = a[3]
+    playlists = [_pl("PA", "كشف أكاذيب القمص", a), _pl("PB", "افتراءات وردود", [*b, shared])]
+    det = detect([*a, *b], playlists)
+    homes = [
+        (s.name, role)
+        for s in det.series
+        for se in s.seasons
+        for role, keys in (("episode", se.episodes), ("extra", se.extras))
+        if shared.key in keys
+    ]
+    assert [r for _, r in homes] == ["episode"]

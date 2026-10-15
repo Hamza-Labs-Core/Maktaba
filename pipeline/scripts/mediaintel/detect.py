@@ -97,7 +97,8 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                     DETECTOR_VERSION,
                 ),
             )
-            for n, path in enumerate(se.episodes, 1):
+            numbers = se.numbers or list(range(1, len(se.episodes) + 1))
+            for n, path in zip(numbers, se.episodes, strict=True):
                 conn.execute(
                     "INSERT OR IGNORE INTO series_episodes (series_id, path, season, episode) "
                     "VALUES (?,?,?,?)",
