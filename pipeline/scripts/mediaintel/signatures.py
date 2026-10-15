@@ -12,7 +12,8 @@ this step reads as little as it can, in two passes:
    a fingerprint could match, so its candidates are skipped.
 
 Everything else (shorts, seasons with nothing left to place, channels without seasons)
-is never read. At most ``workers`` reads run at once. Each result is an ``index_jobs``
+is never read. At most ``workers`` reads (default 2) run at once: under more, a busy
+NAS starts failing reads over SMB. Each result is an ``index_jobs``
 row (stage ``signature``), saved as soon as it finishes, so a stopped run resumes.
 """
 
@@ -26,8 +27,14 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from maktaba_pipeline.audio.chromaprint import AUDIO_FP_VERSION, MATCH, decode, similarity
-from maktaba_pipeline.thumbnail.dhash import FRAMES_VERSION, hamming
+from maktaba_pipeline.audio.chromaprint import (
+    AUDIO_FP_VERSION,
+    MATCH,
+    decode,
+    similarity,
+    windows,
+)
+from maktaba_pipeline.thumbnail.dhash import FRAMES_VERSION, frame_times, hamming
 
 from . import jobs
 from .scan_local import _signature
@@ -116,11 +123,30 @@ def _todo(conn: sqlite3.Connection, paths: set[str]) -> list[tuple[str, float]]:
     out = []
     for path in sorted(paths):
         row = conn.execute(
-            "SELECT duration_s, size, mtime FROM files WHERE path=?", (path,)
+            "SELECT duration_s, size, mtime, audio_head, audio_tail, frame_hashes FROM files"
+            " WHERE path=?",
+            (path,),
         ).fetchone()
-        if row and row[0] and jobs.needed(conn, path, "signature", SIG_VERSION, row[1], row[2]):
+        if not (row and row[0]):
+            continue
+        state = conn.execute(
+            "SELECT state FROM index_jobs WHERE path=? AND stage='signature'", (path,)
+        ).fetchone()
+        # rows saved "done" before partial reads were caught get one more try
+        partial = state == ("done",) and _incomplete(row[0], row[3], row[4], row[5] or "")
+        if partial or jobs.needed(conn, path, "signature", SIG_VERSION, row[1], row[2]):
             out.append((path, float(row[0])))
     return out
+
+
+def _incomplete(dur: float, head: str | None, tail: str | None, frames: str) -> str | None:
+    """Why a signature is partial, or None. A busy NAS fails some reads ("Invalid
+    argument" over SMB); a partial result is kept but marked failed, so it is retried."""
+    missing = [w for w, _, _ in windows(dur) if not (head if w == "head" else tail)]
+    got = len([h for h in frames.split(",") if h])
+    if got < len(frame_times(dur)):
+        missing.append(f"{len(frame_times(dur)) - got} frames")
+    return f"read failed: {', '.join(missing)}" if missing else None
 
 
 def _fingerprint(
@@ -129,7 +155,7 @@ def _fingerprint(
     print(f"{label}: fingerprinting {len(todo)} videos ({workers} reads at a time)", flush=True)
     t0, n = time.monotonic(), 0
     with ThreadPoolExecutor(max(1, workers)) as pool:
-        for (path, _), (head, tail, frames) in zip(
+        for (path, dur), (head, tail, frames) in zip(
             todo, pool.map(lambda x: _signature(*x), todo), strict=True
         ):
             conn.execute(
@@ -141,7 +167,7 @@ def _fingerprint(
                 "SELECT size, mtime FROM files WHERE path=?", (path,)
             ).fetchone()
             jobs.record(conn, path, "signature", SIG_VERSION, size, mtime,
-                        None if head or tail or frames else "no audio or frames decoded")  # fmt: skip
+                        _incomplete(dur, head, tail, frames))  # fmt: skip
             conn.commit()
             n += 1
             if n % 25 == 0 or n == len(todo):
@@ -149,7 +175,7 @@ def _fingerprint(
                 print(f"  [{n}/{len(todo)}] {rate:.0f} per minute", flush=True)
 
 
-def run(conn: sqlite3.Connection, folders: list[str] | None = None, workers: int = 4) -> int:
+def run(conn: sqlite3.Connection, folders: list[str] | None = None, workers: int = 2) -> int:
     """Fingerprint season samples, then the candidates of seasons that have a signature.
     Returns how many candidates carry a fingerprint (0: detecting again is pointless)."""
     jobs.ensure(conn)

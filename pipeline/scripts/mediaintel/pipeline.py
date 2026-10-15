@@ -124,7 +124,7 @@ def _run(
     from . import signatures
 
     _step("signatures (samples of seasons with unplaced videos, then those videos)")
-    if signatures.run(conn, folders, workers=4):
+    if signatures.run(conn, folders, workers=2):
         _step("detect again with fingerprints")
         for f in folders:
             detect.run(conn, f)
