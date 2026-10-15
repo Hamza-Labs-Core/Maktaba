@@ -1252,3 +1252,12 @@ summary.mkt-q-lane__title {
 .mkt-q-status--off {
   color: var(--color-muted);
 }
+
+/* keep wide children (tables, lane rows) scrolling inside their own box */
+.mkt-q > * {
+  min-inline-size: 0;
+}
+.mkt-q-tablewrap {
+  position: relative;
+  max-inline-size: 100%;
+}
