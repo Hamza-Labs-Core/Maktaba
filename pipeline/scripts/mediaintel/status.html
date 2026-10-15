@@ -68,6 +68,13 @@ h2 { font-size: 15px; font-weight: 600; }
 .bar { height: 10px; background: var(--track); border-radius: 6px; overflow: hidden; display: flex; }
 .bar > i { display: block; height: 100%; }
 .bar .done { background: var(--lapis); } .bar .fail { background: var(--bad); } .bar .run { background: var(--saffron); }
+.passes { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--s2); }
+.pass { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; display: grid; gap: 2px; color: var(--muted); }
+.pass.running { color: var(--ink); border-color: var(--saffron); background: var(--saffron-soft); }
+.pass.done .pn { color: var(--ok); }
+.pass.done { color: var(--ink); }
+.pass .pn { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.pass .pv { font-family: var(--f-data); font-size: 14px; }
 .meta-row { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); }
 .meta-row div { display: grid; }
 .meta-row .v { font-family: var(--f-data); font-size: 15px; }
@@ -212,6 +219,7 @@ td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
       <div class="title" id="step-title">Waiting for the first update</div>
       <div class="muted" id="step-what"></div>
       <div class="beat" id="beat"><span class="beat-dot"></span><span id="beat-t">—</span></div>
+      <div class="passes" id="step-passes" hidden></div>
       <div class="bar" id="step-bar"><i class="run" style="width:0"></i></div>
       <div class="meta-row">
         <div><span class="label">Progress</span><span class="v" id="step-prog">—</span></div>
@@ -413,12 +421,16 @@ function render(s) {
     const p = s.progress;
     if (p && p.total) {
       const pct = Math.min(100, 100 * p.done / p.total), r = p.per_min || rateOf("step");
-      if (p.phase) $("step-what").textContent = `${cur.what} · ${p.phase}`;
+      const ps = $("step-passes");
+      ps.hidden = !p.passes;
+      if (p.passes) ps.innerHTML = p.passes.map((x, i) => `<div class="pass ${x.state}"><span class="pn">Pass ${i + 1} of ${p.passes.length}${x.state === "done" ? " ✓" : x.state === "running" ? " · now" : ""}</span>
+        <span>${esc(x.name)}</span><span class="pv">${x.total == null ? "sized after pass 1" : `${fmt(x.done)} of ${fmt(x.total)}`}</span></div>`).join("");
       $("step-bar").innerHTML = `<i class="run" style="width:${pct}%"></i>`;
       $("step-prog").textContent = `${p.done} of ${p.total} ${p.unit}`;
       $("step-rate").textContent = r ? `${r.toFixed(1)} / min` : "measuring…";
       $("step-eta").textContent = r ? dur((p.total - p.done) / r * 60) : "—";
     } else {
+      $("step-passes").hidden = true;
       $("step-bar").innerHTML = `<i class="run" style="width:100%;opacity:.35"></i>`;
       $("step-prog").textContent = p ? (p.phase && !p.total ? p.phase : `${p.done} ${p.unit}`) : "—";
       $("step-rate").textContent = "—"; $("step-eta").textContent = "—";
@@ -426,6 +438,7 @@ function render(s) {
   } else {
     $("stepno").textContent = finished ? "All steps" : "—";
     $("step-title").textContent = finished ? "Run finished" : "No run in progress";
+    $("step-passes").hidden = true;
     $("step-what").textContent = ""; $("step-bar").innerHTML = `<i class="done" style="width:${finished ? 100 : 0}%"></i>`;
   }
 

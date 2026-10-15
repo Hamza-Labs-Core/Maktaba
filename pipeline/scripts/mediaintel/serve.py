@@ -133,14 +133,29 @@ def _sig_progress(body: list[str]) -> dict[str, Any]:
     passes = [(i, m) for i, ln in enumerate(body) if (m := _SIG_RE.match(ln))]
     if not passes:
         return {"done": 0, "total": None, "unit": "videos", "phase": "choosing what to read"}
+    # the bar covers the whole step: earlier passes count as finished
+    ends = [i for i, _ in passes[1:]] + [len(body)]
+    done = total = 0
+    plist = [{"name": "season samples", "done": 0, "total": None, "state": "waiting"},
+             {"name": "candidates", "done": 0, "total": None, "state": "waiting"}]  # fmt: skip
+    for k, ((at, m), end) in enumerate(zip(passes, ends, strict=True)):
+        n = [int(d.group(1)) for ln in body[at + 1 : end] if (d := _SIG_DONE_RE.match(ln))]
+        finished = end < len(body)
+        total += int(m.group(2))
+        done += int(m.group(2)) if finished else (n[-1] if n else 0)
+        if k < len(plist):
+            plist[k].update(done=int(m.group(2)) if finished else (n[-1] if n else 0),
+                            total=int(m.group(2)), state="done" if finished else "running")  # fmt: skip
     at, m = passes[-1]
-    total = int(m.group(2))
-    done = [int(d.group(1)) for ln in body[at + 1 :] if (d := _SIG_DONE_RE.match(ln))]
+    cur = [int(d.group(1)) for ln in body[at + 1 :] if (d := _SIG_DONE_RE.match(ln))]
     return {
-        "done": done[-1] if done else 0,
+        "done": done,
         "total": total,
         "unit": "videos",
-        "phase": f"pass {len(passes)} of 2: {m.group(1) or 'videos'}",
+        "phase": f"pass {len(passes)} of 2, {m.group(1) or 'videos'}: "
+        f"{cur[-1] if cur else 0:,} of {int(m.group(2)):,}",
+        "left": int(m.group(2)) - (cur[-1] if cur else 0),
+        "passes": plist,
     }
 
 
@@ -304,10 +319,15 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
                                        if lines[i].startswith("##### signatures")), 0):])  # fmt: skip
         for st in out["stages"]:
             if st["stage"] == STAGE_NAMES["signature"]:
-                left = (sp["total"] or 0) - sp["done"]
+                left = sp.get("left", 0)
                 st["of"] = st["done"] + st["failed"] + max(0, left)
                 st["note"] = (
-                    f"{sp['phase']}; the candidates pass is sized once the season samples are read"
+                    sp["phase"]
+                    + (
+                        ""
+                        if "of 2, cand" in sp["phase"]
+                        else "; the candidates pass is sized once the season samples are read"
+                    )
                     if sp["total"]
                     else "selected after the first season detection"
                 )
