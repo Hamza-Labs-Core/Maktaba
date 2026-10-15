@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -77,6 +78,9 @@ class RuntimeConfig:
     stage_concurrency: dict[Stage, int] = field(default_factory=dict)
 
 
+_TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn", default=None)
+
+
 class Database:
     """Minimal :class:`DBConn`-compatible facade over asyncpg / aiosqlite.
 
@@ -85,6 +89,15 @@ class Database:
     connection's `_stmt_exclusive_section`. SQLite uses a single
     aiosqlite connection (the driver serializes its own work through
     an executor thread, and aiosqlite doesn't expose a pool primitive).
+
+    Transactions are task-scoped: inside ``async with db.transaction()``
+    every ``fetchrow`` / ``fetch`` / ``execute`` of the same task runs on
+    the transaction's connection (Postgres) or under the transaction's lock
+    (SQLite), and a nested ``transaction()`` joins the outer one (a
+    savepoint on Postgres). Other tasks wait for the SQLite connection, so
+    concurrent tasks cannot interleave statements into someone else's
+    transaction. SQLite runs in autocommit mode (``isolation_level=None``):
+    a statement outside a transaction commits on its own.
 
     The dialect is inferred from the URL scheme:
 
@@ -99,6 +112,7 @@ class Database:
         self._conn = conn  # sqlite path only
         self._pool = pool  # postgres path only
         self._dsn = dsn  # only used by acquire_listener (postgres only)
+        self._lock: asyncio.Lock | None = None  # sqlite only, created lazily on the loop
 
     @classmethod
     async def connect(cls, url: str) -> Database:
@@ -113,39 +127,91 @@ class Database:
 
         aiosqlite = _import_aiosqlite()
         path = _sqlite_path_from_url(url)
-        conn = await aiosqlite.connect(path)
+        conn = await aiosqlite.connect(path, isolation_level=None)
         conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA foreign_keys = ON")
         return cls(dialect="sqlite", conn=conn)
+
+    def _sqlite_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
+        outer = _TX_CONN.get()
         if self.dialect == "postgres":
+            if outer is not None:
+                async with outer.transaction():  # savepoint
+                    yield outer
+                return
             async with self._pool.acquire() as conn, conn.transaction():
-                yield conn
+                token = _TX_CONN.set(conn)
+                try:
+                    yield conn
+                finally:
+                    _TX_CONN.reset(token)
             return
-        await self._conn.execute("BEGIN")
-        try:
-            yield self._conn
-        except BaseException:
-            await self._conn.rollback()
-            raise
-        else:
-            await self._conn.commit()
+        if outer is not None:
+            yield self._conn  # join the outer transaction
+            return
+        async with self._sqlite_lock():
+            await self._conn.execute("BEGIN IMMEDIATE")
+            token = _TX_CONN.set(self._conn)
+            try:
+                yield self._conn
+            except BaseException:
+                await self._conn.execute("ROLLBACK")
+                raise
+            else:
+                await self._conn.execute("COMMIT")
+            finally:
+                _TX_CONN.reset(token)
+
+    @contextlib.asynccontextmanager
+    async def _pg_conn(self) -> AsyncIterator[Any]:
+        tx = _TX_CONN.get()
+        if tx is not None:
+            yield tx
+            return
+        async with self._pool.acquire() as conn:
+            yield conn
+
+    @contextlib.asynccontextmanager
+    async def _sqlite_guard(self) -> AsyncIterator[None]:
+        if _TX_CONN.get() is not None:
+            yield
+            return
+        async with self._sqlite_lock():
+            yield
 
     async def fetchrow(self, sql: str, *args: Any) -> Any:
         if self.dialect == "postgres":
-            async with self._pool.acquire() as conn:
+            async with self._pg_conn() as conn:
                 return await conn.fetchrow(sql, *args)
         sql_q, params = _rewrite_for_sqlite(sql, args)
-        async with self._conn.execute(sql_q, params) as cursor:
+        async with self._sqlite_guard(), self._conn.execute(sql_q, params) as cursor:
             return await cursor.fetchone()
+
+    async def fetch(self, sql: str, *args: Any) -> list[Any]:
+        if self.dialect == "postgres":
+            async with self._pg_conn() as conn:
+                return list(await conn.fetch(sql, *args))
+        sql_q, params = _rewrite_for_sqlite(sql, args)
+        async with self._sqlite_guard(), self._conn.execute(sql_q, params) as cursor:
+            return list(await cursor.fetchall())
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        row = await self.fetchrow(sql, *args)
+        return None if row is None else row[0]
 
     async def execute(self, sql: str, *args: Any) -> Any:
         if self.dialect == "postgres":
-            async with self._pool.acquire() as conn:
+            async with self._pg_conn() as conn:
                 return await conn.execute(sql, *args)
         sql_q, params = _rewrite_for_sqlite(sql, args)
-        await self._conn.execute(sql_q, params)
+        async with self._sqlite_guard():
+            await self._conn.execute(sql_q, params)
         return None
 
     async def acquire_listener(self) -> Any:
