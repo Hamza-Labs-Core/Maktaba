@@ -157,7 +157,12 @@ def _upsert_playlist(
 
 
 def scan_folder(
-    conn: sqlite3.Connection, folder: Path, *, workers: int = 8, probe: bool = True
+    conn: sqlite3.Connection,
+    folder: Path,
+    *,
+    workers: int = 8,
+    probe: bool = True,
+    signatures: bool = False,
 ) -> dict[str, int]:
     """``probe=False`` records files without ffprobe (``scan-plex`` can fill length and
     size from Plex; a second pass probes only what is still missing)."""
@@ -310,8 +315,8 @@ def scan_folder(
                         None if dh is not None else "thumbnail unreadable")  # fmt: skip
             stats["thumbs"] += 1
             conn.commit()
-    if probe:
-        # audio + frame signatures of episode-length videos (shorts are never episodes)
+    if probe and signatures:
+        # every episode-length video (opt-in: the run fingerprints selectively, see signatures.py)
         sig_v = AUDIO_FP_VERSION * 100 + FRAMES_VERSION
         sig_todo = [
             (r[0], float(r[1]))

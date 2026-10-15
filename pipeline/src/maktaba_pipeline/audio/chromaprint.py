@@ -1,4 +1,4 @@
-"""Audio fingerprints of a video's opening and closing (theme song, intro, end nasheed).
+"""Audio fingerprints of a video's opening and closing 45 s (theme song, intro, end nasheed).
 
 Episodes of one show play the same intro and closing music even when the picture
 changes, so the strongest "same show" evidence is the sound. ffmpeg (built with
@@ -35,8 +35,8 @@ __all__ = [
 ]
 
 AUDIO_FP_VERSION: int = 1
-HEAD_S: float = 90.0  # opening window (cold open + intro)
-TAIL_S: float = 90.0  # closing window (end song + credits)
+HEAD_S: float = 45.0  # opening window (cold open + intro); intros fall well inside it
+TAIL_S: float = 45.0  # closing window (end song + credits)
 #: at or above this a pair of windows is the same music (same-series pairs measured
 #: 0.81–0.91, different series 0.53–0.54)
 MATCH: float = 0.70

@@ -280,8 +280,8 @@ let sortKey = "files", sortDir = -1, last = null;
 
 function dur(sec) {
   if (!isFinite(sec) || sec <= 0) return "—";
-  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
-  return h ? `${h} h ${m} min` : `${Math.max(1, m)} min`;
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.round((sec % 3600) / 60);
+  return d ? `${fmt(d)} days ${h} h` : h ? `${h} h ${m} min` : `${Math.max(1, m)} min`;
 }
 function rateOf(key) {           // items per minute over the last ~10 minutes of samples
   const now = samples[samples.length - 1]; if (!now) return 0;
@@ -354,11 +354,11 @@ function render(s) {
   // per-file work
   $("work").innerHTML = s.stages.length ? s.stages.map(st => {
     const of = Math.max(st.of, st.done + st.failed), d = of ? 100 * st.done / of : 0, f = of ? 100 * st.failed / of : 0;
-    const r = rateOf("st:" + st.stage), left = of - st.done - st.failed;
+    const r = st.per_min ?? rateOf("st:" + st.stage), left = of - st.done - st.failed;
     return `<div class="work-row"><div class="hd"><span>${esc(st.stage)}</span>
       <span class="num">${fmt(st.done)} <span class="muted">of ${fmt(of)}</span>${st.failed ? ` · <span style="color:var(--bad)">${fmt(st.failed)} failed</span>` : ""}</span></div>
       <div class="bar"><i class="done" style="width:${d}%"></i><i class="fail" style="width:${f}%"></i></div>
-      <div class="rate">${r ? `${r.toFixed(0)} / min · ${left > 0 ? dur(left / r * 60) + " left" : "done"}` : left > 0 ? "waiting for its step" : "complete"}</div></div>`;
+      <div class="rate">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min over the last 10 min · ${left > 0 ? dur(left / r * 60) + " left at this rate" : "done"}` : left > 0 ? "nothing finished in the last 10 min" : "complete"}</div></div>`;
   }).join("") : `<div class="empty">Per-file work appears once the first files are measured.</div>`;
 
   drawThroughput(s.stages.map(st => st.stage));

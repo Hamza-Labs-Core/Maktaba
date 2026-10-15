@@ -43,8 +43,8 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     (
         "scan-local (",
-        "Measure the rest + fingerprint",
-        "ffprobe for files Plex lacks; thumbnail, intro/end-song and frame fingerprints",
+        "Measure the rest",
+        "ffprobe for the few files Plex lacks; thumbnail fingerprints of episode-length videos",
     ),
     (
         "scan-youtube (",
@@ -53,6 +53,12 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("link", "Match files to YouTube videos", "by file name, title and length"),
     ("detect", "Find series and seasons", "playlists + titles + dates + fingerprints"),
+    (
+        "signatures",
+        "Fingerprint intros, end songs and frames",
+        "only a few episodes per season and the unplaced videos that could still join one",
+    ),
+    ("detect again", "Find seasons again", "with the fingerprints as extra evidence"),
     ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     ("scan-visual", "Rate production style", "talk / produced / cinematic, from sampled frames"),
@@ -157,9 +163,15 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
                     WHERE {cond}""",  # noqa: S608 — fixed fragments
                 (stage,),
             ).fetchone()
+            recent = conn.execute(
+                """SELECT COUNT(*) FROM index_jobs WHERE stage = ? AND state = 'done'
+                   AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')""",
+                (stage,),
+            ).fetchone()[0]
             out["stages"].append(
                 {
-                    "stage": stage,
+                    "stage": STAGE_NAMES.get(stage, stage),
+                    "per_min": recent / 10,
                     "done": r["done"] or 0,
                     "failed": r["failed"] or 0,
                     "of": r["total"] or 0,
@@ -269,11 +281,28 @@ def _running_pid(db_path: str) -> int | None:
         pid = int(f.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return None
+    return pid if _alive(pid) else None
+
+
+def _alive(pid: int) -> bool:
+    """Whether a process exists, without touching it. Never ``os.kill(pid, 0)`` on
+    Windows: there it *terminates* the process (TerminateProcess with exit code 0)."""
+    if os.name == "nt":
+        import ctypes
+
+        k32 = getattr(ctypes, "windll").kernel32  # noqa: B009 — attribute exists on Windows only
+        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(handle, ctypes.byref(code))
+        k32.CloseHandle(handle)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
     try:
-        os.kill(pid, 0)  # existence check (no signal sent) on every OS
+        os.kill(pid, 0)  # POSIX: signal 0 only checks existence
     except OSError:
-        return None
-    return pid
+        return False
+    return True
 
 
 def _run_args(

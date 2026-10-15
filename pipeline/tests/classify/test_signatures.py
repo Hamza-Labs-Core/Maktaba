@@ -37,7 +37,7 @@ def test_encode_roundtrip_and_windows() -> None:
     assert decode(encode(THEME[:10])) == list(THEME[:10])
     assert parse_raw(bytes([1, 0, 0, 0, 2])) == [1]
     assert [w[0] for w in windows(30 * 60)] == ["head", "tail"]
-    assert [w[0] for w in windows(150)] == ["head"]  # too short for a separate ending
+    assert [w[0] for w in windows(100)] == ["head"]  # too short for a separate ending
 
 
 def test_frames_drop_flat_images_and_stay_inside_the_video() -> None:

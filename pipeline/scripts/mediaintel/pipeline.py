@@ -79,7 +79,7 @@ def _run(
         _step("scan-plex")
         scan_plex.scan_plex(conn, server, path_map, None)
     _step(f"scan-local ({len(roots)} folders)")
-    scan_local.scan_roots(conn, roots, workers=workers)
+    scan_local.scan_roots(conn, roots, workers=4, parallel=2)  # 8 reads at once: the NAS slows under more
     folders = [r.as_posix() for r in roots]
     if youtube:
         from . import scan_youtube  # optional yt-dlp extra
@@ -115,6 +115,13 @@ def _run(
     _step("detect")
     for f in folders:
         detect.run(conn, f)
+    from . import signatures
+
+    _step("signatures (a few episodes per season + unplaced videos that could join one)")
+    if signatures.run(conn, folders, workers=4):
+        _step("detect again with fingerprints")
+        for f in folders:
+            detect.run(conn, f)
     if youtube and exact:
         from . import scan_youtube
 
