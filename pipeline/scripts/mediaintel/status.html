@@ -412,14 +412,15 @@ function render(s) {
     $("step-start").textContent = cur.started || "—";
     const p = s.progress;
     if (p && p.total) {
-      const pct = Math.min(100, 100 * p.done / p.total), r = rateOf("step");
+      const pct = Math.min(100, 100 * p.done / p.total), r = p.per_min || rateOf("step");
+      if (p.phase) $("step-what").textContent = `${cur.what} · ${p.phase}`;
       $("step-bar").innerHTML = `<i class="run" style="width:${pct}%"></i>`;
       $("step-prog").textContent = `${p.done} of ${p.total} ${p.unit}`;
       $("step-rate").textContent = r ? `${r.toFixed(1)} / min` : "measuring…";
       $("step-eta").textContent = r ? dur((p.total - p.done) / r * 60) : "—";
     } else {
       $("step-bar").innerHTML = `<i class="run" style="width:100%;opacity:.35"></i>`;
-      $("step-prog").textContent = p ? `${p.done} ${p.unit}` : "—";
+      $("step-prog").textContent = p ? (p.phase && !p.total ? p.phase : `${p.done} ${p.unit}`) : "—";
       $("step-rate").textContent = "—"; $("step-eta").textContent = "—";
     }
   } else {

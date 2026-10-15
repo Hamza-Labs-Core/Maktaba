@@ -27,8 +27,8 @@ from typing import Any
 
 _STEP_RE = re.compile(r"^##### (.+)$")
 _TIME_RE = re.compile(r"\((\d\d:\d\d:\d\d)\)\s*$")
-_SIG_RE = re.compile(r"^fingerprinting (\d+) videos")
-_SIG_DONE_RE = re.compile(r"^\s*\[(\d+)/\d+\] \d+ per minute")
+_SIG_RE = re.compile(r"^(?:(.+): )?fingerprinting (\d+) videos")
+_SIG_DONE_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] \d+ per minute")
 _COUNT_RE = re.compile(r"\((\d+) (?:folders|libraries)\)")
 
 #: the run's steps in order: (log heading prefix, plain title, what it does)
@@ -119,10 +119,29 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                 if ": cached (" in ln or (ln.startswith("  ") and ": {'videos'" in ln)
             )
             unit = "channels"
+        elif STEPS[current][0] == "signatures":
+            return out, _sig_progress(body)
         else:
             n, unit = len(body), "log lines"
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
+
+
+def _sig_progress(body: list[str]) -> dict[str, Any]:
+    """Progress of the fingerprint step: which pass (season samples, then candidates),
+    and done / total inside it, from the pass header and its [n/N] lines."""
+    passes = [(i, m) for i, ln in enumerate(body) if (m := _SIG_RE.match(ln))]
+    if not passes:
+        return {"done": 0, "total": None, "unit": "videos", "phase": "choosing what to read"}
+    at, m = passes[-1]
+    total = int(m.group(2))
+    done = [int(d.group(1)) for ln in body[at + 1 :] if (d := _SIG_DONE_RE.match(ln))]
+    return {
+        "done": done[-1] if done else 0,
+        "total": total,
+        "unit": "videos",
+        "phase": f"pass {len(passes)} of 2: {m.group(1) or 'videos'}",
+    }
 
 
 PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
@@ -281,18 +300,20 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         out["log_age_s"] = time.time() - log_path.stat().st_mtime
         out["last_line"] = next((ln.strip() for ln in reversed(lines) if ln.strip()), "")
         # fingerprints are made only for selected videos: the step says how many
-        sel = [int(m.group(1)) for ln in lines if (m := _SIG_RE.match(ln))]
-        done_now = [int(m.group(1)) for ln in lines if (m := _SIG_DONE_RE.match(ln))]
+        sp = _sig_progress(lines[next((i for i in range(len(lines) - 1, -1, -1)
+                                       if lines[i].startswith("##### signatures")), 0):])  # fmt: skip
         for st in out["stages"]:
             if st["stage"] == STAGE_NAMES["signature"]:
-                if sel:
-                    st["of"] = st["done"] - (done_now[-1] if done_now else 0) + sel[-1]
-                    st["note"] = (
-                        "only 6 episodes per season and the unplaced videos that could join one"
-                    )
-                else:
-                    st["of"] = st["done"]
-                    st["note"] = "selected after the first season detection"
+                left = (sp["total"] or 0) - sp["done"]
+                st["of"] = st["done"] + st["failed"] + max(0, left)
+                st["note"] = (
+                    f"{sp['phase']}; the candidates pass is sized once the season samples are read"
+                    if sp["total"]
+                    else "selected after the first season detection"
+                )
+                prog = out.get("progress")
+                if prog and prog.get("phase"):
+                    prog["per_min"] = st["per_min"]  # measured from saved results, not the log
         out["log"] = lines[-40:]
         prog = out["progress"]
         if prog and prog["total"] is None and prog["unit"] == "channels":
