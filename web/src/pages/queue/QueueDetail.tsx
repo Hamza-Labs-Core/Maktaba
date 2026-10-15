@@ -252,11 +252,12 @@ export function QueueDetail() {
             onChange={(e) =>
               void action
                 .run("mode", () =>
-                  queueApi.patchStage(stage, { write_mode: e.target.value as "apply" | "review" })
+                  queueApi.patchStage(stage, { write_mode: e.target.value as "auto" | "apply" | "review" })
                 )
                 .then(afterAction)
             }
           >
+            <option value="auto">{t("queue.detail.mode.auto")}</option>
             <option value="review">{t("queue.detail.mode.review")}</option>
             <option value="apply">{t("queue.detail.mode.apply")}</option>
           </select>

@@ -799,6 +799,7 @@
   "queue.detail.retryFailed": "إعادة محاولة الفاشل ({n})",
   "queue.detail.requeue": "إعادة إضافة مكتبة أو موسم…",
   "queue.detail.writeMode": "الكتابة إلى أنظمة أخرى",
+  "queue.detail.mode.auto": "تلقائي",
   "queue.detail.mode.review": "مراجعة أولًا",
   "queue.detail.mode.apply": "تطبيق تلقائي",
   "queue.detail.neighbours": "من أين يأتي العمل وإلى أين يذهب",

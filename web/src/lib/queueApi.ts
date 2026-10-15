@@ -70,7 +70,7 @@ export interface StageInfo {
   legacy: boolean;
   hidden: boolean;
   external_write: boolean;
-  write_mode: "apply" | "review";
+  write_mode: "auto" | "apply" | "review";
   enabled: boolean;
   disabled_reason: string | null;
   paused: boolean;
@@ -378,7 +378,7 @@ export const queueApi = {
   resume: (stage: string) => api.post<void>(`/api/queues/${q(stage)}/resume`),
   pauseAll: () => api.post<void>("/api/queues/pause-all"),
   resumeAll: () => api.post<void>("/api/queues/resume-all"),
-  patchStage: (stage: string, body: { enabled?: boolean; write_mode?: "apply" | "review" }) =>
+  patchStage: (stage: string, body: { enabled?: boolean; write_mode?: "auto" | "apply" | "review" }) =>
     api.patch<StageInfo>(`/api/queues/${q(stage)}`, body),
   retry: (stage: string, body: { cause?: string; job_ids?: number[] }) =>
     api.post<{ enqueued: number; coalesced: number }>(`/api/queues/${q(stage)}/retry`, body),

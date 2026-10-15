@@ -799,6 +799,7 @@
   "queue.detail.retryFailed": "Retry failed ({n})",
   "queue.detail.requeue": "Re-queue a library or season…",
   "queue.detail.writeMode": "Writes to other systems",
+  "queue.detail.mode.auto": "Automatic",
   "queue.detail.mode.review": "Review first",
   "queue.detail.mode.apply": "Apply automatically",
   "queue.detail.neighbours": "Where work comes from and goes to",
