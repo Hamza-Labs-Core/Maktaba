@@ -75,6 +75,8 @@ h2 { font-size: 15px; font-weight: 600; }
 .pass.done { color: var(--ink); }
 .pass .pn { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .pass .pv { font-family: var(--f-data); font-size: 14px; }
+.pass .bar { margin: 4px 0 0; }
+.pass .pr { font-size: 12px; color: var(--muted); }
 .meta-row { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); }
 .meta-row div { display: grid; }
 .meta-row .v { font-family: var(--f-data); font-size: 15px; }
@@ -423,8 +425,16 @@ function render(s) {
       const pct = Math.min(100, 100 * p.done / p.total), r = p.per_min || rateOf("step");
       const ps = $("step-passes");
       ps.hidden = !p.passes;
-      if (p.passes) ps.innerHTML = p.passes.map((x, i) => `<div class="pass ${x.state}"><span class="pn">Pass ${i + 1} of ${p.passes.length}${x.state === "done" ? " ✓" : x.state === "running" ? " · now" : ""}</span>
-        <span>${esc(x.name)}</span><span class="pv">${x.total == null ? "sized after pass 1" : `${fmt(x.done)} of ${fmt(x.total)}`}</span></div>`).join("");
+      if (p.passes) ps.innerHTML = p.passes.map((x, i) => {
+        const frac = x.total ? Math.min(1, x.done / x.total) : 0;
+        const tail = x.state === "done" ? "done"
+          : x.state === "running" ? (r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min · ${dur((x.total - x.done) / r * 60)} left` : "measuring…")
+          : "waits for pass " + i;
+        return `<div class="pass ${x.state}"><span class="pn">Pass ${i + 1} of ${p.passes.length}${x.state === "done" ? " ✓" : x.state === "running" ? " · now" : ""}</span>
+          <span>${esc(x.name)}</span><span class="pv">${x.total == null ? "sized after pass 1" : `${fmt(x.done)} of ${fmt(x.total)}`}</span>
+          <div class="bar"><i class="${x.state === "done" ? "done" : "run"}" style="width:${100 * frac}%"></i></div>
+          <span class="pr">${tail}</span></div>`;
+      }).join("");
       $("step-bar").innerHTML = `<i class="run" style="width:${pct}%"></i>`;
       $("step-prog").textContent = `${p.done} of ${p.total} ${p.unit}`;
       $("step-rate").textContent = r ? `${r.toFixed(1)} / min` : "measuring…";
