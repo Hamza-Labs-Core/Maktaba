@@ -122,6 +122,7 @@ def scan_channel(
             counts[tab] = _store_listing(
                 conn, list(info.get("entries") or []), channel_id, channel, tab
             )
+            conn.commit()  # never hold the write lock across a network fetch
 
     # approximate dates (English listing)
     ydl_en = _ydl("en", approximate=True)
@@ -135,6 +136,7 @@ def scan_channel(
                     "UPDATE yt_videos SET upload_date=?, date_quality='approximate' WHERE youtube_id=? AND date_quality IS NULL",
                     (d, ent["id"]),
                 )
+        conn.commit()
 
     if playlists:
         pl = _extract(ydl, base + "/playlists")
@@ -168,6 +170,7 @@ def scan_channel(
                         (pid, ent["id"], pos),
                     )
             _store_listing(conn, entries, channel_id, channel, "playlist")
+            conn.commit()
         counts["playlists"] = len((pl or {}).get("entries") or [])
 
     conn.execute(

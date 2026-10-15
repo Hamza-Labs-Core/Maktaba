@@ -79,7 +79,9 @@ def _run(
         _step("scan-plex")
         scan_plex.scan_plex(conn, server, path_map, None)
     _step(f"scan-local ({len(roots)} folders)")
-    scan_local.scan_roots(conn, roots, workers=4, parallel=2)  # 8 reads at once: the NAS slows under more
+    scan_local.scan_roots(
+        conn, roots, workers=4, parallel=2
+    )  # 8 reads at once: the NAS slows under more
     folders = [r.as_posix() for r in roots]
     if youtube:
         from . import scan_youtube  # optional yt-dlp extra
@@ -102,6 +104,10 @@ def _run(
                 return None
             except scan_youtube.BotCheck as e:
                 return str(e)
+            except Exception as e:  # noqa: BLE001 — one channel must not end the run
+                print(f"  ! {f}: YouTube listing failed ({type(e).__name__}: {e}); "
+                      "continuing with local evidence", flush=True)  # fmt: skip
+                return None
             finally:
                 c.close()
 
