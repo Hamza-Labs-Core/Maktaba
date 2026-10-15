@@ -1239,3 +1239,17 @@ The three workstreams share **no files**. Their interfaces are the DB contract (
 | Q5 | `catalog` vs the brief's "collection" naming (D2). | `catalog` |
 
 Additional finding, not fixed here: the comment in `0058_…sqlite.sql:11-12` claims SQLite 3.35+ supports `ADD COLUMN IF NOT EXISTS`. SQLite has no `IF NOT EXISTS` form for `ADD COLUMN`, so that twin likely fails to apply on a real SQLite. It is only text-tested today. The 0088 rebuild supersedes it on fresh installs, but A should confirm by applying 0001–0058 SQLite twins in a test and fix any failing twin with a follow-up slot.
+
+### Workstream C notes
+
+Contradictions and gaps found while building the web UI, with the option chosen.
+
+| # | Finding | Chosen |
+|---|---------|--------|
+| C1 | §9.1 asks for dark values of success/warn/error; the existing light success (4.1:1) and warn (3.6:1) also fail AA on `--color-bg`. | Darkened light success/warn too (`#0b6e3f`, `#8f5600`). Added `--color-running` (saffron) and `--color-info` (blue). A dark-only override keeps the `#fff` label rule in `app.css` readable on the brighter dark fills. |
+| C2 | Health tiles need a 4-hour sparkline; `HealthNow.spark` carries only 30 one-minute samples. | Tiles use `GET /api/queues/health?hours=4` (refreshed every 60 s), and fall back to `spark`. Metric names assumed: `nas.open_ms_p95`, `cpu.pct`, `net.plex_ms`, `backlog.ready` (backlog is not a sampled metric today, so it uses `spark`). |
+| C3 | Queue page KPI "failed retrying vs gave up" and "avg" have no contract fields. | Shows `counts.failed_open` as "gave up", `kpis.failed_24h`, median and p95. |
+| C4 | §9.2 RetriggerDialog says "search library, season or video", but no search endpoint exists. | Searches the libraries list; seasons load from the library item history; videos arrive only prefilled (item page). |
+| C5 | Decision: external writes are automatic. | Fixtures default `write_mode` to `apply`; no review issue by default. The Apply action and write-mode select still work if B returns an `apply` group. `TimelineEntry.changes?: WriteChange[]` (added/removed/reordered/created/deleted, with items) is proposed for the item history; B must fill it from `job_events.data`. |
+| C6 | Decision: Plex and dizqueTV are extensions. | `StageInfo.extension` (null = core); extension queues render in an "Extensions" lane after Channels, with a badge. Extension APIs assumed: `GET /api/extensions`, `PUT /api/extensions/{name}`, `POST /api/extensions/{name}/test`. Item page hides Plex and dizqueTV "Where it appears" rows unless the extension is enabled. |
+| C7 | Decision: workers on several machines. | `GET /api/workers` -> `{workers: [{worker_id, host, online, last_seen_at, serves[], serves_label}]}`; `QueueSummary.served_by?` and `no_worker?`. `no_worker` with waiting jobs shows "Waiting for a worker that serves <stage>". The Media lane opens by default when it has work. |
