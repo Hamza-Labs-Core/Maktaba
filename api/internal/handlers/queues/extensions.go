@@ -31,6 +31,7 @@ type SettingField struct {
 
 type extensionDef struct {
 	Name        string
+	Label       string
 	Version     string
 	Description string
 	Fields      []SettingField
@@ -38,17 +39,17 @@ type extensionDef struct {
 
 var extensionCatalog = []extensionDef{
 	{
-		Name: "dizquetv", Version: "1", Description: "Publish Maktaba shows and channels to a dizqueTV server.",
+		Name: "dizquetv", Label: "dizqueTV", Version: "1", Description: "Publish Maktaba shows and channels to a dizqueTV server.",
 		Fields: []SettingField{
 			{Key: "url", Label: "dizqueTV URL", Type: "url", Required: true},
 		},
 	},
 	{
-		Name: "plex", Version: "1", Description: "Create and keep Plex collections in sync with detected seasons.",
+		Name: "plex", Label: "Plex", Version: "1", Description: "Create and keep Plex collections in sync with detected seasons.",
 		Fields: []SettingField{
 			{Key: "url", Label: "Plex URL", Type: "url", Required: true},
 			{Key: "token", Label: "Plex token", Type: "secret", Required: true},
-			{Key: "path_map", Label: "Path map (Plex path to local path, JSON)", Type: "json"},
+			{Key: "path_map", Label: "Path map (Plex path to local path, JSON)", Type: "text"},
 		},
 	},
 }
@@ -60,6 +61,7 @@ const SecretMask = "********"
 // Extension is the GET /api/extensions item.
 type Extension struct {
 	Name        string         `json:"name"`
+	Label       string         `json:"label"`
 	Version     string         `json:"version"`
 	Description string         `json:"description"`
 	Enabled     bool           `json:"enabled"`
@@ -121,7 +123,7 @@ func isSet(v any) bool {
 // secret values are replaced by the mask.
 func buildExtension(def extensionDef, row extRow) Extension {
 	e := Extension{
-		Name: def.Name, Version: def.Version, Description: def.Description,
+		Name: def.Name, Label: def.Label, Version: def.Version, Description: def.Description,
 		Enabled: row.enabled, Schema: def.Fields, Settings: map[string]any{},
 		SecretsSet: []string{}, UpdatedAt: row.updated, Configured: true,
 	}
@@ -253,10 +255,6 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.BadRequest("setting "+k+" must be an http(s) URL"))
 			return
 		}
-		if f.Type == "json" && !json.Valid([]byte(s)) {
-			httperror.Write(w, r, httperror.BadRequest("setting "+k+" must be valid JSON"))
-			return
-		}
 		cur.settings[k] = s
 	}
 	enabled := cur.enabled
@@ -276,7 +274,7 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 
 // TestExtension implements POST /api/extensions/{name}/test. The
 // connection check is not implemented yet (the worker owns the client
-// code); it answers 501 so the UI can show a disabled "Test".
+// code); it answers {ok:false, message:"not_implemented..."}.
 func (h *Handler) TestExtension(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
@@ -286,8 +284,7 @@ func (h *Handler) TestExtension(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("extension "+name))
 		return
 	}
-	httperror.Write(w, r, &httperror.Error{
-		Type: "https://maktaba.dev/problems/not-implemented", Title: "not implemented",
-		Status: http.StatusNotImplemented, Detail: "connection test is not implemented yet",
-	})
+	// 200 {ok:false} (queueApi.ts testExtension) rather than a 501 so
+	// the UI can show the message inline.
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ok": false, "message": "not_implemented: connection test is not available yet"})
 }

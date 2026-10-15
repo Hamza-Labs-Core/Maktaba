@@ -114,6 +114,7 @@ const (
 	WaitPausedAll      WaitingReason = "paused_all"
 	WaitPaused         WaitingReason = "paused"
 	WaitAwaitingReview WaitingReason = "awaiting_review"
+	WaitNoWorker       WaitingReason = "no_worker"
 	WaitPoolFull       WaitingReason = "pool_full"
 	WaitDebouncing     WaitingReason = "debouncing"
 	WaitBackoff        WaitingReason = "backoff"
@@ -153,28 +154,31 @@ type QueueSummary struct {
 	// ServedBy lists the online workers that serve this stage; NoWorker
 	// is true when the stage is enabled but no online worker serves it
 	// ("waiting for a worker that serves transcribe").
-	ServedBy ServedBy `json:"served_by"`
-	NoWorker bool     `json:"no_worker"`
+	// served_by is the list of hosts (queueApi.ts contract).
+	ServedBy      []string `json:"served_by"`
+	ServedWorkers int      `json:"served_workers"`
+	NoWorker      bool     `json:"no_worker"`
 	// Extension mirrors StageInfo.Extension for card rendering.
 	Extension *string `json:"extension"`
 }
 
-// ServedBy is the live worker coverage of one stage.
-type ServedBy struct {
+// Coverage is the live worker coverage of one stage.
+type Coverage struct {
 	Workers int      `json:"workers"`
 	Hosts   []string `json:"hosts"`
 }
 
 // Worker is one row of the workers registry plus liveness.
 type Worker struct {
-	ID         string          `json:"id"`
-	Host       string          `json:"host"`
-	Stages     []string        `json:"stages"`
-	Pools      json.RawMessage `json:"pools"`
-	StartedAt  time.Time       `json:"started_at"`
-	LastSeenAt time.Time       `json:"last_seen_at"`
-	Version    *string         `json:"version"`
-	Online     bool            `json:"online"`
+	ID          string          `json:"worker_id"`
+	Host        string          `json:"host"`
+	Online      bool            `json:"online"`
+	LastSeenAt  time.Time       `json:"last_seen_at"`
+	Stages      []string        `json:"serves"`
+	ServesLabel string          `json:"serves_label"`
+	Pools       json.RawMessage `json:"pools"`
+	StartedAt   time.Time       `json:"started_at"`
+	Version     *string         `json:"version"`
 }
 
 // Flow is trigger traffic between two stages.
@@ -366,9 +370,12 @@ type TimelineEntry struct {
 	DurationMs *int64 `json:"duration_ms"`
 	// Summary is processing_jobs.output_summary: for external writes it
 	// carries the diff the write applied.
-	Summary   json.RawMessage `json:"output_summary"`
-	Triggered []TriggeredRef  `json:"triggered"`
-	Reasons   []ReasonRef     `json:"reasons"`
+	Summary json.RawMessage `json:"output_summary"`
+	// Changes is what an external write changed (plex_collection,
+	// dizquetv_show, write_channels), from the job_events data / summary.
+	Changes   []WriteChange  `json:"changes,omitempty"`
+	Triggered []TriggeredRef `json:"triggered"`
+	Reasons   []ReasonRef    `json:"reasons"`
 }
 
 // ItemHistory is GET /api/items/{kind}/{id}/history.
@@ -412,4 +419,13 @@ type HealthPoint struct {
 type HealthSeries struct {
 	Metric string        `json:"metric"`
 	Points []HealthPoint `json:"points"`
+}
+
+// WriteChange is one thing an external write changed (queueApi.ts).
+type WriteChange struct {
+	Action string   `json:"action"` // added|removed|reordered|created|deleted|updated
+	What   string   `json:"what"`   // episodes|collection|show|channel|slot
+	Target string   `json:"target"`
+	Count  *int     `json:"count,omitempty"`
+	Items  []string `json:"items,omitempty"`
 }

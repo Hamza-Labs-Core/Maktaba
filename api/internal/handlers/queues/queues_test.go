@@ -115,7 +115,7 @@ func jobRefRow(id int64, stage, state string) []driver.Value {
 func TestWaitingReason_Precedence(t *testing.T) {
 	ptr := func(s string) *string { return &s }
 	base := func() stageInputs {
-		return stageInputs{Info: StageInfo{Stage: "x", Enabled: true}, PoolSize: 2, Now: t0}
+		return stageInputs{Info: StageInfo{Stage: "x", Enabled: true}, PoolSize: 2, Now: t0, Served: Coverage{Workers: 1}}
 	}
 	tests := []struct {
 		name string
@@ -134,6 +134,7 @@ func TestWaitingReason_Precedence(t *testing.T) {
 			i.Awaiting, i.Live.Pending = 2, 1
 			i.Live.Ready = 0
 		}, WaitDebouncing, false},
+		{"no worker serves a stage with pending work", func(i *stageInputs) { i.Live.Pending, i.Live.Ready, i.Served = 2, 2, Coverage{} }, WaitNoWorker, false},
 		{"pool full", func(i *stageInputs) { i.Live.Pending, i.Live.Ready, i.PoolBusy = 4, 4, 2 }, WaitPoolFull, false},
 		{"debouncing", func(i *stageInputs) { i.Live.Pending = 2 }, WaitDebouncing, false},
 		{"backoff", func(i *stageInputs) { i.Live.Pending, i.Live.Backoff = 2, 1 }, WaitBackoff, false},
@@ -178,19 +179,24 @@ func TestSummarizeStage(t *testing.T) {
 			in: stageInputs{Info: StageInfo{Stage: "probe", Enabled: true},
 				Live:     liveCounts{Pending: 40, Ready: 30, Running: 2, Since: &since, Oldest: &oldest},
 				Done:     doneCounts{Done: 50, Skipped: 5, Recent: 20},
-				WaveDone: 60, FailedOpen: 3, Now: t0, Served: ServedBy{Workers: 1, Hosts: []string{"nas"}}},
+				WaveDone: 60, FailedOpen: 3, Now: t0, Served: Coverage{Workers: 1, Hosts: []string{"nas"}}},
 			wantTotal: 60 + 42 + 3, wantDone: 60, wantRate: 2, wantETA: fp(900), wantOldest: fp(90),
 		},
 		{
 			name: "no live rows -> 24h window, skipped counts as done",
 			in: stageInputs{Info: StageInfo{Stage: "probe", Enabled: true},
-				Done: doneCounts{Done: 7, Skipped: 3}, Now: t0, Served: ServedBy{Workers: 1}},
+				Done: doneCounts{Done: 7, Skipped: 3}, Now: t0, Served: Coverage{Workers: 1}},
 			wantTotal: 10, wantDone: 10, wantReason: true,
 		},
 		{
 			name:       "no worker serves an enabled stage",
+			in:         stageInputs{Info: StageInfo{Stage: "transcribe", Enabled: true}, Live: liveCounts{Pending: 2, Ready: 2}, Now: t0},
+			wantReason: true, wantNoWork: true, wantTotal: 2,
+		},
+		{
+			name:       "idle stage with no worker is not flagged (nothing is waiting)",
 			in:         stageInputs{Info: StageInfo{Stage: "transcribe", Enabled: true}, Now: t0},
-			wantReason: true, wantNoWork: true,
+			wantReason: true,
 		},
 		{
 			name:       "disabled stage is not flagged no_worker",
@@ -222,7 +228,7 @@ func TestSummarizeStage(t *testing.T) {
 			if s.NoWorker != tc.wantNoWork {
 				t.Errorf("no_worker %v want %v", s.NoWorker, tc.wantNoWork)
 			}
-			if s.RunningJobs == nil || s.ServedBy.Hosts == nil {
+			if s.RunningJobs == nil || s.ServedBy == nil {
 				t.Errorf("arrays must be non-nil for JSON")
 			}
 		})
@@ -424,12 +430,12 @@ func TestSnapshot(t *testing.T) {
 	if len(probe.RunningJobs) != 1 || probe.RunningJobs[0].Progress == nil || probe.RunningJobs[0].Progress.TotalUnits != 10 {
 		t.Errorf("running jobs = %+v", probe.RunningJobs)
 	}
-	if probe.ServedBy.Workers != 1 || probe.NoWorker {
+	if len(probe.ServedBy) != 1 || probe.ServedBy[0] != "nas" || probe.ServedWorkers != 1 || probe.NoWorker {
 		t.Errorf("probe served_by = %+v no_worker=%v", probe.ServedBy, probe.NoWorker)
 	}
 
 	tr := q["transcribe"]
-	if !tr.NoWorker || tr.ServedBy.Workers != 0 {
+	if !tr.NoWorker || len(tr.ServedBy) != 0 || tr.WaitingReason == nil || *tr.WaitingReason != WaitNoWorker {
 		t.Errorf("transcribe: the Mac worker is offline, want no_worker; got %+v", tr)
 	}
 	if tr.Extension == nil || *tr.Extension != "whisper" {

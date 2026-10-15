@@ -599,7 +599,6 @@ func TestExtensions(t *testing.T) {
 			}},
 		{"unknown setting", "plex", `{}`, `{"settings":{"password":"x"}}`, 400, nil},
 		{"bad url", "plex", `{}`, `{"settings":{"url":"ftp://x"}}`, 400, nil},
-		{"bad json setting", "plex", `{}`, `{"settings":{"path_map":"{not json"}}`, 400, nil},
 		{"non-string setting", "plex", `{}`, `{"settings":{"url":5}}`, 400, nil},
 		{"nothing to change", "plex", `{}`, `{}`, 400, nil},
 		{"unknown extension", "kodi", `{}`, `{"enabled":true}`, 404, nil},
@@ -629,8 +628,14 @@ func TestExtensions(t *testing.T) {
 
 	t.Run("test endpoint is not implemented", func(t *testing.T) {
 		f := newFixture()
-		if rec := f.do("POST", "/api/extensions/plex/test", "", admin()); rec.Code != http.StatusNotImplemented {
-			t.Fatalf("status %d", rec.Code)
+		rec := f.do("POST", "/api/extensions/plex/test", "", admin())
+		var out struct {
+			OK      bool   `json:"ok"`
+			Message string `json:"message"`
+		}
+		decode(t, rec, &out)
+		if rec.Code != http.StatusOK || out.OK || !strings.HasPrefix(out.Message, "not_implemented") {
+			t.Fatalf("status %d out %+v", rec.Code, out)
 		}
 		if rec := f.do("POST", "/api/extensions/kodi/test", "", admin()); rec.Code != 404 {
 			t.Fatalf("status %d", rec.Code)

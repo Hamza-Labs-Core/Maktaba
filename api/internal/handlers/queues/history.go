@@ -76,6 +76,10 @@ SELECT c.id::text, c.name, count(*)
  ORDER BY c.name
  LIMIT 20`
 
+	changesSQL = `
+SELECT job_id, data FROM job_events
+ WHERE job_id = ANY($1::bigint[]) AND kind IN ('applied', 'review') ORDER BY id`
+
 	triggeredSQL = `
 SELECT job_id, data FROM job_events WHERE job_id = ANY($1::bigint[]) AND kind = 'triggered'`
 )
@@ -421,8 +425,33 @@ func (h *Handler) loadTimeline(ctx context.Context, out *ItemHistory, kind, id s
 		return err
 	}
 
+	// What each external write changed (job_events data.changes).
+	changes := map[int64][]WriteChange{}
+	crows, err := h.DB.QueryContext(ctx, changesSQL, pq.Array(ids))
+	if err != nil {
+		return err
+	}
+	for crows.Next() {
+		var jid int64
+		var data []byte
+		if err := crows.Scan(&jid, &data); err != nil {
+			crows.Close()
+			return err
+		}
+		changes[jid] = append(changes[jid], parseChanges(data)...)
+	}
+	if err := crows.Err(); err != nil {
+		crows.Close()
+		return err
+	}
+	crows.Close()
+
 	for _, t := range tl {
 		e := TimelineEntry{Job: t.job, Triggered: []TriggeredRef{}, Reasons: parseReasons(t.reasons), Summary: rawOrNull(t.summary)}
+		e.Changes = changes[t.job.ID]
+		if len(e.Changes) == 0 {
+			e.Changes = parseChanges(t.summary)
+		}
 		if t.durMs.Valid {
 			d := int64(t.durMs.Float64)
 			e.DurationMs = &d
@@ -466,3 +495,18 @@ func rawOrNull(b []byte) json.RawMessage {
 }
 
 func sprintfSQL(format, arg string) string { return fmt.Sprintf(format, arg) }
+
+// parseChanges reads {"changes":[WriteChange...]} from a job_events data
+// or output_summary document; anything else yields nil.
+func parseChanges(raw []byte) []WriteChange {
+	if len(raw) == 0 {
+		return nil
+	}
+	var doc struct {
+		Changes []WriteChange `json:"changes"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	return doc.Changes
+}

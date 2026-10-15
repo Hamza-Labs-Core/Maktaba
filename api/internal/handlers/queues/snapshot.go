@@ -38,7 +38,7 @@ type stageInputs struct {
 	PoolSize     int
 	UpstreamLive bool
 	Running      []JobRef
-	Served       ServedBy
+	Served       Coverage
 	Now          time.Time
 }
 
@@ -81,15 +81,22 @@ func summarizeStage(in stageInputs) QueueSummary {
 		s.OldestWaitingSec = &age
 	}
 	s.Extension = in.Info.Extension
-	s.ServedBy = in.Served
-	if s.ServedBy.Hosts == nil {
-		s.ServedBy.Hosts = []string{}
+	s.ServedBy = in.Served.Hosts
+	if s.ServedBy == nil {
+		s.ServedBy = []string{}
 	}
-	s.NoWorker = in.Info.Enabled && in.Served.Workers == 0
+	s.ServedWorkers = in.Served.Workers
+	s.NoWorker = noWorker(in)
 	if in.Live.Running == 0 {
 		s.WaitingReason = waitingReason(in)
 	}
 	return s
+}
+
+// noWorker: work is waiting for an enabled stage that no online worker
+// serves ("waiting for a worker that serves transcribe").
+func noWorker(in stageInputs) bool {
+	return in.Info.Enabled && in.Live.Pending > 0 && in.Served.Workers == 0
 }
 
 // waitingReason applies the precedence of plan-06-11 §8.3. It returns
@@ -107,6 +114,8 @@ func waitingReason(in stageInputs) *WaitingReason {
 		return pick(WaitPaused)
 	case in.Awaiting > 0 && in.Live.Pending == 0:
 		return pick(WaitAwaitingReview)
+	case noWorker(in):
+		return pick(WaitNoWorker)
 	case in.Live.Ready > 0 && in.PoolBusy >= in.PoolSize:
 		return pick(WaitPoolFull)
 	case in.Live.Pending > 0 && in.Live.Ready == 0 && in.Live.Backoff == 0:

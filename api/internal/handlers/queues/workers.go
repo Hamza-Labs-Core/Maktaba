@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -57,9 +59,9 @@ func LoadWorkers(ctx context.Context, db *sql.DB, now time.Time) ([]Worker, erro
 }
 
 // ServedByStage computes per-stage live coverage from the online workers.
-func ServedByStage(workers []Worker) map[string]ServedBy { return servedBy(workers) }
+func ServedByStage(workers []Worker) map[string]Coverage { return servedBy(workers) }
 
-func servedBy(workers []Worker) map[string]ServedBy {
+func servedBy(workers []Worker) map[string]Coverage {
 	hosts := map[string]map[string]bool{}
 	count := map[string]int{}
 	for _, w := range workers {
@@ -74,14 +76,14 @@ func servedBy(workers []Worker) map[string]ServedBy {
 			hosts[s][w.Host] = true
 		}
 	}
-	out := map[string]ServedBy{}
+	out := map[string]Coverage{}
 	for s, n := range count {
 		hs := make([]string, 0, len(hosts[s]))
 		for h := range hosts[s] {
 			hs = append(hs, h)
 		}
 		sort.Strings(hs)
-		out[s] = ServedBy{Workers: n, Hosts: hs}
+		out[s] = Coverage{Workers: n, Hosts: hs}
 	}
 	return out
 }
@@ -96,5 +98,31 @@ func (h *Handler) Workers(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "workers", err)
 		return
 	}
+	labels := map[string]string{}
+	if stages, err := h.loadStages(r.Context()); err == nil {
+		for _, s := range stages {
+			labels[s.Stage] = s.Label
+		}
+	}
+	for i := range ws {
+		ws[i].ServesLabel = servesLabel(ws[i].Stages, labels)
+	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"workers": ws})
+}
+
+// servesLabel renders "Probe, Detect, +3 more" from stage labels.
+func servesLabel(stages []string, labels map[string]string) string {
+	const max = 4
+	names := make([]string, 0, len(stages))
+	for _, s := range stages {
+		if l := labels[s]; l != "" {
+			names = append(names, l)
+		} else {
+			names = append(names, s)
+		}
+	}
+	if len(names) <= max {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:max], ", ") + ", +" + strconv.Itoa(len(names)-max) + " more"
 }

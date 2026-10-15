@@ -87,5 +87,20 @@ func (h *Handler) publishSnapshotOnce(ctx context.Context) bool {
 		return false
 	}
 	h.Hub.Publish(SnapshotChannel, ev)
+	h.recordBacklog(ctx, snap)
 	return true
+}
+
+// recordBacklog persists the ready backlog as health metric
+// "backlog.ready" (host "api"), at most one sample per minute, so the
+// health chart has a backlog series: workers do not sample it. Only the
+// snapshot publisher calls this, so GET handlers never write.
+func (h *Handler) recordBacklog(ctx context.Context, snap QueuesSnapshot) {
+	_, err := h.DB.ExecContext(ctx, `
+		INSERT INTO health_samples (at, host, metric, value)
+		VALUES (date_trunc('minute', $1::timestamptz), 'api', 'backlog.ready', $2)
+		ON CONFLICT DO NOTHING`, snap.At, float64(snap.Health.Backlog.Ready))
+	if err != nil {
+		slog.Default().Debug("queues: backlog sample not recorded", "err", err)
+	}
 }

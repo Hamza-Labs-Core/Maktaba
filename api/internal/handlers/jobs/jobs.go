@@ -562,7 +562,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 			if sb.Hosts != nil {
 				st.ServedHosts = sb.Hosts
 			}
-			st.NoWorker = enabled[stage] && sb.Workers == 0
+			st.NoWorker = enabled[stage] && st.Pending > 0 && sb.Workers == 0
 			resp.ByStage[stage] = st
 		}
 	}
