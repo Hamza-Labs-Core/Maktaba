@@ -147,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("serve", help="live status page (http://localhost:8770)")
     p.add_argument("--log", type=Path, help="the run's log file, for the current step")
     p.add_argument("--port", type=int, default=8770)
+    p.add_argument("--dizquetv-db", type=Path, help=".dizquetv folder, passed to runs started here")
+    p.add_argument("--reports", type=Path, default=Path("reports"), help="review pages to serve")
 
     p = sub.add_parser("status", help="summary per folder")
     p.add_argument("--jobs", action="store_true", help="indexing jobs per folder and stage")
@@ -319,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "serve":
         from . import serve
 
-        serve.serve(str(a.db), a.log, a.port)
+        serve.serve(str(a.db), a.log, a.port, dizquetv_db=a.dizquetv_db, reports=a.reports)
         return 0
     elif a.cmd == "status":
         if a.jobs:

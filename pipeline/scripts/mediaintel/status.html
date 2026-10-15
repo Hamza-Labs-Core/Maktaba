@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Library Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
+<style>
+/* Layout: a run console. Status hero → step rail → per-file work with live rates → library table.
+   Lapis marks progress, saffron marks the step in motion; semantic green/red only for done/failed. */
+:root {
+  --paper: #f3f5f8; --surface: #ffffff; --ink: #16202b; --muted: #5b6878; --line: #dbe2ea;
+  --lapis: #2d58cf; --lapis-soft: #dfe7fb; --saffron: #b97c0c; --saffron-soft: #f7ecd5;
+  --ok: #2c7a52; --bad: #b0352a; --track: #e9edf2;
+  --f-display: "Noto Kufi Arabic", "IBM Plex Sans Arabic", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans Arabic", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #8d9aab; --line: #253141;
+    --lapis: #7f9dff; --lapis-soft: #1d2a4a; --saffron: #e2a73c; --saffron-soft: #3a2c12;
+    --ok: #5cbf88; --bad: #f08176; --track: #1f2833; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #8d9aab; --line: #253141;
+  --lapis: #7f9dff; --lapis-soft: #1d2a4a; --saffron: #e2a73c; --saffron-soft: #3a2c12;
+  --ok: #5cbf88; --bad: #f08176; --track: #1f2833; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--f-body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: var(--s5) var(--s6);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: var(--s5); }
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 15px; font-weight: 600; }
+.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.muted { color: var(--muted); }
+.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: var(--s4) var(--s5); min-width: 0; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.running { background: var(--saffron-soft); color: var(--saffron); }
+.pill.done { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.pill.idle { background: var(--track); color: var(--muted); }
+.pill .pulse { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill.running .pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--s5); align-items: stretch; }
+.now-step { display: grid; gap: var(--s3); }
+.now-step .stepno { font-family: var(--f-data); color: var(--saffron); font-size: 13px; }
+.now-step .title { font-family: var(--f-display); font-size: 26px; font-weight: 700; line-height: 1.25; }
+.bar { height: 10px; background: var(--track); border-radius: 6px; overflow: hidden; display: flex; }
+.bar > i { display: block; height: 100%; }
+.bar .done { background: var(--lapis); } .bar .fail { background: var(--bad); } .bar .run { background: var(--saffron); }
+.meta-row { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); }
+.meta-row div { display: grid; }
+.meta-row .v { font-family: var(--f-data); font-size: 15px; }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
+.kpi { display: grid; gap: 2px; padding: var(--s3); border-radius: 8px; background: var(--paper); }
+.kpi .v { font-family: var(--f-data); font-size: 20px; font-weight: 500; }
+.kpi svg { width: 100%; height: 26px; display: block; }
+
+/* step rail */
+.rail { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s3) var(--s2); }
+.rail li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s2); align-items: start; font-size: 13px; }
+.rail .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--f-data);
+  border: 1.5px solid var(--line); color: var(--muted); background: var(--surface); }
+.rail li.done .dot { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
+.rail li.running .dot { border-color: var(--saffron); color: var(--saffron); box-shadow: 0 0 0 4px var(--saffron-soft); }
+.rail li.waiting .t { color: var(--muted); }
+.rail li.running .t { font-weight: 600; }
+.rail .w { font-size: 11px; color: var(--muted); }
+
+/* work + charts */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s5); }
+.work { display: grid; gap: var(--s4); }
+.work-row { display: grid; gap: 6px; }
+.work-row .hd { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s2); }
+.work-row .rate { font-family: var(--f-data); font-size: 12px; color: var(--muted); }
+.chart { width: 100%; height: 190px; display: block; }
+.chart text { fill: var(--muted); font: 11px var(--f-data); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 6px; vertical-align: -1px; }
+.mix { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--s4); align-items: center; }
+.donut { width: 150px; height: 150px; }
+.donut text { fill: var(--ink); font: 600 20px var(--f-data); }
+.donut .sub { fill: var(--muted); font: 11px var(--f-body); }
+.hbar { display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 38px; gap: var(--s2); align-items: center; font-size: 13px; }
+.hbar .track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.hbar .track i { display: block; height: 100%; background: var(--lapis); }
+.empty { color: var(--muted); font-size: 13px; padding: var(--s3) 0; }
+
+/* table */
+.tools { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; justify-content: space-between; }
+input[type="search"] { font: 14px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; min-width: 0; width: 260px; max-width: 100%; }
+input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--lapis); outline-offset: 2px; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: start; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; cursor: pointer; user-select: none; }
+th[aria-sort] { color: var(--ink); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td.n { text-align: end; font-family: var(--f-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.lib { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini { width: 90px; height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-inline-end: 6px; }
+.mini i { display: block; height: 100%; background: var(--lapis); }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-family: var(--f-data); background: var(--track); color: var(--muted); }
+.chip.on { background: var(--lapis-soft); color: var(--lapis); }
+details summary { cursor: pointer; font-family: var(--f-display); font-weight: 600; font-size: 15px; }
+pre { margin: var(--s3) 0 0; font: 12px/1.5 var(--f-data); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; color: var(--muted); }
+.err td { color: var(--bad); }
+.btn { font: 600 13px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+.btn:hover { border-color: var(--lapis); }
+.btn.primary { background: var(--lapis); border-color: var(--lapis); color: var(--surface); }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 3px 10px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.confirm { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.toast { padding: 10px 14px; border-radius: 8px; background: var(--lapis-soft); color: var(--ink); font-size: 13px; }
+.toast.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); }
+.wsteps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5); }
+.wsteps li { display: grid; gap: 8px; align-content: start; padding-top: 10px; border-top: 2px solid var(--lapis-soft); }
+.opt { display: flex; gap: 8px; align-items: baseline; font-size: 13px; cursor: pointer; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row input { flex: 1 1 200px; width: auto; }
+.stack { display: grid; gap: 10px; }
+.field { display: grid; gap: 4px; }
+select, input[type="text"] { font: 14px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.out { min-height: 120px; color: var(--ink); background: var(--paper); border-radius: 8px; padding: 10px; }
+td.act { white-space: nowrap; }
+td.act a { color: var(--lapis); font-size: 12px; margin-inline-start: 6px; }
+@media (max-width: 860px) {
+  .wsteps { grid-template-columns: minmax(0, 1fr); }
+  .hero, .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 460px) { .rail { grid-template-columns: minmax(0, 1fr); } .mix { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .pill.running .pulse { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Library control centre</h1>
+      <div class="muted" id="sub">Series, seasons and channels for the Plex libraries</div>
+    </div>
+    <div class="top" style="gap:12px">
+      <span class="pill idle" id="state"><span class="pulse"></span><span id="state-t">Connecting</span></span>
+      <span class="muted num" id="when"></span>
+      <button class="btn" id="stop" hidden>Stop run</button>
+      <span id="stop-confirm" hidden class="confirm">Stop the run? Finished work is kept and the next run continues from it.
+        <button class="btn danger" id="stop-yes">Stop</button><button class="btn ghost" id="stop-no">Keep running</button></span>
+    </div>
+  </header>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="panel wizard" id="wizard">
+    <div class="top"><h2>Start a run</h2><span class="muted" id="wiz-note">Every step is saved per file, so a new run only does what is left.</span></div>
+    <ol class="wsteps">
+      <li><span class="label">1 · Libraries</span>
+        <label class="opt"><input type="radio" name="scope" id="scope-all" value="all" checked> All Plex libraries <span class="muted">(Movies left out)</span></label>
+        <label class="opt"><input type="radio" name="scope" id="scope-sel" value="sel"> Only the libraries ticked below <span class="chip" id="sel-n">0</span></label>
+      </li>
+      <li><span class="label">2 · What to write</span>
+        <label class="opt"><input type="checkbox" id="o-plex" checked> Season collections in Plex</label>
+        <label class="opt"><input type="checkbox" id="o-tv" checked> dizqueTV shows and TV channels</label>
+        <label class="opt"><input type="checkbox" id="o-yt" checked> Read YouTube playlists and dates</label>
+        <label class="opt"><input type="checkbox" id="o-exact"> <span>Exact upload dates<br><span class="muted">slow: one request per video</span></span></label>
+      </li>
+      <li><span class="label">3 · Review</span>
+        <div id="wiz-review" class="muted"></div>
+        <div><button class="btn primary" id="start">Start run</button></div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="hero">
+    <div class="panel now-step">
+      <div class="stepno" id="stepno">—</div>
+      <div class="title" id="step-title">Waiting for the first update</div>
+      <div class="muted" id="step-what"></div>
+      <div class="bar" id="step-bar"><i class="run" style="width:0"></i></div>
+      <div class="meta-row">
+        <div><span class="label">Progress</span><span class="v" id="step-prog">—</span></div>
+        <div><span class="label">Rate</span><span class="v" id="step-rate">—</span></div>
+        <div><span class="label">Time left (estimate)</span><span class="v" id="step-eta">—</span></div>
+        <div><span class="label">Step started</span><span class="v" id="step-start">—</span></div>
+      </div>
+    </div>
+    <div class="panel kpis" id="kpis"></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:12px"><h2>Run steps</h2><span class="muted" id="run-count"></span></div>
+    <ol class="rail" id="rail"></ol>
+  </section>
+
+  <section class="grid2">
+    <div class="panel work">
+      <div class="top"><h2>Per-file work</h2><span class="label">saved as it goes</span></div>
+      <div id="work"></div>
+      <div class="legend"><span><i style="background:var(--lapis)"></i>done</span><span><i style="background:var(--bad)"></i>failed</span><span><i style="background:var(--track)"></i>to do</span></div>
+    </div>
+    <div class="panel">
+      <div class="top"><h2>Throughput</h2><span class="label">items per minute, this session</span></div>
+      <svg class="chart" id="thru" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Items finished per minute"></svg>
+      <div class="legend" id="thru-legend"></div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Production style</h2><span class="label">seasons</span></div>
+      <div id="styles"></div>
+    </div>
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Topics</h2><span class="label">seasons per main topic</span></div>
+      <div id="genres"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="tools" style="margin-bottom:8px">
+      <h2>Libraries</h2>
+      <input type="search" id="q" placeholder="Filter libraries" aria-label="Filter libraries">
+    </div>
+    <div class="scroll"><table id="libs"></table></div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Explain a video</h2><span class="label">why it is where it is</span></div>
+      <form id="ex-form" class="row">
+        <input type="search" id="ex-q" placeholder="Part of a title, e.g. طلع البدر" aria-label="Title text" dir="auto">
+        <button class="btn" type="submit">Explain</button>
+      </form>
+      <pre id="ex-out" class="out" dir="auto">Search a title to see its air date, length, playlists, Plex item and which season it landed in.</pre>
+    </div>
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Pin a show's style</h2><span class="label">overrides the automatic rating</span></div>
+      <form id="st-form" class="stack">
+        <label class="field"><span class="label">Library</span><select id="st-lib" aria-label="Library"></select></label>
+        <label class="field"><span class="label">Series name, as in the review page</span><input type="text" id="st-series" dir="auto" placeholder="الحبيب"></label>
+        <label class="field"><span class="label">Style</span>
+          <select id="st-style"><option value="cinematic">Cinematic / AI</option><option value="produced">Produced</option><option value="talk">Studio / lecture</option><option value="static">Still picture + audio</option><option value="">Clear the pin</option></select></label>
+        <div><button class="btn" type="submit">Save</button> <span class="muted">Applies from the next production-style step.</span></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details id="fails"><summary>Failures <span class="chip" id="fail-n">0</span></summary><div class="scroll"><table id="errs"></table></div></details>
+  </section>
+  <section class="panel">
+    <details id="logbox"><summary>Log</summary><pre id="log"></pre></details>
+  </section>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => Number(n || 0).toLocaleString();
+const SERIES_COLORS = ["var(--lapis)", "var(--saffron)", "var(--ok)", "var(--muted)"];
+const STYLE_ORDER = [["static","Still picture + audio"],["talk","Studio / lecture"],["produced","Produced"],["cinematic","Cinematic / AI"]];
+const STYLE_COLORS = {static:"var(--muted)", talk:"var(--lapis)", produced:"var(--ok)", cinematic:"var(--saffron)"};
+let samples = [];
+try { samples = JSON.parse(sessionStorage.getItem("mi-samples") || "[]"); } catch (e) { samples = []; }
+let sortKey = "files", sortDir = -1, last = null;
+
+function dur(sec) {
+  if (!isFinite(sec) || sec <= 0) return "—";
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? `${h} h ${m} min` : `${Math.max(1, m)} min`;
+}
+function rateOf(key) {           // items per minute over the last ~10 minutes of samples
+  const now = samples[samples.length - 1]; if (!now) return 0;
+  const old = samples.find(x => now.t - x.t <= 600) || samples[0];
+  const dt = (now.t - old.t) / 60; if (dt < 0.2) return 0;
+  return Math.max(0, ((now.v[key] || 0) - (old.v[key] || 0)) / dt);
+}
+function spark(vals) {
+  if (vals.length < 2) return "";
+  const max = Math.max(...vals), min = Math.min(...vals), r = (max - min) || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(24 - (v - min) / r * 22).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--lapis)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function render(s) {
+  last = s;
+  const t = s.now;
+  const v = {files: s.totals.files, known: s.totals.files - (s.totals["length not known yet"] || 0),
+             seasons: s.totals.seasons, cols: s.totals["Plex collections written"], step: s.progress ? s.progress.done : 0};
+  for (const st of s.stages) v["st:" + st.stage] = st.done;
+  if (!samples.length || t - samples[samples.length - 1].t >= 15) {
+    samples.push({t, v}); samples = samples.filter(x => t - x.t < 6 * 3600);
+    try { sessionStorage.setItem("mi-samples", JSON.stringify(samples)); } catch (e) {}
+  }
+  $("when").textContent = "updated " + new Date(t * 1000).toLocaleTimeString();
+
+  // status + hero
+  const steps = s.steps || [], cur = steps.find(x => x.state === "running");
+  const finished = !cur && steps.some(x => x.state === "done");
+  running = !!s.running_pid;
+  $("stop").hidden = !running || !$("stop-confirm").hidden;
+  $("wiz-note").textContent = running ? "A run is in progress. Stop it to start a different one." : "Every step is saved per file, so a new run only does what is left.";
+  review();
+  $("state").className = "pill " + (cur ? "running" : finished ? "done" : "idle");
+  $("state-t").textContent = cur ? "Running" : finished ? "Finished" : "Not running";
+  $("run-count").textContent = `${steps.filter(x => x.state === "done").length} of ${steps.length} done`;
+  if (cur) {
+    $("stepno").textContent = `Step ${cur.n} of ${steps.length}`;
+    $("step-title").textContent = cur.title;
+    $("step-what").textContent = cur.what;
+    $("step-start").textContent = cur.started || "—";
+    const p = s.progress;
+    if (p && p.total) {
+      const pct = Math.min(100, 100 * p.done / p.total), r = rateOf("step");
+      $("step-bar").innerHTML = `<i class="run" style="width:${pct}%"></i>`;
+      $("step-prog").textContent = `${p.done} of ${p.total} ${p.unit}`;
+      $("step-rate").textContent = r ? `${r.toFixed(1)} / min` : "measuring…";
+      $("step-eta").textContent = r ? dur((p.total - p.done) / r * 60) : "—";
+    } else {
+      $("step-bar").innerHTML = `<i class="run" style="width:100%;opacity:.35"></i>`;
+      $("step-prog").textContent = p ? `${p.done} ${p.unit}` : "—";
+      $("step-rate").textContent = "—"; $("step-eta").textContent = "—";
+    }
+  } else {
+    $("stepno").textContent = finished ? "All steps" : "—";
+    $("step-title").textContent = finished ? "Run finished" : "No run in progress";
+    $("step-what").textContent = ""; $("step-bar").innerHTML = `<i class="done" style="width:${finished ? 100 : 0}%"></i>`;
+  }
+
+  // KPIs with sparklines
+  const series = k => samples.map(x => x.v[k] || 0);
+  const kp = [["Files found", v.files, "files"], ["Length known", v.known, "known"],
+              ["Seasons found", v.seasons, "seasons"], ["Plex collections", v.cols, "cols"]];
+  $("kpis").innerHTML = kp.map(([l, n, k]) => `<div class="kpi"><span class="label">${l}</span><span class="v">${fmt(n)}</span>${spark(series(k))}</div>`).join("");
+
+  // step rail
+  $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" ? "✓" : x.n}</span>
+    <span><span class="t">${esc(x.title)}</span><br><span class="w">${x.started ? "started " + esc(x.started) : esc(x.what)}</span></span></li>`).join("");
+
+  // per-file work
+  $("work").innerHTML = s.stages.length ? s.stages.map(st => {
+    const of = Math.max(st.of, st.done + st.failed), d = of ? 100 * st.done / of : 0, f = of ? 100 * st.failed / of : 0;
+    const r = rateOf("st:" + st.stage), left = of - st.done - st.failed;
+    return `<div class="work-row"><div class="hd"><span>${esc(st.stage)}</span>
+      <span class="num">${fmt(st.done)} <span class="muted">of ${fmt(of)}</span>${st.failed ? ` · <span style="color:var(--bad)">${fmt(st.failed)} failed</span>` : ""}</span></div>
+      <div class="bar"><i class="done" style="width:${d}%"></i><i class="fail" style="width:${f}%"></i></div>
+      <div class="rate">${r ? `${r.toFixed(0)} / min · ${left > 0 ? dur(left / r * 60) + " left" : "done"}` : left > 0 ? "waiting for its step" : "complete"}</div></div>`;
+  }).join("") : `<div class="empty">Per-file work appears once the first files are measured.</div>`;
+
+  drawThroughput(s.stages.map(st => st.stage));
+  drawStyles(s.styles || {});
+  drawGenres(s.genres || []);
+  drawLibs(s.libraries || []);
+
+  $("fail-n").textContent = s.errors.length; $("fail-n").className = "chip" + (s.errors.length ? " on" : "");
+  $("errs").innerHTML = s.errors.length ? `<tr><th>work</th><th>file</th><th>error</th><th>tries</th></tr>` + s.errors.map(r =>
+    `<tr class="err"><td>${esc(r.stage)}</td><td class="lib" dir="auto">${esc(r.file)}</td><td>${esc(r.error)}</td><td class="n">${r.attempts}</td></tr>`).join("")
+    : `<tr><td class="empty">No failures.</td></tr>`;
+  $("log").textContent = (s.log || []).join("\n");
+}
+
+function drawThroughput(stages) {
+  const svg = $("thru"), W = 520, H = 190, L = 40, B = 22, T = 10, R = 8;
+  const pts = samples.slice(-120);
+  if (pts.length < 3) { svg.innerHTML = `<text x="${L}" y="${H / 2}">Collecting a few minutes of samples…</text>`; $("thru-legend").innerHTML = ""; return; }
+  const lines = stages.map(st => {
+    const k = "st:" + st, out = [];
+    for (let i = 1; i < pts.length; i++) {
+      const dt = (pts[i].t - pts[i - 1].t) / 60;
+      out.push([pts[i].t, dt > 0 ? Math.max(0, ((pts[i].v[k] || 0) - (pts[i - 1].v[k] || 0)) / dt) : 0]);
+    }
+    return {st, out};
+  });
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const ymax = Math.max(1, ...lines.flatMap(l => l.out.map(p => p[1])));
+  const nice = Math.pow(10, Math.floor(Math.log10(ymax))), top = Math.ceil(ymax / nice) * nice;
+  const x = tt => L + (tt - t0) / ((t1 - t0) || 1) * (W - L - R), y = val => H - B - val / top * (H - B - T);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const val = top * i / 4, yy = y(val);
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${val >= 1000 ? (val / 1000).toFixed(1) + "k" : Math.round(val)}</text>`; }
+  [t0, (t0 + t1) / 2, t1].forEach((tt, i) => g += `<text x="${x(tt)}" y="${H - 6}" text-anchor="${["start","middle","end"][i]}">${new Date(tt * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</text>`);
+  lines.forEach((l, i) => {
+    if (!l.out.some(p => p[1] > 0)) return;
+    const d = l.out.map((p, j) => `${j ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ");
+    g += `<path d="${d}" fill="none" stroke="${SERIES_COLORS[i % 4]}" stroke-width="1.8"/>`;
+    const e = l.out[l.out.length - 1]; g += `<circle cx="${x(e[0])}" cy="${y(e[1])}" r="3" fill="${SERIES_COLORS[i % 4]}"/>`;
+  });
+  svg.innerHTML = g;
+  $("thru-legend").innerHTML = lines.map((l, i) => `<span><i style="background:${SERIES_COLORS[i % 4]}"></i>${esc(l.st)}</span>`).join("");
+}
+
+function drawStyles(styles) {
+  const total = Object.values(styles).reduce((a, b) => a + b, 0);
+  if (!total) { $("styles").innerHTML = `<div class="empty">Shown after the production-style step rates the seasons (step 9).</div>`; return; }
+  let a = -Math.PI / 2, arcs = "";
+  const R = 60, C = 75, r = 40;
+  for (const [k] of STYLE_ORDER) {
+    const n = styles[k] || 0; if (!n) continue;
+    const b = a + n / total * Math.PI * 2, large = b - a > Math.PI ? 1 : 0;
+    const p = (ang, rad) => `${(C + rad * Math.cos(ang)).toFixed(2)},${(C + rad * Math.sin(ang)).toFixed(2)}`;
+    arcs += n === total ? `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${STYLE_COLORS[k]}" stroke-width="${R - r}"/>`
+      : `<path d="M${p(a, R)} A${R},${R} 0 ${large} 1 ${p(b, R)} L${p(b, r)} A${r},${r} 0 ${large} 0 ${p(a, r)} Z" fill="${STYLE_COLORS[k]}"/>`;
+    a = b;
+  }
+  const rows = STYLE_ORDER.map(([k, label]) => `<div class="hbar"><span><i class="sw" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${STYLE_COLORS[k]};margin-inline-end:6px"></i>${label}</span>
+    <span class="track"><i style="width:${100 * (styles[k] || 0) / total}%;background:${STYLE_COLORS[k]}"></i></span><span class="num" style="text-align:end">${styles[k] || 0}</span></div>`).join("");
+  $("styles").innerHTML = `<div class="mix"><svg class="donut" viewBox="0 0 150 150" role="img" aria-label="Seasons by production style">${arcs}
+    <text x="75" y="77" text-anchor="middle">${total}</text><text class="sub" x="75" y="95" text-anchor="middle">seasons</text></svg><div style="display:grid;gap:8px">${rows}</div></div>`;
+}
+
+function drawGenres(genres) {
+  if (!genres.length) { $("genres").innerHTML = `<div class="empty">Shown after the tagging step (step 8).</div>`; return; }
+  const max = Math.max(...genres.map(g => g.seasons));
+  $("genres").innerHTML = `<div style="display:grid;gap:8px">` + genres.map(g => `<div class="hbar"><span>${esc(g.genre.replaceAll("_", " "))}</span>
+    <span class="track"><i style="width:${100 * g.seasons / max}%"></i></span><span class="num" style="text-align:end">${g.seasons}</span></div>`).join("") + `</div>`;
+}
+
+const COLS = [["name", "Library"], ["files", "Files"], ["probed", "Length known"], ["signatures", "Fingerprinted"], ["seasons", "Seasons"], ["episodes", "Episodes"], ["collections", "In Plex"]];
+const selected = new Set(); let reports = new Set(), running = false;
+function drawLibs(libs) {
+  const q = $("q").value.trim().toLowerCase();
+  const rows = libs.filter(r => !q || r.name.toLowerCase().includes(q))
+    .sort((a, b) => (typeof a[sortKey] === "string" ? a[sortKey].localeCompare(b[sortKey]) : (a[sortKey] - b[sortKey])) * sortDir);
+  $("libs").innerHTML = `<tr><th aria-label="Select"></th>${COLS.map(([k, l]) => `<th data-k="${k}" ${k === sortKey ? `aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}>${l}${k === sortKey ? (sortDir > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}<th></th></tr>` +
+    (rows.length ? rows.map(r => {
+      const pk = r.files ? 100 * r.probed / r.files : 0, sg = r.long ? 100 * r.signatures / r.long : 0;
+      const rep = reports.has(r.name + ".html") ? `<a href="reports/${encodeURIComponent(r.name)}.html" target="_blank" rel="noopener">Review page</a>` : "";
+      return `<tr><td><input type="checkbox" class="pick" data-f="${esc(r.folder)}" aria-label="Select ${esc(r.name)}" ${selected.has(r.folder) ? "checked" : ""}></td>
+        <td class="lib" dir="auto" title="${esc(r.name)}">${esc(r.name)}</td><td class="n">${fmt(r.files)}</td>
+        <td class="n"><span class="mini"><i style="width:${pk}%"></i></span>${Math.round(pk)}%</td>
+        <td class="n">${r.long ? `<span class="mini"><i style="width:${sg}%"></i></span>${fmt(r.signatures)}/${fmt(r.long)}` : "—"}</td>
+        <td class="n">${r.seasons || "—"}</td><td class="n">${r.episodes ? fmt(r.episodes) : "—"}</td>
+        <td class="n"><span class="chip ${r.collections ? "on" : ""}">${r.collections}</span></td>
+        <td class="act"><button class="btn sm run1" data-f="${esc(r.folder)}" ${running ? "disabled" : ""}>Run</button>${rep}</td></tr>`;
+    }).join("") : `<tr><td class="empty" colspan="9">No library matches “${esc(q)}”.</td></tr>`);
+  const libSel = $("st-lib");
+  if (libSel.options.length !== libs.length) libSel.innerHTML = libs.map(r => `<option dir="auto">${esc(r.name)}</option>`).join("");
+}
+
+// ---- controls
+function toast(msg, bad) { const t = $("toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 6000); }
+async function post(path, body) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `The server answered ${r.status}.`); return j;
+}
+function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked}; }
+function review() {
+  const o = options(), sel = $("scope-sel").checked;
+  const what = [o.plex && "write season collections to Plex", o.tv && "update dizqueTV shows and channels",
+                o.youtube ? "read YouTube playlists" : "skip YouTube", o.exact && "fetch exact dates"].filter(Boolean);
+  $("sel-n").textContent = selected.size;
+  $("wiz-review").textContent = `${sel ? `${selected.size} selected ${selected.size === 1 ? "library" : "libraries"}` : "All Plex libraries"}: scan, find seasons, tag and rate style, then ${what.join(", ")}.`;
+  $("start").disabled = running || (sel && !selected.size);
+}
+async function startRun(folders) {
+  try { const j = await post("api/run", {...options(), folders}); toast(`Run started: ${j.command.slice(3).join(" ")}`); tick(); }
+  catch (e) { toast(e.message, true); }
+}
+$("start").addEventListener("click", () => startRun($("scope-sel").checked ? [...selected] : []));
+["o-plex", "o-tv", "o-yt", "o-exact", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
+$("libs").addEventListener("change", e => { const f = e.target.closest(".pick")?.dataset.f; if (!f) return;
+  e.target.checked ? selected.add(f) : selected.delete(f); if (selected.size) $("scope-sel").checked = true; review(); });
+$("libs").addEventListener("click", e => { const b = e.target.closest(".run1"); if (b) startRun([b.dataset.f]); });
+$("stop").addEventListener("click", () => { $("stop").hidden = true; $("stop-confirm").hidden = false; });
+$("stop-no").addEventListener("click", () => { $("stop-confirm").hidden = true; $("stop").hidden = !running; });
+$("stop-yes").addEventListener("click", async () => { $("stop-confirm").hidden = true;
+  try { await post("api/stop"); toast("Run stopped. Finished work is saved."); tick(); } catch (e) { toast(e.message, true); } });
+$("ex-form").addEventListener("submit", async e => { e.preventDefault(); const q = $("ex-q").value.trim(); if (!q) return;
+  $("ex-out").textContent = "Looking it up…";
+  try { const j = await (await fetch("api/explain?q=" + encodeURIComponent(q))).json(); $("ex-out").textContent = j.text.trim() || "No video matches that text."; }
+  catch (err) { $("ex-out").textContent = "The lookup failed: " + err.message; } });
+$("st-form").addEventListener("submit", async e => { e.preventDefault();
+  const body = {library: $("st-lib").value, series: $("st-series").value.trim(), style: $("st-style").value};
+  if (!body.series) { toast("Enter the series name as it appears on the review page.", true); return; }
+  try { await post("api/style", body); toast(body.style ? `Pinned ${body.series} as ${$("st-style").selectedOptions[0].text}.` : `Cleared the pin for ${body.series}.`); }
+  catch (err) { toast(err.message, true); } });
+async function loadReports() { try { reports = new Set((await (await fetch("api/reports")).json()).reports); } catch (e) {} }
+loadReports(); setInterval(loadReports, 60000);
+$("libs").addEventListener("click", e => { const k = e.target.closest("th")?.dataset.k; if (!k) return;
+  sortDir = k === sortKey ? -sortDir : (k === "name" ? 1 : -1); sortKey = k; if (last) drawLibs(last.libraries || []); });
+$("q").addEventListener("input", () => last && drawLibs(last.libraries || []));
+
+async function tick() {
+  try { render(await (await fetch("api/status", {cache: "no-store"})).json()); }
+  catch (e) { $("state").className = "pill idle"; $("state-t").textContent = "Status server not reachable"; }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

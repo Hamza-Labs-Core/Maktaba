@@ -397,7 +397,7 @@ def scan_roots(
             c.close()
 
     with ThreadPoolExecutor(parallel) as pool:
-        for fut in as_completed([pool.submit(one, f) for f in folders]):
+        for k, fut in enumerate(as_completed([pool.submit(one, f) for f in folders]), 1):
             folder, st = fut.result()
-            if st.get("videos"):
-                print(f"{folder}: {st}", flush=True)
+            if st.get("videos") or st.get("skipped"):
+                print(f"[{k}/{len(folders)}] {folder.as_posix()}: {st}", flush=True)

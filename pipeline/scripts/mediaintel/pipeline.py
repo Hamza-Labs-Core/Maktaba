@@ -42,6 +42,36 @@ def run(
     older collections are listed as superseded, never deleted). ``tv``: update dizqueTV
     custom shows (``dizquetv-shows --apply``). Both log every change with its diff."""
     t0 = time.monotonic()
+    import os
+
+    pid_file = Path(conn.execute("PRAGMA database_list").fetchone()[2] + ".run.pid")
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")  # lets `serve` show / stop it
+    try:
+        _run(conn, roots, server=server, path_map=path_map, youtube=youtube, exact=exact,
+             lang=lang, delay_s=delay_s, report_dir=report_dir, workers=workers, plex=plex,
+             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0)  # fmt: skip
+    finally:
+        pid_file.unlink(missing_ok=True)
+
+
+def _run(
+    conn: sqlite3.Connection,
+    roots: list[Path],
+    *,
+    server: scan_plex.PlexServer | None,
+    path_map: list[tuple[str, str]],
+    youtube: bool,
+    exact: bool,
+    lang: str,
+    delay_s: float,
+    report_dir: Path,
+    workers: int,
+    plex: bool,
+    tv: bool,
+    tv_url: str,
+    backup_dir: Path,
+    t0: float,
+) -> None:
     if server is not None:
         # list files first, let Plex supply length/size, then probe only the rest
         _step(f"scan-local, listing ({len(roots)} folders)")

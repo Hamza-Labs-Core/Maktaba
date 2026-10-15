@@ -9,53 +9,110 @@ page); this page is the stand-in until these stages run there.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import os
 import re
+import signal
 import sqlite3
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 _STEP_RE = re.compile(r"^##### (.+)$")
+_TIME_RE = re.compile(r"\((\d\d:\d\d:\d\d)\)\s*$")
+_COUNT_RE = re.compile(r"\((\d+) (?:folders|libraries)\)")
 
-PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>mediaintel status</title>
-<style>
-:root{--bg:#f7f7f5;--fg:#1b1b1b;--muted:#6b6b6b;--card:#fff;--line:#e3e3df;--ok:#2f7d4f;--bad:#b3261e;--bar:#3b6fd8}
-@media (prefers-color-scheme:dark){:root{--bg:#141414;--fg:#ececec;--muted:#9a9a9a;--card:#1e1e1e;--line:#2c2c2c;--ok:#5fbf86;--bad:#ef8079;--bar:#7aa2ff}}
-body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-main{max-width:1100px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 4px} .muted{color:var(--muted)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
-.k{font-size:12px;color:var(--muted)} .v{font-size:22px;font-weight:600}
-table{width:100%;border-collapse:collapse;font-size:13px} td,th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:start}
-th{color:var(--muted);font-weight:500} td.n{text-align:end;font-variant-numeric:tabular-nums}
-.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;min-width:80px}.bar>i{display:block;height:100%;background:var(--bar)}
-.bad{color:var(--bad)} .ok{color:var(--ok)} pre{white-space:pre-wrap;margin:0;font-size:12px;max-height:280px;overflow:auto}
-.lib{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:auto}
-</style></head><body><main>
-<h1>mediaintel</h1><div class="muted" id="when">loading…</div>
-<div class="card"><div class="k">current step</div><div class="v" id="step">–</div><div class="muted" id="steps"></div></div>
-<div class="card"><div class="grid" id="totals"></div></div>
-<div class="card"><div class="k">indexing jobs per stage</div><table id="stages"></table></div>
-<div class="card"><div class="k">libraries</div><table id="libs"></table></div>
-<div class="card"><div class="k">recent failures</div><table id="errs"></table></div>
-<div class="card"><div class="k">log (last lines)</div><pre id="log"></pre></div>
-</main><script>
-const el=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const bar=(d,t)=>`<div class="bar"><i style="width:${t?Math.min(100,100*d/t):0}%"></i></div>`;
-async function tick(){try{const s=await (await fetch("api/status")).json();
-el("when").textContent="updated "+new Date().toLocaleTimeString();
-el("step").textContent=s.step||"–"; el("steps").textContent=(s.steps||[]).join("  →  ");
-el("totals").innerHTML=Object.entries(s.totals).map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${Number(v).toLocaleString()}</div></div>`).join("");
-el("stages").innerHTML="<tr><th>stage</th><th></th><th>done</th><th>failed</th><th>of</th></tr>"+s.stages.map(r=>`<tr><td>${esc(r.stage)}</td><td>${bar(r.done,r.of)}</td><td class="n">${r.done}</td><td class="n ${r.failed?"bad":""}">${r.failed}</td><td class="n">${r.of}</td></tr>`).join("");
-el("libs").innerHTML="<tr><th>library</th><th>files</th><th>probed</th><th>signatures</th><th>seasons</th><th>episodes</th><th>in Plex</th></tr>"+s.libraries.map(r=>`<tr><td class="lib" dir="auto">${esc(r.name)}</td><td class="n">${r.files}</td><td class="n">${r.probed}</td><td class="n">${r.signatures}/${r.long}</td><td class="n">${r.seasons}</td><td class="n">${r.episodes}</td><td class="n ${r.collections?"ok":""}">${r.collections}</td></tr>`).join("");
-el("errs").innerHTML=s.errors.length?s.errors.map(r=>`<tr><td>${esc(r.stage)}</td><td class="lib" dir="auto">${esc(r.file)}</td><td class="bad">${esc(r.error)}</td><td>${esc(r.attempts)}</td></tr>`).join(""):"<tr><td class='muted'>none</td></tr>";
-el("log").textContent=s.log.join("\\n");}catch(e){el("when").textContent="offline: "+e}}
-tick(); setInterval(tick,4000);
-</script></body></html>"""
+#: the run's steps in order: (log heading prefix, plain title, what it does)
+STEPS: list[tuple[str, str, str]] = [
+    (
+        "scan-local, listing",
+        "List files in each library",
+        "every video file, its size and date; nothing is opened yet",
+    ),
+    (
+        "scan-plex",
+        "Read lengths from Plex",
+        "Plex already measured most files: length, resolution, Plex item",
+    ),
+    (
+        "scan-local (",
+        "Measure the rest + fingerprint",
+        "ffprobe for files Plex lacks; thumbnail, intro/end-song and frame fingerprints",
+    ),
+    (
+        "scan-youtube (",
+        "Read YouTube channels",
+        "playlists, positions and upload dates (listing only, polite)",
+    ),
+    ("link", "Match files to YouTube videos", "by file name, title and length"),
+    ("detect", "Find series and seasons", "playlists + titles + dates + fingerprints"),
+    ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
+    ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
+    ("scan-visual", "Rate production style", "talk / produced / cinematic, from sampled frames"),
+    ("report", "Write review pages", "one HTML page per library"),
+    ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
+    ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
+    ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
+    ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
+]
+
+STAGE_NAMES = {
+    "probe": "Length measured",
+    "thumbnail": "Thumbnail fingerprint",
+    "signature": "Intro/end-song + frame fingerprint",
+    "visual_style": "Production style sample",
+}
+
+
+def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """The step list with state, and progress inside the current step."""
+    seen: list[tuple[int, str, int]] = []  # (step index, start time, log line)
+    for i, ln in enumerate(lines):
+        m = _STEP_RE.match(ln)
+        if not m:
+            continue
+        head = m.group(1)
+        idx = next((k for k, (pre, _, _) in enumerate(STEPS) if head.startswith(pre)), None)
+        if idx is not None:
+            t = _TIME_RE.search(head)
+            seen.append((idx, t.group(1) if t else "", i))
+    done_line = any(ln.startswith("done in ") for ln in lines)
+    current = seen[-1][0] if seen and not done_line else None
+    started = {idx: t for idx, t, _ in seen}
+    out = []
+    for k, (_, title, what) in enumerate(STEPS):
+        state = (
+            "done" if k in started and k != current else "running" if k == current else "waiting"
+        )
+        out.append({"n": k + 1, "title": title, "what": what, "state": state,
+                    "started": started.get(k, "")})  # fmt: skip
+    progress = None
+    if seen and current is not None:
+        _, _, at = seen[-1]
+        head = _STEP_RE.match(lines[at]).group(1)  # type: ignore[union-attr]
+        total_m = _COUNT_RE.search(head)
+        body = lines[at + 1 :]
+        if STEPS[current][0].startswith("scan-local"):
+            n = sum(1 for ln in body if ": {'videos'" in ln and ln.count("/") <= 2)
+            unit = "libraries"
+        elif STEPS[current][0] == "export-plex":
+            n, unit = sum(1 for ln in body if ln.startswith("=== ")), "libraries"
+        elif STEPS[current][0].startswith("scan-youtube"):
+            n, unit = sum(1 for ln in body if ": scanning" in ln or ": cached" in ln), "channels"
+        else:
+            n, unit = len(body), "log lines"
+        progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
+    return out, progress
+
+
+PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
 
 
 def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
@@ -84,18 +141,44 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         ),
     }
     if has("index_jobs"):
-        of = {"probe": files, "thumbnail": long_ or 0, "signature": long_ or 0}
-        for r in conn.execute(
-            "SELECT stage, SUM(state='done') d, SUM(state='failed') f FROM index_jobs GROUP BY stage"
-        ):
+        # each stage over the files it applies to, "done" counted within that same set:
+        #   probe: every file; thumbnail: files with a thumbnail that are not known shorts;
+        #   signature: episode-length files (length known); visual_style: sampled episodes
+        applies = {
+            "probe": "1",
+            "thumbnail": "f.thumb_path IS NOT NULL AND (f.duration_s IS NULL OR f.duration_s >= 180)",
+            "signature": "f.duration_s >= 180",
+        }
+        for stage, cond in applies.items():
+            r = conn.execute(
+                f"""SELECT COUNT(*) total,
+                           SUM(j.state = 'done') done, SUM(j.state = 'failed') failed
+                    FROM files f LEFT JOIN index_jobs j ON j.path = f.path AND j.stage = ?
+                    WHERE {cond}""",  # noqa: S608 — fixed fragments
+                (stage,),
+            ).fetchone()
             out["stages"].append(
                 {
-                    "stage": r["stage"],
-                    "done": r["d"],
-                    "failed": r["f"],
-                    "of": of.get(r["stage"], r["d"] + r["f"]),
+                    "stage": stage,
+                    "done": r["done"] or 0,
+                    "failed": r["failed"] or 0,
+                    "of": r["total"] or 0,
                 }  # fmt: skip
             )
+        r = conn.execute(
+            "SELECT SUM(state='done') d, SUM(state='failed') f FROM index_jobs WHERE stage='visual_style'"
+        ).fetchone()
+        if r["d"] or r["f"]:
+            out["stages"].append(
+                {
+                    "stage": "visual_style",
+                    "done": r["d"] or 0,
+                    "failed": r["f"] or 0,
+                    "of": (r["d"] or 0) + (r["f"] or 0),
+                }  # fmt: skip
+            )
+        unknown = conn.execute("SELECT COUNT(*) FROM files WHERE duration_s IS NULL").fetchone()[0]
+        out["totals"]["length not known yet"] = unknown
         out["errors"] = [
             {
                 "stage": r["stage"],
@@ -108,68 +191,216 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
                 "ORDER BY updated_at DESC LIMIT 15"
             )
         ]
-    sig = "(SELECT COUNT(*) FROM index_jobs j WHERE j.path IN (SELECT path FROM files f2 WHERE f2.folder=f.folder) AND j.stage='signature' AND j.state='done')"
-    if not has("index_jobs"):
-        sig = "0"
-    seasons = "(SELECT COUNT(*) FROM series s WHERE json_extract(s.metadata,'$.folder')=f.folder)"
-    eps = (
-        "(SELECT COUNT(*) FROM series_episodes e JOIN series s ON s.id=e.series_id "
-        "WHERE json_extract(s.metadata,'$.folder')=f.folder)"
+
+    # per-library counts: one grouped query each (no per-folder subqueries)
+    def per_folder(sql: str, needs: str) -> dict[str, int]:
+        if not has(needs):
+            return {}
+        return {r[0]: r[1] for r in conn.execute(sql)}
+
+    sig = per_folder(
+        """SELECT f.folder, COUNT(*) FROM index_jobs j JOIN files f ON f.path = j.path
+           WHERE j.stage = 'signature' AND j.state = 'done' GROUP BY f.folder""",
+        "index_jobs",
     )
-    cols = (
-        "(SELECT COUNT(*) FROM plex_collections c WHERE c.section IN "
-        "(SELECT plex_section FROM files f3 WHERE f3.folder=f.folder))"
-        if has("plex_collections")
-        else "0"
+    seasons = per_folder(
+        "SELECT json_extract(metadata, '$.folder'), COUNT(*) FROM series GROUP BY 1", "series"
     )
-    if not has("series"):
-        seasons = eps = "0"
+    eps = per_folder(
+        """SELECT json_extract(s.metadata, '$.folder'), COUNT(*) FROM series_episodes e
+           JOIN series s ON s.id = e.series_id GROUP BY 1""",
+        "series",
+    )
+    cols = per_folder(
+        """SELECT json_extract(s.metadata, '$.folder'), COUNT(*) FROM plex_collections c
+           JOIN series s ON s.id = c.series_id GROUP BY 1""",
+        "plex_collections",
+    )
     for r in conn.execute(
-        f"""SELECT f.folder, COUNT(*) n, SUM(f.duration_s IS NOT NULL) probed,
-                   SUM(f.duration_s >= 180) long, {sig} sig, {seasons} seasons, {eps} eps, {cols} cols
-            FROM files f GROUP BY f.folder ORDER BY f.folder"""  # noqa: S608 — fixed fragments
+        """SELECT folder, COUNT(*) n, SUM(duration_s IS NOT NULL) probed,
+                  SUM(duration_s >= 180) long
+           FROM files GROUP BY folder ORDER BY folder"""
     ):
+        fo = r["folder"]
         out["libraries"].append(
             {
-                "name": r["folder"].replace("\\", "/").rstrip("/").rsplit("/", 1)[-1],
+                "name": fo.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1],
+                "folder": fo,
                 "files": r["n"],
                 "probed": r["probed"] or 0,
                 "long": r["long"] or 0,
-                "signatures": r["sig"] or 0,
-                "seasons": r["seasons"],
-                "episodes": r["eps"],
-                "collections": r["cols"],
-            }  # fmt: skip
+                "signatures": sig.get(fo, 0),
+                "seasons": seasons.get(fo, 0),
+                "episodes": eps.get(fo, 0),
+                "collections": cols.get(fo, 0),
+            }
         )
+    out["styles"] = (
+        {
+            r[0]: r[1]
+            for r in conn.execute("SELECT style, COUNT(*) FROM series_style GROUP BY style")
+        }
+        if has("series_style")
+        else {}
+    )
+    out["genres"] = (
+        [
+            {"genre": r[0][len("genre:") :], "seasons": r[1]}
+            for r in conn.execute(
+                "SELECT tag, COUNT(*) n FROM series_tags WHERE tag LIKE 'genre:%' "
+                "GROUP BY tag ORDER BY n DESC LIMIT 12"
+            )
+        ]
+        if has("series_tags")
+        else []
+    )
+    out["now"] = time.time()
     conn.close()
     if log_path and log_path.exists():
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        steps = [m.group(1) for ln in lines if (m := _STEP_RE.match(ln))]
-        out["steps"] = steps
-        out["step"] = steps[-1] if steps else None
+        out["steps"], out["progress"] = _steps(lines)
         out["log"] = lines[-40:]
     return out
 
 
-def serve(db_path: str, log_path: Path | None, port: int = 8770) -> None:
+def _running_pid(db_path: str) -> int | None:
+    f = Path(db_path + ".run.pid")
+    try:
+        pid = int(f.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)  # existence check (no signal sent) on every OS
+    except OSError:
+        return None
+    return pid
+
+
+def _run_args(
+    db_path: str, body: dict[str, Any], dizquetv_db: Path | None, reports: Path
+) -> list[str]:
+    """The exact ``mediaintel run`` command a page request maps to (no free-form input)."""
+    args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path, "run"]
+    folders = [str(f) for f in body.get("folders") or [] if isinstance(f, str)]
+    args += folders or ["--from-plex", "--exclude-library", "Movies"]
+    if dizquetv_db:
+        args += ["--dizquetv-db", str(dizquetv_db)]
+    args += ["--out", str(reports)]
+    if body.get("plex"):
+        args.append("--plex")
+    if body.get("tv"):
+        args.append("--tv")
+    if body.get("exact"):
+        args.append("--exact")
+    if not body.get("youtube", True):
+        args.append("--no-youtube")
+    return args
+
+
+def serve(
+    db_path: str,
+    log_path: Path | None,
+    port: int = 8770,
+    *,
+    dizquetv_db: Path | None = None,
+    reports: Path = Path("reports"),
+) -> None:
+    """The control centre: status, start / stop a run, explain a video, pin a style,
+    open review pages. Binds to localhost only."""
+    log = log_path or Path(db_path + ".run.log")
+    cache: dict[str, Any] = {"at": 0.0, "st": {}}
+    cache_lock = threading.Lock()
+    pipeline_dir = Path(__file__).resolve().parents[2]
+
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 — http.server API
-            if self.path.startswith("/api/status"):
-                body = json.dumps(status(db_path, log_path), ensure_ascii=False).encode()
-                ctype = "application/json; charset=utf-8"
-            elif self.path in ("/", "/index.html"):
-                body, ctype = PAGE.encode(), "text/html; charset=utf-8"
-            else:
-                self.send_error(404)
-                return
-            self.send_response(200)
+        def _send(self, code: int, body: bytes, ctype: str) -> None:
+            self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
+        def _json(self, code: int, obj: Any) -> None:
+            data = json.dumps(obj, ensure_ascii=False).encode()
+            self._send(code, data, "application/json; charset=utf-8")
+
+        def do_GET(self) -> None:  # noqa: N802 — http.server API
+            url = urllib.parse.urlsplit(self.path)
+            qs = urllib.parse.parse_qs(url.query)
+            if url.path == "/api/status":
+                with cache_lock:  # one computation at a time; reused for 10 s
+                    if time.time() - cache["at"] > 10:
+                        cache["st"], cache["at"] = status(db_path, log), time.time()
+                    st = dict(cache["st"])
+                st["running_pid"] = _running_pid(db_path)
+                self._json(200, st)
+            elif url.path == "/api/explain":
+                from . import explain
+
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+                conn.row_factory = sqlite3.Row
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    folder = qs["folder"][0] if qs.get("folder") else None
+                    explain.explain(conn, (qs.get("q") or [""])[0], folder, 30)
+                conn.close()
+                self._json(200, {"text": buf.getvalue()})
+            elif url.path.startswith("/reports/"):
+                name = urllib.parse.unquote(url.path[len("/reports/") :])
+                target = (reports / name).resolve()
+                if reports.resolve() not in target.parents or not target.is_file():
+                    self.send_error(404)
+                    return
+                ctype = "text/html; charset=utf-8" if target.suffix == ".html" else "image/jpeg"
+                self._send(200, target.read_bytes(), ctype)
+            elif url.path == "/api/reports":
+                names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
+                self._json(200, {"reports": names})
+            elif url.path in ("/", "/index.html"):
+                self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            else:
+                self.send_error(404)
+
+        def do_POST(self) -> None:  # noqa: N802
+            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                self._json(400, {"error": "The request body must be JSON."})
+                return
+            if self.path == "/api/run":
+                if _running_pid(db_path):
+                    self._json(409, {"error": "A run is already in progress. Stop it first."})
+                    return
+                args = _run_args(db_path, body, dizquetv_db, reports)
+                env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+                with log.open("w", encoding="utf-8") as fh:
+                    subprocess.Popen(  # noqa: S603 — fixed argv built by _run_args
+                        args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
+                    )
+                self._json(202, {"started": True, "command": args[3:]})
+            elif self.path == "/api/stop":
+                pid = _running_pid(db_path)
+                if not pid:
+                    self._json(409, {"error": "No run is in progress."})
+                    return
+                os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows; finished work is saved
+                self._json(200, {"stopped": pid})
+            elif self.path == "/api/style":
+                from . import db, scan_visual
+
+                style = body.get("style") or None
+                conn = db.connect(db_path)
+                scan_visual.set_override(
+                    conn, str(body.get("library", "")), str(body.get("series", "")), style
+                )
+                conn.close()
+                self._json(200, {"ok": True})
+            else:
+                self.send_error(404)
+
         def log_message(self, *_: object) -> None:
             return
 
-    print(f"mediaintel status on http://localhost:{port}/  (Ctrl+C to stop)", flush=True)
+    print(f"mediaintel control centre on http://localhost:{port}/  (Ctrl+C to stop)", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
