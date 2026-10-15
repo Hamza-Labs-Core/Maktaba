@@ -27,6 +27,8 @@ from typing import Any
 
 _STEP_RE = re.compile(r"^##### (.+)$")
 _TIME_RE = re.compile(r"\((\d\d:\d\d:\d\d)\)\s*$")
+_SIG_RE = re.compile(r"^fingerprinting (\d+) videos")
+_SIG_DONE_RE = re.compile(r"^\s*\[(\d+)/\d+\] \d+ per minute")
 _COUNT_RE = re.compile(r"\((\d+) (?:folders|libraries)\)")
 
 #: the run's steps in order: (log heading prefix, plain title, what it does)
@@ -271,6 +273,19 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
     if log_path and log_path.exists():
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
         out["steps"], out["progress"] = _steps(lines)
+        # fingerprints are made only for selected videos: the step says how many
+        sel = [int(m.group(1)) for ln in lines if (m := _SIG_RE.match(ln))]
+        done_now = [int(m.group(1)) for ln in lines if (m := _SIG_DONE_RE.match(ln))]
+        for st in out["stages"]:
+            if st["stage"] == STAGE_NAMES["signature"]:
+                if sel:
+                    st["of"] = st["done"] - (done_now[-1] if done_now else 0) + sel[-1]
+                    st["note"] = (
+                        "only 6 episodes per season and the unplaced videos that could join one"
+                    )
+                else:
+                    st["of"] = st["done"]
+                    st["note"] = "selected after the first season detection"
         out["log"] = lines[-40:]
     return out
 

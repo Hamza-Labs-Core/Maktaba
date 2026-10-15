@@ -358,7 +358,7 @@ function render(s) {
     return `<div class="work-row"><div class="hd"><span>${esc(st.stage)}</span>
       <span class="num">${fmt(st.done)} <span class="muted">of ${fmt(of)}</span>${st.failed ? ` · <span style="color:var(--bad)">${fmt(st.failed)} failed</span>` : ""}</span></div>
       <div class="bar"><i class="done" style="width:${d}%"></i><i class="fail" style="width:${f}%"></i></div>
-      <div class="rate">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min over the last 10 min · ${left > 0 ? dur(left / r * 60) + " left at this rate" : "done"}` : left > 0 ? "nothing finished in the last 10 min" : "complete"}</div></div>`;
+      ${st.note ? `<div class="rate">${esc(st.note)}</div>` : ""}<div class="rate">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min over the last 10 min · ${left > 0 ? dur(left / r * 60) + " left at this rate" : "done"}` : left > 0 ? "nothing finished in the last 10 min" : "complete"}</div></div>`;
   }).join("") : `<div class="empty">Per-file work appears once the first files are measured.</div>`;
 
   drawThroughput(s.stages.map(st => st.stage));
