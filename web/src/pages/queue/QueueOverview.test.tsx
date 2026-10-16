@@ -154,6 +154,21 @@ describe("QueueOverview", () => {
     expect(within(small).getByRole("img", { name: /160 of 200 done/ })).toBeInTheDocument();
   });
 
+  it("shows the topic, promo, clip-group and Plex group queues", async () => {
+    setup();
+    for (const [name, stage] of [
+      ["Topic collections", "topic_collections"],
+      ["Promo links", "promo_links"],
+      ["Clip groups", "clip_groups"],
+      ["Plex topic and clip collections", "plex_groups"],
+    ]) {
+      expect(await screen.findByRole("link", { name })).toHaveAttribute("href", `/queue/${stage}`);
+    }
+    const groups = document.querySelector('[data-stage="clip_groups"]') as HTMLElement;
+    expect(groups).toHaveAttribute("data-state", "running");
+    expect(within(groups).getByRole("img", { name: /9 of 12 done/ })).toBeInTheDocument();
+  });
+
   it("shows the waiting-for-a-worker reason when no live worker serves a queue", async () => {
     const queues = snapshotFixture.queues.map((q) =>
       q.stage === "transcribe" ? { ...q, no_worker: true, counts: { ...q.counts, running: 0 } } : q
