@@ -362,3 +362,17 @@ def test_quran_at_dawn_stays_a_slot_on_other_channels() -> None:
     mix = channel(p, "mix")
     assert slot_at(mix.slots, 5 * 60, "mon").kind == "quran"
     assert slot_at(mix.slots, 20 * 60, "mon").kind == "program"
+
+
+def test_friday_slots_go_around_the_khutbah_and_no_queue_is_lost() -> None:
+    khutbah = show("k", "خطب الجمعة", n=40, minutes=45, fmt="khutbah",
+                   tags={"format:khutbah": 0.9, "format:program": 0.0})  # fmt: skip
+    p = plan([khutbah, *many_shows(120, prefix="w")], dawn_quran=False)
+    mix = channel(p, "mix")
+    noon = slot_at(mix.slots, 12 * 60 + 30, "fri")
+    assert noon.kind == "khutbah"
+    # every queue the grid made is on air somewhere: none hidden under the khutbah
+    on_air = {s.lane for s in mix.slots}
+    assert set(mix.lanes) <= on_air
+    placed = {u.series_key for k in mix.lanes for u in p.lanes[k].units}
+    assert all(f"برنامج w{i}" in placed for i in range(120))

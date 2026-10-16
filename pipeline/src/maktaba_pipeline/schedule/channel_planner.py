@@ -1220,8 +1220,21 @@ def _show_grid(
             prev_q: str | None = None
             day_qs: set[str] = set()
             last: list[_Seg] = []
+            # the Friday khutbah owns its window: that day's slots go around it
+            kb = (
+                (cfg.khutbah_start, cfg.khutbah_end)
+                if khutbah is not None and cfg.friday_khutbah and grp == (cfg.khutbah_day,)
+                else None
+            )
             while t < end:
-                room = end - t
+                if kb and kb[0] <= t % DAY_MINUTES < kb[1]:
+                    t += kb[1] - t % DAY_MINUTES
+                    last, prev_q = [], None
+                    continue
+                stop = end
+                if kb and t % DAY_MINUTES < kb[0] < t % DAY_MINUTES + (end - t):
+                    stop = t + kb[0] - t % DAY_MINUTES
+                room = stop - t
                 if pattern in STRIP_FAMILY:
                     s = pick(strip_c if pattern == "strip" else shows, d, prev, room,
                              ramadan_first=pattern == "strip7")  # fmt: skip
@@ -1255,13 +1268,13 @@ def _show_grid(
                 if q is None:
                     if last:  # the previous block pads to the daypart's end with filler
                         for sg in last:
-                            sg.end = end
+                            sg.end = stop
                     else:
                         for day in grp:
                             per_day[day].append(
                                 _Seg(
                                     t,
-                                    end,
+                                    stop,
                                     None,
                                     d.key,
                                     pools.get("topic"),
@@ -1269,8 +1282,11 @@ def _show_grid(
                                     ("no show left for this time: filler only",),
                                 )
                             )
-                    break
-                b = min(end, t + q.slot_minutes)
+                    if stop >= end:
+                        break
+                    t, last = stop, []
+                    continue
+                b = min(stop, t + q.slot_minutes)
                 if q.shows[0].max_episode_s > (b - t + cfg.overrun_tolerance_minutes) * 60:
                     why += (
                         f"; longest episode {q.shows[0].max_episode_s / 60:.0f} min "
