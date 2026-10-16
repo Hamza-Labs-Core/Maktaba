@@ -22,6 +22,7 @@ Safety:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import urllib.error
 from collections import defaultdict
@@ -44,6 +45,21 @@ def _title(library: str, series: str, season: int, season_count: int) -> str:
     if season >= 1900:  # an ongoing show's season is its year: "<lib> - X - 2016"
         return f"{base} - {season}"
     return base if season_count == 1 else f"{base} - الموسم {season}"
+
+
+#: titles that say a video is not an episode: teaser, trailer, announcement, full-length
+#: compilation, song, or a leftover partial download (".f251")
+_NOT_EPISODE_RE = re.compile(
+    r"(تشويق|تتر|اعلان|إعلان|برومو|promo|trailer|كامل[ةه](?!\w)|قريبا|قريبًا|نشيد|\.f\d{3}$)",
+    re.IGNORECASE,
+)
+
+
+def removable(key: str, title: str, placed: set[str], shorts: set[str]) -> bool:
+    """May an episode leave an existing collection? Only on positive evidence: it is an
+    episode of another season now, a short, or its title says it is not an episode. One
+    that detection merely failed to place stays (detection is not perfect; Plex keeps it)."""
+    return key in placed or key in shorts or bool(_NOT_EPISODE_RE.search(title.strip()))
 
 
 def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
@@ -159,6 +175,24 @@ def export(
                 (library,),
             )
         }
+        # every episode detection placed in this library, and its shorts: the evidence an
+        # episode may leave a collection on
+        placed = {
+            k
+            for (k,) in conn.execute(
+                """SELECT f.plex_rating_key FROM series_episodes e JOIN files f ON f.path = e.path
+                   WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+                (library,),
+            )
+        }
+        shorts = {
+            k
+            for (k,) in conn.execute(
+                """SELECT f.plex_rating_key FROM shorts s JOIN files f ON f.path = s.path
+                   WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+                (library,),
+            )
+        }
         planned_keys: list[set[str]] = []
         planned: list[tuple[str, list[str]]] = []
         claimed: set[str] = set()  # existing collections taken over by a planned season
@@ -197,6 +231,10 @@ def export(
                 else []
             )
             current = [k for k, _ in current_t]
+            kept = [
+                k for k, t in current_t if k not in keys and not removable(k, t, placed, shorts)
+            ]
+            keys = keys + kept  # not placed anywhere by detection: stays where it was
             if current == keys:
                 print(f"  =  {title} ({len(keys)})")
                 continue
@@ -204,13 +242,13 @@ def export(
             print(
                 f"  +  {title}: {verb}, {len(keys)} episodes"
                 + (f" (was {len(current)})" if current else "")
+                + (f"; kept {len(kept)} detection did not place" if kept else "")
             )
             if diff and current:
                 if set(current) == set(keys):
                     print("       (same episodes, new order)")
                 else:
-                    covered = set().union(*planned_keys) if planned_keys else set()
-                    _print_diff(current_t, keys, titles, covered=covered)
+                    _print_diff(current_t, keys, titles, covered=placed)
             if apply:
                 new = _recreate(
                     server, machine, section, title, keys, old_key if current or same_name else None

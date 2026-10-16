@@ -136,3 +136,18 @@ def test_tv_names_finds_series_and_season_shows_by_folded_name() -> None:
         "الشيخ نبيل العوضي - قصه وايه",
         "الشيخ نبيل العوضي - قصة وآية - الموسم 2",
     ]
+
+
+def test_plex_export_removes_an_episode_only_on_evidence() -> None:
+    from scripts.mediaintel.export_plex import removable
+
+    placed, shorts = {"moved"}, {"short"}
+    assert removable("moved", "أنوار الأنبياء ٠٩", placed, shorts)  # in another season now
+    assert removable("short", "مقطع", placed, shorts)  # under 3 min
+    for t in ("تشويقة سلسلة خير القرون", "تتر برنامج قصة الفتنة", "إعلان بدء ترجمة",
+              "السيرة النبوية (( المرحلة المكية كاملة ))", "حلقة 28 ｜ آل سلول.f251"):  # fmt: skip
+        assert removable("x", t, placed, shorts), t
+    # detection failed to place a numbered episode: it stays in its collection
+    assert not removable("x", "المنهج الإصلاحي ｜ الأنفال 01", placed, shorts)
+    assert not removable("x", "فايز الكندري ｜ سورة فصلت من الآية ١٣ إلى الآية ١٤", placed, shorts)
+    assert not removable("x", "شرح صحيح البخاري كاملا ٥١٢", placed, shorts)
