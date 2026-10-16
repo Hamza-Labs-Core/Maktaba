@@ -14,8 +14,7 @@ tags, production style, shorts, loose videos) and runs the pure planner
 
 Read-only: the cache is never written. Missing tables degrade: no
 ``series_tags``/``video_tags`` → untagged (run ``tag`` first for themed
-channels); no ``series_style`` → every season's tier is unknown (one tier
-group per channel).
+channels); no ``series_style`` → no production-style tie-breaker (planning does not need it).
 """
 
 from __future__ import annotations
@@ -47,6 +46,7 @@ from maktaba_pipeline.schedule.channel_planner import (
     fmt_hhmm,
     maktaba_channel_definition,
     simulate,
+    slot_timeline,
     suggest_channels,
 )
 
@@ -88,7 +88,7 @@ def load_inputs(
             conn,
             """SELECT f.path, f.folder, COALESCE(y.title, f.stem) AS title,
                       COALESCE(f.duration_s, y.duration_s) AS dur, f.width, f.height,
-                      f.plex_rating_key, f.plex_library, y.upload_date, y.tab
+                      f.plex_rating_key, f.plex_library, y.upload_date, y.tab, y.date_quality
                FROM files f LEFT JOIN yt_videos y ON y.youtube_id = f.youtube_id""",
         )
     }
@@ -147,6 +147,7 @@ def load_inputs(
                     plex_rating_key=f["plex_rating_key"],
                     plex_library=f["plex_library"],
                     air_date=f["upload_date"],
+                    date_exact=f["date_quality"] == "exact",
                 )
             )
         seasons.append(
@@ -168,6 +169,8 @@ def load_inputs(
                 tier=st[1] if st else None,
                 style_confidence=st[2] if st else 0.0,
                 episodes=tuple(eps),
+                brand=bool(meta.get("brand")),
+                season_name=meta.get("season_name"),
             )
         )
     shorts = {r[0] for r in conn.execute("SELECT path FROM shorts")}
@@ -240,7 +243,9 @@ def _slot_json(s: Slot, plan: PlanResult) -> dict[str, Any]:
         "kind": s.kind,
         "lane": s.lane,
         "lane_name": lane.name if lane else None,
-        "tier_group": lane.tier_group if lane else None,
+        "show": lane.shows[0] if lane and lane.shows else None,
+        "pattern": (lane.pattern or lane.special) if lane else None,
+        "cadence": lane.cadence if lane else None,
         "filler_pool": s.filler_pool,
         "reasons": list(s.reasons),
     }
@@ -261,13 +266,45 @@ def _stats(ch: ChannelSuggestion, plan: PlanResult, week: Sequence[Airing]) -> d
         kinds[a.kind] += a.end_s - a.start_s
     total = sum(kinds.values()) or 1.0
     air = {**_lane_airtime(ch.ramadan_slots), **_lane_airtime(ch.slots)}
+    # dead air: flex (nothing fits) longer than the warning threshold, per slot occurrence
+    dead: dict[tuple[int, int | None, str | None], float] = defaultdict(float)
+    start: dict[tuple[int, int | None, str | None], float] = {}
+    for a in week:
+        if a.kind == "flex":
+            k = (int(a.start_s // 86400), a.slot, a.lane)
+            dead[k] += a.end_s - a.start_s
+            start.setdefault(k, a.start_s)
+    warn = plan.config.dead_air_warn_minutes * 60
+    dead_slots = [
+        {
+            "day": WEEKDAYS[k[0] % 7],
+            "at": fmt_hhmm(int(start[k] % 86400) // 60),
+            "slot": plan.lanes[k[2]].name if k[2] is not None and k[2] in plan.lanes else "filler only",
+            "minutes": round(v / 60, 1),
+        }
+        for k, v in sorted(dead.items(), key=lambda kv: -kv[1])
+        if v > warn
+    ]
     return {
         "per_day_minutes": {k: round(v / 7 / 60, 1) for k, v in sorted(kinds.items())},
         "program_share": round(kinds["program"] / total, 3),
+        "filler_share": round(kinds["filler"] / total, 3),
+        "dead_air_share": round(kinds["flex"] / total, 4),
+        "dead_air_slots": dead_slots[:40],
+        "dead_air_slot_count": len(dead_slots),
         "lane_repeat_days": {
             k: round(plan.lanes[k].duration_s / 60 / m, 1) for k, m in air.items() if m > 0
         },
     }
+
+
+def _filler_collections(ch: ChannelSuggestion) -> list[dict[str, Any]]:
+    """dizqueTV fills per channel (not per slot): the channel's on-topic filler, its
+    shows' promos, the library's general filler; the Quran channel only its own."""
+    if ch.kind == "quran":
+        return [{"pool": p, "weight": 300, "cooldown": 0} for p in ch.filler_pools]
+    want = ((f"{ch.key}.topic", 300), (f"{ch.key}.promos", 150), ("library.general", 100))
+    return [{"pool": p, "weight": w, "cooldown": 0} for p, w in want if p in ch.filler_pools]
 
 
 def _airing_json(a: Airing) -> dict[str, Any]:
@@ -302,6 +339,10 @@ def _ep_json(e: EpisodeRef) -> dict[str, Any]:
 def _lane_json(ln: Lane) -> dict[str, Any]:
     return {
         "name": ln.name,
+        "pattern": ln.pattern,
+        "cadence": ln.cadence,
+        "slot_minutes": ln.slot_minutes,
+        "shows": list(ln.shows),
         "tier_group": ln.tier_group,
         "rank": round(ln.rank, 2),
         "order": ln.order,
@@ -368,6 +409,12 @@ def build_plan_json(
                 "slots": [_slot_json(s, plan) for s in ch.slots],
                 "ramadan_slots": [_slot_json(s, plan) for s in ch.ramadan_slots],
                 "stats": _stats(ch, plan, week),
+                # what each slot airs over the next 12 months (continuity at a glance)
+                "timelines": {
+                    k: slot_timeline(plan.lanes[k], ch.slots, weeks=52)
+                    for k in ch.lanes
+                    if k in plan.lanes and any(s.lane == k for s in ch.slots)
+                },
                 "sample_day": {
                     "weekday": sample_weekday,
                     "airings": [_airing_json(a) for a in sample],
@@ -380,10 +427,7 @@ def build_plan_json(
                     "ramadan_schedule": (
                         dizquetv_time_slots(ch, plan, ramadan=True) if ch.ramadan_slots else None
                     ),
-                    "fillerCollections": [
-                        {"pool": p, "weight": w, "cooldown": 0}
-                        for p, w in zip(ch.filler_pools, (300, 100, 50), strict=False)
-                    ],
+                    "fillerCollections": _filler_collections(ch),
                     "fillerRepeatCooldown": plan.config.dz_filler_cooldown_ms,
                 },
             }
@@ -438,6 +482,8 @@ ul.why{margin:6px 0 10px;padding-inline-start:20px;color:var(--mute)}ul.warn{col
 .ticks{display:flex;font-size:10px;color:var(--mute);margin-inline-start:100px}.ticks span{flex:1}
 .tg-talk{background:#9cc3e6}.tg-produced{background:#e6c27a}.tg-cinematic{background:#e59a9a}.tg-static{background:#c8d6b0}
 .tg-unknown{background:#cfc6e6}.tg-mixed{background:#a9dcc8}.tg-flex{background:repeating-linear-gradient(45deg,var(--line),var(--line) 4px,var(--card) 4px,var(--card) 8px);color:var(--mute)!important}
+.tg-weekly{background:#9cc3e6}.tg-strip{background:#e6c27a}.tg-strip7{background:#e59a9a}.tg-quran{background:#c8d6b0}.tg-khutbah{background:#cfc6e6}
+.tl{font-size:12px;margin:0;padding-inline-start:18px}
 table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0}th,td{border-bottom:1px solid var(--line);padding:3px 6px;text-align:start;vertical-align:top}
 th{color:var(--mute);font-weight:600}.k-filler td{color:var(--mute)}.k-flex td{color:var(--warn)}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:10px;padding:0 6px;margin-inline-end:4px;white-space:nowrap}
@@ -468,7 +514,7 @@ def _day_rows(slots: Sequence[dict[str, Any]]) -> str:
         label = "daily" if len(days) == 7 else ", ".join(days)
         cells = []
         for s in per_day[days[0]]:
-            tg = s["tier_group"] or "flex"
+            tg = s["pattern"] or "flex"
             title = f"{s['start']}–{s['end']} {s['lane_name'] or 'filler only'} ({s['daypart']})"
             cells.append(
                 f'<div class="tg-{_e(tg)}" style="flex:{s["minutes"]}" title="{_e(title)}">'
@@ -485,11 +531,11 @@ def _slot_table(slots: Sequence[dict[str, Any]]) -> str:
         f"<tr><td>{_e(s['start'])}–{_e(s['end'])}</td>"
         f"<td>{_e(s['days'] if s['days'] == 'daily' else ', '.join(s['days']))}</td>"
         f"<td>{_e(s['daypart'])}</td><td>{_name(s['lane_name'] or '— filler only')}</td>"
-        f"<td>{_e(s['tier_group'] or '-')}</td><td>{_e(s['filler_pool'] or '-')}</td>"
+        f"<td>{_e(s['pattern'] or '-')}</td><td>{_e(s['filler_pool'] or '-')}</td>"
         f"<td>{'<br>'.join(_e(r) for r in s['reasons'])}</td></tr>"
         for s in slots
     )
-    return ("<table><tr><th>time</th><th>days</th><th>daypart</th><th>lane</th><th>tier</th>"
+    return ("<table><tr><th>time</th><th>days</th><th>daypart</th><th>slot</th><th>repeats</th>"
             f"<th>filler pool</th><th>why</th></tr>{rows}</table>")  # fmt: skip
 
 
@@ -503,11 +549,22 @@ def render_html(plan: dict[str, Any]) -> str:
         nav.append(f'<a href="#{anchor}">{ch["number"]} · {_name(ch["name_ar"] or ch["name"])}</a>')
         st = ch["stats"]
         per_day = " · ".join(f"{k} {v:.0f} min/day" for k, v in st["per_day_minutes"].items())
+        def timeline(k: str, ch: dict[str, Any] = ch) -> str:
+            rows = ch["timelines"].get(k) or []
+            return '<ol class="tl">' + "".join(
+                f"<li>weeks {r['from_week']}–{r['to_week']}: {_name(r['show'])}</li>"
+                for r in rows[:12]
+            ) + ("<li>…</li>" if len(rows) > 12 else "") + "</ol>"
+
         lane_rows = "".join(
-            f"<tr><td>{_name(lanes[k]['name'])}</td><td>{_e(lanes[k]['tier_group'])}</td>"
+            f"<tr><td>{_name(lanes[k]['name'])}</td>"
+            f"<td>{_e(lanes[k]['pattern'] or lanes[k]['special'] or '-')} · "
+            f"{_e(lanes[k]['cadence'] or '')} · {lanes[k]['slot_minutes'] or '-'} min</td>"
             f"<td>{lanes[k]['hours']:.1f} h</td><td>{lanes[k]['episode_count']}</td>"
             f"<td>{_e(st['lane_repeat_days'].get(k, '-'))}</td>"
-            f"<td>{'ramadan ' if lanes[k]['ramadan'] else ''}{_e(lanes[k]['special'] or '')}</td>"
+            f"<td>{len(lanes[k]['shows'])} show(s)"
+            f"{' · ramadan' if lanes[k]['ramadan'] else ''}</td>"
+            f"<td>{timeline(k)}</td>"
             f"<td><details><summary>{len(lanes[k]['units'])} season(s)</summary>"
             + "".join(
                 f'<div><span class="pill">{_e(u["genre"])}</span>{_name(u["name"])} S{u["season"]}'
@@ -544,11 +601,20 @@ def render_html(plan: dict[str, Any]) -> str:
             + (f'<ul class="why warn">{"".join(f"<li>{_e(w)}</li>" for w in ch["warnings"])}</ul>'
                if ch["warnings"] else "")
             + f"<h3>Weekly grid</h3>{_day_rows(ch['slots'])}"
-            f'<div class="sum">{_e(per_day)} · programme share {st["program_share"]:.0%} (simulated week)</div>'
+            f'<div class="sum">{_e(per_day)} · programme {st["program_share"]:.0%} · filler '
+            f'{st["filler_share"]:.0%} · dead air {st["dead_air_share"]:.1%} '
+            f'({st["dead_air_slot_count"]} slot(s) over {plan["config"]["dead_air_warn_minutes"]:.0f} min, '
+            "simulated week)</div>"
+            + ("<details><summary>Slots with dead air</summary><table>" + "".join(
+                f"<tr><td>{_e(d['day'])} {_e(d['at'])}</td><td>{_name(d['slot'])}</td>"
+                f"<td>{d['minutes']} min</td></tr>" for d in st["dead_air_slots"]) + "</table></details>"
+               if st["dead_air_slots"] else "")
+            + ""
             f"<details><summary>Slots</summary>{_slot_table(ch['slots'])}</details>"
             f"{ramadan}"
-            "<h3>Lanes</h3><table><tr><th>lane</th><th>tier</th><th>content</th><th>episodes</th>"
-            f"<th>days to repeat</th><th></th><th>seasons</th></tr>{lane_rows}</table>"
+            "<h3>Slots and their queues</h3><table><tr><th>slot</th><th>repeats</th><th>content</th>"
+            "<th>episodes</th><th>days to repeat</th><th></th><th>next 12 months</th>"
+            f"<th>seasons</th></tr>{lane_rows}</table>"
             "<h3>Filler pools</h3><table><tr><th>pool</th><th>items</th><th>total</th>"
             f"<th>sources</th><th>fallback</th></tr>{pool_rows}</table>"
             f"<details><summary>Sample day ({_e(ch['sample_day']['weekday'])}, "
@@ -559,8 +625,9 @@ def render_html(plan: dict[str, Any]) -> str:
     unplaced = "".join(f"<tr><td>{_name(u['what'])}</td><td>{_e(u['why'])}</td></tr>"
                        for u in plan["unplaced"])  # fmt: skip
     notes = "".join(f"<li>{_e(n)}</li>" for n in plan["notes"])
-    legend = "".join(f'<span class="tg-{t}">{t}</span>'
-                     for t in ("cinematic", "produced", "talk", "static", "unknown", "mixed"))  # fmt: skip
+    legend = "".join(f'<span class="tg-{t}">{label}</span>' for t, label in (
+        ("weekly", "weekly show"), ("strip", "weekday strip"), ("strip7", "every day"),
+        ("quran", "Quran"), ("khutbah", "khutbah")))  # fmt: skip
     return (
         '<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
