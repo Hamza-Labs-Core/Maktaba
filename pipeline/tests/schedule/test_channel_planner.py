@@ -252,41 +252,7 @@ def test_presenter_channel_threshold() -> None:
     assert not [c for c in p2.channels if c.kind == "presenter"]
 
 
-# ----------------------------------------------------------------- tiers and order
-
-
-def test_lanes_never_mix_tiers() -> None:
-    p = plan()
-    for ln in p.lanes.values():
-        if ln.special:
-            continue
-        assert len({u.tier_group for u in ln.units}) == 1, ln.key
-
-
-def test_produced_and_cinematic_take_prime_talk_takes_day_and_late() -> None:
-    ch = channel(plan(), "seerah")
-    lanes = plan().lanes
-    prime = lanes[lane_at(plan(), ch, 21 * 60) or ""]
-    evening = lanes[lane_at(plan(), ch, 18 * 60) or ""]
-    morning = lanes[lane_at(plan(), ch, 9 * 60) or ""]
-    late = lanes[lane_at(plan(), ch, 1 * 60) or ""]
-    assert prime.tier_group == "cinematic"
-    assert evening.tier_group in ("produced", "cinematic")
-    assert morning.tier_group == "talk"
-    assert late.tier_group == "talk"
-
-
-def test_unknown_tier_is_its_own_group() -> None:
-    seasons = [
-        season("a", "A", tier=1, first_air="2010-01-01"),
-        season("b", "B", tier=None, first_air="2011-01-01"),
-        season("c", "C", tier=None, first_air="2012-01-01"),
-    ]
-    p = plan(seasons, dawn_quran=False)
-    groups = {ln.tier_group for ln in p.lanes.values()}
-    assert groups == {"talk", "unknown"}
-    unknown = [ln for ln in p.lanes.values() if ln.tier_group == "unknown"]
-    assert {u.series_id for ln in unknown for u in ln.units} == {"b", "c"}
+# ----------------------------------------------------------------- order
 
 
 def test_seasons_and_episodes_stay_in_order() -> None:
@@ -398,11 +364,12 @@ def test_ramadan_seasons_flagged_and_moved_after_iftar() -> None:
     p = plan()
     ch = channel(p, "seerah")
     assert ch.ramadan_slots
-    iftar = slot_at(ch.ramadan_slots, 20 * 60)
+    iftar = slot_at(ch.ramadan_slots, 19 * 60)  # the first block after iftar
     lane = p.lanes[iftar.lane or ""]
-    assert lane.ramadan
-    assert all(u.ramadan for u in lane.units)
-    assert {u.series_id for u in lane.units} == {"s-hab1"}
+    assert lane.ramadan and lane.pattern == "strip7"
+    # the Ramadan show heads the after-iftar slot every day; its whole series follows
+    assert lane.units[0].series_id == "s-hab1" and lane.units[0].ramadan
+    assert iftar.days == ()  # every day of the week
     assert any("Ramadan" in r for r in ch.reasons)
     # no Ramadan seasons on history-less channels → no Ramadan grid
     raq = channel(p, "raqaiq")
@@ -466,7 +433,8 @@ def test_simulated_day_pads_every_slot_to_its_boundary() -> None:
     ch = channel(p, "seerah")
     day = simulate(ch, p, weekday="fri", days=1)
     assert day[0].start_s == 0
-    assert abs(day[-1].end_s - DAY_MINUTES * 60) < 1
+    tol = PlannerConfig().overrun_tolerance_minutes * 60  # the last episode may overrun a little
+    assert DAY_MINUTES * 60 - 1 < day[-1].end_s <= DAY_MINUTES * 60 + tol
     for a, b in zip(day, day[1:], strict=False):
         assert abs(a.end_s - b.start_s) < 1e-6  # contiguous
     slots = sorted((s for s in ch.slots if s.on("fri")), key=lambda s: s.start)
@@ -474,8 +442,8 @@ def test_simulated_day_pads_every_slot_to_its_boundary() -> None:
         if a.kind != "program":
             continue
         s = slot_at(slots, int(a.start_s // 60), "fri")
-        # an episode never crosses its slot's end (none is longer than a slot here)
-        assert a.end_s <= s.end * 60 + 1e-6, a
+        # an episode never crosses its slot's end by more than the overrun tolerance
+        assert a.end_s <= (s.end + PlannerConfig().overrun_tolerance_minutes) * 60 + 1e-6, a
     progs = sum(a.end_s - a.start_s for a in day if a.kind == "program")
     assert progs / (DAY_MINUTES * 60) > 0.8
 
@@ -518,20 +486,6 @@ def test_long_loose_videos_group_into_a_programme_lane() -> None:
     assert all("g.mp4" not in e.path for e in units[0].episodes)  # general loose skipped
 
 
-def test_mix_rotates_genres_by_whole_series() -> None:
-    seasons = [
-        season("a1", "A", genre="seerah", tier=1, first_air="2001-01-01"),
-        season("a2", "A", genre="seerah", tier=1, season_no=2, first_air="2002-01-01"),
-        season("b1", "B", genre="seerah", tier=1, first_air="2003-01-01"),
-        season("c1", "C", genre="raqaiq", tier=1, first_air="2004-01-01"),
-    ]
-    p = plan(seasons, dawn_quran=False, theme_min_hours=1000.0, presenter_channels=False,
-             max_lanes_per_daypart=1, dayparts=PlannerConfig().dayparts[:1])  # fmt: skip
-    mix = channel(p, "mix")
-    lane = p.lanes[mix.lanes[0]]
-    assert [u.series_id for u in lane.units] == ["a1", "a2", "c1", "b1"]
-
-
 # ----------------------------------------------------------------- mappings
 
 
@@ -560,11 +514,11 @@ def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}
 
 
-def test_dizquetv_daily_schedule_when_no_day_specific_slot() -> None:
+def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows() -> None:
     p = plan()
     ch = channel(p, "seerah")
     dz = dizquetv_time_slots(ch, p)
-    assert dz["period"] == 86_400_000
+    assert dz["period"] == 7 * 86_400_000  # strips and weekly slots: a weekly period
     times = [s["time"] for s in dz["slots"]]
     assert times == sorted(times) and len(set(times)) == len(times)
     shows = [s["showId"] for s in dz["slots"]]

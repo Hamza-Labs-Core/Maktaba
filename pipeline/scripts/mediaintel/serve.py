@@ -10,6 +10,7 @@ page); this page is the stand-in until these stages run there.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -74,6 +75,11 @@ STEPS: list[tuple[str, str, str]] = [
         'the exact day for series episodes whose date is only "N years ago" (runs with --exact)',
     ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
+    (
+        "group (",
+        "Group clips and promos",
+        "shorts and clips into filler collections, stand-alone videos by topic, promos to shows",
+    ),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
     ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
     ("report", "Write review pages", "one HTML page per library"),
@@ -101,7 +107,7 @@ STAGE_APPLIES = {
     "signature": "f.duration_s >= 180",
 }
 
-#: for the stage page: what it does, the run steps (indexes into STEPS) before / at / after it,
+#: for the stage page: what it does, the run steps (STEPS prefixes) before / at / after it,
 #: and a pattern for its lines in the run log
 STAGE_INFO: dict[str, dict[str, Any]] = {
     "probe": {
@@ -222,6 +228,8 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                         if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
             return out, {"done": int(plex_m[-1].group(1)) if plex_m else 0, "total": tot,
                          "unit": "libraries"}  # fmt: skip
+        elif STEPS[current][0] == "group (":
+            return out, _counted(body, r"^grouping clips in (\d+) libraries")
         elif STEPS[current][0] == "dizquetv-shows":
             return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
@@ -234,6 +242,13 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
 
 
 _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+def _counted(body: list[str], total_re: str) -> dict[str, Any]:
+    """A step printing "<total line>" then one "[n/N] …" line per library."""
+    done = [int(x.group(1)) for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+    total = next((int(t.group(1)) for ln in body if (t := re.match(total_re, ln))), None)
+    return {"done": done[-1] if done else 0, "total": total, "unit": "libraries"}
 
 
 def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
@@ -655,6 +670,7 @@ def group_series(
         g["seasons"].append(
             {
                 "season": meta.get("season"),
+                "name": meta.get("season_name"),
                 "episodes": n,
                 "first_air": meta.get("first_air"),
                 "last_air": meta.get("last_air"),
@@ -702,7 +718,9 @@ def tv_names(library: str, g: dict[str, Any], shows: dict[str, str]) -> list[str
     count = len(g["seasons"])
     wanted = [_title(library, g["name"], 1, 1)]
     if count > 1:
-        wanted += [_title(library, g["name"], x["season"] or 0, count) for x in g["seasons"]]
+        wanted += [
+            _title(library, g["name"], x["season"] or 0, count, x.get("name")) for x in g["seasons"]
+        ]
     return [shows[fold(n)] for n in wanted if fold(n) in shows]
 
 
@@ -767,7 +785,9 @@ def item_detail(
             (folder,),
         )
     ]
+    extra = collections_beyond_seasons(conn, folder)
     return {
+        **extra,
         "folder": folder,
         "name": _leaf(folder),
         "files": head[0],
@@ -784,12 +804,56 @@ def item_detail(
     }
 
 
+def collections_beyond_seasons(conn: sqlite3.Connection, folder: str) -> dict[str, Any]:
+    """Topic collections, clip / stand-alone groups and promo links of one library, each
+    with the Plex collection written for it (when there is one)."""
+    from .group_clips import group_title
+
+    written: dict[str, str] = {}
+    with contextlib.suppress(sqlite3.OperationalError):
+        written = dict(conn.execute("SELECT series_id, title FROM plex_collections"))
+    out: dict[str, Any] = {"topics": [], "clip_groups": [], "promos": []}
+    with contextlib.suppress(sqlite3.OperationalError):
+        out["topics"] = [
+            {"name": name, "items": n, "collection": written.get(tid)}
+            for tid, name, n in conn.execute(
+                """SELECT t.id, t.name, COUNT(i.path) FROM topic_collections t
+                   LEFT JOIN topic_items i ON i.topic_id = t.id WHERE t.folder = ?
+                   GROUP BY t.id ORDER BY COUNT(i.path) DESC""",
+                (folder,),
+            )
+        ]
+        out["clip_groups"] = [
+            {"kind": kind, "basis": basis, "name": group_title(lib, kind, basis, name),
+             "items": n, "collection": written.get(gid)}
+            for gid, lib, kind, basis, name, n in conn.execute(
+                """SELECT g.id, g.library, g.kind, g.basis, g.name, COUNT(i.path)
+                   FROM clip_groups g LEFT JOIN clip_group_items i ON i.group_id = g.id
+                   WHERE g.folder = ? GROUP BY g.id ORDER BY g.kind, COUNT(i.path) DESC""",
+                (folder,),
+            )
+        ]  # fmt: skip
+        out["promos"] = [
+            {"title": t, "show": key, "library": lib, "season": se, "evidence": ev}
+            for t, key, lib, se, ev in conn.execute(
+                """SELECT COALESCE(y.title, f.stem), p.series_key, p.series_library, p.season,
+                          p.evidence
+                   FROM promo_links p JOIN files f ON f.path = p.path
+                   LEFT JOIN yt_videos y ON y.youtube_id = f.youtube_id
+                   WHERE p.folder = ? ORDER BY p.series_key""",
+                (folder,),
+            )
+        ]
+    return out
+
+
 _HERE = Path(__file__).parent
 #: request path -> (file beside this module, content type). Only these files are served;
 #: they are read per request so edits show on reload.
 _STATIC: dict[str, tuple[Path, str]] = {
     "/stage": (_HERE / "stage.html", "text/html; charset=utf-8"),
     "/item": (_HERE / "item.html", "text/html; charset=utf-8"),
+    "/settings": (_HERE / "settings.html", "text/html; charset=utf-8"),
     "/common.css": (_HERE / "common.css", "text/css; charset=utf-8"),
     "/common.js": (_HERE / "common.js", "text/javascript; charset=utf-8"),
 }
@@ -1067,6 +1131,80 @@ def _run_args(
     return args
 
 
+def _tail(path: Path, n: int) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+
+
+def settings_payload(db_path: str) -> dict[str, Any]:
+    """Every settings section for the settings page: its fields, values and defaults."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    file = settings_store.path_of(db_path)
+    out = []
+    for key, (cls, title, what) in settings_store.SECTIONS.items():
+        error = None
+        try:
+            changes = settings_store.changed(file, key)
+        except settings.SettingsError as e:  # not {section: {setting: value}} at all
+            changes, error = {}, str(e)
+        # each change on its own: a value this page cannot use (a hand edit) is shown with
+        # why and a way back to the default, and the others still apply
+        valid: dict[str, Any] = {}
+        invalid: dict[str, str] = {}
+        for name, value in changes.items():
+            try:
+                settings.apply(cls, {name: value})
+                valid[name] = value
+            except settings.SettingsError as e:
+                invalid[name] = str(e)
+        fields = settings.describe(settings.apply(cls, valid))
+        for f in fields:
+            if f["name"] in invalid:
+                f["invalid"] = invalid[f["name"]]
+                f["changed"] = True  # offers "Back to default"
+        out.append({"key": key, "title": title, "what": what, "error": error,
+                    "unknown": sorted(k for k in invalid if k not in {f["name"] for f in fields}),
+                    "fields": fields})  # fmt: skip
+    return {"file": str(file), "sections": out}
+
+
+#: one save at a time: each reads the file, changes its section and replaces it
+_SETTINGS_LOCK = threading.Lock()
+
+
+def save_settings(db_path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Apply ``{"section", "set": {name: value}, "reset": [name, …]}`` to the settings
+    file. Every value is checked first; nothing is written when one is refused
+    (``SettingsError``)."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    key = body.get("section")
+    if key not in settings_store.SECTIONS:
+        raise settings.SettingsError("section", f"no such section {key!r}")
+    set_ = body.get("set") or {}
+    reset = body.get("reset") or []
+    if not isinstance(set_, dict) or not isinstance(reset, list):
+        raise settings.SettingsError("body", 'send {"section", "set": {...}, "reset": [...]}')
+    file = settings_store.path_of(db_path)
+    cls = settings_store.SECTIONS[key][0]
+    names = {f.name for f in dataclasses.fields(cls)}
+    with _SETTINGS_LOCK:
+        before = settings_store.changed(file, key)
+        # a name that is no longer a setting can never apply: it is dropped, not kept
+        kept = {k: v for k, v in before.items() if k not in reset and k in names}
+        cfg = settings.apply(cls, {**kept, **set_})
+        written = settings.save(file, key, cfg)
+    return {"section": key, "changed": sorted(written),
+            "dropped": sorted(k for k in before if k not in names)}  # fmt: skip
+
+
 _LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
@@ -1099,11 +1237,17 @@ def serve(
 ) -> None:
     """The control centre: status, start / stop a run, explain a video, pin a style,
     open review pages. Binds to localhost only."""
+    # absolute: the runs and the preview start in pipeline/, wherever the server started
+    db_path = str(Path(db_path).resolve())
+    reports = reports.resolve()
     log = log_path or Path(db_path + ".run.log")
     cache: dict[str, Any] = {"at": 0.0, "st": {}}
     cache_lock = threading.Lock()
     detail_cache: dict[tuple[str, str, str | None], tuple[float, dict[str, Any] | None]] = {}
     pipeline_dir = Path(__file__).resolve().parents[2]
+    #: the settings page's "Preview channels": plan-channels into reports/preview (no writes)
+    preview: dict[str, Any] = {"proc": None}
+    preview_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -1213,6 +1357,19 @@ def serve(
                     self.send_error(404)
                     return
                 self._send(200, Path(f).read_bytes(), "image/jpeg")
+            elif url.path == "/api/settings":
+                self._json(200, settings_payload(db_path))
+            elif url.path == "/preview/channel-plan.html":
+                plan_page = reports / "preview" / "channel-plan.html"
+                if plan_page.is_file():
+                    self._send(200, plan_page.read_bytes(), "text/html; charset=utf-8")
+                else:
+                    self.send_error(404, "No preview yet: press Preview channels.")
+            elif url.path == "/api/plan-preview":
+                self._json(200, {"running": preview["proc"] is not None
+                                 and preview["proc"].poll() is None,
+                                 "ready": (reports / "preview" / "channel-plan.html").is_file(),
+                                 "log": _tail(reports / "preview" / "plan.log", 30)})  # fmt: skip
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})
@@ -1272,6 +1429,29 @@ def serve(
                     return
                 os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows; finished work is saved
                 self._json(200, {"stopped": pid})
+            elif self.path == "/api/settings":
+                from maktaba_pipeline import settings
+
+                try:
+                    self._json(200, save_settings(db_path, body))
+                except settings.SettingsError as e:
+                    self._json(400, {"error": str(e), "field": e.field})
+            elif self.path == "/api/plan-preview":
+                # one check-and-launch at a time: two clicks never start two planners
+                with preview_lock:
+                    if preview["proc"] is not None and preview["proc"].poll() is None:
+                        self._json(409, {"error": "A preview is already being planned."})
+                        return
+                    out = reports / "preview"
+                    out.mkdir(parents=True, exist_ok=True)
+                    args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path,
+                            "plan-channels", "--out", str(out)]  # fmt: skip
+                    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+                    with (out / "plan.log").open("w", encoding="utf-8") as fh:
+                        preview["proc"] = subprocess.Popen(  # noqa: S603 — fixed argv
+                            args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
+                        )
+                self._json(202, {"started": True})
             elif self.path == "/api/style":
                 from . import db, scan_visual
 

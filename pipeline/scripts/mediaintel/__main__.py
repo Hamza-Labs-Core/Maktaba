@@ -14,6 +14,7 @@ Commands (each reads/writes the same SQLite cache, ``--db``):
   set-style LIB SERIES STYLE  pin a series' style (static/talk/produced/cinematic)
   scan-visual                 production style per season: static / talk / produced / cinematic
   tag                         topic / format / audience / occasion tags per series and loose video
+  group                       clips and stand-alone videos into collections; promos to their show
   report                      HTML page per folder to review the grouping visually
   export-plex                 one Plex collection per season (dry run unless --apply)
   plan-channels               suggest live TV channels + time-slot grids + filler pools
@@ -87,9 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     root_args(p)
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
     p.add_argument("--from-step", default="scan", metavar="STEP",
-                   help="start at this step, keeping what earlier steps cached: scan, youtube, "
-                        "link, detect, signatures, exact, tag, scan-visual, report, export-plex, "
-                        "dizquetv-shows, plan-channels, export-dizquetv")  # fmt: skip
+                   help="start at this step, keeping what earlier steps cached: scan, plex, "
+                        "youtube, link, detect, signatures, exact, tag, group, export-plex, "
+                        "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv")  # fmt: skip
+    p.add_argument("--skip", action="append", default=[], metavar="STEP",
+                   help="leave this step out (repeatable), e.g. scan-visual while the NAS is slow")  # fmt: skip
     p.add_argument("--exact", action="store_true",
                    help="also fetch exact upload dates for series members (slow, polite)")  # fmt: skip
     p.add_argument("--lang", default="ar")
@@ -161,8 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("detect", help="group videos into series and seasons")
     p.add_argument("--folder", help="only folders whose path contains this")
     p.add_argument(
-        "--min-episode-minutes", type=float, default=3.0,
-        help="shorter videos are shorts: never episodes, left out of series (default 3)",
+        "--min-episode-minutes", type=float, default=None,
+        help="shorter videos are shorts: never episodes, left out of series (default: the "
+             "detect setting min_episode_s, 180 s)",
     )  # fmt: skip
 
     p = sub.add_parser("set-style", help="pin a series' production style (overrides scan-visual)")
@@ -183,6 +187,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--folder", help="only folders whose path contains this")
 
+    p = sub.add_parser(
+        "group", help="clips / stand-alone videos into collections, promos linked to shows"
+    )
+    p.add_argument("--folder", help="only folders whose path contains this")
+
     p = sub.add_parser("dizquetv-shows", help="update/create dizqueTV custom shows from seasons")
     plex_args(p)
     p.add_argument("--url", default="http://localhost:8002", help="dizqueTV")
@@ -194,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("plan-channels", help="suggest live TV channels + time-slot grids")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
+    p.add_argument("--review", type=Path, help="also write a plain-text review here")
+    p.add_argument("--focus", action="append", default=[],
+                   help="detail channels whose name contains this (repeatable)")  # fmt: skip
 
     p = sub.add_parser(
         "export-dizquetv", help="what a channel plan would write to dizqueTV (dry run)"
@@ -261,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                 exact=a.exact, lang=a.lang, delay_s=a.delay, report_dir=a.out, workers=a.workers,
                 plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
                 from_step=a.from_step,
+                skip=tuple(a.skip),
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(
@@ -293,8 +306,12 @@ def main(argv: list[str] | None = None) -> int:
             apply=a.apply, library_filter=a.library, create_series=a.create_series,
             backup_dir=a.backup_dir,
         )  # fmt: skip
+    elif a.cmd == "group":
+        from . import group_clips
+
+        group_clips.run(conn, a.folder)
     elif a.cmd == "plan-channels":
-        plan_channels.run(conn, a.out)
+        plan_channels.run(conn, a.out, review=a.review, focus=a.focus)
     elif a.cmd == "export-dizquetv":
         export_dizquetv.run(
             a.plan, url=a.url, offline=a.offline, only=set(a.channel or []) or None,

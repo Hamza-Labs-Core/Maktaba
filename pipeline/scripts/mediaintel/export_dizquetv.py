@@ -9,8 +9,8 @@ real endpoint that would write it:
 ======================== ================================= ==========================
 plan                     dizqueTV object                   endpoint
 ======================== ================================= ==========================
-lane (ordered seasons)   custom show ``maktaba-plan · …``  ``PUT /api/show`` (create),
-                         (episodes in lane order)          ``POST /api/show/ID``
+slot queue (its shows,   custom show ``maktaba-plan · …``  ``PUT /api/show`` (create),
+one after the other)     (every episode in queue order)    ``POST /api/show/ID``
 filler pool              filler list ``maktaba-plan · …``  ``PUT /api/filler``,
                                                            ``POST /api/filler/ID``
 channel slot grid        time-slot schedule (lane →        ``POST /api/channel-tools/

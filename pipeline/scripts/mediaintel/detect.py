@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 from datetime import date
@@ -12,7 +13,6 @@ from maktaba_pipeline.audio.chromaprint import decode
 from maktaba_pipeline.classify.series_detector import (
     DETECTOR_VERSION,
     Detection,
-    DetectorConfig,
     PlaylistFacts,
     Series,
     VideoFacts,
@@ -162,6 +162,7 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                 "first_air": se.first_air.isoformat() if se.first_air else None,
                 "last_air": se.last_air.isoformat() if se.last_air else None,
                 "median_duration_s": se.median_duration_s, "folder": folder,
+                "season_name": se.name, "season_year": se.year, "brand": ser.brand,
             }  # fmt: skip
             year = se.first_air.year if se.first_air else None
             # an upsert, never INSERT OR REPLACE: a replace deletes the row first and the
@@ -194,12 +195,42 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
             "(SELECT series_id FROM series_episodes WHERE is_user_override=1)",
             gone,
         )
+    store_topics(conn, library, folder, det)
     conn.commit()
 
 
+def topic_id(folder: str, playlist_id: str) -> str:
+    import hashlib
+
+    return "topic:" + hashlib.sha1(f"{folder}|{playlist_id}".encode()).hexdigest()[:16]
+
+
+def store_topics(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -> None:
+    """Curated playlists cutting across shows (``Detection.topics``), replaced per folder."""
+    conn.execute("DELETE FROM topic_collections WHERE folder=?", (folder,))
+    for t in det.topics:
+        tid = topic_id(folder, t.playlist_id)
+        conn.execute(
+            "INSERT OR REPLACE INTO topic_collections (id, library, folder, name, playlist_id) "
+            "VALUES (?,?,?,?,?)",
+            (tid, library, folder, t.name, t.playlist_id),
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO topic_items (topic_id, path, position) VALUES (?,?,?)",
+            [(tid, path, i) for i, path in enumerate(t.items, 1)],
+        )
+
+
 def run(
-    conn: sqlite3.Connection, only_folder: str | None, min_episode_minutes: float = 3.0
+    conn: sqlite3.Connection, only_folder: str | None, min_episode_minutes: float | None = None
 ) -> None:
+    """``min_episode_minutes``: overrides the setting (``detect.min_episode_s``)."""
+    from . import settings_store
+
+    base = settings_store.get(conn, "detect")
+    if min_episode_minutes is not None:
+        base = dataclasses.replace(base, min_episode_s=min_episode_minutes * 60)
+    settings_store.note(conn, "detect")
     folders = [
         r[0]
         for r in conn.execute("SELECT DISTINCT folder FROM files ORDER BY folder")
@@ -207,7 +238,7 @@ def run(
     ]
     for folder in folders:
         videos, playlists, presenter = load_facts(conn, folder)
-        cfg = DetectorConfig(min_episode_s=min_episode_minutes * 60)
+        cfg = base
         name = Path(folder).name
         print(f"  … {name}: matching {len(videos)} videos against its seasons", flush=True)
 
@@ -226,7 +257,9 @@ def run(
               f"{len(det.unassigned)} unassigned, {len(det.shorts)} shorts excluded")  # fmt: skip
         for ser in det.series:
             seasons = ", ".join(
-                f"S{se.number}:{len(se.episodes)}"
+                f"S{se.number}"
+                + (f" {se.name}" if se.name else "")
+                + f":{len(se.episodes)}"
                 + (f"(+{len(se.attached)})" if se.attached else "")
                 + (f"[{se.first_air:%Y-%m}]" if se.first_air else "")
                 for se in ser.seasons
@@ -236,3 +269,5 @@ def run(
                 f"  {ser.kind:10} {ser.name[:60]:60} {seasons}"
                 + (f"  extras={extras}" if extras else "")
             )
+        if det.topics:
+            print(f"  topics: {', '.join(f'{t.name} ({len(t.items)})' for t in det.topics)}")
