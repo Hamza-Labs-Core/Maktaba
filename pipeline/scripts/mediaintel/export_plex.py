@@ -476,6 +476,7 @@ def export(
 
         # collections this job made for seasons detection no longer has: retired once the
         # new collections hold (nearly) all of them; otherwise kept and reported
+        retired: set[str] = set()
         if retire:
             covered_all = {k for _, ks in everything for k in ks}
             planned_titles_all = {t for t, _ in everything}
@@ -497,6 +498,7 @@ def export(
                             if k not in covered_all:
                                 print(f"       - {t}   (NOT in any new collection)")
                     if apply:
+                        retired.add(row["rating_key"])
                         server.send("DELETE", f"/library/metadata/{row['rating_key']}")
                         conn.execute("DELETE FROM plex_collections WHERE series_id=?", (track_id,))
                         conn.commit()
@@ -513,7 +515,9 @@ def export(
             )
         }
         for c in existing.values():
-            if c["ratingKey"] in our_keys or c.get("smart") or c["title"] in planned_titles:
+            if c["ratingKey"] in our_keys | retired or c.get("smart"):
+                continue
+            if c["title"] in planned_titles:
                 continue
             kids_t = _children_titled(server, c["ratingKey"])
             kids = {k for k, _ in kids_t}
