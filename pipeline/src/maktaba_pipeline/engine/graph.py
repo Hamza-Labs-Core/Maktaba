@@ -61,6 +61,9 @@ CATALOG_ID = UUID("00000000-0000-0000-0000-00000000ca7a")
 SIG_VERSION: int = AUDIO_FP_VERSION * 100 + FRAMES_VERSION
 
 LINK_VERSION = 1
+#: thumb_small / review_pages versions (stages/thumb_small.py, stages/review_pages.py)
+THUMB_SMALL_VERSION = 1
+REVIEW_VERSION = 1
 YT_SYNC_VERSION = 1
 CH_WRITE_VERSION = 1
 
@@ -151,6 +154,8 @@ POOLS: tuple[PoolDef, ...] = (
     PoolDef("network_plex", "Plex", "global", 2, 2),
     PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
+    # review pages only: they never take a cpu or network slot from the stages that write
+    PoolDef("reports", "Review pages", "global", 1, 1),
 )
 
 
@@ -247,7 +252,9 @@ GRAPH: tuple[StageDef, ...] = (
         lane="episodes",
         lane_order=2,
         version=DHASH_VERSION,
-        edges=(Edge("detect", "library_of"),),
+        # the sidecar it hashed is the small copy's source too (YouTube archives never run
+        # the legacy thumbnail stage)
+        edges=(Edge("detect", "library_of"), Edge("thumb_small", "same")),
     ),
     StageDef(
         name="link",
@@ -279,6 +286,17 @@ GRAPH: tuple[StageDef, ...] = (
         version=STYLE_VERSION,
         edges=(Edge("rate_style", "payload_seasons"),),
     ),
+    StageDef(
+        name="thumb_small",
+        label="Small thumbnail",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="episodes",
+        lane_order=6,
+        version=THUMB_SMALL_VERSION,
+        edges=(Edge("review_pages", "library_of"),),
+        entry_for=("video",),
+    ),
     # ---- seasons and libraries lane ------------------------------------
     StageDef(
         name="detect",
@@ -293,6 +311,7 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("rate_style", "seasons_changed"),
             Edge("tag", "same"),
             Edge("plan_channels", "catalog"),
+            Edge("review_pages", "same"),
         ),
         may_request=("fingerprint", "fp_gate"),
         entry_for=("library",),
@@ -336,6 +355,19 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("season",),
         debounce_sec=10,
         debounce_max_sec=120,
+    ),
+    # Its own pool and no edges out: nothing waits for a review page (plan 06-11 section 18).
+    StageDef(
+        name="review_pages",
+        label="Review pages",
+        subject_kinds=("library",),
+        pool="reports",
+        lane="seasons",
+        lane_order=6,
+        version=REVIEW_VERSION,
+        entry_for=("library",),
+        debounce_sec=120,
+        debounce_max_sec=900,
     ),
     # ---- channels lane -------------------------------------------------
     StageDef(
@@ -396,7 +428,14 @@ GRAPH: tuple[StageDef, ...] = (
         4,
         edges=(Edge("thumbnail", "same", legacy=True),),
     ),
-    _legacy("thumbnail", "Poster and sprites", ("video",), "nas_read", 5),
+    _legacy(
+        "thumbnail",
+        "Poster and sprites",
+        ("video",),
+        "nas_read",
+        5,
+        edges=(Edge("thumb_small", "same"),),
+    ),
     _legacy("topic_recluster", "Recluster topics", ("library",), "cpu", 6),
     _legacy("topic_assign", "Assign topics", ("video",), "cpu", 7),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
