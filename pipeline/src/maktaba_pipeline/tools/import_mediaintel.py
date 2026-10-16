@@ -1,0 +1,688 @@
+# ruff: noqa: E501  (long SQL strings read better unwrapped)
+"""Import the mediaintel prototype's cache into Maktaba (plan 06-11 section 10.4).
+
+    python -m maktaba_pipeline.tools.import_mediaintel --cache cache.db --library <uuid|name> \\
+        [--library ...] [--path-map CACHE_PREFIX=MAKTABA_PREFIX] [--database-url URL] [--apply]
+
+A **dry run by default**: everything is written inside a transaction that is rolled back, and the
+per-table row counts it would change are printed. ``--apply`` commits.
+
+Precondition: Maktaba has scanned the libraries (``videos`` rows exist; cheap, the scanner hashes only
+head and tail of each file). Cache files are matched to ``videos`` by normalised path (optionally
+rewritten with ``--path-map``) plus equal size and an mtime within 2 s; unmatched files are reported.
+
+What is copied: fingerprints / thumbnail hashes / style metrics (``video_signals``), YouTube rows,
+the links (``media_metadata_enrichment``), series / seasons / episodes (through the same
+``detect.apply_changes`` the live stage uses, so ids and membership hashes are identical), tags,
+styles and user style overrides, and the Plex collections the tool created (``external_links``).
+
+For every ``(subject, stage)`` that was done in the cache one **synthetic ``processing_jobs`` row**
+(``state='done'``, ``outcome='imported'``) is written with ``input_hash`` computed by the *same*
+``input_fingerprint`` function the live stage uses and ``output_hash`` the hash of the imported
+output. Every live job for those subjects therefore ends ``skipped_unchanged``: nothing is
+recomputed and the NAS is not touched. Cache rows that failed become ``failed`` rows with a
+normalised ``error_cause``. ``probe`` and the extension stages are not imported: Maktaba probes its
+own files, and an extension reconciles with its server on first run (the link rows it needs are
+imported). A final ``detect`` per library is queued with reason ``import``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import json
+import os
+import sqlite3
+import sys
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from ..audio.chromaprint import AUDIO_FP_VERSION
+from ..classify.production_style import STYLE_VERSION, metrics_from_dict
+from ..engine.causes import classify
+from ..engine.enqueue import enqueue_job
+from ..engine.graph import SIG_VERSION, Subject
+from ..engine.hashing import canonical_hash
+from ..engine.ids import season_uuid, series_uuid
+from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
+from ..engine.stages import detect as detect_stage
+from ..engine.stages import fingerprint as fingerprint_stage
+from ..engine.stages import link as link_stage
+from ..engine.stages import rate_style as rate_style_stage
+from ..engine.stages import style_sample as style_sample_stage
+from ..engine.stages import tag as tag_stage
+from ..engine.stages import thumb_hash as thumb_stage
+from ..engine.stages import youtube_sync as yt_stage
+from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
+
+__all__ = ["ImportReport", "main", "run_import"]
+
+MTIME_SLOP_S = 2.0
+LINK_CONFIDENCE = {
+    "info_json": 1.0,
+    "exact_title": 1.0,
+    "folded_title": 0.9,
+    "title_duration": 0.8,
+    "fuzzy_title_duration": 0.6,
+}
+TABLES = (
+    "video_signals", "youtube_channels", "youtube_videos", "youtube_playlists",
+    "youtube_playlist_items", "media_metadata_enrichment", "series", "series_seasons",
+    "series_episodes", "season_tags", "video_topic_tags", "season_style", "external_links",
+    "processing_jobs",
+)  # fmt: skip
+
+
+class _Rollback(Exception):
+    """Raised to roll the dry-run transaction back."""
+
+
+@dataclass
+class ImportReport:
+    applied: bool
+    files: int = 0
+    matched: int = 0
+    unmatched: list[str] = field(default_factory=list)
+    tables: dict[str, tuple[int, int]] = field(default_factory=dict)  # name -> (before, after)
+    jobs_imported: int = 0
+    jobs_failed: int = 0
+    jobs_skipped_existing: int = 0
+    detect_queued: int = 0
+
+    def render(self) -> str:
+        out = [
+            f"{'APPLIED' if self.applied else 'DRY RUN (nothing written; pass --apply)'}",
+            f"cache files: {self.files}, matched to videos: {self.matched}, "
+            f"unmatched: {len(self.unmatched)}",
+        ]
+        for p in self.unmatched[:10]:
+            out.append(f"  unmatched: {p}")
+        out.append(f"{'table':28} {'before':>8} {'after':>8} {'delta':>8}")
+        for name, (b, a) in self.tables.items():
+            out.append(f"{name:28} {b:8d} {a:8d} {a - b:+8d}")
+        out.append(
+            f"synthetic jobs: {self.jobs_imported} done, {self.jobs_failed} failed, "
+            f"{self.jobs_skipped_existing} already imported; detect queued for {self.detect_queued} libraries"
+        )
+        return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- cache access
+
+
+def _open_cache(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _has(conn: sqlite3.Connection, table: str) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (table,)).fetchone() is not None
+    )
+
+
+def _norm(p: str, maps: list[tuple[str, str]]) -> str:
+    s = p.replace("\\", "/")
+    for src, dst in maps:
+        if s.lower().startswith(src.lower()):
+            s = dst + s[len(src) :]
+            break
+    return s.lower()
+
+
+def parse_path_maps(values: list[str]) -> list[tuple[str, str]]:
+    out = []
+    for v in values:
+        a, _, b = v.partition("=")
+        if not a or not b:
+            raise SystemExit(f"--path-map expects CACHE_PREFIX=MAKTABA_PREFIX, got {v!r}")
+        out.append((a.replace("\\", "/"), b.replace("\\", "/")))
+    return sorted(out, key=lambda x: -len(x[0]))
+
+
+def _epoch(v: Any) -> float | None:
+    dt = parse_ts(v)
+    return None if dt is None else dt.timestamp()
+
+
+async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]]:
+    out = []
+    for n in names:
+        row = None
+        with contextlib.suppress(ValueError):
+            row = await db.fetchrow("SELECT id, name FROM libraries WHERE id = $1", str(UUID(n)))
+        if row is None:
+            row = await db.fetchrow("SELECT id, name FROM libraries WHERE name = $1", n)
+        if row is None:
+            raise SystemExit(f"library {n!r} not found")
+        out.append((UUID(str(row["id"])), str(row["name"])))
+    return out
+
+
+# --------------------------------------------------------------------------- the import
+
+
+async def run_import(
+    db: Any,
+    cache: Path,
+    libraries: list[str],
+    *,
+    path_maps: list[tuple[str, str]] | None = None,
+    apply: bool = False,
+) -> ImportReport:
+    """Run the import; with ``apply=False`` everything is rolled back after counting."""
+    maps = path_maps or []
+    conn = _open_cache(cache)
+    try:
+        libs = await _resolve_libraries(db, libraries)
+        report = ImportReport(applied=apply)
+        before = {t: int(await db.fetchval(f"SELECT count(*) FROM {t}")) for t in TABLES}
+        try:
+            async with db.transaction():
+                await _import(db, conn, libs, maps, report)
+                report.tables = {
+                    t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}")))
+                    for t in TABLES
+                }
+                if not apply:
+                    raise _Rollback
+        except _Rollback:
+            pass
+        return report
+    finally:
+        conn.close()
+
+
+async def _import(
+    db: Any,
+    cache: sqlite3.Connection,
+    libs: list[tuple[UUID, str]],
+    maps: list[tuple[str, str]],
+    report: ImportReport,
+) -> None:
+    files = {r["path"]: r for r in cache.execute("SELECT * FROM files")}
+    report.files = len(files)
+    by_norm: dict[str, tuple[UUID, UUID, int, float | None]] = {}
+    for lib_id, _ in libs:
+        for r in await db.fetch(
+            "SELECT id, path, size_bytes, mtime FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
+            uid(lib_id),
+        ):
+            by_norm[str(r["path"]).replace("\\", "/").lower()] = (
+                UUID(str(r["id"])), lib_id, int(r["size_bytes"]), _epoch(r["mtime"]),
+            )  # fmt: skip
+    # cache path -> (video id, library id)
+    match: dict[str, tuple[UUID, UUID]] = {}
+    for path, f in files.items():
+        hit = by_norm.get(_norm(path, maps))
+        if hit is None:
+            report.unmatched.append(path)
+            continue
+        vid, lib, size, mtime = hit
+        if int(f["size"]) != size or (
+            mtime is not None and abs(float(f["mtime"]) - mtime) >= MTIME_SLOP_S
+        ):
+            report.unmatched.append(f"{path} (size or mtime differs)")
+            continue
+        match[path] = (vid, lib)
+    report.matched = len(match)
+
+    await _youtube(db, cache, files, match)
+    await _signals(db, cache, files, match)
+    await _links(db, files, match)
+    seasons = await _series(db, cache, match, report)
+    await _tags_styles_plex(db, cache, match, seasons)
+    await _jobs(db, cache, files, match, libs, seasons, report)
+    for lib_id, _ in libs:
+        res = await enqueue_job(
+            db,
+            subject_kind="library",
+            subject_id=lib_id,
+            stage="detect",
+            reason={"why": "import", "by": "system"},
+        )
+        report.detect_queued += 1 if res.job_id is not None else 0
+
+
+# --------------------------------------------------------------------------- youtube
+
+
+def _d(db: Any, s: str | None) -> Any:
+    return to_date(db, date.fromisoformat(s[:10])) if s else None
+
+
+async def _youtube(
+    db: Any, cache: sqlite3.Connection, files: dict[str, Any], match: dict[str, Any]
+) -> None:
+    wanted_ids = {files[p]["youtube_id"] for p in match if files[p]["youtube_id"]}
+    lib_of_folder: dict[str, UUID] = {}
+    for p, (_, lib) in match.items():
+        lib_of_folder.setdefault(files[p]["folder"], lib)
+    if _has(cache, "folders"):
+        for f in cache.execute("SELECT * FROM folders WHERE channel_id IS NOT NULL"):
+            lib = lib_of_folder.get(f["folder"])
+            if lib is None:
+                continue
+            await db.execute(
+                "INSERT INTO youtube_channels (channel_id, library_id, url, title, status, fetched_at)"
+                " VALUES ($1,$2,$3,$4,'ok',$5) ON CONFLICT (channel_id) DO NOTHING",
+                f["channel_id"], uid(lib), f["channel_url"] or f"https://www.youtube.com/channel/{f['channel_id']}",
+                f["channel"], to_ts(db, now()),
+            )  # fmt: skip
+    if not _has(cache, "yt_videos"):
+        return
+    channel_ids = (
+        {r[0] for r in cache.execute("SELECT channel_id FROM folders WHERE channel_id IS NOT NULL")}
+        if _has(cache, "folders")
+        else set()
+    )
+    for v in cache.execute("SELECT * FROM yt_videos"):
+        if v["youtube_id"] not in wanted_ids and v["channel_id"] not in channel_ids:
+            continue
+        await db.execute(
+            "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality,"
+            " duration_s, tab, description, source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"
+            " ON CONFLICT (youtube_id) DO NOTHING",
+            v["youtube_id"], v["channel_id"], v["title"], _d(db, v["upload_date"]), v["date_quality"],
+            v["duration_s"], v["tab"], v["description"], v["source"], to_ts(db, now()),
+        )  # fmt: skip
+    if _has(cache, "yt_playlists"):
+        pls = {
+            r["playlist_id"]
+            for r in cache.execute("SELECT playlist_id, youtube_id FROM yt_playlist_items")
+            if r["youtube_id"] in wanted_ids
+        }
+        for p in cache.execute("SELECT * FROM yt_playlists"):
+            if p["playlist_id"] not in pls:
+                continue
+            await db.execute(
+                "INSERT INTO youtube_playlists (playlist_id, channel_id, title, item_count, is_real,"
+                " source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (playlist_id) DO NOTHING",
+                p["playlist_id"], p["channel_id"], p["title"], p["item_count"],
+                bool(p["is_real"]) if is_pg(db) else int(p["is_real"]), p["source"], to_ts(db, now()),
+            )  # fmt: skip
+        for i in cache.execute("SELECT * FROM yt_playlist_items"):
+            if i["playlist_id"] in pls:
+                await db.execute(
+                    "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position)"
+                    " VALUES ($1,$2,$3) ON CONFLICT (playlist_id, youtube_id) DO NOTHING",
+                    i["playlist_id"], i["youtube_id"], i["position"],
+                )  # fmt: skip
+
+
+# --------------------------------------------------------------------------- signals + links
+
+
+async def _signals(
+    db: Any, cache: sqlite3.Connection, files: dict[str, Any], match: dict[str, Any]
+) -> None:
+    vm = {}
+    if _has(cache, "visual_metrics"):
+        vm = {r["path"]: r for r in cache.execute("SELECT * FROM visual_metrics")}
+    for path, (vid, _lib) in match.items():
+        f = files[path]
+        cols: dict[str, Any] = {}
+        if f["thumb_dhash"]:
+            cols.update(thumb_dhash=f["thumb_dhash"], thumb_version=DHASH_VERSION)
+        if f["audio_head"] or f["audio_tail"] or f["frame_hashes"]:
+            cols.update(
+                audio_head=f["audio_head"], audio_tail=f["audio_tail"], frame_hashes=f["frame_hashes"] or "",
+                fp_version=int(f["audio_version"] or AUDIO_FP_VERSION) * 100 + int(f["frames_version"] or FRAMES_VERSION),
+                fp_partial=False if is_pg(db) else 0,
+            )  # fmt: skip
+        m = vm.get(path)
+        if m is not None:
+            cols.update(
+                style_metrics=json.dumps(metrics_from_dict(json.loads(m["metrics"])).to_dict()),
+                style_version=int(m["version"]),
+            )
+        if cols:
+            from ..engine.stages._common import upsert_signals
+
+            await upsert_signals(db, vid, **cols)
+
+
+async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
+    for path, (vid, _lib) in match.items():
+        f = files[path]
+        if not f["youtube_id"]:
+            continue
+        method = f["link_method"] or "info_json"
+        yv = await db.fetchrow(
+            "SELECT title, upload_date, date_quality FROM youtube_videos WHERE youtube_id = $1",
+            f["youtube_id"],
+        )
+        mapped = {
+            "link_method": method,
+            "title": None if yv is None else yv["title"],
+            "upload_date": None
+            if yv is None or yv["upload_date"] is None
+            else str(yv["upload_date"]),
+            "date_quality": None if yv is None else yv["date_quality"],
+        }
+        user_edit = await db.fetchrow(
+            "SELECT 1 AS x FROM media_field_provenance WHERE video_id = $1 AND origin = 'user' LIMIT 1",
+            uid(vid),
+        )
+        await db.execute(
+            "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id, mapped, confidence,"
+            " is_accepted, fetched_at) VALUES ($1,$2,'youtube',$3,$4,$5,$6,$7)"
+            " ON CONFLICT (video_id, provider, external_id) DO NOTHING",
+            str(uuid.uuid4()), uid(vid), f["youtube_id"], dumps(mapped), LINK_CONFIDENCE.get(method, 0.6),
+            user_edit is None, to_ts(db, now()),
+        )  # fmt: skip
+
+
+# --------------------------------------------------------------------------- series
+
+
+async def _series(
+    db: Any, cache: sqlite3.Connection, match: dict[str, tuple[UUID, UUID]], report: ImportReport
+) -> dict[str, tuple[UUID, UUID]]:
+    """Series / seasons / episodes through the live ``detect`` writer. Returns cache series id ->
+    (season id, library id)."""
+    if not _has(cache, "series"):
+        return {}
+    eps: dict[str, list[Any]] = defaultdict(list)
+    overrides: dict[str, list[Any]] = defaultdict(list)
+    for e in cache.execute("SELECT * FROM series_episodes ORDER BY series_id, episode, path"):
+        eps[e["series_id"]].append(e)
+    per_lib: dict[UUID, list[detect_stage.PlannedSeason]] = defaultdict(list)
+    out: dict[str, tuple[UUID, UUID]] = {}
+    for s in cache.execute("SELECT * FROM series"):
+        meta = json.loads(s["metadata"] or "{}")
+        rows = [e for e in eps.get(s["id"], []) if e["path"] in match]
+        if not rows:
+            continue
+        lib = match[rows[0]["path"]][1]
+        key, kind, number = (
+            str(meta.get("series_key") or s["name"]),
+            str(meta.get("kind") or "episodic"),
+            int(meta.get("season") or 1),
+        )
+        ids = tuple(match[e["path"]][0] for e in rows)
+        nums = tuple(int(e["episode"] or i) for i, e in enumerate(rows, 1))
+        extras = tuple(match[p][0] for p in meta.get("extras") or [] if p in match)
+        sid = season_uuid(lib, key, kind, number)
+        per_lib[lib].append(
+            detect_stage.PlannedSeason(
+                id=sid, series_id=series_uuid(lib, key, kind), series_key=key, series_name=str(s["name"]),
+                kind=kind, number=number, episodes=ids, numbers=nums, extras=extras,
+                attached=tuple(match[p][0] for p in meta.get("attached") or [] if p in match),
+                duplicates=tuple(match[p][0] for p in meta.get("duplicates") or [] if p in match),
+                playlists=tuple(meta.get("playlists") or []),
+                first_air=date.fromisoformat(meta["first_air"]) if meta.get("first_air") else None,
+                last_air=date.fromisoformat(meta["last_air"]) if meta.get("last_air") else None,
+                median_duration_s=meta.get("median_duration_s"),
+                membership_hash=detect_stage._membership_hash(str(s["name"]), kind, number, ids, nums, extras),
+            )
+        )  # fmt: skip
+        out[s["id"]] = (sid, lib)
+        overrides[s["id"]] = [e for e in rows if e["is_user_override"]]
+    for lib, seasons in per_lib.items():
+        plan = detect_stage.LibraryPlan(tuple(seasons), (), ())
+        current = await detect_stage.load_current(db, lib)
+        await detect_stage.apply_changes(db, lib, plan, current)
+    for rows in overrides.values():
+        for e in rows:
+            await db.execute(
+                "UPDATE series_episodes SET season_override = season, episode_override = episode WHERE video_id = $1",
+                uid(match[e["path"]][0]),
+            )
+    return out
+
+
+# --------------------------------------------------------------------------- tags, styles, plex
+
+
+async def _tags_styles_plex(
+    db: Any, cache: sqlite3.Connection, match: dict[str, Any], seasons: dict[str, tuple[UUID, UUID]]
+) -> None:
+    stamp = to_ts(db, now())
+    if _has(cache, "series_tags"):
+        for t in cache.execute("SELECT * FROM series_tags"):
+            if t["series_id"] in seasons:
+                await db.execute(
+                    "INSERT INTO season_tags (season_id, tag, score, evidence) VALUES ($1,$2,$3,$4)"
+                    " ON CONFLICT (season_id, tag) DO NOTHING",
+                    uid(seasons[t["series_id"]][0]), t["tag"], t["score"], dumps({"why": t["evidence"] or ""}),
+                )  # fmt: skip
+    if _has(cache, "video_tags"):
+        for t in cache.execute("SELECT * FROM video_tags"):
+            if t["path"] in match:
+                await db.execute(
+                    "INSERT INTO video_topic_tags (video_id, tag, score) VALUES ($1,$2,$3)"
+                    " ON CONFLICT (video_id, tag) DO NOTHING",
+                    uid(match[t["path"]][0]), t["tag"], t["score"],
+                )  # fmt: skip
+    ov = {}
+    if _has(cache, "style_overrides"):
+        ov = {
+            (r["library"], r["series"]): r["style"]
+            for r in cache.execute("SELECT * FROM style_overrides")
+        }
+    names = {
+        s["id"]: (s["library"], s["name"])
+        for s in cache.execute("SELECT id, library, name FROM series")
+    }
+    if _has(cache, "series_style"):
+        for st in cache.execute("SELECT * FROM series_style"):
+            if st["series_id"] not in seasons:
+                continue
+            override = ov.get(names.get(st["series_id"], ("", "")))
+            await db.execute(
+                "INSERT INTO season_style (season_id, style, tier, confidence, reasons, sampled, style_version,"
+                " override_style, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"
+                " ON CONFLICT (season_id) DO NOTHING",
+                uid(seasons[st["series_id"]][0]), st["style"], st["tier"], st["confidence"], st["reasons"],
+                st["sampled"], st["version"], override, stamp,
+            )  # fmt: skip
+    if _has(cache, "plex_collections"):
+        for c in cache.execute("SELECT * FROM plex_collections"):
+            if c["series_id"] not in seasons:
+                continue
+            await db.execute(
+                "INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash,"
+                " created_by_tool, updated_at) VALUES ('plex_collection','season',$1,$2,$3,'imported',$4,$5)"
+                " ON CONFLICT (target, subject_kind, subject_id) DO NOTHING",
+                str(seasons[c["series_id"]][0]), c["rating_key"], c["title"], True if is_pg(db) else 1, stamp,
+            )  # fmt: skip
+
+
+# --------------------------------------------------------------------------- synthetic jobs
+
+_STAGE_OF = {"thumbnail": "thumb_hash", "signature": "fingerprint", "visual_style": "style_sample"}
+_FP_VERSION_DEFAULT = SIG_VERSION
+
+
+async def _write_job(
+    db: Any,
+    report: ImportReport,
+    *,
+    kind: str,
+    subject_id: UUID,
+    library_id: UUID | None,
+    stage: str,
+    version: int,
+    input_hash: str | None,
+    output_hash: str | None,
+    error: str | None = None,
+) -> None:
+    prev = await db.fetchrow(
+        "SELECT input_hash, stage_version FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2"
+        " AND stage = $3 AND state = 'done' AND outcome = 'imported' ORDER BY id DESC LIMIT 1",
+        kind, uid(subject_id), stage,
+    )  # fmt: skip
+    if (
+        prev is not None
+        and prev["input_hash"] == input_hash
+        and prev["stage_version"] == version
+        and not error
+    ):
+        report.jobs_skipped_existing += 1
+        return
+    t = to_ts(db, now())
+    failed = error is not None
+    await db.execute(
+        "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id, season_id, stage, state,"
+        " attempts, max_attempts, stage_version, input_hash, output_hash, outcome, propagated_at, started_at,"
+        " finished_at, error, error_cause) VALUES ($1,$2,$3,$4,$5,$6,$7,1,3,$8,$9,$10,$11,$12,$12,$12,$13,$14)",
+        kind, uid(subject_id), uid(subject_id) if kind == "video" else None, uid(library_id),
+        uid(subject_id) if kind == "season" else None, stage, "failed" if failed else "done", version,
+        input_hash, output_hash, None if failed else "imported", t,
+        None if not failed else json.dumps({"kind": "import", "message": error, "retryable": True}),
+        None if not failed else classify("import", error or ""),
+    )  # fmt: skip
+    if failed:
+        report.jobs_failed += 1
+    else:
+        report.jobs_imported += 1
+
+
+async def _jobs(
+    db: Any,
+    cache: sqlite3.Connection,
+    files: dict[str, Any],
+    match: dict[str, tuple[UUID, UUID]],
+    libs: list[tuple[UUID, str]],
+    seasons: dict[str, tuple[UUID, UUID]],
+    report: ImportReport,
+) -> None:
+    done: dict[tuple[str, str], Any] = {}
+    if _has(cache, "index_jobs"):
+        for j in cache.execute("SELECT * FROM index_jobs"):
+            if j["path"] in match and j["stage"] in _STAGE_OF:
+                done[(j["path"], _STAGE_OF[j["stage"]])] = j
+    # 1. per-video stages, in dependency order
+    for stage in ("thumb_hash", "fingerprint", "style_sample"):
+        for (path, st), j in sorted(done.items()):
+            if st != stage:
+                continue
+            vid, lib = match[path]
+            if j["state"] != "done":
+                await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage=stage,
+                                 version=int(j["version"]), input_hash=None, output_hash=None, error=j["error"] or "failed in cache")  # fmt: skip
+                continue
+            sig = await db.fetchrow(
+                "SELECT thumb_dhash, audio_head, audio_tail, frame_hashes, style_metrics FROM video_signals WHERE video_id = $1",
+                uid(vid),
+            )
+            subject = Subject("video", vid)
+            if stage == "thumb_hash":
+                ih = await thumb_stage.input_fingerprint(db, subject)
+                oh = canonical_hash({"dhash": None if sig is None else sig["thumb_dhash"]})
+                ver = DHASH_VERSION
+            elif stage == "fingerprint":
+                ih = await fingerprint_stage.input_fingerprint(db, subject)
+                oh = canonical_hash(
+                    {
+                        "head": sig["audio_head"],
+                        "tail": sig["audio_tail"],
+                        "frames": sig["frame_hashes"],
+                    }
+                )
+                ver = SIG_VERSION if int(j["version"]) == SIG_VERSION else int(j["version"])
+            else:
+                ih = await style_sample_stage.input_fingerprint(db, subject)
+                oh = (
+                    canonical_hash(loads(sig["style_metrics"]))
+                    if sig and sig["style_metrics"]
+                    else None
+                )
+                ver = int(j["version"]) if j["version"] else STYLE_VERSION
+            await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage=stage, version=ver, input_hash=ih, output_hash=oh)  # fmt: skip
+    # 2. youtube_sync + link per linked video
+    for lib_id, _ in libs:
+        chans = await db.fetchval(
+            "SELECT count(*) FROM youtube_channels WHERE library_id = $1", uid(lib_id)
+        )
+        if chans:
+            snap = await yt_stage._snapshot(db, lib_id)
+            await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="youtube_sync",
+                             version=1, input_hash=None, output_hash=snap.digest())  # fmt: skip
+    for path, (vid, lib) in sorted(match.items()):
+        f = files[path]
+        if not f["youtube_id"]:
+            continue
+        method = f["link_method"] or "info_json"
+        ih = await link_stage.input_fingerprint(db, Subject("video", vid))
+        await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="link", version=1,
+                         input_hash=ih, output_hash=canonical_hash({"youtube_id": f["youtube_id"], "method": method}))  # fmt: skip
+    # 3. detect (library), then the season stages that depend on it
+    for lib_id, _ in libs:
+        rows = await db.fetch(
+            "SELECT id, membership_hash FROM series_seasons WHERE library_id = $1 AND retired_at IS NULL",
+            uid(lib_id),
+        )
+        if rows:
+            ih = await detect_stage.input_fingerprint(db, Subject("library", lib_id))
+            await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="detect",
+                             version=detect_stage.DETECTOR_VERSION, input_hash=ih,
+                             output_hash=canonical_hash(sorted([str(r["id"]), r["membership_hash"]] for r in rows)))  # fmt: skip
+    for sid, lib in seasons.values():
+        tags = await db.fetch("SELECT tag, score FROM season_tags WHERE season_id = $1", uid(sid))
+        if tags:
+            ih = await tag_stage.input_fingerprint(db, Subject("season", sid))
+            oh = canonical_hash(sorted([str(t["tag"]), round(float(t["score"]), 3)] for t in tags))
+            await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="tag", version=1, input_hash=ih, output_hash=oh)  # fmt: skip
+        st = await db.fetchrow(
+            "SELECT style, tier, style_version FROM season_style WHERE season_id = $1", uid(sid)
+        )
+        if st is not None and st["style"]:
+            ih = await rate_style_stage.input_fingerprint(db, Subject("season", sid))
+            await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="rate_style",
+                             version=int(st["style_version"] or STYLE_VERSION), input_hash=ih,
+                             output_hash=canonical_hash({"style": st["style"], "tier": int(st["tier"])}))  # fmt: skip
+
+
+# --------------------------------------------------------------------------- cli
+
+
+def _parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="import_mediaintel", description=__doc__.split("\n\n")[0] if __doc__ else ""
+    )
+    p.add_argument(
+        "--cache", required=True, type=Path, help="mediaintel cache database (opened read-only)"
+    )
+    p.add_argument(
+        "--library", action="append", required=True, help="Maktaba library id or name (repeatable)"
+    )
+    p.add_argument(
+        "--path-map", action="append", default=[], help="CACHE_PREFIX=MAKTABA_PREFIX (repeatable)"
+    )
+    p.add_argument("--database-url", default=os.environ.get("MAKTABA_DATABASE_URL", ""))
+    p.add_argument("--apply", action="store_true", help="commit (default: dry run, rolled back)")
+    return p
+
+
+async def _amain(args: argparse.Namespace) -> int:
+    from ..runtime import Database
+
+    if not args.database_url:
+        sys.stderr.write("set --database-url or MAKTABA_DATABASE_URL\n")
+        return 2
+    db = await Database.connect(args.database_url)
+    try:
+        report = await run_import(
+            db, args.cache, args.library, path_maps=parse_path_maps(args.path_map), apply=args.apply
+        )
+    finally:
+        await db.close()
+    sys.stdout.write(report.render() + "\n")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_amain(_parser().parse_args(argv)))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

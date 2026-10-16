@@ -9,13 +9,15 @@ the live ``events`` row and, when a trigger arrived mid-run, the follow-up job.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .causes import classify
 from .events import job_ref, log_event, publish
 from .propagate import enqueue_follow_up
+from .sql import dumps
 
-__all__ = ["on_cancelled", "on_failure", "on_paused"]
+__all__ = ["on_cancelled", "on_failure", "on_paused", "on_progress"]
 
 
 async def _job_row(db: Any, job_id: int) -> Any | None:
@@ -103,3 +105,34 @@ async def on_paused(db: Any, job_id: int, reason: str) -> None:
     if row is None:
         return
     await log_event(db, **_common(row), level="info", kind="paused", message=f"paused ({reason})")
+
+
+_PROGRESS_EVERY_SEC = 2.0
+_last_progress: dict[int, float] = {}
+
+
+async def on_progress(
+    db: Any, job_id: int, *, step: str, done: float, total: float | None, message: str | None = None
+) -> None:
+    """Mirror a legacy progress tick into ``processing_jobs.progress`` and a ``job.progress`` event.
+
+    Throttled to one write per job every 2 s (the transcribe stage ticks once per segment).
+    """
+    t = time.monotonic()
+    if t - _last_progress.get(job_id, float("-inf")) < _PROGRESS_EVERY_SEC:
+        return
+    if len(_last_progress) > 1024:
+        _last_progress.clear()
+    _last_progress[job_id] = t
+    doc: dict[str, Any] = {
+        "step": step,
+        "steps": [step],
+        "done_units": done,
+        "total_units": total or 0,
+    }
+    if message:
+        doc["message"] = message
+    await db.execute("UPDATE processing_jobs SET progress = $2 WHERE id = $1", job_id, dumps(doc))
+    ref = await job_ref(db, job_id)
+    if ref is not None:
+        await publish(db, "job.progress", {"job": ref})
