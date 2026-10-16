@@ -279,7 +279,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     mode = await db.fetchrow("SELECT write_mode FROM job_stages WHERE stage = 'write_channels'")
     return canonical_hash(
         {
-            "plan": None if latest is None else latest["input_hash"],
+            "plan": None if latest is None else int(latest["id"]),  # a new row = a new lineup
             "mode": None if mode is None else mode["write_mode"],
             "v": CH_WRITE_VERSION,
         }
