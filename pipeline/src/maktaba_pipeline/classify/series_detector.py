@@ -1425,16 +1425,44 @@ def _ns(text: str) -> str:
     return re.sub(r"[\W\d_]+", "", fold(text))
 
 
+#: a segment led by a title names a person (a guest, the presenter), not a show
+_PERSON_LEAD = frozenset(
+    fold(w)
+    for w in (
+        "الشيخ", "شيخ", "الدكتور", "دكتور", "د", "الأستاذ", "أستاذ", "فضيلة", "لفضيلة",
+        "المهندس", "الإعلامي", "الإمام", "العلامة", "المفكر", "الداعية", "القارئ", "الرئيس",
+        "الحبيب", "سماحة", "معالي", "الأمير", "اللواء", "الفريق",
+    )
+)  # fmt: skip
+#: a lesson series ("شرح صحيح البخاري", "تفسير سورة …") is a book or a course: playlist
+#: detection handles it; the brand pass is for programmes and talk shows
+_LESSON_LEAD = frozenset(
+    fold(w)
+    for w in (
+        "شرح", "تفسير", "مختصر", "درس", "دروس", "مجلس", "مجالس", "محاضرة", "محاضرات", "خطبة",
+        "خطب", "قراءة", "تلاوة", "سورة", "كتاب", "التعليق", "تعليق", "متن", "المقاطع", "مقاطع",
+        "مقطع", "ترجمة", "ترجمات", "حلقة", "الحلقة",
+    )
+)  # fmt: skip
+
+
 def _brand_key(seg: str, presenter: frozenset[str], generic: frozenset[str]) -> str | None:
     """The show name a title segment could be: presenter words, markers and numbers
-    out, generic words trimmed off the ends ("بلا حدود مع أحمد منصور" → "بلا حدود")."""
-    words = [w for w in strip_markers(seg).split() if w not in presenter and not w.isdigit()]
+    out, generic words trimmed off the ends ("بلا حدود مع أحمد منصور" → "بلا حدود").
+    Not a person ("الشيخ …", "د. …"), not a lesson ("شرح …"), and at least two words of
+    three letters or more ("بلا حدود", "شاهد على العصر"; never "الآيات" alone)."""
+    words = [w for w in strip_markers(seg).split() if not w.isdigit()]
     words = [w for w in words if re.sub(r"[\W\d_]+", "", w)]
+    if words and (words[0].strip(".") in _PERSON_LEAD or words[0] in _LESSON_LEAD):
+        return None
+    words = [w for w in words if w not in presenter]
     while words and words[0] in generic:
         words.pop(0)
     while words and words[-1] in generic:
         words.pop()
     if not words or all(w in generic for w in words):
+        return None
+    if sum(1 for w in words if len(re.sub(r"[\W\d_]+", "", w)) >= 3) < 2:
         return None
     key = _ns(" ".join(words))
     return key if len(key) >= 6 else None
@@ -1454,7 +1482,8 @@ def find_brands(
     slot: dict[str, list[int]] = defaultdict(list)  # which segment of the title it is
     for v in videos:
         keys = set()
-        segs = [x for x in _BRAND_SPLIT_RE.split(v.title or "") if x.strip()]
+        # numbers and punctuation ("(16) شاهد على العصر| …") don't count as a segment
+        segs = [x for x in _BRAND_SPLIT_RE.split(v.title or "") if re.search(r"[^\W\d_]", x)]
         for i, seg in enumerate(segs):
             k = _brand_key(seg, presenter, cfg.generic_words)
             if k and k not in keys:
@@ -1470,7 +1499,16 @@ def find_brands(
         counts: Counter[str] = Counter(k for vk in free for k in per_video[vk])
         # equal counts: the segment titles lead with names the show ("بلا حدود | حوار …")
         ranked = sorted(counts.items(), key=lambda kv: (-kv[1], _median(slot[kv[0]]) or 0.0))
-        key = next((k for k, n in ranked if n >= need), None)
+        # a show's name leads its titles ("بلا حدود | …"); a trailing presenter credit or
+        # sign-off ("… - حفظه الله") does not name a show
+        key = next(
+            (
+                k
+                for k, n in ranked
+                if n >= need and sum(1 for i in slot[k] if i == 0) >= 0.6 * len(slot[k])
+            ),
+            None,
+        )
         if key is None:
             break
         members = sorted(vk for vk in free if key in titles_ns[vk])
@@ -1599,14 +1637,14 @@ def _brand_series(
             if k in members_all and k not in owner:
                 owner[k] = i
     seasons: list[Season] = []
-    for i, (p, qual, year) in enumerate(seasons_pl):
+    for i, (p, given, year) in enumerate(seasons_pl):
         eps = [k for k, _ in p.members if owner.get(k) == i]
         if len(eps) < cfg.min_season_size:
             for k in eps:
                 del owner[k]  # too few for a season of its own: grouped with the rest
             continue
         if eps:
-            label = qual if qual is not None else (str(year) if year is not None else None)
+            label = given if given is not None else (str(year) if year is not None else None)
             seasons.append(
                 Season(number=0, episodes=eps, playlists=[p.playlist_id], name=label, year=year)
             )
@@ -1724,7 +1762,7 @@ def _group_rest(
     for k, ws in words_of.items():
         cands = [w for w in set(ws) if name_like(w)]
         if cands:  # the guest's whole run: the most shared, earliest word
-            group_of[k] = max(cands, key=lambda w: (df[w], -_median(place[w]) or 0.0, w))
+            group_of[k] = max(cands, key=lambda w: (df[w], -(_median(place[w]) or 0.0), w))
     sizes = Counter(group_of.values())
     out: list[Season] = []
     by_group: dict[str, list[str]] = defaultdict(list)
@@ -1748,21 +1786,21 @@ def _group_rest(
                 singles[w] += 1
                 for a, b in ((i - 1, i), (i, i + 1)):
                     if a >= 0 and b < len(ws):
-                        other = ws[b] if a == i else ws[a]
-                        pair = f"{fold(ws[a])} {fold(ws[b])}"
-                        fo = fold(other)
+                        nb = ws[b] if a == i else ws[a]
+                        both = f"{fold(ws[a])} {fold(ws[b])}"
+                        fo = fold(nb)
                         if (
                             len(fo) > 2
                             and fo not in cfg.generic_words | _YEAR_FILLER
-                            and not any(pair in ph or ph in pair for ph in phrases)
+                            and not any(both in ph or ph in both for ph in phrases)
                             # glued words ("منصورمع") and the show's own name stay out
                             and not any(len(pw) > 3 and pw in fo for pw in presenter)
                             and _ns(fo) not in brand
                         ):
                             pairs[f"{ws[a]} {ws[b]}"] += 1
-        pair = pairs.most_common(1)
-        if pair and pair[0][1] >= 0.6 * len(ks):
-            label = pair[0][0]
+        top = pairs.most_common(1)
+        if top and top[0][1] >= 0.6 * len(ks):
+            label = top[0][0]
         else:
             label = singles.most_common(1)[0][0] if singles else g
         out.append(Season(number=0, episodes=ks, name=label))
@@ -1805,6 +1843,20 @@ def _under_split(
     return held * 2 < from_playlists
 
 
+def _placed_after(
+    series: Sequence[Series], built: Sequence[Series], taken: set[str], cand: Series | None
+) -> int:
+    """Episodes placed if ``taken`` left the playlist series (a series losing half or more
+    is dissolved) and ``built`` (+ ``cand``) were added."""
+    n = 0
+    for ser in series:
+        before = ser.episode_count
+        left = sum(1 for se in ser.seasons for k in se.episodes if k not in taken)
+        if left * 2 > before:
+            n += left
+    return n + sum(b.episode_count for b in built) + (cand.episode_count if cand else 0)
+
+
 def _apply_brands(
     series: list[Series],
     videos: Sequence[VideoFacts],
@@ -1836,8 +1888,16 @@ def _apply_brands(
             continue
         if not (_scattered(key, members, series, cfg) or _under_split(ser, members, series, cfg)):
             continue  # playlist detection already holds the show together
+        own_pls = {pid for se in ser.seasons for pid in se.playlists}
+        if len(own_pls) < 2:
+            continue  # the channel itself does not file it as a show (no playlists of its own)
+        mine = {k for se in ser.seasons for k in (*se.episodes, *se.extras)}
+        if _placed_after(series, built, taken | mine, ser) < _placed_after(
+            series, built, taken, None
+        ):
+            continue  # rebuilding would leave more episodes unplaced than it places
         built.append(ser)
-        taken |= {k for se in ser.seasons for k in (*se.episodes, *se.extras)}
+        taken |= mine
     if not built:
         return False
     kept: list[Series] = []
