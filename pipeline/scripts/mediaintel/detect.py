@@ -120,11 +120,11 @@ def run(
         cfg = DetectorConfig(min_episode_s=min_episode_minutes * 60)
         name = Path(folder).name
         print(f"  … {name}: matching {len(videos)} videos against its seasons", flush=True)
-        det = detect(
-            videos, playlists, presenter_words=presenter, config=cfg,
-            progress=lambda n, total, name=name: print(
-                f"  [{n}/{total}] {name}: videos checked", flush=True),
-        )  # fmt: skip
+
+        def checked(n: int, total: int, name: str = name) -> None:
+            print(f"  [{n}/{total}] {name}: videos checked", flush=True)
+
+        det = detect(videos, playlists, presenter_words=presenter, config=cfg, progress=checked)
         lib = conn.execute(
             "SELECT plex_library FROM files WHERE folder=? AND plex_library IS NOT NULL LIMIT 1",
             (folder,),

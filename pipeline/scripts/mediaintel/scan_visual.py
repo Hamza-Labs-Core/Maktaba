@@ -16,9 +16,12 @@ import json
 import os
 import sqlite3
 import subprocess
+import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 
 from maktaba_pipeline.classify.production_style import (
     STYLE_VERSION,
@@ -103,20 +106,67 @@ class _Job:
     duration_s: float | None
 
 
-def sample_file(
-    path: str, duration_s: float | None, *, windows: int = WINDOWS, window_s: float = WINDOW_S
-) -> StyleMetrics | None:
-    """Run ffmpeg over the file's sample windows; None when nothing decoded."""
-    samples: list[WindowSample] = []
-    info: StreamInfo | None = None
-    for start, length in sample_windows(duration_s, count=windows, length_s=window_s):
+_NAS = threading.BoundedSemaphore(NAS_READS)
+#: local scratch for copied sample windows (SSD): decoding happens here, not over SMB
+LOCAL_TMP = Path(os.environ.get("MEDIAINTEL_TMP") or tempfile.gettempdir()) / "mediaintel-style"
+
+
+def _copy_window(path: str, start: float, length: float, dest: Path) -> bool:
+    """Copy one window's video stream to a local file, without decoding. This is the only
+    part that reads the share, so it alone holds one of the ``NAS_READS`` slots."""
+    with _NAS:
         try:
-            out = subprocess.run(
-                ffmpeg_sample_args(path, start, length, binary=FFMPEG),
+            r = subprocess.run(
+                [FFMPEG, "-v", "error", "-nostdin", "-y", "-ss", f"{start:.2f}",
+                 "-t", f"{length:.2f}", "-i", path, "-map", "0:v:0", "-c", "copy",
+                 "-f", "matroska", str(dest)],
                 capture_output=True, timeout=300, check=False,
             )  # fmt: skip
         except (subprocess.TimeoutExpired, OSError):
-            continue
+            return False
+    return r.returncode == 0 and dest.exists() and dest.stat().st_size > 0
+
+
+def sample_file(
+    path: str,
+    duration_s: float | None,
+    *,
+    windows: int = WINDOWS,
+    window_s: float = WINDOW_S,
+    hwaccel: str | None = None,
+) -> StyleMetrics | None:
+    """Sample the file's windows; None when nothing decoded.
+
+    Two stages so the share and the CPU are each used well: each window is first
+    copied (stream copy, no decoding) to local disk under the NAS read limit, then
+    decoded and measured from there, many files at once. A window that cannot be
+    copied is read over the share directly, still under the limit. ``hwaccel`` is
+    optional: on these mostly low-bitrate files the CPU decodes faster than starting
+    a GPU decoder per window (measured: CPU 2-17 s, d3d11va 9-80 s per file)."""
+    samples: list[WindowSample] = []
+    info: StreamInfo | None = None
+    LOCAL_TMP.mkdir(parents=True, exist_ok=True)
+    for start, length in sample_windows(duration_s, count=windows, length_s=window_s):
+        fd, tmp_name = tempfile.mkstemp(suffix=".mkv", dir=LOCAL_TMP)
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            if _copy_window(path, start, length, tmp):
+                args = ffmpeg_sample_args(str(tmp), 0.0, length, binary=FFMPEG, hwaccel=hwaccel)
+                remote = False
+            else:
+                args = ffmpeg_sample_args(path, start, length, binary=FFMPEG, hwaccel=hwaccel)
+                remote = True
+            try:
+                if remote:
+                    with _NAS:
+                        out = subprocess.run(args, capture_output=True, timeout=300, check=False)
+                else:
+                    out = subprocess.run(args, capture_output=True, timeout=300, check=False)
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+        finally:
+            tmp.unlink(missing_ok=True)
         log = out.stderr.decode("utf-8", errors="replace")
         if info is None or info.width is None:
             info = parse_stream_info(log)
@@ -261,11 +311,14 @@ def _sample(
         elif jobs.needed(conn, path, "visual_style", STYLE_VERSION, size, mtime):
             todo.append(_Job(path, dur))
 
-    workers = min(workers, NAS_READS)
-    print(f"sampling {len(todo)} files ({workers} reads at a time)", flush=True)
+    workers = max(1, min(workers, (os.cpu_count() or 4) - 2))  # decoding is local CPU work
+    print(
+        f"sampling {len(todo)} files ({NAS_READS} reads at a time, {workers} decoding)", flush=True
+    )
     started = time.monotonic()
     with ThreadPoolExecutor(max(1, workers)) as pool:
-        results = pool.map(lambda j: sample_file(j.path, j.duration_s), todo)
+        hw = os.environ.get("MEDIAINTEL_HWACCEL") or None  # optional; CPU is the default
+        results = pool.map(lambda j: sample_file(j.path, j.duration_s, hwaccel=hw), todo)
         for n, (job, m) in enumerate(zip(todo, results, strict=True), 1):
             if n % 25 == 0 or n == len(todo):
                 rate = n / max(1e-6, time.monotonic() - started) * 60

@@ -96,7 +96,9 @@ def _hashes(s: str | None) -> list[int]:
     return [int(h, 16) for h in (s or "").split(",") if h]
 
 
-def _same(a: tuple, b: tuple) -> bool:
+def _same(
+    a: tuple[str | None, str | None, str | None], b: tuple[str | None, str | None, str | None]
+) -> bool:
     """Do two fingerprinted videos share an intro, end song or frames?"""
     ah, at, bh, bt = decode(a[0]), decode(a[1]), decode(b[0]), decode(b[1])
     for x, y in ((ah, bh), (at, bt), (ah, bt), (at, bh)):

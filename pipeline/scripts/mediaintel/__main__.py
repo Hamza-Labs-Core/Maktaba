@@ -86,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run", help="every step for the given folders / Plex libraries")
     root_args(p)
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
+    p.add_argument("--from-step", default="scan", metavar="STEP",
+                   help="start at this step, keeping what earlier steps cached: scan, youtube, "
+                        "link, detect, signatures, exact, tag, scan-visual, report, export-plex, "
+                        "dizquetv-shows, plan-channels, export-dizquetv")  # fmt: skip
     p.add_argument("--exact", action="store_true",
                    help="also fetch exact upload dates for series members (slow, polite)")  # fmt: skip
     p.add_argument("--lang", default="ar")
@@ -256,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                 conn, roots, server=server, path_map=maps, youtube=not a.no_youtube,
                 exact=a.exact, lang=a.lang, delay_s=a.delay, report_dir=a.out, workers=a.workers,
                 plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
+                from_step=a.from_step,
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(

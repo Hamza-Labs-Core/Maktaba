@@ -9,11 +9,18 @@ reviewed step).
 from __future__ import annotations
 
 import importlib
+import os
 import sqlite3
 import time
 from pathlib import Path
 
 from . import detect, link, report, scan_local, scan_plex
+
+#: the steps ``run --from-step`` can start at, in order
+STEPS = (
+    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "scan-visual",
+    "report", "export-plex", "dizquetv-shows", "plan-channels", "export-dizquetv",
+)  # fmt: skip
 
 
 def _step(name: str) -> float:
@@ -37,19 +44,20 @@ def run(
     tv: bool = False,
     tv_url: str = "http://localhost:8002",
     backup_dir: Path = Path("backups"),
+    from_step: str = "scan",
 ) -> None:
-    """``plex``: write the season collections (``export-plex --apply --replace-existing``;
+    """``from_step``: start at that step (see :data:`STEPS`); earlier steps are left as the
+    cache holds them, e.g. to finish a stopped run without listing and detecting again.
+    ``plex``: write the season collections (``export-plex --apply --replace-existing``;
     older collections are listed as superseded, never deleted). ``tv``: update dizqueTV
     custom shows (``dizquetv-shows --apply``). Both log every change with its diff."""
     t0 = time.monotonic()
-    import os
-
     pid_file = Path(conn.execute("PRAGMA database_list").fetchone()[2] + ".run.pid")
     pid_file.write_text(str(os.getpid()), encoding="utf-8")  # lets `serve` show / stop it
     try:
         _run(conn, roots, server=server, path_map=path_map, youtube=youtube, exact=exact,
              lang=lang, delay_s=delay_s, report_dir=report_dir, workers=workers, plex=plex,
-             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0)  # fmt: skip
+             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step)  # fmt: skip
     finally:
         pid_file.unlink(missing_ok=True)
 
@@ -71,19 +79,29 @@ def _run(
     tv_url: str,
     backup_dir: Path,
     t0: float,
+    from_step: str = "scan",
 ) -> None:
-    if server is not None:
+    if from_step not in STEPS:
+        raise ValueError(f"--from-step must be one of {', '.join(STEPS)}")
+
+    def want(step: str) -> bool:
+        return STEPS.index(step) >= STEPS.index(from_step)
+
+    folders = [r.as_posix() for r in roots]
+    if from_step != "scan":
+        print(f"starting at step {from_step!r}: earlier steps keep what the cache holds")
+    if server is not None and want("scan"):
         # list files first, let Plex supply length/size, then probe only the rest
         _step(f"scan-local, listing ({len(roots)} folders)")
         scan_local.scan_roots(conn, roots, workers=workers, probe=False)
         _step("scan-plex")
         scan_plex.scan_plex(conn, server, path_map, None)
-    _step(f"scan-local ({len(roots)} folders)")
-    scan_local.scan_roots(
-        conn, roots, workers=4, parallel=2
-    )  # 8 reads at once: the NAS slows under more
-    folders = [r.as_posix() for r in roots]
-    if youtube:
+    if want("scan"):
+        _step(f"scan-local ({len(roots)} folders)")
+        scan_local.scan_roots(
+            conn, roots, workers=4, parallel=2
+        )  # 8 reads at once: the NAS slows under more
+    if youtube and want("youtube"):
         from . import scan_youtube  # optional yt-dlp extra
 
         _step("scan-youtube (3 channels at a time)")
@@ -116,19 +134,22 @@ def _run(
         if stops:
             print(f"youtube asked for a bot check ({stops[0]}); continuing with what was fetched")
             youtube = False
-    _step("link")
-    link.link(conn)
-    _step("detect")
-    for f in folders:
-        detect.run(conn, f)
+    if want("link"):
+        _step("link")
+        link.link(conn)
+    if want("detect"):
+        _step("detect")
+        for f in folders:
+            detect.run(conn, f)
     from . import signatures
 
-    _step("signatures (samples of seasons with unplaced videos, then those videos)")
-    if signatures.run(conn, folders, workers=2):
+    if want("signatures"):
+        _step("signatures (samples of seasons with unplaced videos, then those videos)")
+    if want("signatures") and signatures.run(conn, folders, workers=2):
         _step("detect again with fingerprints: place leftover episodes")
         for f in folders:
             detect.run(conn, f)
-    if youtube and exact:
+    if youtube and exact and want("exact"):
         from . import scan_youtube
 
         _step("scan-youtube --exact (series members), then detect again")
@@ -143,19 +164,23 @@ def _run(
                 break
             detect.run(conn, f)
     for mod, label in (("classify_tags", "tag"), ("scan_visual", "scan-visual")):
+        if not want(label):
+            continue
         try:
             m = importlib.import_module(f"{__package__}.{mod}")
         except ImportError:
             continue
         _step(label)
         if mod == "scan_visual":
-            m.run(conn, None, workers=8)  # all seasons in one pool (one folder at a time idles)
+            # all seasons in one pool; reads are capped inside, decoding uses the cores
+            m.run(conn, None, workers=os.cpu_count() or 8)
         else:
             for f in folders:
                 m.run(conn, f)
-    _step("report")
-    for f in folders:
-        report.run(conn, f, report_dir)
+    if want("report"):
+        _step("report")
+        for f in folders:
+            report.run(conn, f, report_dir)
     libraries = sorted(
         {
             lib
@@ -166,7 +191,7 @@ def _run(
             )
         }
     )
-    if plex and server is not None:
+    if plex and server is not None and want("export-plex"):
         from . import export_plex
 
         _step(f"export-plex ({len(libraries)} libraries)")
@@ -175,7 +200,7 @@ def _run(
                 conn, server, apply=True, library_filter=lib, include_clips=False,
                 replace_existing=True, remove_superseded=False, diff=True,
             )  # fmt: skip
-    if tv and server is not None:
+    if tv and server is not None and want("dizquetv-shows"):
         from . import dizquetv_shows
 
         _step("dizquetv-shows")
@@ -184,11 +209,12 @@ def _run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",
             )  # fmt: skip
-    _step("plan-channels (whole cache)")
-    from . import plan_channels
+    if want("plan-channels"):
+        _step("plan-channels (whole cache)")
+        from . import plan_channels
 
-    plan_channels.run(conn, report_dir)
-    if tv and server is not None:
+        plan_channels.run(conn, report_dir)
+    if tv and server is not None and want("export-dizquetv"):
         from . import export_dizquetv
 
         _step("export-dizquetv (channels)")
