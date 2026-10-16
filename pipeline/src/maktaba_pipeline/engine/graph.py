@@ -64,6 +64,10 @@ LINK_VERSION = 1
 #: thumb_small / review_pages versions (stages/thumb_small.py, stages/review_pages.py)
 THUMB_SMALL_VERSION = 1
 REVIEW_VERSION = 1
+#: topic_collections / promo_links / clip_groups (plan 06-11 section 17)
+TOPIC_VERSION = 1
+PROMO_VERSION = 1
+CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
 CH_WRITE_VERSION = 1
 
@@ -312,6 +316,8 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("tag", "same"),
             Edge("plan_channels", "catalog"),
             Edge("review_pages", "same"),
+            Edge("topic_collections", "same"),
+            Edge("promo_links", "same"),
         ),
         may_request=("fingerprint", "fp_gate"),
         entry_for=("library",),
@@ -339,8 +345,49 @@ GRAPH: tuple[StageDef, ...] = (
         lane="seasons",
         lane_order=2,
         version=TAGGER_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
+        # a topic tag decides a leftover's clip group
+        edges=(Edge("plan_channels", "catalog"), Edge("clip_groups", "library_of")),
         entry_for=("season",),
+    ),
+    # ---- what detection left over: topics, promos, clip groups (section 17) ----
+    StageDef(
+        name="topic_collections",
+        label="Topic collections",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=2,
+        version=TOPIC_VERSION,
+        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+    ),
+    StageDef(
+        name="promo_links",
+        label="Promo links",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=2,
+        version=PROMO_VERSION,
+        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+    ),
+    StageDef(
+        name="clip_groups",
+        label="Clip groups",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=3,
+        version=CLIP_GROUPS_VERSION,
+        edges=(Edge("plan_channels", "catalog"),),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
     ),
     StageDef(
         name="rate_style",

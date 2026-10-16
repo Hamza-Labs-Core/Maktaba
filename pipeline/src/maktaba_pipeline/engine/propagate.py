@@ -75,6 +75,8 @@ async def resolve_edge(
         return [("catalog", CATALOG_ID)]
     if m == "library_of":
         lib = job.library_id
+        if lib is None and subj.kind == "library":
+            lib = subj.id  # a library's own job: its library is itself
         if lib is None and subj.kind == "video":
             lib = await library_of_video(db, subj.id)
         return [] if lib is None else [("library", lib)]

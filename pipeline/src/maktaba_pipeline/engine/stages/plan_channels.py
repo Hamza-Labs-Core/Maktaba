@@ -1,9 +1,11 @@
 """``plan_channels``: suggest live TV channels and their time-slot grids (plan 06-11 section 3.2).
 
 Subject: the single global ``catalog``. Reads what ``detect`` / ``tag`` / ``rate_style`` stored
-(seasons, episodes, tags, production style, loose videos) and runs the pure planner
-:func:`maktaba_pipeline.schedule.channel_planner.suggest_channels`, ported from the prototype's
-``plan_channels.load_inputs``. The result is one ``channel_plans`` row (the latest wins;
+(seasons, episodes, tags, production style, loose videos, clip groups, promo links) and
+runs the planner through its one public entry point,
+:func:`maktaba_pipeline.schedule.entry.plan_catalog` (the hook a new planner replaces;
+plan 06-11 section 17.6), ported from the prototype's ``plan_channels.load_inputs``.
+The result is one ``channel_plans`` row (the latest wins;
 20 are kept).
 
 * ``compute_changes`` diffs the new lineup against the previous plan (channels added, removed,
@@ -34,8 +36,8 @@ from ...schedule.channel_planner import (
     LooseVideo,
     PlannerConfig,
     SeasonCandidate,
-    suggest_channels,
 )
+from ...schedule.entry import plan_catalog
 from ..changes import ChangeSet, apply_or_review
 from ..context import StageContext
 from ..graph import StageResult, Subject
@@ -138,7 +140,8 @@ async def load_inputs(
         eps[str(r["season_id"])].append(r)
 
     season_rows = await db.fetch(
-        "SELECT ss.id AS id, ss.name AS name, ss.kind AS kind, ss.season AS season,"
+        "SELECT ss.id AS id, ss.series_id AS series_id, ss.name AS name, ss.kind AS kind,"
+        " ss.season AS season,"
         " ss.first_air AS first_air, ss.median_duration_s AS median, ss.metadata AS metadata,"
         " s.metadata AS series_meta, l.name AS library"
         " FROM series_seasons ss JOIN series s ON s.id = ss.series_id"
@@ -146,6 +149,7 @@ async def load_inputs(
     )
     hidden: set[str] = set()
     seasons: list[SeasonCandidate] = []
+    show_key: dict[str, str] = {}  # series id -> "<folder>|<series key>", as lanes name shows
     for r in season_rows:
         sid = str(r["id"])
         meta = loads(r["metadata"]) or {}
@@ -162,6 +166,9 @@ async def load_inputs(
         )
         first_air = _iso(r["first_air"])
         series_meta = loads(r["series_meta"]) or {}
+        show_key.setdefault(
+            str(r["series_id"]), f"{folder}|{series_meta.get('series_key') or r['name']}"
+        )
         episodes = tuple(
             EpisodeRef(
                 path=str(x["vid"]),
@@ -196,19 +203,37 @@ async def load_inputs(
             )
         )
 
+    # the clip_groups stage's groups (filler by topic) and the promo_links stage's links
+    group_of: dict[str, tuple[str, str | None]] = {
+        str(r["vid"]): (str(r["title"]), None if r["topic"] is None else str(r["topic"]))
+        for r in await db.fetch(
+            "SELECT i.video_id AS vid, g.title AS title, g.topic AS topic"
+            " FROM clip_group_items i JOIN clip_groups g ON g.id = i.group_id"
+        )
+    }
+    promo_of = {
+        str(r["vid"]): show_key[str(r["series_id"])]
+        for r in await db.fetch("SELECT video_id AS vid, series_id FROM promo_links")
+        if str(r["series_id"]) in show_key
+    }
     vtags: dict[str, dict[str, float]] = defaultdict(dict)
     for r in await db.fetch("SELECT video_id, tag, score FROM video_topic_tags"):
         vtags[str(r["video_id"])][str(r["tag"])] = float(r["score"])
     loose: list[LooseVideo] = []
     for r in await db.fetch(_LOOSE_SQL):
         vid = str(r["vid"])
-        if vid in hidden or not r["dur"]:
-            continue
+        if not r["dur"] or (vid in hidden and vid not in promo_of):
+            continue  # a promo linked to its show airs next to it; other extras never air
         meta = loads(r["metadata"]) or {}
         w, h = meta.get("width"), meta.get("height")
         vertical = bool(w and h and h > w)
         folder = posixpath.dirname(str(r["path"]).replace("\\", "/"))
-        t = vtags.get(vid, {})
+        t = dict(vtags.get(vid, {}))
+        group, group_topic = group_of.get(vid, ("", None))
+        if group_topic and not any(x.startswith("topic:") for x in t):
+            # an untagged clip takes its group's topic, so on-topic pools can use it
+            t[f"topic:{group_topic}"] = 0.5
+            t[f"genre:{group_topic}"] = 0.5
         facts = VideoFacts(
             key=vid,
             title=str(r["title"]),
@@ -227,6 +252,8 @@ async def load_inputs(
                 air_date=_iso(r["upload_date"]),
                 is_short=detector_is_short(facts, DetectorConfig()),
                 vertical=vertical,
+                group=group,
+                promo_of=promo_of.get(vid, ""),
             )
         )
     return seasons, loose, notes
@@ -285,7 +312,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """Hash of every latest ``detect`` / ``tag`` / ``rate_style`` output plus the planner config."""
     rows = await db.fetch(
         "SELECT j.stage AS stage, j.subject_id AS sid, j.output_hash AS h FROM processing_jobs j"
-        " WHERE j.stage IN ('detect','tag','rate_style') AND j.state = 'done'"
+        " WHERE j.stage IN ('detect','tag','rate_style','topic_collections','promo_links',"
+        "'clip_groups') AND j.state = 'done'"
         f" AND j.outcome IN {SUCCESS}"
         " AND j.id = (SELECT max(k.id) FROM processing_jobs k WHERE k.subject_kind = j.subject_kind"
         "  AND k.subject_id = j.subject_id AND k.stage = j.stage AND k.state = 'done'"
@@ -308,7 +336,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     plan_input = await input_fingerprint(db, job.subject) or ""
 
     def build() -> dict[str, Any]:
-        result = suggest_channels(seasons, loose, PlannerConfig())
+        result = plan_catalog(seasons, loose, PlannerConfig())
         return build_plan_json(result, source="catalog", notes=notes, exporters=exporters)
 
     plan = await asyncio.to_thread(build)
