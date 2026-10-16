@@ -42,9 +42,9 @@ STEPS: list[tuple[str, str, str]] = [
         "every video file, its size and date; nothing is opened yet",
     ),
     (
-        "scan-plex",
-        "Read lengths from Plex",
-        "Plex already measured most files: length, resolution, Plex item",
+        "plex-index",
+        "Index Plex",
+        "every Plex item and its details, saved once: lengths for the scan, details for dizqueTV",
     ),
     (
         "scan-local (",
@@ -197,6 +197,12 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                 if ": cached (" in ln or (ln.startswith("  ") and ": {'videos'" in ln)
             )
             unit = "channels"
+        elif STEPS[current][0] == "plex-index":
+            m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+            tot = next((int(x.group(1)) for ln in body
+                        if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
+            return out, {"done": int(m[-1].group(1)) if m else 0, "total": tot,
+                         "unit": "libraries"}  # fmt: skip
         elif STEPS[current][0] == "dizquetv-shows":
             return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
