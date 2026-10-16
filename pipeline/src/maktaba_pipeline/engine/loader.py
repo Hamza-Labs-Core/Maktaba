@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from ..extensions.base import Extension
+from ..extensions.store import ExtensionState
 from .graph import GRAPH, GraphBuilder, StageDef, validate
+from .stages.plan_channels import register_plan_exporter
 from .stages.registry import register_impl
 
 __all__ = ["build_full_graph", "register_extension_impls"]
@@ -37,7 +39,19 @@ def _tag(stage: StageDef, extensions: Sequence[Extension]) -> StageDef:
     return stage
 
 
-def register_extension_impls(extensions: Sequence[Extension]) -> None:
+def register_extension_impls(
+    extensions: Sequence[Extension],
+    states: Mapping[str, ExtensionState] | None = None,
+) -> None:
+    """Register every extension's stage implementations and, for enabled and configured
+    extensions, its plan exporters (how an extension adds data to the channel plan)."""
     for ext in extensions:
         for name, impl in ext.impls().items():
             register_impl(name, impl)
+        exporters = getattr(ext, "plan_exporters", None)
+        if not callable(exporters):
+            continue
+        state = None if states is None else states.get(ext.manifest.name)
+        if state is None or (state.enabled and state.configured):
+            for name, fn in exporters().items():
+                register_plan_exporter(name, fn)

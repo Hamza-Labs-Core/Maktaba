@@ -86,22 +86,15 @@ def _bootstrap_log() -> Any:
     )
 
 
-def _parse_stages(value: str | None) -> tuple[Stage, ...]:
+def _parse_stages(value: str | None) -> tuple[str, ...]:
+    """Explicit ``--stages`` list; empty means "every stage this worker has a handler for".
+
+    Names are validated against the stage graph when the worker starts (extension
+    stages are only known after discovery), so a typo is reported there.
+    """
     if not value:
-        return _DEFAULT_STAGES
-    out: list[Stage] = []
-    for token in value.split(","):
-        name = token.strip().lower()
-        if not name:
-            continue
-        try:
-            out.append(Stage(name))
-        except ValueError as exc:
-            raise SystemExit(
-                f"unknown stage {name!r}; valid: {', '.join(s.value for s in Stage)}",
-            ) from exc
-    if not out:
-        return _DEFAULT_STAGES
+        return ()
+    out = [t.strip().lower() for t in value.split(",") if t.strip()]
     return tuple(out)
 
 
@@ -109,6 +102,10 @@ def _build_runtime_config(args: argparse.Namespace) -> RuntimeConfig:
     return RuntimeConfig(
         database_url=args.database_url,
         stages=_parse_stages(args.stages),
+        exclude_stages=_parse_stages(args.exclude_stages),
+        host=args.host,
+        path_map=args.path_map or "",
+        engine=not args.no_engine,
         worker_id=args.worker_id,
         heartbeat_sec=args.heartbeat_sec,
         stale_claim_sec=args.heartbeat_sec * 18.0,
@@ -122,7 +119,7 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
     cfg = _build_runtime_config(args)
     log.info(
         "pipeline_starting",
-        stages=[s.value for s in cfg.stages],
+        stages=[str(s) for s in cfg.stages] or "all",
         worker_id=cfg.worker_id,
         database_url_scheme=cfg.database_url.split(":", 1)[0],
     )
@@ -192,7 +189,31 @@ def _build_parser() -> argparse.ArgumentParser:
     run_p.add_argument(
         "--stages",
         default=os.getenv("MAKTABA_PIPELINE_STAGES"),
-        help="Comma-separated stage filter (probe,extract,transcribe,subtitle_gen,index,…).",
+        help="Comma-separated stage filter (probe,extract,transcribe,subtitle_gen,index,…). "
+        "Default: every stage in the graph this worker has a handler for.",
+    )
+    run_p.add_argument(
+        "--exclude-stages",
+        default=os.getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"),
+        help="Comma-separated stages this worker must NOT serve, for example "
+        "extract,transcribe,subtitle_gen,index on a host that is not the GPU worker.",
+    )
+    run_p.add_argument(
+        "--host",
+        default=os.getenv("MAKTABA_WORKER_HOST"),
+        help="This host's name in the worker registry (default: the machine hostname).",
+    )
+    run_p.add_argument(
+        "--path-map",
+        default=os.getenv("MAKTABA_WORKER_PATH_MAP"),
+        help="This host's mount points, 'db_prefix=local_prefix;...', for example "
+        "'Y:/=/Volumes/Y;O:/=/Volumes/O' on a Mac. The database keeps POSIX paths as scanned.",
+    )
+    run_p.add_argument(
+        "--no-engine",
+        action="store_true",
+        default=os.getenv("MAKTABA_PIPELINE_NO_ENGINE") == "1",
+        help="Run the original per-stage loop without the queue-graph engine.",
     )
     run_p.add_argument(
         "--worker-id",

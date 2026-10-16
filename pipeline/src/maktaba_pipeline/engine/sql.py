@@ -18,6 +18,7 @@ __all__ = [
     "loads",
     "now",
     "parse_ts",
+    "to_date",
     "to_ts",
     "uid",
 ]
@@ -68,3 +69,10 @@ def loads(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         return value
     return json.loads(value)
+
+
+def to_date(db: Any, value: Any) -> Any:
+    """A DATE parameter: ``date`` on Postgres, ISO text on SQLite (``None`` passes through)."""
+    if value is None:
+        return None
+    return value if is_pg(db) else value.isoformat()

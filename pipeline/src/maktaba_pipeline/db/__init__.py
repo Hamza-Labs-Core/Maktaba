@@ -41,6 +41,7 @@ from .jobs_state import (
     retry_failed,
 )
 from .pubsub import (
+    JOBS_CONTROL,
     JOBS_FLAG_SET,
     JOBS_FORCE_PAUSE,
     JOBS_HEARTBEAT,
@@ -54,6 +55,7 @@ from .pubsub import (
 )
 
 __all__ = [
+    "JOBS_CONTROL",
     "JOBS_FLAG_SET",
     "JOBS_FORCE_PAUSE",
     "JOBS_HEARTBEAT",

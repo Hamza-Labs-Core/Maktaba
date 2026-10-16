@@ -31,16 +31,29 @@ import contextlib
 import contextvars
 import os
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable
+import socket
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import __version__
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
+from .engine.dispatch import EngineRuntime, dispatch_job
+from .engine.graph import StageDef
+from .engine.health import run_sampler
+from .engine.loader import build_full_graph, register_extension_impls
+from .engine.paths import PathMap, set_active_path_map
+from .engine.prune import run_pruner
+from .engine.reconcile import run_reconciler
+from .engine.sync import stages_ahead, sync_graph
+from .engine.workers import deregister_worker, heartbeat_worker, register_worker
+from .extensions import discover
+from .extensions.store import ensure_rows, load_state
 from .log import get_logger
 from .pipeline.heartbeat import DEFAULT_HEARTBEAT_SEC, heartbeat_for
 from .pipeline.reaper import Reaper
-from .pipeline.runner import ClaimLoop, WorkerConfig, install_signal_handlers
+from .pipeline.runner import ClaimLoop, WorkerConfig, default_worker_id, install_signal_handlers
 
 __all__ = [
     "Database",
@@ -68,13 +81,23 @@ class RuntimeConfig:
     """
 
     database_url: str
-    stages: tuple[Stage, ...]
+    stages: tuple[Stage | str, ...]
     worker_id: str | None = None
+    #: this host's name in the worker registry (default: the machine's hostname)
+    host: str | None = None
+    #: this host's own path map, ``db_prefix=local_prefix;...`` (see engine/paths.py)
+    path_map: str = ""
+    #: stages this worker must not serve (for example the audio chain on a host without a GPU)
+    exclude_stages: tuple[str, ...] = ()
+    #: run through the queue-graph engine (pools, change-driven propagation, extensions)
+    engine: bool = True
     heartbeat_sec: float = DEFAULT_HEARTBEAT_SEC
     stale_claim_sec: float = 90.0
     reaper_interval_sec: float = 30.0
     claim_poll_sec: float = 1.0
     claim_poll_max_sec: float = 30.0
+    #: Deprecated: per-stage caps were never wired (F10). Concurrency now comes from
+    #: ``worker_pools``; kept so existing callers still construct the config.
     stage_concurrency: dict[Stage, int] = field(default_factory=dict)
 
 
@@ -242,7 +265,9 @@ def connect(url: str) -> Awaitable[Database]:
 
 
 def build_default_dispatch(
-    overrides: dict[Stage, StageHandler] | None = None,
+    overrides: Mapping[Stage | str, StageHandler] | None = None,
+    *,
+    engine: EngineRuntime | None = None,
 ) -> StageHandler:
     """Return a dispatch callable that routes by ``job.stage``.
 
@@ -251,26 +276,34 @@ def build_default_dispatch(
     the daemon entry point passes the registered handlers in from the
     runtime config, and tests can install fakes for behavioural
     assertions.
+
+    With ``engine`` the routing goes through :func:`engine.dispatch.dispatch_job`:
+    legacy stages run their handler and then the engine bookkeeping
+    (output hash, propagation); every other stage runs through the engine
+    (skip check, handler, change propagation).
     """
 
-    table: dict[Stage, StageHandler] = {
-        Stage.SCAN: _placeholder_handler("scan"),
-        Stage.PROBE: _placeholder_handler("probe"),
-        Stage.EXTRACT: _placeholder_handler("extract"),
-        Stage.TRANSCRIBE: _placeholder_handler("transcribe"),
-        Stage.SUBTITLE_GEN: _placeholder_handler("subtitle_gen"),
-        Stage.INDEX: _placeholder_handler("index"),
-        Stage.THUMBNAIL: _placeholder_handler("thumbnail"),
+    table: dict[str, StageHandler] = {
+        Stage.SCAN.value: _placeholder_handler("scan"),
+        Stage.PROBE.value: _placeholder_handler("probe"),
+        Stage.EXTRACT.value: _placeholder_handler("extract"),
+        Stage.TRANSCRIBE.value: _placeholder_handler("transcribe"),
+        Stage.SUBTITLE_GEN.value: _placeholder_handler("subtitle_gen"),
+        Stage.INDEX.value: _placeholder_handler("index"),
+        Stage.THUMBNAIL.value: _placeholder_handler("thumbnail"),
     }
     if overrides:
-        table.update(overrides)
+        table.update({str(k): v for k, v in overrides.items()})
 
     async def dispatch(db: DBConn, job: Job) -> None:
-        handler = table.get(job.stage)
+        if engine is not None:
+            await dispatch_job(db, job, runtime=engine, legacy_handlers=table)
+            return
+        handler = table.get(str(job.stage))
         if handler is None:
             err = StageError(
                 kind="dispatch_unknown_stage",
-                message=f"no handler registered for stage {job.stage.value}",
+                message=f"no handler registered for stage {job.stage}",
                 retryable=False,
             )
             await mark_failed_or_retry(db, job_id=job.id, error=err)
@@ -306,7 +339,7 @@ def _placeholder_handler(stage_name: str) -> StageHandler:
 async def run(
     cfg: RuntimeConfig,
     *,
-    dispatch_overrides: dict[Stage, StageHandler] | None = None,
+    dispatch_overrides: Mapping[Stage | str, StageHandler] | None = None,
     db: Database | None = None,
 ) -> int:
     """Run the worker daemon until SIGTERM/SIGINT.
@@ -314,32 +347,50 @@ async def run(
     Returns the process exit code. Tests can pre-build a ``db`` and
     pass an :func:`build_default_dispatch`-compatible override map; the
     CLI builds both from environment + flags before calling this.
+
+    With ``cfg.engine`` the daemon also: discovers the extensions and builds
+    the full stage graph, syncs it into ``job_stages``, registers this worker
+    (host, served stages, path map) and heartbeats, claims per resource pool,
+    samples health, and runs the reconciler and the retention job.
     """
 
     owned_db = db is None
     database = db or await Database.connect(cfg.database_url)
+    worker_id = cfg.worker_id or default_worker_id()
+    shutdown = asyncio.Event()
+    install_signal_handlers(shutdown)
+    background: list[asyncio.Task[None]] = []
+    engine_rt: EngineRuntime | None = None
+    stage_names: tuple[str, ...] = tuple(str(s) for s in cfg.stages)
+    stage_pools: dict[str, str] = {}
+    host = cfg.host or socket.gethostname()
+
+    if cfg.engine:
+        engine_rt, stage_names, stage_pools, background = await _start_engine(
+            database, cfg, worker_id, host, shutdown, dispatch_overrides
+        )
+
     _log.info(
         "pipeline_runtime_starting",
         dialect=database.dialect,
-        worker_id=cfg.worker_id,
-        stages=[s.value for s in cfg.stages],
+        worker_id=worker_id,
+        host=host,
+        stages=list(stage_names),
+        engine=cfg.engine,
     )
-
-    shutdown = asyncio.Event()
-    install_signal_handlers(shutdown)
-
-    semaphores = {
-        stage: asyncio.Semaphore(cfg.stage_concurrency.get(stage, 1)) for stage in cfg.stages
-    }
+    if not stage_names:
+        _log.warning("pipeline_no_stages_to_serve")
 
     worker_cfg = WorkerConfig(
-        supported_stages=cfg.stages,
+        supported_stages=stage_names,
         claim_poll_sec=cfg.claim_poll_sec,
         claim_poll_max_sec=cfg.claim_poll_max_sec,
-        **({"worker_id": cfg.worker_id} if cfg.worker_id else {}),
+        worker_id=worker_id,
+        pool_mode=cfg.engine,
+        stage_pools=stage_pools,
     )
 
-    dispatch_for_db = build_default_dispatch(dispatch_overrides)
+    dispatch_for_db = build_default_dispatch(dispatch_overrides, engine=engine_rt)
 
     async def _loop_dispatch(job: Job) -> None:
         await dispatch_for_db(database, job)
@@ -348,7 +399,7 @@ async def run(
         database,
         worker_cfg,
         _loop_dispatch,
-        semaphores=semaphores,
+        semaphores=(None if cfg.engine else {s: asyncio.Semaphore(1) for s in cfg.stages}),
         shutdown_event=shutdown,
     )
 
@@ -361,13 +412,126 @@ async def run(
     reaper.start()
 
     try:
-        await claim_loop.run()
+        if stage_names:
+            await claim_loop.run()
+        else:
+            await shutdown.wait()
     finally:
+        shutdown.set()
         await reaper.stop()
+        for task in background:
+            task.cancel()
+        for task in background:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        if cfg.engine:
+            with contextlib.suppress(Exception):
+                await deregister_worker(database, worker_id)
         if owned_db:
             await database.close()
         _log.info("pipeline_runtime_stopped")
     return 0
+
+
+async def _start_engine(
+    database: Database,
+    cfg: RuntimeConfig,
+    worker_id: str,
+    host: str,
+    shutdown: asyncio.Event,
+    overrides: Mapping[Stage | str, StageHandler] | None,
+) -> tuple[EngineRuntime, tuple[str, ...], dict[str, str], list[asyncio.Task[None]]]:
+    """Extension discovery, graph sync, worker registration and background tasks."""
+    extensions = discover()
+    await ensure_rows(database, extensions)
+    states = {e.manifest.name: await load_state(database, e) for e in extensions}
+    graph = build_full_graph(extensions)
+    register_extension_impls(extensions, states)
+    report = await sync_graph(database, graph, states)
+    if report.version_changes:
+        _log.info("graph_versions_changed", changes=dict(report.version_changes))
+    ahead = await stages_ahead(database, graph)
+    for name, db_version in ahead.items():
+        _log.warning("graph_version_ahead", stage=name, db_version=db_version)
+
+    path_map = PathMap.parse(cfg.path_map)
+    set_active_path_map(path_map)
+    runtime = EngineRuntime(
+        graph={s.name: s for s in graph},
+        extension_states=states,
+        path_map=path_map,
+    )
+    handlers = {str(k) for k in (overrides or {})}
+    served = _served_stages(cfg, graph, handlers, ahead)
+
+    collector = runtime.nas.collector
+    for ext in extensions:
+        probes = getattr(ext, "health_probes", None)
+        state = states.get(ext.manifest.name)
+        if callable(probes) and state is not None and state.enabled and state.configured:
+            collector.probes.update(probes(state.settings))
+
+    pools = sorted({runtime.graph[s].pool for s in served})
+    await register_worker(
+        database,
+        worker_id=worker_id,
+        host=host,
+        stages=served,
+        pools=pools,
+        path_map=path_map.as_json(),
+        version=__version__,
+    )
+    tasks = [
+        asyncio.create_task(_worker_heartbeat(database, worker_id, shutdown), name="worker-hb"),
+        asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
+        asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
+        asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
+    ]
+    return runtime, tuple(served), {s: runtime.graph[s].pool for s in served}, tasks
+
+
+def _served_stages(
+    cfg: RuntimeConfig,
+    graph: Sequence[StageDef],
+    handlers: set[str],
+    ahead: Mapping[str, int],
+) -> list[str]:
+    """Stages this worker claims.
+
+    Default: every graph stage that has a handler here (legacy stages need an
+    entry in the dispatch override map; engine stages need an implementation).
+    ``cfg.stages`` narrows it; stages whose database version is ahead of this
+    worker's graph are never claimed.
+    """
+    from .engine.stages.registry import get_impl
+
+    requested = {str(s) for s in cfg.stages} if cfg.stages else None
+    excluded = set(cfg.exclude_stages)
+    out: list[str] = []
+    for st in graph:
+        if requested is not None and st.name not in requested:
+            continue
+        if st.name in ahead or st.name in excluded:
+            continue
+        if st.legacy:
+            if st.name not in handlers:
+                continue
+        else:
+            impl = get_impl(st.name)
+            if impl is None or impl.run is None:
+                continue
+        out.append(st.name)
+    return out
+
+
+async def _worker_heartbeat(database: Database, worker_id: str, stop: asyncio.Event) -> None:
+    while not stop.is_set():
+        try:
+            await heartbeat_worker(database, worker_id)
+        except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker
+            _log.exception("worker_heartbeat_failed")
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+            await asyncio.wait_for(stop.wait(), timeout=10.0)
 
 
 # --- helpers -----------------------------------------------------------------
