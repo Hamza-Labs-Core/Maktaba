@@ -392,7 +392,7 @@ def _profile(
     return _Profile(
         key_words=key.split(),
         distinctive=distinctive,
-        core_s=_core_median([d for k in eps if (d := facts[k].duration_s)]),
+        core_s=_core_median([dur for k in eps if (dur := facts[k].duration_s)]),
         first=f,
         last=l_,
         hashes=[h for k in eps if (h := facts[k].dhash) is not None],

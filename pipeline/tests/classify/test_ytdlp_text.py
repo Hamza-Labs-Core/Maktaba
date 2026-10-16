@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 # yt-dlp takes ~0.4 s to import: do it at collection, not inside the timed unit test
 try:
-    from yt_dlp import utils as _yt_utils
+    from yt_dlp import utils as _yt_utils  # type: ignore[import-untyped,unused-ignore]
 except ImportError:  # optional extra
     _yt_utils = None
 

@@ -154,9 +154,15 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         n_lib = next((int(m.group(1)) for ln in lines if (m := _COUNT_RE.search(ln))), None)
         name = STEPS[current][0]
         if name in ("detect", "detect again", "scan-youtube --exact", "tag", "report"):
-            mark = {"tag": lambda ln: ln.startswith("=== tags"),
-                    "report": lambda ln: ln.rstrip().endswith(".html")}.get(
-                name, lambda ln: ln.startswith("=== "))  # fmt: skip
+
+            def mark(ln: str, name: str = name) -> bool:
+                """The line a library's result starts with, for this step."""
+                if name == "tag":
+                    return ln.startswith("=== tags")
+                if name == "report":
+                    return ln.rstrip().endswith(".html")
+                return ln.startswith("=== ")
+
             n = sum(1 for ln in body if mark(ln))
             prog = {"done": n, "total": n_lib, "unit": "libraries"}
             # inside a large library: "[n/N] name: videos checked" (detect prints these)
@@ -479,7 +485,7 @@ def stage_detail(
         at = next((i for i in range(len(log_lines) - 1, -1, -1)
                    if log_lines[i].startswith(head)), None)  # fmt: skip
         sp = parse(log_lines[at:]) if at is not None else {"total": None}
-        total = done + failed + max(0, sp.get("left", 0) if sp.get("total") else 0)
+        total = done + failed + max(0, int(sp.get("left") or 0) if sp.get("total") else 0)
         note = (
             "the files this run picked"
             if sp.get("total")
@@ -681,7 +687,8 @@ def _report_files(reports: Path) -> dict[str, Path]:
                 if f.is_file() and f.suffix in (".html", ".jpg"):
                     files[f.relative_to(reports).as_posix()] = f
         c.update(at=time.time(), dir=reports, files=files)
-    return c["files"]
+    out: dict[str, Path] = c["files"]
+    return out
 
 
 PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
@@ -959,7 +966,7 @@ def serve(
         def _detail(self, path: str, qs: dict[str, list[str]]) -> None:
             """/api/stage?name= and /api/item?folder=[&series=], each cached for 10 s."""
             arg = (qs.get("name" if path == "/api/stage" else "folder") or [""])[0]
-            extra = (qs.get("series") or [None])[0] if path == "/api/item" else None
+            extra = (qs.get("series") or [""])[0] or None if path == "/api/item" else None
             key = (path, arg, extra)
             with cache_lock:
                 hit = detail_cache.get(key)
