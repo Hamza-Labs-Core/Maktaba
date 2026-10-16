@@ -39,6 +39,19 @@ from maktaba_pipeline.text.arabic import fold
 FILLER_MAX_S = 9 * 60
 MIN_PLAYLIST = 5
 MIN_TOPIC = 10
+#: a question or a fatwa: grouped as "فتاوى ومسائل" whatever its topic
+QA_RE = re.compile(
+    r"(?:^|\s)(?:"
+    + "|".join(
+        re.escape(fold(w))
+        for w in (
+            "هل يجوز", "هل يصح", "هل يلزم", "هل يشرع", "هل يجب", "ما حكم", "حكم ", "سؤال",
+            "أسئلة", "اسألة", "فتوى", "فتاوى", "فتاوي", "يسأل", "ما الفرق", "ما معنى", "مامعنى",
+            "ما الراجح", "ما رأي", "ما موقف", "ما صحة", "استفسار",
+        )
+    )
+    + ")"
+)  # fmt: skip
 #: words that say a video advertises a show
 PROMO_RE = re.compile(r"(برومو|promo|اعلان|تشويق|قريبا|trailer|teaser|(?<!\w)تتر(?!\w))")
 _CFG = DetectorConfig()
@@ -67,6 +80,7 @@ class Item:
     playlists: dict[str, int] = field(default_factory=dict)  # playlist id → position
     genre: str | None = None
     clip: bool = False
+    qa: bool = False  # a question / fatwa ("هل يجوز …", "ما حكم …", "سؤال عن …")
 
 
 @dataclass
@@ -164,6 +178,11 @@ def plan_groups(items: list[Item], playlist_titles: dict[str, str]) -> list[Grou
             )
             for i in members:
                 del pool[i.path]
+        qa = sorted((i for i in pool.values() if i.qa), key=lambda i: (i.upload or "9999", i.title))
+        if qa:  # questions and fatwas together, whatever their topic
+            out.append(Group(kind, "topic", "فتاوى ومسائل", "qa_fatwa", [i.path for i in qa]))
+            for i in qa:
+                del pool[i.path]
         by_genre: dict[str, list[Item]] = defaultdict(list)
         for i in pool.values():
             if i.genre and i.genre != "general":
@@ -254,7 +273,8 @@ def group_folder(
         for p in m.get("extras") or []:
             if show is not None:
                 extras_of[p] = (show, int(m.get("season") or 1))
-        placed |= set(m.get("duplicates") or [])
+        # a second upload is not an episode, but it still plays: it is grouped like any
+        # leftover so no long video sits in no collection
     copies = {p for (p,) in conn.execute("SELECT path FROM file_copies WHERE folder=?", (folder,))}
     shorts = {p for (p,) in conn.execute("SELECT path FROM shorts WHERE folder=?", (folder,))}
     rows = conn.execute(
@@ -275,6 +295,7 @@ def group_folder(
             yt_of[yid] = path
     # promos: linked to the show, not grouped
     links: list[tuple[str, Show, int | None, float, str]] = []
+    promo_upload = {p: it.upload for p, it in items.items()}
     for path, it in list(items.items()):
         if not PROMO_RE.search(fold(it.title)):
             continue
@@ -316,7 +337,21 @@ def group_folder(
     ):
         if path in items:
             items[path].genre = tag.split(":", 1)[1]  # highest score last wins
+    qa_tagged = {
+        p
+        for (p,) in conn.execute(
+            """SELECT t.path FROM video_tags t JOIN files f ON f.path = t.path
+               WHERE f.folder = ? AND t.tag = 'format:qa_fatwa' AND t.score >= 0.5""",
+            (folder,),
+        )
+    }
+    for path, it in items.items():
+        it.qa = path in qa_tagged or bool(QA_RE.search(fold(it.title)))
     groups = plan_groups(list(items.values()), titles)
+    # linked promos air next to their show, and they are also one collection per library
+    promo_paths = sorted((p for p, *_ in links), key=lambda p: (promo_upload.get(p) or "9999", p))
+    if promo_paths:
+        groups.append(Group("clips", "promo", "إعلانات", None, promo_paths))
     conn.execute("DELETE FROM clip_groups WHERE folder=?", (folder,))
     conn.execute("DELETE FROM promo_links WHERE folder=?", (folder,))
     for g in groups:

@@ -61,6 +61,8 @@ from ..audio.chromaprint import matches as audio_matches
 from ..text.arabic import fold
 from ..thumbnail.dhash import hamming
 from .title_template import (
+    _ORD_ALT,
+    _ORD_VALUE,
     episode_number,
     is_recap,
     is_teaser,
@@ -2026,6 +2028,13 @@ _FORMAT_WORDS = frozenset(
 )  # fmt: skip
 _EP_GLUED_RE = re.compile(r"^(?:ح|ep|e)(\d{1,3})$")
 _SEASON_TAIL_RE = re.compile(r"^(.*?[^\d\s])(\d{1,2})$")
+_YEAR_TOKEN_RE = re.compile(r"^(?:19[89]\d|20[0-4]\d|14[0-6]\d)$")
+#: "الدرس الرابع", "الحلقة الحادية عشرة", "المجلس الثاني والعشرون": an ordinal episode
+_ORD_EP_RE = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(sorted(map(re.escape, _EP_WORDS), key=len, reverse=True))
+    + rf")\s+({_ORD_ALT})(?!\w)"
+)
 
 
 def _numbered(
@@ -2051,6 +2060,9 @@ def _numbered(
         if m := _EP_GLUED_RE.match(t):
             ep, at = int(m.group(1)), i
             break
+    if ep is None and (om := _ORD_EP_RE.search(" ".join(toks))):
+        ep = _ORD_VALUE[om.group(1)]
+        at = len(" ".join(toks)[: om.start()].split())
     season = 1
     if ep is not None:
         name = toks[:at]
@@ -2067,10 +2079,46 @@ def _numbered(
             name = name[:-2]
     else:
         # "<show> <ep> - …": the first number after the name is the episode
-        at = next((i for i, t in enumerate(toks) if t.isdigit() and i > 0), -1)
-        if at < 0 or len(toks[at]) > 3 or toks[at - 1] in _NOT_EPISODE_BEFORE:
+        at = next(
+            (
+                i
+                for i, t in enumerate(toks)
+                if t.isdigit() and i > 0 and not _YEAR_TOKEN_RE.match(t)
+            ),
+            -1,
+        )
+        if toks and toks[0].isdigit() and len(toks[0]) <= 3:
+            # "1- شرح بلوغ المرام // …": the first worded part names the series
+            ep = int(toks[0])
+            worded = [x for x in _BRAND_SPLIT_RE.split(title) if re.search(r"[^\W\d_]", x)]
+            name = fold(worded[0]).split() if worded else []
+        elif at < 0 or len(toks[at]) > 3 or toks[at - 1] in _NOT_EPISODE_BEFORE:
             return None
-        ep, name = int(toks[at]), toks[:at]
+        else:
+            ep, name = int(toks[at]), toks[:at]
+    if not name:
+        # the number leads ("الدرس الأول || شرح مبحث النهي || …", "1- شرح بلوغ المرام //…"):
+        # the next part of the title names the series
+        segs = [x for x in _BRAND_SPLIT_RE.split(title) if re.search(r"[^\W\d_]", x)]
+        first = fold(segs[0]).split() if segs else []
+        if len(segs) >= 2 and all(
+            w in _EP_WORDS
+            or w.isdigit()
+            or w in _ORD_VALUE
+            or w in {fold("و"), "عشر", "عشره"}
+            or any(w in k.split() for k in _ORD_VALUE)
+            for w in first
+        ):
+            name = fold(segs[1]).split()
+        elif segs and not first:
+            name = []
+    # a year in the name ("مجالس فجر شهر رمضان 1443 (10)") is the season of a series that
+    # comes back every year
+    years = [w for w in name if _YEAR_TOKEN_RE.match(w)]
+    if years:
+        name = [w for w in name if not _YEAR_TOKEN_RE.match(w)]
+        if season == 1:
+            season = int(years[0])
     name = _drop_phrases(name, phrases)
     lead = frozenset(fold(w) for w in ("برنامج", "برامج", "سلسلة", "سلسله", "حلقات"))
     while name and name[0] in lead:  # "برنامج قصة وفكرة"; "على ما تفرج" keeps its "على"
@@ -2174,6 +2222,16 @@ def _numbered_shows(
             and "".join(fold(d).split()) == "".join(h[1])  # spelled like the name it matched
         )
         name = names.most_common(1)[0][0] if names else " ".join(hits[0][1])
+        # a Ramadan series with no year in its titles: its exact air dates tell the years
+        ramadan = fold("رمضان") in hits[0][1]
+        exact_years = {h[0].air_date.year for h in hits if h[0].air_date and h[0].date_exact}
+        if (
+            ramadan
+            and all(h[2] == 1 for h in hits)
+            and all(h[0].date_exact and h[0].air_date for h in hits)
+            and len(exact_years) >= 2
+        ):
+            hits = [(v, nm, v.air_date.year if v.air_date else 1, ep) for v, nm, _, ep in hits]
         by_season: dict[int, list[tuple[int, str]]] = defaultdict(list)
         seen: set[tuple[int, int]] = set()
         for v, _, season, ep in sorted(hits, key=lambda h: (h[2], h[3], h[0].key)):
@@ -2192,7 +2250,13 @@ def _numbered_shows(
             keys = [k for _, k in sorted(eps)]
             se = next((x for x in target.seasons if x.number == number), None)
             if se is None:
-                se = Season(number=number, episodes=[])
+                yearly = number >= 1400  # a year (hijri or gregorian) names the season
+                se = Season(
+                    number=number,
+                    episodes=[],
+                    name=str(number) if yearly else None,
+                    year=number if number >= 1980 else None,
+                )
                 target.seasons.append(se)
             se.episodes += [k for k in keys if k not in se.episodes]
             se.attached += keys

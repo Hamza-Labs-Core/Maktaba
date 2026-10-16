@@ -193,3 +193,27 @@ def test_numbered_titles_make_a_show_without_any_playlist() -> None:
 def test_format_words_alone_are_not_a_numbered_show() -> None:
     det = detect(_titles([f"محاضرة عامة {i}" for i in range(1, 9)]), [])
     assert det.series == []
+
+
+def test_ordinals_leading_numbers_and_years_number_a_show() -> None:
+    from maktaba_pipeline.classify.series_detector import _numbered
+
+    g = DetectorConfig().generic_words
+    assert _numbered("تفسير سورة الفاتحة الدرس الرابع", [], g)[2:] == (1, 4)  # type: ignore[index]
+    hit = _numbered("الدرس الأول || شرح مبحث النهي في أصول الفقه || فضيلة الشيخ", [], g)
+    assert hit is not None and hit[1] == ["شرح", "مبحث", "النهي", "في", "اصول", "الفقه"]
+    assert _numbered("1- شرح بلوغ المرام //من باب صلاة العيدين", [], g)[2:] == (1, 1)  # type: ignore[index]
+    yearly = _numbered("مجالس فجر شهر رمضان 1443 _ تفسير سورة الفاتحة ( 10 )", [], g)
+    assert yearly is not None and yearly[2:] == (1443, 10)
+
+
+def test_ramadan_series_gets_a_season_per_year() -> None:
+    vids = [
+        VideoFacts(f"r{y}-{i}", f"مجالس الوعظ في شهر رمضان {i}", 1800 + i,
+                   date(y, 4, i), date_exact=True)
+        for y in (2021, 2022) for i in range(1, 6)
+    ]  # fmt: skip
+    det = detect(vids, [])
+    show = det.series[0]
+    assert [se.name for se in show.seasons] == ["2021", "2022"]
+    assert all(len(se.episodes) == 5 for se in show.seasons)

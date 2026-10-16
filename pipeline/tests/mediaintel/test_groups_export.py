@@ -196,3 +196,13 @@ def test_promo_links_to_the_season_it_names() -> None:
     show = Show("ميديا", "Y:/a", "قصة وفكرة", "قصه وفكره", name_words("قصة وفكرة"), (1, 2))
     assert group_clips.promo_season("برومو قصة وفكرة2", show) == 2
     assert group_clips.promo_season("برومو برنامج قصة وفكرة", show) == 1
+
+
+def test_questions_and_fatwas_get_their_own_group() -> None:
+    items = [_item(f"q{i}", dur=900, clip=False) for i in range(3)]
+    for it in items:
+        it.qa = True
+    items += [_item("l0", dur=1800, clip=False, genre="fiqh")]
+    groups = {(g.kind, g.basis, g.name): g.items for g in plan_groups(items, {})}
+    assert groups[("standalone", "topic", "فتاوى ومسائل")] == ["q0", "q1", "q2"]
+    assert groups[("standalone", "rest", "متنوعة")] == ["l0"]
