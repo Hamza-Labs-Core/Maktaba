@@ -1,0 +1,230 @@
+{
+ "first_show": "00c4a3cc-e852-4364-a4c4-1ce1fab3a633",
+ "first_channel": 1,
+ "responses": {
+  "/api/shows": {
+   "status": 200,
+   "body": [
+    {
+     "id": "00c4a3cc-e852-4364-a4c4-1ce1fab3a633",
+     "name": "Show 33",
+     "count": 16
+    },
+    {
+     "id": "010bc1e7-8a7b-4c12-a4a7-03db7d41e72c",
+     "name": "Show 34",
+     "count": 13
+    },
+    {
+     "id": "01863a8e-1463-4252-91b9-e30acf9e4e43",
+     "name": "Show 35",
+     "count": 39
+    }
+   ]
+  },
+  "/api/channels": {
+   "status": 200,
+   "body": [
+    1
+   ]
+  },
+  "/api/fillers": {
+   "status": 200,
+   "body": [
+    {
+     "id": "0f1072e0-97c3-452d-a4d9-898d9035d41c",
+     "name": "Show 36",
+     "count": 29
+    },
+    {
+     "id": "110517a2-50dd-44f0-86ec-52f90a7a3a22",
+     "name": "Show 37",
+     "count": 4
+    }
+   ]
+  },
+  "/api/show/00c4a3cc-e852-4364-a4c4-1ce1fab3a633": {
+   "status": 200,
+   "body": {
+    "name": "Show 33",
+    "content": [
+     {
+      "title": "Show 38",
+      "key": "/library/metadata/123136",
+      "ratingKey": "123136",
+      "type": "movie",
+      "duration": 345044,
+      "durationStr": "00:05:45.0",
+      "date": "2025-05-20",
+      "year": 2025,
+      "file": "/data/library/File_28.mp4",
+      "episode": 1,
+      "season": 1,
+      "serverKey": "Test-Server",
+      "commercials": []
+     },
+     {
+      "title": "Show 39",
+      "key": "/library/metadata/123137",
+      "ratingKey": "123137",
+      "type": "movie",
+      "duration": 330044,
+      "durationStr": "00:05:30.0",
+      "date": "2025-05-20",
+      "year": 2025,
+      "file": "/data/library/File_30.mp4",
+      "episode": 1,
+      "season": 1,
+      "serverKey": "Test-Server",
+      "commercials": []
+     },
+     {
+      "title": "Show 40",
+      "key": "/library/metadata/123140",
+      "ratingKey": "123140",
+      "type": "movie",
+      "duration": 560119,
+      "durationStr": "00:09:20.1",
+      "date": "2025-05-20",
+      "year": 2025,
+      "file": "/data/library/File_32.mp4",
+      "episode": 1,
+      "season": 1,
+      "serverKey": "Test-Server",
+      "commercials": []
+     }
+    ],
+    "id": "00c4a3cc-e852-4364-a4c4-1ce1fab3a633"
+   }
+  },
+  "/api/channel/programless/1": {
+   "status": 200,
+   "body": {
+    "watermark": {
+     "enabled": true,
+     "position": "top-right",
+     "width": 7,
+     "verticalMargin": 1,
+     "horizontalMargin": 1,
+     "duration": 0,
+     "animated": false,
+     "url": "http://127.0.0.1:8002/images/uploads/alummah now logo.png"
+    },
+    "fillerCollections": [],
+    "guideFlexPlaceholder": "",
+    "fillerRepeatCooldown": 1800000,
+    "fallback": [],
+    "guideMinimumDurationSeconds": 60,
+    "groupTitle": "Home-NAS",
+    "disableFillerOverlay": true,
+    "iconWidth": 120,
+    "iconDuration": 60,
+    "iconPosition": "2",
+    "startTime": "2026-10-14T14:31:00.177Z",
+    "offlinePicture": "http://localhost:8002/images/generic-offline-screen.png",
+    "offlineSoundtrack": "",
+    "offlineMode": "pic",
+    "number": 1,
+    "name": "Show 41",
+    "transcoding": {
+     "targetResolution": ""
+    },
+    "onDemand": {
+     "isOnDemand": false,
+     "modulo": 1,
+     "firstProgramModulo": 1,
+     "playedOffset": 0,
+     "paused": false
+    },
+    "duration": 21847648,
+    "scheduleBackup": {
+     "period": 86400000,
+     "lateness": 86400000,
+     "maxDays": 365,
+     "flexPreference": "distribute",
+     "slots": [
+      {
+       "time": 0,
+       "showId": "custom.26389b15-bef1-4f97-af51-d033aa74ce9d",
+       "order": "next"
+      },
+      {
+       "time": 3600000,
+       "showId": "custom.f9314506-9785-4347-b8ca-777cb9055826",
+       "order": "shuffle"
+      },
+      {
+       "time": 7200000,
+       "showId": "custom.60b07370-5c96-46c9-afd3-b23724d4f7d5",
+       "order": "next"
+      },
+      {
+       "time": 14400000,
+       "showId": "custom.631bc8c2-8e5e-44f1-b7d5-87516f1a3a2a",
+       "order": "next"
+      },
+      {
+       "time": 21600000,
+       "showId": "custom.88e3c66f-ecfe-476d-a526-9af821d23715",
+       "order": "next"
+      },
+      {
+       "time": 28800000,
+       "showId": "custom.de01836f-3885-41f1-91d5-9ed0c11d06c2",
+       "order": "next"
+      },
+      {
+       "time": 36000000,
+       "showId": "custom.f9314506-9785-4347-b8ca-777cb9055826",
+       "order": "next"
+      },
+      {
+       "time": 43200000,
+       "showId": "custom.26389b15-bef1-4f97-af51-d033aa74ce9d",
+       "order": "next"
+      },
+      {
+       "time": 50400000,
+       "showId": "custom.60b07370-5c96-46c9-afd3-b23724d4f7d5",
+       "order": "next"
+      },
+      {
+       "time": 57600000,
+       "showId": "custom.631bc8c2-8e5e-44f1-b7d5-87516f1a3a2a",
+       "order": "next"
+      },
+      {
+       "time": 64800000,
+       "showId": "custom.88e3c66f-ecfe-476d-a526-9af821d23715",
+       "order": "next"
+      },
+      {
+       "time": 72000000,
+       "showId": "custom.de01836f-3885-41f1-91d5-9ed0c11d06c2",
+       "order": "next"
+      },
+      {
+       "time": 79200000,
+       "showId": "custom.f9314506-9785-4347-b8ca-777cb9055826",
+       "order": "next"
+      }
+     ],
+     "pad": 1,
+     "timeZoneOffset": 0
+    }
+   }
+  },
+  "/api/plex-servers": {
+   "status": 200,
+   "body": [
+    {
+     "name": "Test-Server",
+     "_id": "x",
+     "index": 0,
+     "arGuide": true,
+     "arChannels": false
+    }
+   ]
+  }
+ }
+}

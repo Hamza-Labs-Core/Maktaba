@@ -1,0 +1,118 @@
+{
+ "videos": {
+  "_type": "playlist",
+  "id": "UCxxxxxxxxxxxxxxxxxxxxxx",
+  "title": "Test Channel - Videos",
+  "channel": "Test Channel",
+  "uploader": "Test Channel",
+  "playlist_count": 138,
+  "entries": [
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "PXC_PYeB6F8",
+    "url": "https://www.youtube.com/watch?v=PXC_PYeB6F8",
+    "title": "Video 1",
+    "duration": 231,
+    "timestamp": null,
+    "view_count": 107000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "LaOUkDBDjW8",
+    "url": "https://www.youtube.com/watch?v=LaOUkDBDjW8",
+    "title": "Video 2",
+    "duration": 234,
+    "timestamp": null,
+    "view_count": 61000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "wvr7-pDJUOA",
+    "url": "https://www.youtube.com/watch?v=wvr7-pDJUOA",
+    "title": "Video 3",
+    "duration": 248,
+    "timestamp": null,
+    "view_count": 98000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "dE2TxYSDy4Y",
+    "url": "https://www.youtube.com/watch?v=dE2TxYSDy4Y",
+    "title": "Video 4",
+    "duration": 2838,
+    "timestamp": null,
+    "view_count": 40000,
+    "live_status": null,
+    "channel_id": null
+   }
+  ]
+ },
+ "videos_approximate": {
+  "_type": "playlist",
+  "id": "UCxxxxxxxxxxxxxxxxxxxxxx",
+  "title": "Test Channel - Videos",
+  "channel": "Test Channel",
+  "uploader": "Test Channel",
+  "playlist_count": 138,
+  "entries": [
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "PXC_PYeB6F8",
+    "url": "https://www.youtube.com/watch?v=PXC_PYeB6F8",
+    "title": "Video 1",
+    "duration": 231,
+    "timestamp": 1784160000,
+    "view_count": 107000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "LaOUkDBDjW8",
+    "url": "https://www.youtube.com/watch?v=LaOUkDBDjW8",
+    "title": "Video 2",
+    "duration": 234,
+    "timestamp": 1784160000,
+    "view_count": 61000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "wvr7-pDJUOA",
+    "url": "https://www.youtube.com/watch?v=wvr7-pDJUOA",
+    "title": "Video 3",
+    "duration": 248,
+    "timestamp": 1784160000,
+    "view_count": 98000,
+    "live_status": null,
+    "channel_id": null
+   },
+   {
+    "_type": "url",
+    "ie_key": "Youtube",
+    "id": "dE2TxYSDy4Y",
+    "url": "https://www.youtube.com/watch?v=dE2TxYSDy4Y",
+    "title": "Video 4",
+    "duration": 2838,
+    "timestamp": 1784160000,
+    "view_count": 40000,
+    "live_status": null,
+    "channel_id": null
+   }
+  ]
+ }
+}
