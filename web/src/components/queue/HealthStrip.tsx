@@ -32,9 +32,9 @@ function Tile({
 }) {
   return (
     <section className={`mkt-q-tile${tone ? ` mkt-q-tile--${tone}` : ""}`} aria-labelledby={id}>
-      <h3 className="mkt-q-tile__title" id={id}>
+      <h2 className="mkt-q-tile__title" id={id}>
         {title}
-      </h3>
+      </h2>
       <div className="mkt-q-tile__body">{children}</div>
       <Sparkline values={spark} label={sparkLabel} />
     </section>

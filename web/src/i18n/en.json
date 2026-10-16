@@ -187,6 +187,7 @@
   "nav.admin.health": "System health",
   "nav.admin.logs": "Logs",
   "nav.admin.devices": "All devices",
+  "nav.admin.extensions": "Extensions",
   "admin.users.title": "User management",
   "admin.users.note": "The server has no user-listing endpoint, so this table tracks users created or added in this browser. Management actions below work against any user by ID.",
   "admin.users.add": "Add user",

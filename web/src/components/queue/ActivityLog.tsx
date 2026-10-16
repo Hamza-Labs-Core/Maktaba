@@ -108,7 +108,7 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
   const laneOf = (s: string): Lane => stageMeta.get(s)?.lane ?? "media";
 
   return (
-    <section className="mkt-q-log" aria-label={t("queue.log.title")}>
+    <div className="mkt-q-log" role="group" aria-label={t("queue.log.title")}>
       <div className="mkt-q-log__filters">
         {!fixedStage && (
           <label className="mkt-q-field">
@@ -173,6 +173,6 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
           </Button>
         )}
       </div>
-    </section>
+    </div>
   );
 }
