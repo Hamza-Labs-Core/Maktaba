@@ -420,3 +420,24 @@ def test_more_than_seven_reciters_all_air_each_week() -> None:
     assert len(reciters) == 13
     assert reciters <= on_air  # every reciter lane airs somewhere in the week
     assert any("reciters a day" in r for r in q.reasons)
+
+
+def test_a_show_joins_a_channel_whole_never_a_few_of_its_years() -> None:
+    from dataclasses import replace
+
+    years = talk_years(n=30)
+    # two of five years are current affairs (off the mix): the show is still one show
+    years = [replace(y, genre="current_affairs",
+                     tags={**y.tags, "topic:current_affairs": 1.0, "genre:current_affairs": 1.0})
+             if y.season in (2000, 2001) else y for y in years]  # fmt: skip
+    p = plan([*years, *many_shows(60, prefix="w")], dawn_quran=False, fill_target=0.0)
+    mix = channel(p, "mix")
+    seasons = [u.season for k in mix.lanes for u in p.lanes[k].units if u.series_key == "بلا حدود"]
+    assert seasons == [1999, 2000, 2001, 2002, 2003]
+    # mostly current affairs: off the mix entirely, not with holes
+    years2 = [replace(y, genre="current_affairs",
+                      tags={**y.tags, "topic:current_affairs": 1.0, "genre:current_affairs": 1.0})
+              if y.season != 1999 else y for y in years]  # fmt: skip
+    p2 = plan([*years2, *many_shows(60, prefix="w")], dawn_quran=False, fill_target=0.0)
+    mix2 = channel(p2, "mix")
+    assert not any(u.series_key == "بلا حدود" for k in mix2.lanes for u in p2.lanes[k].units)

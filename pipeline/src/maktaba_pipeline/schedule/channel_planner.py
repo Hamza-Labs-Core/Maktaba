@@ -474,6 +474,8 @@ class PlannerConfig:
     #: a channel whose shows at their own cadence fill less than this share of its week
     #: moves its biggest weekly shows to daily strips first (an archive channel re-runs
     #: its long-running shows daily), largest first, while they have enough episodes
+    #: a show joins a channel (whole) when this share of its hours matches the channel
+    show_member_min_share: float = 0.5
     fill_target: float = 0.8
     promote_min_episodes: int = 26
     #: an extra airing never brings a queue under this many weeks of content (it would loop)
@@ -1720,6 +1722,21 @@ def suggest_channels(
     khutbah_lane = lib_lane("library.khutbah", "Friday khutbah", khutbah_ids, "khutbah")
     regular_ids = set(units) - quran_ids - (khutbah_ids if cfg.khutbah_only_friday else set())
 
+    seasons_of_show: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for i, u in units.items():
+        seasons_of_show[(u.folder, u.series_key)].append(i)
+
+    def whole_shows(ids: set[str]) -> set[str]:
+        """A show joins a channel whole (all its years), when at least
+        ``show_member_min_share`` of its hours belong there — never a few seasons."""
+        out: set[str] = set()
+        for sids in seasons_of_show.values():
+            total = sum(units[i].duration_s for i in sids)
+            mine = sum(units[i].duration_s for i in sids if i in ids)
+            if total and mine >= cfg.show_member_min_share * total:
+                out.update(sids)
+        return out
+
     def regular(ids: Iterable[str]) -> list[ProgramUnit]:
         us = [units[i] for i in ids if i in regular_ids]
         if cfg.ramadan_exclusive:
@@ -1768,6 +1785,7 @@ def suggest_channels(
         key: str, number: int, name: str, name_ar: str, kind: str, category: str,
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
     ) -> None:  # fmt: skip
+        member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
         label = name_ar or name
         shows = _shows(reg, tags_of, cfg)
@@ -1914,7 +1932,7 @@ def suggest_channels(
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
                      mix=False)  # fmt: skip
-        placed |= ids
+        placed |= whole_shows(ids)
 
     # ---- mix channel
     excluded = set(cfg.mix_exclude_topics)
@@ -1935,7 +1953,7 @@ def suggest_channels(
              f"excluded: {', '.join(excluded) or '-'}"],
             pk, mix=True,
         )  # fmt: skip
-        placed |= mix_ids
+        placed |= whole_shows(mix_ids)
 
     # ---- presenter channels
     if cfg.presenter_channels:
@@ -1963,7 +1981,7 @@ def suggest_channels(
                 ids, [f"{len(ids)} season(s), {hours:.1f} h by {presenter} across "
                       f"{len(genres)} genres"], pk, mix=True,
             )  # fmt: skip
-            placed |= ids
+            placed |= whole_shows(ids)
             n += 1
 
     for i in sorted(set(units) - placed):
