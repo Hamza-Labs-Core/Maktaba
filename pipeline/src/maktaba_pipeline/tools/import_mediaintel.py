@@ -45,6 +45,7 @@ from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.production_style import STYLE_VERSION, metrics_from_dict
+from ..classify.series_detector import DETECTOR_VERSION
 from ..engine.causes import classify
 from ..engine.enqueue import enqueue_job
 from ..engine.graph import SIG_VERSION, Subject
@@ -575,6 +576,7 @@ async def _jobs(
                 uid(vid),
             )
             subject = Subject("video", vid)
+            oh: str | None
             if stage == "thumb_hash":
                 ih = await thumb_stage.input_fingerprint(db, subject)
                 oh = canonical_hash({"dhash": None if sig is None else sig["thumb_dhash"]})
@@ -624,7 +626,7 @@ async def _jobs(
         if rows:
             ih = await detect_stage.input_fingerprint(db, Subject("library", lib_id))
             await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="detect",
-                             version=detect_stage.DETECTOR_VERSION, input_hash=ih,
+                             version=DETECTOR_VERSION, input_hash=ih,
                              output_hash=canonical_hash(sorted([str(r["id"]), r["membership_hash"]] for r in rows)))  # fmt: skip
     for sid, lib in seasons.values():
         tags = await db.fetch("SELECT tag, score FROM season_tags WHERE season_id = $1", uid(sid))

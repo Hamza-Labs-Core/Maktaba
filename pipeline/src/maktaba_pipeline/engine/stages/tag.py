@@ -256,7 +256,9 @@ async def _run_library(db: Any, job: Job, ctx: StageContext) -> StageResult:
     ):
         old[str(r["vid"])][str(r["tag"])] = float(r["score"])
 
-    added, removed, changed = [], [], []
+    added: list[dict[str, Any]] = []
+    removed: list[dict[str, Any]] = []
+    changed: list[dict[str, Any]] = []
     for vid in sorted(set(new) | set(old)):
         o, n = old.get(vid, {}), new.get(vid, {})
         if o == n:

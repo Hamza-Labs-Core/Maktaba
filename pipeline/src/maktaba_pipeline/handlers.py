@@ -349,7 +349,7 @@ ScanStoreFactory = Callable[[DBConn], ScanStore]
 
 
 def _default_scan_store(db: DBConn) -> ScanStore:
-    return SqlScanStore(db)  # type: ignore[arg-type]  # Database ⊇ _ScanDB
+    return SqlScanStore(db)
 
 
 async def scan_handler(
@@ -945,7 +945,7 @@ async def index_handler(
         )
 
 
-def build_real_dispatch() -> dict[Stage, Callable[[DBConn, Job], Awaitable[None]]]:
+def build_real_dispatch() -> dict[Stage | str, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
 
     Every stage now has a genuine thin-wrapper adapter and is

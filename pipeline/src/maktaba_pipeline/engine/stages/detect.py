@@ -582,14 +582,14 @@ async def apply_changes(
             )
         }
         await _delete_in(db, "series_episodes", "video_id", sorted(existing - set(placed)))
-        for vid, (series_id, season_no, num) in placed.items():
+        for placed_vid, (series_id, season_no, num) in placed.items():
             await db.execute(
                 "INSERT INTO series_episodes (series_id, video_id, season, episode, created_at)"
                 " VALUES ($1,$2,$3,$4,$5) ON CONFLICT (video_id) DO UPDATE SET"
                 " series_id = EXCLUDED.series_id, season = EXCLUDED.season,"
                 " episode = EXCLUDED.episode",
                 uid(series_id),
-                vid,
+                placed_vid,
                 season_no,
                 num,
                 t,

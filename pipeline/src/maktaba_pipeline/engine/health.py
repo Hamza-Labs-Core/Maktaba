@@ -104,7 +104,7 @@ def _touch(path: str) -> None:
 
 def _cpu_percent() -> float | None:
     try:
-        import psutil  # type: ignore[import-not-found,unused-ignore]
+        import psutil  # type: ignore[import-not-found,import-untyped,unused-ignore]  # optional dep; stubs may be absent
 
         return float(psutil.cpu_percent(interval=None))
     except ImportError:

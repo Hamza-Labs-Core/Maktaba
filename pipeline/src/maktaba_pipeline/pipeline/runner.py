@@ -307,7 +307,7 @@ class ClaimLoop:
             task.add_done_callback(in_flight.discard)
         return count
 
-    def _stages_with_capacity(self) -> tuple[Stage, ...]:
+    def _stages_with_capacity(self) -> tuple[Stage | str, ...]:
         """Stages whose semaphore has at least one free slot.
 
         Filtering before the claim avoids the wasted UPDATE that would

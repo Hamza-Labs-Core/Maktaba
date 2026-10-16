@@ -91,7 +91,9 @@ async def resolve_edge(
     if m == "videos_of":
         if subj.kind != "library":
             return []
-        named = [(k, i) for k, i in changed_subjects if k == "video"]
+        named: list[tuple[SubjectKind, UUID]] = [
+            (k, i) for k, i in changed_subjects if k == "video"
+        ]
         if named:
             return named
         return [("video", v) for v in await _unlinked_videos(db, subj.id)]
@@ -137,8 +139,7 @@ async def finalize_success(
     """
     async with db.transaction():
         prev = skipped_from if skipped_from is not None else await last_success(db, job)
-        skipped = skipped_from is not None
-        if skipped:
+        if skipped_from is not None:
             output_hash = str(skipped_from["output_hash"])
             final_outcome = "skipped_unchanged"
             changed = False
@@ -266,7 +267,7 @@ async def _log_finish(
     row: Any,
     finished: Any,
 ) -> None:
-    common = {
+    common: dict[str, Any] = {
         "job_id": job.id,
         "subject_kind": job.subject_kind,
         "subject_id": job.subject.id,
