@@ -1386,7 +1386,8 @@ _YEAR_FILLER = frozenset(
     fold(w)
     for w in (
         "حلقات", "حلقه", "حلقة", "التي", "التى", "تم", "بثها", "سنه", "سنة", "عام", "العام", "في",
-        "فى", "من", "حتى", "حتي", "وحتى", "الى", "إلى", "مع",
+        "فى", "من", "حتى", "حتي", "وحتى", "الى", "إلى", "مع", "بثت", "بث", "عرضت", "اهم",
+        "أهم", "الحلقات", "حلقات",
     )
 )  # fmt: skip
 #: an umbrella playlist holds the whole show ("شاهد على العصر كاملا من البداية فبراير 1999")
@@ -1947,12 +1948,16 @@ def _topics(
         if len(items) < cfg.topic_min:
             continue
         hits = [season_of[k] for k in items if k in season_of]
-        if len(hits) < 0.5 * len(items):
-            continue
-        biggest = Counter(hits).most_common(1)[0][1]
-        if p.playlist_id in own and biggest >= 0.8 * len(hits):
-            continue  # the season's own playlist
-        if len({h[0] for h in hits}) >= 2 or len(set(hits)) >= 3:
+        if len(hits) < 0.8 * len(items):
+            continue  # mostly clips or unplaced videos: the group step's business
+        if p.playlist_id in own:
+            continue  # a season's own playlist
+        per_series = Counter(h[0] for h in hits)
+        # cutting across shows: two or more shows give it two or more episodes each, and
+        # no one show is (nearly) all of it
+        if sum(1 for n in per_series.values() if n >= 2) >= 2 and per_series.most_common(1)[0][
+            1
+        ] <= 0.8 * len(hits):
             out.append(Topic(" ".join(p.title.split()), p.playlist_id, items))
     return out
 

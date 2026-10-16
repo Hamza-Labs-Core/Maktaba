@@ -264,6 +264,14 @@ def group_folder(
             continue
         del items[path]
     titles: dict[str, str] = {}
+    # a topic collection ("ملف") already holds its playlist's episodes: its clips are grouped
+    # by topic instead, so one playlist is not two collections of one name
+    topic_pls = {
+        pid
+        for (pid,) in conn.execute(
+            "SELECT playlist_id FROM topic_collections WHERE folder=?", (folder,)
+        )
+    }
     yids = list(yt_of)
     for at in range(0, len(yids), 500):
         part = yids[at : at + 500]
@@ -274,7 +282,7 @@ def group_folder(
             part,
         ):
             path = yt_of[yid]
-            if path in items:
+            if path in items and pid not in topic_pls:
                 items[path].playlists.setdefault(pid, pos if pos is not None else 10**6)
                 titles[pid] = ptitle
     for path, tag in conn.execute(
