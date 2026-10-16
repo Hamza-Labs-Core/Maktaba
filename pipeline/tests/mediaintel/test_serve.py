@@ -119,3 +119,20 @@ def test_group_series_folds_seasons_and_collects_plex_titles() -> None:
     assert (g["episodes"], g["first_air"], g["last_air"]) == (8, "2020-01-01", "2021-06-01")
     assert [s["season"] for s in g["seasons"]] == [1, 2]
     assert g["seasons"][0]["collection"] == "Show S1"
+
+
+def test_tv_names_finds_series_and_season_shows_by_folded_name() -> None:
+    from scripts.mediaintel.serve import tv_names
+
+    g = {"name": "قصة وآية", "seasons": [{"season": 1}, {"season": 2}]}
+    shows = {  # dizqueTV keys by folded name; spelling variants (ة/ه, آ/ا) still match
+        "الشيخ نبيل العوضي - قصه وايه": "الشيخ نبيل العوضي - قصه وايه",
+        "الشيخ نبيل العوضي - قصه وايه - الموسم 2": "الشيخ نبيل العوضي - قصة وآية - الموسم 2",
+    }
+    from maktaba_pipeline.text.arabic import fold
+
+    shows = {fold(k): v for k, v in shows.items()}
+    assert tv_names("الشيخ نبيل العوضي", g, shows) == [
+        "الشيخ نبيل العوضي - قصه وايه",
+        "الشيخ نبيل العوضي - قصة وآية - الموسم 2",
+    ]

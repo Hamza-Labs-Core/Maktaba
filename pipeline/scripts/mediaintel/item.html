@@ -78,7 +78,8 @@ function render(d) {
     return `<tr><td class="lib" dir="auto" title="${esc(g.name)}"><a href="item?folder=${encodeURIComponent(d.folder)}&series=${encodeURIComponent(g.key)}">${esc(g.name)}</a></td>
       <td><span class="chip k-${esc(g.kind)}">${esc(g.kind)}</span></td><td>${esc(seasonsText(g))}</td><td class="n">${fmt(g.episodes)}</td>
       <td class="num">${esc(span(g.first_air, g.last_air))}</td>
-      <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}</td></tr>`;
+      <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}
+        ${g.tv === null ? `<span class="muted">dizqueTV not reachable</span>` : g.tv.length ? g.tv.map(c => `<span class="chip good">dizqueTV: ${esc(c)}</span>`).join(" ") : `<span class="muted">no dizqueTV show yet</span>`}</td></tr>`;
   }).join("") : `<tr><td class="empty">No series detected in this library yet.</td></tr>`;
   $("history").innerHTML = d.history.length ? d.history.map(h => `<li class="${h.state === "failed" ? "failed" : ""}"><span class="dot"></span>
     <span class="t num muted">${esc(new Date(h.at).toLocaleString())}</span>
