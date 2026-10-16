@@ -1082,6 +1082,10 @@ Steps:
 
 `plex_items (server, rating_key)` primary key, with `section_key`, `section_title`, `library_id`, `video_id` (both nullable, `ON DELETE SET NULL`), `file` (Plex's path), `duration_ms`, `plex_updated_at`, `detail JSONB` and `seen_at`. Indexes on `(server, section_key)` and `(video_id)`, built `CONCURRENTLY`. SQLite twin: TEXT/INTEGER types. Written only by the Plex extension's `plex_index` stage (section 17).
 
+### 10.7 `0093_thumb_small_review_pages`
+
+Seeds the `reports` pool (global, size 1) and the `thumb_small` and `review_pages` rows of `job_stages`, and adds the new edges to the seeded `thumb_hash`, `thumbnail` and `detect` rows, so a fresh database matches the graph before the first worker syncs it (section 18). Down restores the old edges and removes the rows. SQLite twin: JSON text arrays, 0/1 booleans.
+
 ---
 
 ## 11. Workstreams, file ownership and interfaces
@@ -1367,3 +1371,40 @@ Each becomes its own queue when it lands in Maktaba; inputs and outputs below ar
 | `promo_links` | library | promo, teaser and trailer titles (برومو, إعلان, تشويق, promo, trailer…) and the series names across libraries | `promo -> season` links with a score and evidence | `plan_channels` (a season's promos air as filler before and around its slots), report pages |
 
 Planned edges: `detect -> brand_shows`, `detect -> topic_collections`, `tag -> topic_collections`, `detect -> clip_groups`, `tag -> clip_groups`, `detect -> promo_links`; each of them `-> plan_channels (catalog)`. The two collection stages also feed `plex_collection` through the extension, with collection subjects alongside seasons.
+
+---
+
+## 18. Small thumbnails and review pages
+
+Ported from mediaintel: `scripts/mediaintel/thumbs.py` (an app thumbnail cache, at most 2 share reads) and the `report` step, which runs on its own thread so the Plex and dizqueTV writes never wait for it.
+
+### 18.1 `thumb_small` (core, per video)
+
+| | |
+|---|---|
+| Subject / pool / lane | `video`, `nas_read` (the NAS limit, 2 reads), `episodes` lane order 6; `entry_for = video` |
+| Triggered by | `thumbnail -> thumb_small (same)` (the legacy poster stage) and `thumb_hash -> thumb_small (same)` (YouTube archives may never run the legacy chain; the sidecar `thumb_hash` read is the same source) |
+| Source | the yt-dlp sidecar next to the video, else the poster (`thumb_hash.find_thumbnail`) |
+| Writes | `~/.maktaba/cache/thumbnails/<content_hash>/small.jpg`, 320 px, beside `poster.jpg` in the existing thumbnail cache (`thumbnail_dir_for`); ffmpeg writes to stdout and a finished temporary file is renamed into place |
+| Input fingerprint | size, mtime, poster path, version (DB only): an unchanged video is never read again |
+| Adoption | a `small.jpg` already on disk (an earlier run, a copied cache) is adopted without a read |
+| Output hash | file name and byte size |
+| Edges | `thumb_small -> review_pages (library_of)` |
+
+`MAKTABA_THUMBNAIL_ROOT` moves the cache root (tests point it at a temporary folder).
+
+### 18.2 `review_pages` (core, per library)
+
+| | |
+|---|---|
+| Subject / pool / lane | `library`, **`reports`** (new pool, global, size 1), `seasons` lane order 6; `entry_for = library`; debounce 120 s, max 900 s |
+| Triggered by | `detect -> review_pages (same)`, `thumb_small -> review_pages (library_of)`, retrigger |
+| Reads | the library's live seasons and their episodes (database only) and which small thumbnails exist |
+| Writes | `~/.maktaba/cache/reviews/<library_id>.html` (light and dark, RTL-safe), each episode linking `../thumbnails/<content_hash>/small.jpg` relatively so the folder opens or serves as it is |
+| Input fingerprint | library name, each season's id, name and membership hash, and the count and last id of the library's done `thumb_small` jobs |
+| Output hash | the page text |
+| Edges out | **none** |
+
+**Independence from the Plex and dizqueTV queues** is structural, not a priority setting: the stage has its own pool (it never holds a `cpu`, `network_plex` or `network_tv` slot), no stage has an edge or request into anything because of it, and it reads only the database and the local cache. A slow or failing page leaves every write queue running (`test_a_running_review_page_never_holds_a_slot_writes_need`).
+
+**Hosts.** Both caches are per host, so `thumb_small` and `review_pages` should run on the same worker (the default single-host setup). Serving the pages over the API is a follow-up; the control centre shows both queues as ordinary cards (`Small thumbnail`, `Review pages`).
