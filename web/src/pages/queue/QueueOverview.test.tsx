@@ -137,6 +137,23 @@ describe("QueueOverview", () => {
     );
   });
 
+  it("shows the small-thumbnail and review-page queues as their own cards", async () => {
+    setup();
+    expect(await screen.findByRole("link", { name: "Small thumbnail" })).toHaveAttribute(
+      "href",
+      "/queue/thumb_small"
+    );
+    expect(screen.getByRole("link", { name: "Review pages" })).toHaveAttribute(
+      "href",
+      "/queue/review_pages"
+    );
+    const pages = document.querySelector('[data-stage="review_pages"]') as HTMLElement;
+    expect(pages).toHaveAttribute("data-state", "waiting");
+    expect(within(pages).getByRole("img", { name: /3 of 4 done/ })).toBeInTheDocument();
+    const small = document.querySelector('[data-stage="thumb_small"]') as HTMLElement;
+    expect(within(small).getByRole("img", { name: /160 of 200 done/ })).toBeInTheDocument();
+  });
+
   it("shows the waiting-for-a-worker reason when no live worker serves a queue", async () => {
     const queues = snapshotFixture.queues.map((q) =>
       q.stage === "transcribe" ? { ...q, no_worker: true, counts: { ...q.counts, running: 0 } } : q

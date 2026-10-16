@@ -96,6 +96,17 @@ const SEEDS: StageSeed[] = [
     fed_by: ["probe"],
   },
   {
+    stage: "thumb_small",
+    label: "Small thumbnail",
+    lane: "episodes",
+    order: 6,
+    pool: "nas_read",
+    kinds: ["video"],
+    to: ["review_pages"],
+    entry: ["video"],
+    fed_by: ["thumb_hash", "thumbnail"],
+  },
+  {
     stage: "link",
     label: "Link",
     lane: "episodes",
@@ -181,6 +192,16 @@ const SEEDS: StageSeed[] = [
     external_write: true,
     extension: "plex",
     fed_by: ["detect"],
+  },
+  {
+    stage: "review_pages",
+    label: "Review pages",
+    lane: "seasons",
+    order: 6,
+    pool: "reports",
+    kinds: ["library"],
+    entry: ["library"],
+    fed_by: ["detect", "thumb_small"],
   },
   {
     stage: "dizquetv_show",
@@ -433,6 +454,16 @@ export const summariesFixture: QueueSummary[] = [
     waiting_reason: "upstream",
   }),
   queueSummary("dizquetv_show", { wave: { done: 0, total: 0 }, waiting_reason: "not_configured" }),
+  queueSummary("thumb_small", {
+    counts: { pending: 40, ready: 40, done_24h: 160 },
+    wave: { done: 160, total: 200 },
+    waiting_reason: "pool_full",
+  }),
+  queueSummary("review_pages", {
+    counts: { pending: 1, ready: 0, done_24h: 3 },
+    wave: { done: 3, total: 4 },
+    waiting_reason: "debouncing",
+  }),
   queueSummary("plan_channels", {
     counts: { done_24h: 2 },
     wave: { done: 2, total: 2 },
