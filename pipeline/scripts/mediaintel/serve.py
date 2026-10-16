@@ -69,10 +69,14 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
-    ("scan-visual", "Rate production style", "talk / produced / cinematic, from sampled frames"),
     ("report", "Write review pages", "one HTML page per library"),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
     ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
+    (
+        "scan-visual",
+        "Rate production style",
+        "talk / produced / cinematic, from sampled frames; only channel planning needs it",
+    ),
     ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
     ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
 ]
