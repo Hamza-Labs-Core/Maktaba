@@ -29,6 +29,8 @@ import urllib.error
 from collections import defaultdict
 from typing import Any
 
+from maktaba_pipeline.text.arabic import fold
+
 from .scan_plex import PlexServer, quote
 
 SCHEMA = """
@@ -194,13 +196,16 @@ def export(
                 (library,),
             )
         }
-        # a second file of a kept video (X.mkv beside the user's X.mp4) may leave too
+        # a second file of a video (X.mkv beside the user's X.mp4) -> the kept file's key
+        copy_of: dict[str, str] = {}
         with contextlib.suppress(sqlite3.OperationalError):
-            shorts |= {
-                k
-                for (k,) in conn.execute(
-                    """SELECT f.plex_rating_key FROM file_copies c JOIN files f ON f.path = c.path
-                       WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+            copy_of = {
+                a: b
+                for a, b in conn.execute(
+                    """SELECT fc.plex_rating_key, fk.plex_rating_key FROM file_copies c
+                       JOIN files fc ON fc.path = c.path JOIN files fk ON fk.path = c.kept
+                       WHERE fc.plex_library = ? AND fc.plex_rating_key IS NOT NULL
+                         AND fk.plex_rating_key IS NOT NULL""",
                     (library,),
                 )
             }
@@ -242,10 +247,28 @@ def export(
                 else []
             )
             current = [k for k, _ in current_t]
-            kept = [
-                k for k, t in current_t if k not in keys and not removable(k, t, placed, shorts)
-            ]
-            keys = keys + kept  # not placed anywhere by detection: stays where it was
+            # existing collections are protected: an episode detection merely failed to
+            # place stays, and a second file is swapped for its kept twin, never dropped.
+            # Except one that plainly is not this show: (almost) every episode carries
+            # the show's name and its title does not (the detector's own rule).
+            name_words = [w for w in fold(r["name"]).split() if len(w) > 2]
+            branded = bool(name_words) and sum(
+                all(w in fold(titles.get(k, "")) for w in name_words) for k in keys
+            ) >= 0.7 * len(keys)
+
+            kept: list[str] = []
+            for k, t in current_t:
+                if k in keys or k in kept:
+                    continue
+                if branded and not all(w in fold(t) for w in name_words):
+                    continue
+                if k in copy_of:
+                    twin = copy_of[k]
+                    if twin not in placed and twin not in keys and twin not in kept:
+                        kept.append(twin)
+                elif not removable(k, t, placed, shorts):
+                    kept.append(k)
+            keys = keys + kept
             if current == keys:
                 print(f"  =  {title} ({len(keys)})")
                 continue
