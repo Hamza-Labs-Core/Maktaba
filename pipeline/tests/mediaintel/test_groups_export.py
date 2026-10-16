@@ -222,6 +222,23 @@ def test_a_topic_named_like_a_playlist_group_gets_its_own_title() -> None:
     assert names == ["الفقه", "الفقه (2)"]
 
 
+def test_numbered_names_never_repeat_a_final_name() -> None:
+    items = [_item(f"{p}{i}", pls={p: i}) for p in ("A", "B", "C") for i in range(5)]
+    groups = plan_groups(items, {"A": "الفقه", "B": "الفقه", "C": "الفقه (2)"})
+    names = [g.name for g in groups if g.kind == "clips"]
+    assert sorted(names) == ["الفقه", "الفقه (2)", "الفقه (2) (2)"]
+    assert len(set(names)) == 3
+
+
+def test_a_phrase_with_a_trailing_space_matches_only_the_whole_word() -> None:
+    from maktaba_pipeline.text.arabic import fold
+
+    qa = group_clips.GroupConfig().qa_re()
+    assert qa.search(fold("حكم صلاة الجماعة"))
+    assert not qa.search(fold("حكمة اليوم"))
+    assert qa.search(fold("ما رأيك في"))  # a phrase without the space matches word starts
+
+
 def test_a_blocked_replacement_never_retires_the_old_collection(tmp_path: Path) -> None:
     conn = _db(tmp_path)
     plex = FakePlex()
@@ -352,3 +369,25 @@ def test_a_promo_in_a_clip_playlist_is_never_ordinary_filler(tmp_path: Path) -> 
     by_path = {v.path: v for v in loose}
     assert by_path[f"{folder}/v20.mp4"].promo_of == f"{folder}|برنامج"  # airs by its show
     assert f"{folder}/v21.mp4" not in by_path  # advertises nothing found: never airs
+
+
+@pytest.mark.parametrize(("section_b", "plans"), [("5", 1), ("6", 2)])
+def test_groups_of_one_title_from_two_folders(tmp_path: Path, section_b: str, plans: int) -> None:
+    conn = _db(tmp_path)
+    for g, folder, sec, i in (("ga", "Y:/قناة", "5", 30), ("gb", "Y:/قناة 2", section_b, 31)):
+        conn.execute(
+            "INSERT INTO files (path, folder, stem, ext, size, mtime, duration_s, plex_rating_key,"
+            " plex_section, plex_library, plex_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (f"{folder}/v{i}.mp4", folder, f"v{i}", ".mp4", 1, 1.0, 60, str(i), sec, "قناة", "x"),
+        )  # fmt: skip
+        conn.execute(
+            "INSERT INTO clip_groups VALUES (?, 'قناة', ?, 'clips', 'rest', 'متنوعة', NULL)",
+            (g, folder),
+        )
+        conn.execute("INSERT INTO clip_group_items VALUES (?, ?, 1)", (g, f"{folder}/v{i}.mp4"))
+    conn.commit()
+    rest = [p for p in export_plex._group_plans(conn, "قناة") if p[1] == "قناة - مقاطع متنوعة"]
+    # one Plex section: one collection holding both; two sections: one in each
+    assert len(rest) == plans
+    if plans == 1:
+        assert rest[0][0] == "ga" and rest[0][2] == ["30", "31"]

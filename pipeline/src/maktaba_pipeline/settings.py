@@ -53,6 +53,11 @@ class Help:
     kind: str | None = None
     columns: tuple[str, ...] = ()
     choices: tuple[str, ...] = ()
+    #: the smallest value a number may take (a planner rule that would divide by it, or
+    #: take the median of none, refuses 0 here rather than failing later)
+    minimum: float | None = None
+    #: for a list of tuples: which columns hold a time (HH:MM), checked on save
+    time_columns: tuple[int, ...] = ()
 
 
 def _hm(m: int) -> str:
@@ -232,7 +237,25 @@ def apply(cls: type, changes: Mapping[str, Any], base: Any = None) -> Any:
     if unknown := set(changes) - set(known):
         raise SettingsError(sorted(unknown)[0], "no such setting")
     kw = {name: _coerce(v, known[name][1], known[name][2], name) for name, v in changes.items()}
+    helps = _HELP.get(cls, {})
+    for name, v in kw.items():
+        if (h := helps.get(name)) is not None:
+            _check(h, v, name)
     return dataclasses.replace(base if base is not None else cls(), **kw)
+
+
+def _check(h: Help, v: Any, field: str) -> None:
+    """The limits a field's help sets: a minimum, the allowed choices, time columns."""
+    if h.minimum is not None and isinstance(v, int | float) and v < h.minimum:
+        raise SettingsError(field, f"must be at least {h.minimum:g}, got {v!r}")
+    if h.choices and v is not None and v not in h.choices:
+        raise SettingsError(field, f"must be one of {', '.join(h.choices)}, got {v!r}")
+    for i, row in enumerate(v if h.time_columns else ()):
+        for j in h.time_columns:
+            t = row[j]
+            m = _minutes(t, f"{field}[{i}][{j}]") if t else None
+            if m is None or m > 24 * 60:
+                raise SettingsError(f"{field}[{i}]", f"expected a time HH:MM, got {t!r}")
 
 
 def to_json(cfg: Any) -> dict[str, Any]:
@@ -268,6 +291,8 @@ def describe(cfg: Any) -> list[dict[str, Any]]:
         }
         if h and h.choices:
             entry["choices"] = list(h.choices)
+        if h and h.minimum is not None:
+            entry["minimum"] = h.minimum
         if kind == "rows":
             item = typing.get_args(tp)[0]
             entry["columns"] = (

@@ -143,7 +143,7 @@ function editor(f) {
   const id = `f-${f.name}`, named = `aria-labelledby="l-${esc(f.name)}"`;
   if (k === "bool") return `<label class="switch"><input type="checkbox" id="${id}" ${named} aria-describedby="${id}-s" ${v ? "checked" : ""}><span id="${id}-s">${v ? "On" : "Off"}</span></label>`;
   if (f.choices) return `<select id="${id}" ${named}>${f.choices.map(c => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
-  if (k === "int" || k === "float") return `<input type="number" id="${id}" ${named} ${k === "int" ? 'step="1"' : 'step="any"'} value="${v ?? ""}" ${opt ? 'placeholder="empty"' : ""}>`;
+  if (k === "int" || k === "float") return `<input type="number" id="${id}" ${named} ${k === "int" ? 'step="1"' : 'step="any"'} ${f.minimum !== undefined ? `min="${f.minimum}"` : ""} value="${v ?? ""}" ${opt ? 'placeholder="empty"' : ""}>`;
   if (k === "time") return `<input type="time" id="${id}" ${named} value="${esc(v)}">`;
   if (k === "str") return `<input type="text" id="${id}" ${named} dir="auto" value="${esc(v ?? "")}" ${opt ? 'placeholder="empty"' : ""}>`;
   if (k === "list" || k === "words") return `<textarea id="${id}" ${named} dir="auto" aria-describedby="${id}-h">${esc((v || []).join("\n"))}</textarea><span class="muted" id="${id}-h" style="font-size:12px">One per line.</span>`;
@@ -163,7 +163,8 @@ function read(f, row) {
   if (k === "int" || k === "float") { if (el.value === "") return opt ? null : el.value; return Number(el.value); }
   if (k === "str") return opt && el.value === "" ? null : el.value;
   if (k === "time") return el.value;
-  if (k === "list" || k === "words") return el.value.split(/\n|,/).map(x => x.trim()).filter(Boolean);
+  // a trailing space is kept: in a phrase list it means "ends here" ("حكم ")
+  if (k === "list" || k === "words") return el.value.split(/\n|,/).map(x => x.replace(/^\s+/, "")).filter(x => x.trim());
   if (k === "map") { const o = {}; el.querySelectorAll("tbody tr").forEach(tr => { const [a, b] = tr.querySelectorAll("input"); if (a.value.trim()) o[a.value.trim()] = b.value.split(",").map(x => x.trim()).filter(Boolean); }); return o; }
   if (k === "rows" && !el.querySelector("tbody tr")) return [];
   if (k === "rows") {

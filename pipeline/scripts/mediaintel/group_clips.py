@@ -60,7 +60,16 @@ class GroupConfig:
     )  # fmt: skip
 
     def qa_re(self) -> re.Pattern[str]:
-        alt = "|".join(re.escape(fold(w)) for w in self.qa_phrases if w.strip()) or "(?!)"
+        # a phrase written with a trailing space ("حكم ") must end there: folding drops
+        # the space, so it becomes a word boundary ("حكمة اليوم" is not a fatwa)
+        alt = (
+            "|".join(
+                re.escape(fold(w)) + (r"(?!\w)" if w != w.rstrip() else "")
+                for w in self.qa_phrases
+                if w.strip()
+            )
+            or "(?!)"
+        )
         return re.compile(rf"(?:^|\s)(?:{alt})")
 
     def promo_re(self) -> re.Pattern[str]:
@@ -196,26 +205,29 @@ def plan_groups(
             if n >= cfg.min_playlist
             and not (n >= _CFG.catch_all_min and _CATCH_ALL.search(fold(playlist_titles[pid])))
         ]
-        names: Counter[str] = Counter()
+        used: set[str] = set()  # final names taken (folded), across every basis
+
+        def unique(name: str, used: set[str] = used) -> str:
+            # one title per group: a repeated name gets the first free number, checked
+            # against the final names ("الفقه", "الفقه", "الفقه (2)" → … (2), (3))
+            final, n = name, 1
+            while fold(final) in used:
+                n += 1
+                final = f"{name} ({n})"
+            used.add(fold(final))
+            return final
+
         for pid in sorted(candidates, key=lambda p: (sizes[p], p)):
             members = [i for i in by_pl[pid] if i.path in pool]
             if len(members) < cfg.min_playlist:
                 continue
             members.sort(key=lambda i: (i.playlists[pid], i.title))
-            name = " ".join(playlist_titles[pid].split())
-            names[fold(name)] += 1
-            if names[fold(name)] > 1:
-                name = f"{name} ({names[fold(name)]})"
+            name = unique(" ".join(playlist_titles[pid].split()))
             out.append(
                 Group(kind, "playlist", name, _main_genre(members), [i.path for i in members])
             )
             for i in members:
                 del pool[i.path]
-
-        def unique(name: str, names: Counter[str] = names) -> str:
-            # one title per group: a topic named like a playlist group gets a number
-            names[fold(name)] += 1
-            return f"{name} ({names[fold(name)]})" if names[fold(name)] > 1 else name
 
         qa = sorted((i for i in pool.values() if i.qa), key=lambda i: (i.upload or "9999", i.title))
         if qa:  # questions and fatwas together, whatever their topic

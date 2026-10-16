@@ -1247,6 +1247,7 @@ def serve(
     pipeline_dir = Path(__file__).resolve().parents[2]
     #: the settings page's "Preview channels": plan-channels into reports/preview (no writes)
     preview: dict[str, Any] = {"proc": None}
+    preview_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -1436,18 +1437,20 @@ def serve(
                 except settings.SettingsError as e:
                     self._json(400, {"error": str(e), "field": e.field})
             elif self.path == "/api/plan-preview":
-                if preview["proc"] is not None and preview["proc"].poll() is None:
-                    self._json(409, {"error": "A preview is already being planned."})
-                    return
-                out = reports / "preview"
-                out.mkdir(parents=True, exist_ok=True)
-                args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path,
-                        "plan-channels", "--out", str(out)]  # fmt: skip
-                env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
-                with (out / "plan.log").open("w", encoding="utf-8") as fh:
-                    preview["proc"] = subprocess.Popen(  # noqa: S603 — fixed argv
-                        args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
-                    )
+                # one check-and-launch at a time: two clicks never start two planners
+                with preview_lock:
+                    if preview["proc"] is not None and preview["proc"].poll() is None:
+                        self._json(409, {"error": "A preview is already being planned."})
+                        return
+                    out = reports / "preview"
+                    out.mkdir(parents=True, exist_ok=True)
+                    args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path,
+                            "plan-channels", "--out", str(out)]  # fmt: skip
+                    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+                    with (out / "plan.log").open("w", encoding="utf-8") as fh:
+                        preview["proc"] = subprocess.Popen(  # noqa: S603 — fixed argv
+                            args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
+                        )
                 self._json(202, {"started": True})
             elif self.path == "/api/style":
                 from . import db, scan_visual

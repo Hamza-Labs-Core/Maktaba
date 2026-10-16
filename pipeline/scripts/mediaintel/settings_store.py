@@ -34,10 +34,12 @@ G = "Grouping"
 settings.register(group_clips.GroupConfig, {
     "filler_max_minutes": settings.Help(G, "Clip up to (min)", "Longer leftovers are stand-alone "
                                         "programmes (منفردات), shorter ones clips (filler)."),
-    "min_playlist": settings.Help(G, "Playlist group from (videos)"),
-    "min_topic": settings.Help(G, "Topic group from (videos)"),
+    "min_playlist": settings.Help(G, "Playlist group from (videos)", minimum=1),
+    "min_topic": settings.Help(G, "Topic group from (videos)", minimum=1),
     "qa_phrases": settings.Help(G, "Question / fatwa phrases", "A title with one of these goes to "
-                                "\"فتاوى ومسائل\"."),
+                                "\"فتاوى ومسائل\". A phrase matches the start of a word (ما رأي "
+                                "→ ما رأيك); end it with a space to match it only as a whole "
+                                "word (\"حكم \" is not حكمة)."),
     "promo_words": settings.Help(G, "Promo words", "A title with one of these advertises a show; "
                                  "it is linked to the show it names."),
 })  # fmt: skip

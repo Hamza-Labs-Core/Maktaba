@@ -73,6 +73,12 @@ def test_dayparts_and_themes_are_rows_of_named_values() -> None:
         ({"quran_time_rules": [["05:00", "07:00"]]}, "quran_time_rules[0]"),
         ({"dayparts": [{"key": "x", "colour": "red"}]}, "dayparts[0]"),
         ({"no_such": 1}, "no_such"),
+        # limits: values that would make the planner fail later are refused on save
+        ({"cadence_min_gaps": 0}, "cadence_min_gaps"),
+        ({"quran_time_rules": [["", "07:00", "mujawwad"]]}, "quran_time_rules[0]"),
+        ({"quran_time_rules": [["05:00", "late", "warsh"]]}, "quran_time_rules[0][1]"),
+        ({"quran_rotation": "by_week"}, "quran_rotation"),
+        ({"khutbah_day": "friday"}, "khutbah_day"),
     ],
 )
 def test_a_wrong_shape_is_refused_naming_the_field(changes: dict, field: str) -> None:

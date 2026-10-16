@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from maktaba_pipeline.settings import Help, register
 
 from .series_detector import DetectorConfig
@@ -73,5 +75,16 @@ DETECTOR_HELP: dict[str, Help] = {
     "sig_window_days": Help(MATCH, "Fingerprint date window (days)"),
     "dhash_close_bits": Help(MATCH, "Thumbnail match (bits)"),
 }
+
+_MINIMUM: dict[str, float] = {
+    "catch_all_min": 1, "topic_min": 1, "min_episode_s": 0, "min_season_size": 1,
+    "core_band": 1, "same_show_ratio": 1, "short_form_s": 0, "ongoing_min_episodes": 1,
+    "ongoing_min_number": 1, "ongoing_min_span_days": 0, "ongoing_month_coverage": 0,
+    "brand_min": 1, "brand_share": 0, "brand_scattered_series": 1, "brand_named_share": 0,
+    "date_window_days": 0, "approx_window_days": 0, "sig_length_band": 0,
+    "sig_window_days": 0, "dhash_close_bits": 0,
+}  # fmt: skip
+for _name, _min in _MINIMUM.items():
+    DETECTOR_HELP[_name] = dataclasses.replace(DETECTOR_HELP[_name], minimum=_min)
 
 register(DetectorConfig, DETECTOR_HELP)

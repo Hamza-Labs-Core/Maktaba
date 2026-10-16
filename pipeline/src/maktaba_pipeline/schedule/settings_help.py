@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from maktaba_pipeline.settings import Help, register
 
 from .channel_planner import PlannerConfig
@@ -239,5 +241,26 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
 }
+
+#: the smallest value each number may take: below it a rule divides by zero, takes the
+#: median of nothing or schedules nothing
+_MINIMUM: dict[str, float] = {
+    "cadence_min_gaps": 1, "strip_max_gap_days": 0.1, "min_slot_minutes": 5,
+    "max_slot_minutes": 5, "slot_round_minutes": 1, "max_lanes_per_daypart": 1,
+    "overrun_tolerance_minutes": 0, "theme_min_hours": 0, "mix_min_hours": 0,
+    "presenter_min_hours": 0, "presenter_min_genres": 1, "short_series_max_minutes": 0,
+    "loose_program_min_minutes": 0, "loose_min_group_videos": 1, "filler_max_minutes": 0,
+    "filler_min_s": 0, "filler_recent_window": 0, "slot_filler_topics": 1,
+    "dead_air_warn_minutes": 0, "strip_max_limited_episodes": 0, "fill_target": 0,
+    "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
+    "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
+    "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
+    "dz_filler_cooldown_ms": 0,
+}  # fmt: skip
+for _name, _min in _MINIMUM.items():
+    PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)
+PLANNER_HELP["quran_time_rules"] = dataclasses.replace(
+    PLANNER_HELP["quran_time_rules"], time_columns=(0, 1)
+)
 
 register(PlannerConfig, PLANNER_HELP)

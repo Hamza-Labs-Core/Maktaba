@@ -203,23 +203,29 @@ def _group_plans(conn: sqlite3.Connection, library: str) -> list[tuple[str, str,
     """(track id, title, ordered Plex keys) of the library's clip / stand-alone groups."""
     from .group_clips import group_title
 
-    out = []
+    # two folders of one library can make groups of one title ("<lib> - مقاطع متنوعة"): in
+    # one Plex section they are one collection, tracked by the first group's id; in two
+    # sections (a library split over two Plex libraries) each stays its own
+    merged: dict[tuple[str, str | None], tuple[str, list[str]]] = {}
     with contextlib.suppress(sqlite3.OperationalError):
         for gid, kind, basis, name in conn.execute(
-            "SELECT id, kind, basis, name FROM clip_groups WHERE library=? ORDER BY kind, name",
+            "SELECT id, kind, basis, name FROM clip_groups WHERE library=? ORDER BY kind, name, id",
             (library,),
         ).fetchall():
-            keys = [
-                k
-                for (k,) in conn.execute(
-                    """SELECT f.plex_rating_key FROM clip_group_items g JOIN files f ON f.path = g.path
-                       WHERE g.group_id = ? AND f.plex_rating_key IS NOT NULL ORDER BY g.position""",
-                    (gid,),
-                )
-            ]
-            if keys:
-                out.append((gid, group_title(library, kind, basis, name), keys))
-    return out
+            rows = conn.execute(
+                """SELECT f.plex_rating_key, f.plex_section FROM clip_group_items g
+                   JOIN files f ON f.path = g.path
+                   WHERE g.group_id = ? AND f.plex_rating_key IS NOT NULL ORDER BY g.position""",
+                (gid,),
+            ).fetchall()
+            if not rows:
+                continue
+            secs = Counter(sec for _, sec in rows)
+            home = min(secs, key=lambda s: (-secs[s], str(s)))
+            title = group_title(library, kind, basis, name)
+            _, keys = merged.setdefault((title, home), (gid, []))
+            keys += [k for k, _ in rows if k not in keys]
+    return [(tid, title, keys) for (title, _), (tid, keys) in merged.items()]
 
 
 class _Sync:
