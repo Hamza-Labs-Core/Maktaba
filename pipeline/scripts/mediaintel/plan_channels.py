@@ -645,8 +645,16 @@ def render_html(plan: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- run
 
 
-def run(conn: sqlite3.Connection, out_dir: Path, config: PlannerConfig | None = None) -> Path:
+def run(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    config: PlannerConfig | None = None,
+    *,
+    review: Path | None = None,
+    focus: Sequence[str] = (),
+) -> Path:
     """Plan channels from the cache behind ``conn`` (read-only) into ``out_dir``.
+    ``review``: also write the plain-text review (:func:`review_text`) there.
     Returns the JSON path."""
     seasons, loose, notes = load_inputs(conn)
     plan = suggest_channels(seasons, loose, config)
@@ -656,6 +664,9 @@ def run(conn: sqlite3.Connection, out_dir: Path, config: PlannerConfig | None = 
     jpath = out_dir / "channel-plan.json"
     jpath.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "channel-plan.html").write_text(render_html(data), encoding="utf-8")
+    if review is not None:
+        review.parent.mkdir(parents=True, exist_ok=True)
+        review.write_text(review_text(data, focus), encoding="utf-8")
     print(summary(data))
     print(f"\n{jpath}\n{out_dir / 'channel-plan.html'}")
     return jpath
@@ -682,6 +693,81 @@ def summary(plan: Mapping[str, Any]) -> str:
             if pool:
                 lines.append(f"       filler {p}: {pool['count']} items, {pool['minutes']:.0f} min")
     return "\n".join(lines)
+
+
+def _week_lines(ch: Mapping[str, Any], *, skip_quran: bool = True) -> list[str]:
+    """Each day's slots, one line per slot ("20:00–21:00 · weekly · <slot>")."""
+    out: list[str] = []
+    for day in ("sat", "sun", "mon", "tue", "wed", "thu", "fri"):
+        segs = sorted(
+            (s for s in ch["slots"] if s["days"] == "daily" or day in s["days"]),
+            key=lambda s: s["start"],
+        )
+        out.append(f"  {day}:")
+        for s in segs:
+            if skip_quran and s["kind"] == "quran" and ch["kind"] != "quran":
+                out.append(f"    {s['start']}–{s['end']}  Quran at dawn")
+                continue
+            what = s["show"] or s["lane_name"] or "(filler only)"
+            out.append(f"    {s['start']}–{s['end']}  {s['pattern'] or s['kind']:7} {what}")
+    return out
+
+
+def review_text(plan: Mapping[str, Any], focus: Sequence[str] = (), weeks: int = 52) -> str:
+    """A plain-text review of a plan: every channel's shares, then the full week and the
+    slot timelines of the channels whose name contains one of ``focus``, and the Quran
+    channel's week."""
+    lanes: Mapping[str, Any] = plan["lanes"]
+    lines = [f"channel plan v{plan['planner_version']} · {plan['generated_at']} · "
+             f"{len(plan['channels'])} channels", ""]  # fmt: skip
+    lines.append("num  kind      slots strips weekly  programme filler dead-air (slots)  name")
+    for ch in plan["channels"]:
+        st = ch["stats"]
+        pats = Counter(lanes[k]["pattern"] for k in ch["lanes"] if k in lanes)
+        lines.append(
+            f"{ch['number']:4} {ch['kind']:9} {len(ch['lanes']):5} {pats['strip']:6} "
+            f"{pats['weekly']:6}  {st['program_share']:8.0%} {st['filler_share']:6.0%} "
+            f"{st['dead_air_share']:7.1%} ({st['dead_air_slot_count']:3})  {ch['name_ar']}"
+            + (f"  [{len(ch['warnings'])} warning(s)]" if ch["warnings"] else "")
+        )
+    picked = [ch for ch in plan["channels"]
+              if ch["kind"] == "quran" or any(f in ch["name_ar"] or f in ch["name"] for f in focus)]  # fmt: skip
+    for ch in picked:
+        st = ch["stats"]
+        lines += ["", "=" * 78, f"{ch['number']} {ch['name_ar']} ({ch['kind']})", "=" * 78]
+        lines += [f"  - {r}" for r in ch["reasons"]]
+        lines += [f"  ! {w}" for w in ch["warnings"][:8]]
+        lines.append(
+            f"  shares (simulated week): programme {st['program_share']:.0%}, filler "
+            f"{st['filler_share']:.0%}, dead air {st['dead_air_share']:.1%} in "
+            f"{st['dead_air_slot_count']} slot(s)"
+        )
+        for d in st["dead_air_slots"][:5]:
+            lines.append(f"    dead air: {d['day']} {d['at']} {d['slot']} — {d['minutes']} min")
+        lines.append("  the week:")
+        lines += _week_lines(ch)
+        if ch["kind"] == "quran":
+            lines.append("  reciter lanes:")
+            for k in ch["lanes"]:
+                lines.append(f"    {lanes[k]['name']}: {lanes[k]['episode_count']} recitations, "
+                             f"{lanes[k]['hours']:.0f} h ({lanes[k]['cadence']})")  # fmt: skip
+            for p in ch["filler_pools"]:
+                pool = plan["filler_pools"].get(p) or {}
+                lines.append(f"  filler {p}: {pool.get('count', 0)} items "
+                             f"({', '.join(f'{s} {n}' for s, n in (pool.get('sources') or {}).items())})")  # fmt: skip
+            continue
+        lines.append(f"  next {weeks} weeks, slot by slot (season runs):")
+        for k, rows in ch["timelines"].items():
+            ln = lanes[k]
+            if ln.get("special"):
+                continue
+            lines.append(f"    {ln['name']}  [{ln['pattern']}, {ln['slot_minutes']} min, "
+                         f"{len(ln['shows'])} show(s) in the queue]")  # fmt: skip
+            for r in rows[:10]:
+                lines.append(f"      weeks {r['from_week']:>2}–{r['to_week']:<2} {r['show']}")
+            if len(rows) > 10:
+                lines.append(f"      … {len(rows) - 10} more")
+    return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
