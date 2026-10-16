@@ -301,3 +301,15 @@ def test_two_shows_with_one_name_are_told_apart_by_their_playlist_part() -> None
     names = sorted(s.name for s in det.series)
     assert len(set(names)) == len(names) == 2
     assert names == ["أنوار الصحيحين - كتاب الإيمان", "أنوار الصحيحين - كتاب فضائل القرآن"]
+
+
+def test_short_numbered_episode_in_its_playlist_stays_an_episode() -> None:
+    eps = _season("q", 10, date(2016, 1, 1), 20, "الأربعون القلبية {i}، شرح حديث")
+    day = eps[1].air_date
+    short = VideoFacts("q2", "الأربعون القلبية 2، شرح حديث كقلب واحد", 5.8 * 60, day, True)
+    eps[1] = short
+    teaser = VideoFacts("t", "تشويقة سلسلة الأربعون القلبية", 290.0, date(2015, 12, 25), True)
+    det = detect([*eps, teaser], [_pl("PQ", "سلسلة الأربعون القلبية", [*eps, teaser])])
+    (ser,) = det.series
+    se = ser.seasons[0]
+    assert "q2" in se.episodes and "t" not in se.episodes

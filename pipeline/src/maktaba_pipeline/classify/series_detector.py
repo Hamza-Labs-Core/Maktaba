@@ -312,11 +312,17 @@ def _make_seed(
     key, season, year = series_key(p.title, stop)
     durs = [facts[k].duration_s for k in members if facts[k].duration_s]
     core = _core_median([d for d in durs if d is not None])
+    # an extra is a teaser/recap by its title, or an odd length *without* an episode
+    # number: a numbered member in its playlist is an episode however long it runs
+    # ("الأربعون القلبية 2" at 6 min among 20-min talks, a 3-hour tafsir session)
     extras = {
         k
         for k in members
         if is_teaser(facts[k].title, facts[k].duration_s, typical_s=core)
-        or not _within(facts[k].duration_s, core, cfg.core_band)
+        or (
+            not _within(facts[k].duration_s, core, cfg.core_band)
+            and _title_number(facts[k].title) is None
+        )
     }
     s = _Seed([p.playlist_id], [p.title], key, season, year, members, extras, core)
     s.first, s.last = _date_span((k for k in members if k not in extras), facts)
