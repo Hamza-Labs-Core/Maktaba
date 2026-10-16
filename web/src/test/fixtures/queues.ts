@@ -283,7 +283,7 @@ export function stageInfo(over: Partial<StageInfo> & { stage: string }): StageIn
     legacy: seed?.legacy ?? false,
     hidden: seed?.hidden ?? false,
     external_write: seed?.external_write ?? false,
-    write_mode: "apply", // external writes are automatic by default
+    write_mode: "auto", // external writes are automatic by default
     enabled: true,
     disabled_reason: null,
     paused: false,

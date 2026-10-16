@@ -54,8 +54,8 @@ SELECT id::text, name, season, kind, episode_count
 	externalLinksSQL = `
 SELECT el.target, el.title, el.external_id, el.subject_kind
   FROM external_links el
- WHERE (el.subject_kind = $1 AND el.subject_id = $2::uuid)
-    OR (el.subject_kind = 'season' AND el.subject_id IN (%s))
+ WHERE (el.subject_kind = $1 AND el.subject_id = $2::text)
+    OR (el.subject_kind = 'season' AND el.subject_id IN (SELECT x::text FROM (%s) AS ids(x)))
  ORDER BY el.target, el.title
  LIMIT 50`
 

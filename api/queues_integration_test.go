@@ -76,7 +76,7 @@ func TestQueues_Routes_RealPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime)
-		VALUES ($1, 'h1', '/tmp/a.mp4', 'a.mp4', 1, now()) RETURNING id::text`, libID).Scan(&videoID); err != nil {
+		VALUES ($1, repeat('a', 64), '/tmp/a.mp4', 'a.mp4', 1, now()) RETURNING id::text`, libID).Scan(&videoID); err != nil {
 		t.Fatal(err)
 	}
 	res, err := queues.Enqueue(context.Background(), db, queues.EnqueueParams{

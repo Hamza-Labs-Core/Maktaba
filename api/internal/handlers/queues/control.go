@@ -135,8 +135,8 @@ func (h *Handler) PatchStage(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("nothing to change: send enabled and/or write_mode"))
 		return
 	}
-	if body.WriteMode != nil && *body.WriteMode != "auto" && *body.WriteMode != "apply" && *body.WriteMode != "review" {
-		httperror.Write(w, r, httperror.BadRequest(`write_mode must be "auto", "apply" or "review"`))
+	if body.WriteMode != nil && *body.WriteMode != "auto" && *body.WriteMode != "review" {
+		httperror.Write(w, r, httperror.BadRequest(`write_mode must be "auto" or "review"`))
 		return
 	}
 	cur, ok := h.stageOr404(w, r, stage)
