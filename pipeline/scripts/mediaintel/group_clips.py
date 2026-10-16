@@ -211,9 +211,17 @@ def plan_groups(
             )
             for i in members:
                 del pool[i.path]
+
+        def unique(name: str, names: Counter[str] = names) -> str:
+            # one title per group: a topic named like a playlist group gets a number
+            names[fold(name)] += 1
+            return f"{name} ({names[fold(name)]})" if names[fold(name)] > 1 else name
+
         qa = sorted((i for i in pool.values() if i.qa), key=lambda i: (i.upload or "9999", i.title))
         if qa:  # questions and fatwas together, whatever their topic
-            out.append(Group(kind, "topic", "فتاوى ومسائل", "qa_fatwa", [i.path for i in qa]))
+            out.append(
+                Group(kind, "topic", unique("فتاوى ومسائل"), "qa_fatwa", [i.path for i in qa])
+            )
             for i in qa:
                 del pool[i.path]
         by_genre: dict[str, list[Item]] = defaultdict(list)
@@ -224,7 +232,7 @@ def plan_groups(
             if len(members) < cfg.min_topic:
                 continue
             members.sort(key=lambda i: (i.upload or "9999", i.title))
-            name = TOPIC_NAMES_AR.get(genre, genre)
+            name = unique(TOPIC_NAMES_AR.get(genre, genre))
             out.append(Group(kind, "topic", name, genre, [i.path for i in members]))
             for i in members:
                 del pool[i.path]

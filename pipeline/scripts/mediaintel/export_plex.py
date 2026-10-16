@@ -513,7 +513,6 @@ def export(
                     (library,),
                 )
             }
-        planned_keys: list[set[str]] = []
         planned: list[tuple[str, list[str]]] = []
         everything: list[tuple[str, list[str]]] = []  # seasons, topics and groups
         claimed: set[str] = set()  # existing collections taken over by a planned one
@@ -549,7 +548,6 @@ def export(
             ]
             if not keys:
                 continue
-            planned_keys.append(set(keys))
             planned.append((title, keys))
             # the series grew a season: its old single collection ("<lib> - X") becomes
             # season 1 ("<lib> - X - الموسم 1")
@@ -597,8 +595,11 @@ def export(
                     print(f"  ?  kept: {row['title']} ({len(kids)} items, only {inside} in the "
                           "new collections)")  # fmt: skip
 
-        # older collections whose content is (almost) entirely inside one new season
+        # older collections whose content is (almost) entirely inside one new season: only
+        # seasons as written count (a blocked or failed one, or a refused item, covers nothing)
         planned_titles = {t for t, _ in everything} | claimed  # replaced above
+        season_titles = {t for t, _ in planned}
+        confirmed = [(t, ks) for t, ks in everything if t in season_titles]
         our_keys = {
             r["rating_key"]
             for r in conn.execute(
@@ -614,14 +615,14 @@ def export(
             kids = {k for k, _ in kids_t}
             if len(kids) < 3:
                 continue
-            best = max(planned, key=lambda p: len(kids & set(p[1])), default=None)
+            best = max(confirmed, key=lambda p: len(kids & set(p[1])), default=None)
             if best and len(kids & set(best[1])) >= 0.8 * len(kids):
                 print(
                     f"  ~  superseded: {c['title']} ({len(kids)} items) by {best[0]}"
                     + (" — removed" if apply and remove_superseded else "")
                 )
                 if diff:
-                    covered = set().union(*planned_keys)
+                    covered = set().union(*(set(ks) for _, ks in confirmed))
                     for k, t in kids_t:
                         if k not in covered:
                             print(f"       - {t}   (NOT in any new season)")

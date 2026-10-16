@@ -55,3 +55,18 @@ def test_the_page_saves_only_valid_values_and_resets(tmp_path: Path) -> None:
     page = serve.settings_payload(dbf)
     assert [s["key"] for s in page["sections"]] == ["planner", "groups", "detect"]
     assert all(f["label"] for s in page["sections"] for f in s["fields"])
+
+
+def test_a_hand_edited_bad_value_is_shown_and_can_go_back_to_default(tmp_path: Path) -> None:
+    dbf = str(tmp_path / "mi.db")
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"planner": {"mix_number": "two", "dawn_quran": False, "gone": 1}}),
+        encoding="utf-8",
+    )
+    planner = serve.settings_payload(dbf)["sections"][0]
+    by = {f["name"]: f for f in planner["fields"]}
+    assert "whole number" in by["mix_number"]["invalid"] and by["mix_number"]["changed"]
+    assert by["dawn_quran"]["value"] is False  # the good change still applies
+    assert planner["unknown"] == ["gone"]
+    serve.save_settings(dbf, {"section": "planner", "reset": ["mix_number", "gone"]})
+    assert settings.load(tmp_path / "settings.json") == {"planner": {"dawn_quran": False}}

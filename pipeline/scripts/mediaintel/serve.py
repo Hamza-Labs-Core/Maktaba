@@ -10,6 +10,7 @@ page); this page is the stand-in until these stages run there.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -1145,15 +1146,35 @@ def settings_payload(db_path: str) -> dict[str, Any]:
 
     file = settings_store.path_of(db_path)
     out = []
-    for key, (_, title, what) in settings_store.SECTIONS.items():
+    for key, (cls, title, what) in settings_store.SECTIONS.items():
+        error = None
         try:
-            cfg = settings_store.get(file, key)
-            error = None
-        except settings.SettingsError as e:  # a hand-edited file: show the defaults and why
-            cfg, error = settings_store.SECTIONS[key][0](), str(e)
+            changes = settings_store.changed(file, key)
+        except settings.SettingsError as e:  # not {section: {setting: value}} at all
+            changes, error = {}, str(e)
+        # each change on its own: a value this page cannot use (a hand edit) is shown with
+        # why and a way back to the default, and the others still apply
+        valid: dict[str, Any] = {}
+        invalid: dict[str, str] = {}
+        for name, value in changes.items():
+            try:
+                settings.apply(cls, {name: value})
+                valid[name] = value
+            except settings.SettingsError as e:
+                invalid[name] = str(e)
+        fields = settings.describe(settings.apply(cls, valid))
+        for f in fields:
+            if f["name"] in invalid:
+                f["invalid"] = invalid[f["name"]]
+                f["changed"] = True  # offers "Back to default"
         out.append({"key": key, "title": title, "what": what, "error": error,
-                    "fields": settings.describe(cfg)})  # fmt: skip
+                    "unknown": sorted(k for k in invalid if k not in {f["name"] for f in fields}),
+                    "fields": fields})  # fmt: skip
     return {"file": str(file), "sections": out}
+
+
+#: one save at a time: each reads the file, changes its section and replaces it
+_SETTINGS_LOCK = threading.Lock()
 
 
 def save_settings(db_path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -1172,10 +1193,16 @@ def save_settings(db_path: str, body: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(set_, dict) or not isinstance(reset, list):
         raise settings.SettingsError("body", 'send {"section", "set": {...}, "reset": [...]}')
     file = settings_store.path_of(db_path)
-    kept = {k: v for k, v in settings_store.changed(file, key).items() if k not in reset}
-    cfg = settings.apply(settings_store.SECTIONS[key][0], {**kept, **set_})
-    written = settings.save(file, key, cfg)
-    return {"section": key, "changed": sorted(written)}
+    cls = settings_store.SECTIONS[key][0]
+    names = {f.name for f in dataclasses.fields(cls)}
+    with _SETTINGS_LOCK:
+        before = settings_store.changed(file, key)
+        # a name that is no longer a setting can never apply: it is dropped, not kept
+        kept = {k: v for k, v in before.items() if k not in reset and k in names}
+        cfg = settings.apply(cls, {**kept, **set_})
+        written = settings.save(file, key, cfg)
+    return {"section": key, "changed": sorted(written),
+            "dropped": sorted(k for k in before if k not in names)}  # fmt: skip
 
 
 _LOCAL_HOSTS = ("127.0.0.1", "localhost")
@@ -1210,6 +1237,9 @@ def serve(
 ) -> None:
     """The control centre: status, start / stop a run, explain a video, pin a style,
     open review pages. Binds to localhost only."""
+    # absolute: the runs and the preview start in pipeline/, wherever the server started
+    db_path = str(Path(db_path).resolve())
+    reports = reports.resolve()
     log = log_path or Path(db_path + ".run.log")
     cache: dict[str, Any] = {"at": 0.0, "st": {}}
     cache_lock = threading.Lock()
@@ -1329,9 +1359,9 @@ def serve(
             elif url.path == "/api/settings":
                 self._json(200, settings_payload(db_path))
             elif url.path == "/preview/channel-plan.html":
-                f = reports / "preview" / "channel-plan.html"
-                if f.is_file():
-                    self._send(200, f.read_bytes(), "text/html; charset=utf-8")
+                plan_page = reports / "preview" / "channel-plan.html"
+                if plan_page.is_file():
+                    self._send(200, plan_page.read_bytes(), "text/html; charset=utf-8")
                 else:
                     self.send_error(404, "No preview yet: press Preview channels.")
             elif url.path == "/api/plan-preview":

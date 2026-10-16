@@ -48,6 +48,7 @@
   .banner { border: 1px solid var(--bad); background: var(--bad-soft); color: var(--ink); border-radius: 8px; padding: var(--s3) var(--s4); }
   .preview { display: grid; gap: var(--s2); }
   .preview pre { margin: 0; max-height: 220px; overflow: auto; font: 12px/1.45 var(--f-data); background: var(--paper); border-radius: 8px; padding: var(--s2) var(--s3); white-space: pre-wrap; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .set.wide { grid-template-columns: minmax(0, 1fr); }
   .set.wide .help { max-width: 90ch; }
   .tbl input[type="text"] { min-width: 14ch; }
@@ -118,34 +119,40 @@ function counts() {
 }
 
 // ---- editors per kind
+const DEL = `<td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td>`;
+// one table row, its cells typed from the field's default rows (so an empty table still
+// adds rows whose numbers are numbers and lists are lists)
+function rowHtml(f, r) {
+  if (f.kind.replace("?", "") === "map") {
+    const [a, b] = r || ["", []];
+    return `<tr><td><input value="${esc(a)}" dir="auto" aria-label="Key"></td><td><input value="${esc((b || []).join(", "))}" dir="auto" aria-label="Values" data-arr="1"></td>${DEL}</tr>`;
+  }
+  const tmpl = (f.default || [])[0] ?? (f.value || [])[0];
+  const cell = (c, j) => {
+    const val = r === undefined ? "" : Array.isArray(r) ? r[j] : r[c];
+    const isTime = /^(start|end|from|until)$/.test(c);
+    const sample = tmpl ? (Array.isArray(tmpl) ? tmpl[j] : tmpl[c]) : "";
+    const shown = Array.isArray(val) ? val.join(", ") : val ?? "";
+    const numeric = typeof sample === "number" || (sample === null && c === "min_hours");
+    return `<td><input class="${isTime || numeric ? "t" : ""}" ${isTime ? 'type="time"' : numeric ? 'type="number" step="any"' : 'type="text" dir="auto"'} value="${esc(shown)}" data-c="${esc(c)}" data-arr="${Array.isArray(sample) ? 1 : ""}" data-num="${numeric ? 1 : ""}" aria-label="${esc(c.replace(/_/g, " "))}"></td>`;
+  };
+  return `<tr>${f.columns.map(cell).join("")}${DEL}</tr>`;
+}
 function editor(f) {
   const v = valueOf(f), k = f.kind.replace("?", ""), opt = f.kind.endsWith("?");
-  const id = `f-${f.name}`;
-  if (k === "bool") return `<label class="switch"><input type="checkbox" id="${id}" ${v ? "checked" : ""}><span>${v ? "On" : "Off"}</span></label>`;
-  if (f.choices) return `<select id="${id}">${f.choices.map(c => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
-  if (k === "int" || k === "float") return `<input type="number" id="${id}" ${k === "int" ? 'step="1"' : 'step="any"'} value="${v ?? ""}" ${opt ? 'placeholder="empty"' : ""}>`;
-  if (k === "time") return `<input type="time" id="${id}" value="${esc(v)}">`;
-  if (k === "str") return `<input type="text" id="${id}" dir="auto" value="${esc(v ?? "")}" ${opt ? 'placeholder="empty"' : ""}>`;
-  if (k === "list" || k === "words") return `<textarea id="${id}" dir="auto" aria-describedby="${id}-h">${esc((v || []).join("\n"))}</textarea><span class="muted" id="${id}-h" style="font-size:12px">One per line.</span>`;
-  if (k === "map") {
-    const rows = Object.entries(v || {});
-    return `<div class="tblwrap"><table class="tbl" id="${id}"><thead><tr><th>Key</th><th>Values (comma separated)</th><th></th></tr></thead><tbody>${
-      rows.map(([a, b]) => `<tr><td><input value="${esc(a)}" dir="auto" aria-label="Key"></td><td><input value="${esc(b.join(", "))}" dir="auto" aria-label="Values"></td><td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td></tr>`).join("")
-    }</tbody></table></div><div><button class="btn sm add" type="button">Add row</button></div>`;
-  }
-  if (k === "rows") {
-    const cols = f.columns, rows = v || [], tmpl = (f.default || [])[0] ?? rows[0];
-    const cell = (c, j, x) => {
-      const val = Array.isArray(rows) && x !== undefined ? x : "";
-      const isTime = /^(start|end|from|until)$/.test(c);
-      const sample = tmpl ? (Array.isArray(tmpl) ? tmpl[j] : tmpl[c]) : "";
-      const shown = Array.isArray(val) ? val.join(", ") : val ?? "";
-      const numeric = typeof sample === "number" || (sample === null && c === "min_hours");
-      return `<td><input class="${isTime || numeric ? "t" : ""}" ${isTime ? 'type="time"' : numeric ? 'type="number" step="any"' : 'type="text" dir="auto"'} value="${esc(shown)}" data-c="${esc(c)}" data-arr="${Array.isArray(sample) ? 1 : ""}" data-num="${numeric ? 1 : ""}" aria-label="${esc(c)}"></td>`;
-    };
-    return `<div class="tblwrap"><table class="tbl" id="${id}"><thead><tr>${cols.map(c => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("")}<th></th></tr></thead><tbody>${
-      rows.map(r => `<tr>${cols.map((c, j) => cell(c, j, Array.isArray(r) ? r[j] : r[c])).join("")}<td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td></tr>`).join("")
-    }</tbody></table></div><div><button class="btn sm add" type="button">Add row</button></div>`;
+  const id = `f-${f.name}`, named = `aria-labelledby="l-${esc(f.name)}"`;
+  if (k === "bool") return `<label class="switch"><input type="checkbox" id="${id}" ${named} aria-describedby="${id}-s" ${v ? "checked" : ""}><span id="${id}-s">${v ? "On" : "Off"}</span></label>`;
+  if (f.choices) return `<select id="${id}" ${named}>${f.choices.map(c => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+  if (k === "int" || k === "float") return `<input type="number" id="${id}" ${named} ${k === "int" ? 'step="1"' : 'step="any"'} value="${v ?? ""}" ${opt ? 'placeholder="empty"' : ""}>`;
+  if (k === "time") return `<input type="time" id="${id}" ${named} value="${esc(v)}">`;
+  if (k === "str") return `<input type="text" id="${id}" ${named} dir="auto" value="${esc(v ?? "")}" ${opt ? 'placeholder="empty"' : ""}>`;
+  if (k === "list" || k === "words") return `<textarea id="${id}" ${named} dir="auto" aria-describedby="${id}-h">${esc((v || []).join("\n"))}</textarea><span class="muted" id="${id}-h" style="font-size:12px">One per line.</span>`;
+  if (k === "map" || k === "rows") {
+    const head = k === "map" ? ["Key", "Values (comma separated)"] : f.columns.map(c => c.replace(/_/g, " "));
+    const rows = k === "map" ? Object.entries(v || {}) : (v || []);
+    return `<div class="tblwrap"><table class="tbl" id="${id}" ${named}><thead><tr>${head.map(c => `<th>${esc(c)}</th>`).join("")}<th><span class="sr">Remove</span></th></tr></thead><tbody>${
+      rows.map(r => rowHtml(f, r)).join("")
+    }</tbody></table></div><div><button class="btn sm add" type="button" aria-describedby="l-${esc(f.name)}">Add row</button></div>`;
   }
   return `<span class="muted">Not editable here.</span>`;
 }
@@ -158,6 +165,7 @@ function read(f, row) {
   if (k === "time") return el.value;
   if (k === "list" || k === "words") return el.value.split(/\n|,/).map(x => x.trim()).filter(Boolean);
   if (k === "map") { const o = {}; el.querySelectorAll("tbody tr").forEach(tr => { const [a, b] = tr.querySelectorAll("input"); if (a.value.trim()) o[a.value.trim()] = b.value.split(",").map(x => x.trim()).filter(Boolean); }); return o; }
+  if (k === "rows" && !el.querySelector("tbody tr")) return [];
   if (k === "rows") {
     const named = !/^value \d/.test(f.columns[0]) && f.default && f.default[0] && !Array.isArray(f.default[0]);
     return [...el.querySelectorAll("tbody tr")].map(tr => {
@@ -176,11 +184,10 @@ function wire(row, f) {
   }));
   const add = row.querySelector(".add");
   if (add) add.addEventListener("click", () => {
-    const tb = row.querySelector("tbody"), cols = row.querySelectorAll("thead th").length - 1;
-    const proto = tb.querySelector("tr");
-    const tr = proto ? proto.cloneNode(true) : Object.assign(document.createElement("tr"), {innerHTML: `${"<td><input type=\"text\" dir=\"auto\"></td>".repeat(cols)}<td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td>`});
-    tr.querySelectorAll("input").forEach(i => i.value = "");
-    tb.appendChild(tr); wireRow(tr); tr.querySelector("input").focus(); update();
+    const tb = row.querySelector("tbody");
+    tb.insertAdjacentHTML("beforeend", rowHtml(f, undefined));
+    const tr = tb.lastElementChild;
+    wireRow(tr); tr.querySelector("input").focus(); update();
   });
   const wireRow = tr => {
     tr.querySelectorAll("input").forEach(i => i.addEventListener("input", update));
@@ -196,17 +203,21 @@ function render() {
   $("file").textContent = data.file;
   $("tabs").innerHTML = data.sections.map(x => `<button type="button" role="tab" data-k="${x.key}" aria-selected="${x.key === s.key}" title="${esc(x.what)}">${esc(x.title)}<span class="n"></span></button>`).join("");
   document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => { tab = b.dataset.k; try { localStorage.setItem("mi-settings-tab", tab); } catch (e) {} render(); }));
-  $("banner").hidden = !s.error;
-  $("banner").textContent = s.error ? `The settings file has a value this page cannot use, so the defaults are shown: ${s.error}. Saving replaces it.` : "";
+  const bad = s.fields.filter(f => f.invalid), unknown = s.unknown || [];
+  $("banner").hidden = !(s.error || bad.length || unknown.length);
+  $("banner").innerHTML = s.error ? `The settings file is not in the expected shape, so this section shows the defaults: ${esc(s.error)}. Saving here rewrites this section.`
+    : [bad.length ? `${bad.length} saved value${bad.length === 1 ? "" : "s"} cannot be used (marked below); the default applies until you fix ${bad.length === 1 ? "it" : "them"} or go back to the default.` : "",
+       unknown.length ? `The file names setting${unknown.length === 1 ? "" : "s"} that no longer exist: ${unknown.map(esc).join(", ")}. <button class="btn sm" type="button" id="drop-unknown">Remove ${unknown.length === 1 ? "it" : "them"}</button>` : ""].filter(Boolean).join(" ");
+  if ($("drop-unknown")) $("drop-unknown").addEventListener("click", () => save(unknown));
   $("preview-panel").hidden = s.key !== "planner";
   const q = $("q").value.trim().toLowerCase();
   const fields = s.fields.filter(f => !q || [f.name, f.label, f.help, f.group].join(" ").toLowerCase().includes(q));
   const groups = [...new Set(fields.map(f => f.group))];
   $("groups").innerHTML = groups.length ? groups.map(g => `<section class="panel grp" aria-label="${esc(g)}"><h2>${esc(g)}</h2>${
     fields.filter(f => f.group === g).map(f => `<div class="set${/rows|map/.test(f.kind) ? " wide" : ""}${f.changed ? " changed" : ""}${f.name in (edits[tab] || {}) ? " dirty" : ""}" data-n="${esc(f.name)}">
-      <div><div class="name">${esc(f.label)}<code>${esc(f.name)}</code></div>${f.help ? `<div class="help">${esc(f.help)}</div>` : ""}
+      <div><div class="name" id="l-${esc(f.name)}">${esc(f.label)}<code>${esc(f.name)}</code></div>${f.help ? `<div class="help">${esc(f.help)}</div>` : ""}
         <div class="def">Default: ${esc(show(f.default))}${f.changed ? ` · <b style="color:var(--saffron)">changed</b>` : ""}</div></div>
-      <div class="ed">${editor(f)}<span class="err" ${errors[f.name] ? "" : "hidden"}>${esc(errors[f.name] || "")}</span>
+      <div class="ed">${editor(f)}<span class="err" ${errors[f.name] || f.invalid ? "" : "hidden"}>${esc(errors[f.name] || (f.invalid ? `The saved value cannot be used, so the default applies: ${f.invalid}` : ""))}</span>
         ${f.changed ? `<div><button class="btn sm ghost reset" type="button">Back to default</button></div>` : ""}</div></div>`).join("")
   }</section>`).join("") : `<div class="empty-note">No setting matches “${esc(q)}”.</div>`;
   groups.length && fields.forEach(f => { const row = document.querySelector(`.set[data-n="${CSS.escape(f.name)}"]`); if (row) wire(row, f); });
@@ -220,11 +231,15 @@ async function load() {
   if (!data.sections.some(s => s.key === tab)) tab = data.sections[0].key;
 }
 async function save(reset) {
-  const set = reset ? {} : (edits[tab] || {});
+  // what this request carries, captured now: edits made (or tabs switched) while it is
+  // under way are kept
+  const section = tab, sent = reset ? {} : {...(edits[section] || {})};
   $("save").disabled = true;
   try {
-    const j = await post("api/settings", {section: tab, set, reset: reset || []});
-    edits[tab] = {}; errors = {};
+    const j = await post("api/settings", {section, set: sent, reset: reset || []});
+    const left = edits[section] || {};
+    for (const [n, v] of Object.entries(sent)) if (same(left[n], v)) { delete left[n]; delete errors[n]; }
+    for (const n of reset || []) { delete left[n]; delete errors[n]; }
     await load(); render();
     toast(reset ? "Back to the default." : `Saved. ${j.changed.length} setting${j.changed.length === 1 ? "" : "s"} differ from the defaults.`);
   } catch (e) {

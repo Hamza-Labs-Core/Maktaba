@@ -214,6 +214,14 @@ def test_questions_and_fatwas_get_their_own_group() -> None:
     assert groups[("standalone", "rest", "متنوعة")] == ["l0"]
 
 
+def test_a_topic_named_like_a_playlist_group_gets_its_own_title() -> None:
+    items = [_item(f"p{i}", pls={"PL": i}) for i in range(5)]
+    items += [_item(f"f{i}", genre="fiqh") for i in range(10)]
+    groups = plan_groups(items, {"PL": "الفقه"})
+    names = sorted(g.name for g in groups if g.kind == "clips")
+    assert names == ["الفقه", "الفقه (2)"]
+
+
 def test_a_blocked_replacement_never_retires_the_old_collection(tmp_path: Path) -> None:
     conn = _db(tmp_path)
     plex = FakePlex()
@@ -309,3 +317,38 @@ def test_a_library_split_over_two_plex_sections_writes_each_collection_in_its_ow
     assert by_title["قناة - مسابقة"]["section"] == "6"
     assert by_title["قناة - مسابقة"]["kids"] == [str(i) for i in range(10, 16)]
     assert by_title["قناة - برنامج"]["section"] == "5"
+
+
+def test_a_promo_in_a_clip_playlist_is_never_ordinary_filler(tmp_path: Path) -> None:
+    from scripts.mediaintel import plan_channels
+
+    conn = _db(tmp_path)
+    folder = "Y:/قناة"
+    for i, title in ((20, "برومو برنامج"), (21, "إعلان لا يعرف برنامجه"), (22, "مقطع")):
+        conn.execute(
+            "INSERT INTO files (path, folder, stem, ext, size, mtime, duration_s, plex_rating_key,"
+            " plex_section, plex_library, plex_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (f"{folder}/v{i}.mp4", folder, title, ".mp4", 1, 1.0, 60, str(i), "5", "قناة", title),
+        )  # fmt: skip
+    meta = {"series_key": "مقاطع", "kind": "clips", "season": 1, "season_count": 1,
+            "folder": folder, "extras": []}  # fmt: skip
+    conn.execute(
+        "INSERT INTO series (id, library, name, metadata, detector_version) VALUES (?,?,?,?,3)",
+        ("C1", "قناة", "مقاطع", json.dumps(meta)),
+    )
+    for n, i in enumerate((20, 21, 22), 1):
+        conn.execute(
+            "INSERT INTO series_episodes (series_id, path, season, episode) VALUES (?,?,1,?)",
+            ("C1", f"{folder}/v{i}.mp4", n),
+        )
+    conn.execute(
+        "INSERT INTO promo_links VALUES (?, ?, 'قناة', 'برنامج', 'قناة', ?, 1, 1.0, 'title')",
+        (f"{folder}/v20.mp4", folder, folder),
+    )
+    conn.commit()
+    seasons, loose, _ = plan_channels.load_inputs(conn)
+    clip_paths = {e.path for s in seasons if s.kind == "clips" for e in s.episodes}
+    assert clip_paths == {f"{folder}/v22.mp4"}  # the promos left the clip playlist
+    by_path = {v.path: v for v in loose}
+    assert by_path[f"{folder}/v20.mp4"].promo_of == f"{folder}|برنامج"  # airs by its show
+    assert f"{folder}/v21.mp4" not in by_path  # advertises nothing found: never airs
