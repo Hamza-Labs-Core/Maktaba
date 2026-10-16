@@ -1041,10 +1041,16 @@ def _alive(pid: int) -> bool:
 def _run_args(
     db_path: str, body: dict[str, Any], dizquetv_db: Path | None, reports: Path
 ) -> list[str]:
-    """The exact ``mediaintel run`` command a page request maps to (no free-form input)."""
+    """The exact ``mediaintel run`` command a page request maps to (no free-form input).
+
+    Folders go last, after ``--``, so none can be read as an option; one that starts
+    with '-' is refused outright (ValueError) rather than silently dropped."""
     args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path, "run"]
-    folders = [str(f) for f in body.get("folders") or [] if isinstance(f, str)]
-    args += folders or ["--from-plex", "--exclude-library", "Movies"]
+    folders = [f for f in body.get("folders") or [] if isinstance(f, str) and f]
+    if any(f.startswith("-") for f in folders):
+        raise ValueError("A folder cannot start with '-'.")
+    if not folders:
+        args += ["--from-plex", "--exclude-library", "Movies"]
     if dizquetv_db:
         args += ["--dizquetv-db", str(dizquetv_db)]
     args += ["--out", str(reports)]
@@ -1056,7 +1062,31 @@ def _run_args(
         args.append("--exact")
     if not body.get("youtube", True):
         args.append("--no-youtube")
+    if folders:
+        args += ["--", *folders]
     return args
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def request_problem(method: str, headers: Any, port: int) -> str | None:
+    """Why a request must be refused, or None. The server is reachable only from this
+    machine, but any web page open in a browser here can still send it requests:
+    a Host other than ours means DNS rebinding, an Origin other than ours means a
+    cross-site request, and a POST that is not JSON is a CORS "simple" request that
+    skipped the preflight. ``headers`` is anything with ``.get`` (an HTTPMessage)."""
+    allowed = {f"{h}:{port}" for h in _LOCAL_HOSTS}
+    if (headers.get("Host") or "").lower() not in allowed:
+        return "Unexpected Host header."
+    origin = headers.get("Origin")
+    if origin is not None and origin.lower() not in {f"http://{a}" for a in allowed}:
+        return "Cross-origin requests are not allowed."
+    if method == "POST":
+        ctype = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if ctype != "application/json":
+            return "Send the body as application/json."
+    return None
 
 
 def serve(
@@ -1116,7 +1146,16 @@ def serve(
             else:
                 self._json(200, {**data, "running_pid": _running_pid(db_path)})
 
+        def _refused(self, method: str) -> bool:
+            """Answer 403 and return True when the request is not from our own page."""
+            problem = request_problem(method, self.headers, port)
+            if problem:
+                self._json(403, {"error": problem})
+            return problem is not None
+
         def do_GET(self) -> None:  # noqa: N802 — http.server API
+            if self._refused("GET"):
+                return
             url = urllib.parse.urlsplit(self.path)
             qs = urllib.parse.parse_qs(url.query)
             if url.path == "/api/status":
@@ -1188,17 +1227,25 @@ def serve(
                 self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
+            if self._refused("POST"):
+                return
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
-                self._json(400, {"error": "The request body must be JSON."})
+                body = None
+            if not isinstance(body, dict):
+                self._json(400, {"error": "The request body must be a JSON object."})
                 return
             if self.path == "/api/run":
                 if _running_pid(db_path):
                     self._json(409, {"error": "A run is already in progress. Stop it first."})
                     return
-                args = _run_args(db_path, body, dizquetv_db, reports)
+                try:
+                    args = _run_args(db_path, body, dizquetv_db, reports)
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                    return
                 env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
                 with log.open("w", encoding="utf-8") as fh:
                     subprocess.Popen(  # noqa: S603 — fixed argv built by _run_args
