@@ -11,32 +11,47 @@ tagging and the production-style pass know about a library:
   short), with its own tags.
 
 :func:`suggest_channels` returns a :class:`PlanResult`: themed channels (one
-per topic family with enough hours), a Mix channel and per-presenter
-channels. Every channel carries a weekly time-slot grid over *lanes* —
-ordered runs of seasons of one production tier, played episode by episode,
-season by season, never interleaved — plus filler pools that pad each slot to
-its boundary. The rules a network programmer would apply:
+per topic family with enough hours), a Mix channel, per-presenter channels and
+the Quran channel. A channel's week is laid out the way a TV channel is:
 
-- **Tiers are grouped, never alternated.** A lane holds one tier group
-  (static / talk / produced / cinematic / unknown). Produced and cinematic
-  lanes take the evening and prime time; talk lanes take daytime and late
-  night. Unknown tier is its own group, ranked by format (a ``program`` ranks
-  above a ``lecture``).
-- **Order is sacred.** Within a lane, series play in first-air order, seasons
-  in season order, episodes in episode order.
+- **Shows, not seasons.** Seasons fold into :class:`Show` s: a *limited* series
+  (seasons with an end), an *ongoing* programme (a weekly talk show, a lesson
+  series that ran for years — its year or guest seasons are one run) or a
+  *collection* of stand-alone videos.
+- **Cadence.** A show airs ``weekly`` or as a ``strip`` (every weekday at the
+  same time): from its own exact air dates when they show a rhythm, else from
+  its format (lessons and Q&A → strip, talk shows and programmes → weekly) and
+  type. Its episode length sets the slot (30 / 60 / 90 / 120 min).
+- **Slots own a queue.** Each slot (Wednesday 20:00, or weekdays 17:00) is
+  owned by a show and keeps a queue (a :class:`Lane`): an ongoing show plays all
+  its years there back to back; when a series ends, the next show in the queue
+  takes the slot. Shows never interleave and never air more often than their
+  cadence (unless a channel has fewer shows than slots: ``extra_airings``).
+- **Variety.** Strong shows take prime time; dayparts prefer their topics
+  (``mix_daypart_topics``); adjacent slots differ in genre; every night of the
+  week has its own prime-time show; weekends take weekly shows.
+- **Fillers are first-class.** Every slot pads to its boundary — and between
+  the episodes of a long block — from its pool chain: its own shows' promos,
+  then clips on its topics (the group step's clip collections and shorts), the
+  channel's, the library's; never a recent repeat. What nothing fits is dead
+  air (``flex``), which the plan reports per slot.
 - **Quran at dawn**, a **Friday khutbah** slot, and a separate **Ramadan grid**
-  that moves Ramadan-tagged seasons to the post-iftar prime slot.
-- **Filler** (short-series episodes, highlight-clip series, shorts, short loose
-  videos) is pooled per channel and per daypart role, kept on-topic with the
-  videos' own tags.
+  whose after-iftar slots air the Ramadan shows every day.
+- **The Quran channel** is not a show grid: recitation non-stop, a reciter per
+  day (or rotating by hours), styles at set times (mujawwad after Fajr, warsh at
+  night); a reciter resumes where he stopped and starts the next khatma after
+  the last surah; its filler is only short recitations and dua.
+- Production style is at most a tie-breaker in a show's strength.
 
 The result maps onto Epic 27 directly: each channel becomes a ``schedule``
 mode channel (:func:`maktaba_channel_definition`, the slot-0081 shape the Go
 validator accepts and :class:`~maktaba_pipeline.channels.planner.schedule.
 SchedulePlanner` reads), and onto dizqueTV's time-slot tool
-(:func:`dizquetv_time_slots`). :func:`simulate` lays a sample day out the way
-both schedulers do (next episode while it fits, filler to the boundary) so a
-reviewer sees how full each slot really is.
+(:func:`dizquetv_time_slots`; each queue becomes one dizqueTV custom show
+played in order, so a slot runs on through the years). :func:`simulate` lays
+days out the way both schedulers do (next episodes while they fit, filler
+between and to the boundary) and :func:`slot_timeline` shows what a slot airs
+over the coming months.
 
 Every threshold lives in :class:`PlannerConfig`; every suggestion carries
 ``reasons``.
@@ -44,10 +59,14 @@ Every threshold lives in :class:`PlannerConfig`; every suggestion carries
 
 from __future__ import annotations
 
+import contextlib
+import math
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import date
+from pathlib import Path
 from statistics import median
 from typing import Any
 
@@ -78,11 +97,14 @@ __all__ = [
     "fmt_hhmm",
     "group_series",
     "maktaba_channel_definition",
+    "Show",
+    "recitation_style",
     "simulate",
+    "slot_timeline",
     "suggest_channels",
 ]
 
-PLANNER_VERSION: int = 1
+PLANNER_VERSION: int = 2  # 2: TV grid (show slots with queues), Quran channel
 DAY_MINUTES = 24 * 60
 WEEKDAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIER_NAMES: dict[int, str] = {0: "static", 1: "talk", 2: "produced", 3: "cinematic"}
@@ -114,6 +136,8 @@ class EpisodeRef:
     plex_rating_key: str | None = None
     plex_library: str | None = None
     air_date: str | None = None
+    #: the air date is the real day (YouTube's exact upload date), not "N years ago"
+    date_exact: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +169,10 @@ class SeasonCandidate:
     style: str | None = None
     tier: int | None = None
     style_confidence: float = 0.0
+    #: a talk show found by its title brand ("شاهد على العصر | …"): one ongoing programme
+    brand: bool = False
+    #: the season's own name (a guest, a year, a topic), when detection gave one
+    season_name: str | None = None
 
     @property
     def duration_s(self) -> float:
@@ -298,14 +326,21 @@ class Daypart:
     """A daily window of the grid. ``end <= start`` wraps past midnight.
 
     ``role``: ``quran`` (recitation lane when the library has one), ``high``
-    (produced/cinematic lanes first), ``low`` (talk/lecture lanes first) or
-    ``ramadan`` (Ramadan-tagged lanes first; Ramadan grid only)."""
+    (the strongest shows first: prime time), ``low`` (the daypart's own topics
+    first) or ``ramadan`` (Ramadan-tagged shows first; Ramadan grid only).
+
+    ``pattern`` is how its slots repeat through the week, like a TV schedule:
+    ``weekly`` (each day its own show: Wednesday 20:00 is one show, Thursday
+    20:00 another), ``strip`` (one show at the same time every weekday; the
+    weekend days get weekly shows), ``strip7`` (the same show every day, e.g.
+    the Ramadan series after iftar) or ``quran`` (recitation)."""
 
     key: str
     start: int  # minutes after local midnight
     end: int
     role: str
     label: str = ""
+    pattern: str = "weekly"
 
     @property
     def minutes(self) -> int:
@@ -318,22 +353,29 @@ def _hm(s: str) -> int:
 
 
 DEFAULT_DAYPARTS: tuple[Daypart, ...] = (
-    Daypart("dawn", _hm("04:00"), _hm("07:00"), "quran", "Dawn: Quran"),
-    Daypart("morning", _hm("07:00"), _hm("12:00"), "low", "Morning"),
-    Daypart("afternoon", _hm("12:00"), _hm("17:00"), "low", "Afternoon"),
-    Daypart("evening", _hm("17:00"), _hm("20:00"), "high", "Evening"),
-    Daypart("prime", _hm("20:00"), _hm("23:00"), "high", "Prime time"),
-    Daypart("late", _hm("23:00"), _hm("04:00"), "low", "Late night"),
+    Daypart("dawn", _hm("04:00"), _hm("07:00"), "quran", "Dawn: Quran", "quran"),
+    Daypart("morning", _hm("07:00"), _hm("12:00"), "low", "Morning", "strip"),
+    Daypart("afternoon", _hm("12:00"), _hm("17:00"), "low", "Afternoon", "strip"),
+    Daypart("evening", _hm("17:00"), _hm("20:00"), "high", "Evening", "strip"),
+    Daypart("prime", _hm("20:00"), _hm("23:00"), "high", "Prime time", "weekly"),
+    Daypart("late", _hm("23:00"), _hm("04:00"), "low", "Late night", "weekly"),
 )
 
 DEFAULT_RAMADAN_DAYPARTS: tuple[Daypart, ...] = (
-    Daypart("suhoor", _hm("01:00"), _hm("04:00"), "low", "Suhoor"),
-    Daypart("dawn", _hm("04:00"), _hm("06:00"), "quran", "Fajr: Quran"),
-    Daypart("morning", _hm("06:00"), _hm("13:00"), "low", "Morning"),
-    Daypart("afternoon", _hm("13:00"), _hm("17:00"), "low", "Afternoon"),
-    Daypart("pre_iftar", _hm("17:00"), _hm("19:00"), "quran", "Before iftar: Quran"),
-    Daypart("iftar_prime", _hm("19:00"), _hm("22:00"), "ramadan", "After iftar: Ramadan programs"),
-    Daypart("night", _hm("22:00"), _hm("01:00"), "high", "After taraweeh"),
+    Daypart("suhoor", _hm("01:00"), _hm("04:00"), "low", "Suhoor", "weekly"),
+    Daypart("dawn", _hm("04:00"), _hm("06:00"), "quran", "Fajr: Quran", "quran"),
+    Daypart("morning", _hm("06:00"), _hm("13:00"), "low", "Morning", "strip"),
+    Daypart("afternoon", _hm("13:00"), _hm("17:00"), "low", "Afternoon", "strip"),
+    Daypart("pre_iftar", _hm("17:00"), _hm("19:00"), "quran", "Before iftar: Quran", "quran"),
+    Daypart(
+        "iftar_prime",
+        _hm("19:00"),
+        _hm("22:00"),
+        "ramadan",
+        "After iftar: Ramadan programs",
+        "strip7",
+    ),
+    Daypart("night", _hm("22:00"), _hm("01:00"), "high", "After taraweeh", "weekly"),
 )
 
 
@@ -412,6 +454,37 @@ class PlannerConfig:
     min_slot_minutes: int = 30
     slot_round_minutes: int = 30
     max_lanes_per_daypart: int = 2
+    max_slot_minutes: int = 120
+    #: an episode this much longer than its slot still gets that slot (it overruns a little)
+    overrun_tolerance_minutes: int = 5
+    #: the weekend: strip shows air on the other days, weekly shows take these
+    weekend_days: tuple[str, ...] = ("fri", "sat")
+    # cadence: how often a show airs (weekly, or a strip: every weekday)
+    cadence_min_gaps: int = 5  # exact air dates needed to read a show's own rhythm
+    strip_max_gap_days: float = 2.5  # median gap ≤ this → it aired daily → a strip
+    #: format tags whose shows air weekly (talk shows, programmes, interviews)
+    weekly_formats: tuple[str, ...] = ("program", "interview", "podcast", "documentary", "live")
+    #: format tags whose shows air as daily strips (lesson series, Q&A, drama serials)
+    strip_formats: tuple[str, ...] = ("lecture", "qa_fatwa", "drama")
+    #: a limited series with at most this many episodes airs as a strip by default
+    strip_max_limited_episodes: int = 60
+    #: a channel with fewer shows than its grid has slots gives shows an extra airing
+    #: (False: the rest of the week is filler)
+    extra_airings: bool = True
+    # filler
+    filler_between_episodes: bool = True  # pad between the episodes of a long block too
+    dead_air_warn_minutes: float = 3.0
+    # Quran channel: recitation non-stop, a reciter per day, styles at set times
+    quran_rotation: str = "by_day"  # by_day | by_time (time rules only, rotating)
+    #: (start, end, style): e.g. mujawwad after Fajr, warsh at night
+    quran_time_rules: tuple[tuple[str, str, str], ...] = (
+        ("04:00", "07:00", "mujawwad"), ("21:00", "22:00", "warsh"),
+    )  # fmt: skip
+    quran_filler_topics: tuple[str, ...] = ("quran_recitation", "tajweed", "dua_dhikr")
+    #: talk formats never used as filler on the Quran channel
+    quran_filler_exclude_formats: tuple[str, ...] = (
+        "lecture", "qa_fatwa", "program", "interview", "podcast", "khutbah",
+    )  # fmt: skip
     # unknown tier is ranked by format: these formats rank like "produced-ish"
     prime_unknown_formats: tuple[str, ...] = ("program", "documentary", "drama")
     format_min_score: float = 0.5
@@ -443,6 +516,8 @@ class ProgramUnit:
     first_air: str
     series_key: str
     episodes: tuple[EpisodeRef, ...]
+    brand: bool = False
+    season_name: str | None = None
 
     @property
     def tier_group(self) -> str:
@@ -458,6 +533,8 @@ class ProgramUnit:
 
     @property
     def label(self) -> str:
+        if self.season_name and self.season_name != self.name:
+            return f"{self.name} · {self.season_name}"
         if self.season >= 1900:  # an ongoing show: its season is the year
             return f"{self.name} {self.season}"
         return (
@@ -480,6 +557,12 @@ class Lane:
     ramadan: bool = False
     special: str = ""  # "" | "quran" | "khutbah"
     reasons: tuple[str, ...] = ()
+    #: the slot this lane is the queue of: weekly | strip | strip7 | quran | special
+    pattern: str = ""
+    cadence: str = ""  # of its shows: weekly | strip
+    slot_minutes: int = 0
+    #: its shows in queue order (one after the other, never interleaved)
+    shows: tuple[str, ...] = ()
 
     @property
     def duration_s(self) -> float:
@@ -567,7 +650,7 @@ class ChannelSuggestion:
     number: int
     name: str
     name_ar: str
-    kind: str  # theme | mix | presenter
+    kind: str  # theme | mix | presenter | quran
     category: str
     lanes: tuple[str, ...]
     slots: tuple[Slot, ...]
@@ -674,6 +757,8 @@ def _unit(s: SeasonCandidate, cfg: PlannerConfig) -> ProgramUnit:
         first_air=s.first_air or "9999",
         series_key=s.series_key or s.name,
         episodes=tuple(e for e in s.episodes if e.duration_s > 0),
+        brand=s.brand,
+        season_name=s.season_name,
     )
 
 
@@ -833,111 +918,171 @@ def _loose_units(loose: Sequence[LooseVideo], cfg: PlannerConfig) -> list[Season
     return out
 
 
-# --------------------------------------------------------------------------- lanes
+# --------------------------------------------------------------------------- shows
+
+DAY_NAMES_AR: dict[str, str] = {
+    "mon": "الاثنين", "tue": "الثلاثاء", "wed": "الأربعاء", "thu": "الخميس",
+    "fri": "الجمعة", "sat": "السبت", "sun": "الأحد",
+}  # fmt: skip
+SHOW_TYPES_AR: dict[str, str] = {
+    "limited": "مسلسل/برنامج محدود", "ongoing": "برنامج مستمر", "collection": "مختارات",
+}  # fmt: skip
+STRIP_FAMILY = ("strip", "strip7")
 
 
-def _tier_lanes(
-    prefix: str,
-    label: str,
-    units: Sequence[ProgramUnit],
-    tags_of: Mapping[str, Mapping[str, float]],
-    cfg: PlannerConfig,
-    *,
-    mix: bool = False,
-    ramadan: bool = False,
-) -> list[Lane]:
-    by_tier: dict[str, list[ProgramUnit]] = defaultdict(list)
+@dataclass(frozen=True, slots=True)
+class Show:
+    """One show as a channel schedules it: every season of one series, in order.
+
+    ``type``: ``limited`` (a series with an end), ``ongoing`` (a programme that
+    ran for years — a weekly talk show, a lesson series; its year or guest
+    seasons are one run) or ``collection`` (stand-alone videos grouped by topic).
+    ``cadence``: ``weekly`` or ``strip`` (every weekday at the same time).
+    ``slot_minutes``: the slot its episodes need (30 / 60 / 90 / 120)."""
+
+    key: str
+    name: str
+    presenter: str
+    folder: str
+    genre: str
+    units: tuple[ProgramUnit, ...]
+    type: str
+    cadence: str
+    slot_minutes: int
+    rank: float
+    ramadan: bool
+    reasons: tuple[str, ...] = ()
+
+    @property
+    def duration_s(self) -> float:
+        return sum(u.duration_s for u in self.units)
+
+    @property
+    def episode_count(self) -> int:
+        return sum(len(u.episodes) for u in self.units)
+
+    @property
+    def first_air(self) -> str:
+        return min((u.first_air for u in self.units), default="9999")
+
+    @property
+    def max_episode_s(self) -> float:
+        return max((u.max_episode_s for u in self.units), default=0.0)
+
+
+def _median_gap_days(units: Sequence[ProgramUnit], cfg: PlannerConfig) -> float | None:
+    """Median days between a show's exact air dates ("N years ago" dates don't count)."""
+    days: set[int] = set()
     for u in units:
-        by_tier[u.tier_group].append(u)
-    lanes: list[Lane] = []
-    for tg, us in by_tier.items():
-        ordered = _interleave_by_genre(us) if mix else _order_units(us)
-        rank = _rank(ordered, tags_of, cfg)
-        n_series = len({(u.folder, u.series_key) for u in ordered})
-        lanes.append(
-            Lane(
-                key=f"{prefix}.{tg}",
-                name=" · ".join(x for x in (label, TIER_NAMES_AR.get(tg, tg)) if x),
-                tier_group=tg,
-                units=tuple(ordered),
-                rank=rank,
-                ramadan=ramadan,
-                reasons=(
-                    f"{len(ordered)} season(s) of {n_series} series, tier group '{tg}'"
-                    + (" (no production-style data: grouped as unknown)" if tg == UNKNOWN else "")
-                    + (", interleaved by genre (whole series blocks)" if mix else
-                       ", series in first-air order, seasons and episodes in order"),
-                ),
+        for e in u.episodes:
+            if e.date_exact and e.air_date:
+                with contextlib.suppress(ValueError):
+                    days.add(date.fromisoformat(e.air_date[:10]).toordinal())
+    ds = sorted(days)
+    gaps = [b - a for a, b in zip(ds, ds[1:], strict=False)]
+    if len(gaps) < cfg.cadence_min_gaps:
+        return None
+    return float(median(gaps))
+
+
+def _show_type(units: Sequence[ProgramUnit]) -> str:
+    if any(u.kind == "loose" for u in units):
+        return "collection"
+    if any(u.kind == "ongoing" or u.brand for u in units):
+        return "ongoing"
+    if sum(1 for u in units if u.season >= 1900) >= 2:  # a season per year
+        return "ongoing"
+    return "limited"
+
+
+def _cadence(
+    units: Sequence[ProgramUnit], tags: Mapping[str, float], type_: str, cfg: PlannerConfig
+) -> tuple[str, str]:
+    """(``weekly`` | ``strip``, why). The show's own rhythm when its exact air dates
+    show one; otherwise its format and type (documented defaults)."""
+    gap = _median_gap_days(units, cfg)
+    if gap is not None:
+        if gap <= cfg.strip_max_gap_days:
+            return "strip", f"aired every {gap:.1f} days (exact dates): a daily strip"
+        return "weekly", f"aired every {gap:.0f} days (exact dates): weekly"
+    fw = max((_format_score(tags, f) for f in cfg.weekly_formats), default=0.0)
+    fs = max((_format_score(tags, f) for f in cfg.strip_formats), default=0.0)
+    n = sum(len(u.episodes) for u in units)
+    if type_ == "collection":
+        return "weekly", "stand-alone videos grouped by topic: weekly"
+    if type_ == "ongoing" and fw >= fs:
+        return "weekly", "an ongoing talk show / programme: weekly (no exact dates)"
+    if fs >= cfg.format_min_score and fs >= fw:
+        return "strip", "a lesson / Q&A series: a daily strip (no exact dates)"
+    if fw >= cfg.format_min_score:
+        return "weekly", "a programme / interview: weekly (no exact dates)"
+    if type_ == "limited" and n <= cfg.strip_max_limited_episodes:
+        return "strip", f"a limited series of {n} episodes: a daily strip"
+    return "weekly", f"{n} episodes, no format or date evidence: weekly"
+
+
+def _slot_minutes(median_s: float, cfg: PlannerConfig) -> int:
+    """The slot an episode of this length needs, rounded up to the slot step; an
+    episode up to ``overrun_tolerance_minutes`` longer keeps the shorter slot."""
+    step = cfg.slot_round_minutes or 30
+    m = max(1.0, median_s / 60 - cfg.overrun_tolerance_minutes)
+    return int(min(cfg.max_slot_minutes, max(cfg.min_slot_minutes, step * math.ceil(m / step))))
+
+
+def _show_rank(units: Sequence[ProgramUnit], tags: Mapping[str, float], genre: str, type_: str,
+               cfg: PlannerConfig) -> float:  # fmt: skip
+    """Prime-time strength: programmes, documentaries and interviews over lessons,
+    prime-time topics, size, an ongoing run. Production style is only a tie-breaker."""
+    hours = sum(u.duration_s for u in units) / 3600
+    r = 1.0
+    strong = (*cfg.prime_unknown_formats, "interview")
+    if max((_format_score(tags, f) for f in strong), default=0.0) >= cfg.format_min_score:
+        r += 1.0
+    if genre in cfg.mix_daypart_topics.get("prime", ()):
+        r += 0.4
+    r += 0.3 * min(1.0, hours / 40)
+    if type_ == "ongoing":
+        r += 0.2
+    if type_ == "collection":
+        r -= 0.8
+    tiers = [u.tier for u in units if u.tier is not None]
+    if tiers and max(tiers) >= 2:
+        r += 0.1
+    return round(r, 3)
+
+
+def _shows(units: Iterable[ProgramUnit], tags_of: Mapping[str, Mapping[str, float]],
+           cfg: PlannerConfig) -> list[Show]:  # fmt: skip
+    """Seasons → shows (folder + series key), seasons in order, strongest first."""
+    groups: dict[tuple[str, str], list[ProgramUnit]] = defaultdict(list)
+    for u in units:
+        groups[(u.folder, u.series_key)].append(u)
+    out: list[Show] = []
+    for (folder, key), us in groups.items():
+        us = _order_units(us)
+        tags: dict[str, float] = {}
+        for u in us:
+            for t, sc in tags_of.get(u.series_id, {}).items():
+                tags[t] = max(tags.get(t, 0.0), sc)
+        weight: Counter[str] = Counter()
+        for u in us:
+            weight[u.genre] += int(u.duration_s)
+        genre = weight.most_common(1)[0][0] if weight else "general"
+        type_ = _show_type(us)
+        cadence, why = _cadence(us, tags, type_, cfg)
+        durs = [e.duration_s for u in us for e in u.episodes]
+        slot = _slot_minutes(float(median(durs)) if durs else 0.0, cfg)
+        out.append(
+            Show(
+                key=f"{folder}|{key}", name=us[0].name, presenter=us[0].presenter, folder=folder,
+                genre=genre, units=tuple(us), type=type_, cadence=cadence, slot_minutes=slot,
+                rank=_show_rank(us, tags, genre, type_, cfg), ramadan=any(u.ramadan for u in us),
+                reasons=(f"{type_} show, {len(us)} season(s), {sum(len(u.episodes) for u in us)} "
+                         f"episodes; {why}; {slot} min slot",),
             )
         )  # fmt: skip
-    lanes.sort(key=lambda ln: (-ln.rank, -ln.duration_s, ln.key))
-    return lanes
-
-
-def _split_lane(lane: Lane, parts: int, daypart_keys: Sequence[str], cfg: PlannerConfig,
-                *, mix: bool) -> list[tuple[int, Lane]]:  # fmt: skip
-    """Split one lane into ``parts`` sub-lanes of whole series (same tier group,
-    order kept) so the dayparts it serves show different series. Mix lanes
-    split by the dayparts' preferred genres (part ``i`` ↔ ``daypart_keys[i]``);
-    others by balanced hours. Returns ``(part index, lane)``; empty parts are
-    left out."""
-    blocks = _series_blocks(lane.units) if not mix else _blocks_in_order(lane.units)
-    parts = min(parts, len(blocks))
-    if parts <= 1:
-        return [(0, lane)]
-    bins: list[list[list[ProgramUnit]]] = [[] for _ in range(parts)]
-    weight = [0.0] * parts
-    rest: list[list[ProgramUnit]] = []
-    if mix:
-        for b in blocks:
-            g = b[0].genre
-            homes = [
-                i
-                for i, dk in enumerate(daypart_keys[:parts])
-                if g in cfg.mix_daypart_topics.get(dk, ())
-            ]
-            if homes:
-                i = min(homes, key=lambda j: weight[j])
-                bins[i].append(b)
-                weight[i] += sum(u.duration_s for u in b)
-            else:
-                rest.append(b)
-    else:
-        rest = sorted(blocks, key=lambda b: -sum(u.duration_s for u in b))
-    for b in rest:
-        i = min(range(parts), key=lambda j: weight[j])
-        bins[i].append(b)
-        weight[i] += sum(u.duration_s for u in b)
-    out: list[tuple[int, Lane]] = []
-    for i, bn in enumerate(bins):
-        if not bn:
-            continue
-        units = [u for b in bn for u in b]
-        units = units if mix else _order_units(units)
-        out.append((i,
-            replace(
-                lane,
-                key=f"{lane.key}.{i + 1}",
-                name=(
-                    f"{lane.name} · {DAYPART_NAMES_AR.get(daypart_keys[i], str(i + 1))}"
-                    if mix and i < len(daypart_keys)
-                    else f"{lane.name} · {i + 1}"
-                ),
-                units=tuple(units),
-                reasons=lane.reasons + (f"part {i + 1}/{parts} of the lane (whole series kept)",),
-            ),
-        ))  # fmt: skip
+    out.sort(key=lambda s: (-s.rank, s.first_air, s.name, s.key))
     return out
-
-
-def _blocks_in_order(units: Sequence[ProgramUnit]) -> list[list[ProgramUnit]]:
-    blocks: list[list[ProgramUnit]] = []
-    for u in units:
-        if blocks and (blocks[-1][0].folder, blocks[-1][0].series_key) == (u.folder, u.series_key):
-            blocks[-1].append(u)
-        else:
-            blocks.append([u])
-    return blocks
 
 
 # --------------------------------------------------------------------------- grid
@@ -954,195 +1099,305 @@ class _Seg:
     reasons: tuple[str, ...]
 
 
-def _round_down(m: int, step: int) -> int:
-    return m - m % step if step > 0 else m
+@dataclass(slots=True)
+class _Queue:
+    """A slot's queue: its shows play one after the other, never interleaved."""
+
+    key: str
+    pattern: str  # weekly | strip | strip7
+    slot_minutes: int
+    start: int
+    day: str  # the day of a weekly slot, "" for strips
+    shows: list[Show]
+    airings: int = 0  # occurrences per week
+    extra: int = 0  # occurrences beyond the shows' cadence (a channel short of shows)
+
+    @property
+    def family(self) -> str:
+        return "strip" if self.pattern in STRIP_FAMILY else "weekly"
+
+    def weeks_left(self) -> float:
+        mins = sum(s.duration_s for s in self.shows) / 60
+        return mins / max(1, self.airings * self.slot_minutes)
 
 
-def _assign_dayparts(
-    lanes: list[Lane],
-    dayparts: Sequence[Daypart],
-    quran: Lane | None,
-    ramadan_lanes: Sequence[Lane],
-    cfg: PlannerConfig,
-    *,
-    mix: bool,
-) -> tuple[dict[str, list[Lane]], list[Lane], list[str]]:
-    """Decide which lane(s) each daypart plays. Returns (daypart → lanes,
-    every lane used (sub-lanes included), warnings)."""
-    warnings: list[str] = []
-    ranked = sorted(lanes, key=lambda ln: (-ln.rank, -ln.duration_s, ln.key))
-    shared = len(ranked) <= 1  # one tier group: split it once across every daypart
-    high: list[Lane] = []
-    low: list[Lane] = []
-    if not shared:
-        high = [ln for ln in ranked if ln.rank >= 2]
-        low = [ln for ln in ranked if ln.rank < 2]
-        if not high:
-            high, low = ranked[:1], ranked[1:]
-        elif not low:
-            high, low = ranked[:-1], ranked[-1:]
-    role_lanes: dict[str, list[Lane]] = {"high": high, "low": low, "all": list(ranked)}
-    roles: dict[str, str] = {}
-    for d in dayparts:
-        r = d.role
-        if r == "quran" and quran is None:
-            r = "low"
-        if r == "ramadan" and not ramadan_lanes:
-            r = "high"
-        if shared and r in ("high", "low"):
-            r = "all"
-        roles[d.key] = r
-    out: dict[str, list[Lane]] = {}
-    used: list[Lane] = []
-    if quran is not None:
-        used.append(quran)
-    if ramadan_lanes:
-        used.extend(ramadan_lanes)
-    for role in ("high", "low", "all"):
-        dps = [d for d in dayparts if roles[d.key] == role]
-        pool = role_lanes[role]
-        if not dps or not pool:
-            continue
-        # one lane per daypart when possible; a lane serving several dayparts is
-        # split into sub-lanes of whole series so each daypart shows something else
-        per_lane: dict[str, list[Daypart]] = defaultdict(list)
-        # best lane → longest daypart; on a tie, high roles prefer the later
-        # daypart (prime over evening), low roles the earlier one
-        sign = -1 if role == "high" else 1
-        for i, d in enumerate(sorted(dps, key=lambda d: (-d.minutes, sign * d.start))):
-            per_lane[pool[i % len(pool)].key].append(d)
-        extra = pool[len(dps) :]
-        by_key = {ln.key: ln for ln in pool}
-        for lk, ds in per_lane.items():
-            ln = by_key[lk]
-            ds_sorted = sorted(ds, key=lambda d: d.start)
-            parts = _split_lane(ln, len(ds), [d.key for d in ds_sorted], cfg, mix=mix)
-            subs = [sub for _, sub in parts]
-            biggest = max(subs, key=lambda s: s.duration_s)
-            if mix:
-                by_idx = dict(parts)
-                for i, d in enumerate(ds_sorted):
-                    out.setdefault(d.key, []).append(by_idx.get(i, biggest))
-            else:  # longest sub-lane → longest daypart, named after it
-                order = sorted(subs, key=lambda s: -s.duration_s)
-                named: dict[str, Lane] = {}
-                for i, d in enumerate(sorted(ds, key=lambda d: -d.minutes)):
-                    sub = order[i] if i < len(order) else biggest
-                    if len(subs) > 1 and sub.key not in named:
-                        named[sub.key] = replace(
-                            sub, name=f"{ln.name} · {DAYPART_NAMES_AR.get(d.key, d.key)}"
-                        )
-                    out.setdefault(d.key, []).append(named.get(sub.key, sub))
-                subs = [named.get(sub.key, sub) for sub in subs]
-            used.extend(subs)
-        # more lanes than dayparts: share the longest dayparts
-        for ln in extra:
-            hosts = sorted(dps, key=lambda d: (len(out.get(d.key, [])), -d.minutes))
-            target = hosts[0]
-            if len(out.get(target.key, [])) >= cfg.max_lanes_per_daypart:
-                warnings.append(f"lane {ln.key} has no daypart left (max_lanes_per_daypart)")
-                continue
-            out.setdefault(target.key, []).append(ln)
-            used.append(ln)
-    for d in dayparts:
-        if roles[d.key] == "quran" and quran is not None:
-            out[d.key] = [quran]
-        elif roles[d.key] == "ramadan":
-            out[d.key] = list(ramadan_lanes[: cfg.max_lanes_per_daypart])
-    uniq: dict[str, Lane] = {}
-    for ln in used:
-        uniq.setdefault(ln.key, ln)
-    return out, list(uniq.values()), warnings
+def _fhm(m: int) -> str:
+    return fmt_hhmm(m % DAY_MINUTES)
 
 
-def _daypart_segments(
-    d: Daypart, lanes: Sequence[Lane], pool: str | None, kind: str, cfg: PlannerConfig
-) -> list[_Seg]:
-    """Cut a daypart into one segment per lane (rounded to the slot step,
-    each at least as long as its lane's longest episode when possible)."""
-    if not lanes:
-        return [_Seg(d.start, d.start + d.minutes, None, d.key, pool, "flex",
-                     ("no lane for this daypart: filler only",))]  # fmt: skip
-    total = d.minutes
-    n = len(lanes)
-    cuts = [d.start]
-    for i in range(1, n):
-        cuts.append(d.start + _round_down(total * i // n, cfg.slot_round_minutes))
-    cuts.append(d.start + total)
-    segs: list[_Seg] = []
-    for i, ln in enumerate(lanes):
-        a, b = cuts[i], cuts[i + 1]
-        if b - a < cfg.min_slot_minutes and segs:
-            segs[-1].end = b
-            continue
-        why = [f"{d.label or d.key}: {d.role} daypart → lane {ln.key} (rank {ln.rank:.2f})"]
-        if ln.max_episode_s > (b - a) * 60:
-            why.append(
-                f"longest episode {ln.max_episode_s / 60:.0f} min exceeds the "
-                f"{b - a} min slot: it overruns into the next slot"
-            )
-        segs.append(_Seg(a, b, ln.key, d.key, pool, kind, tuple(why)))
-    return segs
+def _queue_name(q: _Queue, label: str) -> str:
+    day = q.day
+    if day and q.start >= DAY_MINUTES:  # after midnight: the next day's early hours
+        day = WEEKDAYS[(WEEKDAYS.index(day) + 1) % 7]
+    when = (
+        DAY_NAMES_AR.get(day, day) if q.pattern == "weekly"
+        else "يومياً" if q.pattern == "strip7" else "أيام الأسبوع"
+    )  # fmt: skip
+    head = q.shows[0].name if q.shows else "—"
+    return " · ".join(x for x in (label, f"{when} {_fhm(q.start)}", head) if x)
 
 
-def _build_grid(
-    channel_key: str,
-    lanes: list[Lane],
+def _show_grid(
+    ck: str,
+    label: str,
+    shows: Sequence[Show],
     dayparts: Sequence[Daypart],
     quran: Lane | None,
     khutbah: Lane | None,
-    ramadan_lanes: Sequence[Lane],
     pools: Mapping[str, str | None],
     cfg: PlannerConfig,
     *,
-    mix: bool,
+    ramadan: bool = False,
 ) -> tuple[list[Slot], list[Lane], list[str]]:
-    assign, used, warnings = _assign_dayparts(lanes, dayparts, quran, ramadan_lanes, cfg, mix=mix)
-    daily: list[_Seg] = []
-    for d in dayparts:
-        ls = assign.get(d.key, [])
-        is_quran = bool(ls) and ls[0].special == "quran"
-        pool = pools.get("dawn") if is_quran else pools.get("topic")
-        daily.extend(_daypart_segments(d, ls, pool, "quran" if is_quran else "program", cfg))
-    # unwrap past-midnight segments, then cover any hole with a flex segment
-    flat: list[_Seg] = []
-    for s in daily:
-        if s.end > DAY_MINUTES:
-            flat.append(_Seg(s.start, DAY_MINUTES, s.lane, s.daypart, s.pool, s.kind, s.reasons))
-            flat.append(_Seg(0, s.end - DAY_MINUTES, s.lane, s.daypart, s.pool, s.kind, s.reasons))
+    """A TV week: every slot is owned by a show and keeps a queue.
+
+    Dayparts are filled strongest first (Ramadan after iftar, then prime time and
+    the evening, then the rest). A ``strip`` daypart gives each block one strip
+    show at the same time every weekday (its weekend days get weekly shows); a
+    ``weekly`` daypart gives every day its own shows. A show heads one slot only
+    and never airs more often than its cadence — a strip show may fill a weekly
+    slot (slower), a weekly show never a strip. Adjacent blocks avoid the same
+    genre. When the channel has more slots than shows, existing queues get extra
+    airings (``extra_airings``) or the time is filler. The shows left over join
+    the queues of their cadence, balanced so every queue runs about as long: when
+    a limited series ends, the next show takes its slot; an ongoing show plays all
+    its years in its slot before the queue moves on."""
+    strip_days = tuple(d for d in WEEKDAYS if d not in cfg.weekend_days)
+    weekend = tuple(d for d in WEEKDAYS if d in cfg.weekend_days)
+    used: set[str] = set()
+    queues: dict[str, _Queue] = {}
+    per_day: dict[str, list[_Seg]] = {d: [] for d in WEEKDAYS}
+    warnings: list[str] = []
+    strip_c = [s for s in shows if s.cadence == "strip"]
+    weekly_c = [s for s in shows if s.cadence == "weekly"]
+    prefix = f"{ck}.ramadan" if ramadan else ck
+
+    def pick(cands: Sequence[Show], d: Daypart, prev: str | None, room: int,
+             *, ramadan_first: bool = False) -> Show | None:  # fmt: skip
+        topics = cfg.mix_daypart_topics.get(d.key, ())
+        best: tuple[Any, ...] | None = None
+        out: Show | None = None
+        for i, s in enumerate(cands):
+            if s.key in used or s.slot_minutes > room:
+                continue
+            miss = 0 if s.genre in topics else 1
+            k = (
+                (0 if s.ramadan else 1) if ramadan_first else 0,
+                1 if s.genre == prev else 0,  # variety first: never the same genre twice in a row
+                -s.rank if d.role != "low" else miss,
+                miss if d.role != "low" else -s.rank,
+                i,
+            )
+            if best is None or k < best:
+                best, out = k, s
+        return out
+
+    def extra_pick(family: str, room: int, prev_q: str | None, day_qs: set[str],
+                   prev: str | None) -> _Queue | None:  # fmt: skip
+        if not cfg.extra_airings:
+            return None
+        cands = [q for q in queues.values() if q.slot_minutes <= room and q.key != prev_q
+                 and q.key not in day_qs]  # fmt: skip
+        if not cands:
+            return None
+        return min(cands, key=lambda q: (q.family != family, q.airings,
+                                         q.shows[0].genre == prev, q.key))  # fmt: skip
+
+    def put(days: Sequence[str], a: int, b: int, q: _Queue, d: Daypart, why: str) -> None:
+        for day in days:
+            per_day[day].append(_Seg(a, b, q.key, d.key, None, "program", (why,)))
+        q.airings += len(days)
+
+    def fill(d: Daypart, days: Sequence[str], pattern: str) -> None:
+        """Blocks from the daypart's start to its end on ``days`` (one block = one
+        queue: the same show on every day of a strip, each day its own when weekly)."""
+        groups: list[tuple[str, ...]] = [tuple(days)] if pattern in STRIP_FAMILY else [
+            (day,) for day in days]  # fmt: skip
+        end = d.start + d.minutes
+        for grp in groups:
+            t = d.start
+            prev: str | None = None
+            prev_q: str | None = None
+            day_qs: set[str] = set()
+            last: list[_Seg] = []
+            while t < end:
+                room = end - t
+                if pattern in STRIP_FAMILY:
+                    s = pick(strip_c if pattern == "strip" else shows, d, prev, room,
+                             ramadan_first=pattern == "strip7")  # fmt: skip
+                else:  # a strip show may air weekly; a weekly show never daily
+                    s = pick(weekly_c, d, prev, room) or pick(strip_c, d, prev, room)
+                q: _Queue | None = None
+                why = ""
+                if s is not None:
+                    used.add(s.key)
+                    where = grp[0] if pattern == "weekly" else pattern
+                    key = f"{prefix}.{where}.{_fhm(t).replace(':', '')}"
+                    q = _Queue(
+                        key, pattern, s.slot_minutes, t, grp[0] if pattern == "weekly" else "", [s]
+                    )
+                    queues[key] = q
+                    why = (
+                        f"{d.label or d.key}: {s.name} ({s.cadence}, {s.type}, rank {s.rank:.2f})"
+                        + (" — Ramadan show" if pattern == "strip7" and s.ramadan else "")
+                    )
+                elif pattern == "weekly" or not (strip_c or shows):
+                    q = extra_pick(pattern if pattern == "weekly" else "strip", room, prev_q,
+                                   day_qs, prev)  # fmt: skip
+                    if q is not None:
+                        q.extra += len(grp)
+                        why = (f"{d.label or d.key}: extra airing of {q.shows[0].name} — the "
+                               "channel has fewer shows than slots")  # fmt: skip
+                elif pattern == "strip":  # no strip show left: the weekdays take weekly shows,
+                    # after the weekly dayparts had their pick (prime time first)
+                    later.append((_Daypart_from(d, t), grp))
+                    return
+                if q is None:
+                    if last:  # the previous block pads to the daypart's end with filler
+                        for sg in last:
+                            sg.end = end
+                    else:
+                        for day in grp:
+                            per_day[day].append(
+                                _Seg(
+                                    t,
+                                    end,
+                                    None,
+                                    d.key,
+                                    pools.get("topic"),
+                                    "flex",
+                                    ("no show left for this time: filler only",),
+                                )
+                            )
+                    break
+                b = min(end, t + q.slot_minutes)
+                if q.shows[0].max_episode_s > (b - t + cfg.overrun_tolerance_minutes) * 60:
+                    why += (
+                        f"; longest episode {q.shows[0].max_episode_s / 60:.0f} min "
+                        f"overruns the {b - t} min slot"
+                    )
+                put(grp, t, b, q, d, why)
+                last = [sg for day in grp for sg in per_day[day][-1:]]
+                prev, prev_q = q.shows[0].genre, q.key
+                day_qs.add(q.key)
+                t = b
+
+    later: list[tuple[Daypart, tuple[str, ...]]] = []  # weekly fills after the strips
+    order = sorted(dayparts, key=lambda d: (
+        0 if d.role == "ramadan" else 1 if d.role == "high" else 2,
+        -d.start if d.role == "high" else d.start,
+    ))  # fmt: skip
+    weekly_tasks: list[tuple[Daypart, tuple[str, ...]]] = []
+    # strips first (they need a show for every weekday), then the weekly slots: prime
+    # time, the other weekly dayparts, the strip dayparts' weekends
+    for d in order:
+        if d.pattern == "quran" and quran is not None:
+            for day in WEEKDAYS:
+                per_day[day].append(_Seg(d.start, d.start + d.minutes, quran.key, d.key,
+                                         pools.get("dawn"), "quran",
+                                         (f"{d.label or d.key}: Quran recitation",)))  # fmt: skip
+            continue
+        pattern = "strip" if d.pattern == "quran" else d.pattern
+        if pattern == "strip7" and not ramadan:
+            pattern = "strip"
+        if pattern == "strip":
+            fill(d, strip_days, "strip")
+            if weekend:
+                later.append((d, weekend))
+        elif pattern == "strip7":
+            fill(d, WEEKDAYS, "strip7")
         else:
-            flat.append(s)
-    flat.sort(key=lambda s: s.start)
-    filled: list[_Seg] = []
-    t = 0
-    for s in flat:
-        if s.start > t:
-            filled.append(_Seg(t, s.start, None, "gap", pools.get("topic"), "flex",
+            weekly_tasks.append((d, WEEKDAYS))
+    for d, days in weekly_tasks + later:
+        fill(d, days, "weekly")
+
+    # the shows left over join the queues of their cadence, balanced by how long each runs
+    for s in [s for s in shows if s.key not in used]:
+        fam = "strip" if s.cadence == "strip" else "weekly"
+        cands = [q for q in queues.values() if q.family == fam] or list(queues.values())
+        if not cands:
+            warnings.append(f"{s.name}: no slot on this channel")
+            continue
+        fit = [q for q in cands if s.slot_minutes <= q.slot_minutes] or cands
+        q = min(fit, key=lambda q: (q.weeks_left(), q.shows[-1].genre == s.genre, q.key))
+        q.shows.append(s)
+        used.add(s.key)
+    for q in queues.values():
+        if q.extra:
+            warnings.append(f"{_queue_name(q, label)}: {q.extra} extra airing(s) a week "
+                            "(the channel has fewer shows than slots)")  # fmt: skip
+
+    lanes: dict[str, Lane] = {}
+    for q in queues.values():
+        head = q.shows[0]
+        lanes[q.key] = Lane(
+            key=q.key, name=_queue_name(q, label), tier_group="mixed",
+            units=tuple(u for s in q.shows for u in s.units), rank=head.rank, ramadan=ramadan,
+            pattern=q.pattern, cadence=q.family, slot_minutes=q.slot_minutes,
+            shows=tuple(s.name for s in q.shows),
+            reasons=(
+                f"{q.airings} airing(s) a week, {q.slot_minutes} min",
+                *head.reasons,
+                *([f"then, in this slot: {', '.join(s.name for s in q.shows[1:6])}"
+                   + (f" and {len(q.shows) - 6} more" if len(q.shows) > 6 else "")]
+                  if len(q.shows) > 1 else []),
+            ),
+        )  # fmt: skip
+
+    # unwrap past midnight (the rest belongs to the next day), then cover holes with flex
+    flat: dict[str, list[_Seg]] = {d: [] for d in WEEKDAYS}
+    for i, day in enumerate(WEEKDAYS):
+        nxt = WEEKDAYS[(i + 1) % 7]
+        for sg in per_day[day]:
+            if sg.start >= DAY_MINUTES:  # wholly after midnight: the next day's early hours
+                flat[nxt].append(_Seg(sg.start - DAY_MINUTES, sg.end - DAY_MINUTES, sg.lane,
+                                      sg.daypart, sg.pool, sg.kind, sg.reasons))  # fmt: skip
+            elif sg.end > DAY_MINUTES:
+                flat[day].append(_Seg(sg.start, DAY_MINUTES, sg.lane, sg.daypart, sg.pool,
+                                      sg.kind, sg.reasons))  # fmt: skip
+                flat[nxt].append(_Seg(0, sg.end - DAY_MINUTES, sg.lane, sg.daypart, sg.pool,
+                                      sg.kind, sg.reasons))  # fmt: skip
+            else:
+                flat[day].append(sg)
+    out_days: dict[str, list[_Seg]] = {}
+    for day in WEEKDAYS:
+        segs = sorted(flat[day], key=lambda s: s.start)
+        filled: list[_Seg] = []
+        t = 0
+        for sg in segs:
+            if sg.start > t:
+                filled.append(_Seg(t, sg.start, None, "gap", pools.get("topic"), "flex",
+                                   ("no daypart covers this time: filler only",)))  # fmt: skip
+            if sg.end > t:
+                filled.append(_Seg(max(sg.start, t), sg.end, sg.lane, sg.daypart, sg.pool, sg.kind,
+                                   sg.reasons))  # fmt: skip
+                t = sg.end
+        if t < DAY_MINUTES:
+            filled.append(_Seg(t, DAY_MINUTES, None, "gap", pools.get("topic"), "flex",
                                ("no daypart covers this time: filler only",)))  # fmt: skip
-        if s.end > t:
-            filled.append(_Seg(max(s.start, t), s.end, s.lane, s.daypart, s.pool, s.kind,
-                               s.reasons))  # fmt: skip
-            t = s.end
-    if t < DAY_MINUTES:
-        filled.append(_Seg(t, DAY_MINUTES, None, "gap", pools.get("topic"), "flex",
-                           ("no daypart covers this time: filler only",)))  # fmt: skip
-    per_day: dict[str, list[_Seg]] = {d: [_copy(s) for s in filled] for d in WEEKDAYS}
+        out_days[day] = filled
+    used_lanes = list(lanes.values())
     if khutbah is not None and cfg.friday_khutbah:
         day = cfg.khutbah_day
-        per_day[day] = _overlay(
-            per_day[day],
+        out_days[day] = _overlay(
+            out_days[day],
             _Seg(cfg.khutbah_start, cfg.khutbah_end, khutbah.key, "khutbah", pools.get("topic"),
                  "khutbah", (f"Friday khutbah {fmt_hhmm(cfg.khutbah_start)}–"
                              f"{fmt_hhmm(cfg.khutbah_end)} ({khutbah.episode_count} khutbahs, "
                              "one per week)",)),
         )  # fmt: skip
-        used.append(khutbah)
-    slots = _merge_days(per_day)
-    uniq: dict[str, Lane] = {}
-    for ln in used:
-        uniq.setdefault(ln.key, ln)
+        used_lanes.append(khutbah)
+    if quran is not None:
+        used_lanes.append(quran)
+    slots = _merge_days(out_days)
     referenced = {s.lane for s in slots}
-    return slots, [ln for ln in uniq.values() if ln.key in referenced], warnings
+    return slots, [ln for ln in used_lanes if ln.key in referenced], warnings
+
+
+def _Daypart_from(d: Daypart, start: int) -> Daypart:  # noqa: N802 — a Daypart "constructor"
+    """The rest of a daypart from ``start`` (minutes may run past midnight)."""
+    end = d.start + d.minutes
+    return replace(d, start=start, end=end % DAY_MINUTES if end > DAY_MINUTES else end)
 
 
 def _copy(s: _Seg) -> _Seg:
@@ -1193,6 +1448,108 @@ def _merge_days(per_day: Mapping[str, list[_Seg]]) -> list[Slot]:
     ]  # fmt: skip
     slots.sort(key=lambda s: (s.start, s.days != (), s.days))
     return slots
+
+
+# --------------------------------------------------------------------------- Quran channel
+
+#: recitation styles, recognised in a reciter's season / folder names
+QURAN_STYLES: dict[str, tuple[str, ...]] = {
+    "warsh": ("ورش", "warsh"),
+    "mujawwad": ("مجود", "مجوّد", "mojawwad", "mujawwad"),
+    "murattal": ("مرتل", "murattal", "حفص"),
+}
+QURAN_STYLES_AR: dict[str, str] = {"warsh": "ورش", "mujawwad": "مجود", "murattal": "مرتل"}
+
+
+def recitation_style(u: ProgramUnit) -> str:
+    text = f"{u.name} {u.folder} {u.presenter}".lower()
+    for style in ("warsh", "mujawwad", "murattal"):
+        if any(w in text for w in QURAN_STYLES[style]):
+            return style
+    return "murattal"
+
+
+def _reciter_lanes(units: Sequence[ProgramUnit]) -> list[Lane]:
+    """One lane per reciter and style, his surahs in their order."""
+    groups: dict[tuple[str, str], list[ProgramUnit]] = defaultdict(list)
+    for u in units:
+        reciter = u.presenter or Path(u.folder.replace("\\", "/")).name
+        groups[(reciter, recitation_style(u))].append(u)
+    lanes: list[Lane] = []
+    for (reciter, style), us in groups.items():
+        us = _order_units(us)
+        has_word = any(w in reciter.lower() for w in QURAN_STYLES[style])
+        name = (
+            reciter if has_word or style == "murattal" else f"{reciter} · {QURAN_STYLES_AR[style]}"
+        )
+        lanes.append(Lane(
+            key=f"quran.{_slug(reciter)}.{style}", name=name, tier_group="mixed", units=tuple(us),
+            rank=0.0, special="quran", pattern="quran", cadence=style, shows=(name,),
+            reasons=(f"{reciter}, {QURAN_STYLES_AR[style]}: {sum(len(u.episodes) for u in us)} "
+                     "recitations in order; each airing resumes where he stopped, and after "
+                     "the last surah the next khatma starts",),
+        ))  # fmt: skip
+    # Hafs murattal first (the everyday recitation), then the longest
+    lanes.sort(key=lambda ln: (ln.cadence != "murattal", -ln.duration_s, ln.key))
+    return lanes
+
+
+def _quran_grid(lanes: Sequence[Lane], pool: str | None,
+                cfg: PlannerConfig) -> tuple[list[Slot], list[str]]:  # fmt: skip
+    """Recitation non-stop. ``by_day``: a reciter per day (Saturday one reciter,
+    Sunday the next …); ``by_time``: reciters rotate every few hours. On top,
+    ``quran_time_rules`` give set hours to a style (mujawwad after Fajr, warsh at
+    night), rotating among the reciters of that style day by day. Continuity: a
+    reciter's lane resumes where it stopped the last time he aired, so each runs
+    his khatma through the week and starts the next one after the last surah."""
+    why: list[str] = []
+    if not lanes:
+        return [], why
+    order = ("sat", "sun", "mon", "tue", "wed", "thu", "fri")  # the week as it is lived
+    per_day: dict[str, list[_Seg]] = {}
+    for i, day in enumerate(order):
+        if cfg.quran_rotation == "by_time":
+            step = 4 * 60
+            segs = [_Seg(a, a + step, lanes[(i * 6 + a // step) % len(lanes)].key, "quran", pool,
+                         "quran", ("reciters rotate every 4 hours",))
+                    for a in range(0, DAY_MINUTES, step)]  # fmt: skip
+        else:
+            ln = lanes[i % len(lanes)]
+            segs = [_Seg(0, DAY_MINUTES, ln.key, "quran", pool, "quran",
+                         (f"{DAY_NAMES_AR[day]}: {ln.name}",))]  # fmt: skip
+        for a, b, style in cfg.quran_time_rules:
+            cands = [ln for ln in lanes if ln.cadence == style]
+            if not cands:
+                continue
+            ln = cands[i % len(cands)]
+            segs = _overlay(
+                segs,
+                _Seg(
+                    _hm(a),
+                    _hm(b) or DAY_MINUTES,
+                    ln.key,
+                    "quran",
+                    pool,
+                    "quran",
+                    (f"{a}–{b}: {QURAN_STYLES_AR.get(style, style)} — {ln.name}",),
+                ),
+            )
+        per_day[day] = segs
+    if cfg.quran_rotation == "by_time":
+        why.append("reciters rotate every 4 hours")
+    else:
+        why.append(
+            "a reciter per day: "
+            + ", ".join(
+                f"{DAY_NAMES_AR[d]} {lanes[i % len(lanes)].name}" for i, d in enumerate(order)
+            )
+        )
+    for a, b, style in cfg.quran_time_rules:
+        if any(ln.cadence == style for ln in lanes):
+            why.append(f"{a}–{b} every day: {QURAN_STYLES_AR.get(style, style)} recitation")
+    why.append("continuity: a reciter resumes where he stopped; after the last surah the next "
+               "khatma starts")  # fmt: skip
+    return _merge_days(per_day), why
 
 
 # --------------------------------------------------------------------------- planner
@@ -1270,83 +1627,165 @@ def suggest_channels(
         pools[p.key] = p
         return {"topic": p.key, "dawn": dawn.key if dawn.items else general.key}
 
+    def slot_pool(ln: Lane, ck: str, label: str, topic_key: str | None) -> str | None:
+        """A slot's filler: its own shows' promos first ("coming up"), then clips on its
+        topics, then the channel's on-topic filler, then the library's general filler."""
+        genres = list(dict.fromkeys(u.genre for u in ln.units))[:3]
+        gk = f"{ck}.topic.{_slug(genres[0])}" if genres else None
+        if gk is not None and gk not in pools:
+            items = [f for f in fillers if f.topic_score(genres) >= fmin]
+            if items:
+                pools[gk] = _pool(
+                    gk,
+                    f"{label} · {genres[0]}",
+                    items,
+                    topic_key,
+                    f"filler on this slot's topics ({', '.join(genres)})",
+                )
+        nxt = gk if gk in pools else topic_key
+        shows = {f"{u.folder}|{u.series_key}" for u in ln.units}
+        mine = [f for f in promos if f.promo_of in shows]
+        if not mine:
+            return nxt
+        pk_ = f"{ln.key}.promo"
+        if pk_ not in pools:
+            pools[pk_] = _pool(
+                pk_,
+                f"{ln.name} · إعلانات",
+                mine,
+                nxt,
+                f"{len(mine)} promo(s) of this slot's shows, then its topics",
+            )
+        return pk_
+
     def make_channel(
         key: str, number: int, name: str, name_ar: str, kind: str, category: str,
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
-        own_quran: bool = False,
     ) -> None:  # fmt: skip
         reg = regular(member_ids)
-        if own_quran:
-            reg = [units[i] for i in member_ids]
-        tier_lanes = _tier_lanes(key, name_ar or name, reg, tags_of, cfg, mix=mix)
-        q = None if own_quran else (quran_lane if cfg.dawn_quran else None)
+        label = name_ar or name
+        shows = _shows(reg, tags_of, cfg)
+        q = quran_lane if cfg.dawn_quran else None
         k = khutbah_lane if (khutbah_lane and (mix or member_ids & khutbah_ids)) else None
-        ram_units = [units[i] for i in member_ids if i in units and units[i].ramadan]
-        ram_lanes = (
-            _tier_lanes(f"{key}.ramadan", f"{name_ar or name} · رمضان", ram_units, tags_of, cfg,
-                        mix=mix, ramadan=True)
-            if cfg.ramadan_grid and ram_units else []
-        )  # fmt: skip
-        slots, used, warn = _build_grid(
-            key, tier_lanes, cfg.dayparts, q, k, (), pool_keys, cfg, mix=mix
-        )
+        slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg)
         r_slots: list[Slot] = []
         r_used: list[Lane] = []
-        if ram_lanes:
-            r_slots, r_used, w2 = _build_grid(
-                key, tier_lanes, cfg.ramadan_dayparts, q, k, ram_lanes, pool_keys, cfg, mix=mix
-            )
+        ram = [s for s in shows if s.ramadan]
+        if cfg.ramadan_grid and ram:
+            r_slots, r_used, w2 = _show_grid(key, label, shows, cfg.ramadan_dayparts, q, k,
+                                             pool_keys, cfg, ramadan=True)  # fmt: skip
             warn += w2
             why.append(
-                f"{len(ram_units)} Ramadan-tagged season(s) (occasion:ramadan ≥ "
-                f"{cfg.ramadan_min_score}): Ramadan grid puts them after iftar"
+                f"{len(ram)} Ramadan-tagged show(s) (occasion:ramadan ≥ {cfg.ramadan_min_score}): "
+                "the Ramadan grid airs them every day after iftar"
             )
+        n_strip = sum(1 for s in shows if s.cadence == "strip")
+        why.append(
+            f"{len(shows)} shows ({sum(1 for s in shows if s.type == 'ongoing')} ongoing, "
+            f"{sum(1 for s in shows if s.type == 'limited')} limited, "
+            f"{sum(1 for s in shows if s.type == 'collection')} collections): {n_strip} air as "
+            f"daily strips, {len(shows) - n_strip} weekly; each slot keeps a queue"
+        )
         if q is not None:
             why.append(f"dawn plays the library's Quran recitation lane ({q.hours:.1f} h)")
-        elif cfg.dawn_quran and not own_quran:
-            why.append("no Quran recitation in the library: dawn falls back to a talk lane")
+        elif cfg.dawn_quran:
+            why.append("no Quran recitation in the library: dawn falls back to shows")
         if k is not None:
             why.append(f"Friday khutbah slot from {k.episode_count} khutbah(s)")
         for ln in used + r_used:
             lanes.setdefault(ln.key, ln)
-        # a lane whose shows have promos pads its slots with them first ("coming up")
-        promo_keys: list[str] = []
+        slot_pools: dict[str, str | None] = {}
         for ln in used + r_used:
-            shows = {f"{u.folder}|{u.series_key}" for u in ln.units}
-            mine = [f for f in promos if f.promo_of in shows]
-            if not mine:
-                continue
-            pk_ = f"{ln.key}.promo"
-            if pk_ not in pools:
-                pools[pk_] = _pool(pk_, f"{ln.name} · إعلانات", mine, pool_keys.get("topic"),
-                                   f"{len(mine)} promo(s) of this lane's shows")  # fmt: skip
-            promo_keys.append(pk_)
-            slots = [replace(sl, filler_pool=pk_) if sl.lane == ln.key and sl.kind == "program"
-                     else sl for sl in slots]  # fmt: skip
-            r_slots = [replace(sl, filler_pool=pk_) if sl.lane == ln.key and sl.kind == "program"
-                       else sl for sl in r_slots]  # fmt: skip
-        if promo_keys:
-            why.append(f"{len(promo_keys)} lane(s) pad with their own shows' promos first")
-        hours = sum(u.duration_s for u in reg) / 3600
+            if not ln.special:
+                slot_pools[ln.key] = slot_pool(ln, key, label, pool_keys.get("topic"))
+        slots = [
+            replace(sl, filler_pool=slot_pools[sl.lane])
+            if sl.kind == "program" and sl.lane in slot_pools
+            else sl
+            for sl in slots
+        ]
+        r_slots = [
+            replace(sl, filler_pool=slot_pools[sl.lane])
+            if sl.kind == "program" and sl.lane in slot_pools
+            else sl
+            for sl in r_slots
+        ]
+        # one list of every promo of the channel's shows (dizqueTV fills per channel)
+        shows_keys = {s.key for s in shows}
+        ch_promos = [f for f in promos if f.promo_of in shows_keys]
+        promo_key: str | None = None
+        if ch_promos:
+            promo_key = f"{key}.promos"
+            pools[promo_key] = _pool(
+                promo_key,
+                f"{label} · إعلانات البرامج",
+                ch_promos,
+                pool_keys.get("topic"),
+                "promos of this channel's shows",
+            )
+            why.append(f"{len(ch_promos)} promo(s) of its shows pad their own slots first")
+        hours = sum(s.duration_s for s in shows) / 3600
         channels.append(
             ChannelSuggestion(
                 key=key, number=number, name=name, name_ar=name_ar, kind=kind,
                 category=category, lanes=tuple(dict.fromkeys(ln.key for ln in used + r_used)),
                 slots=tuple(slots), ramadan_slots=tuple(r_slots),
                 filler_pools=tuple(dict.fromkeys(
-                    p for p in [*pool_keys.values(), *promo_keys, general.key] if p is not None)),
+                    p for p in [pool_keys.get("topic"), promo_key, pool_keys.get("dawn"),
+                                *slot_pools.values(), general.key] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip
+
+    def make_quran_channel(t: ThemeSpec) -> bool:
+        """The Quran channel: recitation non-stop, no show grid."""
+        rec = [units[i] for i in quran_ids]
+        hours = sum(u.duration_s for u in rec) / 3600
+        need = t.min_hours if t.min_hours is not None else cfg.theme_min_hours
+        if not rec or hours < need:
+            if rec:
+                unplaced.append((f"theme {t.key}", f"only {hours:.1f} h (< {need:.0f} h)"))
+            return False
+        reciters = _reciter_lanes(rec)
+        talk = cfg.quran_filler_exclude_formats
+        items = [
+            f for f in fillers
+            if f.topic_score(cfg.quran_filler_topics) >= fmin
+            and max((_format_score(f.tags, x) for x in talk), default=0.0) < cfg.format_min_score
+        ]  # fmt: skip
+        pk_: str | None = None
+        if items:
+            pk_ = "quran.filler"
+            pools[pk_] = _pool(pk_, "تلاوات قصيرة وأدعية", items, None,
+                               "short recitations and dua only (never talk)")  # fmt: skip
+        slots, why = _quran_grid(reciters, pk_, cfg)
+        for ln in reciters:
+            lanes.setdefault(ln.key, ln)
+        referenced = {s.lane for s in slots}
+        channels.append(
+            ChannelSuggestion(
+                key=t.key, number=t.number, name=t.name, name_ar=t.name_ar, kind="quran",
+                category=t.category,
+                lanes=tuple(ln.key for ln in reciters if ln.key in referenced),
+                slots=tuple(slots), ramadan_slots=(),
+                filler_pools=(pk_,) if pk_ else (), hours=hours,
+                reasons=(f"{len(reciters)} reciter lane(s), {hours:.1f} h of recitation: Quran "
+                         "non-stop, no show grid", *why,
+                         "filler: short recitations and dua only" if pk_ else
+                         "no short recitation / dua clips: gaps stay silent (flex)"),
+            )
+        )  # fmt: skip
+        return True
 
     placed: set[str] = set()
     # ---- themed channels
     for t in cfg.themes:
         if t.key == "quran":
-            ids = set(quran_ids) | {i for i in units if _in_theme(by_id[i], t, cfg)}
-        else:
-            ids = {i for i in regular_ids if _in_theme(by_id[i], t, cfg)}
-            ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
+            if make_quran_channel(t):
+                placed |= quran_ids
+            continue
+        ids = {i for i in regular_ids if _in_theme(by_id[i], t, cfg)}
+        ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
         hours = sum(units[i].duration_s for i in ids) / 3600
         need = t.min_hours if t.min_hours is not None else cfg.theme_min_hours
         if not ids or hours < need:
@@ -1368,7 +1807,7 @@ def suggest_channels(
             f"(genre or score ≥ {cfg.topic_min_score})"
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
-                     mix=False, own_quran=t.key == "quran")  # fmt: skip
+                     mix=False)  # fmt: skip
         placed |= ids
 
     # ---- mix channel
@@ -1386,7 +1825,7 @@ def suggest_channels(
         make_channel(
             "mix", cfg.mix_number, cfg.mix_name, cfg.mix_name_ar, "mix", "general", mix_ids,
             [f"{len(mix_ids)} season(s), {mix_hours:.1f} h across {len(genres)} genres; "
-             "dayparts prefer genres per mix_daypart_topics; "
+             "dayparts prefer genres per mix_daypart_topics, adjacent slots differ; "
              f"excluded: {', '.join(excluded) or '-'}"],
             pk, mix=True,
         )  # fmt: skip
@@ -1439,17 +1878,19 @@ def suggest_channels(
 # --------------------------------------------------------------------------- simulation
 
 
-def _pick_filler(pool: Sequence[FillerItem], remaining: float, recent: list[str],
+def _pick_filler(tiers: Sequence[Sequence[FillerItem]], remaining: float, recent: list[str],
                  window: int) -> FillerItem | None:  # fmt: skip
-    """Best fit: the longest item that fits, skipping the last ``window`` picks
-    when another one fits (pool is sorted longest first)."""
+    """Best fit, tier by tier (the slot's own promos, then its topics, then the
+    channel's, then general): the longest item that fits and is not one of the last
+    ``window`` picks; a recent one only when nothing else in any tier fits."""
     fallback: FillerItem | None = None
-    for it in pool:
-        if it.duration_s <= remaining:
-            if it.path not in recent[-window:]:
-                return it
-            if fallback is None:
-                fallback = it
+    for pool in tiers:
+        for it in pool:
+            if it.duration_s <= remaining:
+                if it.path not in recent[-window:]:
+                    return it
+                if fallback is None:
+                    fallback = it
     return fallback
 
 
@@ -1462,11 +1903,13 @@ def simulate(
     ramadan: bool = False,
 ) -> list[Airing]:
     """Lay ``days`` days out from ``weekday`` 00:00: in each slot window play
-    the lane's next episode while it fits (the first one may overrun, like
-    dizqueTV's "slide"), then pad to the boundary with best-fit filler from
-    the slot's pool (falling back along ``FillerPool.fallback``); what no
-    filler fits is ``flex`` (bumper / slate time). Lane cursors persist across
-    slots and days, so a lane continues where it stopped."""
+    the lane's next episodes while they fit (the first one may overrun, like
+    dizqueTV's "slide"), with filler between them (``filler_between_episodes``,
+    dizqueTV's ``flexPreference: distribute``) and to the boundary — best fit
+    from the slot's pool chain: its own shows' promos, then its topics, the
+    channel's, the library's (``FillerPool.fallback``). What no filler fits is
+    ``flex`` (dead air: a bumper / slate). Lane cursors persist across slots and
+    days, so a lane continues where it stopped."""
     slots = channel.ramadan_slots if ramadan and channel.ramadan_slots else channel.slots
     cfg = plan.config
     cursors: dict[str, int] = defaultdict(int)
@@ -1474,19 +1917,40 @@ def simulate(
     out: list[Airing] = []
     t = 0.0
     d0 = WEEKDAYS.index(weekday)
+    tier_cache: dict[str | None, list[list[FillerItem]]] = {}
 
-    def pool_items(key: str | None) -> list[FillerItem]:
-        items: list[FillerItem] = []
+    def pool_tiers(key: str | None) -> list[list[FillerItem]]:
+        if key in tier_cache:
+            return tier_cache[key]
+        tiers: list[list[FillerItem]] = []
         seen: set[str] = set()
-        while key is not None and key not in seen:
-            seen.add(key)
-            p = plan.filler_pools.get(key)
+        paths: set[str] = set()
+        k = key
+        while k is not None and k not in seen:
+            seen.add(k)
+            p = plan.filler_pools.get(k)
             if p is None:
                 break
-            items.extend(p.items)
-            key = p.fallback
-        uniq = {i.path: i for i in items}
-        return sorted(uniq.values(), key=lambda i: (i.vertical, -i.duration_s, i.path))
+            tier = [i for i in p.items if i.path not in paths]
+            paths.update(i.path for i in tier)
+            tiers.append(sorted(tier, key=lambda i: (i.vertical, -i.duration_s, i.path)))
+            k = p.fallback
+        tier_cache[key] = tiers
+        return tiers
+
+    def pad(until: float, s: Slot, si: int, *, flex: bool) -> None:
+        nonlocal t
+        tiers = pool_tiers(s.filler_pool)
+        while until - t > 0.5:
+            f = _pick_filler(tiers, until - t, recent, cfg.filler_recent_window)
+            if f is None or until - t < cfg.filler_min_s:
+                if flex:
+                    out.append(Airing(t, until, "flex", "flex / bumper", s.lane, None, si))
+                    t = until
+                return
+            out.append(Airing(t, t + f.duration_s, "filler", f.title[:160], s.lane, f.path, si))
+            recent.append(f.path)
+            t += f.duration_s
 
     for day_i in range(days):
         day = WEEKDAYS[(d0 + day_i) % 7]
@@ -1497,33 +1961,77 @@ def simulate(
                 continue
             t = max(t, ws)
             lane = plan.lanes.get(s.lane) if s.lane else None
+            picks: list[tuple[ProgramUnit, EpisodeRef]] = []
             if lane is not None:
                 eps = lane.episodes()
-                played = 0
+                tt = t
+                c = cursors[lane.key]
                 while eps:
-                    u, e = eps[cursors[lane.key] % len(eps)]
+                    u, e = eps[c % len(eps)]
                     # doesn't fit what is left: pad and wait for the next window, unless
                     # the episode is longer than the whole slot (then it overruns)
-                    if t + e.duration_s > we and (played or e.duration_s <= we - ws):
+                    if tt + e.duration_s > we and (picks or e.duration_s <= we - ws):
                         break
+                    picks.append((u, e))
+                    tt += e.duration_s
+                    c += 1
+                    if tt >= we:
+                        break
+                spare = max(0.0, we - tt)
+                between = cfg.filler_between_episodes and len(picks) > 1
+                for n, (u, e) in enumerate(picks):
                     title = f"{u.label} · {e.title}"[:160]
                     out.append(Airing(t, t + e.duration_s, "program", title, lane.key, e.path, si))
                     t += e.duration_s
                     cursors[lane.key] += 1
-                    played += 1
-                    if t >= we:
-                        break
-            items = pool_items(s.filler_pool)
-            while we - t > 0.5:
-                f = _pick_filler(items, we - t, recent, cfg.filler_recent_window)
-                if f is None or we - t < cfg.filler_min_s:
-                    out.append(Airing(t, we, "flex", "flex / bumper", s.lane, None, si))
-                    t = we
-                    break
-                out.append(Airing(t, t + f.duration_s, "filler", f.title[:160], s.lane, f.path, si))
-                recent.append(f.path)
-                t += f.duration_s
+                    if between and n < len(picks) - 1:
+                        # an even share of the spare time after each episode
+                        pad(t + spare / len(picks), s, si, flex=False)
+            pad(we, s, si, flex=True)
     return out
+
+
+def slot_timeline(lane: Lane, slots: Sequence[Slot], *, weeks: int = 52) -> list[dict[str, Any]]:
+    """What a slot's queue airs, week by week, for ``weeks`` weeks: consecutive
+    weeks of one season are one row (``{"from_week", "to_week", "show"}``), so a
+    reviewer sees an ongoing show run through its years and the next show take
+    over. Counts only the episodes that fit each airing (the first may overrun);
+    filler is not simulated. When the queue runs out it starts again (a marker row)."""
+    occ = sorted(
+        (WEEKDAYS.index(day), s.start, s.minutes)
+        for s in slots
+        if s.lane == lane.key
+        for day in (s.days or WEEKDAYS)
+    )
+    eps = lane.episodes()
+    if not occ or not eps:
+        return []
+    rows: list[dict[str, Any]] = []
+    i = 0
+
+    def note(week: int, label: str) -> None:
+        if rows and rows[-1]["show"] == label and rows[-1]["to_week"] >= week - 1:
+            rows[-1]["to_week"] = week
+        else:
+            rows.append({"from_week": week, "to_week": week, "show": label})
+
+    for w in range(1, weeks + 1):
+        for _, _, mins in occ:
+            room = mins * 60.0
+            played = 0
+            while True:
+                u, e = eps[i % len(eps)]
+                if e.duration_s > room and played:
+                    break
+                note(w, u.label)
+                room -= e.duration_s
+                played += 1
+                i += 1
+                if i % len(eps) == 0:
+                    note(w, "↻ the queue starts again")
+                if room <= 0:
+                    break
+    return rows
 
 
 # --------------------------------------------------------------------------- mappings
@@ -1534,7 +2042,10 @@ def _lane_source(lane: Lane) -> dict[str, Any]:
         "type": "lane",
         "lane": lane.key,
         "order": lane.order,
-        "tier_group": lane.tier_group,
+        "pattern": lane.pattern,
+        "cadence": lane.cadence,
+        "slot_minutes": lane.slot_minutes,
+        "shows": list(lane.shows),
         "series_ids": list(dict.fromkeys(u.series_id for u in lane.units)),
     }
 
