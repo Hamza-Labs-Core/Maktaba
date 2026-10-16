@@ -88,7 +88,7 @@ func TestTimelineChanges(t *testing.T) {
 	}
 	f := newFixture(
 		stagesRule(),
-		&queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"a", "b", "c", "d"}, Rows: [][]driver.Value{{uidB, "Kids", 600.0, true}}},
+		&queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"a", "b", "c", "d", "e"}, Rows: [][]driver.Value{{uidB, "Kids", 600.0, true, false}}},
 		&queuestest.Rule{Match: "where j.subject_kind = $1 and j.subject_id = $2::uuid", Cols: timelineCols, Rows: [][]driver.Value{
 			row(3, nil),
 			row(2, `{"changes":[{"action":"added","what":"episodes","target":"Show S1","count":2,"items":["e1","e2"]}]}`),

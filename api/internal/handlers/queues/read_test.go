@@ -346,8 +346,8 @@ func TestItemHistory(t *testing.T) {
 			stageRow("detect", "seasons", 1, "cpu", withKinds("{library}")),
 			stageRow("tag", "seasons", 2, "cpu", withKinds("{season}")),
 		),
-		{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries"},
-			Rows: [][]driver.Value{{uidB, "Kids", 600.0, true}}},
+		{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries", "isextra"},
+			Rows: [][]driver.Value{{uidB, "Kids", 600.0, true, false}}},
 		{Match: "from unnest", Cols: []string{"k", "id", "label"}, Rows: [][]driver.Value{
 			{"video", uidA, "Episode 1"}, {"library", uidB, "Kids"}}},
 		{Match: "select distinct on (stage) id", Cols: jobRefCols(), Rows: [][]driver.Value{jobRefRow(5, "probe", "done")}},
@@ -392,13 +392,32 @@ func TestItemHistory(t *testing.T) {
 		}
 	})
 	t.Run("short unplaced video", func(t *testing.T) {
-		f := newFixture(&queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries"},
-			Rows: [][]driver.Value{{uidB, "Kids", 60.0, false}}}, stagesRule())
+		f := newFixture(&queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries", "isextra"},
+			Rows: [][]driver.Value{{uidB, "Kids", 60.0, false, false}}}, stagesRule())
 		rec := f.do("GET", "/api/items/video/"+uidA+"/history", "", viewer())
 		var h ItemHistory
 		decode(t, rec, &h)
 		if h.Kinds[0] != "short" {
 			t.Errorf("kinds = %v", h.Kinds)
+		}
+	})
+	t.Run("extra video", func(t *testing.T) {
+		// detect stores extras as series_seasons.metadata.extras: a JSON array of video ids
+		// (text). A video listed there is an extra even if it also has a short duration.
+		f := newFixture(&queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries", "isextra"},
+			Rows: [][]driver.Value{{uidB, "Kids", 60.0, false, true}}}, stagesRule())
+		rec := f.do("GET", "/api/items/video/"+uidA+"/history", "", viewer())
+		var h ItemHistory
+		decode(t, rec, &h)
+		if len(h.Kinds) != 1 || h.Kinds[0] != "extra" {
+			t.Errorf("kinds = %v, want [extra]", h.Kinds)
+		}
+	})
+	t.Run("extra lookup reads the detect metadata format", func(t *testing.T) {
+		for _, want := range []string{"ss.metadata->'extras' @> to_jsonb(v.id::text)", "ss.retired_at IS NULL"} {
+			if !strings.Contains(videoSubjectSQL, want) {
+				t.Errorf("videoSubjectSQL lacks %q", want)
+			}
 		}
 	})
 	t.Run("library lists seasons and kinds", func(t *testing.T) {

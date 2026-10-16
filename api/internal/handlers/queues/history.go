@@ -22,7 +22,10 @@ const shortVideoSec = 180
 const (
 	videoSubjectSQL = `
 SELECT v.library_id::text, l.name, COALESCE(v.duration_sec, 0),
-       EXISTS (SELECT 1 FROM series_episodes se WHERE se.video_id = v.id)
+       EXISTS (SELECT 1 FROM series_episodes se WHERE se.video_id = v.id),
+       EXISTS (SELECT 1 FROM series_seasons ss
+                WHERE ss.library_id = v.library_id AND ss.retired_at IS NULL
+                  AND ss.metadata->'extras' @> to_jsonb(v.id::text))
   FROM videos v JOIN libraries l ON l.id = v.library_id
  WHERE v.id = $1::uuid`
 
@@ -235,10 +238,12 @@ func (h *Handler) loadSubject(ctx context.Context, out *ItemHistory) (bool, erro
 	switch kind {
 	case KindVideo:
 		var dur float64
-		var inSeries bool
-		err = h.DB.QueryRowContext(ctx, videoSubjectSQL, id).Scan(&lib, &libName, &dur, &inSeries)
+		var inSeries, isExtra bool
+		err = h.DB.QueryRowContext(ctx, videoSubjectSQL, id).Scan(&lib, &libName, &dur, &inSeries, &isExtra)
 		if err == nil {
 			switch {
+			case isExtra:
+				out.Kinds = []string{"extra"}
 			case inSeries:
 				out.Kinds = []string{"episode"}
 			case dur > 0 && dur < shortVideoSec:
