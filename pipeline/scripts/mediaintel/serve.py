@@ -197,6 +197,8 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                 if ": cached (" in ln or (ln.startswith("  ") and ": {'videos'" in ln)
             )
             unit = "channels"
+        elif STEPS[current][0] == "dizquetv-shows":
+            return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
         else:  # no counter: say so instead of counting log lines
@@ -204,6 +206,35 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                          "phase": "working (this step has no counter)"}  # fmt: skip
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
+
+
+_DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
+    """dizqueTV shows, one library at a time: a library is done at its "Backups of
+    changed shows" line. Inside one, the shows it will write ("+" lines), the episode
+    details fetched from Plex so far, and whether Plex is stalling."""
+    ends = [i for i, ln in enumerate(body) if ln.startswith("Backups of changed shows")]
+    cur = body[ends[-1] + 1 :] if ends else body
+    prog: dict[str, Any] = {"done": len(ends), "total": n_lib, "unit": "libraries"}
+    writing = sum(1 for ln in cur if ln.startswith("  +  "))
+    details = [m for ln in cur if (m := _DETAILS_RE.match(ln))]
+    parts = []
+    if writing:
+        parts.append(f"now writing {writing} show{'s' if writing != 1 else ''}")
+    if details:
+        parts.append(f"{int(details[-1].group(1)):,} of {int(details[-1].group(2)):,}"
+                     " episode details from Plex")  # fmt: skip
+    elif writing:
+        parts.append("fetching episode details from Plex")
+    tail = [ln for ln in cur if ln.strip()][-1:]
+    if tail and "Plex not answering" in tail[0]:
+        n = sum(1 for ln in cur if "Plex not answering" in ln)
+        parts.append(f"Plex not answering, retrying ({n} so far in this library)")
+    if parts:
+        prog["phase"] = " · ".join(parts)
+    return prog
 
 
 def _sampled_progress(body: list[str], stage: str) -> dict[str, Any]:

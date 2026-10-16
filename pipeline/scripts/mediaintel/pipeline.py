@@ -194,8 +194,9 @@ def _run(
     if tv and server is not None and want("dizquetv-shows"):
         from . import dizquetv_shows
 
-        _step("dizquetv-shows")
+        _step(f"dizquetv-shows ({len(libraries)} libraries)")
         for lib in libraries:
+            print(f"=== {lib}", flush=True)
             dizquetv_shows.run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",

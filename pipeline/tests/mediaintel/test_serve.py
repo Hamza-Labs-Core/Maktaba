@@ -169,3 +169,26 @@ def test_pick_copies_keeps_the_mp4_transcode_with_the_youtube_details() -> None:
     assert copies == {mkv["path"]: mp4["path"]}
     assert kept[mp4["path"]]["upload_date"] == "2020-05-01"  # took the original's details
     assert kept[mp4["path"]]["youtube_id"] == "y2vMJey7UJc"
+
+
+def test_dizquetv_shows_counts_libraries_and_plex_stalls() -> None:
+    log = [
+        "##### export-plex (3 libraries)  (03:24:34)",
+        "=== A",
+        "##### dizquetv-shows (3 libraries)  (03:50:03)",
+        "=== A",
+        "  =  Show A (4)",
+        "Backups of changed shows: x",
+        "=== B",
+        "  +  Show B - S1: new S1, 10 episodes",
+        "  +  Show B - S2: new S2, 8 episodes",
+        "  [500/900] episode details from Plex",
+        "     (Plex not answering; retry 1/4 in 10 s)",
+    ]
+    from scripts.mediaintel import serve
+
+    prog = serve._steps(log)[1]
+    assert prog["done"] == 1 and prog["total"] == 3 and prog["unit"] == "libraries"
+    assert "writing 2 shows" in prog["phase"]
+    assert "500 of 900 episode details" in prog["phase"]
+    assert "Plex not answering" in prog["phase"]
