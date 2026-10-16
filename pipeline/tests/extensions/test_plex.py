@@ -130,11 +130,11 @@ async def test_second_run_with_identical_remote_state_writes_nothing(db: Databas
     writes = list(w.fake.writes)
     assert writes
 
-    # the first run cached the rating keys, which changes the dry fingerprint once: the
-    # second run reaches the handler, computes an empty change set and writes nothing
+    # the first run cached the rating keys, but the fingerprint covers membership and settings
+    # only, so the very next trigger is already skipped without reaching the handler
     second = await collection_job(db, rt, w)
-    assert second["outcome"] == "unchanged" and w.fake.writes == writes
-    # now the inputs are stable: the dry fingerprint matches and the handler is not called
+    assert second["outcome"] == "skipped_unchanged"
+    assert w.fake.writes == writes
     third = await collection_job(db, rt, w)
     assert third["outcome"] == "skipped_unchanged"
     assert w.fake.writes == writes
@@ -299,7 +299,7 @@ async def test_dry_fingerprint_is_stable_database_only_and_sensitive(db: Databas
 
     await collection_job(db, await setup_runtime(db, [ext], SETTINGS), w)
     cached = await fp(db, subject)
-    assert cached != a  # cached rating keys are part of the input
+    assert cached == a  # the rating-key cache is not an input: a first run settles in one pass
     assert cached == await fp(db, subject)
 
     await set_membership(db, w.season, "h2")

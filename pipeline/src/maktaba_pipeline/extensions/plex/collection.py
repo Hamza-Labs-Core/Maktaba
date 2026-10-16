@@ -442,13 +442,12 @@ async def fingerprint(db: Any, subject: Subject, write_mode: str) -> str | None:
     if season is None:
         return None
     members = await load_members(db, subject.id)
-    links = await get_links(db, ITEM_TARGET, "video", [str(m.video_id) for m in members])
-    keys = [
-        links[str(m.video_id)].external_id if str(m.video_id) in links else None for m in members
-    ]
+    # Season membership and order, not the cached rating keys: the first run caches them as a
+    # side effect, and a fingerprint that moved with that cache would make the stage run twice.
+    order = [str(m.video_id) for m in members]
     return canonical_hash(
         {
-            "keys": keys,
+            "members": order,
             "title": season.title,
             "membership": season.membership_hash,
             "retired": season.retired,
