@@ -292,9 +292,12 @@ def test_fillers_between_episodes_of_a_long_block_and_no_recent_repeat() -> None
 
 
 def reciter(sid: str, name: str, folder: str, n: int = 114, minutes: float = 15) -> SeasonCandidate:
-    return show(sid, name, n=n, minutes=minutes, genre="quran_recitation", fmt="recitation",
-                folder=folder, presenter=Path_leaf(folder),
-                tags={"topic:quran_recitation": 1.0, "format:program": 0.0})  # fmt: skip
+    from dataclasses import replace
+
+    s = show(sid, name, n=n, minutes=minutes, genre="quran_recitation", fmt="recitation",
+             folder=folder, presenter="Quranic Recitations",
+             tags={"topic:quran_recitation": 1.0, "format:program": 0.0})  # fmt: skip
+    return replace(s, library=Path_leaf(folder))  # the reciter is his library
 
 
 def Path_leaf(folder: str) -> str:  # noqa: N802 — a tiny helper
@@ -376,3 +379,18 @@ def test_friday_slots_go_around_the_khutbah_and_no_queue_is_lost() -> None:
     assert set(mix.lanes) <= on_air
     placed = {u.series_key for k in mix.lanes for u in p.lanes[k].units}
     assert all(f"برنامج w{i}" in placed for i in range(120))
+
+
+def test_the_reciter_is_his_library_and_a_scholars_recitation_stays_a_programme() -> None:
+    from dataclasses import replace
+
+    scholar = [replace(x, library="العدوي") for x in many_shows(20, prefix="l", fmt="lecture")]
+    stray = replace(reciter("st", "قراءة", "Y:/العدوي", n=10), library="العدوي")
+    p = plan([*quran_library(), *scholar, stray])
+    q = channel(p, "quran")
+    names = {p.lanes[k].name for k in q.lanes}
+    assert "الحصري" in names and "المنشاوي" in names
+    assert not any("Quranic Recitations" in n for n in names)  # the YouTube channel name
+    assert not any(u.series_id == "st" for k in q.lanes for u in p.lanes[k].units)
+    # the scholar's recitation-tagged season is one of his programmes
+    assert any(u.series_id == "st" for ln in p.lanes.values() if not ln.special for u in ln.units)

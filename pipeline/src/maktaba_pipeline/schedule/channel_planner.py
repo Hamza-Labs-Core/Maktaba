@@ -480,6 +480,10 @@ class PlannerConfig:
     quran_time_rules: tuple[tuple[str, str, str], ...] = (
         ("04:00", "07:00", "mujawwad"), ("21:00", "22:00", "warsh"),
     )  # fmt: skip
+    #: a library is a reciter's when this share of its hours is recitation; only those
+    #: feed the Quran channel and Quran at dawn (a scholar's few recitation-tagged
+    #: seasons stay his programmes)
+    quran_library_min_share: float = 0.6
     quran_filler_topics: tuple[str, ...] = ("quran_recitation", "tajweed", "dua_dhikr")
     #: talk formats never used as filler on the Quran channel
     quran_filler_exclude_formats: tuple[str, ...] = (
@@ -518,6 +522,7 @@ class ProgramUnit:
     episodes: tuple[EpisodeRef, ...]
     brand: bool = False
     season_name: str | None = None
+    library: str = ""
 
     @property
     def tier_group(self) -> str:
@@ -759,6 +764,7 @@ def _unit(s: SeasonCandidate, cfg: PlannerConfig) -> ProgramUnit:
         episodes=tuple(e for e in s.episodes if e.duration_s > 0),
         brand=s.brand,
         season_name=s.season_name,
+        library=s.library,
     )
 
 
@@ -1478,7 +1484,7 @@ QURAN_STYLES_AR: dict[str, str] = {"warsh": "ورش", "mujawwad": "مجود", "m
 
 
 def recitation_style(u: ProgramUnit) -> str:
-    text = f"{u.name} {u.folder} {u.presenter}".lower()
+    text = f"{u.library} {u.name} {u.folder} {u.presenter}".lower()
     for style in ("warsh", "mujawwad", "murattal"):
         if any(w in text for w in QURAN_STYLES[style]):
             return style
@@ -1486,10 +1492,11 @@ def recitation_style(u: ProgramUnit) -> str:
 
 
 def _reciter_lanes(units: Sequence[ProgramUnit]) -> list[Lane]:
-    """One lane per reciter and style, his surahs in their order."""
+    """One lane per reciter and style (a reciter's library: الحصري, عبد الباسط - مجود …),
+    his surahs in their order."""
     groups: dict[tuple[str, str], list[ProgramUnit]] = defaultdict(list)
     for u in units:
-        reciter = u.presenter or Path(u.folder.replace("\\", "/")).name
+        reciter = u.library or u.presenter or Path(u.folder.replace("\\", "/")).name
         groups[(reciter, recitation_style(u))].append(u)
     lanes: list[Lane] = []
     for (reciter, style), us in groups.items():
@@ -1594,7 +1601,21 @@ def suggest_channels(
     units = {s.series_id: _unit(s, cfg) for s in programs}
     unplaced: list[tuple[str, str]] = list(filler_notes)
 
-    quran_ids = {s.series_id for s in programs if _is_recitation(s, cfg)}
+    # Quran comes from the reciters' libraries (most of their hours are recitation)
+    lib_hours: dict[str, float] = defaultdict(float)
+    lib_rec: dict[str, float] = defaultdict(float)
+    for s in programs:
+        lib_hours[s.library] += s.duration_s
+        if _is_recitation(s, cfg):
+            lib_rec[s.library] += s.duration_s
+    reciter_libs = {
+        lib for lib, h in lib_rec.items() if h >= cfg.quran_library_min_share * lib_hours[lib]
+    }
+    quran_ids = {
+        s.series_id
+        for s in programs
+        if _is_recitation(s, cfg) and (not reciter_libs or s.library in reciter_libs)
+    }
     khutbah_ids = {s.series_id for s in programs if _is_khutbah(s, cfg)} - quran_ids
 
     lanes: dict[str, Lane] = {}
