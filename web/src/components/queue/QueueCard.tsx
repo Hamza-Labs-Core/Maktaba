@@ -8,6 +8,13 @@ import type { Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
 
+/** Display name of an external service named by the API ("plex" -> "Plex"). */
+const SERVICE_NAMES: Record<string, string> = { plex: "Plex", dizquetv: "dizqueTV", youtube: "YouTube" };
+
+export function serviceName(service: string): string {
+  return SERVICE_NAMES[service] ?? service;
+}
+
 export interface QueueCardProps {
   info: StageInfo;
   summary: QueueSummary;
@@ -35,6 +42,7 @@ export function QueueCard({
   const total = Math.max(wave.total, wave.done);
   const progress = t("queue.card.doneOf", { done: n(wave.done), total: n(total) });
   const noWorker = !!summary.no_worker && counts.running === 0 && counts.pending > 0;
+  const service = summary.retrying_service ? serviceName(summary.retrying_service) : null;
   const reasonKey = noWorker
     ? "no_worker"
     : (summary.waiting_reason ?? (counts.running === 0 && counts.pending === 0 ? "idle" : null));
@@ -49,6 +57,7 @@ export function QueueCard({
       t(`queue.waiting.${reasonKey}`, {
         time: fmt.dur(summary.oldest_waiting_sec),
         stage: info.label,
+        service: service ?? "",
       })
     ) : null;
 
@@ -83,6 +92,12 @@ export function QueueCard({
         <div className="mkt-q-card__nums">
           <strong className="mkt-q-card__progress">{progress}</strong>
           <span className="mkt-q-card__detail">{detail}</span>
+          {service && counts.running > 0 && (
+            <span className="mkt-q-card__flag mkt-q-card__flag--retrying">
+              <span aria-hidden="true">↻ </span>
+              {t("queue.card.serviceRetrying", { service })}
+            </span>
+          )}
           {counts.failed_open > 0 && (
             <span className="mkt-q-card__flag">
               <span aria-hidden="true">! </span>

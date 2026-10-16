@@ -92,6 +92,7 @@ export type WaitingReason =
   | "pool_full"
   | "debouncing"
   | "backoff"
+  | "service_retrying"
   | "upstream"
   | "disabled"
   | "not_configured"
@@ -122,6 +123,8 @@ export interface QueueSummary {
   served_by?: string[];
   /** true when work is waiting but no live worker serves this stage. */
   no_worker?: boolean;
+  /** External service ("plex", "dizquetv") whose failures put waiting rows into backoff. */
+  retrying_service?: string | null;
 }
 
 export interface WorkerHost {

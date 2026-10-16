@@ -137,6 +137,12 @@ func TestWaitingReason_Precedence(t *testing.T) {
 		{"pool full", func(i *stageInputs) { i.Live.Pending, i.Live.Ready, i.PoolBusy = 4, 4, 2 }, WaitPoolFull, false},
 		{"debouncing", func(i *stageInputs) { i.Live.Pending = 2 }, WaitDebouncing, false},
 		{"backoff", func(i *stageInputs) { i.Live.Pending, i.Live.Backoff = 2, 1 }, WaitBackoff, false},
+		{"backoff on an unreachable service", func(i *stageInputs) {
+			i.Live.Pending, i.Live.Backoff, i.Live.BackoffCause = 2, 1, ptr("plex_unreachable")
+		}, WaitServiceRetrying, false},
+		{"backoff on another cause stays backoff", func(i *stageInputs) {
+			i.Live.Pending, i.Live.Backoff, i.Live.BackoffCause = 2, 1, ptr("nas_timeout")
+		}, WaitBackoff, false},
 		{"upstream", func(i *stageInputs) { i.UpstreamLive = true }, WaitUpstream, false},
 		{"idle", func(*stageInputs) {}, WaitIdle, false},
 		{"ready and free slot -> about to claim", func(i *stageInputs) { i.Live.Pending, i.Live.Ready = 1, 1 }, "", true},
@@ -363,10 +369,10 @@ func snapshotRules() []*queuestest.Rule {
 			}},
 		{Match: "group by s.pool", Cols: []string{"pool", "n"}, Rows: [][]driver.Value{{"nas_read", int64(2)}}},
 		{Match: "from queue_control", Cols: []string{"paused"}, Rows: [][]driver.Value{{false}}},
-		{Match: "min(created_at) filter", Cols: []string{"stage", "pending", "ready", "backoff", "running", "paused", "since", "oldest"},
+		{Match: "min(created_at) filter", Cols: []string{"stage", "pending", "ready", "backoff", "running", "paused", "since", "oldest", "backoff_cause"},
 			Rows: [][]driver.Value{
-				{"probe", int64(10), int64(8), int64(0), int64(2), int64(0), t0.Add(-time.Hour), t0.Add(-2 * time.Minute)},
-				{"transcribe", int64(3), int64(3), int64(0), int64(0), int64(0), t0.Add(-time.Hour), t0.Add(-time.Minute)},
+				{"probe", int64(10), int64(8), int64(0), int64(2), int64(0), t0.Add(-time.Hour), t0.Add(-2 * time.Minute), nil},
+				{"transcribe", int64(3), int64(3), int64(0), int64(0), int64(0), t0.Add(-time.Hour), t0.Add(-time.Minute), nil},
 			}},
 		{Match: "and finished_at > $1 group by stage", Cols: []string{"stage", "done", "skipped", "recent"},
 			Rows: [][]driver.Value{{"probe", int64(100), int64(20), int64(30)}}},
@@ -558,5 +564,24 @@ func TestMountedRoutes(t *testing.T) {
 	})
 	for missing := range want {
 		t.Errorf("route not mounted: %s", missing)
+	}
+}
+
+func TestRetryingService(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+	cases := map[string]string{"plex_unreachable": "plex", "dizquetv_unreachable": "dizquetv", "nas_timeout": "", "_unreachable": ""}
+	for cause, want := range cases {
+		got := retryingService(ptr(cause))
+		if (got == nil) != (want == "") || (got != nil && *got != want) {
+			t.Fatalf("%s: got %v want %q", cause, got, want)
+		}
+	}
+	if retryingService(nil) != nil {
+		t.Fatal("nil cause must give nil")
+	}
+	s := summarizeStage(stageInputs{Info: StageInfo{Stage: "plex_index", Enabled: true}, PoolSize: 2, Now: t0,
+		Served: Coverage{Workers: 1}, Live: liveCounts{Pending: 1, Backoff: 1, Running: 1, BackoffCause: ptr("plex_unreachable")}})
+	if s.RetryingService == nil || *s.RetryingService != "plex" {
+		t.Fatalf("summary while running: %v", s.RetryingService)
 	}
 }

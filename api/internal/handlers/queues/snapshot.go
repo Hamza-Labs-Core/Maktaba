@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -17,6 +18,9 @@ const rateWindow = 10 * time.Minute
 type liveCounts struct {
 	Pending, Ready, Backoff, Running, Paused int
 	Since, Oldest                            *time.Time
+	// BackoffCause is the error_cause of a backing-off row whose failure
+	// was an unreachable service ("plex_unreachable"), if any.
+	BackoffCause *string
 }
 
 func (c *liveCounts) live() int { return c.Pending + c.Running + c.Paused }
@@ -87,6 +91,7 @@ func summarizeStage(in stageInputs) QueueSummary {
 	}
 	s.ServedWorkers = in.Served.Workers
 	s.NoWorker = noWorker(in)
+	s.RetryingService = retryingService(in.Live.BackoffCause)
 	if in.Live.Running == 0 {
 		s.WaitingReason = waitingReason(in)
 	}
@@ -120,6 +125,8 @@ func waitingReason(in stageInputs) *WaitingReason {
 		return pick(WaitPoolFull)
 	case in.Live.Pending > 0 && in.Live.Ready == 0 && in.Live.Backoff == 0:
 		return pick(WaitDebouncing)
+	case in.Live.Pending > 0 && in.Live.Ready == 0 && retryingService(in.Live.BackoffCause) != nil:
+		return pick(WaitServiceRetrying)
 	case in.Live.Pending > 0 && in.Live.Ready == 0:
 		return pick(WaitBackoff)
 	case in.Live.Pending == 0 && in.UpstreamLive:
@@ -130,6 +137,19 @@ func waitingReason(in stageInputs) *WaitingReason {
 	return nil
 }
 
+// retryingService maps an unreachable-service cause to the service name
+// ("plex_unreachable" -> "plex"); nil for anything else.
+func retryingService(cause *string) *string {
+	if cause == nil {
+		return nil
+	}
+	name, ok := strings.CutSuffix(*cause, "_unreachable")
+	if !ok || name == "" {
+		return nil
+	}
+	return &name
+}
+
 const liveCountsSQL = `
 SELECT stage,
        count(*) FILTER (WHERE state = 'pending'),
@@ -138,7 +158,9 @@ SELECT stage,
        count(*) FILTER (WHERE state IN ('claimed','running','resuming')),
        count(*) FILTER (WHERE state = 'paused'),
        min(created_at),
-       min(created_at) FILTER (WHERE state = 'pending' AND (not_before IS NULL OR not_before <= $1))
+       min(created_at) FILTER (WHERE state = 'pending' AND (not_before IS NULL OR not_before <= $1)),
+       max(error_cause) FILTER (WHERE state = 'pending' AND not_before > $1 AND attempts > 0
+                                  AND error_cause LIKE '%unreachable')
   FROM processing_jobs
  WHERE state IN ('pending','claimed','running','resuming','paused')
  GROUP BY stage`
@@ -183,10 +205,14 @@ func (h *Handler) loadLiveCounts(ctx context.Context, now time.Time) (map[string
 		var stage string
 		var c liveCounts
 		var since, oldest sql.NullTime
-		if err := rows.Scan(&stage, &c.Pending, &c.Ready, &c.Backoff, &c.Running, &c.Paused, &since, &oldest); err != nil {
+		var cause sql.NullString
+		if err := rows.Scan(&stage, &c.Pending, &c.Ready, &c.Backoff, &c.Running, &c.Paused, &since, &oldest, &cause); err != nil {
 			return nil, err
 		}
 		c.Since, c.Oldest = nullTimePtr(since), nullTimePtr(oldest)
+		if cause.Valid {
+			c.BackoffCause = &cause.String
+		}
 		out[stage] = c
 	}
 	return out, rows.Err()

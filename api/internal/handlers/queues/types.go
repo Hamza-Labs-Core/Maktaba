@@ -118,6 +118,10 @@ const (
 	WaitPoolFull       WaitingReason = "pool_full"
 	WaitDebouncing     WaitingReason = "debouncing"
 	WaitBackoff        WaitingReason = "backoff"
+	// WaitServiceRetrying: the waiting rows are backing off because an
+	// external service (Plex, dizqueTV) did not answer ("Plex not
+	// answering, retrying"); QueueSummary.RetryingService names it.
+	WaitServiceRetrying WaitingReason = "service_retrying"
 	WaitUpstream       WaitingReason = "upstream"
 	WaitIdle           WaitingReason = "idle"
 )
@@ -160,6 +164,10 @@ type QueueSummary struct {
 	NoWorker      bool     `json:"no_worker"`
 	// Extension mirrors StageInfo.Extension for card rendering.
 	Extension *string `json:"extension"`
+	// RetryingService names the external service ("plex", "dizquetv")
+	// whose failures put this stage's waiting rows into backoff; nil when
+	// none did. Set even while other rows run, so the card can say so.
+	RetryingService *string `json:"retrying_service"`
 }
 
 // Coverage is the live worker coverage of one stage.
