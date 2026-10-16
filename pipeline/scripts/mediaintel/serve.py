@@ -655,6 +655,7 @@ def group_series(
         g["seasons"].append(
             {
                 "season": meta.get("season"),
+                "name": meta.get("season_name"),
                 "episodes": n,
                 "first_air": meta.get("first_air"),
                 "last_air": meta.get("last_air"),

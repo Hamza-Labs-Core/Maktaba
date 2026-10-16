@@ -32,11 +32,15 @@ def cache_dir(conn: sqlite3.Connection) -> Path:
 
 def _copy(src: str, dst: Path) -> str | None:
     tmp = dst.with_suffix(".part.jpg")
-    r = subprocess.run(
-        [FFMPEG, "-v", "error", "-nostdin", "-y", "-i", src, "-vf", "scale=320:-2",
-         "-frames:v", "1", "-q:v", "5", str(tmp)],
-        capture_output=True, timeout=60, check=False,
-    )  # fmt: skip
+    try:
+        r = subprocess.run(
+            [FFMPEG, "-v", "error", "-nostdin", "-y", "-i", src, "-vf", "scale=320:-2",
+             "-frames:v", "1", "-q:v", "5", str(tmp)],
+            capture_output=True, timeout=60, check=False,
+        )  # fmt: skip
+    except subprocess.TimeoutExpired:  # a stalled share: recorded as failed, retried next run
+        tmp.unlink(missing_ok=True)
+        return "read timed out (60 s)"
     if r.returncode or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
         return (r.stderr.decode(errors="replace").strip().splitlines() or ["no image"])[-1][:200]
