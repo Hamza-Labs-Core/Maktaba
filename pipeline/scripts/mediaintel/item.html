@@ -42,6 +42,13 @@
   </section>
 
   <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2>Topics, clips and promos</h2><span class="muted" id="extra-sub"></span></div>
+    <div class="scroll"><table id="topics"></table></div>
+    <div class="scroll" style="margin-top:12px"><table id="clips"></table></div>
+    <div class="scroll" style="margin-top:12px"><table id="promos"></table></div>
+  </section>
+
+  <section class="panel">
     <div class="top" style="margin-bottom:8px"><h2>History</h2><span class="label">latest 50 results</span></div>
     <ol class="tl" id="history"></ol>
   </section>
@@ -81,6 +88,18 @@ function render(d) {
       <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}
         ${g.tv === null ? `<span class="muted">dizqueTV not reachable</span>` : g.tv.length ? g.tv.map(c => `<span class="chip good">dizqueTV: ${esc(c)}</span>`).join(" ") : `<span class="muted">no dizqueTV show yet</span>`}</td></tr>`;
   }).join("") : `<tr><td class="empty">No series detected in this library yet.</td></tr>`;
+  const plexCell = c => c ? `<span class="chip good">Plex: ${esc(c)}</span>` : `<span class="muted">no Plex collection yet</span>`;
+  $("extra-sub").textContent = `${fmt(d.topics.length)} topics · ${fmt(d.clip_groups.length)} clip groups · ${fmt(d.promos.length)} promos linked`;
+  $("topics").innerHTML = d.topics.length ? `<tr><th>Topic (across shows)</th><th>Videos</th><th>Where it appears</th></tr>` + d.topics.map(t =>
+    `<tr><td class="lib" dir="auto">${esc(t.name)}</td><td class="n">${fmt(t.items)}</td><td dir="auto">${plexCell(t.collection)}</td></tr>`).join("")
+    : `<tr><td class="empty">No topic playlists cut across this library's shows.</td></tr>`;
+  $("clips").innerHTML = d.clip_groups.length ? `<tr><th>Clips / stand-alone</th><th>Kind</th><th>Grouped by</th><th>Videos</th><th>Where it appears</th></tr>` + d.clip_groups.map(g =>
+    `<tr><td class="lib" dir="auto">${esc(g.name)}</td><td><span class="chip">${g.kind === "clips" ? "filler" : "stand-alone"}</span></td><td>${esc(g.basis)}</td>
+      <td class="n">${fmt(g.items)}</td><td dir="auto">${plexCell(g.collection)}</td></tr>`).join("")
+    : `<tr><td class="empty">No clips or stand-alone videos left over.</td></tr>`;
+  $("promos").innerHTML = d.promos.length ? `<tr><th>Promo</th><th>Advertises</th><th>Why</th></tr>` + d.promos.map(p =>
+    `<tr><td dir="auto">${esc(p.title)}</td><td dir="auto">${esc(p.show)}${p.season ? ` · S${p.season}` : ""} <span class="muted">${esc(p.library)}</span></td><td dir="auto" class="muted">${esc(p.evidence)}</td></tr>`).join("")
+    : `<tr><td class="empty">No promos linked to a show.</td></tr>`;
   $("history").innerHTML = d.history.length ? d.history.map(h => `<li class="${h.state === "failed" ? "failed" : ""}"><span class="dot"></span>
     <span class="t num muted">${esc(new Date(h.at).toLocaleString())}</span>
     <span><span class="chip ${h.state === "failed" ? "badc" : "good"}">${esc(h.stage)} ${esc(h.state)}</span> <span dir="auto">${esc(h.file)}</span>${h.error ? `<div class="err">${esc(h.error)}</div>` : ""}</span></li>`).join("")

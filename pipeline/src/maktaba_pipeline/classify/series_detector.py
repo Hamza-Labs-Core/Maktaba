@@ -61,6 +61,8 @@ from ..audio.chromaprint import matches as audio_matches
 from ..text.arabic import fold
 from ..thumbnail.dhash import hamming
 from .title_template import (
+    _ORD_ALT,
+    _ORD_VALUE,
     episode_number,
     is_recap,
     is_teaser,
@@ -77,12 +79,13 @@ __all__ = [
     "PlaylistFacts",
     "Season",
     "Series",
+    "Topic",
     "VideoFacts",
     "detect",
     "is_short",
 ]
 
-DETECTOR_VERSION: int = 2
+DETECTOR_VERSION: int = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +152,16 @@ class DetectorConfig:
     ongoing_month_coverage: float = 0.5
     #: anything shorter is a short (clip, promo, YouTube Short) and never an episode
     min_episode_s: float = 180.0
+    #: title-brand shows ("شاهد على العصر | …"): a title segment carried by at least this
+    #: many videos and this share of the channel names a show
+    brand_min: int = 20
+    brand_share: float = 0.02
+    #: … which is rebuilt from its own playlists only when playlist detection scattered
+    #: it: over this many series, or with less than this share in series of its name
+    brand_scattered_series: int = 3
+    brand_named_share: float = 0.7
+    #: a curated playlist cutting across shows ("الشأن الفلسطيني") is a topic collection
+    topic_min: int = 5
 
 
 @dataclass
@@ -165,6 +178,11 @@ class Season:
     #: episode number of each episode, same order: from the titles when the season is
     #: numbered consistently ("كنوز السيرة 31" → 31, gaps kept), else 1..n
     numbers: list[int] = field(default_factory=list)
+    #: a season with a name of its own (a guest of a talk show, "وليد جنبلاط"), shown
+    #: instead of "الموسم N"
+    name: str | None = None
+    #: the year a playlist title gives the season ("بلا حدود - 2005")
+    year: int | None = None
 
 
 @dataclass
@@ -173,6 +191,8 @@ class Series:
     key: str  # folded identity key
     seasons: list[Season]
     kind: str = "episodic"  # episodic | ongoing | short-form | clips
+    #: built from a title brand ("شاهد على العصر | …") rather than playlist seeds
+    brand: bool = False
 
     @property
     def episode_count(self) -> int:
@@ -180,10 +200,21 @@ class Series:
 
 
 @dataclass
+class Topic:
+    """A curated playlist that cuts across shows ("الشأن الفلسطيني"): its own collection,
+    which may overlap seasons."""
+
+    name: str
+    playlist_id: str
+    items: list[str]  # video keys in playlist order
+
+
+@dataclass
 class Detection:
     series: list[Series]
     unassigned: list[str]
     shorts: list[str] = field(default_factory=list)  # excluded from series entirely
+    topics: list[Topic] = field(default_factory=list)
     version: int = DETECTOR_VERSION
 
 
@@ -1017,6 +1048,7 @@ def detect(
     ``progress(done, total)`` is called now and then while loose videos are matched
     against the seasons, the slow part on a large channel."""
     cfg = config or DetectorConfig()
+    presenter_words = list(presenter_words)
     # shorts never become episodes: drop them before anything else looks at the channel
     shorts = sorted(v.key for v in videos if is_short(v, cfg))
     short_set = set(shorts)
@@ -1265,6 +1297,20 @@ def detect(
         if ser.kind == "ongoing":
             ser.seasons = _by_year(ser.seasons, facts)
 
+    # 5b'. title-brand shows that playlist detection scattered are rebuilt from their own
+    #      playlists ("شاهد على العصر | <guest>", "بلا حدود - 2005")
+    phrases = [fold(w) for w in presenter_words]
+    if _apply_brands(series, videos, playlists, facts, presenter, cfg, phrases):
+        assigned = {
+            k
+            for ser in series
+            for se in ser.seasons
+            for k in (*se.episodes, *se.extras, *se.duplicates)
+        }
+
+    # 5b''. numbered shows no playlist holds ("قصة وفكرة - ح1 …", "قصة وفكرة2 - ح1 …")
+    assigned |= _numbered_shows(videos, assigned, series, phrases, cfg, presenter)
+
     # 5c. one place per video: a video in two playlists can be an episode of one season
     #     and fall outside another playlist's length band (an "extra" there). The episode
     #     wins; an extra, a duplicate upload or a clip belongs to one season only.
@@ -1288,23 +1334,29 @@ def detect(
             )
             positions = positions_of([*own_pls, *playlists])
             primary = len(own_pls) <= 1 or len(own_pls[0].members) >= 2 * len(own_pls[1].members)
-            se.episodes = (
-                sorted(se.episodes, key=lambda k: (facts[k].air_date or date.max, facts[k].title))
-                if ser.kind == "ongoing"
-                else _order(se.episodes, positions, facts, multi_playlist=not primary)
-            )
+            if ser.brand:
+                pass  # brand seasons arrive ordered (umbrella playlist, then title numbers)
+            elif ser.kind == "ongoing":
+                se.episodes = sorted(
+                    se.episodes, key=lambda k: (facts[k].air_date or date.max, facts[k].title)
+                )
+            else:
+                se.episodes = _order(se.episodes, positions, facts, multi_playlist=not primary)
             se.extras = sorted(
                 set(se.extras), key=lambda k: (facts[k].air_date or date.max, facts[k].title)
             )
             se.numbers = title_numbers(se.episodes, facts)
             se.first_air, se.last_air = _date_span(se.episodes, facts)
+            if se.year and not any(facts[k].date_exact for k in se.episodes):
+                # the playlist says the year; approximate upload dates ("5 years ago") don't
+                se.first_air, se.last_air = date(se.year, 1, 1), date(se.year, 12, 31)
             se.median_duration_s = _median([d for k in se.episodes if (d := facts[k].duration_s)])
         ser.seasons.sort(key=lambda x: x.number)
         # a playlist named apart from its episodes ("سيرة الرسول ﷺ" holding "كنوز السيرة N")
         # is named the way the episode titles name the show
         eps_all = [k for se in ser.seasons for k in se.episodes]
         own = [w for w in fold(ser.name).split() if len(w) > 2]
-        if ser.kind != "clips" and eps_all and own:
+        if ser.kind != "clips" and not ser.brand and eps_all and own:
             carried = sum(all(w in fold(facts[k].title) for w in own) for k in eps_all)
             if carried < 0.3 * len(eps_all):
                 named = _title_name(eps_all, facts, presenter | cfg.generic_words)
@@ -1318,7 +1370,8 @@ def detect(
     series = [s for s in series if s.episode_count > 0]
     _distinct_names(series, playlists, presenter, cfg)
     series.sort(key=lambda s: (s.seasons[0].first_air or date.max, s.name))
-    return Detection(series=series, unassigned=unassigned, shorts=shorts)
+    topics = _topics(series, playlists, facts, cfg)
+    return Detection(series=series, unassigned=unassigned, shorts=shorts, topics=topics)
 
 
 def _overlaps(a: _Seed, b: _Seed, cfg: DetectorConfig) -> bool:
@@ -1327,6 +1380,889 @@ def _overlaps(a: _Seed, b: _Seed, cfg: DetectorConfig) -> bool:
     return a.first <= b.last + timedelta(
         days=cfg.date_window_days
     ) and b.first <= a.last + timedelta(days=cfg.date_window_days)
+
+
+# --------------------------------------------------------------------------- brand shows
+
+#: separators that set a show's name apart in a title ("شاهد على العصر | …", "… - بلا حدود")
+_BRAND_SPLIT_RE = re.compile(r"\s*(?:[|｜¦⧸/\\:：–—]|\s-\s|\s-|-\s|\(|\)|（|）|\[|\]|«|»|\.\.)\s*")
+#: playlist words that only say "episodes aired in year …" ("حلقات بلا حدود التى تم بثها فى سنة")
+_YEAR_FILLER = frozenset(
+    fold(w)
+    for w in (
+        "حلقات", "حلقه", "حلقة", "التي", "التى", "تم", "بثها", "سنه", "سنة", "عام", "العام", "في",
+        "فى", "من", "حتى", "حتي", "وحتى", "الى", "إلى", "مع", "بثت", "بث", "عرضت", "اهم",
+        "أهم", "الحلقات", "حلقات",
+    )
+)  # fmt: skip
+#: an umbrella playlist holds the whole show ("شاهد على العصر كاملا من البداية فبراير 1999")
+_UMBRELLA_RE = re.compile(r"(?<!\w)(كامل[اه]?|من البدايه|جميع|كل حلقات)(?!\w)")
+#: brand-free leftovers of a season playlist's title that carry no name
+_QUAL_DROP = frozenset(fold(w) for w in ("حلقة", "حلقات", "حلقه", "و", "مع", "-"))
+_PUNCT = "|｜:.-()\"'«»،,؟?!#_"
+#: a clip list wherever the words sit ("بلا حدود | مقاطع مختارة من أهم الحلقات …")
+_CLIPS_ANY_RE = re.compile(r"(?<!\w)(مقاطع|مقتطفات|مختارات|shorts|clips|highlights)(?!\w)")
+
+
+def _plain(title: str | None) -> str:
+    """Hashtags read as words: "#فاضل_العزاوي" → "فاضل العزاوي"."""
+    return (title or "").replace("_", " ").replace("#", " ")
+
+
+def _drop_phrases(words: list[str], phrases: Sequence[str]) -> list[str]:
+    """Words without any presenter phrase ("أحمد منصور") and a "مع" just before it; a
+    guest who shares a first name with the presenter ("أحمد بن بلة") keeps it."""
+    folded = [fold(w) for w in words]
+    drop: set[int] = set()
+    for ph in phrases:
+        pw = ph.split()
+        if not pw:
+            continue
+        for i in range(len(folded) - len(pw) + 1):
+            if folded[i : i + len(pw)] == pw:
+                drop.update(range(i, i + len(pw)))
+                if i > 0 and folded[i - 1] == fold("مع"):
+                    drop.add(i - 1)
+    return [w for i, w in enumerate(words) if i not in drop]
+
+
+def _ns(text: str) -> str:
+    """Folded, without spaces, digits or punctuation: "بلاحدود" == "بلا حدود"."""
+    return re.sub(r"[\W\d_]+", "", fold(text))
+
+
+#: a segment led by a title names a person (a guest, the presenter), not a show
+_PERSON_LEAD = frozenset(
+    fold(w)
+    for w in (
+        "الشيخ", "شيخ", "الدكتور", "دكتور", "د", "الأستاذ", "أستاذ", "فضيلة", "لفضيلة",
+        "المهندس", "الإعلامي", "الإمام", "العلامة", "المفكر", "الداعية", "القارئ", "الرئيس",
+        "الحبيب", "سماحة", "معالي", "الأمير", "اللواء", "الفريق",
+    )
+)  # fmt: skip
+#: a lesson series ("شرح صحيح البخاري", "تفسير سورة …") is a book or a course: playlist
+#: detection handles it; the brand pass is for programmes and talk shows
+_LESSON_LEAD = frozenset(
+    fold(w)
+    for w in (
+        "شرح", "تفسير", "مختصر", "درس", "دروس", "مجلس", "مجالس", "محاضرة", "محاضرات", "خطبة",
+        "خطب", "قراءة", "تلاوة", "سورة", "كتاب", "التعليق", "تعليق", "متن", "المقاطع", "مقاطع",
+        "مقطع", "ترجمة", "ترجمات", "حلقة", "الحلقة",
+    )
+)  # fmt: skip
+
+
+def _brand_key(seg: str, presenter: frozenset[str], generic: frozenset[str]) -> str | None:
+    """The show name a title segment could be: presenter words, markers and numbers
+    out, generic words trimmed off the ends ("بلا حدود مع أحمد منصور" → "بلا حدود").
+    Not a person ("الشيخ …", "د. …"), not a lesson ("شرح …"), and at least two words of
+    three letters or more ("بلا حدود", "شاهد على العصر"; never "الآيات" alone)."""
+    words = [w for w in strip_markers(seg).split() if not w.isdigit()]
+    words = [w for w in words if re.sub(r"[\W\d_]+", "", w)]
+    if words and (words[0].strip(".") in _PERSON_LEAD or words[0] in _LESSON_LEAD):
+        return None
+    words = [w for w in words if w not in presenter]
+    while words and words[0] in generic:
+        words.pop(0)
+    while words and words[-1] in generic:
+        words.pop()
+    if not words or all(w in generic for w in words):
+        return None
+    if sum(1 for w in words if len(re.sub(r"[\W\d_]+", "", w)) >= 3) < 2:
+        return None
+    key = _ns(" ".join(words))
+    return key if len(key) >= 6 else None
+
+
+def find_brands(
+    videos: Sequence[VideoFacts], presenter: frozenset[str], cfg: DetectorConfig
+) -> list[tuple[str, str, list[str]]]:
+    """Title brands of a channel, biggest first: ``(key, display name, video keys)``.
+
+    A segment many titles share ("شاهد على العصر", carried by 800 of 2,200 videos) names
+    a show. Brands are taken greedily, biggest first, each video belonging to the first
+    brand its title carries, so a guest's name inside one show ("الشيخ أحمد ياسين | شاهد
+    على العصر") does not become a show of its own."""
+    seen: dict[str, Counter[str]] = defaultdict(Counter)  # key → original spellings
+    per_video: dict[str, set[str]] = {}
+    slot: dict[str, list[int]] = defaultdict(list)  # which segment of the title it is
+    for v in videos:
+        keys = set()
+        # numbers and punctuation ("(16) شاهد على العصر| …") don't count as a segment
+        segs = [x for x in _BRAND_SPLIT_RE.split(v.title or "") if re.search(r"[^\W\d_]", x)]
+        for i, seg in enumerate(segs):
+            k = _brand_key(seg, presenter, cfg.generic_words)
+            if k and k not in keys:
+                keys.add(k)
+                seen[k][" ".join(seg.split())] += 1
+                slot[k].append(i)
+        per_video[v.key] = keys
+    titles_ns = {v.key: _ns(v.title or "") for v in videos}
+    need = max(cfg.brand_min, math.ceil(cfg.brand_share * len(videos)))
+    out: list[tuple[str, str, list[str]]] = []
+    free = set(titles_ns)
+    while True:
+        counts: Counter[str] = Counter(k for vk in free for k in per_video[vk])
+        # equal counts: the segment titles lead with names the show ("بلا حدود | حوار …")
+        ranked = sorted(counts.items(), key=lambda kv: (-kv[1], _median(slot[kv[0]]) or 0.0))
+        # a show's name leads its titles ("بلا حدود | …"); a trailing presenter credit or
+        # sign-off ("… - حفظه الله") does not name a show
+        key = next(
+            (
+                k
+                for k, n in ranked
+                if n >= need and sum(1 for i in slot[k] if i == 0) >= 0.6 * len(slot[k])
+            ),
+            None,
+        )
+        if key is None:
+            break
+        members = sorted(vk for vk in free if key in titles_ns[vk])
+        if len(members) < need:
+            break
+        spelled = seen[key].most_common(1)[0][0]
+        name = " ".join(w for w in spelled.split() if fold(w) not in presenter)
+        name = re.sub(r"\s*\(?[\d٠-٩]+\)?\s*", " ", name)
+        name = " ".join(name.split()).strip(" |｜-–/⧸.")
+        while name.split() and fold(name.split()[-1]) in cfg.generic_words:
+            name = " ".join(name.split()[:-1])
+        out.append((key, name or spelled, members))
+        free -= set(members)
+    return out
+
+
+def _scattered(
+    key: str, members: Sequence[str], series: Sequence[Series], cfg: DetectorConfig
+) -> bool:
+    """Did playlist detection scatter this brand over many series, or file it under
+    other names? A show it already holds together ("كنوز السيرة") is left alone."""
+    where: Counter[int] = Counter()
+    named = 0
+    eps = {k: ser for ser in series for se in ser.seasons for k in se.episodes}
+    for k in members:
+        ser = eps.get(k)
+        if ser is None:
+            continue
+        where[id(ser)] += 1
+        if key in _ns(ser.name):
+            named += 1
+    placed = sum(where.values())
+    if placed < cfg.brand_named_share * len(members):
+        return True  # most of the show sits in no season at all
+    # one series holds (nearly) all of it: named after it, or from one playlist whatever it
+    # is called ("سيرة الرسول ﷺ" holding "كنوز السيرة N"), a stray episode elsewhere or
+    # not: together. Not a series that swallowed dozens of the show's playlists under one
+    # episode's name ("مجزرة صبرا وشاتيلا" holding "شاهد على العصر").
+    top_id, top_n = where.most_common(1)[0]
+    top = next(ser for ser in series if id(ser) == top_id)
+    top_pls = {pid for se in top.seasons for pid in se.playlists}
+    if top_n >= cfg.brand_named_share * placed and (key in _ns(top.name) or len(top_pls) <= 2):
+        return False
+    many = sum(1 for n in where.values() if n >= 2) >= cfg.brand_scattered_series
+    return many or named < cfg.brand_named_share * placed
+
+
+def _qualifier_of(title: str, key: str, phrases: Sequence[str]) -> str:
+    """A season playlist's title without the show's name: "شاهد على العصر | وليد جنبلاط"
+    → "وليد جنبلاط", "13حلقة وحوار مع د.عبدالله النفيسي -بلا حدود" → "وحوار مع
+    د.عبدالله النفيسي"."""
+    parts = []
+    for seg in _BRAND_SPLIT_RE.split(title):
+        if not seg.strip():
+            continue
+        if key in _ns(seg):
+            # the brand inside a longer segment ("حلقات بلا حدود التى …"): keep the rest
+            seg = " ".join(w for w in seg.split() if _ns(w) and _ns(w) not in key)
+        words = _drop_phrases(seg.split(), phrases)
+        while words:
+            first = re.sub(r"^[\d٠-٩]+", "", words[0])
+            if not first or fold(first) in _QUAL_DROP:
+                words.pop(0)
+                continue
+            words[0] = first
+            break
+        if words:
+            parts.append(" ".join(words))
+    return " - ".join(parts).strip(" |｜-–/⧸.")
+
+
+def _years_in(title: str) -> list[int]:
+    return [int(y) for y in re.findall(r"(?<!\d)(19[89]\d|20[0-4]\d)(?!\d)", fold(title))]
+
+
+def _brand_series(
+    key: str,
+    name: str,
+    titled: Sequence[str],
+    claimed_elsewhere: set[str],
+    playlists: Sequence[PlaylistFacts],
+    facts: dict[str, VideoFacts],
+    presenter: frozenset[str],
+    cfg: DetectorConfig,
+    channel_df: Counter[str],
+    phrases: Sequence[str] = (),
+) -> Series:
+    """One title-brand show: seasons from its playlists (a guest, a year), ordered by
+    its umbrella playlist(s), the rest grouped by a shared guest name, else by year."""
+    clip_re = re.compile(cfg.clip_playlist_re)
+    umbrellas: list[PlaylistFacts] = []
+    seasons_pl: list[tuple[PlaylistFacts, str | None, int | None]] = []
+    titled_set = set(titled)
+    for p in playlists:
+        if key not in _ns(p.title) or clip_re.search(fold(p.title)):
+            continue
+        if _CLIPS_ANY_RE.search(fold(p.title)):
+            continue  # a clip list of the show, not a season
+        members = [k for k, _ in p.members if k in facts]
+        if len(members) < cfg.min_season_size:
+            continue
+        years = sorted(set(_years_in(p.title)))
+        if _UMBRELLA_RE.search(fold(p.title)) or len(years) >= 2:
+            umbrellas.append(p)  # the whole show, or a run of years
+            continue
+        qual = _qualifier_of(p.title, key, phrases)
+        qual_words = [
+            w
+            for w in fold(re.sub(r"[\d٠-٩]+", " ", qual)).split()
+            if w not in _YEAR_FILLER and _ns(w)
+        ]
+        if len(years) == 1 and not qual_words:
+            seasons_pl.append((p, None, years[0]))
+        elif qual_words:
+            seasons_pl.append((p, qual, years[0] if len(years) == 1 else None))
+        elif len(set(members) & titled_set) >= 0.4 * len(titled_set):
+            umbrellas.append(p)  # just the show's name, holding much of it
+    # words every guest playlist repeats after the show's name ("… الإسلامية للجيل الصاعد -
+    # شخصيات", "… الإسلامية للجيل الصاعد - زمن الخلفاء") and a closing "مكتمل" say nothing
+    by_first: dict[str, list[list[str]]] = defaultdict(list)
+    for _, q, _ in seasons_pl:
+        if q:
+            by_first[fold(q.split()[0])].append(q.split())
+    strip_n: dict[str, int] = {}
+    for first, quals in by_first.items():
+        if len(quals) < 2:
+            continue
+        n = 0
+        while all(len(q) > n + 1 and fold(q[n]) == fold(quals[0][n]) for q in quals):
+            n += 1
+        if n:
+            strip_n[first] = n
+    seasons_pl = [
+        (
+            p,
+            (" ".join(q.split()[strip_n[fold(q.split()[0])] :]).strip(" -|｜") or q)
+            if q and fold(q.split()[0]) in strip_n
+            else q,
+            y,
+        )
+        for p, q, y in seasons_pl
+    ]
+    seasons_pl = [
+        (p, re.sub(r"\s*[-|｜]?\s*(مكتمل[ةه]?|كامل[ةه]?)\s*$", "", q) if q else q, y)
+        for p, q, y in seasons_pl
+    ]
+    # global order: umbrellas by their first year, then their positions
+    umbrellas.sort(key=lambda p: (min(_years_in(p.title), default=9999), -len(p.members)))
+    gpos: dict[str, tuple[int, float]] = {}
+    for i, p in enumerate(umbrellas):
+        for k, pos in p.members:
+            if k in facts and k not in gpos:
+                gpos[k] = (i, float(pos if pos is not None else 1e6))
+    members_all = set(titled_set)
+    for p in [*umbrellas, *(x[0] for x in seasons_pl)]:
+        members_all |= {k for k, _ in p.members if k in facts and k not in claimed_elsewhere}
+    # each video in the smallest season playlist holding it
+    owner: dict[str, int] = {}
+    for i, (p, _, _) in sorted(enumerate(seasons_pl), key=lambda x: len(x[1][0].members)):
+        for k, _ in p.members:
+            if k in members_all and k not in owner:
+                owner[k] = i
+    seasons: list[Season] = []
+    for i, (p, given, year) in enumerate(seasons_pl):
+        eps = [k for k, _ in p.members if owner.get(k) == i]
+        if len(eps) < cfg.min_season_size:
+            for k in eps:
+                del owner[k]  # too few for a season of its own: grouped with the rest
+            continue
+        if eps:
+            label = given if given is not None else (str(year) if year is not None else None)
+            seasons.append(
+                Season(number=0, episodes=eps, playlists=[p.playlist_id], name=label, year=year)
+            )
+    rest = sorted(k for k in members_all if k not in owner)
+    for extra in _group_rest(rest, key, facts, presenter, cfg, channel_df, phrases):
+        # a guest's other episodes join the season his playlist already named
+        same = next(
+            (
+                se
+                for se in seasons
+                if extra.name
+                and se.name
+                and extra.name != "حلقات أخرى"
+                and (fold(extra.name) in fold(se.name) or fold(se.name) in fold(extra.name))
+            ),
+            None,
+        )
+        if same is not None:
+            same.episodes += extra.episodes
+        else:
+            seasons.append(extra)
+    pos_of = {p.playlist_id: p for p in playlists}
+    for se in seasons:
+        own_pos = {
+            k: float(pos)
+            for pid in se.playlists
+            if pid in pos_of
+            for k, pos in pos_of[pid].members
+            if pos is not None
+        }
+
+        def order(k: str, own_pos: dict[str, float] = own_pos) -> tuple[float, ...]:
+            g = gpos.get(k)
+            n = _title_number(facts[k].title)
+            return (
+                g[0] if g else math.inf,
+                g[1] if g else math.inf,
+                float(n) if n is not None else math.inf,
+                own_pos.get(k, math.inf),
+                float((facts[k].air_date or date.max).toordinal()),
+            )
+
+        teasers = [k for k in se.episodes if is_teaser(facts[k].title, facts[k].duration_s)]
+        se.extras = teasers
+        se.episodes = sorted((k for k in se.episodes if k not in teasers), key=order)
+        se.playlists += [p.playlist_id for p in umbrellas]
+    seasons = [se for se in seasons if se.episodes]
+
+    def season_order(se: Season) -> tuple[float, ...]:
+        # a year first (a talk show's year seasons in air order), then the umbrella
+        # order (a guest's run where the full-show playlist puts it), then exact dates
+        firsts = [gpos[k] for k in se.episodes if k in gpos]
+        g = min(firsts) if firsts else (math.inf, math.inf)
+        ds = [
+            d.toordinal() for k in se.episodes if (d := facts[k].air_date) and facts[k].date_exact
+        ]
+        return (float(se.year or 9999), g[0], g[1], float(min(ds) if ds else math.inf))
+
+    seasons.sort(key=season_order)
+    seen: Counter[str] = Counter()
+    for i, se in enumerate(seasons, 1):
+        se.number = i
+        if se.name:  # two seasons of one name would be one Plex collection
+            seen[fold(se.name)] += 1
+            if seen[fold(se.name)] > 1:
+                se.name = f"{se.name} ({seen[fold(se.name)]})"
+    n_eps = sum(len(se.episodes) for se in seasons)
+    kind = "ongoing" if n_eps >= cfg.ongoing_min_episodes and len(seasons) > 1 else "episodic"
+    return Series(name=name, key=fold(name), seasons=seasons, kind=kind, brand=True)
+
+
+def _title_words(title: str, stop: frozenset[str], brand: str) -> list[str]:
+    out = []
+    for w in _plain(title).split():
+        f = fold(w).strip(_PUNCT)
+        digits = any(ch.isdigit() for ch in f)
+        if len(f) > 2 and f not in stop and not digits and _ns(f) not in brand:
+            out.append(f)
+    return out
+
+
+def _group_rest(
+    keys: Sequence[str],
+    brand: str,
+    facts: dict[str, VideoFacts],
+    presenter: frozenset[str],
+    cfg: DetectorConfig,
+    channel_df: Counter[str],
+    phrases: Sequence[str] = (),
+) -> list[Season]:
+    """Brand episodes no season playlist holds. A guest's run ("عدنان الباجة جي …(6)",
+    "… الباجة جي يتحدث …(9)") shares a name found almost nowhere else on the channel;
+    else exact air dates give the year; the rest wait together as "حلقات أخرى"."""
+    stop = cfg.generic_words | presenter | _YEAR_FILLER
+    words_of = {k: _title_words(facts[k].title, stop, brand) for k in keys}
+    df: Counter[str] = Counter(w for ws in words_of.values() for w in set(ws))
+    min_run = max(4, cfg.min_season_size)
+
+    def name_like(w: str) -> bool:
+        # carried by a run of these episodes and (nearly) nowhere else on the channel;
+        # "مقاطع مختارة" is a clip list, not a guest
+        return (
+            min_run <= df[w] <= 60
+            and channel_df[w] <= 1.25 * df[w] + 1
+            and not _CLIPS_ANY_RE.search(w)
+            and fold("مختاره") != w
+        )
+
+    # where in the title a word sits: a guest's name comes early ("الباجه جي يتحدث …")
+    place: dict[str, list[int]] = defaultdict(list)
+    for ws in words_of.values():
+        for i, w in enumerate(ws):
+            place[w].append(i)
+    group_of: dict[str, str] = {}
+    for k, ws in words_of.items():
+        cands = [w for w in set(ws) if name_like(w)]
+        if cands:  # the guest's whole run: the most shared, earliest word
+            group_of[k] = max(cands, key=lambda w: (df[w], -(_median(place[w]) or 0.0), w))
+    sizes = Counter(group_of.values())
+    out: list[Season] = []
+    by_group: dict[str, list[str]] = defaultdict(list)
+    left: list[str] = []
+    for k in keys:
+        g = group_of.get(k)
+        if g and sizes[g] >= min_run:
+            by_group[g].append(k)
+        else:
+            left.append(k)
+    for g, ks in by_group.items():
+        # the guest's name as titles write it: the word, with its neighbour when most
+        # titles carry both ("عدنان الباجة")
+        pairs: Counter[str] = Counter()
+        singles: Counter[str] = Counter()
+        for k in ks:
+            ws = [w.strip(_PUNCT) for w in _plain(facts[k].title).split()]
+            for i, w in enumerate(ws):
+                if fold(w) != g:
+                    continue
+                singles[w] += 1
+                for a, b in ((i - 1, i), (i, i + 1)):
+                    if a >= 0 and b < len(ws):
+                        nb = ws[b] if a == i else ws[a]
+                        both = f"{fold(ws[a])} {fold(ws[b])}"
+                        fo = fold(nb)
+                        if (
+                            len(fo) > 2
+                            and fo not in cfg.generic_words | _YEAR_FILLER
+                            and not any(both in ph or ph in both for ph in phrases)
+                            # glued words ("منصورمع") and the show's own name stay out
+                            and not any(len(pw) > 3 and pw in fo for pw in presenter)
+                            and _ns(fo) not in brand
+                        ):
+                            pairs[f"{ws[a]} {ws[b]}"] += 1
+        top = pairs.most_common(1)
+        if top and top[0][1] >= 0.6 * len(ks):
+            label = top[0][0]
+        else:
+            label = singles.most_common(1)[0][0] if singles else g
+        out.append(Season(number=0, episodes=ks, name=label))
+    by_year: dict[int, list[str]] = defaultdict(list)
+    other: list[str] = []
+    for k in left:
+        d = facts[k].air_date
+        if d is not None and facts[k].date_exact:
+            by_year[d.year].append(k)
+        else:
+            other.append(k)
+    for y, ks in sorted(by_year.items()):
+        if len(ks) >= cfg.min_season_size:
+            out.append(Season(number=0, episodes=ks, name=str(y), year=y))
+        else:
+            other += ks
+    if other:
+        out.append(Season(number=0, episodes=sorted(other), name="حلقات أخرى"))
+    return out
+
+
+def _under_split(
+    cand: Series, members: Sequence[str], series: Sequence[Series], cfg: DetectorConfig
+) -> bool:
+    """The channel files the show by guest or year (several season playlists) but
+    playlist detection folded it into far fewer seasons (one season of 600 episodes)."""
+    if len(cand.seasons) < 2:
+        return False
+    common = set.intersection(*(set(se.playlists) for se in cand.seasons))
+    from_playlists = sum(1 for se in cand.seasons if se.playlists and se.playlists[0] not in common)
+    if from_playlists < 2:
+        return False
+    member_set = set(members)
+    held = [
+        n
+        for ser in series
+        for se in ser.seasons
+        if (n := len(member_set.intersection(se.episodes))) >= cfg.min_season_size
+    ]
+    # everything in one season (the umbrella playlist swallowed the guests' playlists)
+    return (
+        from_playlists >= 3
+        and len(held) <= 1
+        and sum(held) >= cfg.brand_named_share * len(member_set)
+    )
+
+
+def _placed_after(
+    series: Sequence[Series], built: Sequence[Series], taken: set[str], cand: Series | None
+) -> int:
+    """Episodes placed if ``taken`` left the playlist series (a series losing half or more
+    is dissolved) and ``built`` (+ ``cand``) were added."""
+    n = 0
+    for ser in series:
+        before = ser.episode_count
+        left = sum(1 for se in ser.seasons for k in se.episodes if k not in taken)
+        if left * 2 > before:
+            n += left
+    return n + sum(b.episode_count for b in built) + (cand.episode_count if cand else 0)
+
+
+def _apply_brands(
+    series: list[Series],
+    videos: Sequence[VideoFacts],
+    playlists: Sequence[PlaylistFacts],
+    facts: dict[str, VideoFacts],
+    presenter: frozenset[str],
+    cfg: DetectorConfig,
+    phrases: Sequence[str] = (),
+) -> bool:
+    """Rebuild the brands playlist detection scattered; their videos leave the other
+    series, and a series that loses most of its episodes to them is dissolved.
+    Returns whether anything changed."""
+    brands = find_brands(videos, presenter, cfg)
+    if not brands:
+        return False
+    all_titled = {vk for _, _, m in brands for vk in m}
+    stop = cfg.generic_words | presenter | _YEAR_FILLER
+    channel_df: Counter[str] = Counter(
+        w for v in videos for w in set(_title_words(v.title, stop, ""))
+    )
+    built: list[Series] = []
+    taken: set[str] = set()
+    for key, name, members in brands:
+        elsewhere = (all_titled - set(members)) | taken
+        ser = _brand_series(
+            key, name, members, elsewhere, playlists, facts, presenter, cfg, channel_df, phrases
+        )
+        if not ser.episode_count:
+            continue
+        if not (_scattered(key, members, series, cfg) or _under_split(ser, members, series, cfg)):
+            continue  # playlist detection already holds the show together
+        own_pls = {pid for se in ser.seasons for pid in se.playlists}
+        if len(own_pls) < 2:
+            continue  # the channel itself does not file it as a show (no playlists of its own)
+        mine = {k for se in ser.seasons for k in (*se.episodes, *se.extras)}
+        if _placed_after(series, built, taken | mine, ser) < _placed_after(
+            series, built, taken, None
+        ):
+            continue  # rebuilding would leave more episodes unplaced than it places
+        built.append(ser)
+        taken |= mine
+    if not built:
+        return False
+    kept: list[Series] = []
+    for ser in series:
+        before = ser.episode_count
+        for se in ser.seasons:
+            se.episodes = [k for k in se.episodes if k not in taken]
+            se.extras = [k for k in se.extras if k not in taken]
+            se.attached = [k for k in se.attached if k not in taken]
+            se.duplicates = [k for k in se.duplicates if k not in taken]
+        ser.seasons = [se for se in ser.seasons if se.episodes]
+        if ser.episode_count and ser.episode_count * 2 > before:
+            kept.append(ser)
+    series[:] = kept + built
+    return True
+
+
+def _topics(
+    series: Sequence[Series],
+    playlists: Sequence[PlaylistFacts],
+    facts: dict[str, VideoFacts],
+    cfg: DetectorConfig,
+) -> list[Topic]:
+    """Curated playlists that cut across shows: their episodes sit in two or more
+    series (or three or more seasons of one), and the playlist is no season's own."""
+    season_of: dict[str, tuple[int, int]] = {}
+    for ser in series:
+        if ser.kind == "clips":
+            continue
+        for se in ser.seasons:
+            for k in se.episodes:
+                season_of[k] = (id(ser), se.number)
+    own = {se.playlists[0] for ser in series for se in ser.seasons if se.playlists}
+    # a brand show's playlists (its umbrella, its guests) are the show itself
+    brand_pls = {pid for ser in series if ser.brand for se in ser.seasons for pid in se.playlists}
+    clip_re = re.compile(cfg.clip_playlist_re)
+    out: list[Topic] = []
+    for p in playlists:
+        title = fold(p.title)
+        if clip_re.search(title) or re.search(cfg.catch_all_re, title):
+            continue
+        if p.playlist_id in brand_pls:
+            continue
+        items = [
+            k for k, _ in sorted(p.members, key=lambda m: (m[1] is None, m[1] or 0)) if k in facts
+        ]
+        if len(items) < cfg.topic_min:
+            continue
+        hits = [season_of[k] for k in items if k in season_of]
+        if len(hits) < 0.8 * len(items):
+            continue  # mostly clips or unplaced videos: the group step's business
+        if p.playlist_id in own:
+            continue  # a season's own playlist
+        per_series = Counter(h[0] for h in hits)
+        # cutting across shows: two or more shows give it two or more episodes each, and
+        # no one show is (nearly) all of it
+        if sum(1 for n in per_series.values() if n >= 2) >= 2 and per_series.most_common(1)[0][
+            1
+        ] <= 0.8 * len(hits):
+            out.append(Topic(" ".join(p.title.split()), p.playlist_id, items))
+    return out
+
+
+# --------------------------------------------------------------------------- numbered shows
+
+_EP_WORDS = frozenset(
+    fold(w)
+    for w in (
+        "ح", "حلقة", "الحلقة", "حلقه", "ep", "episode", "eps", "مجلس", "المجلس", "درس", "الدرس",
+        "المحاضرة", "لقاء", "اللقاء", "الجزء", "جزء", "part",
+    )
+)  # fmt: skip
+#: a number after these counts verses or pages, not episodes ("تفسير سورة هود من آية 25")
+_NOT_EPISODE_BEFORE = frozenset(fold(w) for w in ("آية", "الآية", "آيات", "الآيات", "من", "صفحة"))
+#: words that only say what a video is ("محاضرة عامة 3", "درس 12"): never a show's name alone
+_FORMAT_WORDS = frozenset(
+    fold(w)
+    for w in (
+        "محاضرة", "محاضرات", "عامة", "درس", "دروس", "خطبة", "لقاء", "فيديو", "مقطع", "جزء",
+        "الجزء", "جديد", "جديدة", "video", "part", "clip", "live", "بث", "مباشر",
+    )
+)  # fmt: skip
+_EP_GLUED_RE = re.compile(r"^(?:ح|ep|e)(\d{1,3})$")
+_SEASON_TAIL_RE = re.compile(r"^(.*?[^\d\s])(\d{1,2})$")
+_YEAR_TOKEN_RE = re.compile(r"^(?:19[89]\d|20[0-4]\d|14[0-6]\d)$")
+#: "الدرس الرابع", "الحلقة الحادية عشرة", "المجلس الثاني والعشرون": an ordinal episode
+_ORD_EP_RE = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(sorted(map(re.escape, _EP_WORDS), key=len, reverse=True))
+    + rf")\s+({_ORD_ALT})(?!\w)"
+)
+
+
+def _numbered(
+    title: str,
+    phrases: Sequence[str],
+    generic: frozenset[str],
+    presenter: frozenset[str] = frozenset(),
+    catch_all_re: str = r"(?!)",
+) -> tuple[str, list[str], int, int] | None:
+    """(key, name tokens, season, episode) of a title shaped "<show>[N] - ح<ep> …",
+    "<show> حلقة <ep>", "<show> (<ep>)", "<show> #<ep>" or "<show> <ep> - …"; the number
+    glued to or after the show's name before an episode marker is its season
+    ("قصة وفكرة2 - ح11" → season 2, episode 11)."""
+    toks = fold(title).split()
+    ep: int | None = None
+    at = -1
+    for i, t in enumerate(toks):
+        if t in _EP_WORDS and i + 1 < len(toks) and toks[i + 1].isdigit():
+            ep, at = int(toks[i + 1]), i
+            break
+        if t in _NOT_EPISODE_BEFORE and i + 1 < len(toks) and toks[i + 1].isdigit():
+            return None  # "من آية 25": a verse range, the title has no episode number
+        if m := _EP_GLUED_RE.match(t):
+            ep, at = int(m.group(1)), i
+            break
+    if ep is None and (om := _ORD_EP_RE.search(" ".join(toks))):
+        ep = _ORD_VALUE[om.group(1)]
+        at = len(" ".join(toks)[: om.start()].split())
+    season = 1
+    if ep is not None:
+        name = toks[:at]
+        if name and name[-1].isdigit() and len(name[-1]) <= 2 and len(name) > 1:
+            season = int(name.pop())
+        elif name and (m := _SEASON_TAIL_RE.match(name[-1])):
+            name[-1], season = m.group(1), int(m.group(2))
+        if (
+            len(name) >= 2
+            and name[-2] in (fold("الموسم"), fold("موسم"), "s")
+            and name[-1].isdigit()
+        ):
+            season = int(name[-1])
+            name = name[:-2]
+    else:
+        # "<show> <ep> - …": the first number after the name is the episode
+        at = next(
+            (
+                i
+                for i, t in enumerate(toks)
+                if t.isdigit() and i > 0 and not _YEAR_TOKEN_RE.match(t)
+            ),
+            -1,
+        )
+        if toks and toks[0].isdigit() and len(toks[0]) <= 3:
+            # "1- شرح بلوغ المرام // …": the first worded part names the series
+            ep = int(toks[0])
+            worded = [x for x in _BRAND_SPLIT_RE.split(title) if re.search(r"[^\W\d_]", x)]
+            name = fold(worded[0]).split() if worded else []
+        elif at < 0 or len(toks[at]) > 3 or toks[at - 1] in _NOT_EPISODE_BEFORE:
+            return None
+        else:
+            ep, name = int(toks[at]), toks[:at]
+    if not name:
+        # the number leads ("الدرس الأول || شرح مبحث النهي || …", "1- شرح بلوغ المرام //…"):
+        # the next part of the title names the series
+        segs = [x for x in _BRAND_SPLIT_RE.split(title) if re.search(r"[^\W\d_]", x)]
+        first = fold(segs[0]).split() if segs else []
+        if len(segs) >= 2 and all(
+            w in _EP_WORDS
+            or w.isdigit()
+            or w in _ORD_VALUE
+            or w in {fold("و"), "عشر", "عشره"}
+            or any(w in k.split() for k in _ORD_VALUE)
+            for w in first
+        ):
+            name = fold(segs[1]).split()
+        elif segs and not first:
+            name = []
+    # a year in the name ("مجالس فجر شهر رمضان 1443 (10)") is the season of a series that
+    # comes back every year
+    years = [w for w in name if _YEAR_TOKEN_RE.match(w)]
+    if years:
+        name = [w for w in name if not _YEAR_TOKEN_RE.match(w)]
+        if season == 1:
+            season = int(years[0])
+    name = _drop_phrases(name, phrases)
+    lead = frozenset(fold(w) for w in ("برنامج", "برامج", "سلسلة", "سلسله", "حلقات"))
+    while name and name[0] in lead:  # "برنامج قصة وفكرة"; "على ما تفرج" keeps its "على"
+        name = name[1:]
+    # a trailing credit ("… الشيخ المنجد", "… محمد المنجد") is not the show's name
+    while name and (name[-1] in presenter or name[-1] in _PERSON_LEAD):
+        name = name[:-1]
+    if any(w in _EP_WORDS for w in name):
+        return None  # "الراصد حلقة التعايش … 3": an episode's own parts, not a show
+    if re.search(catch_all_re, " ".join(name)):
+        return None  # "منوعات 12" is a catch-all, not a show
+    if not name or len(name) > 8 or ep is None or ep == 0:
+        return None
+    if name[0] in _PERSON_LEAD or not any(
+        len(w) >= 3 and w not in generic and w not in _FORMAT_WORDS for w in name
+    ):
+        return None
+    key = "".join(name)
+    if len(key) < 5:
+        return None
+    return key, name, season, ep
+
+
+def _edit1(a: str, b: str) -> bool:
+    """At most one letter apart ("قصهوفره" for "قصهوفكره": a typo in one title)."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b, strict=True)) <= 1
+    if len(a) > len(b):
+        a, b = b, a
+    return any(b[:i] + b[i + 1 :] == a for i in range(len(b)))
+
+
+def _display(title: str, n_tokens: int) -> str:
+    """The show's name as the title spells it: its first ``n_tokens`` folded words."""
+    words: list[str] = []
+    got = 0
+    for raw in re.split(r"[\s|｜:\-–—()（）\[\]#]+", title):
+        f = fold(raw).split()
+        if not f:
+            continue
+        if got + len(f) > n_tokens:
+            break
+        words.append(raw)
+        got += len(f)
+        if got >= n_tokens:
+            break
+    name = re.sub(r"(?<=[^\d\s])\d{1,2}$", "", " ".join(words)).strip(' ⧸/|｜-–:＂"')
+    return name if " ".join(fold(name).split()) else ""
+
+
+def _numbered_shows(
+    videos: Sequence[VideoFacts],
+    assigned: set[str],
+    series: list[Series],
+    phrases: Sequence[str],
+    cfg: DetectorConfig,
+    presenter: frozenset[str] = frozenset(),
+) -> set[str]:
+    """Shows with no playlist at all whose titles number them ("قصة وفكرة - ح1 …" … ح30,
+    "قصة وفكرة2 - ح1 …"): five or more unplaced videos of one name and a like length.
+    The number on the name is the season; episodes go in title-number order. A show
+    playlist detection already has (same name) gains them in the season they name.
+    Returns the videos placed."""
+    found: dict[str, list[tuple[VideoFacts, list[str], int, int]]] = defaultdict(list)
+    for v in videos:
+        if v.key in assigned or v.duration_s is None:
+            continue
+        hit = _numbered(v.title or "", phrases, cfg.generic_words, presenter, cfg.catch_all_re)
+        if hit:
+            found[hit[0]].append((v, hit[1], hit[2], hit[3]))
+    # a typo in one title ("قصة وفرة2") joins the bigger group one letter away
+    for k in sorted(found, key=lambda x: len(found[x])):
+        big = next(
+            (o for o in found if o != k and len(found[o]) > len(found[k]) and _edit1(k, o)), None
+        )
+        if big is not None:
+            found[big] += found.pop(k)
+    placed: set[str] = set()
+    existing = [s for s in series if s.kind != "clips"]
+
+    def same_show(key: str) -> Series | None:
+        """A show playlist detection already has under this name (or its key, or a
+        longer name starting with it: "أهل الذكر ( فتاوي )"); one only."""
+        exact = [s for s in existing if key in (_ns(s.name), _ns(s.key))]
+        if len(exact) == 1:
+            return exact[0]
+        longer = [s for s in existing if len(key) >= 6 and _ns(s.name).startswith(key)]
+        return longer[0] if len(longer) == 1 else None
+
+    for key, hits in found.items():
+        med = _median([h[0].duration_s or 0.0 for h in hits])
+        hits = [h for h in hits if med and _within(h[0].duration_s, med, 1.6)]
+        if len({(h[2], h[3]) for h in hits}) < 5:
+            continue
+        names = Counter(
+            d
+            for h in hits
+            if (d := _display(h[0].title, len(h[1])))
+            and "".join(fold(d).split()) == "".join(h[1])  # spelled like the name it matched
+        )
+        name = names.most_common(1)[0][0] if names else " ".join(hits[0][1])
+        # a Ramadan series with no year in its titles: its exact air dates tell the years
+        ramadan = fold("رمضان") in hits[0][1]
+        exact_years = {h[0].air_date.year for h in hits if h[0].air_date and h[0].date_exact}
+        if (
+            ramadan
+            and all(h[2] == 1 for h in hits)
+            and all(h[0].date_exact and h[0].air_date for h in hits)
+            and len(exact_years) >= 2
+        ):
+            hits = [(v, nm, v.air_date.year if v.air_date else 1, ep) for v, nm, _, ep in hits]
+        by_season: dict[int, list[tuple[int, str]]] = defaultdict(list)
+        seen: set[tuple[int, int]] = set()
+        for v, _, season, ep in sorted(hits, key=lambda h: (h[2], h[3], h[0].key)):
+            if (season, ep) in seen:
+                continue  # a second upload of one episode
+            seen.add((season, ep))
+            by_season[season].append((ep, v.key))
+        target = same_show(key)
+        if target is None and any(_ns(s.name) == _ns(name) for s in existing):
+            continue  # one name, several shows already: leave them for review
+        if target is None:
+            # built from titles, ordered by their numbers: kept as built (like a brand show)
+            target = Series(name=name, key=fold(name), seasons=[], kind="episodic", brand=True)
+            series.append(target)
+        for number, eps in sorted(by_season.items()):
+            keys = [k for _, k in sorted(eps)]
+            se = next((x for x in target.seasons if x.number == number), None)
+            if se is None:
+                yearly = number >= 1400  # a year (hijri or gregorian) names the season
+                se = Season(
+                    number=number,
+                    episodes=[],
+                    name=str(number) if yearly else None,
+                    year=number if number >= 1980 else None,
+                )
+                target.seasons.append(se)
+            se.episodes += [k for k in keys if k not in se.episodes]
+            se.attached += keys
+            placed.update(keys)
+        target.seasons.sort(key=lambda x: x.number)
+    return placed
 
 
 def group_by_season_key(det: Detection) -> dict[str, list[Series]]:

@@ -74,6 +74,11 @@ STEPS: list[tuple[str, str, str]] = [
         'the exact day for series episodes whose date is only "N years ago" (runs with --exact)',
     ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
+    (
+        "group (",
+        "Group clips and promos",
+        "shorts and clips into filler collections, stand-alone videos by topic, promos to shows",
+    ),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
     ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
     ("report", "Write review pages", "one HTML page per library"),
@@ -101,7 +106,7 @@ STAGE_APPLIES = {
     "signature": "f.duration_s >= 180",
 }
 
-#: for the stage page: what it does, the run steps (indexes into STEPS) before / at / after it,
+#: for the stage page: what it does, the run steps (STEPS prefixes) before / at / after it,
 #: and a pattern for its lines in the run log
 STAGE_INFO: dict[str, dict[str, Any]] = {
     "probe": {
@@ -217,11 +222,9 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             )
             unit = "channels"
         elif STEPS[current][0] == "plex-index":
-            m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
-            tot = next((int(x.group(1)) for ln in body
-                        if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
-            return out, {"done": int(m[-1].group(1)) if m else 0, "total": tot,
-                         "unit": "libraries"}  # fmt: skip
+            return out, _counted(body, r"^reading (\d+) Plex libraries")
+        elif STEPS[current][0] == "group (":
+            return out, _counted(body, r"^grouping clips in (\d+) libraries")
         elif STEPS[current][0] == "dizquetv-shows":
             return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
@@ -234,6 +237,13 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
 
 
 _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+def _counted(body: list[str], total_re: str) -> dict[str, Any]:
+    """A step printing "<total line>" then one "[n/N] …" line per library."""
+    done = [int(x.group(1)) for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+    total = next((int(t.group(1)) for ln in body if (t := re.match(total_re, ln))), None)
+    return {"done": done[-1] if done else 0, "total": total, "unit": "libraries"}
 
 
 def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
@@ -655,6 +665,7 @@ def group_series(
         g["seasons"].append(
             {
                 "season": meta.get("season"),
+                "name": meta.get("season_name"),
                 "episodes": n,
                 "first_air": meta.get("first_air"),
                 "last_air": meta.get("last_air"),
@@ -702,7 +713,9 @@ def tv_names(library: str, g: dict[str, Any], shows: dict[str, str]) -> list[str
     count = len(g["seasons"])
     wanted = [_title(library, g["name"], 1, 1)]
     if count > 1:
-        wanted += [_title(library, g["name"], x["season"] or 0, count) for x in g["seasons"]]
+        wanted += [
+            _title(library, g["name"], x["season"] or 0, count, x.get("name")) for x in g["seasons"]
+        ]
     return [shows[fold(n)] for n in wanted if fold(n) in shows]
 
 
@@ -767,7 +780,9 @@ def item_detail(
             (folder,),
         )
     ]
+    extra = collections_beyond_seasons(conn, folder)
     return {
+        **extra,
         "folder": folder,
         "name": _leaf(folder),
         "files": head[0],
@@ -782,6 +797,49 @@ def item_detail(
         "stages": stages,
         "history": history,
     }
+
+
+def collections_beyond_seasons(conn: sqlite3.Connection, folder: str) -> dict[str, Any]:
+    """Topic collections, clip / stand-alone groups and promo links of one library, each
+    with the Plex collection written for it (when there is one)."""
+    from .group_clips import group_title
+
+    written: dict[str, str] = {}
+    with contextlib.suppress(sqlite3.OperationalError):
+        written = dict(conn.execute("SELECT series_id, title FROM plex_collections"))
+    out: dict[str, Any] = {"topics": [], "clip_groups": [], "promos": []}
+    with contextlib.suppress(sqlite3.OperationalError):
+        out["topics"] = [
+            {"name": name, "items": n, "collection": written.get(tid)}
+            for tid, name, n in conn.execute(
+                """SELECT t.id, t.name, COUNT(i.path) FROM topic_collections t
+                   LEFT JOIN topic_items i ON i.topic_id = t.id WHERE t.folder = ?
+                   GROUP BY t.id ORDER BY COUNT(i.path) DESC""",
+                (folder,),
+            )
+        ]
+        out["clip_groups"] = [
+            {"kind": kind, "basis": basis, "name": group_title(lib, kind, basis, name),
+             "items": n, "collection": written.get(gid)}
+            for gid, lib, kind, basis, name, n in conn.execute(
+                """SELECT g.id, g.library, g.kind, g.basis, g.name, COUNT(i.path)
+                   FROM clip_groups g LEFT JOIN clip_group_items i ON i.group_id = g.id
+                   WHERE g.folder = ? GROUP BY g.id ORDER BY g.kind, COUNT(i.path) DESC""",
+                (folder,),
+            )
+        ]  # fmt: skip
+        out["promos"] = [
+            {"title": t, "show": key, "library": lib, "season": se, "evidence": ev}
+            for t, key, lib, se, ev in conn.execute(
+                """SELECT COALESCE(y.title, f.stem), p.series_key, p.series_library, p.season,
+                          p.evidence
+                   FROM promo_links p JOIN files f ON f.path = p.path
+                   LEFT JOIN yt_videos y ON y.youtube_id = f.youtube_id
+                   WHERE p.folder = ? ORDER BY p.series_key""",
+                (folder,),
+            )
+        ]
+    return out
 
 
 _HERE = Path(__file__).parent

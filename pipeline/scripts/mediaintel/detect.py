@@ -131,6 +131,7 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                 "first_air": se.first_air.isoformat() if se.first_air else None,
                 "last_air": se.last_air.isoformat() if se.last_air else None,
                 "median_duration_s": se.median_duration_s, "folder": folder,
+                "season_name": se.name, "season_year": se.year, "brand": ser.brand,
             }  # fmt: skip
             year = se.first_air.year if se.first_air else None
             conn.execute(
@@ -152,7 +153,30 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                     "VALUES (?,?,?,?)",
                     (sid, path, se.number, n),
                 )
+    store_topics(conn, library, folder, det)
     conn.commit()
+
+
+def topic_id(folder: str, playlist_id: str) -> str:
+    import hashlib
+
+    return "topic:" + hashlib.sha1(f"{folder}|{playlist_id}".encode()).hexdigest()[:16]
+
+
+def store_topics(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -> None:
+    """Curated playlists cutting across shows (``Detection.topics``), replaced per folder."""
+    conn.execute("DELETE FROM topic_collections WHERE folder=?", (folder,))
+    for t in det.topics:
+        tid = topic_id(folder, t.playlist_id)
+        conn.execute(
+            "INSERT OR REPLACE INTO topic_collections (id, library, folder, name, playlist_id) "
+            "VALUES (?,?,?,?,?)",
+            (tid, library, folder, t.name, t.playlist_id),
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO topic_items (topic_id, path, position) VALUES (?,?,?)",
+            [(tid, path, i) for i, path in enumerate(t.items, 1)],
+        )
 
 
 def run(
@@ -184,7 +208,9 @@ def run(
               f"{len(det.unassigned)} unassigned, {len(det.shorts)} shorts excluded")  # fmt: skip
         for ser in det.series:
             seasons = ", ".join(
-                f"S{se.number}:{len(se.episodes)}"
+                f"S{se.number}"
+                + (f" {se.name}" if se.name else "")
+                + f":{len(se.episodes)}"
                 + (f"(+{len(se.attached)})" if se.attached else "")
                 + (f"[{se.first_air:%Y-%m}]" if se.first_air else "")
                 for se in ser.seasons
@@ -194,3 +220,5 @@ def run(
                 f"  {ser.kind:10} {ser.name[:60]:60} {seasons}"
                 + (f"  extras={extras}" if extras else "")
             )
+        if det.topics:
+            print(f"  topics: {', '.join(f'{t.name} ({len(t.items)})' for t in det.topics)}")

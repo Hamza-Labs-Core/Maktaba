@@ -111,19 +111,21 @@ def _targets(
     rows = conn.execute(
         "SELECT id, library, name, metadata FROM series ORDER BY library, name"
     ).fetchall()
-    by_series: dict[tuple[str, str], list[tuple[int, int, str]]] = defaultdict(list)
+    by_series: dict[tuple[str, str], list[tuple[int, int, str, str | None]]] = defaultdict(list)
     for r in rows:
         if library_filter and library_filter not in r["library"]:
             continue
         m = json.loads(r["metadata"])
         if m["kind"] == "clips":
             continue
-        by_series[(r["library"], r["name"])].append((m["season"], m["season_count"], r["id"]))
+        by_series[(r["library"], r["name"])].append(
+            (m["season"], m["season_count"], r["id"], m.get("season_name"))
+        )
     out: list[tuple[str, str, list[str], bool]] = []
     for (library, name), seasons in by_series.items():
-        seasons.sort()
+        seasons.sort(key=lambda x: x[0])
         all_keys: list[str] = []
-        for number, count, sid in seasons:
+        for number, count, sid, season_name in seasons:
             keys = [
                 k
                 for (k,) in conn.execute(
@@ -134,7 +136,8 @@ def _targets(
             ]
             all_keys += keys
             if count > 1 and keys:
-                out.append((_title(library, name, number, count), f"S{number}", keys, False))
+                title = _title(library, name, number, count, season_name)
+                out.append((title, f"S{number}", keys, False))
         if all_keys:
             out.append((_title(library, name, 1, 1), "series", all_keys, True))
     return out
