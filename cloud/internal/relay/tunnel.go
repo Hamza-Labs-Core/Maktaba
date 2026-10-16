@@ -112,7 +112,25 @@ func (t *Tunnel) Proxy(ctx context.Context, r *http.Request) (*http.Response, er
 	streamID := atomic.AddUint32(&t.nextID, 1)
 	s := newStream()
 	t.streams.Store(streamID, s)
-	defer t.streams.Delete(streamID)
+	// The stream must stay registered until the response BODY is fully
+	// consumed, not merely until Proxy returns: Proxy returns as soon as
+	// RESPONSE_HEAD arrives, and RESPONSE_BODY frames that dispatch sees
+	// after an early delete would be dropped, hanging the body reader
+	// until ctx expires. On success, ownership of the registration moves
+	// to the returned body (released on EOF, error, or Close).
+	release := func() {
+		t.streams.Delete(streamID)
+		s.abandon()
+	}
+	resp, err := t.proxy(ctx, r, streamID, s, release)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (t *Tunnel) proxy(ctx context.Context, r *http.Request, streamID uint32, s *stream, release func()) (*http.Response, error) {
 
 	// Serialize request preamble.
 	var head bytes.Buffer
@@ -150,17 +168,25 @@ func (t *Tunnel) Proxy(ctx context.Context, r *http.Request) (*http.Response, er
 		_ = t.writeFrame(Frame{Kind: KindRequestBody, StreamID: streamID})
 	}
 
-	return s.collectResponse(ctx, r)
+	return s.collectResponse(ctx, r, release)
 }
 
 // stream is the per-request inbound buffer. Frames from the read loop
 // land here; the proxy goroutine consumes them.
 type stream struct {
-	frames chan Frame
-	closed atomic.Bool
+	frames    chan Frame
+	closed    atomic.Bool
+	gone      chan struct{} // closed once the consumer stops reading
+	abandoned sync.Once
 }
 
-func newStream() *stream { return &stream{frames: make(chan Frame, 16)} }
+func newStream() *stream {
+	return &stream{frames: make(chan Frame, 16), gone: make(chan struct{})}
+}
+
+// abandon tells push that nobody will read further frames, so the read
+// loop never blocks on a stream whose body was closed early.
+func (s *stream) abandon() { s.abandoned.Do(func() { close(s.gone) }) }
 
 func (s *stream) push(f Frame) {
 	if s.closed.Load() {
@@ -168,6 +194,7 @@ func (s *stream) push(f Frame) {
 	}
 	select {
 	case s.frames <- f:
+	case <-s.gone:
 	case <-time.After(30 * time.Second):
 		// Drop on the floor; we can't block the read loop. The
 		// underlying request will time out on its own.
@@ -184,7 +211,7 @@ func (s *stream) fail(_ error) {
 }
 
 // collectResponse blocks until RESPONSE_HEAD + body EOF arrive.
-func (s *stream) collectResponse(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (s *stream) collectResponse(ctx context.Context, req *http.Request, release func()) (*http.Response, error) {
 	var head Frame
 	select {
 	case f, ok := <-s.frames:
@@ -203,15 +230,22 @@ func (s *stream) collectResponse(ctx context.Context, req *http.Request) (*http.
 		return nil, err
 	}
 	// Replace body with a reader that pulls subsequent RESPONSE_BODY frames.
-	resp.Body = &streamBody{src: s.frames, ctx: ctx}
+	resp.Body = &streamBody{src: s.frames, ctx: ctx, release: release}
 	return resp, nil
 }
 
 type streamBody struct {
-	src  chan Frame
-	ctx  context.Context
-	buf  []byte
-	done bool
+	src     chan Frame
+	ctx     context.Context
+	buf     []byte
+	done    bool
+	release func() // unregisters the stream; idempotent
+}
+
+// finish marks the body terminal and unregisters its stream.
+func (b *streamBody) finish() {
+	b.done = true
+	b.release()
 }
 
 func (b *streamBody) Read(p []byte) (int, error) {
@@ -227,24 +261,28 @@ func (b *streamBody) Read(p []byte) (int, error) {
 		select {
 		case f, ok := <-b.src:
 			if !ok {
-				b.done = true
+				b.finish()
 				return 0, io.EOF
 			}
 			if f.Kind == KindCloseStream {
-				b.done = true
+				b.finish()
 				if len(f.Payload) > 0 {
 					return 0, fmt.Errorf("relay: %s", string(f.Payload))
 				}
 				return 0, io.EOF
 			}
 			if len(f.Payload) == 0 {
-				b.done = true
+				b.finish()
 				return 0, io.EOF
 			}
 			b.buf = f.Payload
 		case <-b.ctx.Done():
+			b.release()
 			return 0, b.ctx.Err()
 		}
 	}
 }
-func (b *streamBody) Close() error { return nil }
+func (b *streamBody) Close() error {
+	b.release()
+	return nil
+}
