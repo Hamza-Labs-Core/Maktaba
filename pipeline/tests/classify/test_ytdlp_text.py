@@ -19,6 +19,12 @@ from maktaba_pipeline.thumbnail.dhash import dhash_from_gray, hamming, similarit
 
 pytestmark = pytest.mark.unit
 
+# yt-dlp takes ~0.4 s to import: do it at collection, not inside the timed unit test
+try:
+    from yt_dlp import utils as _yt_utils
+except ImportError:  # optional extra
+    _yt_utils = None
+
 
 def test_fold_variants_equal() -> None:
     assert fold("فَائِدَة لُغَوِية") == fold("فـائـدة لغوية") == fold("فائدة  لغوية")
@@ -45,7 +51,9 @@ def test_ytdlp_filename(title: str, stem: str) -> None:
 
 
 def test_ytdlp_filename_matches_yt_dlp_when_installed() -> None:
-    yt_utils = pytest.importorskip("yt_dlp.utils")
+    if _yt_utils is None:
+        pytest.skip("yt-dlp not installed")
+    yt_utils = _yt_utils
     for t in ["الحبيب | بل الرفيق", 'a/b:c*d?e<f>g|h"i', "  padded  ", "-dash"]:
         assert ytdlp_filename(t) == yt_utils.sanitize_filename(t, restricted=False)
 
