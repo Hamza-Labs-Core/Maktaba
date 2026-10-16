@@ -295,6 +295,7 @@ def group_folder(
             yt_of[yid] = path
     # promos: linked to the show, not grouped
     links: list[tuple[str, Show, int | None, float, str]] = []
+    unmatched: list[str] = []  # promos whose show is not found: kept out of clip groups
     promo_upload = {p: it.upload for p, it in items.items()}
     for path, it in list(items.items()):
         if not PROMO_RE.search(fold(it.title)):
@@ -306,7 +307,7 @@ def group_folder(
         elif (hit := link_promo(it.title, folder, shows)) is not None:
             links.append((path, hit[0], promo_season(it.title, hit[0]), hit[1], hit[2]))
         else:
-            continue
+            unmatched.append(path)
         del items[path]
     titles: dict[str, str] = {}
     # a topic collection ("ملف") already holds its playlist's episodes: its clips are grouped
@@ -330,26 +331,41 @@ def group_folder(
             if path in items and pid not in topic_pls:
                 items[path].playlists.setdefault(pid, pos if pos is not None else 10**6)
                 titles[pid] = ptitle
-    for path, tag in conn.execute(
-        """SELECT t.path, t.tag FROM video_tags t JOIN files f ON f.path = t.path
+    # the tag step makes video_tags; without it every clip is untagged
+    tagged = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_tags'"
+    ).fetchone()
+    genre_rows = (
+        conn.execute(
+            """SELECT t.path, t.tag FROM video_tags t JOIN files f ON f.path = t.path
            WHERE f.folder = ? AND t.tag LIKE 'genre:%' ORDER BY t.score""",
-        (folder,),
-    ):
-        if path in items:
-            items[path].genre = tag.split(":", 1)[1]  # highest score last wins
-    qa_tagged = {
-        p
-        for (p,) in conn.execute(
-            """SELECT t.path FROM video_tags t JOIN files f ON f.path = t.path
-               WHERE f.folder = ? AND t.tag = 'format:qa_fatwa' AND t.score >= 0.5""",
             (folder,),
         )
-    }
+        if tagged
+        else []
+    )
+    for path, tag in genre_rows:
+        if path in items:
+            items[path].genre = tag.split(":", 1)[1]  # highest score last wins
+    qa_tagged = (
+        {
+            p
+            for (p,) in conn.execute(
+                """SELECT t.path FROM video_tags t JOIN files f ON f.path = t.path
+               WHERE f.folder = ? AND t.tag = 'format:qa_fatwa' AND t.score >= 0.5""",
+                (folder,),
+            )
+        }
+        if tagged
+        else set()
+    )
     for path, it in items.items():
         it.qa = path in qa_tagged or bool(QA_RE.search(fold(it.title)))
     groups = plan_groups(list(items.values()), titles)
     # linked promos air next to their show, and they are also one collection per library
-    promo_paths = sorted((p for p, *_ in links), key=lambda p: (promo_upload.get(p) or "9999", p))
+    promo_paths = sorted(
+        [p for p, *_ in links] + unmatched, key=lambda p: (promo_upload.get(p) or "9999", p)
+    )
     if promo_paths:
         groups.append(Group("clips", "promo", "إعلانات", None, promo_paths))
     conn.execute("DELETE FROM clip_groups WHERE folder=?", (folder,))

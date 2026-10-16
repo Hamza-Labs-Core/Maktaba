@@ -49,7 +49,9 @@ from maktaba_pipeline.schedule.channel_planner import (
     slot_timeline,
     suggest_channels,
 )
+from maktaba_pipeline.text.arabic import fold
 
+from .group_clips import PROMO_RE
 from .report import CSS as REPORT_CSS
 
 PLAN_FORMAT = 1
@@ -201,6 +203,8 @@ def load_inputs(
             continue
         if path in hidden and path not in promo_of:
             continue  # a promo linked to its show airs next to it; other extras never air
+        if path not in promo_of and PROMO_RE.search(fold(f["title"] or "")):
+            continue  # a promo whose show was not found advertises nothing on air
         tags = dict(video_tags.get(path, {}))
         group, group_topic = group_of.get(path, ("", None))
         if group_topic and not any(t.startswith("topic:") for t in tags):

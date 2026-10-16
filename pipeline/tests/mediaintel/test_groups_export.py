@@ -206,3 +206,44 @@ def test_questions_and_fatwas_get_their_own_group() -> None:
     groups = {(g.kind, g.basis, g.name): g.items for g in plan_groups(items, {})}
     assert groups[("standalone", "topic", "فتاوى ومسائل")] == ["q0", "q1", "q2"]
     assert groups[("standalone", "rest", "متنوعة")] == ["l0"]
+
+
+def test_a_blocked_replacement_never_retires_the_old_collection(tmp_path: Path) -> None:
+    conn = _db(tmp_path)
+    plex = FakePlex()
+    plex.add("قناة - برنامج", ["1", "2"])  # the user's own: without --replace-existing, kept
+    old = plex.add("قناة - مجزرة صبرا وشاتيلا", ["1", "2", "3"])
+    export_plex.export(conn, plex, apply=False, library_filter=None, include_clips=False,
+                       replace_existing=False, remove_superseded=False)  # fmt: skip
+    conn.execute("INSERT INTO plex_collections (series_id, section, rating_key, title) "
+                 "VALUES ('GONE', '5', ?, 'قناة - مجزرة صبرا وشاتيلا')", (old,))  # fmt: skip
+    conn.commit()
+    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+                       replace_existing=False, remove_superseded=False)  # fmt: skip
+    # the season's collection was not written, so the old one is still the only home of v3
+    assert old not in plex.deleted
+
+
+def test_grouping_works_before_the_tag_step_and_keeps_unlinked_promos_apart(
+    tmp_path: Path,
+) -> None:
+    conn = _db(tmp_path)
+    conn.execute("DROP TABLE IF EXISTS video_tags")
+    folder = "Y:/قناة"
+    conn.execute(
+        "INSERT INTO files (path, folder, stem, ext, size, mtime, duration_s, plex_rating_key,"
+        " plex_section, plex_library, plex_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (f"{folder}/p.mp4", folder, "برومو برنامج لا يعرفه أحد", ".mp4", 1, 1.0, 40, "9", "5",
+         "قناة", "برومو برنامج لا يعرفه أحد"),
+    )  # fmt: skip
+    conn.commit()
+    group_clips.run(conn, folders=[folder])
+    kinds = {
+        (k, b)
+        for k, b in conn.execute(
+            "SELECT g.kind, g.basis FROM clip_group_items i JOIN clip_groups g ON g.id = i.group_id"
+            " WHERE i.path = ?",
+            (f"{folder}/p.mp4",),
+        )
+    }
+    assert kinds == {("clips", "promo")}  # in the promos' collection, not an ordinary clip

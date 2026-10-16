@@ -1930,6 +1930,13 @@ def _apply_brands(
         ser = _brand_series(
             key, name, members, elsewhere, playlists, facts, presenter, cfg, channel_df, phrases
         )
+        # one copy per episode, as for every other show (step 5 ran before the rebuild)
+        pos = positions_of(playlists)
+        for se in ser.seasons:
+            se.episodes, dups = _dedupe(se.episodes, pos, facts, key, cfg.generic_words | presenter)
+            se.duplicates = dups
+            se.attached = [k for k in se.attached if k not in dups]
+        ser.seasons = [se for se in ser.seasons if se.episodes]
         if not ser.episode_count:
             continue
         if not (_scattered(key, members, series, cfg) or _under_split(ser, members, series, cfg)):
@@ -1937,7 +1944,7 @@ def _apply_brands(
         own_pls = {pid for se in ser.seasons for pid in se.playlists}
         if len(own_pls) < 2:
             continue  # the channel itself does not file it as a show (no playlists of its own)
-        mine = {k for se in ser.seasons for k in (*se.episodes, *se.extras)}
+        mine = {k for se in ser.seasons for k in (*se.episodes, *se.extras, *se.duplicates)}
         if _placed_after(series, built, taken | mine, ser) < _placed_after(
             series, built, taken, None
         ):
@@ -2066,10 +2073,7 @@ def _numbered(
     season = 1
     if ep is not None:
         name = toks[:at]
-        if name and name[-1].isdigit() and len(name[-1]) <= 2 and len(name) > 1:
-            season = int(name.pop())
-        elif name and (m := _SEASON_TAIL_RE.match(name[-1])):
-            name[-1], season = m.group(1), int(m.group(2))
+        # an explicit marker first ("… الموسم 2 الحلقة 1"), so it never joins the name
         if (
             len(name) >= 2
             and name[-2] in (fold("الموسم"), fold("موسم"), "s")
@@ -2077,6 +2081,10 @@ def _numbered(
         ):
             season = int(name[-1])
             name = name[:-2]
+        elif name and name[-1].isdigit() and len(name[-1]) <= 2 and len(name) > 1:
+            season = int(name.pop())
+        elif name and (m := _SEASON_TAIL_RE.match(name[-1])):
+            name[-1], season = m.group(1), int(m.group(2))
     else:
         # "<show> <ep> - …": the first number after the name is the episode
         at = next(

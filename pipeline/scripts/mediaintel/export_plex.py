@@ -234,7 +234,6 @@ class _Sync:
         """Create or update one collection, keeping what an existing one holds
         unless there is positive evidence it does not belong (:func:`removable`)."""
         leave_ok = self.placed if leave_ok is None else leave_ok
-        self.everything.append((title, keys))
         mine = self.ours.get(track_id)
         same_name = self.existing.get(title)
         if same_name is None and alt_title:
@@ -248,6 +247,8 @@ class _Sync:
                       f"({same_name.get('childCount', '?')} items) — use --replace-existing")  # fmt: skip
                 return
             old_key = same_name["ratingKey"]
+        # counted as coverage for retiring older collections only once it will be written
+        self.everything.append((title, keys))
         current_t = (
             _children_titled(self.server, old_key)
             if old_key and old_key in self.existing_keys

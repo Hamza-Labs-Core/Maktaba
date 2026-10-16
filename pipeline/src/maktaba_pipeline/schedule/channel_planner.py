@@ -1131,9 +1131,24 @@ class _Queue:
     def family(self) -> str:
         return "strip" if self.pattern in STRIP_FAMILY else "weekly"
 
+    def minutes(self) -> float:
+        return sum(_show_minutes(s) for s in self.shows)
+
     def weeks_left(self) -> float:
-        mins = sum(s.duration_s for s in self.shows) / 60
-        return mins / max(1, self.airings * self.slot_minutes)
+        return self.minutes() / max(1, self.airings * self.slot_minutes)
+
+
+_SHOW_MINUTES: dict[int, tuple[Show, float]] = {}
+
+
+def _show_minutes(s: Show) -> float:
+    """A show's length in minutes, summed once (the grid asks for it thousands of times)."""
+    hit = _SHOW_MINUTES.get(id(s))
+    if hit is None or hit[0] is not s:
+        if len(_SHOW_MINUTES) > 100_000:
+            _SHOW_MINUTES.clear()
+        hit = _SHOW_MINUTES[id(s)] = (s, s.duration_s / 60)
+    return hit[1]
 
 
 def _fhm(m: int) -> str:
@@ -1246,8 +1261,7 @@ def _show_grid(
             return None
 
         def weeks_after(q: _Queue) -> float:  # weeks of content once it airs once more
-            mins = sum(s.duration_s for s in q.shows) / 60
-            return mins / max(1, (q.airings + 1) * q.slot_minutes)
+            return q.minutes() / max(1, (q.airings + 1) * q.slot_minutes)
 
         fits = [q for q in queues.values() if q.slot_minutes <= room and q.key != prev_q
                 and q.key not in day_qs]  # fmt: skip
@@ -1330,7 +1344,10 @@ def _show_grid(
                     later.append((_Daypart_from(d, t), grp))
                     return
                 if q is None:
-                    if last:  # the previous block pads to the daypart's end with filler
+                    # extra airings allowed: the previous block runs on to the daypart's
+                    # end; otherwise the time is filler of its own, so a show never airs
+                    # more often than its cadence
+                    if last and cfg.extra_airings:
                         for sg in last:
                             sg.end = stop
                     else:
@@ -1398,7 +1415,13 @@ def _show_grid(
         if not cands:
             warnings.append(f"{s.name}: no slot on this channel")
             continue
-        fit = [q for q in cands if s.slot_minutes <= q.slot_minutes] or cands
+        fit = [q for q in cands
+               if s.slot_minutes <= q.slot_minutes + cfg.overrun_tolerance_minutes]  # fmt: skip
+        if not fit:
+            # in a shorter slot its episodes would run into the next show's
+            warnings.append(f"{s.name}: needs {s.slot_minutes} min, no slot that long on "
+                            "this channel")  # fmt: skip
+            continue
         q = min(fit, key=lambda q: (q.weeks_left(), q.shows[-1].genre == s.genre, q.key))
         q.shows.append(s)
         used.add(s.key)
@@ -1614,19 +1637,24 @@ def _quran_grid(lanes: Sequence[Lane], pool: str | None,
             cands = [ln for ln in lanes if ln.cadence == style]
             if not cands:
                 continue
-            ln = cands[i % len(cands)]
-            segs = _overlay(
-                segs,
-                _Seg(
-                    _hm(a),
-                    _hm(b) or DAY_MINUTES,
-                    ln.key,
-                    "quran",
-                    pool,
-                    "quran",
-                    (f"{a}–{b}: {QURAN_STYLES_AR.get(style, style)} — {ln.name}",),
-                ),
-            )
+            # more reciters of the style than days: the window is split so every one airs
+            n = math.ceil(len(cands) / 7)
+            lo, hi = _hm(a), _hm(b) or DAY_MINUTES
+            cut = [lo + (hi - lo) * k // n for k in range(n + 1)]
+            for k in range(n):
+                ln = cands[(i * n + k) % len(cands)]
+                segs = _overlay(
+                    segs,
+                    _Seg(
+                        cut[k],
+                        cut[k + 1],
+                        ln.key,
+                        "quran",
+                        pool,
+                        "quran",
+                        (f"{a}–{b}: {QURAN_STYLES_AR.get(style, style)} — {ln.name}",),
+                    ),
+                )
         per_day[day] = segs
     if cfg.quran_rotation == "by_time":
         why.append("reciters rotate every 4 hours")
@@ -1685,6 +1713,8 @@ def suggest_channels(
     quran_ids = {
         s.series_id
         for s in programs
+        # no reciter library at all: the library's own recitations still make the dawn
+        # lane (a scholar's channel with a few recitations keeps them on air)
         if _is_recitation(s, cfg) and (not reciter_libs or s.library in reciter_libs)
     }
     khutbah_ids = {s.series_id for s in programs if _is_khutbah(s, cfg)} - quran_ids
@@ -1725,16 +1755,20 @@ def suggest_channels(
     seasons_of_show: dict[tuple[str, str], list[str]] = defaultdict(list)
     for i, u in units.items():
         seasons_of_show[(u.folder, u.series_key)].append(i)
+    show_hours = {k: sum(units[i].duration_s for i in v) for k, v in seasons_of_show.items()}
 
     def whole_shows(ids: set[str]) -> set[str]:
         """A show joins a channel whole (all its years), when at least
         ``show_member_min_share`` of its hours belong there — never a few seasons."""
+        mine: dict[tuple[str, str], float] = defaultdict(float)
+        for i in ids:
+            if (u := units.get(i)) is not None:
+                mine[(u.folder, u.series_key)] += u.duration_s
         out: set[str] = set()
-        for sids in seasons_of_show.values():
-            total = sum(units[i].duration_s for i in sids)
-            mine = sum(units[i].duration_s for i in sids if i in ids)
-            if total and mine >= cfg.show_member_min_share * total:
-                out.update(sids)
+        for show, h in mine.items():
+            total = show_hours[show]
+            if total and h >= cfg.show_member_min_share * total:
+                out.update(seasons_of_show[show])
         return out
 
     def regular(ids: Iterable[str]) -> list[ProgramUnit]:
@@ -1754,13 +1788,13 @@ def suggest_channels(
         """A slot's filler: its own shows' promos first ("coming up"), then clips on its
         topics, then the channel's on-topic filler, then the library's general filler."""
         genres = list(dict.fromkeys(u.genre for u in ln.units))[:3]
-        gk = f"{ck}.topic.{_slug(genres[0])}" if genres else None
+        gk = f"{ck}.topic.{'+'.join(_slug(g) for g in genres)}" if genres else None
         if gk is not None and gk not in pools:
             items = [f for f in fillers if f.topic_score(genres) >= fmin]
             if items:
                 pools[gk] = _pool(
                     gk,
-                    f"{label} · {genres[0]}",
+                    f"{label} · {' / '.join(genres)}",
                     items,
                     topic_key,
                     f"filler on this slot's topics ({', '.join(genres)})",
@@ -1794,9 +1828,16 @@ def suggest_channels(
         slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg)
         r_slots: list[Slot] = []
         r_used: list[Lane] = []
-        ram = [s for s in shows if s.ramadan]
+        # the Ramadan grid sees every show, also those ramadan_exclusive keeps off the
+        # normal grid
+        r_shows = (
+            _shows([units[i] for i in member_ids if i in regular_ids], tags_of, cfg)
+            if cfg.ramadan_exclusive
+            else shows
+        )
+        ram = [s for s in r_shows if s.ramadan]
         if cfg.ramadan_grid and ram:
-            r_slots, r_used, w2 = _show_grid(key, label, shows, cfg.ramadan_dayparts, q, k,
+            r_slots, r_used, w2 = _show_grid(key, label, r_shows, cfg.ramadan_dayparts, q, k,
                                              pool_keys, cfg, ramadan=True)  # fmt: skip
             warn += w2
             why.append(
@@ -1910,6 +1951,8 @@ def suggest_channels(
             continue
         ids = {i for i in regular_ids if _in_theme(by_id[i], t, cfg)}
         ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
+        # a show joins whole or not at all, so the hours counted are the hours it airs
+        ids = {i for i in whole_shows(ids) if i in regular_ids or i in khutbah_ids}
         hours = sum(units[i].duration_s for i in ids) / 3600
         need = t.min_hours if t.min_hours is not None else cfg.theme_min_hours
         if not ids or hours < need:
@@ -1942,6 +1985,7 @@ def suggest_channels(
         if units[i].genre not in excluded
         and _score(tags_of[i], "topic", excluded) < cfg.topic_min_score
     }
+    mix_ids = whole_shows(mix_ids)
     mix_hours = sum(units[i].duration_s for i in mix_ids if i in regular_ids) / 3600
     if cfg.mix_channel and mix_hours >= cfg.mix_min_hours:
         pk = channel_pools("mix", cfg.mix_name, fillers, "all on-topic filler of the library")
@@ -1963,7 +2007,7 @@ def suggest_channels(
                 by_presenter[u.presenter].add(i)
         n = 0
         for presenter in sorted(by_presenter):
-            ids = by_presenter[presenter]
+            ids = whole_shows(by_presenter[presenter])
             hours = sum(units[i].duration_s for i in ids if i in regular_ids) / 3600
             genres = {units[i].genre for i in ids}
             if hours < cfg.presenter_min_hours or len(genres) < cfg.presenter_min_genres:

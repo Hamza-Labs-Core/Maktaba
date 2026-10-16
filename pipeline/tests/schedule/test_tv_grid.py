@@ -441,3 +441,29 @@ def test_a_show_joins_a_channel_whole_never_a_few_of_its_years() -> None:
     p2 = plan([*years2, *many_shows(60, prefix="w")], dawn_quran=False, fill_target=0.0)
     mix2 = channel(p2, "mix")
     assert not any(u.series_key == "بلا حدود" for k in mix2.lanes for u in p2.lanes[k].units)
+
+
+def test_more_mujawwad_reciters_than_days_all_air_in_the_morning_window() -> None:
+    extra = [reciter(f"j{i}", "المصحف المجود", f"Y:/قارئ {i} - مجود", minutes=25)
+             for i in range(8)]  # fmt: skip
+    p = plan(quran_library() + extra)
+    q = channel(p, "quran")
+    mujawwad = {k for k in p.lanes if k.startswith("quran.") and p.lanes[k].cadence == "mujawwad"}
+    assert len(mujawwad) == 9
+    assert mujawwad <= {s.lane for s in q.slots}
+
+
+def test_without_extra_airings_a_slot_is_never_stretched_past_its_show() -> None:
+    p = plan(many_shows(3, prefix="w"), dawn_quran=False, extra_airings=False)
+    mix = channel(p, "mix")
+    for s in mix.slots:
+        if s.kind == "program":
+            assert s.end - s.start <= p.lanes[s.lane or ""].slot_minutes, s
+
+
+def test_exclusive_ramadan_shows_still_get_the_ramadan_grid() -> None:
+    ram = show("r", "خواطر رمضانية", n=30, tags={"occasion:ramadan": 1.0})
+    p = plan([ram, *many_shows(6, prefix="w")], ramadan_exclusive=True, dawn_quran=False)
+    mix = channel(p, "mix")
+    assert any(p.lanes[s.lane or ""].ramadan for s in mix.ramadan_slots if s.lane)
+    assert not any("خواطر رمضانية" in p.lanes[s.lane or ""].shows for s in mix.slots if s.lane)
