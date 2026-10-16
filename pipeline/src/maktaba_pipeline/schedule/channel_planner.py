@@ -471,6 +471,11 @@ class PlannerConfig:
     #: a channel with fewer shows than its grid has slots gives shows an extra airing
     #: (False: the rest of the week is filler)
     extra_airings: bool = True
+    #: a channel whose shows at their own cadence fill less than this share of its week
+    #: moves its biggest weekly shows to daily strips first (an archive channel re-runs
+    #: its long-running shows daily), largest first, while they have enough episodes
+    fill_target: float = 0.8
+    promote_min_episodes: int = 26
     # filler
     filler_between_episodes: bool = True  # pad between the episodes of a long block too
     dead_air_warn_minutes: float = 3.0
@@ -1170,10 +1175,43 @@ def _show_grid(
     its years in its slot before the queue moves on."""
     strip_days = tuple(d for d in WEEKDAYS if d not in cfg.weekend_days)
     weekend = tuple(d for d in WEEKDAYS if d in cfg.weekend_days)
+    warnings: list[str] = []
+    # too few shows for the week at their own cadence: the biggest weekly shows become
+    # daily strips (an archive channel re-runs its long-running shows every weekday)
+    week_min = sum(
+        d.minutes * 7 for d in dayparts if not (d.pattern == "quran" and quran is not None)
+    )
+    demand = sum(s.slot_minutes * (len(strip_days) if s.cadence == "strip" else 1) for s in shows)
+    if week_min and demand < cfg.fill_target * week_min:
+        promoted: list[Show] = []
+        out_shows = list(shows)
+        for s in sorted(
+            (
+                s
+                for s in shows
+                if s.cadence == "weekly" and s.episode_count >= cfg.promote_min_episodes
+            ),
+            key=lambda s: -s.episode_count,
+        ):
+            if demand >= cfg.fill_target * week_min:
+                break
+            i = out_shows.index(s)
+            out_shows[i] = replace(
+                s,
+                cadence="strip",
+                reasons=(*s.reasons, "moved to a daily strip: the channel is short of shows"),
+            )
+            promoted.append(s)
+            demand += s.slot_minutes * (len(strip_days) - 1)
+        if promoted:
+            warnings.append(
+                f"{len(promoted)} weekly show(s) air as daily strips (too few shows for a full "
+                f"week at their own cadence): {', '.join(s.name for s in promoted[:5])}"
+            )
+        shows = out_shows
     used: set[str] = set()
     queues: dict[str, _Queue] = {}
     per_day: dict[str, list[_Seg]] = {d: [] for d in WEEKDAYS}
-    warnings: list[str] = []
     strip_c = [s for s in shows if s.cadence == "strip"]
     weekly_c = [s for s in shows if s.cadence == "weekly"]
     prefix = f"{ck}.ramadan" if ramadan else ck
@@ -1206,8 +1244,12 @@ def _show_grid(
                  and q.key not in day_qs]  # fmt: skip
         if not cands:
             return None
-        return min(cands, key=lambda q: (q.family != family, q.airings,
-                                         q.shows[0].genre == prev, q.key))  # fmt: skip
+        # the queue with the most weeks of content left takes it: a deep archive absorbs
+        # the repeats, a 7-episode series does not loop all week
+        return min(
+            cands,
+            key=lambda q: (q.shows[0].genre == prev, -q.weeks_left(), q.family != family, q.key),
+        )
 
     def put(days: Sequence[str], a: int, b: int, q: _Queue, d: Daypart, why: str) -> None:
         for day in days:
@@ -2003,11 +2045,13 @@ def simulate(
                 eps = lane.episodes()
                 tt = t
                 c = cursors[lane.key]
+                tol = cfg.overrun_tolerance_minutes * 60.0
                 while eps:
                     u, e = eps[c % len(eps)]
-                    # doesn't fit what is left: pad and wait for the next window, unless
-                    # the episode is longer than the whole slot (then it overruns)
-                    if tt + e.duration_s > we and (picks or e.duration_s <= we - ws):
+                    # doesn't fit what is left (an episode may end up to the tolerance past
+                    # the slot): pad and wait for the next window, unless the episode is
+                    # longer than the whole slot (then it overruns)
+                    if tt + e.duration_s > we + tol and (picks or e.duration_s <= we - ws + tol):
                         break
                     picks.append((u, e))
                     tt += e.duration_s
@@ -2028,7 +2072,9 @@ def simulate(
     return out
 
 
-def slot_timeline(lane: Lane, slots: Sequence[Slot], *, weeks: int = 52) -> list[dict[str, Any]]:
+def slot_timeline(
+    lane: Lane, slots: Sequence[Slot], *, weeks: int = 52, tolerance_minutes: int = 5
+) -> list[dict[str, Any]]:
     """What a slot's queue airs, week by week, for ``weeks`` weeks: consecutive
     weeks of one season are one row (``{"from_week", "to_week", "show"}``), so a
     reviewer sees an ongoing show run through its years and the next show take
@@ -2054,7 +2100,7 @@ def slot_timeline(lane: Lane, slots: Sequence[Slot], *, weeks: int = 52) -> list
 
     for w in range(1, weeks + 1):
         for _, _, mins in occ:
-            room = mins * 60.0
+            room = (mins + tolerance_minutes) * 60.0  # as simulate: a little overrun is fine
             played = 0
             while True:
                 u, e = eps[i % len(eps)]

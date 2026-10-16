@@ -279,7 +279,9 @@ def _stats(ch: ChannelSuggestion, plan: PlanResult, week: Sequence[Airing]) -> d
         {
             "day": WEEKDAYS[k[0] % 7],
             "at": fmt_hhmm(int(start[k] % 86400) // 60),
-            "slot": plan.lanes[k[2]].name if k[2] is not None and k[2] in plan.lanes else "filler only",
+            "slot": plan.lanes[k[2]].name
+            if k[2] is not None and k[2] in plan.lanes
+            else "filler only",
             "minutes": round(v / 60, 1),
         }
         for k, v in sorted(dead.items(), key=lambda kv: -kv[1])
@@ -411,7 +413,12 @@ def build_plan_json(
                 "stats": _stats(ch, plan, week),
                 # what each slot airs over the next 12 months (continuity at a glance)
                 "timelines": {
-                    k: slot_timeline(plan.lanes[k], ch.slots, weeks=52)
+                    k: slot_timeline(
+                        plan.lanes[k],
+                        ch.slots,
+                        weeks=52,
+                        tolerance_minutes=plan.config.overrun_tolerance_minutes,
+                    )
                     for k in ch.lanes
                     if k in plan.lanes and any(s.lane == k for s in ch.slots)
                 },
@@ -549,12 +556,18 @@ def render_html(plan: dict[str, Any]) -> str:
         nav.append(f'<a href="#{anchor}">{ch["number"]} · {_name(ch["name_ar"] or ch["name"])}</a>')
         st = ch["stats"]
         per_day = " · ".join(f"{k} {v:.0f} min/day" for k, v in st["per_day_minutes"].items())
+
         def timeline(k: str, ch: dict[str, Any] = ch) -> str:
             rows = ch["timelines"].get(k) or []
-            return '<ol class="tl">' + "".join(
-                f"<li>weeks {r['from_week']}–{r['to_week']}: {_name(r['show'])}</li>"
-                for r in rows[:12]
-            ) + ("<li>…</li>" if len(rows) > 12 else "") + "</ol>"
+            return (
+                '<ol class="tl">'
+                + "".join(
+                    f"<li>weeks {r['from_week']}–{r['to_week']}: {_name(r['show'])}</li>"
+                    for r in rows[:12]
+                )
+                + ("<li>…</li>" if len(rows) > 12 else "")
+                + "</ol>"
+            )
 
         lane_rows = "".join(
             f"<tr><td>{_name(lanes[k]['name'])}</td>"

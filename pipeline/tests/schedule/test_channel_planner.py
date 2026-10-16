@@ -255,12 +255,6 @@ def test_presenter_channel_threshold() -> None:
 # ----------------------------------------------------------------- order
 
 
-
-
-
-
-
-
 def test_seasons_and_episodes_stay_in_order() -> None:
     p = plan()
     hab = [
@@ -439,7 +433,8 @@ def test_simulated_day_pads_every_slot_to_its_boundary() -> None:
     ch = channel(p, "seerah")
     day = simulate(ch, p, weekday="fri", days=1)
     assert day[0].start_s == 0
-    assert abs(day[-1].end_s - DAY_MINUTES * 60) < 1
+    tol = PlannerConfig().overrun_tolerance_minutes * 60  # the last episode may overrun a little
+    assert DAY_MINUTES * 60 - 1 < day[-1].end_s <= DAY_MINUTES * 60 + tol
     for a, b in zip(day, day[1:], strict=False):
         assert abs(a.end_s - b.start_s) < 1e-6  # contiguous
     slots = sorted((s for s in ch.slots if s.on("fri")), key=lambda s: s.start)
@@ -491,8 +486,6 @@ def test_long_loose_videos_group_into_a_programme_lane() -> None:
     assert all("g.mp4" not in e.path for e in units[0].episodes)  # general loose skipped
 
 
-
-
 # ----------------------------------------------------------------- mappings
 
 
@@ -521,11 +514,11 @@ def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}
 
 
-def test_dizquetv_daily_schedule_when_no_day_specific_slot() -> None:
+def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows() -> None:
     p = plan()
     ch = channel(p, "seerah")
     dz = dizquetv_time_slots(ch, p)
-    assert dz["period"] == 86_400_000
+    assert dz["period"] == 7 * 86_400_000  # strips and weekly slots: a weekly period
     times = [s["time"] for s in dz["slots"]]
     assert times == sorted(times) and len(set(times)) == len(times)
     shows = [s["showId"] for s in dz["slots"]]

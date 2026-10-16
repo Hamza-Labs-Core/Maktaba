@@ -107,7 +107,7 @@ def many_shows(k: int, *, fmt: str = "program", genre: str = "seerah", n: int = 
 
 
 def test_an_ongoing_show_is_one_show_its_years_in_one_queue_back_to_back() -> None:
-    p = plan(talk_years() + many_shows(40, prefix="x"), dawn_quran=False)
+    p = plan(talk_years() + many_shows(40, prefix="x"), dawn_quran=False, fill_target=0.0)
     queues = [ln for ln in p.lanes.values() if any(u.series_key == "بلا حدود" for u in ln.units)]
     mix = channel(p, "mix")
     in_mix = [ln for ln in queues if ln.key.startswith("mix.")]
@@ -147,7 +147,7 @@ def test_cadence_defaults_lessons_strip_talk_shows_weekly() -> None:
         *talk_years("شاهد على العصر", range(2001, 2003), brand=True),
         show("p", "برنامج", fmt="program", n=100),
     ]
-    p = plan(seasons, dawn_quran=False)
+    p = plan(seasons, dawn_quran=False, fill_target=0.0)  # cadence as found, no promotion
     cad = {ln.shows[0]: ln.cadence for ln in p.lanes.values() if ln.shows}
     assert cad["شرح الأربعين"] == "strip"
     assert cad["شاهد على العصر"] == "weekly"
@@ -169,7 +169,7 @@ def test_slot_length_follows_the_episodes() -> None:
 
 
 def test_a_strip_show_airs_at_the_same_time_every_weekday_weekends_get_weekly_shows() -> None:
-    seasons = many_shows(6, fmt="lecture", prefix="s", n=100) + many_shows(60, prefix="w")
+    seasons = many_shows(6, fmt="lecture", prefix="s", n=100) + many_shows(120, prefix="w")
     p = plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     strips = [s for s in mix.slots if s.lane and p.lanes[s.lane].pattern == "strip"]
@@ -394,3 +394,18 @@ def test_the_reciter_is_his_library_and_a_scholars_recitation_stays_a_programme(
     assert not any(u.series_id == "st" for k in q.lanes for u in p.lanes[k].units)
     # the scholar's recitation-tagged season is one of his programmes
     assert any(u.series_id == "st" for ln in p.lanes.values() if not ln.special for u in ln.units)
+
+
+def test_a_channel_short_of_shows_moves_its_biggest_weekly_shows_to_strips() -> None:
+    seasons = [*talk_years(n=140), *many_shows(5, prefix="w", n=8)]
+    p = plan(seasons, dawn_quran=False)
+    mix = channel(p, "mix")
+    bh = next(p.lanes[k] for k in mix.lanes if p.lanes[k].shows[:1] == ("بلا حدود",))
+    assert bh.pattern == "strip"  # a deep archive re-runs daily on a small channel
+    assert any("daily strips" in w for w in mix.warnings)
+    # a short series is not looped all week: the deep archive takes the extra airings
+    small = [p.lanes[k] for k in mix.lanes if p.lanes[k].shows[:1] == ("برنامج w0",)]
+    big_airs = sum(len(s.days) or 7 for s in mix.slots if s.lane == bh.key)
+    for ln in small:
+        airs = sum(len(s.days) or 7 for s in mix.slots if s.lane == ln.key)
+        assert airs < big_airs, (ln.key, airs, big_airs)
