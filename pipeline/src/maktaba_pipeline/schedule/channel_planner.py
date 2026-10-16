@@ -476,6 +476,8 @@ class PlannerConfig:
     #: its long-running shows daily), largest first, while they have enough episodes
     fill_target: float = 0.8
     promote_min_episodes: int = 26
+    #: an extra airing never brings a queue under this many weeks of content (it would loop)
+    extra_min_weeks_left: float = 8.0
     # filler
     filler_between_episodes: bool = True  # pad between the episodes of a long block too
     dead_air_warn_minutes: float = 3.0
@@ -1240,15 +1242,27 @@ def _show_grid(
                    prev: str | None) -> _Queue | None:  # fmt: skip
         if not cfg.extra_airings:
             return None
-        cands = [q for q in queues.values() if q.slot_minutes <= room and q.key != prev_q
-                 and q.key not in day_qs]  # fmt: skip
+
+        def weeks_after(q: _Queue) -> float:  # weeks of content once it airs once more
+            mins = sum(s.duration_s for s in q.shows) / 60
+            return mins / max(1, (q.airings + 1) * q.slot_minutes)
+
+        fits = [q for q in queues.values() if q.slot_minutes <= room and q.key != prev_q
+                and q.key not in day_qs]  # fmt: skip
+        # prefer queues that keep 8+ weeks of content; if none does, the deepest one
+        # (a channel of repeats beats a channel of clips)
+        cands = [q for q in fits if weeks_after(q) >= cfg.extra_min_weeks_left] or fits
         if not cands:
             return None
         # the queue with the most weeks of content left takes it: a deep archive absorbs
         # the repeats, a 7-episode series does not loop all week
         return min(
             cands,
-            key=lambda q: (q.shows[0].genre == prev, -q.weeks_left(), q.family != family, q.key),
+            key=lambda q: (
+                -q.weeks_left() * (0.5 if q.shows[0].genre == prev else 1.0),
+                q.family != family,
+                q.key,
+            ),
         )
 
     def put(days: Sequence[str], a: int, b: int, q: _Queue, d: Daypart, why: str) -> None:
