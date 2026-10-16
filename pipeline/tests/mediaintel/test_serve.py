@@ -40,7 +40,7 @@ def test_file_names_and_numbers_are_stripped() -> None:
 
 
 def test_groups_merge_and_count_retries() -> None:
-    rows = [
+    rows: list[tuple[str, str | None, int, int | None]] = [
         ("signature", "read failed: 1 frames", 3, 2),
         ("signature", "read failed: 2 frames", 2, 0),
         ("probe", "ffprobe gave no duration", 1, 1),
