@@ -819,8 +819,8 @@ interface StageInfo { stage: string; label: string; lane: "sources"|"episodes"|"
   fed_by: string[];            // stages with an edge or request into this one (computed by Go)
   graph_synced_at: string|null; }
 
-type WaitingReason = "paused"|"paused_all"|"pool_full"|"debouncing"|"backoff"|"upstream"|"disabled"
-                   |"not_configured"|"awaiting_review"|"idle"|null;
+type WaitingReason = "paused"|"paused_all"|"pool_full"|"debouncing"|"backoff"|"service_retrying"
+                   |"upstream"|"disabled"|"not_configured"|"awaiting_review"|"idle"|null;
 
 interface QueueSummary {
   stage: string;
@@ -902,9 +902,10 @@ interface HealthSeries { metric: string; points: { t: string; v: number }[] }
   4. `awaiting_review` (the stage only has `awaiting_review` latest rows)
   5. `pool_full` (ready > 0 and pool busy ≥ effective size)
   6. `debouncing` (pending > 0, all with `not_before > now()` and `attempts = 0`)
-  7. `backoff` (the same with `attempts > 0`)
-  8. `upstream` (pending = 0 and any `fed_by` stage has live rows)
-  9. `idle`
+  7. `service_retrying` (backoff rows whose `error_cause` is `<service>_unreachable`, e.g. `plex_unreachable`; `QueueSummary.retrying_service` names the service, and is set even while other rows run, so the card says "Plex not answering, retrying")
+  8. `backoff` (the same with `attempts > 0`)
+  9. `upstream` (pending = 0 and any `fed_by` stage has live rows)
+  10. `idle`
 - **Snapshot cost:** the snapshot is one `GROUP BY stage, state` query plus the per-pool busy count, the flows query and the latest `health_samples`. Target under 20 ms at 1M rows. The live-state partial indexes keep it small, and every count query filters on live states or a time window.
 - **Subject labels** (batch joins):
   - videos: `COALESCE(title, filename)`;
@@ -1076,6 +1077,10 @@ Steps:
 ### 10.5 `0091_drop_legacy_live_indexes`
 
 `DROP INDEX CONCURRENTLY IF EXISTS processing_jobs_one_live_per_video_stage`, `processing_jobs_one_live_scan_per_library`. Merge it only after A's `db/jobs.py` and B's `enqueuer.go` call the function. Both workstreams' final PR checklists contain this item. SQLite twin: `DROP INDEX IF EXISTS`.
+
+### 10.6 `0092_plex_items`
+
+`plex_items (server, rating_key)` primary key, with `section_key`, `section_title`, `library_id`, `video_id` (both nullable, `ON DELETE SET NULL`), `file` (Plex's path), `duration_ms`, `plex_updated_at`, `detail JSONB` and `seen_at`. Indexes on `(server, section_key)` and `(video_id)`, built `CONCURRENTLY`. SQLite twin: TEXT/INTEGER types. Written only by the Plex extension's `plex_index` stage (section 17).
 
 ---
 
@@ -1325,3 +1330,40 @@ Decisions and deviations recorded by workstream A (DB + Python engine). Newest i
 - **D-A22. From the extension work.** A Plex collection or dizqueTV show with the same name that the tool did not create is never replaced (the stage reports a `title_conflict` / `name_conflict` and finishes `waiting_inputs`); the prototype's replace-existing and remove-superseded flags and its updating of hand-named dizqueTV shows are dropped. The first `plex_collection` run caches Plex rating keys, so its input fingerprint changes once and a second run follows (then `skipped_unchanged`).
 - **D-A23. Bootstrap, extension settings.** `extensions` rows are created from the environment on first sight (enabled only when configured); afterwards the database wins and API responses must use `extensions.store.public_settings` (secrets masked as `********`, a masked value on save keeps the stored secret).
 - **D-A24. CLI.** `python -m maktaba_pipeline run` gained `--exclude-stages`, `--host`, `--path-map` (this host's mounts, `db_prefix=local_prefix;...`) and `--no-engine`; with no `--stages` a worker serves every stage it has a handler for. A Mac worker is started with the audio chain and its path map; the Windows worker excludes it (`--exclude-stages extract,transcribe,subtitle_gen,index`).
+
+---
+
+## 17. Plex index queue and planned stages
+
+### 17.1 `plex_index` (Plex extension, built)
+
+The mediaintel prototype asked Plex for episode details in batches of 25 while writing dizqueTV shows. With Plex busy on its own maintenance (loudness analysis, butler tasks) each stalled call cost a 120 s timeout, and one run spent hours there. Plex's library listing (`/library/sections/K/all`) already carries every field a dizqueTV programme needs, so the index is now its own queue: one listing per library, saved, read by everything after it.
+
+| | |
+|---|---|
+| Subject | `library` (`entry_for = library`, so a library retrigger re-adds it to this queue) |
+| Pool / lane | `network_plex`, `sources` lane order 1 |
+| Triggered by | `scan -> plex_index (same)` (a rescan may add, move or drop files), retrigger, a version bump |
+| Reads | `/library/sections` once, then one listing of each section whose locations hold the library (all sections when none matches) |
+| Writes | `plex_items` (a section's old rows are replaced, so items Plex dropped go); `external_links(plex_item)` for every video the listing reaches through the extension `path_map`; `videos.duration_sec` where the scan has not measured it |
+| Output hash | the sorted `(video, rating key, file)` set |
+| Changed subjects | the seasons whose members gained, changed or lost a Plex item |
+| Edges | `plex_index -> plex_collection (seasons_changed)`; the dizqueTV extension adds `plex_index -> dizquetv_show (seasons_changed)` when the Plex extension is present |
+| Failure | Plex unreachable is retryable with cause `plex_unreachable`; the queue card shows "Plex not answering, retrying" (section 8.3) |
+
+**Why a table and not `external_links`:** `external_links` is one row per (target, subject) with no payload. Plex lists items no Maktaba video maps to (outside the path map), and the dizqueTV stages need the item record, not only its key. The video-to-rating-key link stays in `external_links(plex_item)`, written by this stage (and, as before, by `plex_collection` for anything the index missed).
+
+**Readers.** `plex_collection.resolve_members` uses the cached links, then `plex_items` by `video_id`, and only then the in-memory Plex listing. `dizquetv_show` and `dizquetv_channels` build programmes from `plex_items.detail` (`extensions/plex_items.details_for`) and call `/library/metadata` only for keys the index lacks.
+
+### 17.2 Planned stages (being built in `feat/clip-groups`, mediaintel first)
+
+Each becomes its own queue when it lands in Maktaba; inputs and outputs below are the contract.
+
+| Stage | Subject | Inputs | Outputs | Feeds |
+|---|---|---|---|---|
+| `brand_shows` (title-brand shows) | library | video titles (a shared prefix such as `شاهد على العصر \|` or `بلا حدود \|` across many videos), playlists, upload dates | a series per brand; seasons from that brand's playlists (a guest arc) or from years for an ongoing show; replaces playlist-named fragments | `detect` (series and seasons), then `tag`, `plex_collection`, `dizquetv_show` |
+| `topic_collections` ("ملف", may overlap seasons) | library | season and video topic tags, playlists whose titles name a topic (e.g. "الشأن الفلسطيني") | topic collections whose members may also sit in a season: an episode keeps its one season, and a topic collection never counts as a placement in the export safety rules | `plex_collection` (as collections), channel planner (themed blocks) |
+| `clip_groups` (clip collections for filler) | library | shorts and standalone clips (not in any season), their playlists and topic tags | playable groups: by playlist, else by topic, else one "mixed" group per library; one group per clip | `plex_collection` (filler collections), `plan_channels` (filler pools by topic), `dizquetv_channels` (filler lists) |
+| `promo_links` | library | promo, teaser and trailer titles (برومو, إعلان, تشويق, promo, trailer…) and the series names across libraries | `promo -> season` links with a score and evidence | `plan_channels` (a season's promos air as filler before and around its slots), report pages |
+
+Planned edges: `detect -> brand_shows`, `detect -> topic_collections`, `tag -> topic_collections`, `detect -> clip_groups`, `tag -> clip_groups`, `detect -> promo_links`; each of them `-> plan_channels (catalog)`. The two collection stages also feed `plex_collection` through the extension, with collection subjects alongside seasons.
