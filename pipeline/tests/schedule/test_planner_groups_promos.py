@@ -54,8 +54,10 @@ def test_lane_names_are_arabic_and_keys_stay_stable() -> None:
     assert mix, names
     assert all(n.startswith("منوعات") for n in mix.values())
     assert not any("unknown" in n or "Mix" in n for n in mix.values())
-    assert all(k.split(".")[1] in {"talk", "produced", "static", "cinematic", "unknown"}
-               for k in mix)  # fmt: skip
+    # keys name the slot (a weekday or "strip", and the time), so re-planning finds them
+    days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun", "strip", "strip7"}
+    assert all(k.split(".")[1] in days and k.split(".")[2].isdigit() for k in mix), mix
+    assert plan.lanes == _plan().lanes  # same input, same keys and queues
 
 
 def test_promos_pad_their_own_show_and_nowhere_else() -> None:
@@ -67,7 +69,7 @@ def test_promos_pad_their_own_show_and_nowhere_else() -> None:
         assert any(u.series_key == "كنوز السيرة" for u in lane.units)
         assert all(i.promo_of == "Y:/a|كنوز السيرة" for i in pool.items)
         assert pool.fallback is not None  # then the channel's on-topic filler
-    general = [p for k, p in plan.filler_pools.items() if not k.endswith(".promo")]
+    general = [p for k, p in plan.filler_pools.items() if not k.endswith((".promo", ".promos"))]
     assert not any(i.promo_of for p in general for i in p.items)
     # clip-group items are on-topic filler
     assert any(i.source == "clip_group" for p in general for i in p.items)

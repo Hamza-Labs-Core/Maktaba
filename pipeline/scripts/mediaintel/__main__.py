@@ -200,6 +200,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("plan-channels", help="suggest live TV channels + time-slot grids")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
+    p.add_argument("--review", type=Path, help="also write a plain-text review here")
+    p.add_argument("--focus", action="append", default=[],
+                   help="detail channels whose name contains this (repeatable)")  # fmt: skip
 
     p = sub.add_parser(
         "export-dizquetv", help="what a channel plan would write to dizqueTV (dry run)"
@@ -304,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
 
         group_clips.run(conn, a.folder)
     elif a.cmd == "plan-channels":
-        plan_channels.run(conn, a.out)
+        plan_channels.run(conn, a.out, review=a.review, focus=a.focus)
     elif a.cmd == "export-dizquetv":
         export_dizquetv.run(
             a.plan, url=a.url, offline=a.offline, only=set(a.channel or []) or None,
