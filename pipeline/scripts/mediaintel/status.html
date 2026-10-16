@@ -305,7 +305,7 @@ function render(s) {
 
   // step rail
   $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" || x.state === "earlier" ? "✓" : x.state === "skipped" ? "–" : x.n}</span>
-    <span><span class="t">${esc(x.title)}</span><br><span class="w">${esc(x.what)}</span>${x.started || x.state === "earlier" || x.state === "skipped" ? `<br><span class="w s">${x.started ? "started " + esc(x.started) : x.state === "earlier" ? "done in the earlier run; its results are used" : "not part of this run"}</span>` : ""}</span></li>`).join("");
+    <span><span class="t">${esc(x.title)}</span><br><span class="w">${esc(x.what)}</span>${x.note || x.started || x.state === "earlier" || x.state === "skipped" ? `<br><span class="w s">${x.note ? esc(x.note) : x.started ? "started " + esc(x.started) : x.state === "earlier" ? "done in the earlier run; its results are used" : "not part of this run"}</span>` : ""}</span></li>`).join("");
 
   // per-file work
   $("work").innerHTML = s.stages.length ? s.stages.map(st => {

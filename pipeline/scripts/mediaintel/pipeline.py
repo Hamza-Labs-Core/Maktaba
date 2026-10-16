@@ -11,10 +11,12 @@ from __future__ import annotations
 import importlib
 import os
 import sqlite3
+import threading
 import time
+import traceback
 from pathlib import Path
 
-from . import detect, link, report, scan_local, scan_plex
+from . import db, detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
@@ -203,11 +205,26 @@ def _run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",
             )  # fmt: skip
-    # review pages (with thumbnails read from the share) after the writes people use
+    # review pages read thumbnails from the share (cached once): they run alongside the
+    # remaining steps on their own connection, never holding them up
+    side: threading.Thread | None = None
     if want("report"):
-        _step("report")
-        for f in folders:
-            report.run(conn, f, report_dir)
+        _step("report (alongside the next steps)")
+        db_file = next(r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main")
+
+        def pages() -> None:
+            c2 = db.connect(db_file)
+            try:
+                for f in folders:
+                    report.run(c2, f, report_dir)
+            except Exception:  # noqa: BLE001 — logged; the main steps go on
+                traceback.print_exc()
+            finally:
+                c2.close()
+                print(f"report: finished ({time.strftime('%H:%M:%S')})", flush=True)
+
+        side = threading.Thread(target=pages, name="report", daemon=True)
+        side.start()
     # production style feeds only channel planning, so Plex and dizqueTV don't wait for it
     if want("scan-visual"):
         try:
@@ -228,4 +245,7 @@ def _run(
 
         _step("export-dizquetv (channels)")
         export_dizquetv.run(report_dir / "channel-plan.json", url=tv_url, apply=True, server=server)
+    if side is not None and side.is_alive():
+        print("waiting for the review pages to finish", flush=True)
+        side.join()
     print(f"\ndone in {(time.monotonic() - t0) / 60:.1f} min")

@@ -71,7 +71,7 @@ STEPS: list[tuple[str, str, str]] = [
     (
         "scan-youtube --exact",
         "Exact upload dates",
-        "the exact day for series episodes whose date is only \"N years ago\" (runs with --exact)",
+        'the exact day for series episodes whose date is only "N years ago" (runs with --exact)',
     ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
@@ -148,13 +148,22 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
     done_line = any(ln.startswith("done in ") for ln in lines)
     # "run --from-step X": the steps before X were done by an earlier run, not skipped
     resumed = next((m.group(1) for ln in lines if (m := _RESUME_RE.match(ln))), None)
-    current = seen[-1][0] if seen and not done_line else None
+    # steps that run alongside the others (review pages): running until their end line
+    side = {k for k, (pre, _, _) in enumerate(STEPS) if pre in PARALLEL_STEPS}
+    main = [x for x in seen if x[0] not in side]
+    current = (main[-1][0] if main else seen[-1][0]) if seen and not done_line else None
     started = {idx: t for idx, t, _ in seen}
+    side_running = {
+        k: at for k, _, at in seen
+        if k in side and not done_line
+        and not any(ln.startswith(f"{STEPS[k][0]}: finished") for ln in lines[at:])
+    }  # fmt: skip
     out = []
     for k, (_, title, what) in enumerate(STEPS):
         later = any(i > k for i in started)  # a later step ran: this one was left out
         state = (
-            "done" if k in started and k != current
+            "running" if k in side_running
+            else "done" if k in started and k != current
             else "running" if k == current
             else "earlier" if later and resumed and k < min(started, default=k)
             else "skipped" if later
@@ -162,6 +171,8 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         )  # fmt: skip
         out.append({"n": k + 1, "title": title, "what": what, "state": state,
                     "started": started.get(k, "")})  # fmt: skip
+        if k in side_running:
+            out[-1]["note"] = _report_note(lines[side_running[k] + 1 :])
     progress = None
     if seen and current is not None:
         _, _, at = seen[-1]
@@ -249,6 +260,20 @@ def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
     if parts:
         prog["phase"] = " · ".join(parts)
     return prog
+
+
+PARALLEL_STEPS = ("report",)
+_THUMBS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] (.+): thumbnails")
+
+
+def _report_note(body: list[str]) -> str:
+    """Where the review pages are, while they run alongside the other steps."""
+    pages = sum(1 for ln in body if ln.rstrip().endswith(".html"))
+    last = max((i for i, ln in enumerate(body) if ln.rstrip().endswith(".html")), default=-1)
+    th = [m for ln in body[last + 1 :] if (m := _THUMBS_RE.match(ln))]
+    now = (f" · now {th[-1].group(3)}: {int(th[-1].group(1)):,} of {int(th[-1].group(2)):,}"
+           " thumbnails") if th else ""  # fmt: skip
+    return f"alongside the other steps: {pages} pages written{now}"
 
 
 def _sampled_progress(body: list[str], stage: str) -> dict[str, Any]:
@@ -1127,7 +1152,7 @@ def serve(
                     explain.explain(conn, (qs.get("q") or [""])[0], folder, 30)
                 conn.close()
                 self._json(200, {"text": buf.getvalue()})
-            elif url.path.startswith("/reports/"):
+            elif url.path.startswith("/reports/") and not url.path.startswith("/reports/thumbs/"):
                 # only files listed from the reports folder, looked up by name: a request
                 # cannot name a path of its own
                 name = urllib.parse.unquote(url.path[len("/reports/") :])
@@ -1137,6 +1162,14 @@ def serve(
                     return
                 ctype = "text/html; charset=utf-8" if target.suffix == ".html" else "image/jpeg"
                 self._send(200, target.read_bytes(), ctype)
+            elif url.path.startswith(("/thumbs/", "/reports/thumbs/")):
+                # the app's thumbnail cache: a fixed name pattern, never a path
+                name = url.path.rsplit("/", 1)[-1]
+                f = Path(db_path).parent / "thumbs" / name
+                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name) or not f.is_file():
+                    self.send_error(404)
+                    return
+                self._send(200, f.read_bytes(), "image/jpeg")
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})

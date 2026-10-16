@@ -192,3 +192,40 @@ def test_dizquetv_shows_counts_libraries_and_plex_stalls() -> None:
     assert "writing 2 shows" in prog["phase"]
     assert "500 of 900 episode details" in prog["phase"]
     assert "Plex not answering" in prog["phase"]
+
+
+def test_report_runs_alongside_the_next_step() -> None:
+    from scripts.mediaintel import serve
+
+    log = [
+        "##### dizquetv-shows (2 libraries)  (03:50:03)",
+        "##### report (alongside the next steps)  (10:46:40)",
+        "##### scan-visual  (10:46:41)",
+        "E:/r/A.html",
+        "  [200/900] B: thumbnails",
+    ]
+    steps, _ = serve._steps(log)
+    by = {s["title"]: s for s in steps}
+    assert by["Write review pages"]["state"] == "running"
+    assert by["Rate production style"]["state"] == "running"
+    assert "1 pages written" in by["Write review pages"]["note"]
+    assert "200 of 900 thumbnails" in by["Write review pages"]["note"]
+    steps, _ = serve._steps([*log, "report: finished (11:00:00)"])
+    assert {s["title"]: s for s in steps}["Write review pages"]["state"] == "done"
+
+
+def test_thumbnail_cache_adopts_existing_copies(tmp_path: Path) -> None:
+    from scripts.mediaintel import db, jobs, thumbs
+
+    conn = db.connect(tmp_path / "m.db")
+    conn.execute(
+        "INSERT INTO files (path, folder, stem, ext, size, mtime, thumb_path) "
+        "VALUES ('Y:/a/v.mp4', 'Y:/a', 'v', '.mp4', 10, 1.0, 'Y:/a/v.jpg')"
+    )
+    out = thumbs.cache_dir(conn)
+    out.mkdir()
+    (out / thumbs.name("Y:/a/v.jpg")).write_bytes(b"jpg")
+    assert thumbs.ensure(conn, ["Y:/a/v.mp4"]) == out
+    assert not jobs.needed(conn, "Y:/a/v.mp4", thumbs.STAGE, thumbs.VERSION, 10, 1.0)
+    # a changed video needs a new copy
+    assert jobs.needed(conn, "Y:/a/v.mp4", thumbs.STAGE, thumbs.VERSION, 11, 2.0)
