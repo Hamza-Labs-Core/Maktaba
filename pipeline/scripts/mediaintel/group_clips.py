@@ -96,13 +96,20 @@ def link_promo(title: str, folder: str, shows: list[Show]) -> tuple[Show, float,
     """The show a promo's title names: every name word in the title; the same channel
     first, then the longest name. None when two shows fit equally."""
     t = fold(title)
-    fits = [s for s in shows if s.words and sum(len(w) for w in s.words) >= 5]
-    fits = [s for s in fits if all(w in t for w in s.words)]
+
+    def names(s: Show) -> bool:
+        if s.words and sum(len(w) for w in s.words) >= 5:
+            return all(w in t for w in s.words)
+        # a short name ("كن نجما"): the whole name, as written
+        whole = " ".join(fold(s.name).split())
+        return len(whole) >= 5 and re.search(rf"(?<!\w){re.escape(whole)}", t) is not None
+
+    fits = [s for s in shows if names(s)]
     if not fits:
         return None
 
     def rank(s: Show) -> tuple[int, int]:
-        return (s.folder == folder, sum(len(w) for w in s.words))
+        return (s.folder == folder, len(fold(s.name)))
 
     fits.sort(key=rank, reverse=True)
     if len(fits) > 1 and rank(fits[0]) == rank(fits[1]) and fits[0].name != fits[1].name:

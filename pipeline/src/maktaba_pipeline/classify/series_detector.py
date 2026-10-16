@@ -2007,7 +2007,15 @@ def _topics(
 
 # --------------------------------------------------------------------------- numbered shows
 
-_EP_WORDS = frozenset(fold(w) for w in ("ح", "حلقة", "الحلقة", "حلقه", "ep", "episode", "eps"))
+_EP_WORDS = frozenset(
+    fold(w)
+    for w in (
+        "ح", "حلقة", "الحلقة", "حلقه", "ep", "episode", "eps", "مجلس", "المجلس", "درس", "الدرس",
+        "المحاضرة", "لقاء", "اللقاء", "الجزء", "جزء", "part",
+    )
+)  # fmt: skip
+#: a number after these counts verses or pages, not episodes ("تفسير سورة هود من آية 25")
+_NOT_EPISODE_BEFORE = frozenset(fold(w) for w in ("آية", "الآية", "آيات", "الآيات", "من", "صفحة"))
 #: words that only say what a video is ("محاضرة عامة 3", "درس 12"): never a show's name alone
 _FORMAT_WORDS = frozenset(
     fold(w)
@@ -2034,6 +2042,8 @@ def _numbered(
         if t in _EP_WORDS and i + 1 < len(toks) and toks[i + 1].isdigit():
             ep, at = int(toks[i + 1]), i
             break
+        if t in _NOT_EPISODE_BEFORE and i + 1 < len(toks) and toks[i + 1].isdigit():
+            return None  # "من آية 25": a verse range, the title has no episode number
         if m := _EP_GLUED_RE.match(t):
             ep, at = int(m.group(1)), i
             break
@@ -2054,11 +2064,12 @@ def _numbered(
     else:
         # "<show> <ep> - …": the first number after the name is the episode
         at = next((i for i, t in enumerate(toks) if t.isdigit() and i > 0), -1)
-        if at < 0 or len(toks[at]) > 3:
+        if at < 0 or len(toks[at]) > 3 or toks[at - 1] in _NOT_EPISODE_BEFORE:
             return None
         ep, name = int(toks[at]), toks[:at]
     name = _drop_phrases(name, phrases)
-    while name and name[0] in generic | {fold("برنامج")}:
+    lead = frozenset(fold(w) for w in ("برنامج", "برامج", "سلسلة", "سلسله", "حلقات"))
+    while name and name[0] in lead:  # "برنامج قصة وفكرة"; "على ما تفرج" keeps its "على"
         name = name[1:]
     if not name or len(name) > 8 or ep is None or ep == 0:
         return None
@@ -2097,8 +2108,8 @@ def _display(title: str, n_tokens: int) -> str:
         got += len(f)
         if got >= n_tokens:
             break
-    name = " ".join(words)
-    return re.sub(r"(?<=[^\d\s])\d{1,2}$", "", name).strip()
+    name = re.sub(r"(?<=[^\d\s])\d{1,2}$", "", " ".join(words)).strip(' ⧸/|｜-–:＂"')
+    return name if " ".join(fold(name).split()) else ""
 
 
 def _numbered_shows(
@@ -2134,8 +2145,13 @@ def _numbered_shows(
         hits = [h for h in hits if med and _within(h[0].duration_s, med, 1.6)]
         if len({(h[2], h[3]) for h in hits}) < 5:
             continue
-        names = Counter(_display(h[0].title, len(h[1])) for h in hits)
-        name = names.most_common(1)[0][0] or " ".join(hits[0][1])
+        names = Counter(
+            d
+            for h in hits
+            if (d := _display(h[0].title, len(h[1])))
+            and "".join(fold(d).split()) == "".join(h[1])  # spelled like the name it matched
+        )
+        name = names.most_common(1)[0][0] if names else " ".join(hits[0][1])
         by_season: dict[int, list[tuple[int, str]]] = defaultdict(list)
         seen: set[tuple[int, int]] = set()
         for v, _, season, ep in sorted(hits, key=lambda h: (h[2], h[3], h[0].key)):
