@@ -208,16 +208,8 @@ class FakePlex:
                 }
             }
         if parts[:2] == ["library", "sections"] and len(parts) == 4 and parts[3] == "all":
-            md = [
-                {
-                    "ratingKey": rk,
-                    "title": it["title"],
-                    "duration": 1_500_000,
-                    "Media": [{"Part": [{"file": it["file"]}]}],
-                }
-                for rk, it in self.items.items()
-                if it["section"] == parts[2]
-            ]
+            # the listing carries the full item record, as real Plex's does
+            md = [_meta(rk, it) for rk, it in self.items.items() if it["section"] == parts[2]]
             return {"MediaContainer": {"Metadata": md}}
         if parts[:2] == ["library", "sections"] and len(parts) == 4 and parts[3] == "collections":
             md = [

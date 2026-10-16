@@ -32,6 +32,7 @@ from ...engine.hashing import canonical_hash
 from ...engine.paths import PathMap
 from ...integrations.plex import PlexClient, PlexError, PlexItem, PlexSection, TransportError
 from ..links import Link, delete_link, get_link, get_links, put_link
+from ..plex_items import items_for_videos
 from ..seasons import Member, load_members, load_season
 
 __all__ = [
@@ -209,7 +210,9 @@ async def resolve_members(
 ) -> dict[UUID, Link]:
     """Plex rating key (as a cached ``plex_item`` link) for every member that has one.
 
-    Members without a cached key are matched against Plex by file path (the
+    Members without a cached key are looked up in ``plex_items`` (the
+    ``plex_index`` stage's saved listing) and only then matched against Plex by
+    file path (the
     Plex-side view of the database path, via the extension's ``path_map``); the
     match is cached in ``external_links`` so later runs never touch the network.
     """
@@ -218,6 +221,26 @@ async def resolve_members(
         m.video_id: cached[str(m.video_id)] for m in members if str(m.video_id) in cached
     }
     missing = [m for m in members if m.video_id not in found]
+    if not missing:
+        return found
+    # the plex_index stage's saved listing, before any network call
+    indexed = await items_for_videos(db, [str(m.video_id) for m in missing])
+    for m in missing:
+        it = indexed.get(str(m.video_id))
+        if it is None or it.file is None:
+            continue
+        link = Link(
+            ITEM_TARGET,
+            "video",
+            str(m.video_id),
+            it.rating_key,
+            m.title,
+            item_content_hash(it.section_key, it.file),
+            False,
+        )
+        await put_link(db, link)
+        found[m.video_id] = link
+    missing = [m for m in missing if m.video_id not in found]
     if not missing:
         return found
     pm = path_map_of(settings)

@@ -1,8 +1,10 @@
 """The ``dizquetv_show`` stage: one dizqueTV custom show per season.
 
 Ported from ``scripts/mediaintel/dizquetv_shows.py``. The show holds the season's
-episodes in order, built from the Plex rating keys that the ``plex_collection``
-stage cached in ``external_links`` (``target='plex_item'``). A season whose
+episodes in order, built from the Plex rating keys cached in ``external_links``
+(``target='plex_item'``, written by ``plex_index`` and ``plex_collection``) and the
+item records ``plex_index`` saved in ``plex_items``; Plex is asked only for what
+the index lacks. A season whose
 episodes are not all known to Plex yet finishes with ``waiting_inputs``; the edge
 ``plex_collection -> dizquetv_show`` runs it again when Plex has caught up.
 
@@ -27,6 +29,7 @@ from ...integrations.dizquetv import DizqueError, DizqueTV, program_from_plex
 from ...integrations.plex import PlexClient, PlexError, TransportError
 from ...text.arabic import fold
 from ..links import Link, delete_link, get_link, get_links, put_link
+from ..plex_items import details_for
 from ..seasons import load_members, load_season
 
 __all__ = [
@@ -129,11 +132,17 @@ def read_remote(dz: DizqueTV, link: Link | None, name: str) -> ShowRemote:
 
 
 def apply_show(
-    dz: DizqueTV, plex: PlexClient, desired: DesiredShow, remote: ShowRemote
+    dz: DizqueTV,
+    plex: PlexClient,
+    desired: DesiredShow,
+    remote: ShowRemote,
+    saved: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[str | None, int]:
     """Perform the change (blocking); returns ``(show id, programme count)``.
 
-    The show is read back and its ratingKey order verified.
+    Programmes are built from ``saved`` (the ``plex_index`` stage's records, by
+    rating key) and only the keys it lacks are asked of Plex. The show is read
+    back and its ratingKey order verified.
     """
     ours = remote.ours
     if desired.delete:
@@ -145,7 +154,10 @@ def apply_show(
         raise StageFailure(
             "dizquetv_no_plex_server", "dizqueTV has no Plex server configured", retryable=False
         )
-    meta = plex.metadata(list(desired.keys))
+    meta: dict[str, Mapping[str, Any]] = dict(saved or {})
+    missing = [k for k in desired.keys if k not in meta]
+    if missing:
+        meta.update(plex.metadata(missing))
     content: list[dict[str, Any]] = []
     for k in desired.keys:
         m = meta.get(k)
@@ -238,8 +250,9 @@ async def run_show(db: Any, job: Any, ctx: StageContext, service: ShowsService) 
                 retryable=False,
             )
         plex = service.plex(plex_settings)
+        saved = {} if desired.delete else await details_for(db, desired.keys)
         try:
-            sid, n = await asyncio.to_thread(apply_show, dz, plex, desired, remote)
+            sid, n = await asyncio.to_thread(apply_show, dz, plex, desired, remote, saved)
         except (DizqueError, PlexError, TransportError) as exc:
             raise _wrap(exc) from exc
         result["id"], result["n"] = sid, n

@@ -70,7 +70,10 @@ def test_fake_ext_satisfies_the_protocol() -> None:
 @pytest.mark.unit
 def test_core_graph_names_no_extension_stage() -> None:
     names = {s.name for s in GRAPH}
-    assert not {"plex_collection", "dizquetv_show", "dizquetv_channels", "fake_push"} & names
+    assert (
+        not {"plex_index", "plex_collection", "dizquetv_show", "dizquetv_channels", "fake_push"}
+        & names
+    )
     assert all(s.extension is None for s in GRAPH)
     for s in GRAPH:
         for e in s.edges:

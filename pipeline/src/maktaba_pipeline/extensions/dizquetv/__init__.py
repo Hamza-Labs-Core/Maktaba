@@ -102,6 +102,8 @@ class DizqueTVExtension:
         graph.add_edge("detect", Edge("dizquetv_show", "seasons_changed"))
         if graph.has_stage("plex_collection"):
             graph.add_edge("plex_collection", Edge("dizquetv_show", "same"))
+        if graph.has_stage("plex_index"):  # programmes are built from the saved Plex records
+            graph.add_edge("plex_index", Edge("dizquetv_show", "seasons_changed"))
         graph.add_edge("plan_channels", Edge("dizquetv_channels", "same"))
 
     def impls(self) -> Mapping[str, StageImpl]:

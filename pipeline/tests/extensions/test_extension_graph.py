@@ -15,7 +15,7 @@ from maktaba_pipeline.extensions.plex import extension as plex
 from maktaba_pipeline.extensions.store import ExtensionState
 from maktaba_pipeline.runtime import Database
 
-EXT_STAGES = {"plex_collection", "dizquetv_show", "dizquetv_channels"}
+EXT_STAGES = {"plex_index", "plex_collection", "dizquetv_show", "dizquetv_channels"}
 
 
 def edges(graph: tuple[StageDef, ...], name: str) -> set[tuple[str, str]]:

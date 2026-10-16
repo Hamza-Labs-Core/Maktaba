@@ -37,6 +37,7 @@ from ...integrations.dizquetv import (
 )
 from ...integrations.plex import PlexClient, PlexError, TransportError
 from ..links import Link, get_links, put_link
+from ..plex_items import details_for
 
 __all__ = [
     "CHANNEL_TARGET",
@@ -362,8 +363,12 @@ def apply_actions(
     plan: Mapping[str, Any],
     *,
     tz_offset: int,
+    saved: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Write shows and filler lists, then the channels; read every object back.
+
+    Programmes come from ``saved`` (the ``plex_index`` records, by rating key);
+    only the keys it lacks are asked of Plex.
 
     Returns one record per written channel (``key``, ``number``, ``name``, ``digest``).
     """
@@ -374,7 +379,10 @@ def apply_actions(
         )
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
-    meta = plex.metadata(keys) if keys else {}
+    meta: dict[str, Any] = dict(saved or {})
+    missing = [k for k in keys if k not in meta]
+    if missing:
+        meta.update(plex.metadata(missing))
     for a in objs:
         assert a.body is not None and a.endpoint is not None
         content = _content([str(i["ratingKey"]) for i in a.body["content"]], meta, server, plex)
@@ -528,9 +536,16 @@ async def run_channels(
                 retryable=False,
             )
         plex = service.plex(plex_settings)
+        objs = [
+            a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")
+        ]
+        wanted = {str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])}
+        saved = await details_for(db, sorted(wanted)) if wanted else {}
         try:
             written.extend(
-                await asyncio.to_thread(apply_actions, dz, plex, actions, plan, tz_offset=tz)
+                await asyncio.to_thread(
+                    apply_actions, dz, plex, actions, plan, tz_offset=tz, saved=saved
+                )
             )
         except (DizqueError, PlexError, TransportError) as exc:
             raise _wrap(exc) from exc

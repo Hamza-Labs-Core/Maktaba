@@ -1,4 +1,5 @@
-"""The Plex extension: writes each detected season to Plex as a manual collection.
+"""The Plex extension: indexes each library's Plex items and writes each detected
+season to Plex as a manual collection.
 
 Settings: ``url`` (``MAKTABA_PLEX_URL``), ``token`` (secret, ``MAKTABA_PLEX_TOKEN``)
 and ``path_map`` (``MAKTABA_PATH_MAP``: how *Plex* sees the NAS paths the database
@@ -25,15 +26,26 @@ from .collection import (
     fingerprint,
     run_collection,
 )
+from .index import run_index
 
-__all__ = ["PLEX_EXPORT_VERSION", "PlexExtension", "extension", "health_probes"]
+__all__ = [
+    "PLEX_EXPORT_VERSION",
+    "PLEX_INDEX_VERSION",
+    "PlexExtension",
+    "extension",
+    "health_probes",
+]
 
 PLEX_EXPORT_VERSION = 1
+PLEX_INDEX_VERSION = 1
 
 MANIFEST = Manifest(
     name="plex",
     version="1",
-    description="Write each detected season to Plex as an ordered manual collection.",
+    description=(
+        "Index each library's Plex items once, then write each detected season to Plex"
+        " as an ordered manual collection."
+    ),
     settings=(
         SettingField("url", "Plex URL", required=True, env="MAKTABA_PLEX_URL"),
         SettingField("token", "Plex token", secret=True, required=True, env="MAKTABA_PLEX_TOKEN"),
@@ -43,7 +55,7 @@ MANIFEST = Manifest(
             env="MAKTABA_PATH_MAP",
         ),
     ),
-    stages=("plex_collection",),
+    stages=("plex_index", "plex_collection"),
 )
 
 
@@ -68,6 +80,25 @@ class PlexExtension:
         return bool(settings.get("url")) and bool(settings.get("token"))
 
     def register(self, graph: GraphBuilder) -> None:
+        # one Plex listing per library, saved (plex_items): later stages read it
+        # instead of asking Plex item by item
+        graph.add_stage(
+            StageDef(
+                name="plex_index",
+                label="Plex index",
+                subject_kinds=("library",),
+                pool="network_plex",
+                lane="sources",
+                lane_order=1,
+                version=PLEX_INDEX_VERSION,
+                edges=(Edge("plex_collection", "seasons_changed"),),
+                entry_for=("library",),
+                debounce_sec=60,
+                debounce_max_sec=600,
+            )
+        )
+        if graph.has_stage("scan"):  # a rescan may add, move or drop files Plex lists
+            graph.add_edge("scan", Edge("plex_index", "same"))
         graph.add_stage(
             StageDef(
                 name="plex_collection",
@@ -85,15 +116,21 @@ class PlexExtension:
 
     def impls(self) -> Mapping[str, StageImpl]:
         return {
+            "plex_index": StageImpl(
+                run=self._run_index, input_fingerprint=None, output_fingerprint=None
+            ),
             "plex_collection": StageImpl(
                 run=self._run, input_fingerprint=self._input_fingerprint, output_fingerprint=None
-            )
+            ),
         }
 
     # ------------------------------------------------------------------ stage
 
     async def _run(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_collection(db, job, ctx, self.service)
+
+    async def _run_index(self, db: Any, job: Any, ctx: Any) -> StageResult:
+        return await run_index(db, job, ctx, self.service)
 
     async def _input_fingerprint(self, db: Any, subject: Subject) -> str | None:
         row = await db.fetchrow(

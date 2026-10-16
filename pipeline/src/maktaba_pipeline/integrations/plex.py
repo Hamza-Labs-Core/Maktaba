@@ -172,12 +172,20 @@ class PlexClient:
             out.append(PlexSection(str(d["key"]), str(d.get("title", "")), str(d["type"]), locs))
         return out
 
-    def section_items(self, section: PlexSection) -> list[PlexItem]:
-        """Every playable item of a section that has a media file."""
+    def section_listing(self, section: PlexSection) -> list[dict[str, Any]]:
+        """Plex's full record of every item of a section, in one call. The listing
+        carries every field a dizqueTV programme needs (title, key, duration,
+        thumb, dates, media part), so callers can save it instead of asking
+        ``/library/metadata`` item by item later."""
         ptype = _LIST_TYPE.get(section.type, 1)
         items = self._container(f"/library/sections/{section.key}/all?type={ptype}")
+        md = items.get("Metadata", [])
+        return [m for m in md if isinstance(m, dict)] if isinstance(md, list) else []
+
+    def section_items(self, section: PlexSection) -> list[PlexItem]:
+        """Every playable item of a section that has a media file."""
         out: list[PlexItem] = []
-        for m in items.get("Metadata", []):
+        for m in self.section_listing(section):
             try:
                 part = m["Media"][0]["Part"][0]
                 file = str(part["file"])
