@@ -21,10 +21,15 @@ Safety:
 
 from __future__ import annotations
 
+import contextlib
 import json
+import re
 import sqlite3
+import urllib.error
 from collections import defaultdict
 from typing import Any
+
+from maktaba_pipeline.text.arabic import fold
 
 from .scan_plex import PlexServer, quote
 
@@ -45,8 +50,31 @@ def _title(library: str, series: str, season: int, season_count: int) -> str:
     return base if season_count == 1 else f"{base} - الموسم {season}"
 
 
+#: titles that say a video is not an episode: teaser, trailer, announcement, full-length
+#: compilation, song, or a leftover partial download (".f251")
+_NOT_EPISODE_RE = re.compile(
+    r"(تشويق|تتر|اعلان|إعلان|برومو|promo|trailer|كامل[ةه](?!\w)|قريبا|قريبًا|نشيد|\.f\d{3}$)",
+    re.IGNORECASE,
+)
+
+
+def removable(key: str, title: str, placed: set[str], shorts: set[str]) -> bool:
+    """May an episode leave an existing collection? Only on positive evidence: it is an
+    episode of another season now, a short, or its title says it is not an episode. One
+    that detection merely failed to place stays (detection is not perfect; Plex keeps it)."""
+    return key in placed or key in shorts or bool(_NOT_EPISODE_RE.search(title.strip()))
+
+
 def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
-    md = server.get(f"/library/collections/{key}/children")["MediaContainer"].get("Metadata", [])
+    """Items of a collection; [] when Plex no longer has it (deleted meanwhile → 404)."""
+    try:
+        got = server.get(f"/library/collections/{key}/children")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"     (collection {key} is gone from Plex; skipped)", flush=True)
+            return []
+        raise
+    md = got["MediaContainer"].get("Metadata", [])
     return [(m["ratingKey"], m.get("title", "")) for m in md]
 
 
@@ -150,6 +178,37 @@ def export(
                 (library,),
             )
         }
+        # every episode detection placed in this library, and its shorts: the evidence an
+        # episode may leave a collection on
+        placed = {
+            k
+            for (k,) in conn.execute(
+                """SELECT f.plex_rating_key FROM series_episodes e JOIN files f ON f.path = e.path
+                   WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+                (library,),
+            )
+        }
+        shorts = {
+            k
+            for (k,) in conn.execute(
+                """SELECT f.plex_rating_key FROM shorts s JOIN files f ON f.path = s.path
+                   WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+                (library,),
+            )
+        }
+        # a second file of a video (X.mkv beside the user's X.mp4) -> the kept file's key
+        copy_of: dict[str, str] = {}
+        with contextlib.suppress(sqlite3.OperationalError):
+            copy_of = {
+                a: b
+                for a, b in conn.execute(
+                    """SELECT fc.plex_rating_key, fk.plex_rating_key FROM file_copies c
+                       JOIN files fc ON fc.path = c.path JOIN files fk ON fk.path = c.kept
+                       WHERE fc.plex_library = ? AND fc.plex_rating_key IS NOT NULL
+                         AND fk.plex_rating_key IS NOT NULL""",
+                    (library,),
+                )
+            }
         planned_keys: list[set[str]] = []
         planned: list[tuple[str, list[str]]] = []
         claimed: set[str] = set()  # existing collections taken over by a planned season
@@ -188,6 +247,28 @@ def export(
                 else []
             )
             current = [k for k, _ in current_t]
+            # existing collections are protected: an episode detection merely failed to
+            # place stays, and a second file is swapped for its kept twin, never dropped.
+            # Except one that plainly is not this show: (almost) every episode carries
+            # the show's name and its title does not (the detector's own rule).
+            name_words = [w for w in fold(r["name"]).split() if len(w) > 2]
+            branded = bool(name_words) and sum(
+                all(w in fold(titles.get(k, "")) for w in name_words) for k in keys
+            ) >= 0.7 * len(keys)
+
+            kept: list[str] = []
+            for k, t in current_t:
+                if k in keys or k in kept:
+                    continue
+                if branded and not all(w in fold(t) for w in name_words):
+                    continue
+                if k in copy_of:
+                    twin = copy_of[k]
+                    if twin not in placed and twin not in keys and twin not in kept:
+                        kept.append(twin)
+                elif not removable(k, t, placed, shorts):
+                    kept.append(k)
+            keys = keys + kept
             if current == keys:
                 print(f"  =  {title} ({len(keys)})")
                 continue
@@ -195,13 +276,13 @@ def export(
             print(
                 f"  +  {title}: {verb}, {len(keys)} episodes"
                 + (f" (was {len(current)})" if current else "")
+                + (f"; kept {len(kept)} detection did not place" if kept else "")
             )
             if diff and current:
                 if set(current) == set(keys):
                     print("       (same episodes, new order)")
                 else:
-                    covered = set().union(*planned_keys) if planned_keys else set()
-                    _print_diff(current_t, keys, titles, covered=covered)
+                    _print_diff(current_t, keys, titles, covered=placed)
             if apply:
                 new = _recreate(
                     server, machine, section, title, keys, old_key if current or same_name else None

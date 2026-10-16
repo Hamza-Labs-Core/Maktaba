@@ -266,3 +266,58 @@ def test_video_in_two_playlists_is_an_episode_once_never_also_an_extra() -> None
         if shared.key in keys
     ]
     assert [r for _, r in homes] == ["episode"]
+
+
+def test_topic_playlist_nested_in_a_series_stays_in_that_series() -> None:
+    # "أنوار الأنبياء" numbered 1..20; "موسى ﷺ في القرآن" lists episodes 7..17 again
+    def title(i: int) -> str:
+        part = f"موسى ﷺ {i - 6:02d}" if 7 <= i <= 17 else f"آدم {i:02d}"
+        return f"أنوار الأنبياء {i:02d} | {part}"
+
+    start = date(2021, 1, 1)
+    eps = [
+        VideoFacts(f"e{i}", title(i), 25 * 60 + i, start + timedelta(days=7 * i), True)
+        for i in range(1, 21)
+    ]
+    moses = [v for v in eps if 7 <= int(v.key[1:]) <= 17]
+    series_pl = _pl("PA", "أنوار الأنبياء | سلسلة تدبر", eps)
+    playlists = [series_pl, _pl("PM", "موسى ﷺ في القرآن", moses)]
+    det = detect(eps, playlists)
+    shows = [s for s in det.series if s.episode_count]
+    assert len(shows) == 1
+    assert shows[0].seasons[0].numbers == list(range(1, 21))
+
+
+def test_two_shows_with_one_name_are_told_apart_by_their_playlist_part() -> None:
+    a = _season("a", 6, date(2025, 10, 1), 30, "أنوار الصحيحين | كتاب الإيمان {i:02d} | شرح")
+    b = _season("b", 6, date(2026, 3, 1), 25, "أنوار الصحيحين | كتاب فضائل القرآن {i:02d} | شرح")
+    det = detect(
+        [*a, *b],
+        [
+            _pl("PA", "أنوار الصحيحين | كتاب الإيمان | شرح الجمع بين الصحيحين", a),
+            _pl("PB", "أنوار الصحيحين | كتاب فضائل القرآن | شرح الجمع بين الصحيحين", b),
+        ],
+    )
+    names = sorted(s.name for s in det.series)
+    assert len(set(names)) == len(names) == 2
+    assert names == ["أنوار الصحيحين - كتاب الإيمان", "أنوار الصحيحين - كتاب فضائل القرآن"]
+
+
+def test_short_numbered_episode_in_its_playlist_stays_an_episode() -> None:
+    eps = _season("q", 10, date(2016, 1, 1), 20, "الأربعون القلبية {i}، شرح حديث")
+    day = eps[1].air_date
+    short = VideoFacts("q2", "الأربعون القلبية 2، شرح حديث كقلب واحد", 5.8 * 60, day, True)
+    eps[1] = short
+    teaser = VideoFacts("t", "تشويقة سلسلة الأربعون القلبية", 290.0, date(2015, 12, 25), True)
+    det = detect([*eps, teaser], [_pl("PQ", "سلسلة الأربعون القلبية", [*eps, teaser])])
+    (ser,) = det.series
+    se = ser.seasons[0]
+    assert "q2" in se.episodes and "t" not in se.episodes
+
+
+def test_unbranded_video_on_the_same_topic_does_not_join_a_branded_season() -> None:
+    s3 = _season("s", 8, date(2021, 4, 14), 12, "دعوة النبي ﷺ [{i:02d}] أندى العالمين موسم 1442")
+    loose = VideoFacts("x", "كيف تكون محبة النبي ﷺ ؟! | للشيخ الحويني في رمضان", 12 * 60 + 5,
+                       date(2021, 4, 20), True)  # fmt: skip
+    det = detect([*s3, loose], [_pl("P3", "البرنامج الإذاعي أندى العالمين رمضان 1442", s3)])
+    assert "x" in det.unassigned

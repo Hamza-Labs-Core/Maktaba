@@ -30,7 +30,7 @@ from typing import Any
 from maktaba_pipeline.text.arabic import fold
 
 from .export_plex import _title
-from .scan_plex import PlexServer
+from .scan_plex import PlexServer, cached_items
 
 
 class _Dz:
@@ -82,12 +82,25 @@ def _program(m: dict[str, Any], server: PlexServer) -> dict[str, Any] | None:
     return p
 
 
-def _metadata(server: PlexServer, keys: list[str]) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for i in range(0, len(keys), 50):
-        md = server.get(f"/library/metadata/{','.join(keys[i : i + 50])}")["MediaContainer"]
+def _metadata(
+    server: PlexServer, keys: list[str], batch: int = 25, conn: sqlite3.Connection | None = None
+) -> dict[str, dict[str, Any]]:
+    """Plex details of every episode: from the plex-index step's saved records first,
+    then only the missing ones from Plex, ``batch`` at a time, with a progress line every
+    20 batches (thousands of episodes take a while, and silence looks like a hang)."""
+    out: dict[str, dict[str, Any]] = cached_items(conn, keys) if conn is not None else {}
+    if out:
+        print(f"  {len(out):,} of {len(keys):,} episode details from the Plex index", flush=True)
+    keys = [k for k in keys if k not in out]
+    batches = range(0, len(keys), batch)
+    for n, i in enumerate(batches, 1):
+        md = server.get(f"/library/metadata/{','.join(keys[i : i + batch])}")["MediaContainer"]
         for m in md.get("Metadata", []):
             out[str(m["ratingKey"])] = m
+        if n % 20 == 0 or n == len(batches):
+            print(
+                f"  [{min(i + batch, len(keys))}/{len(keys)}] episode details from Plex", flush=True
+            )
     return out
 
 
@@ -183,7 +196,7 @@ def run(
         print("\nDry run. Re-run with --apply to write.")
         return
 
-    meta = _metadata(server, sorted({k for _, _, keys, _, _ in plan for k in keys}))
+    meta = _metadata(server, sorted({k for _, _, keys, _, _ in plan for k in keys}), conn=conn)
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     for name, _kind, keys, show, _cur in plan:

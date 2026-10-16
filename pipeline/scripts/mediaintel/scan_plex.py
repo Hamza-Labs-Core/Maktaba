@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -23,25 +25,31 @@ class PlexServer:
     token: str
 
     def get(self, path: str) -> dict[str, Any]:
-        sep = "&" if "?" in path else "?"
-        req = urllib.request.Request(
-            f"{self.uri}{path}{sep}X-Plex-Token={self.token}",
-            headers={"Accept": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 — user-configured server
-            body = r.read()
-        return json.loads(body) if body else {}
+        return self.send("GET", path)
 
     def send(self, method: str, path: str) -> dict[str, Any]:
+        """One Plex call. A connection that fails (Plex restarting, a network blip) is
+        retried with backoff (5 tries, up to 2 min apart); Plex's own answers (404 …) are
+        raised at once."""
         sep = "&" if "?" in path else "?"
         req = urllib.request.Request(
             f"{self.uri}{path}{sep}X-Plex-Token={self.token}",
             method=method,
             headers={"Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
-            body = r.read()
-        return json.loads(body) if body else {}
+        for attempt, wait in enumerate((0, 10, 30, 60, 120)):
+            if wait:
+                print(f"     (Plex not answering; retry {attempt}/4 in {wait} s)", flush=True)
+                time.sleep(wait)
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
+                    body = r.read()
+                return json.loads(body) if body else {}
+            except urllib.error.HTTPError:
+                raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                last = e
+        raise last
 
 
 def load_server(dizquetv_db: Path | None, uri: str | None, token: str | None) -> PlexServer:
@@ -63,29 +71,56 @@ def map_path(plex_path: str, path_map: list[tuple[str, str]]) -> str | None:
     return None
 
 
+#: the item fields kept in ``plex_items.detail``: what a dizqueTV programme is built from
+DETAIL_KEYS = (
+    "ratingKey", "key", "type", "title", "summary", "duration", "thumb", "year",
+    "originallyAvailableAt", "contentRating", "grandparentTitle", "grandparentThumb",
+    "parentIndex", "index", "addedAt", "updatedAt",
+)  # fmt: skip
+
+
+def detail(m: dict[str, Any]) -> dict[str, Any]:
+    """The part of a Plex item later steps use (first media part only)."""
+    d = {k: m[k] for k in DETAIL_KEYS if k in m}
+    try:
+        md, part = m["Media"][0], m["Media"][0]["Part"][0]
+        d["Media"] = [{"width": md.get("width"), "height": md.get("height"),
+                       "Part": [{"key": part.get("key"), "file": part.get("file")}]}]  # fmt: skip
+    except (KeyError, IndexError):
+        pass
+    return d
+
+
 def scan_plex(
     conn: sqlite3.Connection,
     server: PlexServer,
     path_map: list[tuple[str, str]],
     library: str | None,
 ) -> None:
-    sections = server.get("/library/sections")["MediaContainer"].get("Directory", [])
-    for sec in sections:
-        if sec.get("type") not in ("movie", "show"):
-            continue
-        if library and library.lower() not in sec["title"].lower():
-            continue
+    """plex-index: one listing per library. Saves every item's record (``plex_items``,
+    items Plex dropped are removed) and attaches Plex keys and lengths to files."""
+    sections = [
+        s
+        for s in server.get("/library/sections")["MediaContainer"].get("Directory", [])
+        if s.get("type") in ("movie", "show")
+        and not (library and library.lower() not in s["title"].lower())
+    ]
+    print(f"reading {len(sections)} Plex libraries", flush=True)
+    for n_sec, sec in enumerate(sections, 1):
         ptype = 1 if sec["type"] == "movie" else 4
         items = server.get(f"/library/sections/{sec['key']}/all?type={ptype}")[
             "MediaContainer"
         ].get("Metadata", [])
         matched = 0
+        seen: list[tuple[str, str, str, str | None, int | None, str]] = []
         for m in items:
             try:
                 plex_file = m["Media"][0]["Part"][0]["file"]
             except (KeyError, IndexError):
-                continue
-            local = map_path(plex_file, path_map)
+                plex_file = None
+            local = map_path(plex_file, path_map) if plex_file else None
+            seen.append((str(m["ratingKey"]), str(sec["key"]), sec["title"], local,
+                         m.get("updatedAt"), json.dumps(detail(m), ensure_ascii=False)))  # fmt: skip
             if local is None:
                 continue
             cur = conn.execute(
@@ -110,8 +145,24 @@ def scan_plex(
                 ).fetchone()
                 if frow:  # Plex measured it: the probe job is done without ffprobe
                     jobs.record(conn, local, "probe", 1, frow[0], frow[1])
+        conn.execute("DELETE FROM plex_items WHERE section=?", (str(sec["key"]),))
+        conn.executemany("INSERT OR REPLACE INTO plex_items VALUES (?,?,?,?,?,?)", seen)
         conn.commit()
-        print(f"{sec['title']}: {len(items)} items, {matched} matched to scanned files")
+        print(f"  [{n_sec}/{len(sections)}] {sec['title']}: {len(items)} items, "
+              f"{matched} matched to scanned files", flush=True)  # fmt: skip
+
+
+def cached_items(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict[str, Any]]:
+    """Saved Plex records (``plex_items``) for these rating keys."""
+    out: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(keys), 500):
+        part = keys[i : i + 500]
+        for k, d in conn.execute(
+            f"SELECT rating_key, detail FROM plex_items WHERE rating_key IN ({','.join('?' * len(part))})",  # noqa: S608
+            part,
+        ):
+            out[k] = json.loads(d)
+    return out
 
 
 def quote(s: str) -> str:

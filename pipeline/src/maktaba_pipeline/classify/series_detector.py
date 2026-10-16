@@ -312,11 +312,17 @@ def _make_seed(
     key, season, year = series_key(p.title, stop)
     durs = [facts[k].duration_s for k in members if facts[k].duration_s]
     core = _core_median([d for d in durs if d is not None])
+    # an extra is a teaser/recap by its title, or an odd length *without* an episode
+    # number: a numbered member in its playlist is an episode however long it runs
+    # ("الأربعون القلبية 2" at 6 min among 20-min talks, a 3-hour tafsir session)
     extras = {
         k
         for k in members
         if is_teaser(facts[k].title, facts[k].duration_s, typical_s=core)
-        or not _within(facts[k].duration_s, core, cfg.core_band)
+        or (
+            not _within(facts[k].duration_s, core, cfg.core_band)
+            and _title_number(facts[k].title) is None
+        )
     }
     s = _Seed([p.playlist_id], [p.title], key, season, year, members, extras, core)
     s.first, s.last = _date_span((k for k in members if k not in extras), facts)
@@ -356,6 +362,9 @@ class _Profile:
     weekday: int | None = None
     #: the series keeps going: a later air date is a new episode, not another show
     ongoing: bool = False
+    #: the show's own name words, and whether (almost) every member title carries them
+    name_words: tuple[str, ...] = ()
+    branded: bool = False
 
 
 def _content_words(title: str, stop: frozenset[str]) -> frozenset[str]:
@@ -372,6 +381,7 @@ def _profile(
     stop: frozenset[str],
     *,
     ongoing: bool = False,
+    name: str = "",
 ) -> _Profile:
     seg_counts: Counter[str] = Counter()
     for k in eps:
@@ -408,6 +418,9 @@ def _profile(
         frame_hashes=[h for k in eps for h in facts[k].frames],
         weekday=weekday,
         ongoing=ongoing,
+        name_words=(nw := tuple(w for w in fold(name).split() if len(w) > 2)),
+        branded=bool(nw)
+        and sum(all(w in fold(facts[k].title) for w in nw) for k in eps) >= 0.7 * max(1, len(eps)),
     )
 
 
@@ -426,6 +439,11 @@ def _attach_score(
     # title evidence
     if p.key_words and all(w in words or w in t for w in p.key_words):
         title_s = 1.0
+    elif p.branded and not all(w in t for w in p.name_words):
+        # every episode says the show's name ("… أندى العالمين موسم 1442") and this title
+        # does not: sharing a topic ("محبة النبي ﷺ") does not make it an episode. Only the
+        # signature (same intro / end song) below can still place it.
+        title_s = 0.0
     elif p.distinctive and set(segments(v.title)) & p.distinctive:
         title_s = 0.8
     else:
@@ -909,6 +927,56 @@ def _title_name(
     return name if n >= 0.6 * len(eps) and any(len(fold(w)) > 2 for w in name.split()) else None
 
 
+def _qualifier(
+    titles: Sequence[str], name: str, presenter: frozenset[str], generic: frozenset[str]
+) -> str | None:
+    """The part of a playlist title that is not the show's name ("أنوار الصحيحين | كتاب
+    الإيمان | شرح …" → "كتاب الإيمان"), skipping presenter- or generic-only parts."""
+    own = fold(name)
+    for t in sorted(titles, key=len):
+        for part in _SEP_SPLIT_RE.split(t.replace("#", " ")):
+            part = part.strip(" |｜-–/⧸.")
+            words = [fold(w) for w in part.split()]
+            if (
+                part
+                and fold(part) != own
+                and fold(part) not in own
+                and any(w not in presenter | generic for w in words)
+            ):
+                return part
+    return None
+
+
+def _distinct_names(
+    series: list[Series],
+    playlists: Sequence[PlaylistFacts],
+    presenter: frozenset[str],
+    cfg: DetectorConfig,
+) -> None:
+    """Two shows of one channel never share a name: they would land in one Plex
+    collection and one dizqueTV show. Each takes the part of its playlist title that
+    tells them apart, else its first year, else a number."""
+    titles_of = {p.playlist_id: p.title for p in playlists}
+    groups: dict[str, list[Series]] = defaultdict(list)
+    for ser in series:
+        groups[fold(ser.name)].append(ser)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        for ser in group:
+            pts = [titles_of[pid] for se in ser.seasons for pid in se.playlists if pid in titles_of]
+            q = _qualifier(pts, ser.name, presenter, cfg.generic_words)
+            if q is None and ser.seasons and ser.seasons[0].first_air:
+                q = str(ser.seasons[0].first_air.year)
+            if q:
+                ser.name = f"{ser.name} - {q}"
+        seen: Counter[str] = Counter()
+        for ser in group:  # still equal (same part, same year): number them
+            seen[fold(ser.name)] += 1
+            if seen[fold(ser.name)] > 1:
+                ser.name = f"{ser.name} ({seen[fold(ser.name)]})"
+
+
 def _display_name(titles: Sequence[str], presenter: frozenset[str], generic: frozenset[str]) -> str:
     """Human name for a series from its playlist titles (original spelling kept).
 
@@ -978,7 +1046,11 @@ def detect(
     for s in sorted(seeds, key=lambda x: -len(x.members)):
         for m in merged:
             inter = len(set(s.members) & set(m.members))
-            if inter >= 0.6 * min(len(s.members), len(m.members)) and _keys_match(s.key, m.key):
+            small = min(len(s.members), len(m.members))
+            # a playlist nested in a bigger one ("موسى ﷺ في القرآن" inside "أنوار الأنبياء") is
+            # a topic list of that show, whatever its name, not a show of its own
+            nested = inter >= 0.8 * small and small < len(m.members)
+            if nested or (inter >= 0.6 * small and _keys_match(s.key, m.key)):
                 _merge_into(m, s)
                 break
         else:
@@ -1132,7 +1204,9 @@ def detect(
             continue
         for se in ser.seasons:
             ongoing = ser.kind == "ongoing"
-            prof = _profile(se.episodes, ser.key, facts, seg_df, stop, ongoing=ongoing)
+            prof = _profile(
+                se.episodes, ser.key, facts, seg_df, stop, ongoing=ongoing, name=ser.name
+            )
             profiles.append((ser, se, prof))
     for i_v, v in enumerate(videos, 1):
         if progress is not None and (i_v % 250 == 0 or i_v == len(videos)):
@@ -1203,13 +1277,21 @@ def detect(
             se.duplicates = [k for k in dict.fromkeys(se.duplicates) if k not in as_episode]
 
     # 6. order + stats
-    positions = positions_of(playlists)
+    by_id = {p.playlist_id: p for p in playlists}
     for ser in series:
         for se in ser.seasons:
+            # the season's own playlists, biggest first: a nested topic list ("موسى ﷺ في
+            # القرآن") must not renumber the series playlist's order
+            own_pls = sorted(
+                (by_id[pid] for pid in dict.fromkeys(se.playlists) if pid in by_id),
+                key=lambda p: -len(p.members),
+            )
+            positions = positions_of([*own_pls, *playlists])
+            primary = len(own_pls) <= 1 or len(own_pls[0].members) >= 2 * len(own_pls[1].members)
             se.episodes = (
                 sorted(se.episodes, key=lambda k: (facts[k].air_date or date.max, facts[k].title))
                 if ser.kind == "ongoing"
-                else _order(se.episodes, positions, facts, multi_playlist=len(se.playlists) > 1)
+                else _order(se.episodes, positions, facts, multi_playlist=not primary)
             )
             se.extras = sorted(
                 set(se.extras), key=lambda k: (facts[k].air_date or date.max, facts[k].title)
@@ -1225,10 +1307,16 @@ def detect(
         if ser.kind != "clips" and eps_all and own:
             carried = sum(all(w in fold(facts[k].title) for w in own) for k in eps_all)
             if carried < 0.3 * len(eps_all):
-                ser.name = _title_name(eps_all, facts, presenter | cfg.generic_words) or ser.name
+                named = _title_name(eps_all, facts, presenter | cfg.generic_words)
+                # never the name another show of this channel already has: two shows of
+                # one name would land in one Plex collection / dizqueTV show
+                taken = {fold(o.name) for o in series if o is not ser}
+                if named and fold(named) not in taken:
+                    ser.name = named
 
     unassigned = sorted(k for k in facts if k not in assigned)
     series = [s for s in series if s.episode_count > 0]
+    _distinct_names(series, playlists, presenter, cfg)
     series.sort(key=lambda s: (s.seasons[0].first_air or date.max, s.name))
     return Detection(series=series, unassigned=unassigned, shorts=shorts)
 

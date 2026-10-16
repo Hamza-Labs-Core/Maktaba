@@ -18,8 +18,8 @@ from . import detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
-    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "report",
-    "export-plex", "dizquetv-shows", "scan-visual", "plan-channels", "export-dizquetv",
+    "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "export-plex",
+    "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv",
 )  # fmt: skip
 
 
@@ -94,7 +94,9 @@ def _run(
         # list files first, let Plex supply length/size, then probe only the rest
         _step(f"scan-local, listing ({len(roots)} folders)")
         scan_local.scan_roots(conn, roots, workers=workers, probe=False)
-        _step("scan-plex")
+    if server is not None and want("plex"):
+        # its own step: every Plex item's record is saved, so later steps don't ask Plex
+        _step("plex-index (Plex items and their details)")
         scan_plex.scan_plex(conn, server, path_map, None)
     if want("scan"):
         _step(f"scan-local ({len(roots)} folders)")
@@ -172,10 +174,6 @@ def _run(
             _step("tag")
             for f in folders:
                 tags.run(conn, f)
-    if want("report"):
-        _step("report")
-        for f in folders:
-            report.run(conn, f, report_dir)
     libraries = sorted(
         {
             lib
@@ -198,12 +196,18 @@ def _run(
     if tv and server is not None and want("dizquetv-shows"):
         from . import dizquetv_shows
 
-        _step("dizquetv-shows")
+        _step(f"dizquetv-shows ({len(libraries)} libraries)")
         for lib in libraries:
+            print(f"=== {lib}", flush=True)
             dizquetv_shows.run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",
             )  # fmt: skip
+    # review pages (with thumbnails read from the share) after the writes people use
+    if want("report"):
+        _step("report")
+        for f in folders:
+            report.run(conn, f, report_dir)
     # production style feeds only channel planning, so Plex and dizqueTV don't wait for it
     if want("scan-visual"):
         try:

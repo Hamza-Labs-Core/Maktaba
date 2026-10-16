@@ -45,9 +45,13 @@ def _thumb_name(src: str) -> str:
     return hashlib.sha1(src.encode()).hexdigest()[:16] + ".jpg"
 
 
-def _make_thumbs(srcs: list[str], out_dir: Path, workers: int = 8) -> None:
+def _make_thumbs(srcs: list[str], out_dir: Path, workers: int = 2, label: str = "") -> None:
+    """Small JPEG copies of the sidecar thumbnails. They are read from the share, so at
+    most ``workers`` at once (2: the NAS limit), with a progress line every 100."""
     out_dir.mkdir(parents=True, exist_ok=True)
     todo = [s for s in srcs if not (out_dir / _thumb_name(s)).exists()]
+    if todo:
+        print(f"  {label}: {len(todo)} thumbnails to copy", flush=True)
 
     def one(src: str) -> None:
         subprocess.run(
@@ -57,7 +61,9 @@ def _make_thumbs(srcs: list[str], out_dir: Path, workers: int = 8) -> None:
         )  # fmt: skip
 
     with ThreadPoolExecutor(workers) as pool:
-        list(pool.map(one, todo))
+        for n, _ in enumerate(pool.map(one, todo), 1):
+            if n % 100 == 0 or n == len(todo):
+                print(f"  [{n}/{len(todo)}] {label}: thumbnails", flush=True)
 
 
 def _card(row: sqlite3.Row, n: int | None, tag: str, cls: str = "") -> str:
@@ -103,7 +109,11 @@ def build(conn: sqlite3.Connection, folder: str, out_dir: Path) -> Path:
 
     all_paths = [r[0] for r in conn.execute("SELECT path FROM files WHERE folder=?", (folder,))]
     rows = _rows(conn, all_paths)
-    _make_thumbs([r["thumb_path"] for r in rows.values() if r["thumb_path"]], out_dir / "thumbs")
+    _make_thumbs(
+        [r["thumb_path"] for r in rows.values() if r["thumb_path"]],
+        out_dir / "thumbs",
+        label=Path(folder).name,
+    )
     placed: set[str] = set()
     body: list[str] = []
     nav: list[str] = []

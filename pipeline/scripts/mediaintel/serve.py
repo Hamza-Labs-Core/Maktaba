@@ -30,6 +30,7 @@ _STEP_RE = re.compile(r"^##### (.+)$")
 _TIME_RE = re.compile(r"\((\d\d:\d\d:\d\d)\)\s*$")
 _SIG_RE = re.compile(r"^(?:(.+): )?fingerprinting (\d+) videos")
 _SIG_DONE_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] \d+ per minute")
+_RESUME_RE = re.compile(r"^starting at step '([\w-]+)'")
 _INNER_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] (.+): videos checked")
 _COUNT_RE = re.compile(r"\((\d+) (?:folders|libraries)\)")
 
@@ -41,9 +42,9 @@ STEPS: list[tuple[str, str, str]] = [
         "every video file, its size and date; nothing is opened yet",
     ),
     (
-        "scan-plex",
-        "Read lengths from Plex",
-        "Plex already measured most files: length, resolution, Plex item",
+        "plex-index",
+        "Index Plex",
+        "every Plex item and its details, saved once: lengths for the scan, details for dizqueTV",
     ),
     (
         "scan-local (",
@@ -69,9 +70,9 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
-    ("report", "Write review pages", "one HTML page per library"),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
     ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
+    ("report", "Write review pages", "one HTML page per library"),
     (
         "scan-visual",
         "Rate production style",
@@ -137,6 +138,8 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             t = _TIME_RE.search(head)
             seen.append((idx, t.group(1) if t else "", i))
     done_line = any(ln.startswith("done in ") for ln in lines)
+    # "run --from-step X": the steps before X were done by an earlier run, not skipped
+    resumed = next((m.group(1) for ln in lines if (m := _RESUME_RE.match(ln))), None)
     current = seen[-1][0] if seen and not done_line else None
     started = {idx: t for idx, t, _ in seen}
     out = []
@@ -145,6 +148,7 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         state = (
             "done" if k in started and k != current
             else "running" if k == current
+            else "earlier" if later and resumed and k < min(started, default=k)
             else "skipped" if later
             else "waiting"
         )  # fmt: skip
@@ -193,6 +197,14 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                 if ": cached (" in ln or (ln.startswith("  ") and ": {'videos'" in ln)
             )
             unit = "channels"
+        elif STEPS[current][0] == "plex-index":
+            m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+            tot = next((int(x.group(1)) for ln in body
+                        if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
+            return out, {"done": int(m[-1].group(1)) if m else 0, "total": tot,
+                         "unit": "libraries"}  # fmt: skip
+        elif STEPS[current][0] == "dizquetv-shows":
+            return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
         else:  # no counter: say so instead of counting log lines
@@ -200,6 +212,35 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                          "phase": "working (this step has no counter)"}  # fmt: skip
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
+
+
+_DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
+    """dizqueTV shows, one library at a time: a library is done at its "Backups of
+    changed shows" line. Inside one, the shows it will write ("+" lines), the episode
+    details fetched from Plex so far, and whether Plex is stalling."""
+    ends = [i for i, ln in enumerate(body) if ln.startswith("Backups of changed shows")]
+    cur = body[ends[-1] + 1 :] if ends else body
+    prog: dict[str, Any] = {"done": len(ends), "total": n_lib, "unit": "libraries"}
+    writing = sum(1 for ln in cur if ln.startswith("  +  "))
+    details = [m for ln in cur if (m := _DETAILS_RE.match(ln))]
+    parts = []
+    if writing:
+        parts.append(f"now writing {writing} show{'s' if writing != 1 else ''}")
+    if details:
+        parts.append(f"{int(details[-1].group(1)):,} of {int(details[-1].group(2)):,}"
+                     " episode details from Plex")  # fmt: skip
+    elif writing:
+        parts.append("fetching episode details from Plex")
+    tail = [ln for ln in cur if ln.strip()][-1:]
+    if tail and "Plex not answering" in tail[0]:
+        n = sum(1 for ln in cur if "Plex not answering" in ln)
+        parts.append(f"Plex not answering, retrying ({n} so far in this library)")
+    if parts:
+        prog["phase"] = " · ".join(parts)
+    return prog
 
 
 def _sampled_progress(body: list[str], stage: str) -> dict[str, Any]:

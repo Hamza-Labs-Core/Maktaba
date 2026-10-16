@@ -136,3 +136,59 @@ def test_tv_names_finds_series_and_season_shows_by_folded_name() -> None:
         "الشيخ نبيل العوضي - قصه وايه",
         "الشيخ نبيل العوضي - قصة وآية - الموسم 2",
     ]
+
+
+def test_plex_export_removes_an_episode_only_on_evidence() -> None:
+    from scripts.mediaintel.export_plex import removable
+
+    placed, shorts = {"moved"}, {"short"}
+    assert removable("moved", "أنوار الأنبياء ٠٩", placed, shorts)  # in another season now
+    assert removable("short", "مقطع", placed, shorts)  # under 3 min
+    for t in ("تشويقة سلسلة خير القرون", "تتر برنامج قصة الفتنة", "إعلان بدء ترجمة",
+              "السيرة النبوية (( المرحلة المكية كاملة ))", "حلقة 28 ｜ آل سلول.f251"):  # fmt: skip
+        assert removable("x", t, placed, shorts), t
+    # detection failed to place a numbered episode: it stays in its collection
+    assert not removable("x", "المنهج الإصلاحي ｜ الأنفال 01", placed, shorts)
+    assert not removable("x", "فايز الكندري ｜ سورة فصلت من الآية ١٣ إلى الآية ١٤", placed, shorts)
+    assert not removable("x", "شرح صحيح البخاري كاملا ٥١٢", placed, shorts)
+
+
+def test_pick_copies_keeps_the_mp4_transcode_with_the_youtube_details() -> None:
+    from scripts.mediaintel.detect import pick_copies
+
+    base = {"title": "x", "dur": 979.0, "date_quality": None, "tab": None, "youtube_id": None}
+    name = "كيف تكون محبة النبي"
+    mkv = {**base, "path": f"f/{name}.mkv", "stem": name, "size": 55,
+           "upload_date": "2020-05-01", "youtube_id": "y2vMJey7UJc", "title": name}  # fmt: skip
+    mp4 = {**base, "path": "f/كيف تكون محبة النبي.mp4", "stem": "كيف تكون محبة النبي", "size": 70,
+           "upload_date": None}  # fmt: skip
+    other = {**base, "path": "f/b.mp4", "stem": "b", "size": 1, "upload_date": None}
+    rows, copies = pick_copies([mkv, mp4, other])
+    kept = {r["path"]: r for r in rows}
+    assert set(kept) == {mp4["path"], other["path"]}
+    assert copies == {mkv["path"]: mp4["path"]}
+    assert kept[mp4["path"]]["upload_date"] == "2020-05-01"  # took the original's details
+    assert kept[mp4["path"]]["youtube_id"] == "y2vMJey7UJc"
+
+
+def test_dizquetv_shows_counts_libraries_and_plex_stalls() -> None:
+    log = [
+        "##### export-plex (3 libraries)  (03:24:34)",
+        "=== A",
+        "##### dizquetv-shows (3 libraries)  (03:50:03)",
+        "=== A",
+        "  =  Show A (4)",
+        "Backups of changed shows: x",
+        "=== B",
+        "  +  Show B - S1: new S1, 10 episodes",
+        "  +  Show B - S2: new S2, 8 episodes",
+        "  [500/900] episode details from Plex",
+        "     (Plex not answering; retry 1/4 in 10 s)",
+    ]
+    from scripts.mediaintel import serve
+
+    prog = serve._steps(log)[1]
+    assert prog["done"] == 1 and prog["total"] == 3 and prog["unit"] == "libraries"
+    assert "writing 2 shows" in prog["phase"]
+    assert "500 of 900 episode details" in prog["phase"]
+    assert "Plex not answering" in prog["phase"]
