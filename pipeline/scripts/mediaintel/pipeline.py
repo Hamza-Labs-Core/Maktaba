@@ -18,8 +18,8 @@ from . import detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
-    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "report",
-    "export-plex", "dizquetv-shows", "scan-visual", "plan-channels", "export-dizquetv",
+    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "export-plex",
+    "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv",
 )  # fmt: skip
 
 
@@ -172,10 +172,6 @@ def _run(
             _step("tag")
             for f in folders:
                 tags.run(conn, f)
-    if want("report"):
-        _step("report")
-        for f in folders:
-            report.run(conn, f, report_dir)
     libraries = sorted(
         {
             lib
@@ -204,6 +200,11 @@ def _run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",
             )  # fmt: skip
+    # review pages (with thumbnails read from the share) after the writes people use
+    if want("report"):
+        _step("report")
+        for f in folders:
+            report.run(conn, f, report_dir)
     # production style feeds only channel planning, so Plex and dizqueTV don't wait for it
     if want("scan-visual"):
         try:
