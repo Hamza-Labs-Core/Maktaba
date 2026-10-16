@@ -1585,6 +1585,16 @@ def _quran_grid(lanes: Sequence[Lane], pool: str | None,
     if not lanes:
         return [], why
     order = ("sat", "sun", "mon", "tue", "wed", "thu", "fri")  # the week as it is lived
+    # reciters of a style the time rules give set hours to keep those hours; the others
+    # share the days — more than 7 of them split each day (up to 4 parts) so all air
+    ruled = {style for _, _, style in cfg.quran_time_rules}
+    day_lanes = [ln for ln in lanes if ln.cadence not in ruled] or list(lanes)
+    parts = min(4, max(1, math.ceil(len(day_lanes) / 7)))
+    step_p = DAY_MINUTES // parts
+
+    def day_reciters(i: int) -> list[Lane]:
+        return [day_lanes[(i * parts + k) % len(day_lanes)] for k in range(parts)]
+
     per_day: dict[str, list[_Seg]] = {}
     for i, day in enumerate(order):
         if cfg.quran_rotation == "by_time":
@@ -1593,9 +1603,11 @@ def _quran_grid(lanes: Sequence[Lane], pool: str | None,
                          "quran", ("reciters rotate every 4 hours",))
                     for a in range(0, DAY_MINUTES, step)]  # fmt: skip
         else:
-            ln = lanes[i % len(lanes)]
-            segs = [_Seg(0, DAY_MINUTES, ln.key, "quran", pool, "quran",
-                         (f"{DAY_NAMES_AR[day]}: {ln.name}",))]  # fmt: skip
+            segs = [
+                _Seg(k * step_p, DAY_MINUTES if k == parts - 1 else (k + 1) * step_p, ln.key,
+                     "quran", pool, "quran", (f"{DAY_NAMES_AR[day]}: {ln.name}",))
+                for k, ln in enumerate(day_reciters(i))
+            ]  # fmt: skip
         for a, b, style in cfg.quran_time_rules:
             cands = [ln for ln in lanes if ln.cadence == style]
             if not cands:
@@ -1618,9 +1630,10 @@ def _quran_grid(lanes: Sequence[Lane], pool: str | None,
         why.append("reciters rotate every 4 hours")
     else:
         why.append(
-            "a reciter per day: "
+            ("a reciter per day: " if parts == 1 else f"{parts} reciters a day: ")
             + ", ".join(
-                f"{DAY_NAMES_AR[d]} {lanes[i % len(lanes)].name}" for i, d in enumerate(order)
+                f"{DAY_NAMES_AR[d]} {' / '.join(ln.name for ln in day_reciters(i))}"
+                for i, d in enumerate(order)
             )
         )
     for a, b, style in cfg.quran_time_rules:

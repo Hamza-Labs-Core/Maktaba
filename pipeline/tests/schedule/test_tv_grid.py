@@ -409,3 +409,14 @@ def test_a_channel_short_of_shows_moves_its_biggest_weekly_shows_to_strips() -> 
     for ln in small:
         airs = sum(len(s.days) or 7 for s in mix.slots if s.lane == ln.key)
         assert airs < big_airs, (ln.key, airs, big_airs)
+
+
+def test_more_than_seven_reciters_all_air_each_week() -> None:
+    extra = [reciter(f"r{i}", "المصحف", f"Y:/قارئ {i}") for i in range(8)]
+    p = plan(quran_library() + extra)
+    q = channel(p, "quran")
+    on_air = {s.lane for s in q.slots}
+    reciters = {k for k in p.lanes if k.startswith("quran.")}
+    assert len(reciters) == 13
+    assert reciters <= on_air  # every reciter lane airs somewhere in the week
+    assert any("reciters a day" in r for r in q.reasons)
