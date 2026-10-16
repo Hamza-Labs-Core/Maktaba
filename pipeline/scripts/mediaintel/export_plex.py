@@ -33,7 +33,7 @@ import contextlib
 import json
 import re
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 from maktaba_pipeline.text.arabic import fold
@@ -243,8 +243,11 @@ class _Sync:
         diff: bool,
         replace_existing: bool,
         failed: list[str] | None = None,
+        key_section: dict[str, str] | None = None,
     ) -> None:
         self.failed: list[str] = failed if failed is not None else []
+        #: the Plex section of each item, when the library spans several sections
+        self.key_section = key_section or {}
         self.conn, self.server, self.machine, self.section = conn, server, machine, section
         self.existing, self.ours, self.titles = existing, ours, titles
         self.shorts, self.copy_of, self.placed = shorts, copy_of, placed
@@ -266,6 +269,17 @@ class _Sync:
         """Create or update one collection, keeping what an existing one holds
         unless there is positive evidence it does not belong (:func:`removable`)."""
         leave_ok = self.placed if leave_ok is None else leave_ok
+        if self.key_section:
+            # a collection lives in one Plex section: the one holding most of its items
+            # (it is written in that section's pass); items of another section stay out
+            secs = Counter(self.key_section[k] for k in keys if k in self.key_section)
+            if secs and min(secs, key=lambda x: (-secs[x], x)) != self.section:
+                return
+            away = [k for k in keys if self.key_section.get(k, self.section) != self.section]
+            if away:
+                print(f"  ~  {title}: {len(away)} item(s) are in another Plex library of the "
+                      "same name and stay out", flush=True)  # fmt: skip
+                keys = [k for k in keys if k not in away]
         mine = self.ours.get(track_id)
         same_name = self.existing.get(title)
         if same_name is None and alt_title:
@@ -414,16 +428,34 @@ def export(
                 libraries.add(lib)
     live_ids = {r["id"] for r in rows}
 
+    # a library can be several Plex sections of one name: each gets its own pass, and a
+    # collection goes to the section holding its items
+    passes: list[tuple[str, str | None, dict[str, str]]] = []
     for library in sorted(libraries):
-        items = by_lib.get(library, [])
-        sec = conn.execute(
-            "SELECT plex_section FROM files WHERE plex_library=? AND plex_section IS NOT NULL LIMIT 1",
+        secs = conn.execute(
+            "SELECT plex_section, COUNT(*) FROM files WHERE plex_library=? AND plex_section "
+            "IS NOT NULL GROUP BY plex_section ORDER BY COUNT(*) DESC, plex_section",
             (library,),
-        ).fetchone()
-        if not sec:
+        ).fetchall()
+        key_section = (
+            {
+                k: sec
+                for k, sec in conn.execute(
+                    "SELECT plex_rating_key, plex_section FROM files WHERE plex_library=? "
+                    "AND plex_rating_key IS NOT NULL AND plex_section IS NOT NULL",
+                    (library,),
+                )
+            }
+            if len(secs) > 1
+            else {}
+        )
+        passes += [(library, sec, key_section) for sec, _ in secs] or [(library, None, {})]
+    for library, section_or_none, key_section in passes:
+        items = by_lib.get(library, [])
+        if section_or_none is None:
             print(f"\n=== {library}: no Plex section known (run scan-plex) — skipped")
             continue
-        section = sec[0]
+        section = section_or_none
         existing = {
             c["title"]: c
             for c in server.get(f"/library/sections/{section}/collections")["MediaContainer"].get(
@@ -437,7 +469,8 @@ def export(
         }
         topic_plans = _topic_plans(conn, library) if topics else []
         group_plans = _group_plans(conn, library) if clip_groups else []
-        print(f"\n=== {library}  ({len(items)} seasons, {len(topic_plans)} topics, "
+        print(f"\n=== {library}" + (f" (Plex section {section})" if key_section else "")
+              + f"  ({len(items)} seasons, {len(topic_plans)} topics, "
               f"{len(group_plans)} clip groups)")  # fmt: skip
         titles = {
             k: t
@@ -500,6 +533,7 @@ def export(
             diff=diff,
             replace_existing=replace_existing,
             failed=failed,
+            key_section=key_section,
         )
         everything, claimed = sync.everything, sync.claimed
 

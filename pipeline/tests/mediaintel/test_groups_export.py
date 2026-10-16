@@ -108,6 +108,7 @@ class FakePlex:
         if method == "POST" and u.path == "/library/collections":
             keys = q["uri"][0].rsplit("/", 1)[1].split(",")
             key = self.add(q["title"][0], keys)
+            self.cols[key]["section"] = q["sectionId"][0]
             return {"MediaContainer": {"Metadata": [{"ratingKey": key}]}}
         if method == "PUT" and parts[-1] == "items":
             keys = q["uri"][0].rsplit("/", 1)[1].split(",")
@@ -275,3 +276,36 @@ def test_an_item_plex_refuses_stays_out_and_the_run_goes_on(
     assert "Plex refused" in out and "not fully written" in out
     # v3 sits in no written collection now, so the old one that holds it is kept
     assert old not in plex.deleted
+
+
+def test_a_library_split_over_two_plex_sections_writes_each_collection_in_its_own(
+    tmp_path: Path,
+) -> None:
+    conn = _db(tmp_path)
+    folder = "Y:/قناة 2"
+    for i in range(10, 16):  # a second Plex library of the same name, with its own show
+        conn.execute(
+            "INSERT INTO files (path, folder, stem, ext, size, mtime, duration_s, plex_rating_key,"
+            " plex_section, plex_library, plex_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (f"{folder}/v{i}.mp4", folder, f"v{i}", ".mp4", 1, 1.0, 1800, str(i), "6", "قناة",
+             f"حلقة {i}"),
+        )  # fmt: skip
+    meta = {"series_key": "مسابقة", "kind": "episodic", "season": 1, "season_count": 1,
+            "folder": folder, "extras": []}  # fmt: skip
+    conn.execute(
+        "INSERT INTO series (id, library, name, metadata, detector_version) VALUES (?,?,?,?,3)",
+        ("S2", "قناة", "مسابقة", json.dumps(meta)),
+    )
+    for n, i in enumerate(range(10, 16), 1):
+        conn.execute(
+            "INSERT INTO series_episodes (series_id, path, season, episode) VALUES (?,?,1,?)",
+            ("S2", f"{folder}/v{i}.mp4", n),
+        )
+    conn.commit()
+    plex = FakePlex()
+    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+                       replace_existing=True, remove_superseded=False)  # fmt: skip
+    by_title = {c["title"]: c for c in plex.cols.values()}
+    assert by_title["قناة - مسابقة"]["section"] == "6"
+    assert by_title["قناة - مسابقة"]["kids"] == [str(i) for i in range(10, 16)]
+    assert by_title["قناة - برنامج"]["section"] == "5"
