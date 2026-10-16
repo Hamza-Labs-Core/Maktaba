@@ -266,3 +266,38 @@ def test_video_in_two_playlists_is_an_episode_once_never_also_an_extra() -> None
         if shared.key in keys
     ]
     assert [r for _, r in homes] == ["episode"]
+
+
+def test_topic_playlist_nested_in_a_series_stays_in_that_series() -> None:
+    # "أنوار الأنبياء" numbered 1..20; "موسى ﷺ في القرآن" lists episodes 7..17 again
+    def title(i: int) -> str:
+        part = f"موسى ﷺ {i - 6:02d}" if 7 <= i <= 17 else f"آدم {i:02d}"
+        return f"أنوار الأنبياء {i:02d} | {part}"
+
+    start = date(2021, 1, 1)
+    eps = [
+        VideoFacts(f"e{i}", title(i), 25 * 60 + i, start + timedelta(days=7 * i), True)
+        for i in range(1, 21)
+    ]
+    moses = [v for v in eps if 7 <= int(v.key[1:]) <= 17]
+    series_pl = _pl("PA", "أنوار الأنبياء | سلسلة تدبر", eps)
+    playlists = [series_pl, _pl("PM", "موسى ﷺ في القرآن", moses)]
+    det = detect(eps, playlists)
+    shows = [s for s in det.series if s.episode_count]
+    assert len(shows) == 1
+    assert shows[0].seasons[0].numbers == list(range(1, 21))
+
+
+def test_two_shows_with_one_name_are_told_apart_by_their_playlist_part() -> None:
+    a = _season("a", 6, date(2025, 10, 1), 30, "أنوار الصحيحين | كتاب الإيمان {i:02d} | شرح")
+    b = _season("b", 6, date(2026, 3, 1), 25, "أنوار الصحيحين | كتاب فضائل القرآن {i:02d} | شرح")
+    det = detect(
+        [*a, *b],
+        [
+            _pl("PA", "أنوار الصحيحين | كتاب الإيمان | شرح الجمع بين الصحيحين", a),
+            _pl("PB", "أنوار الصحيحين | كتاب فضائل القرآن | شرح الجمع بين الصحيحين", b),
+        ],
+    )
+    names = sorted(s.name for s in det.series)
+    assert len(set(names)) == len(names) == 2
+    assert names == ["أنوار الصحيحين - كتاب الإيمان", "أنوار الصحيحين - كتاب فضائل القرآن"]

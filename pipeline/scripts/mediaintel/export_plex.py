@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import urllib.error
 from collections import defaultdict
 from typing import Any
 
@@ -46,7 +47,15 @@ def _title(library: str, series: str, season: int, season_count: int) -> str:
 
 
 def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
-    md = server.get(f"/library/collections/{key}/children")["MediaContainer"].get("Metadata", [])
+    """Items of a collection; [] when Plex no longer has it (deleted meanwhile → 404)."""
+    try:
+        got = server.get(f"/library/collections/{key}/children")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"     (collection {key} is gone from Plex; skipped)", flush=True)
+            return []
+        raise
+    md = got["MediaContainer"].get("Metadata", [])
     return [(m["ratingKey"], m.get("title", "")) for m in md]
 
 
