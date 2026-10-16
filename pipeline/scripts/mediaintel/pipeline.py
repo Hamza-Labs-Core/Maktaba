@@ -18,7 +18,7 @@ from . import detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
-    "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "export-plex",
+    "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "group", "export-plex",
     "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv",
 )  # fmt: skip
 
@@ -174,13 +174,21 @@ def _run(
             _step("tag")
             for f in folders:
                 tags.run(conn, f)
+    if want("group"):
+        from . import group_clips
+
+        # what detection left over: clips and stand-alone videos into collections, promos
+        # linked to the show they advertise
+        _step("group (clips, stand-alone videos, promos)")
+        group_clips.run(conn, folders=folders)
     libraries = sorted(
         {
             lib
             for f in folders
             for (lib,) in conn.execute(
-                "SELECT DISTINCT library FROM series WHERE json_extract(metadata, '$.folder') LIKE ?",
-                (f"%{f}%",),
+                "SELECT DISTINCT library FROM series WHERE json_extract(metadata, '$.folder') LIKE ?"
+                " UNION SELECT DISTINCT library FROM clip_groups WHERE folder LIKE ?",
+                (f"%{f}%", f"%{f}%"),
             )
         }
     )

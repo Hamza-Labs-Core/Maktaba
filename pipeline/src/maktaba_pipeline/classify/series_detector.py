@@ -1666,8 +1666,13 @@ def _brand_series(
         return (float(se.year or 9999), g[0], g[1], float(min(ds) if ds else math.inf))
 
     seasons.sort(key=season_order)
+    seen: Counter[str] = Counter()
     for i, se in enumerate(seasons, 1):
         se.number = i
+        if se.name:  # two seasons of one name would be one Plex collection
+            seen[fold(se.name)] += 1
+            if seen[fold(se.name)] > 1:
+                se.name = f"{se.name} ({seen[fold(se.name)]})"
     n_eps = sum(len(se.episodes) for se in seasons)
     kind = "ongoing" if n_eps >= cfg.ongoing_min_episodes and len(seasons) > 1 else "episodic"
     return Series(name=name, key=fold(name), seasons=seasons, kind=kind, brand=True)

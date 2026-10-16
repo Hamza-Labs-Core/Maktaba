@@ -14,6 +14,7 @@ Commands (each reads/writes the same SQLite cache, ``--db``):
   set-style LIB SERIES STYLE  pin a series' style (static/talk/produced/cinematic)
   scan-visual                 production style per season: static / talk / produced / cinematic
   tag                         topic / format / audience / occasion tags per series and loose video
+  group                       clips and stand-alone videos into collections; promos to their show
   report                      HTML page per folder to review the grouping visually
   export-plex                 one Plex collection per season (dry run unless --apply)
   plan-channels               suggest live TV channels + time-slot grids + filler pools
@@ -88,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
     p.add_argument("--from-step", default="scan", metavar="STEP",
                    help="start at this step, keeping what earlier steps cached: scan, youtube, "
-                        "link, detect, signatures, exact, tag, scan-visual, report, export-plex, "
+                        "link, detect, signatures, exact, tag, group, scan-visual, report, export-plex, "
                         "dizquetv-shows, plan-channels, export-dizquetv")  # fmt: skip
     p.add_argument("--exact", action="store_true",
                    help="also fetch exact upload dates for series members (slow, polite)")  # fmt: skip
@@ -180,6 +181,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser(
         "tag", help="topic/format/audience/occasion tags for series and loose videos"
+    )
+    p.add_argument("--folder", help="only folders whose path contains this")
+
+    p = sub.add_parser(
+        "group", help="clips / stand-alone videos into collections, promos linked to shows"
     )
     p.add_argument("--folder", help="only folders whose path contains this")
 
@@ -293,6 +299,10 @@ def main(argv: list[str] | None = None) -> int:
             apply=a.apply, library_filter=a.library, create_series=a.create_series,
             backup_dir=a.backup_dir,
         )  # fmt: skip
+    elif a.cmd == "group":
+        from . import group_clips
+
+        group_clips.run(conn, a.folder)
     elif a.cmd == "plan-channels":
         plan_channels.run(conn, a.out)
     elif a.cmd == "export-dizquetv":
