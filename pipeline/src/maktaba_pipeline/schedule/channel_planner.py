@@ -45,7 +45,7 @@ Every threshold lives in :class:`PlannerConfig`; every suggestion carries
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from statistics import median
@@ -87,6 +87,16 @@ DAY_MINUTES = 24 * 60
 WEEKDAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIER_NAMES: dict[int, str] = {0: "static", 1: "talk", 2: "produced", 3: "cinematic"}
 UNKNOWN = "unknown"
+#: Arabic words for lane names ("منوعات · حوارات · المساء"); unknown tier adds no word
+TIER_NAMES_AR: dict[str, str] = {
+    "static": "دروس", "talk": "حوارات", "produced": "برامج", "cinematic": "وثائقيات",
+    "mixed": "متنوعة", UNKNOWN: "",
+}  # fmt: skip
+DAYPART_NAMES_AR: dict[str, str] = {
+    "dawn": "الفجر", "morning": "الصباح", "afternoon": "الظهيرة", "evening": "المساء",
+    "prime": "السهرة", "late": "آخر الليل", "suhoor": "السحور", "pre_iftar": "قبل الإفطار",
+    "iftar_prime": "بعد الإفطار", "night": "بعد التراويح",
+}  # fmt: skip
 
 
 # --------------------------------------------------------------------------- inputs
@@ -164,6 +174,10 @@ class LooseVideo:
     plex_library: str | None = None
     is_short: bool = False
     vertical: bool = False
+    #: the clip / stand-alone group it is in ("<lib> - مقاطع - الفقه"), "" when none
+    group: str = ""
+    #: a promo: "<folder>|<series key>" of the show it advertises, "" otherwise
+    promo_of: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -494,7 +508,7 @@ class FillerItem:
     path: str
     duration_s: float
     title: str
-    source: str  # short | clips | short_series | loose
+    source: str  # short | clips | short_series | loose | clip_group | promo
     genre: str
     tags: Mapping[str, float]
     folder: str = ""
@@ -503,6 +517,8 @@ class FillerItem:
     plex_library: str | None = None
     vertical: bool = False
     tier: int | None = None
+    group: str = ""
+    promo_of: str = ""  # "<folder>|<series key>" of the show a promo advertises
 
     def topic_score(self, topics: Iterable[str]) -> float:
         ts = tuple(topics)
@@ -734,12 +750,17 @@ def _filler_items(
             continue
         if v.vertical and not cfg.include_vertical_shorts:
             continue
+        source = (
+            "promo" if v.promo_of else "clip_group" if v.group
+            else "short" if v.is_short else "loose"
+        )  # fmt: skip
         items.append(
             FillerItem(
                 path=v.path, duration_s=v.duration_s, title=v.title,
-                source="short" if v.is_short else "loose", genre=v.genre, tags=v.tags,
+                source=source, genre=v.genre, tags=v.tags,
                 folder=v.folder, presenter=v.presenter, plex_rating_key=v.plex_rating_key,
-                plex_library=v.plex_library, vertical=v.vertical,
+                plex_library=v.plex_library, vertical=v.vertical, group=v.group,
+                promo_of=v.promo_of,
             )
         )  # fmt: skip
     excluded = set(cfg.filler_exclude_topics)
@@ -771,15 +792,17 @@ def _loose_units(loose: Sequence[LooseVideo], cfg: PlannerConfig) -> list[Season
         return []
     groups: dict[tuple[str, str], list[LooseVideo]] = defaultdict(list)
     for v in loose:
-        if v.is_short or v.duration_s < cfg.loose_program_min_minutes * 60:
+        if v.is_short or v.promo_of or v.duration_s < cfg.loose_program_min_minutes * 60:
             continue
-        if v.genre in cfg.loose_skip_genres:
+        if v.genre in cfg.loose_skip_genres and not v.group:
             continue
-        groups[(v.folder, v.genre)].append(v)
+        groups[(v.folder, v.group or v.genre)].append(v)
     out: list[SeasonCandidate] = []
-    for (folder, genre), vids in sorted(groups.items()):
+    for (folder, group_or_genre), vids in sorted(groups.items()):
         if len(vids) < cfg.loose_min_group_videos:
             continue
+        group = vids[0].group
+        genre = Counter(v.genre for v in vids).most_common(1)[0][0] if group else group_or_genre
         vids.sort(key=lambda v: (v.air_date or "9999", v.title, v.path))
         tags: dict[str, float] = defaultdict(float)
         for v in vids:
@@ -788,9 +811,9 @@ def _loose_units(loose: Sequence[LooseVideo], cfg: PlannerConfig) -> list[Season
         presenter = vids[0].presenter
         out.append(
             SeasonCandidate(
-                series_id=f"loose:{folder}:{genre}",
-                name=f"{presenter or folder} · {genre}",
-                series_key=f"loose:{genre}",
+                series_id=f"loose:{folder}:{group_or_genre}",
+                name=group or f"{presenter or folder} · {genre}",
+                series_key=f"loose:{group_or_genre}",
                 kind="loose",
                 folder=folder,
                 presenter=presenter,
@@ -834,7 +857,7 @@ def _tier_lanes(
         lanes.append(
             Lane(
                 key=f"{prefix}.{tg}",
-                name=f"{label} · {tg}",
+                name=" · ".join(x for x in (label, TIER_NAMES_AR.get(tg, tg)) if x),
                 tier_group=tg,
                 units=tuple(ordered),
                 rank=rank,
@@ -895,7 +918,11 @@ def _split_lane(lane: Lane, parts: int, daypart_keys: Sequence[str], cfg: Planne
             replace(
                 lane,
                 key=f"{lane.key}.{i + 1}",
-                name=f"{lane.name} {i + 1}",
+                name=(
+                    f"{lane.name} · {DAYPART_NAMES_AR.get(daypart_keys[i], str(i + 1))}"
+                    if mix and i < len(daypart_keys)
+                    else f"{lane.name} · {i + 1}"
+                ),
                 units=tuple(units),
                 reasons=lane.reasons + (f"part {i + 1}/{parts} of the lane (whole series kept)",),
             ),
@@ -996,10 +1023,17 @@ def _assign_dayparts(
                 by_idx = dict(parts)
                 for i, d in enumerate(ds_sorted):
                     out.setdefault(d.key, []).append(by_idx.get(i, biggest))
-            else:  # longest sub-lane → longest daypart
+            else:  # longest sub-lane → longest daypart, named after it
                 order = sorted(subs, key=lambda s: -s.duration_s)
+                named: dict[str, Lane] = {}
                 for i, d in enumerate(sorted(ds, key=lambda d: -d.minutes)):
-                    out.setdefault(d.key, []).append(order[i] if i < len(order) else biggest)
+                    sub = order[i] if i < len(order) else biggest
+                    if len(subs) > 1 and sub.key not in named:
+                        named[sub.key] = replace(
+                            sub, name=f"{ln.name} · {DAYPART_NAMES_AR.get(d.key, d.key)}"
+                        )
+                    out.setdefault(d.key, []).append(named.get(sub.key, sub))
+                subs = [named.get(sub.key, sub) for sub in subs]
             used.extend(subs)
         # more lanes than dayparts: share the longest dayparts
         for ln in extra:
@@ -1173,6 +1207,9 @@ def suggest_channels(
     cfg = config or PlannerConfig()
     all_seasons = list(seasons) + _loose_units(loose, cfg)
     fillers, filler_notes = _filler_items(all_seasons, loose, cfg)
+    # promos air only next to the show they advertise, never as anyone's general filler
+    promos = [f for f in fillers if f.promo_of]
+    fillers = [f for f in fillers if not f.promo_of]
     filler_ids = {s.series_id for s in all_seasons if s.kind == "clips"} | {
         s.series_id
         for s in all_seasons
@@ -1241,12 +1278,12 @@ def suggest_channels(
         reg = regular(member_ids)
         if own_quran:
             reg = [units[i] for i in member_ids]
-        tier_lanes = _tier_lanes(key, name, reg, tags_of, cfg, mix=mix)
+        tier_lanes = _tier_lanes(key, name_ar or name, reg, tags_of, cfg, mix=mix)
         q = None if own_quran else (quran_lane if cfg.dawn_quran else None)
         k = khutbah_lane if (khutbah_lane and (mix or member_ids & khutbah_ids)) else None
         ram_units = [units[i] for i in member_ids if i in units and units[i].ramadan]
         ram_lanes = (
-            _tier_lanes(f"{key}.ramadan", f"{name} Ramadan", ram_units, tags_of, cfg,
+            _tier_lanes(f"{key}.ramadan", f"{name_ar or name} · رمضان", ram_units, tags_of, cfg,
                         mix=mix, ramadan=True)
             if cfg.ramadan_grid and ram_units else []
         )  # fmt: skip
@@ -1272,6 +1309,24 @@ def suggest_channels(
             why.append(f"Friday khutbah slot from {k.episode_count} khutbah(s)")
         for ln in used + r_used:
             lanes.setdefault(ln.key, ln)
+        # a lane whose shows have promos pads its slots with them first ("coming up")
+        promo_keys: list[str] = []
+        for ln in used + r_used:
+            shows = {f"{u.folder}|{u.series_key}" for u in ln.units}
+            mine = [f for f in promos if f.promo_of in shows]
+            if not mine:
+                continue
+            pk_ = f"{ln.key}.promo"
+            if pk_ not in pools:
+                pools[pk_] = _pool(pk_, f"{ln.name} · إعلانات", mine, pool_keys.get("topic"),
+                                   f"{len(mine)} promo(s) of this lane's shows")  # fmt: skip
+            promo_keys.append(pk_)
+            slots = [replace(sl, filler_pool=pk_) if sl.lane == ln.key and sl.kind == "program"
+                     else sl for sl in slots]  # fmt: skip
+            r_slots = [replace(sl, filler_pool=pk_) if sl.lane == ln.key and sl.kind == "program"
+                       else sl for sl in r_slots]  # fmt: skip
+        if promo_keys:
+            why.append(f"{len(promo_keys)} lane(s) pad with their own shows' promos first")
         hours = sum(u.duration_s for u in reg) / 3600
         channels.append(
             ChannelSuggestion(
@@ -1279,7 +1334,7 @@ def suggest_channels(
                 category=category, lanes=tuple(dict.fromkeys(ln.key for ln in used + r_used)),
                 slots=tuple(slots), ramadan_slots=tuple(r_slots),
                 filler_pools=tuple(dict.fromkeys(
-                    p for p in [*pool_keys.values(), general.key] if p is not None)),
+                    p for p in [*pool_keys.values(), *promo_keys, general.key] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip

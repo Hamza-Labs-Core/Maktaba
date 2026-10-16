@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS promo_links (
     library    TEXT NOT NULL,
     series_key TEXT NOT NULL,
     series_library TEXT NOT NULL,
+    series_folder  TEXT NOT NULL,
     score      REAL NOT NULL,
     evidence   TEXT NOT NULL
 );

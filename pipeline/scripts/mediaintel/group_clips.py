@@ -300,8 +300,8 @@ def group_folder(
         )
     conn.executemany(
         "INSERT OR REPLACE INTO promo_links (path, folder, library, series_key, series_library, "
-        "score, evidence) VALUES (?,?,?,?,?,?,?)",
-        [(p, folder, library, s.series_key, s.library, sc, ev) for p, s, sc, ev in links],
+        "series_folder, score, evidence) VALUES (?,?,?,?,?,?,?,?)",
+        [(p, folder, library, s.series_key, s.library, s.folder, sc, ev) for p, s, sc, ev in links],
     )
     conn.commit()
     return Counter(

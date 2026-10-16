@@ -171,14 +171,39 @@ def load_inputs(
             )
         )
     shorts = {r[0] for r in conn.execute("SELECT path FROM shorts")}
+    # the group step's clip / stand-alone groups (filler by topic) and promo links
+    group_of: dict[str, tuple[str, str | None]] = {}
+    promo_of: dict[str, str] = {}
+    if "clip_groups" in tables:
+        from .group_clips import group_title
+
+        for path, lib, kind, basis, gname, topic in conn.execute(
+            """SELECT i.path, g.library, g.kind, g.basis, g.name, g.topic FROM clip_group_items i
+               JOIN clip_groups g ON g.id = i.group_id"""
+        ):
+            group_of[path] = (group_title(lib, kind, basis, gname), topic)
+    if "promo_links" in tables:
+        promo_of = {
+            p: f"{folder}|{key}"
+            for p, folder, key in conn.execute(
+                "SELECT path, series_folder, series_key FROM promo_links"
+            )
+        }
     # a second file of a video (X.mkv beside X.mp4) is not a loose video
     with contextlib.suppress(sqlite3.OperationalError):
         hidden |= {r[0] for r in conn.execute("SELECT path FROM file_copies")}
     loose: list[LooseVideo] = []
     for path, f in files.items():
-        if path in in_series or path in hidden or not f["dur"]:
+        if path in in_series or not f["dur"]:
             continue
-        tags = video_tags.get(path, {})
+        if path in hidden and path not in promo_of:
+            continue  # a promo linked to its show airs next to it; other extras never air
+        tags = dict(video_tags.get(path, {}))
+        group, group_topic = group_of.get(path, ("", None))
+        if group_topic and not any(t.startswith("topic:") for t in tags):
+            # an untagged clip takes its group's topic, so on-topic pools can use it
+            tags[f"topic:{group_topic}"] = 0.5
+            tags[f"genre:{group_topic}"] = 0.5
         vertical = bool(f["width"] and f["height"] and f["height"] > f["width"])
         loose.append(
             LooseVideo(
@@ -194,6 +219,8 @@ def load_inputs(
                 plex_library=f["plex_library"],
                 is_short=path in shorts or f["tab"] == "shorts" or vertical,
                 vertical=vertical,
+                group=group,
+                promo_of=promo_of.get(path, ""),
             )
         )
     return seasons, loose, notes
