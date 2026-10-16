@@ -1307,7 +1307,7 @@ def detect(
         }
 
     # 5b''. numbered shows no playlist holds ("قصة وفكرة - ح1 …", "قصة وفكرة2 - ح1 …")
-    assigned |= _numbered_shows(videos, assigned, series, phrases, cfg)
+    assigned |= _numbered_shows(videos, assigned, series, phrases, cfg, presenter)
 
     # 5c. one place per video: a video in two playlists can be an episode of one season
     #     and fall outside another playlist's length band (an "extra" there). The episode
@@ -2029,7 +2029,11 @@ _SEASON_TAIL_RE = re.compile(r"^(.*?[^\d\s])(\d{1,2})$")
 
 
 def _numbered(
-    title: str, phrases: Sequence[str], generic: frozenset[str]
+    title: str,
+    phrases: Sequence[str],
+    generic: frozenset[str],
+    presenter: frozenset[str] = frozenset(),
+    catch_all_re: str = r"(?!)",
 ) -> tuple[str, list[str], int, int] | None:
     """(key, name tokens, season, episode) of a title shaped "<show>[N] - ح<ep> …",
     "<show> حلقة <ep>", "<show> (<ep>)", "<show> #<ep>" or "<show> <ep> - …"; the number
@@ -2071,6 +2075,13 @@ def _numbered(
     lead = frozenset(fold(w) for w in ("برنامج", "برامج", "سلسلة", "سلسله", "حلقات"))
     while name and name[0] in lead:  # "برنامج قصة وفكرة"; "على ما تفرج" keeps its "على"
         name = name[1:]
+    # a trailing credit ("… الشيخ المنجد", "… محمد المنجد") is not the show's name
+    while name and (name[-1] in presenter or name[-1] in _PERSON_LEAD):
+        name = name[:-1]
+    if any(w in _EP_WORDS for w in name):
+        return None  # "الراصد حلقة التعايش … 3": an episode's own parts, not a show
+    if re.search(catch_all_re, " ".join(name)):
+        return None  # "منوعات 12" is a catch-all, not a show
     if not name or len(name) > 8 or ep is None or ep == 0:
         return None
     if name[0] in _PERSON_LEAD or not any(
@@ -2118,6 +2129,7 @@ def _numbered_shows(
     series: list[Series],
     phrases: Sequence[str],
     cfg: DetectorConfig,
+    presenter: frozenset[str] = frozenset(),
 ) -> set[str]:
     """Shows with no playlist at all whose titles number them ("قصة وفكرة - ح1 …" … ح30,
     "قصة وفكرة2 - ح1 …"): five or more unplaced videos of one name and a like length.
@@ -2128,7 +2140,7 @@ def _numbered_shows(
     for v in videos:
         if v.key in assigned or v.duration_s is None:
             continue
-        hit = _numbered(v.title or "", phrases, cfg.generic_words)
+        hit = _numbered(v.title or "", phrases, cfg.generic_words, presenter, cfg.catch_all_re)
         if hit:
             found[hit[0]].append((v, hit[1], hit[2], hit[3]))
     # a typo in one title ("قصة وفرة2") joins the bigger group one letter away
@@ -2139,7 +2151,17 @@ def _numbered_shows(
         if big is not None:
             found[big] += found.pop(k)
     placed: set[str] = set()
-    by_ns = {_ns(s.name): s for s in series if s.kind != "clips"}
+    existing = [s for s in series if s.kind != "clips"]
+
+    def same_show(key: str) -> Series | None:
+        """A show playlist detection already has under this name (or its key, or a
+        longer name starting with it: "أهل الذكر ( فتاوي )"); one only."""
+        exact = [s for s in existing if key in (_ns(s.name), _ns(s.key))]
+        if len(exact) == 1:
+            return exact[0]
+        longer = [s for s in existing if len(key) >= 6 and _ns(s.name).startswith(key)]
+        return longer[0] if len(longer) == 1 else None
+
     for key, hits in found.items():
         med = _median([h[0].duration_s or 0.0 for h in hits])
         hits = [h for h in hits if med and _within(h[0].duration_s, med, 1.6)]
@@ -2159,7 +2181,9 @@ def _numbered_shows(
                 continue  # a second upload of one episode
             seen.add((season, ep))
             by_season[season].append((ep, v.key))
-        target = by_ns.get(key)
+        target = same_show(key)
+        if target is None and any(_ns(s.name) == _ns(name) for s in existing):
+            continue  # one name, several shows already: leave them for review
         if target is None:
             # built from titles, ordered by their numbers: kept as built (like a brand show)
             target = Series(name=name, key=fold(name), seasons=[], kind="episodic", brand=True)
