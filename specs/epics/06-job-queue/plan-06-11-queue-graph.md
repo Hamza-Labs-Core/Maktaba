@@ -196,13 +196,20 @@ Pools are defined in §5.
 | `fingerprint` | Fingerprint | video | nas_read | episodes/4 | `SIG_VERSION` | `size_bytes,mtime,duration_sec` | `video_signals.audio_head/audio_tail/frame_hashes` (+`fp_partial`) | `detect`/library_of; `fp_gate`/payload seasons (see §3.3) | – | 0 |
 | `style_sample` | Style sample | video | nas_read | episodes/5 | `STYLE_VERSION` | `size_bytes,mtime` | `video_signals.style_metrics` | `rate_style`/payload seasons | – | 0 |
 | `youtube_sync` | YouTube listing | library | network_yt | sources/0 | `YT_SYNC_VERSION=1` | none (external; always runs) | hash of `youtube_playlists` + `youtube_playlist_items` + `youtube_videos` for the library's channels | `link`/videos_of, `detect`/same→library | – | 300 (3600) |
-| `detect` | Place episodes | library | cpu | seasons/1 | `DETECTOR_VERSION` | md5 over sorted `(video_id, latest done output_hash of probe, thumb_hash, link, fingerprint)` + library `youtube_sync` output + style/season overrides | `series`, `series_seasons`, `series_episodes`; per-season `membership_hash` | `tag`/seasons_changed, `rate_style`/seasons_changed, `plex_collection`/seasons_changed, `dizquetv_show`/seasons_changed, `tag`/same (library: loose videos), `plan_channels`/catalog | `fingerprint`, `fp_gate` | 30 (300) |
+| `detect` | Place episodes | library | cpu | seasons/1 | `DETECTOR_VERSION` | md5 over sorted `(video_id, latest done output_hash of probe, thumb_hash, link, fingerprint)` + library `youtube_sync` output + style/season overrides | `series`, `series_seasons`, `series_episodes`; per-season `membership_hash` | `tag`/seasons_changed, `rate_style`/seasons_changed, `plex_collection`/seasons_changed, `dizquetv_show`/seasons_changed, `tag`/same (library: loose videos), `plan_channels`/catalog, `topic_collections`/same, `promo_links`/same, `review_pages`/same | `fingerprint`, `fp_gate` | 30 (300) |
 | `fp_gate` (hidden) | Samples → candidates | season | cpu | seasons/1 | `SIG_VERSION` | sample set + their fingerprint output hashes + candidate set (from `series_seasons.metadata.fp_plan`) | `series_seasons.metadata.signature ∈ {shared, none, incomplete}` | – | `fingerprint` | 10 (120) |
-| `tag` | Tag topics | season, library | cpu | seasons/2 | `TAGGER_VERSION` | season: `membership_hash`; library: hash of loose/short video titles | `season_tags`; `video_tags` (loose) | `plan_channels`/catalog | – | 0 |
+| `tag` | Tag topics | season, library | cpu | seasons/2 | `TAGGER_VERSION` | season: `membership_hash`; library: hash of loose/short video titles | `season_tags`; `video_tags` (loose) | `plan_channels`/catalog, `clip_groups`/library_of | – | 0 |
 | `rate_style` | Rate style | season | cpu | seasons/3 | `STYLE_VERSION` | `membership_hash` + sampled videos' `style_sample` output hashes + override | `season_style` | `plan_channels`/catalog | `style_sample` | 10 (120) |
 | `plex_collection` | Plex collection | season | network_plex | seasons/4 | `PLEX_EXPORT_VERSION=1` | ordered member Plex rating keys + collection title + `write_mode` | `external_links(target='plex_collection')` | `dizquetv_show`/same | – | 0 |
 | `dizquetv_show` | dizqueTV show | season | network_tv | seasons/5 | `DZ_SHOW_VERSION=1` | ordered members + Plex collection output hash + `write_mode` | `external_links(target='dizquetv_show')` | – | – | 0 |
-| `plan_channels` | Plan channels | catalog | cpu | channels/1 | `PLANNER_VERSION` | md5 over all latest done output hashes of `detect`, `tag`, `rate_style` + planner config hash | `channel_plans` row (latest) | `write_channels`/same | – | 60 (900) |
+| `plex_index` (Plex ext.) | Plex index | library | network_plex | sources/1 | `PLEX_INDEX_VERSION=1` | none (external; always runs) | `plex_items`; `external_links(plex_item)`; `videos.duration_sec` where missing | `plex_collection`/seasons_changed, `dizquetv_show`/seasons_changed, `plex_groups`/same | – | 60 (600) |
+| `thumb_small` | Small thumbnail | video | nas_read | episodes/6 | `THUMB_SMALL_VERSION=1` | `size_bytes,mtime,poster_path` | `~/.maktaba/cache/thumbnails/<hash>/small.jpg` | `review_pages`/library_of | – | 0 |
+| `topic_collections` | Topic collections | library | cpu | seasons/2 | `TOPIC_VERSION=1` | library seasons' membership hashes + playlist memberships | `topic_collections`, `topic_items` | `clip_groups`/same, `plex_groups`/same, `plan_channels`/catalog | – | 30 (300) |
+| `promo_links` | Promo links | library | cpu | seasons/2 | `PROMO_VERSION=1` | every live season's membership hash + the library's videos | `promo_links` | `clip_groups`/same, `plan_channels`/catalog | – | 30 (300) |
+| `clip_groups` | Clip groups | library | cpu | seasons/3 | `CLIP_GROUPS_VERSION=1` | library seasons, videos, topic tags, topic playlists, promo links | `clip_groups`, `clip_group_items` | `plex_groups`/same, `plan_channels`/catalog | – | 30 (300) |
+| `plex_groups` (Plex ext.) | Plex topic and clip collections | library | network_plex | seasons/4 | `PLEX_GROUPS_VERSION=1` | every topic / group (id, title, members) + `write_mode` | `external_links(plex_topic, plex_clip_group)` | – | – | 60 (600) |
+| `review_pages` | Review pages | library | reports | seasons/6 | `REVIEW_VERSION=1` | library seasons + done `thumb_small` count | `~/.maktaba/cache/reviews/<library>.html` | – | – | 120 (900) |
+| `plan_channels` | Plan channels | catalog | cpu | channels/1 | `PLANNER_VERSION` | md5 over all latest done output hashes of `detect`, `tag`, `rate_style`, `topic_collections`, `promo_links`, `clip_groups` + planner config hash; the planner is called only through `schedule.entry.plan_catalog` (§17.7) | `channel_plans` row (latest) | `write_channels`/same | – | 60 (900) |
 | `write_channels` | Write channels | catalog | network_tv | channels/2 | `CH_WRITE_VERSION=1` | `channel_plans.input_hash` of latest plan + `write_mode` | `external_links(target ∈ maktaba_channel, dizquetv_channel)`; Maktaba `channels` rows + `channel_schedule_state.stale=true` | – | – | 0 |
 | `extract`, `transcribe`, `subtitle_gen`, `index`, `thumbnail` (legacy) | as today | video | nas_read, gpu, cpu, cpu, nas_read | media/1..5 | 1 | none | output_fingerprint = finished_at (always "changed") | legacy chain (F13) | – | 0 |
 | `topic_recluster`, `topic_assign`, `categorize`, `chapter_infer` (legacy, no handler) | as named | video / library | cpu | media/6..9 | 1 | none | – | – | – | 0 |
@@ -210,14 +217,14 @@ Pools are defined in §5.
 Notes on the table:
 
 - **Entry stages** (`entry_for`):
-  - video: `probe`
-  - library: `youtube_sync`, `detect`
+  - video: `probe`, `thumb_small`
+  - library: `youtube_sync`, `plex_index`, `detect`, `topic_collections`, `promo_links`, `clip_groups`, `plex_groups`, `review_pages`
   - season: `tag`, `rate_style`, `plex_collection`
   - catalog: `plan_channels`
   - series: expands to its seasons (series is a display and history subject only; no stage runs on it in v1)
 - **Display mapping to the approved layout:**
-  - Episodes lane: length = `probe`, then `thumb_hash`, `link`, `fingerprint`, `style_sample`.
-  - Seasons & libraries lane: `detect`, `tag`, `rate_style`, `plex_collection`, `dizquetv_show`.
+  - Episodes lane: length = `probe`, then `thumb_hash`, `link`, `fingerprint`, `style_sample`, `thumb_small`.
+  - Seasons & libraries lane: `detect`, `tag`, `topic_collections`, `promo_links`, `rate_style`, `clip_groups`, `plex_collection`, `plex_groups`, `dizquetv_show`, `review_pages`.
   - Channels lane: `plan_channels`, `write_channels`.
   - `youtube_sync` and the `media` lane were not in the approved mock-up. They render as a compact "Sources" chip row above the lanes and a collapsed "Media processing" lane below them (open question Q1).
 - **`write_channels` has two sub-steps**, `maktaba` (local DB, primary per the user's goal) and `dizquetv` (secondary). Each records its own output in `external_links`.
@@ -1086,6 +1093,10 @@ Steps:
 
 Seeds the `reports` pool (global, size 1) and the `thumb_small` and `review_pages` rows of `job_stages`, and adds the new edges to the seeded `thumb_hash`, `thumbnail` and `detect` rows, so a fresh database matches the graph before the first worker syncs it (section 18). Down restores the old edges and removes the rows. SQLite twin: JSON text arrays, 0/1 booleans.
 
+### 10.8 `0094_topics_clips_promos`
+
+`topic_collections` (+ `topic_items`), `clip_groups` (+ `clip_group_items`, unique on `video_id`: one group per video) and `promo_links` (one per video), all `ON DELETE CASCADE` from `libraries` / `videos`; indexes built `CONCURRENTLY`. Seeds `topic_collections`, `promo_links` and `clip_groups` into `job_stages`, adds the new `detect` and `tag` edges and sets the `detect` version to 3. SQLite twin: TEXT / INTEGER types.
+
 ---
 
 ## 11. Workstreams, file ownership and interfaces
@@ -1337,7 +1348,7 @@ Decisions and deviations recorded by workstream A (DB + Python engine). Newest i
 
 ---
 
-## 17. Plex index queue and planned stages
+## 17. Plex index, what detection leaves over, and the planner hook
 
 ### 17.1 `plex_index` (Plex extension, built)
 
@@ -1359,18 +1370,92 @@ The mediaintel prototype asked Plex for episode details in batches of 25 while w
 
 **Readers.** `plex_collection.resolve_members` uses the cached links, then `plex_items` by `video_id`, and only then the in-memory Plex listing. `dizquetv_show` and `dizquetv_channels` build programmes from `plex_items.detail` (`extensions/plex_items.details_for`) and call `/library/metadata` only for keys the index lacks.
 
-### 17.2 Planned stages (being built in `feat/clip-groups`, mediaintel first)
+### 17.2 The detector inside `detect` (title-brand, numbered and named seasons)
 
-Each becomes its own queue when it lands in Maktaba; inputs and outputs below are the contract.
+`detect` calls the shared `maktaba_pipeline.classify.series_detector` (version 3, from PR #48). It finds:
 
-| Stage | Subject | Inputs | Outputs | Feeds |
-|---|---|---|---|---|
-| `brand_shows` (title-brand shows) | library | video titles (a shared prefix such as `شاهد على العصر \|` or `بلا حدود \|` across many videos), playlists, upload dates | a series per brand; seasons from that brand's playlists (a guest arc) or from years for an ongoing show; replaces playlist-named fragments | `detect` (series and seasons), then `tag`, `plex_collection`, `dizquetv_show` |
-| `topic_collections` ("ملف", may overlap seasons) | library | season and video topic tags, playlists whose titles name a topic (e.g. "الشأن الفلسطيني") | topic collections whose members may also sit in a season: an episode keeps its one season, and a topic collection never counts as a placement in the export safety rules | `plex_collection` (as collections), channel planner (themed blocks) |
-| `clip_groups` (clip collections for filler) | library | shorts and standalone clips (not in any season), their playlists and topic tags | playable groups: by playlist, else by topic, else one "mixed" group per library; one group per clip | `plex_collection` (filler collections), `plan_channels` (filler pools by topic), `dizquetv_channels` (filler lists) |
-| `promo_links` | library | promo, teaser and trailer titles (برومو, إعلان, تشويق, promo, trailer…) and the series names across libraries | `promo -> season` links with a score and evidence | `plan_channels` (a season's promos air as filler before and around its slots), report pages |
+- title-brand talk shows (`شاهد على العصر | …`, `بلا حدود | …`);
+- numbered shows without playlists;
+- ordinal and leading episode numbers, and yearly session series;
+- **named seasons**.
 
-Planned edges: `detect -> brand_shows`, `detect -> topic_collections`, `tag -> topic_collections`, `detect -> clip_groups`, `tag -> clip_groups`, `detect -> promo_links`; each of them `-> plan_channels (catalog)`. The two collection stages also feed `plex_collection` through the extension, with collection subjects alongside seasons.
+A season's `name` (a talk show's guest, "وليد جنبلاط") and `year` (from a playlist title, "بلا حدود - 2005") are stored in `series_seasons.metadata` as `season_name` and `season_year`. The series' `brand` flag is stored there as `brand`, and also in `series.metadata`.
+
+`season_name` is part of the membership hash, so a renamed season propagates. `extensions/seasons.collection_title` titles a named season of a series with several as `<library> - <series> - <name>`, the same rule as mediaintel's `export_plex._title`. Slot 0094 sets the seeded `detect` version to 3, so the version sweep re-detects every library once.
+
+### 17.3 `topic_collections` (core, per library)
+
+| | |
+|---|---|
+| Subject / pool / lane | `library`, `cpu`, `seasons` lane order 2; `entry_for = library`; debounce 30 s, max 300 s |
+| Triggered by | `detect -> topic_collections (same)`, retrigger |
+| Rule | the detector's own `series_detector.find_topics` (now public), run on the *stored* seasons and the library's YouTube playlists. A topic is a curated playlist whose episodes sit in two or more shows, with no show holding over 80 % of them. It must not be any season's own playlist or any brand show's. |
+| Writes | `topic_collections` + `topic_items` (slot 0094), replaced per library; ids are `topic_uuid(library, playlist)` |
+| Input fingerprint | the library's season membership hashes and playlist memberships (DB only) |
+| Edges | `-> clip_groups (same)`, `-> plex_groups (same)` (Plex extension), `-> plan_channels (catalog)` |
+
+A topic overlaps seasons by design. Its episodes keep their one season, and topic membership never counts as a placement.
+
+### 17.4 `promo_links` (core, per library)
+
+| | |
+|---|---|
+| Subject / pool / lane | `library`, `cpu`, `seasons` lane order 2; `entry_for = library`; debounce 30 s, max 300 s |
+| Triggered by | `detect -> promo_links (same)`, retrigger |
+| Rule | a leftover whose title says it advertises (`clip_groups.is_promo`: برومو, إعلان, تشويق, promo, trailer …). It links to the season detection already put it with (its `extras`, score 1.0). Otherwise it links to the show its title names (`clip_groups.link_promo`: same library 0.9, another library 0.7) and to the season the title names (`promo_season`). |
+| Writes | `promo_links` (video, library, series, season id and number, score, evidence), replaced per library |
+| Input fingerprint | every live season in the catalog (a promo may name any show) and the library's videos |
+| Edges | `-> clip_groups (same)`, `-> plan_channels (catalog)` |
+
+### 17.5 `clip_groups` (core, per library)
+
+| | |
+|---|---|
+| Subject / pool / lane | `library`, `cpu`, `seasons` lane order 3; `entry_for = library`; debounce 30 s, max 300 s |
+| Triggered by | `topic_collections -> clip_groups (same)`, `promo_links -> clip_groups (same)`, `tag -> clip_groups (library_of)` (a topic tag decides a group), retrigger |
+| Inputs | the library's leftovers (`engine/stages/_leftovers.py`): videos in no season or in a `clips` season, excluding second uploads. Each comes with its playlists (minus topic playlists), its topic tags and its `format:qa_fatwa` tag. |
+| Rule | `clip_groups.plan_groups`, applied to clips (Shorts, clip playlists, anything under 9 min) and stand-alone videos separately. A video goes to its most specific real playlist holding at least 5 of them. Otherwise questions and fatwas go to "فتاوى ومسائل", whatever their topic; then a video goes to its topic (at least 10); the rest go to "متنوعة". The library's linked promos form one more group, "إعلانات". |
+| Writes | `clip_groups` (kind, basis, name, topic, Plex title) + `clip_group_items` (one group per video, enforced by a unique index), replaced per library; ids are `clip_group_uuid(library, kind, basis, name)` |
+| Edges | `-> plex_groups (same)` (Plex extension), `-> plan_channels (catalog)` |
+
+The pure rules live in `maktaba_pipeline/classify/clip_groups.py`. Mediaintel's `group_clips.py` imports them from there, so the prototype and the queues cannot drift apart.
+
+### 17.6 `plex_groups` (Plex extension, per library) and the label
+
+| | |
+|---|---|
+| Subject / pool / lane | `library`, `network_plex`, `seasons` lane order 4; `entry_for = library`; `external_write`; debounce 60 s, max 600 s |
+| Triggered by | `topic_collections`, `clip_groups` and `plex_index` (all `same`), retrigger |
+| Writes | `<library> - ملف - <name>` per topic, and the stored title per group (`<library> - مقاطع - <name>` or `<library> - منفردات - <name>`). Links go to `external_links` (`plex_topic`, `plex_clip_group`) with `content_hash = <library id>:<hash>`. |
+| Safety | the season rules (`extensions/plex/collection.py`). Only collections this tool created are changed. A foreign collection with the same title is left alone and reported as a conflict. The old collection is deleted before the new one is created, and every write is read back. |
+| Retire pass | when a topic or group is gone, the collection this tool made for it is deleted once the library's current collections (topics, groups and season members) hold at least 80 % of its items. Otherwise it is kept and logged. |
+
+**Label.** Every collection the extension creates (seasons, topics, groups) gets the locked Plex label `maktaba-auto` (`PlexClient.add_label`). Plex shows it as "Maktaba-auto", verified on the Media Masters write, where collections were created and read back. The collection hash includes the label, so a collection written before labels existed is labelled once on its next unchanged run.
+
+### 17.7 The channel planner hook (`plan_channels`)
+
+The catalog stage `plan_channels` *is* the channel-plan stage. It loads the catalog: seasons, loose videos (each with its clip group title and `promo_of`), tags and styles. It calls the planner only through `maktaba_pipeline.schedule.entry.plan_catalog(seasons, loose, config) -> PlanResult`.
+
+`feat/tv-grid` is a TV slot grid: an ongoing show keeps its slot, with cadence, fillers and non-stop Quran channels. It plugs in by changing that one function's body and bumping `PLANNER_VERSION`. The stage, `channel_plans`, `_plan_json`, `write_channels` and `dizquetv_channels` stay unchanged.
+
+No separate `channel_plan` stage was added: it would run the planner twice on the same catalog and give the dizqueTV export two parents.
+
+The input fingerprint of `plan_channels` now also covers the latest `topic_collections`, `promo_links` and `clip_groups` outputs, so new groups or promo links trigger a new plan.
+
+### 17.8 The flow
+
+```
+scan -> plex_index -> plex_collection, dizquetv_show, plex_groups
+probe / thumb_hash / link / fingerprint -> detect
+detect -> tag, rate_style, topic_collections, promo_links, review_pages, plex_collection, dizquetv_show
+topic_collections, promo_links, tag -> clip_groups
+topic_collections, clip_groups -> plex_groups
+detect, tag, rate_style, topic_collections, promo_links, clip_groups -> plan_channels -> write_channels, dizquetv_channels
+```
+
+A library retrigger (`POST /api/queue/retrigger` with a library and no stage) re-adds the library to every library entry queue: `youtube_sync`, `plex_index`, `detect`, `topic_collections`, `promo_links`, `clip_groups`, `plex_groups` and `review_pages`.
+
+Each queue appears in the control centre as an ordinary card, because the web reads `job_stages`. Slot 0094 seeds the three core stages; the worker syncs the extension stages.
 
 ---
 
@@ -1407,4 +1492,4 @@ Ported from mediaintel: `scripts/mediaintel/thumbs.py` (an app thumbnail cache, 
 
 **Independence from the Plex and dizqueTV queues** is structural, not a priority setting: the stage has its own pool (it never holds a `cpu`, `network_plex` or `network_tv` slot), no stage has an edge or request into anything because of it, and it reads only the database and the local cache. A slow or failing page leaves every write queue running (`test_a_running_review_page_never_holds_a_slot_writes_need`).
 
-**Hosts.** Both caches are per host, so `thumb_small` and `review_pages` should run on the same worker (the default single-host setup). Serving the pages over the API is a follow-up; the control centre shows both queues as ordinary cards (`Small thumbnail`, `Review pages`).
+**Hosts.** Both caches are per host, so `thumb_small` and `review_pages` should run on the same worker (the default single-host setup). The pages are files in that cache (the API does not serve them); the control centre shows both queues as ordinary cards (`Small thumbnail`, `Review pages`).
