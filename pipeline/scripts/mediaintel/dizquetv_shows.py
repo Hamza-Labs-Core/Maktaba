@@ -82,12 +82,19 @@ def _program(m: dict[str, Any], server: PlexServer) -> dict[str, Any] | None:
     return p
 
 
-def _metadata(server: PlexServer, keys: list[str]) -> dict[str, dict[str, Any]]:
+def _metadata(server: PlexServer, keys: list[str], batch: int = 25) -> dict[str, dict[str, Any]]:
+    """Plex details of every episode, ``batch`` at a time, with a progress line every
+    20 batches (thousands of episodes take a while, and silence looks like a hang)."""
     out: dict[str, dict[str, Any]] = {}
-    for i in range(0, len(keys), 50):
-        md = server.get(f"/library/metadata/{','.join(keys[i : i + 50])}")["MediaContainer"]
+    batches = range(0, len(keys), batch)
+    for n, i in enumerate(batches, 1):
+        md = server.get(f"/library/metadata/{','.join(keys[i : i + batch])}")["MediaContainer"]
         for m in md.get("Metadata", []):
             out[str(m["ratingKey"])] = m
+        if n % 20 == 0 or n == len(batches):
+            print(
+                f"  [{min(i + batch, len(keys))}/{len(keys)}] episode details from Plex", flush=True
+            )
     return out
 
 
