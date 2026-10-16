@@ -108,6 +108,34 @@ def _print_diff(
             print(f"       + {titles.get(k, k)}")
 
 
+def _in_order(got: list[str], target: list[str]) -> set[str]:
+    """The items of ``got`` that already stand in ``target``'s order: the longest
+    increasing run of their target positions (they stay; the rest move)."""
+    pos = {k: i for i, k in enumerate(target)}
+    seq = [k for k in got if k in pos]
+    tails: list[int] = []  # tails[j]: index in seq ending the best run of length j + 1
+    prev: list[int] = [-1] * len(seq)
+    for i, k in enumerate(seq):
+        lo, hi = 0, len(tails)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if pos[seq[tails[mid]]] < pos[k]:
+                lo = mid + 1
+            else:
+                hi = mid
+        prev[i] = tails[lo - 1] if lo else -1
+        if lo == len(tails):
+            tails.append(i)
+        else:
+            tails[lo] = i
+    out: set[str] = set()
+    i = tails[-1] if tails else -1
+    while i >= 0:
+        out.add(seq[i])
+        i = prev[i]
+    return out
+
+
 def _recreate(
     server: PlexServer, machine: str, section: str, title: str, keys: list[str], old: str | None
 ) -> tuple[str, dict[str, str]]:
@@ -156,9 +184,27 @@ def _recreate(
                     refused[k] = str(e1)
     placed = [k for k in keys if k not in refused]
     server.send("PUT", f"/library/metadata/{new}/prefs?collectionSort=2")
-    for prev, cur in zip(placed, placed[1:], strict=False):
-        server.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
+    # only the items out of place move (one call each): those outside the longest run
+    # already in order. Plex usually keeps the order items were added in, so a big
+    # collection needs few moves, or none
     got = _children(server, new)
+    if got != placed:
+        keep = _in_order(got, placed)
+        for i, cur in enumerate(placed):
+            if cur in keep:  # in target order: its predecessor is already in place
+                continue
+            if i:
+                server.send(
+                    "PUT", f"/library/collections/{new}/items/{cur}/move?after={placed[i - 1]}"
+                )
+            else:  # to the front; the collection was made with it, so this is rare
+                with contextlib.suppress(PlexError):
+                    server.send("PUT", f"/library/collections/{new}/items/{cur}/move")
+        got = _children(server, new)
+    if got != placed:  # Plex did not follow: every item after its predecessor, as before
+        for prev, cur in zip(placed, placed[1:], strict=False):
+            server.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
+        got = _children(server, new)
     if got != placed:
         raise RuntimeError(
             f"{title}: Plex holds {len(got)} items (expected {len(placed)}), "

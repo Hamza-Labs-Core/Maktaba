@@ -81,6 +81,8 @@ class FakePlex:
         self.next = 1000
         self.deleted: list[str] = []
         self.refuse: set[str] = set()  # items Plex answers 400 for
+        self.shuffle_adds = False  # Plex files added items in its own order
+        self.moves = 0
 
     def add(self, title: str, kids: list[str]) -> str:
         self.next += 1
@@ -114,13 +116,20 @@ class FakePlex:
             keys = q["uri"][0].rsplit("/", 1)[1].split(",")
             if self.refuse & set(keys):
                 raise PlexError(method, path, 400, "Bad Request")
-            self.cols[parts[2]]["kids"] += keys
+            kids = self.cols[parts[2]]["kids"]
+            kids += keys
+            if self.shuffle_adds:
+                kids.sort(key=lambda k: int(k) % 7)  # an order of Plex's own
             return {}
         if method == "PUT" and parts[-1] == "move":
+            self.moves += 1
             kids = self.cols[parts[2]]["kids"]
-            cur, after = parts[4], q["after"][0]
+            cur = parts[4]
             kids.remove(cur)
-            kids.insert(kids.index(after) + 1, cur)
+            if "after" in q:
+                kids.insert(kids.index(q["after"][0]) + 1, cur)
+            else:
+                kids.insert(0, cur)
             return {}
         if method == "PUT" and parts[-1] == "all":
             self.cols[q["id"][0]]["labels"].add(q["label[0].tag.tag"][0])
@@ -391,3 +400,16 @@ def test_groups_of_one_title_from_two_folders(tmp_path: Path, section_b: str, pl
     assert len(rest) == plans
     if plans == 1:
         assert rest[0][0] == "ga" and rest[0][2] == ["30", "31"]
+
+
+@pytest.mark.parametrize("shuffled", [False, True])
+def test_only_items_out_of_place_are_moved(shuffled: bool) -> None:
+    plex = FakePlex()
+    plex.shuffle_adds = shuffled
+    keys = [str(i) for i in range(1, 41)]
+    new, refused = export_plex._recreate(plex, "m", "5", "x - y", keys, None)
+    assert plex.cols[new]["kids"] == keys and not refused
+    if not shuffled:
+        assert plex.moves == 0  # added in order: nothing to move
+    else:
+        assert 0 < plex.moves < len(keys) - 1
