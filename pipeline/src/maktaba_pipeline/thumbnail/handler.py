@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from ..db.jobs import DBConn, Job, Stage
 from ..db.jobs_state import StageError, mark_done, mark_failed_or_retry
+from ..engine.paths import to_local
 from ..log import get_logger
 from .generator import ThumbnailError, ThumbnailSet, generate_thumbnails
 
@@ -84,7 +85,7 @@ async def thumbnail_handler(
             )
             return
 
-        path = str(row["path"])
+        path = to_local(str(row["path"]))  # this host's mount of the NAS
         content_hash = str(row["content_hash"])
         duration_sec = float(row["duration_sec"]) if row["duration_sec"] is not None else 0.0
 
