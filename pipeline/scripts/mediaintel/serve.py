@@ -217,10 +217,10 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             )
             unit = "channels"
         elif STEPS[current][0] == "plex-index":
-            m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+            plex_m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
             tot = next((int(x.group(1)) for ln in body
                         if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
-            return out, {"done": int(m[-1].group(1)) if m else 0, "total": tot,
+            return out, {"done": int(plex_m[-1].group(1)) if plex_m else 0, "total": tot,
                          "unit": "libraries"}  # fmt: skip
         elif STEPS[current][0] == "dizquetv-shows":
             return out, _dz_shows_progress(body, n_lib)
@@ -1165,11 +1165,15 @@ def serve(
             elif url.path.startswith(("/thumbs/", "/reports/thumbs/")):
                 # the app's thumbnail cache: a fixed name pattern, never a path
                 name = url.path.rsplit("/", 1)[-1]
-                f = Path(db_path).parent / "thumbs" / name
-                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name) or not f.is_file():
+                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name):
                     self.send_error(404)
                     return
-                self._send(200, f.read_bytes(), "image/jpeg")
+                thumbs = os.path.normpath(Path(db_path).parent / "thumbs")
+                f = os.path.normpath(os.path.join(thumbs, name))
+                if not f.startswith(thumbs + os.sep) or not os.path.isfile(f):
+                    self.send_error(404)
+                    return
+                self._send(200, Path(f).read_bytes(), "image/jpeg")
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})

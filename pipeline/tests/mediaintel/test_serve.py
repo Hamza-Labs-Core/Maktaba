@@ -188,6 +188,7 @@ def test_dizquetv_shows_counts_libraries_and_plex_stalls() -> None:
     from scripts.mediaintel import serve
 
     prog = serve._steps(log)[1]
+    assert prog is not None
     assert prog["done"] == 1 and prog["total"] == 3 and prog["unit"] == "libraries"
     assert "writing 2 shows" in prog["phase"]
     assert "500 of 900 episode details" in prog["phase"]
