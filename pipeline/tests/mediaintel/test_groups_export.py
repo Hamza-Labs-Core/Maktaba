@@ -20,6 +20,7 @@ from scripts.mediaintel.group_clips import (  # noqa: E402
     name_words,
     plan_groups,
 )
+from scripts.mediaintel.scan_plex import PlexError  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -79,6 +80,7 @@ class FakePlex:
         self.titles: dict[str, str] = {}
         self.next = 1000
         self.deleted: list[str] = []
+        self.refuse: set[str] = set()  # items Plex answers 400 for
 
     def add(self, title: str, kids: list[str]) -> str:
         self.next += 1
@@ -108,7 +110,10 @@ class FakePlex:
             key = self.add(q["title"][0], keys)
             return {"MediaContainer": {"Metadata": [{"ratingKey": key}]}}
         if method == "PUT" and parts[-1] == "items":
-            self.cols[parts[2]]["kids"] += q["uri"][0].rsplit("/", 1)[1].split(",")
+            keys = q["uri"][0].rsplit("/", 1)[1].split(",")
+            if self.refuse & set(keys):
+                raise PlexError(method, path, 400, "Bad Request")
+            self.cols[parts[2]]["kids"] += keys
             return {}
         if method == "PUT" and parts[-1] == "move":
             kids = self.cols[parts[2]]["kids"]
@@ -247,3 +252,26 @@ def test_grouping_works_before_the_tag_step_and_keeps_unlinked_promos_apart(
         )
     }
     assert kinds == {("clips", "promo")}  # in the promos' collection, not an ordinary clip
+
+
+def test_an_item_plex_refuses_stays_out_and_the_run_goes_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    conn = _db(tmp_path)
+    plex = FakePlex()
+    plex.refuse = {"3"}  # v3 is in the season only
+    old = plex.add("قناة - مجزرة صبرا وشاتيلا", ["1", "2", "3"])
+    export_plex.export(conn, plex, apply=False, library_filter=None, include_clips=False,
+                       replace_existing=True, remove_superseded=False)  # fmt: skip
+    conn.execute("INSERT INTO plex_collections (series_id, section, rating_key, title) "
+                 "VALUES ('GONE', '5', ?, 'قناة - مجزرة صبرا وشاتيلا')", (old,))  # fmt: skip
+    conn.commit()
+    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+                       replace_existing=True, remove_superseded=False)  # fmt: skip
+    by_title = {c["title"]: c for c in plex.cols.values()}
+    assert by_title["قناة - برنامج"]["kids"] == ["1", "2"]  # written without the refused one
+    assert by_title["قناة - مقاطع - الفقه"]["kids"] == ["7", "8"]  # the next ones too
+    out = capsys.readouterr().out
+    assert "Plex refused" in out and "not fully written" in out
+    # v3 sits in no written collection now, so the old one that holds it is kept
+    assert old not in plex.deleted
