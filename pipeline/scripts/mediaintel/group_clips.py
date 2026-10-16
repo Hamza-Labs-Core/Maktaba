@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from maktaba_pipeline.classify.series_detector import DetectorConfig
+from maktaba_pipeline.classify.title_template import season_number
 from maktaba_pipeline.classify.topic_tags import TOPIC_NAMES_AR
 from maktaba_pipeline.text.arabic import fold
 
@@ -84,6 +85,7 @@ class Show:
     name: str
     series_key: str
     words: tuple[str, ...]
+    seasons: tuple[int, ...] = ()
 
 
 def name_words(name: str) -> tuple[str, ...]:
@@ -108,6 +110,19 @@ def link_promo(title: str, folder: str, shows: list[Show]) -> tuple[Show, float,
     best = fits[0]
     where = "same channel" if best.folder == folder else f"in {best.library}"
     return best, 0.9 if best.folder == folder else 0.7, f"title names «{best.name}» ({where})"
+
+
+def promo_season(title: str, show: Show) -> int | None:
+    """The season a promo names: a number glued to or right after the show's name
+    ("برومو قصة وفكرة2" → 2) or "الموسم الثاني"; with none, the show's first season."""
+    t = fold(title)
+    if show.words:
+        m = re.search(re.escape(show.words[-1]) + r"\s*(\d{1,2})(?!\d)", t)
+        if m and int(m.group(1)) in show.seasons:
+            return int(m.group(1))
+    if (n := season_number(title)) is not None and n in show.seasons:
+        return n
+    return min(show.seasons) if show.seasons else None
 
 
 def plan_groups(items: list[Item], playlist_titles: dict[str, str]) -> list[Group]:
@@ -166,18 +181,19 @@ def _main_genre(items: list[Item]) -> str | None:
 
 
 def _shows(conn: sqlite3.Connection) -> list[Show]:
-    out = []
-    seen = set()
+    first: dict[tuple[str, str], tuple[str, str]] = {}
+    seasons: dict[tuple[str, str], set[int]] = defaultdict(set)
     for library, name, meta_s in conn.execute("SELECT library, name, metadata FROM series"):
         m = json.loads(meta_s)
         if m.get("kind") == "clips":
             continue
         key = (m.get("folder", ""), m.get("series_key", name))
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(Show(library, key[0], name, key[1], name_words(name)))
-    return out
+        first.setdefault(key, (library, name))
+        seasons[key].add(int(m.get("season") or 1))
+    return [
+        Show(lib, k[0], name, k[1], name_words(name), tuple(sorted(seasons[k])))
+        for k, (lib, name) in first.items()
+    ]
 
 
 def run(
@@ -214,7 +230,7 @@ def group_folder(
 ) -> Counter[str]:
     placed: set[str] = set()
     clip_members: set[str] = set()
-    extras_of: dict[str, Show] = {}
+    extras_of: dict[str, tuple[Show, int]] = {}
     show_by_key = {(s.folder, s.series_key): s for s in shows}
     for sid, meta_s in conn.execute(
         "SELECT id, metadata FROM series WHERE json_extract(metadata, '$.folder') = ?", (folder,)
@@ -230,7 +246,7 @@ def group_folder(
         show = show_by_key.get((folder, m.get("series_key")))
         for p in m.get("extras") or []:
             if show is not None:
-                extras_of[p] = show
+                extras_of[p] = (show, int(m.get("season") or 1))
         placed |= set(m.get("duplicates") or [])
     copies = {p for (p,) in conn.execute("SELECT path FROM file_copies WHERE folder=?", (folder,))}
     shorts = {p for (p,) in conn.execute("SELECT path FROM shorts WHERE folder=?", (folder,))}
@@ -251,15 +267,16 @@ def group_folder(
         if yid:
             yt_of[yid] = path
     # promos: linked to the show, not grouped
-    links: list[tuple[str, Show, float, str]] = []
+    links: list[tuple[str, Show, int | None, float, str]] = []
     for path, it in list(items.items()):
         if not PROMO_RE.search(fold(it.title)):
             continue
-        show = extras_of.get(path)
-        if show is not None:
-            links.append((path, show, 1.0, "aired with its season (detection)"))
+        with_season = extras_of.get(path)
+        if with_season is not None:
+            show, season = with_season
+            links.append((path, show, season, 1.0, "aired with its season (detection)"))
         elif (hit := link_promo(it.title, folder, shows)) is not None:
-            links.append((path, *hit))
+            links.append((path, hit[0], promo_season(it.title, hit[0]), hit[1], hit[2]))
         else:
             continue
         del items[path]
@@ -308,8 +325,11 @@ def group_folder(
         )
     conn.executemany(
         "INSERT OR REPLACE INTO promo_links (path, folder, library, series_key, series_library, "
-        "series_folder, score, evidence) VALUES (?,?,?,?,?,?,?,?)",
-        [(p, folder, library, s.series_key, s.library, s.folder, sc, ev) for p, s, sc, ev in links],
+        "series_folder, season, score, evidence) VALUES (?,?,?,?,?,?,?,?,?)",
+        [
+            (p, folder, library, s.series_key, s.library, s.folder, se, sc, ev)
+            for p, s, se, sc, ev in links
+        ],
     )
     conn.commit()
     return Counter(

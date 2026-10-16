@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS promo_links (
     series_key TEXT NOT NULL,
     series_library TEXT NOT NULL,
     series_folder  TEXT NOT NULL,
+    season     INTEGER,            -- the season it advertises ("برومو قصة وفكرة2" → 2)
     score      REAL NOT NULL,
     evidence   TEXT NOT NULL
 );

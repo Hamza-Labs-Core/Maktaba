@@ -190,3 +190,9 @@ def test_export_writes_topic_and_clip_collections_with_the_label(tmp_path: Path)
     assert old in plex.deleted and "قناة - مجزرة صبرا وشاتيلا" not in by_title
     tracked = {r[0] for r in conn.execute("SELECT series_id FROM plex_collections")}
     assert tracked == {"S1", "topic:1", "clips:1"}
+
+
+def test_promo_links_to_the_season_it_names() -> None:
+    show = Show("ميديا", "Y:/a", "قصة وفكرة", "قصه وفكره", name_words("قصة وفكرة"), (1, 2))
+    assert group_clips.promo_season("برومو قصة وفكرة2", show) == 2
+    assert group_clips.promo_season("برومو برنامج قصة وفكرة", show) == 1

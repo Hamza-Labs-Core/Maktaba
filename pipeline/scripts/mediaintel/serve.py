@@ -796,9 +796,10 @@ def collections_beyond_seasons(conn: sqlite3.Connection, folder: str) -> dict[st
             )
         ]  # fmt: skip
         out["promos"] = [
-            {"title": t, "show": key, "library": lib, "evidence": ev}
-            for t, key, lib, ev in conn.execute(
-                """SELECT COALESCE(y.title, f.stem), p.series_key, p.series_library, p.evidence
+            {"title": t, "show": key, "library": lib, "season": se, "evidence": ev}
+            for t, key, lib, se, ev in conn.execute(
+                """SELECT COALESCE(y.title, f.stem), p.series_key, p.series_library, p.season,
+                          p.evidence
                    FROM promo_links p JOIN files f ON f.path = p.path
                    LEFT JOIN yt_videos y ON y.youtube_id = f.youtube_id
                    WHERE p.folder = ? ORDER BY p.series_key""",

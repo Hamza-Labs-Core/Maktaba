@@ -87,7 +87,9 @@ def _channel() -> tuple[list[VideoFacts], list[PlaylistFacts]]:
         ),
         _pl("BU", "بلا حدود من 2005 حتى 2006", [v.key for v in b]),
         _pl("Y5", "بلا حدود - 2005", [f"b2005-{i}" for i in range(1, 11)]),
-        _pl("Y6", "حلقات بلا حدود التى تم بثها فى سنة - 2006", [f"b2006-{i}" for i in range(1, 11)]),
+        _pl(
+            "Y6", "حلقات بلا حدود التى تم بثها فى سنة - 2006", [f"b2006-{i}" for i in range(1, 11)]
+        ),
         # a topic list named after one episode, mixing both shows: what scatters them
         _pl(
             "MIX",
@@ -161,3 +163,33 @@ def test_brand_held_together_by_playlists_is_left_alone() -> None:
     assert det.series[0].name == "كنوز السيرة"
     assert not det.series[0].brand
     assert len(det.series[0].seasons) == 1
+
+
+# --------------------------------------------------------------------------- numbered shows
+
+
+def _titles(titles: list[str], minutes: float = 28) -> list[VideoFacts]:
+    return [VideoFacts(f"n{i}", t, minutes * 60 + i, _approx(2016)) for i, t in enumerate(titles)]
+
+
+def test_numbered_titles_make_a_show_without_any_playlist() -> None:
+    s1 = [f"قصة وفكرة - ح{i} موضوع {i} - شخصية {i}" for i in range(1, 31)]
+    s2 = [f"قصة وفكرة2 - ح{i} موضوع آخر {i}" for i in range(1, 30) if i not in (11, 22)]
+    s2 += ["قصة وفرة2 - ح11 عدنان مندريس", "قصة وفكرة2 ح22 - د.عبدالرحمن السميط"]
+    bare = [f"نورك فينا {i} - صفة رقم - د. طارق السويدان" for i in range(1, 8)]
+    videos = _titles(s1 + s2 + bare)
+    det = detect(videos, [], presenter_words=["Media Masters"])
+    by = {s.name: s for s in det.series}
+    show = by["قصة وفكرة"]
+    assert [se.number for se in show.seasons] == [1, 2]
+    assert len(show.seasons[0].episodes) == 30 and len(show.seasons[1].episodes) == 29
+    title = {v.key: v.title for v in videos}
+    # episodes in title-number order; the "وفرة2" typo and "ح22 -" variant are season 2
+    assert [title[k] for k in show.seasons[1].episodes][10].startswith("قصة وفرة2 - ح11")
+    assert title[show.seasons[1].episodes[21]].startswith("قصة وفكرة2 ح22")
+    assert len(by["نورك فينا"].seasons[0].episodes) == 7
+
+
+def test_format_words_alone_are_not_a_numbered_show() -> None:
+    det = detect(_titles([f"محاضرة عامة {i}" for i in range(1, 9)]), [])
+    assert det.series == []

@@ -98,7 +98,7 @@ function render(d) {
       <td class="n">${fmt(g.items)}</td><td dir="auto">${plexCell(g.collection)}</td></tr>`).join("")
     : `<tr><td class="empty">No clips or stand-alone videos left over.</td></tr>`;
   $("promos").innerHTML = d.promos.length ? `<tr><th>Promo</th><th>Advertises</th><th>Why</th></tr>` + d.promos.map(p =>
-    `<tr><td dir="auto">${esc(p.title)}</td><td dir="auto">${esc(p.show)} <span class="muted">${esc(p.library)}</span></td><td dir="auto" class="muted">${esc(p.evidence)}</td></tr>`).join("")
+    `<tr><td dir="auto">${esc(p.title)}</td><td dir="auto">${esc(p.show)}${p.season ? ` · S${p.season}` : ""} <span class="muted">${esc(p.library)}</span></td><td dir="auto" class="muted">${esc(p.evidence)}</td></tr>`).join("")
     : `<tr><td class="empty">No promos linked to a show.</td></tr>`;
   $("history").innerHTML = d.history.length ? d.history.map(h => `<li class="${h.state === "failed" ? "failed" : ""}"><span class="dot"></span>
     <span class="t num muted">${esc(new Date(h.at).toLocaleString())}</span>

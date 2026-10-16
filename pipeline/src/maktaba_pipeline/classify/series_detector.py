@@ -1306,6 +1306,9 @@ def detect(
             for k in (*se.episodes, *se.extras, *se.duplicates)
         }
 
+    # 5b''. numbered shows no playlist holds ("قصة وفكرة - ح1 …", "قصة وفكرة2 - ح1 …")
+    assigned |= _numbered_shows(videos, assigned, series, phrases, cfg)
+
     # 5c. one place per video: a video in two playlists can be an episode of one season
     #     and fall outside another playlist's length band (an "extra" there). The episode
     #     wins; an extra, a duplicate upload or a clip belongs to one season only.
@@ -2000,6 +2003,162 @@ def _topics(
         ] <= 0.8 * len(hits):
             out.append(Topic(" ".join(p.title.split()), p.playlist_id, items))
     return out
+
+
+# --------------------------------------------------------------------------- numbered shows
+
+_EP_WORDS = frozenset(fold(w) for w in ("ح", "حلقة", "الحلقة", "حلقه", "ep", "episode", "eps"))
+#: words that only say what a video is ("محاضرة عامة 3", "درس 12"): never a show's name alone
+_FORMAT_WORDS = frozenset(
+    fold(w)
+    for w in (
+        "محاضرة", "محاضرات", "عامة", "درس", "دروس", "خطبة", "لقاء", "فيديو", "مقطع", "جزء",
+        "الجزء", "جديد", "جديدة", "video", "part", "clip", "live", "بث", "مباشر",
+    )
+)  # fmt: skip
+_EP_GLUED_RE = re.compile(r"^(?:ح|ep|e)(\d{1,3})$")
+_SEASON_TAIL_RE = re.compile(r"^(.*?[^\d\s])(\d{1,2})$")
+
+
+def _numbered(
+    title: str, phrases: Sequence[str], generic: frozenset[str]
+) -> tuple[str, list[str], int, int] | None:
+    """(key, name tokens, season, episode) of a title shaped "<show>[N] - ح<ep> …",
+    "<show> حلقة <ep>", "<show> (<ep>)", "<show> #<ep>" or "<show> <ep> - …"; the number
+    glued to or after the show's name before an episode marker is its season
+    ("قصة وفكرة2 - ح11" → season 2, episode 11)."""
+    toks = fold(title).split()
+    ep: int | None = None
+    at = -1
+    for i, t in enumerate(toks):
+        if t in _EP_WORDS and i + 1 < len(toks) and toks[i + 1].isdigit():
+            ep, at = int(toks[i + 1]), i
+            break
+        if m := _EP_GLUED_RE.match(t):
+            ep, at = int(m.group(1)), i
+            break
+    season = 1
+    if ep is not None:
+        name = toks[:at]
+        if name and name[-1].isdigit() and len(name[-1]) <= 2 and len(name) > 1:
+            season = int(name.pop())
+        elif name and (m := _SEASON_TAIL_RE.match(name[-1])):
+            name[-1], season = m.group(1), int(m.group(2))
+        if (
+            len(name) >= 2
+            and name[-2] in (fold("الموسم"), fold("موسم"), "s")
+            and name[-1].isdigit()
+        ):
+            season = int(name[-1])
+            name = name[:-2]
+    else:
+        # "<show> <ep> - …": the first number after the name is the episode
+        at = next((i for i, t in enumerate(toks) if t.isdigit() and i > 0), -1)
+        if at < 0 or len(toks[at]) > 3:
+            return None
+        ep, name = int(toks[at]), toks[:at]
+    name = _drop_phrases(name, phrases)
+    while name and name[0] in generic | {fold("برنامج")}:
+        name = name[1:]
+    if not name or len(name) > 8 or ep is None or ep == 0:
+        return None
+    if name[0] in _PERSON_LEAD or not any(
+        len(w) >= 3 and w not in generic and w not in _FORMAT_WORDS for w in name
+    ):
+        return None
+    key = "".join(name)
+    if len(key) < 5:
+        return None
+    return key, name, season, ep
+
+
+def _edit1(a: str, b: str) -> bool:
+    """At most one letter apart ("قصهوفره" for "قصهوفكره": a typo in one title)."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b, strict=True)) <= 1
+    if len(a) > len(b):
+        a, b = b, a
+    return any(b[:i] + b[i + 1 :] == a for i in range(len(b)))
+
+
+def _display(title: str, n_tokens: int) -> str:
+    """The show's name as the title spells it: its first ``n_tokens`` folded words."""
+    words: list[str] = []
+    got = 0
+    for raw in re.split(r"[\s|｜:\-–—()（）\[\]#]+", title):
+        f = fold(raw).split()
+        if not f:
+            continue
+        if got + len(f) > n_tokens:
+            break
+        words.append(raw)
+        got += len(f)
+        if got >= n_tokens:
+            break
+    name = " ".join(words)
+    return re.sub(r"(?<=[^\d\s])\d{1,2}$", "", name).strip()
+
+
+def _numbered_shows(
+    videos: Sequence[VideoFacts],
+    assigned: set[str],
+    series: list[Series],
+    phrases: Sequence[str],
+    cfg: DetectorConfig,
+) -> set[str]:
+    """Shows with no playlist at all whose titles number them ("قصة وفكرة - ح1 …" … ح30,
+    "قصة وفكرة2 - ح1 …"): five or more unplaced videos of one name and a like length.
+    The number on the name is the season; episodes go in title-number order. A show
+    playlist detection already has (same name) gains them in the season they name.
+    Returns the videos placed."""
+    found: dict[str, list[tuple[VideoFacts, list[str], int, int]]] = defaultdict(list)
+    for v in videos:
+        if v.key in assigned or v.duration_s is None:
+            continue
+        hit = _numbered(v.title or "", phrases, cfg.generic_words)
+        if hit:
+            found[hit[0]].append((v, hit[1], hit[2], hit[3]))
+    # a typo in one title ("قصة وفرة2") joins the bigger group one letter away
+    for k in sorted(found, key=lambda x: len(found[x])):
+        big = next(
+            (o for o in found if o != k and len(found[o]) > len(found[k]) and _edit1(k, o)), None
+        )
+        if big is not None:
+            found[big] += found.pop(k)
+    placed: set[str] = set()
+    by_ns = {_ns(s.name): s for s in series if s.kind != "clips"}
+    for key, hits in found.items():
+        med = _median([h[0].duration_s or 0.0 for h in hits])
+        hits = [h for h in hits if med and _within(h[0].duration_s, med, 1.6)]
+        if len({(h[2], h[3]) for h in hits}) < 5:
+            continue
+        names = Counter(_display(h[0].title, len(h[1])) for h in hits)
+        name = names.most_common(1)[0][0] or " ".join(hits[0][1])
+        by_season: dict[int, list[tuple[int, str]]] = defaultdict(list)
+        seen: set[tuple[int, int]] = set()
+        for v, _, season, ep in sorted(hits, key=lambda h: (h[2], h[3], h[0].key)):
+            if (season, ep) in seen:
+                continue  # a second upload of one episode
+            seen.add((season, ep))
+            by_season[season].append((ep, v.key))
+        target = by_ns.get(key)
+        if target is None:
+            # built from titles, ordered by their numbers: kept as built (like a brand show)
+            target = Series(name=name, key=fold(name), seasons=[], kind="episodic", brand=True)
+            series.append(target)
+        for number, eps in sorted(by_season.items()):
+            keys = [k for _, k in sorted(eps)]
+            se = next((x for x in target.seasons if x.number == number), None)
+            if se is None:
+                se = Season(number=number, episodes=[])
+                target.seasons.append(se)
+            se.episodes += [k for k in keys if k not in se.episodes]
+            se.attached += keys
+            placed.update(keys)
+        target.seasons.sort(key=lambda x: x.number)
+    return placed
 
 
 def group_by_season_key(det: Detection) -> dict[str, list[Series]]:
