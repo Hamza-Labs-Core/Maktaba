@@ -18,8 +18,8 @@ from . import detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
-    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "scan-visual",
-    "report", "export-plex", "dizquetv-shows", "plan-channels", "export-dizquetv",
+    "scan", "youtube", "link", "detect", "signatures", "exact", "tag", "report",
+    "export-plex", "dizquetv-shows", "scan-visual", "plan-channels", "export-dizquetv",
 )  # fmt: skip
 
 
@@ -163,20 +163,15 @@ def _run(
                 print(f"youtube stopped ({e})")
                 break
             detect.run(conn, f)
-    for mod, label in (("classify_tags", "tag"), ("scan_visual", "scan-visual")):
-        if not want(label):
-            continue
+    if want("tag"):
         try:
-            m = importlib.import_module(f"{__package__}.{mod}")
+            tags = importlib.import_module(f"{__package__}.classify_tags")
         except ImportError:
-            continue
-        _step(label)
-        if mod == "scan_visual":
-            # all seasons in one pool; reads are capped inside, decoding uses the cores
-            m.run(conn, None, workers=os.cpu_count() or 8)
-        else:
+            tags = None
+        if tags is not None:
+            _step("tag")
             for f in folders:
-                m.run(conn, f)
+                tags.run(conn, f)
     if want("report"):
         _step("report")
         for f in folders:
@@ -209,6 +204,16 @@ def _run(
                 conn, server, url=tv_url, apply=True, library_filter=lib,
                 backup_dir=backup_dir / "dizquetv-shows",
             )  # fmt: skip
+    # production style feeds only channel planning, so Plex and dizqueTV don't wait for it
+    if want("scan-visual"):
+        try:
+            sv = importlib.import_module(f"{__package__}.scan_visual")
+        except ImportError:
+            sv = None
+        if sv is not None:
+            _step("scan-visual")
+            # all seasons in one pool; reads are capped inside, decoding uses the cores
+            sv.run(conn, None, workers=os.cpu_count() or 8)
     if want("plan-channels"):
         _step("plan-channels (whole cache)")
         from . import plan_channels

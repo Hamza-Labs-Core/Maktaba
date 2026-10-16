@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -318,8 +318,11 @@ def _sample(
     started = time.monotonic()
     with ThreadPoolExecutor(max(1, workers)) as pool:
         hw = os.environ.get("MEDIAINTEL_HWACCEL") or None  # optional; CPU is the default
-        results = pool.map(lambda j: sample_file(j.path, j.duration_s, hwaccel=hw), todo)
-        for n, (job, m) in enumerate(zip(todo, results, strict=True), 1):
+        futures = {
+            pool.submit(sample_file, j.path, j.duration_s, hwaccel=hw): j for j in todo
+        }  # saved as each finishes: one slow file must not hold back the rest
+        for n, fut in enumerate(as_completed(futures), 1):
+            job, m = futures[fut], fut.result()
             if n % 25 == 0 or n == len(todo):
                 rate = n / max(1e-6, time.monotonic() - started) * 60
                 print(f"  [{n}/{len(todo)}] {rate:.0f} per minute", flush=True)

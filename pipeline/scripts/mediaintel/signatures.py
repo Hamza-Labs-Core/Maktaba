@@ -24,7 +24,7 @@ import math
 import sqlite3
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 from maktaba_pipeline.audio.chromaprint import (
@@ -157,9 +157,9 @@ def _fingerprint(
     print(f"{label}: fingerprinting {len(todo)} videos ({workers} reads at a time)", flush=True)
     t0, n = time.monotonic(), 0
     with ThreadPoolExecutor(max(1, workers)) as pool:
-        for (path, dur), (head, tail, frames) in zip(
-            todo, pool.map(lambda x: _signature(*x), todo), strict=True
-        ):
+        futures = {pool.submit(_signature, *x): x for x in todo}
+        for fut in as_completed(futures):  # saved as each finishes
+            (path, dur), (head, tail, frames) = futures[fut], fut.result()
             conn.execute(
                 """UPDATE files SET audio_head=?, audio_tail=?, audio_version=?,
                      frame_hashes=?, frames_version=? WHERE path=?""",
