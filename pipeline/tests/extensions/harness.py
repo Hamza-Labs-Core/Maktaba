@@ -207,6 +207,18 @@ class FakePlex:
                     ]
                 }
             }
+        if (
+            parts[:2] == ["library", "sections"]
+            and len(parts) == 4
+            and parts[3] == "all"
+            and method == "PUT"
+            and q.get("type") == "18"
+        ):  # a label on a collection
+            c = self.collections.get(q["id"])
+            if c is None:
+                return None
+            c.setdefault("labels", []).append(q["label[0].tag.tag"])
+            return {}
         if parts[:2] == ["library", "sections"] and len(parts) == 4 and parts[3] == "all":
             # the listing carries the full item record, as real Plex's does
             md = [_meta(rk, it) for rk, it in self.items.items() if it["section"] == parts[2]]

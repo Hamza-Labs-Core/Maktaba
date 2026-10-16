@@ -267,3 +267,12 @@ class PlexClient:
         for prev, cur in zip(keys, keys[1:], strict=False):
             self.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
         return new
+
+    def add_label(self, section_key: str, rating_key: str, label: str) -> None:
+        """Put a (locked) label on a collection. Plex shows the first letter capitalised
+        ("maktaba-auto" reads "Maktaba-auto" in the Plex UI); the stored tag is as given."""
+        self.send(
+            "PUT",
+            f"/library/sections/{section_key}/all?type=18&id={rating_key}"
+            f"&label[0].tag.tag={quote(label)}&label.locked=1",
+        )

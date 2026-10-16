@@ -38,11 +38,13 @@ from ..seasons import Member, load_members, load_season
 __all__ = [
     "COLLECTION_TARGET",
     "ITEM_TARGET",
+    "LABEL",
     "ClientFactory",
     "Desired",
     "PlexRemote",
     "RemoteCollection",
     "apply_collection",
+    "collection_hash",
     "compute_changes",
     "item_content_hash",
     "section_of",
@@ -50,6 +52,8 @@ __all__ = [
 
 COLLECTION_TARGET = "plex_collection"
 ITEM_TARGET = "plex_item"
+#: every collection this tool creates carries this Plex label (shown "Maktaba-auto" in Plex)
+LABEL = "maktaba-auto"
 INDEX_TTL_SEC = 120.0
 
 ClientFactory = Callable[[Mapping[str, str]], PlexClient]
@@ -81,6 +85,11 @@ class PlexRemote:
     ours: RemoteCollection | None = None
     #: a collection the tool did not create already carries the desired title
     foreign_title: bool = False
+
+
+def collection_hash(desired: Desired) -> str:
+    """What a written collection is: title, ordered keys and the label it carries."""
+    return canonical_hash({"title": desired.title, "keys": list(desired.keys), "label": LABEL})
 
 
 def item_content_hash(section_key: str, file: str) -> str:
@@ -152,7 +161,9 @@ def apply_collection(client: PlexClient, desired: Desired, remote: PlexRemote) -
         client.delete_metadata(ours.rating_key)
     if desired.delete:
         return None
-    return client.create_collection(machine, desired.section, desired.title, list(desired.keys))
+    new = client.create_collection(machine, desired.section, desired.title, list(desired.keys))
+    client.add_label(desired.section, new, LABEL)
+    return new
 
 
 # ------------------------------------------------------------------ handler
@@ -319,7 +330,7 @@ async def run_collection(db: Any, job: Any, ctx: StageContext, service: PlexServ
     keys = tuple(lk.external_id for _, lk in keyed if section_of(lk) == section)
     summary["other_section"] = len(keyed) - len(keys)
     desired = Desired(season.title, keys, section)
-    output_hash = canonical_hash({"title": desired.title, "keys": list(keys)})
+    output_hash = collection_hash(desired)
 
     client = service.client(settings)
     try:
@@ -355,6 +366,11 @@ async def run_collection(db: Any, job: Any, ctx: StageContext, service: PlexServ
         and remote.ours is not None
         and (link.content_hash != output_hash or link.title != desired.title)
     ):
+        if link.content_hash != output_hash:  # e.g. made before collections were labelled
+            try:
+                await asyncio.to_thread(client.add_label, section, remote.ours.rating_key, LABEL)
+            except (PlexError, TransportError) as exc:
+                raise _wrap(exc) from exc
         # keep the link's content hash current even though Plex needed nothing
         await put_link(
             db, Link(*_link_fields(season_id, remote.ours.rating_key, desired, output_hash))
@@ -399,7 +415,7 @@ async def _apply(
     new_key = await asyncio.to_thread(apply_collection, client, desired, remote)
     if new_key is None:  # delete action
         return
-    content_hash = canonical_hash({"title": desired.title, "keys": list(desired.keys)})
+    content_hash = collection_hash(desired)
     await put_link(db, Link(*_link_fields(season_id, new_key, desired, content_hash)))
     got = await asyncio.to_thread(client.collection_children, new_key)
     if tuple(got) != desired.keys:

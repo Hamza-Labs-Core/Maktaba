@@ -26,6 +26,8 @@ from .collection import (
     fingerprint,
     run_collection,
 )
+from .groups import fingerprint as groups_fingerprint
+from .groups import run_groups
 from .index import run_index
 
 __all__ = [
@@ -38,6 +40,7 @@ __all__ = [
 
 PLEX_EXPORT_VERSION = 1
 PLEX_INDEX_VERSION = 1
+PLEX_GROUPS_VERSION = 1
 
 MANIFEST = Manifest(
     name="plex",
@@ -55,7 +58,7 @@ MANIFEST = Manifest(
             env="MAKTABA_PATH_MAP",
         ),
     ),
-    stages=("plex_index", "plex_collection"),
+    stages=("plex_index", "plex_collection", "plex_groups"),
 )
 
 
@@ -113,6 +116,25 @@ class PlexExtension:
             )
         )
         graph.add_edge("detect", Edge("plex_collection", "seasons_changed"))
+        # topic ("ملف") and clip collections, same safety rules, labelled, retired when gone
+        graph.add_stage(
+            StageDef(
+                name="plex_groups",
+                label="Plex topic and clip collections",
+                subject_kinds=("library",),
+                pool="network_plex",
+                lane="seasons",
+                lane_order=4,
+                version=PLEX_GROUPS_VERSION,
+                external_write=True,
+                entry_for=("library",),
+                debounce_sec=60,
+                debounce_max_sec=600,
+            )
+        )
+        for src in ("topic_collections", "clip_groups", "plex_index"):
+            if graph.has_stage(src):
+                graph.add_edge(src, Edge("plex_groups", "same"))
 
     def impls(self) -> Mapping[str, StageImpl]:
         return {
@@ -121,6 +143,11 @@ class PlexExtension:
             ),
             "plex_collection": StageImpl(
                 run=self._run, input_fingerprint=self._input_fingerprint, output_fingerprint=None
+            ),
+            "plex_groups": StageImpl(
+                run=self._run_groups,
+                input_fingerprint=self._groups_fingerprint,
+                output_fingerprint=None,
             ),
         }
 
@@ -131,6 +158,15 @@ class PlexExtension:
 
     async def _run_index(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_index(db, job, ctx, self.service)
+
+    async def _run_groups(self, db: Any, job: Any, ctx: Any) -> StageResult:
+        return await run_groups(db, job, ctx, self.service)
+
+    async def _groups_fingerprint(self, db: Any, subject: Subject) -> str | None:
+        row = await db.fetchrow("SELECT write_mode FROM job_stages WHERE stage = $1", "plex_groups")
+        return await groups_fingerprint(
+            db, subject, "auto" if row is None else str(row["write_mode"])
+        )
 
     async def _input_fingerprint(self, db: Any, subject: Subject) -> str | None:
         row = await db.fetchrow(
