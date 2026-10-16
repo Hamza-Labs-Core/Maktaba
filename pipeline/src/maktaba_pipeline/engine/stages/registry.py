@@ -1,0 +1,68 @@
+"""Binding of stage names to implementations (handler plus fingerprints).
+
+Core stages are imported lazily on first lookup so that importing the graph
+never pulls in ffmpeg wrappers or HTTP clients. Extensions register their
+implementations through :func:`register_impl` (see ``engine.loader``).
+"""
+
+from __future__ import annotations
+
+import importlib
+from dataclasses import dataclass
+
+from ..graph import InputFingerprint, OutputFingerprint, StageHandler
+
+__all__ = ["CORE_MODULES", "StageImpl", "get_impl", "register_impl", "reset_registry"]
+
+
+@dataclass(frozen=True, slots=True)
+class StageImpl:
+    run: StageHandler | None = None
+    input_fingerprint: InputFingerprint | None = None
+    output_fingerprint: OutputFingerprint | None = None
+
+
+#: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it
+#: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
+CORE_MODULES: dict[str, str] = {
+    "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
+    "link": "maktaba_pipeline.engine.stages.link",
+    "fingerprint": "maktaba_pipeline.engine.stages.fingerprint",
+    "style_sample": "maktaba_pipeline.engine.stages.style_sample",
+    "youtube_sync": "maktaba_pipeline.engine.stages.youtube_sync",
+    "detect": "maktaba_pipeline.engine.stages.detect",
+    "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
+    "tag": "maktaba_pipeline.engine.stages.tag",
+    "rate_style": "maktaba_pipeline.engine.stages.rate_style",
+    "plan_channels": "maktaba_pipeline.engine.stages.plan_channels",
+    "write_channels": "maktaba_pipeline.engine.stages.write_channels",
+}
+_LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
+
+_IMPLS: dict[str, StageImpl] = {}
+_LEGACY_LOADED = False
+
+
+def register_impl(name: str, impl: StageImpl) -> None:
+    _IMPLS[name] = impl
+
+
+def reset_registry() -> None:
+    """Drop registered (extension) implementations; for tests."""
+    global _LEGACY_LOADED
+    _IMPLS.clear()
+    _LEGACY_LOADED = False
+
+
+def get_impl(name: str) -> StageImpl | None:
+    global _LEGACY_LOADED
+    if name in _IMPLS:
+        return _IMPLS[name]
+    if name in CORE_MODULES:
+        impl = importlib.import_module(CORE_MODULES[name]).IMPL
+        _IMPLS[name] = impl
+        return impl  # type: ignore[no-any-return]
+    if not _LEGACY_LOADED:
+        _IMPLS.update(importlib.import_module(_LEGACY_MODULE).IMPLS)
+        _LEGACY_LOADED = True
+    return _IMPLS.get(name)

@@ -20,15 +20,17 @@ tested without either driver installed.
 
 from __future__ import annotations
 
-import json
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
-from .pubsub import JOBS_NEW, get_bus
+from .pubsub import JOBS_NEW, get_bus  # noqa: F401 - re-exported for tests
+
+if TYPE_CHECKING:
+    from ..engine.graph import Subject
 
 __all__ = [
     "LIVE_STATES",
@@ -62,11 +64,11 @@ class JobState(StrEnum):
 
 
 class Stage(StrEnum):
-    """The seven canonical pipeline stages (Story 1.6 + ``subtitle_gen``).
+    """Well-known stage names, for typing legacy call sites.
 
-    Mirrors the CHECK constraint ``processing_jobs_stage_chk`` in the
-    migration. Adding a new stage requires (a) a new value here and
-    (b) a follow-up migration that ALTERs the CHECK.
+    Since slot 0087 the source of truth is the ``job_stages`` table, filled from
+    ``engine/graph.py``; there is no stage CHECK to keep in sync. A job's
+    ``stage`` is a plain ``str`` (extension stages are not enumerable here).
     """
 
     SCAN = "scan"
@@ -136,7 +138,7 @@ class Job:
     id: int
     video_id: UUID | None
     library_id: UUID | None
-    stage: Stage
+    stage: str
     state: JobState
     priority: int
     attempts: int
@@ -164,6 +166,41 @@ class Job:
     payload: dict[str, Any] | None
     created_at: datetime
     finished_at: datetime | None
+    # plan 06-11 (slot 0088): the subject and the change-driven columns
+    subject_kind: str = "video"
+    subject_id: UUID | None = None
+    series_id: UUID | None = None
+    season_id: UUID | None = None
+    stage_version: int | None = None
+    input_hash: str | None = None
+    output_hash: str | None = None
+    outcome: str | None = None
+    output_summary: dict[str, Any] | None = None
+    force: bool = False
+    force_cascade: bool = False
+    reasons: list[Any] = field(default_factory=list)
+    enqueue_count: int = 1
+    triggered_by: int | None = None
+    triggered_by_stage: str | None = None
+    rerun_requested: bool = False
+    rerun_force: bool = False
+    rerun_reasons: list[Any] = field(default_factory=list)
+    propagated_at: datetime | None = None
+    error_cause: str | None = None
+    progress: dict[str, Any] | None = None
+    started_at: datetime | None = None
+
+    @property
+    def subject(self) -> Subject:
+        """The :class:`~maktaba_pipeline.engine.graph.Subject` this job acts on."""
+        from ..engine.graph import CATALOG_ID, Subject
+
+        sid = self.subject_id
+        if sid is None:
+            fallback = self.video_id or self.library_id
+            sid = CATALOG_ID if self.subject_kind == "catalog" else fallback
+        assert sid is not None
+        return Subject(kind=self.subject_kind, id=sid, library_id=self.library_id)  # type: ignore[arg-type]
 
 
 class _Row(Protocol):
@@ -192,28 +229,14 @@ class DBConn(Protocol):
 
     async def fetchrow(self, sql: str, *args: Any) -> _Row | None: ...
 
+    async def fetch(self, sql: str, *args: Any) -> list[Any]: ...
 
-# SQL is parameterised with $N placeholders for asyncpg; the SQLite
-# code path rewrites them to ``?`` at the connection-wrapper layer
-# (Story 1.5), keeping this module dialect-agnostic at the call site.
+    async def execute(self, sql: str, *args: Any) -> Any: ...
 
-_INSERT_SQL = """
-INSERT INTO processing_jobs
-       (video_id, stage, state, priority, payload, max_attempts)
-VALUES ($1, $2, 'pending', $3, $4, $5)
-ON CONFLICT (video_id, stage)
-   WHERE state IN ('pending','claimed','running','resuming','paused')
-DO NOTHING
-RETURNING id
-"""
 
-_FALLBACK_LIVE_SQL = """
-SELECT id FROM processing_jobs
- WHERE video_id = $1
-   AND stage    = $2
-   AND state IN ('pending','claimed','running','resuming','paused')
- LIMIT 1
-"""
+# SQL is parameterised with $N placeholders for asyncpg; the SQLite code path
+# rewrites them to ``?`` in the connection facade, keeping this module
+# dialect-agnostic at the call site.
 
 _DONE_ROW_SQL = """
 SELECT pj.id          AS id,
@@ -228,123 +251,68 @@ SELECT pj.id          AS id,
  LIMIT 1
 """
 
-# --- Library-scoped SCAN enqueue (slot 0058) ----------------------------
-#
-# A SCAN job has no video — it is what discovers them — so it cannot use
-# the per-video `enqueue` above. It rides the slot 0058 partial unique
-# index `processing_jobs_one_live_scan_per_library`
-# (UNIQUE (library_id, stage) WHERE stage='scan' AND state IN <live>) the
-# exact same race-free way: concurrent inserts collide on the index, the
-# loser's INSERT is a no-op, the caller falls back to the existing live
-# row's id. There is no "skip when done" branch — a library is always
-# re-scannable (the source tree changes out of band), unlike a finished
-# per-video stage whose inputs are immutable.
+_LEGACY_STAGES = frozenset(
+    {
+        "scan",
+        "probe",
+        "extract",
+        "transcribe",
+        "subtitle_gen",
+        "index",
+        "thumbnail",
+        "topic_recluster",
+        "topic_assign",
+        "categorize",
+        "chapter_infer",
+    }
+)
 
-_INSERT_SCAN_SQL = """
-INSERT INTO processing_jobs
-       (library_id, video_id, stage, state, priority, payload, max_attempts)
-VALUES ($1, NULL, 'scan', 'pending', $2, $3, $4)
-ON CONFLICT (library_id, stage)
-   WHERE stage = 'scan'
-     AND state IN ('pending','claimed','running','resuming','paused')
-DO NOTHING
-RETURNING id
-"""
 
-_FALLBACK_LIVE_SCAN_SQL = """
-SELECT id FROM processing_jobs
- WHERE library_id = $1
-   AND stage      = 'scan'
-   AND state IN ('pending','claimed','running','resuming','paused')
- LIMIT 1
-"""
+def _legacy_outcome(outcome: str) -> str:
+    """Map the engine's outcomes onto the legacy ``EnqueueResult`` vocabulary."""
+    return "inserted" if outcome == "inserted" else "reused"
 
 
 async def enqueue(
     db: DBConn,
     *,
     video_id: UUID,
-    stage: Stage,
+    stage: Stage | str,
     priority: int = 100,
     payload: dict[str, Any] | None = None,
     max_attempts: int = 3,
 ) -> EnqueueResult:
-    """Insert a ``pending`` row, or return the existing live row's id.
+    """Enqueue a per-video stage (thin wrapper over :func:`engine.enqueue.enqueue_job`).
 
-    Idempotency rules (matching Story 6.1's acceptance criteria):
+    Kept for the existing handlers and their signature. Outcomes:
 
-    - **Done row exists and source unchanged**
-      (``videos.updated_at <= done.finished_at``) → return the done
-      row's id with ``outcome='skipped_done_unchanged'``. The check
-      runs *before* the INSERT because the unique-live partial index
-      doesn't cover ``done`` rows; a naive INSERT-first approach would
-      happily create a duplicate pending row alongside the done one.
-    - **Live row exists** (state in ``{pending, claimed, running,
-      resuming, paused}``) → return its id with ``outcome='reused'``.
-      Detected by the unique partial index swallowing the INSERT.
-    - **Otherwise** → INSERT and return ``outcome='inserted'``. On
-      Postgres the AFTER INSERT trigger fires
-      ``pg_notify('jobs.new', …)``; on SQLite the helper publishes
-      manually on the in-process :class:`PubsubBus`.
-
-    Concurrent callers race on the unique partial index
-    ``processing_jobs_one_live_per_video_stage``: exactly one INSERT
-    wins, the rest fall through to the SELECT branch and return the
-    same id.
+    - ``skipped_done_unchanged`` - **legacy stages only**: a ``done`` row exists
+      and the video has not changed since (``videos.updated_at <= finished_at``).
+      The change-driven stages decide this themselves, in the worker, from their
+      input fingerprint.
+    - ``reused`` - a live row already existed (the engine reports ``coalesced``
+      or ``rerun_requested``; both mean "your trigger is already on the queue").
+    - ``inserted`` - a fresh pending row.
     """
-    payload_text = json.dumps(payload) if payload is not None else None
+    from ..engine.enqueue import enqueue_job
 
+    stage_name = str(stage)
     async with db.transaction():
-        # Skip-when-done check first. The unique-live partial index
-        # only covers live states, so without this check a stale done
-        # row would let the INSERT through and we'd create unwanted
-        # re-runs of finished work.
-        done = await db.fetchrow(_DONE_ROW_SQL, video_id, stage.value)
-        if done is not None and done["updated_at"] <= done["finished_at"]:
-            return EnqueueResult(
-                id=int(done["id"]),
-                outcome="skipped_done_unchanged",
-            )
-
-        # Try the insert. On conflict the unique-live partial index
-        # silently swallows it and we fall through to the live-row
-        # lookup.
-        row = await db.fetchrow(
-            _INSERT_SQL,
-            video_id,
-            stage.value,
-            priority,
-            payload_text,
-            max_attempts,
+        if stage_name in _LEGACY_STAGES:
+            done = await db.fetchrow(_DONE_ROW_SQL, str(video_id), stage_name)
+            if done is not None and done["updated_at"] <= done["finished_at"]:
+                return EnqueueResult(id=int(done["id"]), outcome="skipped_done_unchanged")
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=video_id,
+            stage=stage_name,
+            priority=priority,
+            payload=payload,
+            max_attempts=max_attempts,
+            reason={"why": "enqueue", "by": "system"},
         )
-        if row is not None:
-            new_id = int(row["id"])
-            if db.dialect == "sqlite":
-                # Postgres has the AFTER INSERT trigger; SQLite needs
-                # us to publish manually because there's no NOTIFY.
-                get_bus().publish(
-                    JOBS_NEW,
-                    {
-                        "id": new_id,
-                        "video_id": str(video_id),
-                        "stage": stage.value,
-                        "priority": priority,
-                    },
-                )
-            return EnqueueResult(id=new_id, outcome="inserted")
-
-        # Conflict on the unique-live partial index → reuse the
-        # existing live row.
-        live = await db.fetchrow(_FALLBACK_LIVE_SQL, video_id, stage.value)
-        if live is not None:
-            return EnqueueResult(id=int(live["id"]), outcome="reused")
-
-        # Truly impossible by construction: the INSERT only fails when
-        # a live row exists, so the SELECT above must find one. A miss
-        # here means the schema invariant was violated.
-        raise RuntimeError(
-            "enqueue: INSERT swallowed but no live row found — schema invariant violated",
-        )
+    return _wrap(res.job_id, res.outcome, "enqueue")
 
 
 async def enqueue_scan(
@@ -355,57 +323,29 @@ async def enqueue_scan(
     payload: dict[str, Any] | None = None,
     max_attempts: int = 3,
 ) -> EnqueueResult:
-    """Insert a library-scoped ``pending`` SCAN row, or reuse the live one.
+    """Enqueue a library-scoped SCAN job (wrapper over :func:`enqueue_job`).
 
-    The library-scoped sibling of :func:`enqueue`. Mirrors its
-    conventions (same signature shape minus ``video_id``/``stage``,
-    same :class:`EnqueueResult`, same SQLite manual-publish on the
-    in-process bus) but honours the slot 0058 partial unique index
-    ``processing_jobs_one_live_scan_per_library`` instead of the
-    per-video one.
-
-    Idempotency: a live scan row for the library → return its id with
-    ``outcome='reused'`` (the partial unique index swallows the
-    duplicate INSERT). Otherwise INSERT and return
-    ``outcome='inserted'``. There is no ``skipped_done_unchanged``
-    branch — a finished scan does not block the next one (the library's
-    on-disk tree mutates out of band; "unchanged source" has no stable
-    meaning for a whole library the way it does for one immutable
-    video).
+    There is no ``skipped_done_unchanged`` branch: a library is always
+    re-scannable, its tree changes out of band.
     """
-    payload_text = json.dumps(payload) if payload is not None else None
+    from ..engine.enqueue import enqueue_job
 
-    async with db.transaction():
-        row = await db.fetchrow(
-            _INSERT_SCAN_SQL,
-            library_id,
-            priority,
-            payload_text,
-            max_attempts,
-        )
-        if row is not None:
-            new_id = int(row["id"])
-            if db.dialect == "sqlite":
-                # Postgres has the slot 0002 AFTER INSERT trigger;
-                # SQLite has no NOTIFY so publish manually. video_id is
-                # null for a scan job — keep the key present (as None)
-                # so subscribers see a stable payload shape.
-                get_bus().publish(
-                    JOBS_NEW,
-                    {
-                        "id": new_id,
-                        "video_id": None,
-                        "library_id": str(library_id),
-                        "stage": Stage.SCAN.value,
-                        "priority": priority,
-                    },
-                )
-            return EnqueueResult(id=new_id, outcome="inserted")
+    res = await enqueue_job(
+        db,
+        subject_kind="library",
+        subject_id=library_id,
+        stage="scan",
+        priority=priority,
+        payload=payload,
+        max_attempts=max_attempts,
+        reason={"why": "scan", "by": "system"},
+    )
+    return _wrap(res.job_id, res.outcome, "enqueue_scan")
 
-        live = await db.fetchrow(_FALLBACK_LIVE_SCAN_SQL, library_id)
-        if live is not None:
-            return EnqueueResult(id=int(live["id"]), outcome="reused")
 
-        raise RuntimeError(
-            "enqueue_scan: INSERT swallowed but no live scan row found — schema invariant violated",
-        )
+def _wrap(job_id: int | None, outcome: str, who: str) -> EnqueueResult:
+    if job_id is None:
+        if outcome == "disabled":
+            return EnqueueResult(id=0, outcome="disabled")
+        raise ValueError(f"{who}: refused ({outcome})")
+    return EnqueueResult(id=job_id, outcome=_legacy_outcome(outcome))

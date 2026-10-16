@@ -39,6 +39,7 @@ from .audio.probe import ProbeResult
 from .audio.probe import probe as _ffprobe
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
+from .engine.paths import to_local
 from .log import get_logger
 from .scanner import Scanner, ScanStore, SqlScanStore
 from .thumbnail.handler import thumbnail_handler
@@ -141,7 +142,7 @@ async def probe_handler(
             )
             return
 
-        path = str(row["path"])
+        path = to_local(str(row["path"]))  # this host's mount of the NAS
         result = await probe(path)
 
         # commit_probe persists media_info + audio_tracks, advances the
@@ -234,7 +235,7 @@ async def extract_handler(
             )
             return
 
-        path = str(row["path"])
+        path = to_local(str(row["path"]))
         content_hash = str(row["content_hash"])
 
         from .audio.extract import commit_extract, load_selected_track  # noqa: PLC0415
