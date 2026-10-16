@@ -35,25 +35,56 @@ from maktaba_pipeline.classify.title_template import season_number
 from maktaba_pipeline.classify.topic_tags import TOPIC_NAMES_AR
 from maktaba_pipeline.text.arabic import fold
 
-#: longer than this and not a clip: a stand-alone programme, not filler
-FILLER_MAX_S = 9 * 60
-MIN_PLAYLIST = 5
-MIN_TOPIC = 10
-#: a question or a fatwa: grouped as "فتاوى ومسائل" whatever its topic
-QA_RE = re.compile(
-    r"(?:^|\s)(?:"
-    + "|".join(
-        re.escape(fold(w))
-        for w in (
-            "هل يجوز", "هل يصح", "هل يلزم", "هل يشرع", "هل يجب", "ما حكم", "حكم ", "سؤال",
-            "أسئلة", "اسألة", "فتوى", "فتاوى", "فتاوي", "يسأل", "ما الفرق", "ما معنى", "مامعنى",
-            "ما الراجح", "ما رأي", "ما موقف", "ما صحة", "استفسار",
-        )
-    )
-    + ")"
+_QA_PHRASES = (
+    "هل يجوز", "هل يصح", "هل يلزم", "هل يشرع", "هل يجب", "ما حكم", "حكم ", "سؤال",
+    "أسئلة", "اسألة", "فتوى", "فتاوى", "فتاوي", "يسأل", "ما الفرق", "ما معنى", "مامعنى",
+    "ما الراجح", "ما رأي", "ما موقف", "ما صحة", "استفسار",
 )  # fmt: skip
+
+
+@dataclass(frozen=True, slots=True)
+class GroupConfig:
+    """The group step's rules (settings section ``groups``)."""
+
+    #: longer than this and not a clip: a stand-alone programme, not filler
+    filler_max_minutes: float = 9.0
+    #: a playlist holding at least this many leftovers becomes their group
+    min_playlist: int = 5
+    #: a topic with at least this many leftovers becomes their group
+    min_topic: int = 10
+    #: a title with one of these is a question or a fatwa ("فتاوى ومسائل")
+    qa_phrases: tuple[str, ...] = _QA_PHRASES
+    #: a title with one of these advertises a show (a promo); "تتر" only as a word
+    promo_words: tuple[str, ...] = (
+        "برومو", "promo", "اعلان", "تشويق", "قريبا", "trailer", "teaser", "تتر",
+    )  # fmt: skip
+
+    def qa_re(self) -> re.Pattern[str]:
+        alt = "|".join(re.escape(fold(w)) for w in self.qa_phrases if w.strip()) or "(?!)"
+        return re.compile(rf"(?:^|\s)(?:{alt})")
+
+    def promo_re(self) -> re.Pattern[str]:
+        return _promo_re(self)
+
+
+def _promo_re(cfg: GroupConfig) -> re.Pattern[str]:
+    # "تتر" (a show's theme) is a word of its own; the others match inside words too
+    whole = [w for w in cfg.promo_words if fold(w) == fold("تتر")]
+    part = [w for w in cfg.promo_words if w.strip() and w not in whole]
+    alts = [re.escape(fold(w)) for w in part] + [
+        rf"(?<!\w){re.escape(fold(w))}(?!\w)" for w in whole
+    ]
+    return re.compile("(" + ("|".join(alts) or "(?!)") + ")")
+
+
+DEFAULT = GroupConfig()
+#: longer than this and not a clip: a stand-alone programme, not filler
+FILLER_MAX_S = DEFAULT.filler_max_minutes * 60
+MIN_PLAYLIST = DEFAULT.min_playlist
+MIN_TOPIC = DEFAULT.min_topic
+QA_RE = DEFAULT.qa_re()
 #: words that say a video advertises a show
-PROMO_RE = re.compile(r"(برومو|promo|اعلان|تشويق|قريبا|trailer|teaser|(?<!\w)تتر(?!\w))")
+PROMO_RE = _promo_re(DEFAULT)
 _CFG = DetectorConfig()
 _CATCH_ALL = re.compile(_CFG.catch_all_re)
 _NAME_STOP = _CFG.generic_words | frozenset(fold(w) for w in ("برنامج", "برومو", "اعلان"))
@@ -146,7 +177,9 @@ def promo_season(title: str, show: Show) -> int | None:
     return min(show.seasons) if show.seasons else None
 
 
-def plan_groups(items: list[Item], playlist_titles: dict[str, str]) -> list[Group]:
+def plan_groups(
+    items: list[Item], playlist_titles: dict[str, str], cfg: GroupConfig = DEFAULT
+) -> list[Group]:
     """One group per item: smallest real playlist with enough of them, else topic, else
     the kind's "متنوعة" group."""
     out: list[Group] = []
@@ -160,13 +193,13 @@ def plan_groups(items: list[Item], playlist_titles: dict[str, str]) -> list[Grou
         candidates = [
             pid
             for pid, n in sizes.items()
-            if n >= MIN_PLAYLIST
+            if n >= cfg.min_playlist
             and not (n >= _CFG.catch_all_min and _CATCH_ALL.search(fold(playlist_titles[pid])))
         ]
         names: Counter[str] = Counter()
         for pid in sorted(candidates, key=lambda p: (sizes[p], p)):
             members = [i for i in by_pl[pid] if i.path in pool]
-            if len(members) < MIN_PLAYLIST:
+            if len(members) < cfg.min_playlist:
                 continue
             members.sort(key=lambda i: (i.playlists[pid], i.title))
             name = " ".join(playlist_titles[pid].split())
@@ -188,7 +221,7 @@ def plan_groups(items: list[Item], playlist_titles: dict[str, str]) -> list[Grou
             if i.genre and i.genre != "general":
                 by_genre[i.genre].append(i)
         for genre, members in sorted(by_genre.items()):
-            if len(members) < MIN_TOPIC:
+            if len(members) < cfg.min_topic:
                 continue
             members.sort(key=lambda i: (i.upload or "9999", i.title))
             name = TOPIC_NAMES_AR.get(genre, genre)
@@ -223,7 +256,10 @@ def _shows(conn: sqlite3.Connection) -> list[Show]:
 
 
 def run(
-    conn: sqlite3.Connection, only_folder: str | None = None, folders: list[str] | None = None
+    conn: sqlite3.Connection,
+    only_folder: str | None = None,
+    folders: list[str] | None = None,
+    cfg: GroupConfig = DEFAULT,
 ) -> dict[str, int]:
     """Group every folder's leftovers (those under ``folders`` / matching ``only_folder``)
     and link its promos. Returns totals."""
@@ -235,6 +271,11 @@ def run(
         and "/." not in r[0]
     ]
     shows = _shows(conn)
+    if cfg is DEFAULT:
+        from . import settings_store
+
+        cfg = settings_store.get(conn, "groups")
+        settings_store.note(conn, "groups")
     totals: Counter[str] = Counter()
     print(f"grouping clips in {len(folders)} libraries", flush=True)
     for n, folder in enumerate(folders, 1):
@@ -243,7 +284,7 @@ def run(
             (folder,),
         ).fetchone()
         library = lib[0] if lib else Path(folder).name
-        got = group_folder(conn, library, folder, shows)
+        got = group_folder(conn, library, folder, shows, cfg)
         totals.update(got)
         print(f"  [{n}/{len(folders)}] {library}: {got['groups']} groups "
               f"({got['clips']} clips, {got['standalone']} stand-alone), "
@@ -252,8 +293,13 @@ def run(
 
 
 def group_folder(
-    conn: sqlite3.Connection, library: str, folder: str, shows: list[Show]
+    conn: sqlite3.Connection,
+    library: str,
+    folder: str,
+    shows: list[Show],
+    cfg: GroupConfig = DEFAULT,
 ) -> Counter[str]:
+    promo_re, qa_re = cfg.promo_re(), cfg.qa_re()
     placed: set[str] = set()
     clip_members: set[str] = set()
     extras_of: dict[str, tuple[Show, int]] = {}
@@ -290,7 +336,9 @@ def group_folder(
         if path in placed or path in copies or not dur:
             continue
         items[path] = Item(path, title or "", float(dur), upload)
-        items[path].clip = path in shorts or path in clip_members or float(dur) < FILLER_MAX_S
+        items[path].clip = (
+            path in shorts or path in clip_members or float(dur) < cfg.filler_max_minutes * 60
+        )
         if yid:
             yt_of[yid] = path
     # promos: linked to the show, not grouped
@@ -298,7 +346,7 @@ def group_folder(
     unmatched: list[str] = []  # promos whose show is not found: kept out of clip groups
     promo_upload = {p: it.upload for p, it in items.items()}
     for path, it in list(items.items()):
-        if not PROMO_RE.search(fold(it.title)):
+        if not promo_re.search(fold(it.title)):
             continue
         with_season = extras_of.get(path)
         if with_season is not None:
@@ -360,8 +408,8 @@ def group_folder(
         else set()
     )
     for path, it in items.items():
-        it.qa = path in qa_tagged or bool(QA_RE.search(fold(it.title)))
-    groups = plan_groups(list(items.values()), titles)
+        it.qa = path in qa_tagged or bool(qa_re.search(fold(it.title)))
+    groups = plan_groups(list(items.values()), titles, cfg)
     # linked promos air next to their show, and they are also one collection per library
     promo_paths = sorted(
         [p for p, *_ in links] + unmatched, key=lambda p: (promo_upload.get(p) or "9999", p)

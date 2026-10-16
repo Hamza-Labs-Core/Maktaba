@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 from datetime import date
@@ -12,7 +13,6 @@ from maktaba_pipeline.audio.chromaprint import decode
 from maktaba_pipeline.classify.series_detector import (
     DETECTOR_VERSION,
     Detection,
-    DetectorConfig,
     PlaylistFacts,
     Series,
     VideoFacts,
@@ -222,8 +222,15 @@ def store_topics(conn: sqlite3.Connection, library: str, folder: str, det: Detec
 
 
 def run(
-    conn: sqlite3.Connection, only_folder: str | None, min_episode_minutes: float = 3.0
+    conn: sqlite3.Connection, only_folder: str | None, min_episode_minutes: float | None = None
 ) -> None:
+    """``min_episode_minutes``: overrides the setting (``detect.min_episode_s``)."""
+    from . import settings_store
+
+    base = settings_store.get(conn, "detect")
+    if min_episode_minutes is not None:
+        base = dataclasses.replace(base, min_episode_s=min_episode_minutes * 60)
+    settings_store.note(conn, "detect")
     folders = [
         r[0]
         for r in conn.execute("SELECT DISTINCT folder FROM files ORDER BY folder")
@@ -231,7 +238,7 @@ def run(
     ]
     for folder in folders:
         videos, playlists, presenter = load_facts(conn, folder)
-        cfg = DetectorConfig(min_episode_s=min_episode_minutes * 60)
+        cfg = base
         name = Path(folder).name
         print(f"  … {name}: matching {len(videos)} videos against its seasons", flush=True)
 

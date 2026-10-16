@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settings - Library Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<script src="common.js"></script>
+<style>
+  .tabs { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .tabs button { font: 600 13px var(--f-body); color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { color: var(--lapis); border-color: var(--lapis); background: var(--lapis-soft); }
+  .tabs .n { font-family: var(--f-data); font-weight: 500; margin-inline-start: 6px; }
+  .bar-actions { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center;
+    background: var(--paper); padding-block: var(--s2); border-bottom: 1px solid var(--line); }
+  .bar-actions .grow { flex: 1 1 200px; min-width: 0; }
+  .bar-actions input[type="search"] { width: 100%; font: 14px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .grp { display: grid; gap: 0; }
+  .grp > h2 { margin-bottom: var(--s2); }
+  .set { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--s2) var(--s5); padding-block: var(--s3); border-top: 1px solid var(--line); }
+  .set:first-of-type { border-top: 0; }
+  .set .name { font-weight: 600; }
+  .set .name code { font: 11px var(--f-data); color: var(--muted); font-weight: 400; margin-inline-start: 6px; }
+  .set .help { color: var(--muted); font-size: 13px; max-width: 62ch; }
+  .set .def { color: var(--muted); font-size: 12px; font-family: var(--f-data); overflow-wrap: anywhere; }
+  .set.changed { box-shadow: inset 3px 0 0 var(--saffron); padding-inline-start: var(--s3); }
+  .set.dirty { box-shadow: inset 3px 0 0 var(--lapis); padding-inline-start: var(--s3); }
+  .ed { display: grid; gap: 6px; align-content: start; min-width: 0; }
+  .ed input[type="number"], .ed input[type="time"], .ed input[type="text"], .ed select, .ed textarea, .tbl input {
+    font: 14px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; min-width: 0; width: 100%; }
+  .ed input[type="number"], .ed input[type="time"] { max-width: 180px; font-family: var(--f-data); }
+  .ed textarea { min-height: 76px; resize: vertical; font-size: 13px; line-height: 1.5; }
+  .ed .err { color: var(--bad); font-size: 12px; }
+  .switch { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--lapis); }
+  .tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .tbl th { text-align: start; font: 500 11px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .tbl td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl input { padding: 4px 7px; font-size: 13px; min-width: 7ch; }
+  .tbl input.t { font-family: var(--f-data); min-width: 9ch; }
+  .tbl td.x { width: 1%; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .empty-note { color: var(--muted); padding: var(--s4) 0; }
+  .banner { border: 1px solid var(--bad); background: var(--bad-soft); color: var(--ink); border-radius: 8px; padding: var(--s3) var(--s4); }
+  .preview { display: grid; gap: var(--s2); }
+  .preview pre { margin: 0; max-height: 220px; overflow: auto; font: 12px/1.45 var(--f-data); background: var(--paper); border-radius: 8px; padding: var(--s2) var(--s3); white-space: pre-wrap; }
+  .set.wide { grid-template-columns: minmax(0, 1fr); }
+  .set.wide .help { max-width: 90ch; }
+  .tbl input[type="text"] { min-width: 14ch; }
+  .tbl input.t { min-width: 9ch; width: 11ch; }
+  @media (max-width: 760px) { .set { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="./">Control centre</a><span aria-hidden="true">/</span><b>Settings</b></nav>
+    <div class="seg" id="theme" role="group" aria-label="Colour theme"><button type="button" data-mode="light" aria-pressed="false">Light</button><button type="button" data-mode="dark" aria-pressed="false">Dark</button><button type="button" data-mode="system" aria-pressed="true">System</button></div>
+  </header>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="stack">
+    <h1>Settings</h1>
+    <div class="muted" style="max-width:72ch">The rules the steps follow. A changed setting applies from the next time its step runs.
+      Only what you change is saved (in <span class="num" id="file">settings.json</span>); everything else keeps the built-in default.</div>
+    <div class="tabs" role="tablist" id="tabs"></div>
+  </section>
+
+  <div class="bar-actions">
+    <div class="grow"><input type="search" id="q" placeholder="Find a setting" aria-label="Find a setting"></div>
+    <span class="muted" id="dirty-n"></span>
+    <button class="btn ghost" id="discard" disabled>Discard changes</button>
+    <button class="btn primary" id="save" disabled>Save</button>
+  </div>
+
+  <div id="banner" class="banner" hidden></div>
+  <section class="panel preview" id="preview-panel" hidden>
+    <div class="top"><h2>Preview the channels</h2>
+      <div class="acts"><button class="btn" id="preview">Preview channels</button><a id="preview-open" href="preview/channel-plan.html" target="_blank" rel="noopener" hidden>Open the preview</a></div></div>
+    <div class="muted">Plans every channel with the saved settings into a separate preview. Nothing is written to dizqueTV or Plex.</div>
+    <pre id="preview-log" hidden></pre>
+  </section>
+  <div id="groups" class="stack" style="gap:var(--s5)"></div>
+</div>
+<script>
+let data = null, tab = "planner", edits = {}, errors = {};
+try { tab = localStorage.getItem("mi-settings-tab") || tab; } catch (e) {}
+
+const sec = () => data.sections.find(s => s.key === tab) || data.sections[0];
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const valueOf = f => (f.name in (edits[tab] || {})) ? edits[tab][f.name] : f.value;
+const show = v => v === null || v === undefined || v === "" ? "empty"
+  : Array.isArray(v) ? (v.length ? v.map(x => Array.isArray(x) ? x.join(" – ") : (x && typeof x === "object") ? (x.key || x.name || JSON.stringify(x)) : x).join(", ") : "none")
+  : typeof v === "object" ? Object.keys(v).join(", ") : typeof v === "boolean" ? (v ? "on" : "off") : String(v);
+
+function setEdit(name, v) {
+  const f = sec().fields.find(x => x.name === name);
+  edits[tab] = edits[tab] || {};
+  if (same(v, f.value)) delete edits[tab][name]; else edits[tab][name] = v;
+  delete errors[name];
+  const row = document.querySelector(`.set[data-n="${CSS.escape(name)}"]`);
+  if (row) { row.classList.toggle("dirty", name in edits[tab]); const e = row.querySelector(".err"); if (e) e.hidden = true; }
+  counts();
+}
+function counts() {
+  const n = Object.keys(edits[tab] || {}).length;
+  $("dirty-n").textContent = n ? `${n} unsaved` : "";
+  $("save").disabled = $("discard").disabled = !n;
+  document.querySelectorAll("#tabs button").forEach(b => {
+    const k = b.dataset.k, s = data.sections.find(x => x.key === k);
+    const changed = s.fields.filter(f => f.changed).length, un = Object.keys(edits[k] || {}).length;
+    b.querySelector(".n").textContent = changed || un ? `${changed} changed${un ? ` · ${un} unsaved` : ""}` : "";
+  });
+}
+
+// ---- editors per kind
+function editor(f) {
+  const v = valueOf(f), k = f.kind.replace("?", ""), opt = f.kind.endsWith("?");
+  const id = `f-${f.name}`;
+  if (k === "bool") return `<label class="switch"><input type="checkbox" id="${id}" ${v ? "checked" : ""}><span>${v ? "On" : "Off"}</span></label>`;
+  if (f.choices) return `<select id="${id}">${f.choices.map(c => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+  if (k === "int" || k === "float") return `<input type="number" id="${id}" ${k === "int" ? 'step="1"' : 'step="any"'} value="${v ?? ""}" ${opt ? 'placeholder="empty"' : ""}>`;
+  if (k === "time") return `<input type="time" id="${id}" value="${esc(v)}">`;
+  if (k === "str") return `<input type="text" id="${id}" dir="auto" value="${esc(v ?? "")}" ${opt ? 'placeholder="empty"' : ""}>`;
+  if (k === "list" || k === "words") return `<textarea id="${id}" dir="auto" aria-describedby="${id}-h">${esc((v || []).join("\n"))}</textarea><span class="muted" id="${id}-h" style="font-size:12px">One per line.</span>`;
+  if (k === "map") {
+    const rows = Object.entries(v || {});
+    return `<div class="tblwrap"><table class="tbl" id="${id}"><thead><tr><th>Key</th><th>Values (comma separated)</th><th></th></tr></thead><tbody>${
+      rows.map(([a, b]) => `<tr><td><input value="${esc(a)}" dir="auto" aria-label="Key"></td><td><input value="${esc(b.join(", "))}" dir="auto" aria-label="Values"></td><td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td></tr>`).join("")
+    }</tbody></table></div><div><button class="btn sm add" type="button">Add row</button></div>`;
+  }
+  if (k === "rows") {
+    const cols = f.columns, rows = v || [], tmpl = (f.default || [])[0] ?? rows[0];
+    const cell = (c, j, x) => {
+      const val = Array.isArray(rows) && x !== undefined ? x : "";
+      const isTime = /^(start|end|from|until)$/.test(c);
+      const sample = tmpl ? (Array.isArray(tmpl) ? tmpl[j] : tmpl[c]) : "";
+      const shown = Array.isArray(val) ? val.join(", ") : val ?? "";
+      const numeric = typeof sample === "number" || (sample === null && c === "min_hours");
+      return `<td><input class="${isTime || numeric ? "t" : ""}" ${isTime ? 'type="time"' : numeric ? 'type="number" step="any"' : 'type="text" dir="auto"'} value="${esc(shown)}" data-c="${esc(c)}" data-arr="${Array.isArray(sample) ? 1 : ""}" data-num="${numeric ? 1 : ""}" aria-label="${esc(c)}"></td>`;
+    };
+    return `<div class="tblwrap"><table class="tbl" id="${id}"><thead><tr>${cols.map(c => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("")}<th></th></tr></thead><tbody>${
+      rows.map(r => `<tr>${cols.map((c, j) => cell(c, j, Array.isArray(r) ? r[j] : r[c])).join("")}<td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td></tr>`).join("")
+    }</tbody></table></div><div><button class="btn sm add" type="button">Add row</button></div>`;
+  }
+  return `<span class="muted">Not editable here.</span>`;
+}
+function read(f, row) {
+  const k = f.kind.replace("?", ""), opt = f.kind.endsWith("?"), el = row.querySelector(`#f-${CSS.escape(f.name)}`);
+  if (k === "bool") return el.checked;
+  if (f.choices) return el.value;
+  if (k === "int" || k === "float") { if (el.value === "") return opt ? null : el.value; return Number(el.value); }
+  if (k === "str") return opt && el.value === "" ? null : el.value;
+  if (k === "time") return el.value;
+  if (k === "list" || k === "words") return el.value.split(/\n|,/).map(x => x.trim()).filter(Boolean);
+  if (k === "map") { const o = {}; el.querySelectorAll("tbody tr").forEach(tr => { const [a, b] = tr.querySelectorAll("input"); if (a.value.trim()) o[a.value.trim()] = b.value.split(",").map(x => x.trim()).filter(Boolean); }); return o; }
+  if (k === "rows") {
+    const named = !/^value \d/.test(f.columns[0]) && f.default && f.default[0] && !Array.isArray(f.default[0]);
+    return [...el.querySelectorAll("tbody tr")].map(tr => {
+      const cells = [...tr.querySelectorAll("input")].map(i => i.dataset.arr ? i.value.split(",").map(x => x.trim()).filter(Boolean)
+        : i.dataset.num ? (i.value === "" ? null : Number(i.value)) : i.value);
+      if (!named) return cells;
+      const o = {}; f.columns.forEach((c, j) => o[c] = cells[j]); return o;
+    });
+  }
+}
+function wire(row, f) {
+  const update = () => setEdit(f.name, read(f, row));
+  row.querySelectorAll("input, select, textarea").forEach(el => el.addEventListener(el.type === "checkbox" ? "change" : "input", () => {
+    if (el.type === "checkbox") el.nextElementSibling.textContent = el.checked ? "On" : "Off";
+    update();
+  }));
+  const add = row.querySelector(".add");
+  if (add) add.addEventListener("click", () => {
+    const tb = row.querySelector("tbody"), cols = row.querySelectorAll("thead th").length - 1;
+    const proto = tb.querySelector("tr");
+    const tr = proto ? proto.cloneNode(true) : Object.assign(document.createElement("tr"), {innerHTML: `${"<td><input type=\"text\" dir=\"auto\"></td>".repeat(cols)}<td class="x"><button class="btn sm ghost del" type="button" aria-label="Remove row">✕</button></td>`});
+    tr.querySelectorAll("input").forEach(i => i.value = "");
+    tb.appendChild(tr); wireRow(tr); tr.querySelector("input").focus(); update();
+  });
+  const wireRow = tr => {
+    tr.querySelectorAll("input").forEach(i => i.addEventListener("input", update));
+    tr.querySelector(".del").addEventListener("click", () => { tr.remove(); update(); });
+  };
+  row.querySelectorAll("tbody tr").forEach(tr => tr.querySelector(".del") && tr.querySelector(".del").addEventListener("click", () => { tr.remove(); update(); }));
+  const reset = row.querySelector(".reset");
+  if (reset) reset.addEventListener("click", () => save([f.name]));
+}
+
+function render() {
+  const s = sec();
+  $("file").textContent = data.file;
+  $("tabs").innerHTML = data.sections.map(x => `<button type="button" role="tab" data-k="${x.key}" aria-selected="${x.key === s.key}" title="${esc(x.what)}">${esc(x.title)}<span class="n"></span></button>`).join("");
+  document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => { tab = b.dataset.k; try { localStorage.setItem("mi-settings-tab", tab); } catch (e) {} render(); }));
+  $("banner").hidden = !s.error;
+  $("banner").textContent = s.error ? `The settings file has a value this page cannot use, so the defaults are shown: ${s.error}. Saving replaces it.` : "";
+  $("preview-panel").hidden = s.key !== "planner";
+  const q = $("q").value.trim().toLowerCase();
+  const fields = s.fields.filter(f => !q || [f.name, f.label, f.help, f.group].join(" ").toLowerCase().includes(q));
+  const groups = [...new Set(fields.map(f => f.group))];
+  $("groups").innerHTML = groups.length ? groups.map(g => `<section class="panel grp" aria-label="${esc(g)}"><h2>${esc(g)}</h2>${
+    fields.filter(f => f.group === g).map(f => `<div class="set${/rows|map/.test(f.kind) ? " wide" : ""}${f.changed ? " changed" : ""}${f.name in (edits[tab] || {}) ? " dirty" : ""}" data-n="${esc(f.name)}">
+      <div><div class="name">${esc(f.label)}<code>${esc(f.name)}</code></div>${f.help ? `<div class="help">${esc(f.help)}</div>` : ""}
+        <div class="def">Default: ${esc(show(f.default))}${f.changed ? ` · <b style="color:var(--saffron)">changed</b>` : ""}</div></div>
+      <div class="ed">${editor(f)}<span class="err" ${errors[f.name] ? "" : "hidden"}>${esc(errors[f.name] || "")}</span>
+        ${f.changed ? `<div><button class="btn sm ghost reset" type="button">Back to default</button></div>` : ""}</div></div>`).join("")
+  }</section>`).join("") : `<div class="empty-note">No setting matches “${esc(q)}”.</div>`;
+  groups.length && fields.forEach(f => { const row = document.querySelector(`.set[data-n="${CSS.escape(f.name)}"]`); if (row) wire(row, f); });
+  counts();
+}
+
+async function load() {
+  const r = await fetch("api/settings", {cache: "no-store"});
+  if (!r.ok) throw new Error(`The server answered ${r.status}.`);
+  data = await r.json();
+  if (!data.sections.some(s => s.key === tab)) tab = data.sections[0].key;
+}
+async function save(reset) {
+  const set = reset ? {} : (edits[tab] || {});
+  $("save").disabled = true;
+  try {
+    const j = await post("api/settings", {section: tab, set, reset: reset || []});
+    edits[tab] = {}; errors = {};
+    await load(); render();
+    toast(reset ? "Back to the default." : `Saved. ${j.changed.length} setting${j.changed.length === 1 ? "" : "s"} differ from the defaults.`);
+  } catch (e) {
+    const m = /^([\w.\[\]]+): /.exec(e.message), name = m ? m[1].split(/[.\[]/)[0] : null;
+    if (name) {
+      errors[name] = e.message;
+      const row = document.querySelector(`.set[data-n="${CSS.escape(name)}"]`);
+      if (row) { const er = row.querySelector(".err"); er.textContent = e.message; er.hidden = false; row.scrollIntoView({block: "center"}); }
+    }
+    toast(`Not saved: ${e.message}`, true); counts();
+  }
+}
+$("save").addEventListener("click", () => save());
+$("discard").addEventListener("click", () => { edits[tab] = {}; errors = {}; render(); });
+$("q").addEventListener("input", render);
+window.addEventListener("beforeunload", e => { if (Object.values(edits).some(x => Object.keys(x).length)) { e.preventDefault(); e.returnValue = ""; } });
+
+let pollT = null;
+async function previewState() {
+  try {
+    const j = await (await fetch("api/plan-preview", {cache: "no-store"})).json();
+    $("preview").disabled = j.running;
+    $("preview").textContent = j.running ? "Planning…" : "Preview channels";
+    $("preview-open").hidden = !j.ready || j.running;
+    $("preview-log").hidden = !j.log.length;
+    $("preview-log").textContent = j.log.join("\n");
+    clearTimeout(pollT); if (j.running) pollT = setTimeout(previewState, 2000);
+  } catch (e) {}
+}
+$("preview").addEventListener("click", async () => {
+  if (Object.keys(edits.planner || {}).length) { toast("Save your changes first: the preview uses the saved settings.", true); return; }
+  try { await post("api/plan-preview", {}); toast("Planning the channels…"); previewState(); } catch (e) { toast(e.message, true); }
+});
+
+load().then(() => { render(); previewState(); }).catch(e => { $("groups").innerHTML = `<div class="banner">Could not load the settings: ${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

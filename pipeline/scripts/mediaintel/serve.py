@@ -852,6 +852,7 @@ _HERE = Path(__file__).parent
 _STATIC: dict[str, tuple[Path, str]] = {
     "/stage": (_HERE / "stage.html", "text/html; charset=utf-8"),
     "/item": (_HERE / "item.html", "text/html; charset=utf-8"),
+    "/settings": (_HERE / "settings.html", "text/html; charset=utf-8"),
     "/common.css": (_HERE / "common.css", "text/css; charset=utf-8"),
     "/common.js": (_HERE / "common.js", "text/javascript; charset=utf-8"),
 }
@@ -1129,6 +1130,54 @@ def _run_args(
     return args
 
 
+def _tail(path: Path, n: int) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+
+
+def settings_payload(db_path: str) -> dict[str, Any]:
+    """Every settings section for the settings page: its fields, values and defaults."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    file = settings_store.path_of(db_path)
+    out = []
+    for key, (_, title, what) in settings_store.SECTIONS.items():
+        try:
+            cfg = settings_store.get(file, key)
+            error = None
+        except settings.SettingsError as e:  # a hand-edited file: show the defaults and why
+            cfg, error = settings_store.SECTIONS[key][0](), str(e)
+        out.append({"key": key, "title": title, "what": what, "error": error,
+                    "fields": settings.describe(cfg)})  # fmt: skip
+    return {"file": str(file), "sections": out}
+
+
+def save_settings(db_path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Apply ``{"section", "set": {name: value}, "reset": [name, …]}`` to the settings
+    file. Every value is checked first; nothing is written when one is refused
+    (``SettingsError``)."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    key = body.get("section")
+    if key not in settings_store.SECTIONS:
+        raise settings.SettingsError("section", f"no such section {key!r}")
+    set_ = body.get("set") or {}
+    reset = body.get("reset") or []
+    if not isinstance(set_, dict) or not isinstance(reset, list):
+        raise settings.SettingsError("body", 'send {"section", "set": {...}, "reset": [...]}')
+    file = settings_store.path_of(db_path)
+    kept = {k: v for k, v in settings_store.changed(file, key).items() if k not in reset}
+    cfg = settings.apply(settings_store.SECTIONS[key][0], {**kept, **set_})
+    written = settings.save(file, key, cfg)
+    return {"section": key, "changed": sorted(written)}
+
+
 _LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
@@ -1166,6 +1215,8 @@ def serve(
     cache_lock = threading.Lock()
     detail_cache: dict[tuple[str, str, str | None], tuple[float, dict[str, Any] | None]] = {}
     pipeline_dir = Path(__file__).resolve().parents[2]
+    #: the settings page's "Preview channels": plan-channels into reports/preview (no writes)
+    preview: dict[str, Any] = {"proc": None}
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -1275,6 +1326,19 @@ def serve(
                     self.send_error(404)
                     return
                 self._send(200, Path(f).read_bytes(), "image/jpeg")
+            elif url.path == "/api/settings":
+                self._json(200, settings_payload(db_path))
+            elif url.path == "/preview/channel-plan.html":
+                f = reports / "preview" / "channel-plan.html"
+                if f.is_file():
+                    self._send(200, f.read_bytes(), "text/html; charset=utf-8")
+                else:
+                    self.send_error(404, "No preview yet: press Preview channels.")
+            elif url.path == "/api/plan-preview":
+                self._json(200, {"running": preview["proc"] is not None
+                                 and preview["proc"].poll() is None,
+                                 "ready": (reports / "preview" / "channel-plan.html").is_file(),
+                                 "log": _tail(reports / "preview" / "plan.log", 30)})  # fmt: skip
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})
@@ -1334,6 +1398,27 @@ def serve(
                     return
                 os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows; finished work is saved
                 self._json(200, {"stopped": pid})
+            elif self.path == "/api/settings":
+                from maktaba_pipeline import settings
+
+                try:
+                    self._json(200, save_settings(db_path, body))
+                except settings.SettingsError as e:
+                    self._json(400, {"error": str(e), "field": e.field})
+            elif self.path == "/api/plan-preview":
+                if preview["proc"] is not None and preview["proc"].poll() is None:
+                    self._json(409, {"error": "A preview is already being planned."})
+                    return
+                out = reports / "preview"
+                out.mkdir(parents=True, exist_ok=True)
+                args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path,
+                        "plan-channels", "--out", str(out)]  # fmt: skip
+                env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+                with (out / "plan.log").open("w", encoding="utf-8") as fh:
+                    preview["proc"] = subprocess.Popen(  # noqa: S603 — fixed argv
+                        args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
+                    )
+                self._json(202, {"started": True})
             elif self.path == "/api/style":
                 from . import db, scan_visual
 

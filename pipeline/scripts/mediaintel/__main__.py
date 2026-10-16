@@ -164,8 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("detect", help="group videos into series and seasons")
     p.add_argument("--folder", help="only folders whose path contains this")
     p.add_argument(
-        "--min-episode-minutes", type=float, default=3.0,
-        help="shorter videos are shorts: never episodes, left out of series (default 3)",
+        "--min-episode-minutes", type=float, default=None,
+        help="shorter videos are shorts: never episodes, left out of series (default: the "
+             "detect setting min_episode_s, 180 s)",
     )  # fmt: skip
 
     p = sub.add_parser("set-style", help="pin a series' production style (overrides scan-visual)")

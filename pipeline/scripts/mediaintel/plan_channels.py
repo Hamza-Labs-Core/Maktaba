@@ -51,7 +51,6 @@ from maktaba_pipeline.schedule.channel_planner import (
 )
 from maktaba_pipeline.text.arabic import fold
 
-from .group_clips import PROMO_RE
 from .report import CSS as REPORT_CSS
 
 PLAN_FORMAT = 1
@@ -197,13 +196,16 @@ def load_inputs(
     # a second file of a video (X.mkv beside X.mp4) is not a loose video
     with contextlib.suppress(sqlite3.OperationalError):
         hidden |= {r[0] for r in conn.execute("SELECT path FROM file_copies")}
+    from . import settings_store
+
+    promo_re = settings_store.get(conn, "groups").promo_re()
     loose: list[LooseVideo] = []
     for path, f in files.items():
         if path in in_series or not f["dur"]:
             continue
         if path in hidden and path not in promo_of:
             continue  # a promo linked to its show airs next to it; other extras never air
-        if path not in promo_of and PROMO_RE.search(fold(f["title"] or "")):
+        if path not in promo_of and promo_re.search(fold(f["title"] or "")):
             continue  # a promo whose show was not found advertises nothing on air
         tags = dict(video_tags.get(path, {}))
         group, group_topic = group_of.get(path, ("", None))
@@ -673,6 +675,11 @@ def run(
     """Plan channels from the cache behind ``conn`` (read-only) into ``out_dir``.
     ``review``: also write the plain-text review (:func:`review_text`) there.
     Returns the JSON path."""
+    if config is None:
+        from . import settings_store
+
+        config = settings_store.get(conn, "planner")
+        settings_store.note(conn, "planner")
     seasons, loose, notes = load_inputs(conn)
     plan = suggest_channels(seasons, loose, config)
     src = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
