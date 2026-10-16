@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -23,25 +25,31 @@ class PlexServer:
     token: str
 
     def get(self, path: str) -> dict[str, Any]:
-        sep = "&" if "?" in path else "?"
-        req = urllib.request.Request(
-            f"{self.uri}{path}{sep}X-Plex-Token={self.token}",
-            headers={"Accept": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 — user-configured server
-            body = r.read()
-        return json.loads(body) if body else {}
+        return self.send("GET", path)
 
     def send(self, method: str, path: str) -> dict[str, Any]:
+        """One Plex call. A connection that fails (Plex restarting, a network blip) is
+        retried with backoff (5 tries, up to 2 min apart); Plex's own answers (404 …) are
+        raised at once."""
         sep = "&" if "?" in path else "?"
         req = urllib.request.Request(
             f"{self.uri}{path}{sep}X-Plex-Token={self.token}",
             method=method,
             headers={"Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
-            body = r.read()
-        return json.loads(body) if body else {}
+        for attempt, wait in enumerate((0, 10, 30, 60, 120)):
+            if wait:
+                print(f"     (Plex not answering; retry {attempt}/4 in {wait} s)", flush=True)
+                time.sleep(wait)
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
+                    body = r.read()
+                return json.loads(body) if body else {}
+            except urllib.error.HTTPError:
+                raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                last = e
+        raise last
 
 
 def load_server(dizquetv_db: Path | None, uri: str | None, token: str | None) -> PlexServer:
