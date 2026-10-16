@@ -209,7 +209,7 @@ Pools are defined in §5.
 | `clip_groups` | Clip groups | library | cpu | seasons/3 | `CLIP_GROUPS_VERSION=1` | library seasons, videos, topic tags, topic playlists, promo links | `clip_groups`, `clip_group_items` | `plex_groups`/same, `plan_channels`/catalog | – | 30 (300) |
 | `plex_groups` (Plex ext.) | Plex topic and clip collections | library | network_plex | seasons/4 | `PLEX_GROUPS_VERSION=1` | every topic / group (id, title, members) + `write_mode` | `external_links(plex_topic, plex_clip_group)` | – | – | 60 (600) |
 | `review_pages` | Review pages | library | reports | seasons/6 | `REVIEW_VERSION=1` | library seasons + done `thumb_small` count | `~/.maktaba/cache/reviews/<library>.html` | – | – | 120 (900) |
-| `plan_channels` | Plan channels | catalog | cpu | channels/1 | `PLANNER_VERSION` | md5 over all latest done output hashes of `detect`, `tag`, `rate_style`, `topic_collections`, `promo_links`, `clip_groups` + planner config hash; the planner is called only through `schedule.entry.plan_catalog` (§17.7) | `channel_plans` row (latest) | `write_channels`/same | – | 60 (900) |
+| `plan_channels` | Plan channels | catalog | cpu | channels/1 | `PLANNER_VERSION` (2: TV grid) | md5 over all latest done output hashes of `detect`, `tag`, `rate_style`, `topic_collections`, `promo_links`, `clip_groups` + planner config hash; the planner is called only through `schedule.entry.plan_catalog` (§17.7) | `channel_plans` row (latest) | `write_channels`/same | – | 60 (900) |
 | `write_channels` | Write channels | catalog | network_tv | channels/2 | `CH_WRITE_VERSION=1` | `channel_plans.input_hash` of latest plan + `write_mode` | `external_links(target ∈ maktaba_channel, dizquetv_channel)`; Maktaba `channels` rows + `channel_schedule_state.stale=true` | – | – | 0 |
 | `extract`, `transcribe`, `subtitle_gen`, `index`, `thumbnail` (legacy) | as today | video | nas_read, gpu, cpu, cpu, nas_read | media/1..5 | 1 | none | output_fingerprint = finished_at (always "changed") | legacy chain (F13) | – | 0 |
 | `topic_recluster`, `topic_assign`, `categorize`, `chapter_infer` (legacy, no handler) | as named | video / library | cpu | media/6..9 | 1 | none | – | – | – | 0 |
@@ -1097,6 +1097,10 @@ Seeds the `reports` pool (global, size 1) and the `thumb_small` and `review_page
 
 `topic_collections` (+ `topic_items`), `clip_groups` (+ `clip_group_items`, unique on `video_id`: one group per video) and `promo_links` (one per video), all `ON DELETE CASCADE` from `libraries` / `videos`; indexes built `CONCURRENTLY`. Seeds `topic_collections`, `promo_links` and `clip_groups` into `job_stages`, adds the new `detect` and `tag` edges and sets the `detect` version to 3. SQLite twin: TEXT / INTEGER types.
 
+### 10.9 `0095_planner_tv_grid`
+
+Sets the seeded `plan_channels` version to 2 (the TV-grid planner, §17.7); Down sets it back to 1. SQLite twin: the same statement.
+
 ---
 
 ## 11. Workstreams, file ownership and interfaces
@@ -1432,15 +1436,28 @@ The pure rules live in `maktaba_pipeline/classify/clip_groups.py`. Mediaintel's 
 
 **Label.** Every collection the extension creates (seasons, topics, groups) gets the locked Plex label `maktaba-auto` (`PlexClient.add_label`). Plex shows it as "Maktaba-auto", verified on the Media Masters write, where collections were created and read back. The collection hash includes the label, so a collection written before labels existed is labelled once on its next unchanged run.
 
-### 17.7 The channel planner hook (`plan_channels`)
+### 17.7 The channel planner: the TV grid, plugged in (`plan_channels`)
 
-The catalog stage `plan_channels` *is* the channel-plan stage. It loads the catalog: seasons, loose videos (each with its clip group title and `promo_of`), tags and styles. It calls the planner only through `maktaba_pipeline.schedule.entry.plan_catalog(seasons, loose, config) -> PlanResult`.
+The catalog stage `plan_channels` *is* the channel-plan stage. It calls the planner only through `maktaba_pipeline.schedule.entry.plan_catalog(seasons, loose, config) -> PlanResult`. That function now runs the **TV slot grid** from `feat/tv-grid` (PR #50, merged through `feat/clip-groups` ac252c7), at **planner version 2**:
 
-`feat/tv-grid` is a TV slot grid: an ongoing show keeps its slot, with cadence, fillers and non-stop Quran channels. It plugs in by changing that one function's body and bumping `PLANNER_VERSION`. The stage, `channel_plans`, `_plan_json`, `write_channels` and `dizquetv_channels` stay unchanged.
+- **A show owns a slot, and a slot has a queue.** Each lane is the queue of one slot pattern (`weekly`, `strip` Monday to Friday, `strip7`, `quran`, `special`). Its shows play one after the other, never interleaved. When a series ends, the next show in the queue takes the slot.
+- **An ongoing show runs on through its years.** A title-brand talk show (`brand`) is one programme whose yearly or guest seasons (`season_name`) follow each other in its slot.
+- **Cadence from exact dates.** A show uploaded daily becomes a strip, a weekly one stays weekly; this needs `EpisodeRef.date_exact`. Lessons default to strips and talk shows to weekly. Slot length follows the episode length.
+- **Fillers.** A slot pads with its own shows' promos first, then its topic's clips, with no recent repeat.
+- **Quran channels play recitation non-stop.** There is one lane per reciter, named after the reciter (the reciter's library). Reciters rotate by day, mujawwad plays after fajr, and Warsh plays at night. Every reciter airs, splitting the day when there are more than seven.
+- Friday slots go around the khutbah. Small channels thin out their deep archives instead of looping short series. A show joins a channel whole, never a few of its years.
+
+**What the Maktaba side passes and keeps:**
+
+- `load_inputs` passes `brand` and `season_name` (from `series_seasons.metadata`, §17.2) and `date_exact` (`youtube_videos.date_quality = 'exact'`), alongside each loose video's clip group and `promo_of`.
+- `_plan_json` adds each lane's `pattern`, `cadence`, `slot_minutes` and `shows`.
+- The dizqueTV export (`extensions/dizquetv/channels.py`) is unchanged in behaviour. Every queue a slot plays becomes one `maktaba-plan · <lane name> [<lane key>]` custom show, holding its shows' episodes in queue order. So each slot queue is one show, and each Quran reciter lane is its own show. Only shows and channels this tool created are updated; a same-named show the user made is a reported conflict and left untouched.
+
+**Versions:** `PLANNER_VERSION = 2` is the stage version (`job_stages.version`, seeded by slot 0095) and part of the `plan_channels` input fingerprint. The version sweep therefore re-plans the catalog once, and `dizquetv_channels` follows the new plan hash. A later planner change goes through the same path: change `plan_catalog`'s body if needed, bump `PLANNER_VERSION`, and add a seed slot.
 
 No separate `channel_plan` stage was added: it would run the planner twice on the same catalog and give the dizqueTV export two parents.
 
-The input fingerprint of `plan_channels` now also covers the latest `topic_collections`, `promo_links` and `clip_groups` outputs, so new groups or promo links trigger a new plan.
+The input fingerprint of `plan_channels` also covers the latest `topic_collections`, `promo_links` and `clip_groups` outputs, so new groups or promo links trigger a new plan.
 
 ### 17.8 The flow
 
