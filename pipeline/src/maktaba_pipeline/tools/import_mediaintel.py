@@ -422,7 +422,11 @@ async def _series(
                 first_air=date.fromisoformat(meta["first_air"]) if meta.get("first_air") else None,
                 last_air=date.fromisoformat(meta["last_air"]) if meta.get("last_air") else None,
                 median_duration_s=meta.get("median_duration_s"),
-                membership_hash=detect_stage._membership_hash(str(s["name"]), kind, number, ids, nums, extras),
+                membership_hash=detect_stage._membership_hash(
+                    str(s["name"]), kind, number, ids, nums, extras, meta.get("season_name")
+                ),
+                season_name=meta.get("season_name"), season_year=meta.get("season_year"),
+                brand=bool(meta.get("brand")),
             )
         )  # fmt: skip
         out[s["id"]] = (sid, lib)

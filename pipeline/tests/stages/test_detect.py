@@ -153,7 +153,22 @@ async def test_a_vanished_season_is_retired_and_its_dependents_run(db: Database)
         await db.execute(
             "UPDATE youtube_videos SET title = $2 WHERE youtube_id = $1",
             w.youtube[v],
-            f"unrelated {i} xyz{i}",
+            # no shared word and no number: nothing a numbered-show rule can join
+            (
+                "apple orchard tour",
+                "river stone bridge",
+                "winter market lights",
+                "copper kettle story",
+                "desert night sky",
+                "harbor fog morning",
+                "violin workshop visit",
+                "garden tea ritual",
+                "mountain rail line",
+                "paper lantern craft",
+                "salt marsh birds",
+                "clock tower repair",
+            )[i % 12]
+            + f" {'abcdefghijkl'[i % 12] * 3}",
         )
     await _detect(db, rt, w.library, force=True)  # (a real change arrives with a new sync hash)
     row = await db.fetchrow(

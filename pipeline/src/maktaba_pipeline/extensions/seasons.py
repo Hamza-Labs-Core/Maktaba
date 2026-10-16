@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from ..engine.sql import uid
+from ..engine.sql import loads, uid
 
 __all__ = ["Member", "SeasonInfo", "collection_title", "load_members", "load_season"]
 
@@ -21,10 +21,14 @@ class SeasonInfo:
     kind: str
     membership_hash: str
     retired: bool
+    #: a named season (a talk show's guest, "وليد جنبلاط"), from the detector
+    season_name: str | None = None
 
     @property
     def title(self) -> str:
-        return collection_title(self.library, self.series, self.season, self.season_count)
+        return collection_title(
+            self.library, self.series, self.season, self.season_count, self.season_name
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,12 +38,18 @@ class Member:
     title: str
 
 
-def collection_title(library: str, series: str, season: int, season_count: int) -> str:
+def collection_title(
+    library: str, series: str, season: int, season_count: int, season_name: str | None = None
+) -> str:
     """``<library> - <series>`` for a one-season series, ``... - الموسم N`` otherwise.
 
-    An ongoing show's season is its year (``<library> - <series> - 2016``).
+    A named season of a series with several (a talk show's guest) is
+    ``<library> - <series> - <name>``; an ongoing show's season is its year
+    (``<library> - <series> - 2016``). Same rule as mediaintel's ``export_plex._title``.
     """
     base = f"{library} - {series}"
+    if season_name and season_count > 1:
+        return f"{base} - {season_name}"
     if season >= 1900:
         return f"{base} - {season}"
     return base if season_count == 1 else f"{base} - الموسم {season}"
@@ -49,6 +59,7 @@ async def load_season(db: Any, season_id: UUID | str) -> SeasonInfo | None:
     row = await db.fetchrow(
         "SELECT ss.id AS id, ss.season AS season, ss.kind AS kind,"
         " ss.membership_hash AS membership_hash, ss.retired_at AS retired_at,"
+        " ss.metadata AS metadata,"
         " COALESCE(s.name_override, s.name) AS series, COALESCE(l.name, '') AS library,"
         " (SELECT count(*) FROM series_seasons x WHERE x.series_id = ss.series_id"
         "   AND x.retired_at IS NULL) AS n"
@@ -67,6 +78,7 @@ async def load_season(db: Any, season_id: UUID | str) -> SeasonInfo | None:
         str(row["kind"]),
         str(row["membership_hash"]),
         row["retired_at"] is not None,
+        (loads(row["metadata"]) or {}).get("season_name") or None,
     )
 
 

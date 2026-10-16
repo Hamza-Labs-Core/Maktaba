@@ -210,6 +210,11 @@ class PlannedSeason:
     median_duration_s: float | None
     membership_hash: str
     fp_plan: dict[str, list[str]] | None = None
+    #: a named season (a talk show's guest) and the year a playlist title gives it
+    season_name: str | None = None
+    season_year: int | None = None
+    #: the series is a title brand ("شاهد على العصر | …"), not playlist seeds
+    brand: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,10 +242,12 @@ def _membership_hash(
     eps: Sequence[UUID],
     nums: Sequence[int],
     extras: Sequence[UUID],
+    season_name: str | None = None,
 ) -> str:
     return canonical_hash(
         {
             "name": name,
+            "season_name": season_name,
             "kind": kind,
             "number": number,
             "episodes": [[str(e), n] for e, n in zip(eps, nums, strict=True)],
@@ -367,9 +374,12 @@ def plan_library(
                         last_air=se.last_air,
                         median_duration_s=se.median_duration_s,
                         membership_hash=_membership_hash(
-                            ser.name, ser.kind, se.number, eps, nums, extras
+                            ser.name, ser.kind, se.number, eps, nums, extras, se.name
                         ),
                         fp_plan=fp.get((ser.key, se.number)),
+                        season_name=se.name,
+                        season_year=se.year,
+                        brand=ser.brand,
                     )
                 )
         unassigned.extend(UUID(k) for k in det.unassigned)
@@ -525,7 +535,14 @@ async def apply_changes(
                     uid(library_id),
                     s.series_name,
                     s.first_air.year if s.first_air else None,
-                    dumps({"series_key": s.series_key, "kind": s.kind, "source": "detector"}),
+                    dumps(
+                        {
+                            "series_key": s.series_key,
+                            "kind": s.kind,
+                            "brand": s.brand,
+                            "source": "detector",
+                        }
+                    ),
                     t,
                 )
         for s in plan.seasons:
@@ -536,6 +553,9 @@ async def apply_changes(
                 "attached": [str(x) for x in s.attached],
                 "duplicates": [str(x) for x in s.duplicates],
                 "fp_plan": s.fp_plan,
+                "season_name": s.season_name,
+                "season_year": s.season_year,
+                "brand": s.brand,
             }
             if old is not None and "signature" in old.metadata and s.fp_plan is not None:
                 meta["signature"] = old.metadata[
