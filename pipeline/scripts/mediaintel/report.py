@@ -2,23 +2,20 @@
 
 Each season is a grid of thumbnail cards (air date, duration, how the video
 got there: playlist position or attached by signals). Extras (promos,
-trailers) and unassigned videos are listed below. Thumbnails are copied as
-small JPEGs into ``<out>/thumbs`` (cached), so the report folder is
-self-contained and opens fast.
+trailers) and unassigned videos are listed below. Thumbnails come from the
+app's cache (:mod:`.thumbs`, ``thumbs/`` next to the database), read from the
+share once and shared with the control centre.
 """
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import sqlite3
-import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from .bins import FFMPEG
+from . import thumbs
 
 CSS = """
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--mute:#6b675f;--line:#e2ded6;--acc:#2f6f5e;--warn:#a5532a;--att:#7a5aa8}
@@ -42,32 +39,12 @@ details{margin:8px 0}summary{cursor:pointer;color:var(--mute)}
 
 
 def _thumb_name(src: str) -> str:
-    return hashlib.sha1(src.encode()).hexdigest()[:16] + ".jpg"
-
-
-def _make_thumbs(srcs: list[str], out_dir: Path, workers: int = 2, label: str = "") -> None:
-    """Small JPEG copies of the sidecar thumbnails. They are read from the share, so at
-    most ``workers`` at once (2: the NAS limit), with a progress line every 100."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    todo = [s for s in srcs if not (out_dir / _thumb_name(s)).exists()]
-    if todo:
-        print(f"  {label}: {len(todo)} thumbnails to copy", flush=True)
-
-    def one(src: str) -> None:
-        subprocess.run(
-            [FFMPEG, "-v", "error", "-nostdin", "-y", "-i", src, "-vf", "scale=320:-2",
-             "-frames:v", "1", "-q:v", "5", str(out_dir / _thumb_name(src))],
-            capture_output=True, timeout=60, check=False,
-        )  # fmt: skip
-
-    with ThreadPoolExecutor(workers) as pool:
-        for n, _ in enumerate(pool.map(one, todo), 1):
-            if n % 100 == 0 or n == len(todo):
-                print(f"  [{n}/{len(todo)}] {label}: thumbnails", flush=True)
+    return thumbs.name(src)
 
 
 def _card(row: sqlite3.Row, n: int | None, tag: str, cls: str = "") -> str:
-    thumb = f"thumbs/{_thumb_name(row['thumb_path'])}" if row["thumb_path"] else ""
+    # the app's thumbnail cache sits next to the reports folder (../thumbs)
+    thumb = f"../thumbs/{_thumb_name(row['thumb_path'])}" if row["thumb_path"] else ""
     dur = f"{(row['duration_s'] or 0) / 60:.0f}m" if row["duration_s"] else "?"
     d = row["upload_date"] or "—"
     approx = (
@@ -109,11 +86,7 @@ def build(conn: sqlite3.Connection, folder: str, out_dir: Path) -> Path:
 
     all_paths = [r[0] for r in conn.execute("SELECT path FROM files WHERE folder=?", (folder,))]
     rows = _rows(conn, all_paths)
-    _make_thumbs(
-        [r["thumb_path"] for r in rows.values() if r["thumb_path"]],
-        out_dir / "thumbs",
-        label=Path(folder).name,
-    )
+    thumbs.ensure(conn, [p for p, r in rows.items() if r["thumb_path"]], label=Path(folder).name)
     placed: set[str] = set()
     body: list[str] = []
     nav: list[str] = []

@@ -318,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "set-style":
         from . import scan_visual
 
+        if not a.clear and not a.style:
+            ap.error("set-style needs STYLE, or --clear to remove the override")
         scan_visual.set_override(conn, a.library, a.series, None if a.clear else a.style)
         print(f"{a.library} / {a.series}: " + ("cleared" if a.clear else a.style))
     elif a.cmd == "scan-visual":

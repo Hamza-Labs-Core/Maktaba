@@ -275,7 +275,12 @@ class _Sync:
             elif not removable(k, t, leave_ok, self.shorts):
                 kept.append(k)
         keys = keys + kept
-        if current == keys:
+        # same episodes is not enough: a season 1 that gained a season 2 still has
+        # to move from "<lib> - X" to "<lib> - X - الموسم 1"
+        now_titled = next(
+            (t for t, c in self.existing.items() if old_key and c["ratingKey"] == old_key), None
+        )
+        if current == keys and now_titled == title:
             print(f"  =  {title} ({len(keys)})")
             if (
                 self.apply
@@ -290,6 +295,8 @@ class _Sync:
                 self.conn.commit()
             return
         verb = "update" if current else "new"
+        if current == keys:
+            verb = f"rename from {now_titled}"
         print(
             f"  +  {title}: {verb}, {len(keys)} items"
             + (f" (was {len(current)})" if current else "")

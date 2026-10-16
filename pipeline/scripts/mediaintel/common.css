@@ -90,6 +90,7 @@ h2 { font-size: 15px; font-weight: 600; }
 .rail li.earlier .t { color: var(--muted); }
 .rail li.running .t { font-weight: 600; }
 .rail .w { font-size: 11px; color: var(--muted); }
+.rail .w.s { font-style: italic; opacity: .85; }
 
 /* work + charts */
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s5); }
@@ -209,6 +210,7 @@ a:focus-visible { outline: 2px solid var(--lapis); outline-offset: 2px; border-r
 .scard .nm { font-weight: 600; }
 .scard .ln { font: 12px var(--f-data); color: var(--muted); }
 .scard .ln.bad { color: var(--bad); }
+.scard .ln.w { font: 12px var(--f-body, inherit); margin-bottom: 2px; }
 
 .logfilter { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-bottom: var(--s2); }
 .logfilter select { padding: 4px 8px; font-size: 13px; }

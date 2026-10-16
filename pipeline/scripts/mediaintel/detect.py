@@ -14,6 +14,7 @@ from maktaba_pipeline.classify.series_detector import (
     Detection,
     DetectorConfig,
     PlaylistFacts,
+    Series,
     VideoFacts,
     detect,
 )
@@ -102,6 +103,23 @@ def load_facts(
     return videos, playlists, presenter
 
 
+def _id_keys(series: list[Series]) -> list[str]:
+    """The key each detected show's season ids hash. Shows that share a name and kind
+    (split apart by episode length) get their first episode appended, so each keeps
+    its own ids instead of overwriting the other's."""
+    count: dict[tuple[str, str], int] = {}
+    for ser in series:
+        count[(ser.key, ser.kind)] = count.get((ser.key, ser.kind), 0) + 1
+    out = []
+    for ser in series:
+        if count[(ser.key, ser.kind)] == 1:
+            out.append(ser.key)
+            continue
+        firsts = [ep for se in ser.seasons for ep in se.episodes[:1]]
+        out.append(f"{ser.key}|{min(firsts) if firsts else ser.name}")
+    return out
+
+
 #: folder -> {other copy: kept path}, filled by load_facts and written by store
 _COPIES: dict[str, dict[str, str]] = {}
 
@@ -116,16 +134,29 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
     conn.executemany(
         "INSERT INTO shorts (path, folder) VALUES (?,?)", [(k, folder) for k in det.shorts]
     )
-    conn.execute(
-        "DELETE FROM series WHERE library=? AND id NOT IN "
-        "(SELECT series_id FROM series_episodes WHERE is_user_override=1)",
-        (library,),
-    )
-    for ser in det.series:
+    # Only this folder's seasons are rebuilt: other folders in the library keep theirs.
+    # Automatic memberships are re-derived; manual ones (is_user_override=1) and every
+    # row keyed by a surviving season id (style, tags, Plex collections) stay put.
+    old_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM series WHERE library=? AND json_extract(metadata, '$.folder')=?",
+            (library, folder),
+        )
+    ]
+    marks = ",".join("?" * len(old_ids))
+    if old_ids:
+        conn.execute(
+            f"DELETE FROM series_episodes WHERE is_user_override=0 AND series_id IN ({marks})",
+            old_ids,
+        )
+    keep: set[str] = set()
+    for ser, id_key in zip(det.series, _id_keys(det.series), strict=True):
         for se in ser.seasons:
-            sid = series_id(folder, ser.key, ser.kind, se.number)
+            sid = series_id(folder, id_key, ser.kind, se.number)
+            keep.add(sid)
             meta = {
-                "series_key": ser.key, "kind": ser.kind, "season": se.number,
+                "series_key": ser.key, "id_key": id_key, "kind": ser.kind, "season": se.number,
                 "season_count": len(ser.seasons), "playlists": se.playlists,
                 "extras": se.extras, "attached": se.attached, "duplicates": se.duplicates,
                 "first_air": se.first_air.isoformat() if se.first_air else None,
@@ -134,9 +165,13 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                 "season_name": se.name, "season_year": se.year, "brand": ser.brand,
             }  # fmt: skip
             year = se.first_air.year if se.first_air else None
+            # an upsert, never INSERT OR REPLACE: a replace deletes the row first and the
+            # foreign keys would cascade away its manual episodes, style and tags
             conn.execute(
-                "INSERT OR REPLACE INTO series (id, library, name, year, metadata, detector_version) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO series (id, library, name, year, metadata, detector_version) "
+                "VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET library=excluded.library, "
+                "name=excluded.name, year=excluded.year, metadata=excluded.metadata, "
+                "detector_version=excluded.detector_version",
                 (
                     sid,
                     library,
@@ -153,6 +188,13 @@ def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -
                     "VALUES (?,?,?,?)",
                     (sid, path, se.number, n),
                 )
+    gone = [i for i in old_ids if i not in keep]
+    if gone:
+        conn.execute(
+            f"DELETE FROM series WHERE id IN ({','.join('?' * len(gone))}) AND id NOT IN "
+            "(SELECT series_id FROM series_episodes WHERE is_user_override=1)",
+            gone,
+        )
     store_topics(conn, library, folder, det)
     conn.commit()
 

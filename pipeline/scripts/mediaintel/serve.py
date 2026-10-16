@@ -68,7 +68,11 @@ STEPS: list[tuple[str, str, str]] = [
         "Place leftover episodes by intro and end song",
         "unplaced videos join the season whose intro, end song or frames they match",
     ),
-    ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
+    (
+        "scan-youtube --exact",
+        "Exact upload dates",
+        'the exact day for series episodes whose date is only "N years ago" (runs with --exact)',
+    ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     (
         "group (",
@@ -106,21 +110,25 @@ STAGE_APPLIES = {
 #: and a pattern for its lines in the run log
 STAGE_INFO: dict[str, dict[str, Any]] = {
     "probe": {
+        "short": "length of each file (ffprobe), where Plex had none",
         "what": "Measures each video's length with ffprobe, for the files Plex did not already measure.",
-        "flow": ("plex-index", "scan-local (", "detect"),
+        "flow": ("plex-index", "scan-local (", "scan-youtube ("),
         "log": r"ffprobe|probe|scan-local",
     },
     "thumbnail": {
+        "short": "a small picture fingerprint per episode, to spot look-alikes",
         "what": "Makes a small thumbnail fingerprint of each episode-length video, to find look-alikes.",
-        "flow": ("plex-index", "scan-local (", "detect"),
+        "flow": ("plex-index", "scan-local (", "scan-youtube ("),
         "log": r"thumb",
     },
     "signature": {
+        "short": "intro, end-song and frame fingerprints, to place leftover episodes",
         "what": "Fingerprints the intro, end song and sampled frames of a few episodes per season.",
         "flow": ("detect", "signatures", "detect again"),
         "log": r"fingerprint|^\s*\[\d+/\d+\] \d+ per minute",
     },
     "visual_style": {
+        "short": "frames sampled per season, to rate talk / produced / cinematic",
         "what": "Rates each season's production style (talk, produced, cinematic) from sampled frames.",
         "flow": ("report", "scan-visual", "plan-channels"),
         "log": r"sampling|^\s*\[\d+/\d+\] \d+ per minute|style",
@@ -145,13 +153,22 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
     done_line = any(ln.startswith("done in ") for ln in lines)
     # "run --from-step X": the steps before X were done by an earlier run, not skipped
     resumed = next((m.group(1) for ln in lines if (m := _RESUME_RE.match(ln))), None)
-    current = seen[-1][0] if seen and not done_line else None
+    # steps that run alongside the others (review pages): running until their end line
+    side = {k for k, (pre, _, _) in enumerate(STEPS) if pre in PARALLEL_STEPS}
+    main = [x for x in seen if x[0] not in side]
+    current = (main[-1][0] if main else seen[-1][0]) if seen and not done_line else None
     started = {idx: t for idx, t, _ in seen}
+    side_running = {
+        k: at for k, _, at in seen
+        if k in side and not done_line
+        and not any(ln.startswith(f"{STEPS[k][0]}: finished") for ln in lines[at:])
+    }  # fmt: skip
     out = []
     for k, (_, title, what) in enumerate(STEPS):
         later = any(i > k for i in started)  # a later step ran: this one was left out
         state = (
-            "done" if k in started and k != current
+            "running" if k in side_running
+            else "done" if k in started and k != current
             else "running" if k == current
             else "earlier" if later and resumed and k < min(started, default=k)
             else "skipped" if later
@@ -159,6 +176,8 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
         )  # fmt: skip
         out.append({"n": k + 1, "title": title, "what": what, "state": state,
                     "started": started.get(k, "")})  # fmt: skip
+        if k in side_running:
+            out[-1]["note"] = _report_note(lines[side_running[k] + 1 :])
     progress = None
     if seen and current is not None:
         _, _, at = seen[-1]
@@ -203,7 +222,11 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             )
             unit = "channels"
         elif STEPS[current][0] == "plex-index":
-            return out, _counted(body, r"^reading (\d+) Plex libraries")
+            plex_m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+            tot = next((int(x.group(1)) for ln in body
+                        if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
+            return out, {"done": int(plex_m[-1].group(1)) if plex_m else 0, "total": tot,
+                         "unit": "libraries"}  # fmt: skip
         elif STEPS[current][0] == "group (":
             return out, _counted(body, r"^grouping clips in (\d+) libraries")
         elif STEPS[current][0] == "dizquetv-shows":
@@ -251,6 +274,20 @@ def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
     if parts:
         prog["phase"] = " · ".join(parts)
     return prog
+
+
+PARALLEL_STEPS = ("report",)
+_THUMBS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] (.+): thumbnails")
+
+
+def _report_note(body: list[str]) -> str:
+    """Where the review pages are, while they run alongside the other steps."""
+    pages = sum(1 for ln in body if ln.rstrip().endswith(".html"))
+    last = max((i for i, ln in enumerate(body) if ln.rstrip().endswith(".html")), default=-1)
+    th = [m for ln in body[last + 1 :] if (m := _THUMBS_RE.match(ln))]
+    now = (f" · now {th[-1].group(3)}: {int(th[-1].group(1)):,} of {int(th[-1].group(2)):,}"
+           " thumbnails") if th else ""  # fmt: skip
+    return f"alongside the other steps: {pages} pages written{now}"
 
 
 def _sampled_progress(body: list[str], stage: str) -> dict[str, Any]:
@@ -590,8 +627,8 @@ def stage_detail(
         ]
     )
     pat = re.compile(info["log"], re.I)
-    index = {pre: i for i, (pre, _, _) in enumerate(STEPS)}
-    before, step, after = (STEPS[index[n]][1] for n in info["flow"])
+    titles = {pre: title for pre, title, _ in STEPS}
+    before, step, after = (titles[k] for k in info["flow"])
     return {
         "key": name,
         "title": STAGE_NAMES.get(name, name),
@@ -901,7 +938,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
             out["stages"].append(
                 {
                     "key": "visual_style",
-                    "stage": "visual_style",
+                    "stage": STAGE_NAMES["visual_style"],
                     "done": r["d"] or 0,
                     "failed": r["f"] or 0,
                     "of": (r["d"] or 0) + (r["f"] or 0),
@@ -997,6 +1034,8 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         if has("series_tags")
         else []
     )
+    for st in out["stages"]:
+        st["what"] = STAGE_INFO.get(st["key"], {}).get("short", "")
     out["now"] = time.time()
     conn.close()
     if log_path and log_path.exists():
@@ -1064,10 +1103,16 @@ def _alive(pid: int) -> bool:
 def _run_args(
     db_path: str, body: dict[str, Any], dizquetv_db: Path | None, reports: Path
 ) -> list[str]:
-    """The exact ``mediaintel run`` command a page request maps to (no free-form input)."""
+    """The exact ``mediaintel run`` command a page request maps to (no free-form input).
+
+    Folders go last, after ``--``, so none can be read as an option; one that starts
+    with '-' is refused outright (ValueError) rather than silently dropped."""
     args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path, "run"]
-    folders = [str(f) for f in body.get("folders") or [] if isinstance(f, str)]
-    args += folders or ["--from-plex", "--exclude-library", "Movies"]
+    folders = [f for f in body.get("folders") or [] if isinstance(f, str) and f]
+    if any(f.startswith("-") for f in folders):
+        raise ValueError("A folder cannot start with '-'.")
+    if not folders:
+        args += ["--from-plex", "--exclude-library", "Movies"]
     if dizquetv_db:
         args += ["--dizquetv-db", str(dizquetv_db)]
     args += ["--out", str(reports)]
@@ -1079,7 +1124,31 @@ def _run_args(
         args.append("--exact")
     if not body.get("youtube", True):
         args.append("--no-youtube")
+    if folders:
+        args += ["--", *folders]
     return args
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def request_problem(method: str, headers: Any, port: int) -> str | None:
+    """Why a request must be refused, or None. The server is reachable only from this
+    machine, but any web page open in a browser here can still send it requests:
+    a Host other than ours means DNS rebinding, an Origin other than ours means a
+    cross-site request, and a POST that is not JSON is a CORS "simple" request that
+    skipped the preflight. ``headers`` is anything with ``.get`` (an HTTPMessage)."""
+    allowed = {f"{h}:{port}" for h in _LOCAL_HOSTS}
+    if (headers.get("Host") or "").lower() not in allowed:
+        return "Unexpected Host header."
+    origin = headers.get("Origin")
+    if origin is not None and origin.lower() not in {f"http://{a}" for a in allowed}:
+        return "Cross-origin requests are not allowed."
+    if method == "POST":
+        ctype = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if ctype != "application/json":
+            return "Send the body as application/json."
+    return None
 
 
 def serve(
@@ -1139,7 +1208,16 @@ def serve(
             else:
                 self._json(200, {**data, "running_pid": _running_pid(db_path)})
 
+        def _refused(self, method: str) -> bool:
+            """Answer 403 and return True when the request is not from our own page."""
+            problem = request_problem(method, self.headers, port)
+            if problem:
+                self._json(403, {"error": problem})
+            return problem is not None
+
         def do_GET(self) -> None:  # noqa: N802 — http.server API
+            if self._refused("GET"):
+                return
             url = urllib.parse.urlsplit(self.path)
             qs = urllib.parse.parse_qs(url.query)
             if url.path == "/api/status":
@@ -1175,7 +1253,7 @@ def serve(
                     explain.explain(conn, (qs.get("q") or [""])[0], folder, 30)
                 conn.close()
                 self._json(200, {"text": buf.getvalue()})
-            elif url.path.startswith("/reports/"):
+            elif url.path.startswith("/reports/") and not url.path.startswith("/reports/thumbs/"):
                 # only files listed from the reports folder, looked up by name: a request
                 # cannot name a path of its own
                 name = urllib.parse.unquote(url.path[len("/reports/") :])
@@ -1185,6 +1263,18 @@ def serve(
                     return
                 ctype = "text/html; charset=utf-8" if target.suffix == ".html" else "image/jpeg"
                 self._send(200, target.read_bytes(), ctype)
+            elif url.path.startswith(("/thumbs/", "/reports/thumbs/")):
+                # the app's thumbnail cache: a fixed name pattern, never a path
+                name = url.path.rsplit("/", 1)[-1]
+                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name):
+                    self.send_error(404)
+                    return
+                thumbs = os.path.normpath(Path(db_path).parent / "thumbs")
+                f = os.path.normpath(os.path.join(thumbs, name))
+                if not f.startswith(thumbs + os.sep) or not os.path.isfile(f):
+                    self.send_error(404)
+                    return
+                self._send(200, Path(f).read_bytes(), "image/jpeg")
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})
@@ -1199,17 +1289,25 @@ def serve(
                 self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
+            if self._refused("POST"):
+                return
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
-                self._json(400, {"error": "The request body must be JSON."})
+                body = None
+            if not isinstance(body, dict):
+                self._json(400, {"error": "The request body must be a JSON object."})
                 return
             if self.path == "/api/run":
                 if _running_pid(db_path):
                     self._json(409, {"error": "A run is already in progress. Stop it first."})
                     return
-                args = _run_args(db_path, body, dizquetv_db, reports)
+                try:
+                    args = _run_args(db_path, body, dizquetv_db, reports)
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                    return
                 env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
                 with log.open("w", encoding="utf-8") as fh:
                     subprocess.Popen(  # noqa: S603 — fixed argv built by _run_args

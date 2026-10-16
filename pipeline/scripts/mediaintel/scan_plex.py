@@ -134,16 +134,19 @@ def scan_plex(
                 conn.execute(
                     """UPDATE files SET duration_s=?, width=?, height=?,
                          probed_size=size, probed_mtime=mtime
-                       WHERE path=? AND (duration_s IS NULL OR width IS NULL)""",
+                       WHERE path=? AND (duration_s IS NULL OR width IS NULL
+                         OR probed_size IS NOT size OR probed_mtime IS NOT mtime)""",
                     (m["duration"] / 1000, md.get("width"), md.get("height"), local),
                 )
                 from . import jobs
 
                 jobs.ensure(conn)
                 frow = conn.execute(
-                    "SELECT size, mtime FROM files WHERE path=?", (local,)
+                    "SELECT size, mtime FROM files WHERE path=? AND probed_size IS size "
+                    "AND probed_mtime IS mtime",
+                    (local,),
                 ).fetchone()
-                if frow:  # Plex measured it: the probe job is done without ffprobe
+                if frow:  # measured for this file state: the probe job is done without ffprobe
                     jobs.record(conn, local, "probe", 1, frow[0], frow[1])
         conn.execute("DELETE FROM plex_items WHERE section=?", (str(sec["key"]),))
         conn.executemany("INSERT OR REPLACE INTO plex_items VALUES (?,?,?,?,?,?)", seen)

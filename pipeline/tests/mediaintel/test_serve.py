@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
@@ -12,9 +13,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # pipeline/ (scripts package)
 
 from scripts.mediaintel.serve import (  # noqa: E402
+    _run_args,
     attention_groups,
     kind_counts,
     normalize_cause,
+    request_problem,
     retry_failures,
 )
 
@@ -188,7 +191,107 @@ def test_dizquetv_shows_counts_libraries_and_plex_stalls() -> None:
     from scripts.mediaintel import serve
 
     prog = serve._steps(log)[1]
+    assert prog is not None
     assert prog["done"] == 1 and prog["total"] == 3 and prog["unit"] == "libraries"
     assert "writing 2 shows" in prog["phase"]
     assert "500 of 900 episode details" in prog["phase"]
     assert "Plex not answering" in prog["phase"]
+
+
+def test_report_runs_alongside_the_next_step() -> None:
+    from scripts.mediaintel import serve
+
+    log = [
+        "##### dizquetv-shows (2 libraries)  (03:50:03)",
+        "##### report (alongside the next steps)  (10:46:40)",
+        "##### scan-visual  (10:46:41)",
+        "E:/r/A.html",
+        "  [200/900] B: thumbnails",
+    ]
+    steps, _ = serve._steps(log)
+    by = {s["title"]: s for s in steps}
+    assert by["Write review pages"]["state"] == "running"
+    assert by["Rate production style"]["state"] == "running"
+    assert "1 pages written" in by["Write review pages"]["note"]
+    assert "200 of 900 thumbnails" in by["Write review pages"]["note"]
+    steps, _ = serve._steps([*log, "report: finished (11:00:00)"])
+    assert {s["title"]: s for s in steps}["Write review pages"]["state"] == "done"
+
+
+def test_thumbnail_cache_adopts_existing_copies(tmp_path: Path) -> None:
+    from scripts.mediaintel import db, jobs, thumbs
+
+    conn = db.connect(tmp_path / "m.db")
+    conn.execute(
+        "INSERT INTO files (path, folder, stem, ext, size, mtime, thumb_path) "
+        "VALUES ('Y:/a/v.mp4', 'Y:/a', 'v', '.mp4', 10, 1.0, 'Y:/a/v.jpg')"
+    )
+    out = thumbs.cache_dir(conn)
+    out.mkdir()
+    (out / thumbs.name("Y:/a/v.jpg")).write_bytes(b"jpg")
+    assert thumbs.ensure(conn, ["Y:/a/v.mp4"]) == out
+    assert not jobs.needed(conn, "Y:/a/v.mp4", thumbs.STAGE, thumbs.VERSION, 10, 1.0)
+    # a changed video needs a new copy
+    assert jobs.needed(conn, "Y:/a/v.mp4", thumbs.STAGE, thumbs.VERSION, 11, 2.0)
+
+
+_OK = {"Host": "127.0.0.1:8770", "Content-Type": "application/json"}
+
+
+def test_own_page_requests_pass() -> None:
+    assert request_problem("POST", _OK, 8770) is None
+    assert request_problem("POST", {**_OK, "Origin": "http://localhost:8770"}, 8770) is None
+    assert request_problem("GET", {"Host": "localhost:8770"}, 8770) is None
+    ctype = {**_OK, "Content-Type": "application/json; charset=utf-8"}
+    assert request_problem("POST", ctype, 8770) is None
+
+
+def test_bad_host_is_refused() -> None:
+    # DNS rebinding: the browser connects to 127.0.0.1 but names the attacker's host
+    assert request_problem("GET", {"Host": "evil.example:8770"}, 8770)
+    assert request_problem("POST", {**_OK, "Host": "localhost:9999"}, 8770)
+    assert request_problem("GET", {}, 8770)
+
+
+def test_foreign_origin_is_refused() -> None:
+    assert request_problem("POST", {**_OK, "Origin": "https://evil.example"}, 8770)
+    assert request_problem("GET", {"Host": "localhost:8770", "Origin": "null"}, 8770)
+
+
+def test_non_json_post_is_refused() -> None:
+    # text/plain is a CORS "simple" request: no preflight would stop it
+    assert request_problem("POST", {**_OK, "Content-Type": "text/plain"}, 8770)
+    assert request_problem("POST", {"Host": "127.0.0.1:8770"}, 8770)
+
+
+def test_folder_starting_with_dash_is_refused() -> None:
+    with pytest.raises(ValueError):
+        _run_args("m.db", {"folders": ["E:/ok", "--plex"]}, None, Path("reports"))
+
+
+def test_folders_come_last_after_double_dash(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scripts.mediaintel import __main__ as cli
+    from scripts.mediaintel import db
+
+    args = _run_args("m.db", {"folders": ["E:/a b", "E:/c"], "plex": True}, None, Path("r"))
+    assert args[-3:] == ["--", "E:/a b", "E:/c"]
+    seen: dict[str, object] = {}
+
+    def stop(_db: str) -> None:
+        raise SystemExit(0)
+
+    monkeypatch.setattr(db, "connect", stop)
+    real = argparse.ArgumentParser.parse_args
+
+    def spy(self: argparse.ArgumentParser, argv: list[str] | None = None) -> object:
+        a = real(self, argv)
+        seen.update(vars(a))
+        return a
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", spy)
+    with pytest.raises(SystemExit):
+        cli.main(args[3:])
+    assert seen["roots"] == [Path("E:/a b"), Path("E:/c")]
+    assert seen["plex"] is True and seen["out"] == Path("r")
+    plex = _run_args("m.db", {}, None, Path("r"))
+    assert "--" not in plex and "--from-plex" in plex

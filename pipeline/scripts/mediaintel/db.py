@@ -249,7 +249,9 @@ def normalize_paths(conn: sqlite3.Connection) -> int:
         meta["folder"] = new_folder
         for k in ("extras", "attached", "duplicates"):
             meta[k] = [p.replace("\\", "/") for p in meta.get(k) or []]
-        new_id = series_id(new_folder, meta["series_key"], meta["kind"], meta["season"])
+        new_id = series_id(
+            new_folder, meta.get("id_key", meta["series_key"]), meta["kind"], meta["season"]
+        )
         conn.execute(
             "UPDATE series SET id=?, metadata=? WHERE id=?",
             (new_id, json.dumps(meta, ensure_ascii=False), sid),
