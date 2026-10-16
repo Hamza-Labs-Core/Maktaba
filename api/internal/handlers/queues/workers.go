@@ -112,7 +112,7 @@ func (h *Handler) Workers(w http.ResponseWriter, r *http.Request) {
 
 // servesLabel renders "Probe, Detect, +3 more" from stage labels.
 func servesLabel(stages []string, labels map[string]string) string {
-	const max = 4
+	const maxNamed = 4
 	names := make([]string, 0, len(stages))
 	for _, s := range stages {
 		if l := labels[s]; l != "" {
@@ -121,8 +121,8 @@ func servesLabel(stages []string, labels map[string]string) string {
 			names = append(names, s)
 		}
 	}
-	if len(names) <= max {
+	if len(names) <= maxNamed {
 		return strings.Join(names, ", ")
 	}
-	return strings.Join(names[:max], ", ") + ", +" + strconv.Itoa(len(names)-max) + " more"
+	return strings.Join(names[:maxNamed], ", ") + ", +" + strconv.Itoa(len(names)-maxNamed) + " more"
 }

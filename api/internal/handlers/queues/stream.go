@@ -20,7 +20,7 @@ const DefaultSnapshotInterval = 2 * time.Second
 
 // SnapshotEvent builds the ws.Event for a snapshot. Snapshots carry no
 // "_event_id": they are ephemeral, with no durability or replay.
-func SnapshotEvent(s QueuesSnapshot) (ws.Event, error) {
+func SnapshotEvent(s Snapshot) (ws.Event, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
 		return ws.Event{}, err
@@ -95,7 +95,7 @@ func (h *Handler) publishSnapshotOnce(ctx context.Context) bool {
 // "backlog.ready" (host "api"), at most one sample per minute, so the
 // health chart has a backlog series: workers do not sample it. Only the
 // snapshot publisher calls this, so GET handlers never write.
-func (h *Handler) recordBacklog(ctx context.Context, snap QueuesSnapshot) {
+func (h *Handler) recordBacklog(ctx context.Context, snap Snapshot) {
 	_, err := h.DB.ExecContext(ctx, `
 		INSERT INTO health_samples (at, host, metric, value)
 		VALUES (date_trunc('minute', $1::timestamptz), 'api', 'backlog.ready', $2)

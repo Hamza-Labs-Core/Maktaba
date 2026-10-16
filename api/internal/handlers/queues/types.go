@@ -212,8 +212,8 @@ type HealthNow struct {
 	Spark map[string][]float64 `json:"spark"`
 }
 
-// QueuesSnapshot is GET /api/queues and the queues.snapshot event.
-type QueuesSnapshot struct {
+// Snapshot is GET /api/queues and the queues.snapshot event.
+type Snapshot struct {
 	At          time.Time      `json:"at"`
 	PausedAll   bool           `json:"paused_all"`
 	Stages      []StageInfo    `json:"stages"`

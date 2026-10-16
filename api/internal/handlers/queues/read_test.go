@@ -637,7 +637,7 @@ func TestInitialFrame(t *testing.T) {
 	if ev == nil || ev.Type != "queues.snapshot" {
 		t.Fatalf("ev = %+v", ev)
 	}
-	var _ ws.Event = *ev
+	_ = ws.Event(*ev)
 	if rec := f.do(http.MethodGet, "/api/queues", "", viewer()); rec.Code != 200 {
 		t.Fatal(rec.Code)
 	}

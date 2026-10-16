@@ -328,7 +328,7 @@ func runSQLiteMigrate(ctx context.Context, dsn, dir, action string) error {
 				highest = v
 			}
 		}
-		fmt.Printf("version: %d\n", highest)
+		fmt.Fprintf(os.Stdout, "version: %d\n", highest)
 		return nil
 	}
 	migs, err := listSQLiteMigrations(dir)
@@ -340,7 +340,7 @@ func runSQLiteMigrate(ctx context.Context, dsn, dir, action string) error {
 		if applied[m.version] {
 			state = "Applied"
 		}
-		fmt.Printf("%-8s %s\n", state, m.name)
+		fmt.Fprintf(os.Stdout, "%-8s %s\n", state, m.name)
 	}
 	return nil
 }

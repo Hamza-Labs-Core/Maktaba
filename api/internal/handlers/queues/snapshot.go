@@ -280,52 +280,52 @@ func (h *Handler) loadFlows(ctx context.Context, now time.Time) ([]Flow, error) 
 	return out, nil
 }
 
-// BuildSnapshot computes the full QueuesSnapshot (GET /api/queues and
+// BuildSnapshot computes the full Snapshot (GET /api/queues and
 // the queues.snapshot event). Every count query filters on live states
 // or a time window so the cost does not grow with history.
-func (h *Handler) BuildSnapshot(ctx context.Context) (QueuesSnapshot, error) {
+func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 	now := h.now()
 	stages, err := h.loadStages(ctx)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	pools, err := h.loadPools(ctx, stages)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	pausedAll, err := h.pausedAll(ctx)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	live, err := h.loadLiveCounts(ctx, now)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	done, err := h.loadDoneCounts(ctx, now)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	wave, err := h.loadWaveDone(ctx)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	running, err := h.loadRunningJobs(ctx, 5, "")
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	groups, err := h.failureGroups(ctx, "", false, stages, now)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	failed, awaiting, issues := tallyGroups(groups)
 	workers, err := h.loadWorkers(ctx, now)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 	served := servedBy(workers)
 	flows, err := h.loadFlows(ctx, now)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
 
 	poolBy := map[string]Pool{}
@@ -351,9 +351,9 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (QueuesSnapshot, error) {
 
 	hn, err := h.healthNow(ctx, now, pools, queues)
 	if err != nil {
-		return QueuesSnapshot{}, err
+		return Snapshot{}, err
 	}
-	return QueuesSnapshot{
+	return Snapshot{
 		At: now, PausedAll: pausedAll, Stages: stages, Queues: queues, Pools: pools,
 		Flows: flows, Health: hn, IssuesCount: issues,
 	}, nil

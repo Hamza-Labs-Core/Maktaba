@@ -11,10 +11,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// rollupHost marks the 10-minute rollup rows the pruner keeps for 30
-// days (plan-06-11 §6.4).
-const rollupHost = "*rollup*"
-
 // rawRetention is how long 10 s samples are kept; older history is
 // served from the rollup rows.
 const rawRetention = 48 * time.Hour

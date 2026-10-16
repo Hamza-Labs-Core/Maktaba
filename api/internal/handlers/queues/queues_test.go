@@ -87,7 +87,6 @@ func withExternal() stageOpt      { return func(r []driver.Value) { r[9] = true 
 func withDisabled(reason string) stageOpt {
 	return func(r []driver.Value) { r[11] = false; r[12] = reason }
 }
-func withPaused() stageOpt            { return func(r []driver.Value) { r[13] = true } }
 func withSynced(t time.Time) stageOpt { return func(r []driver.Value) { r[20] = t } }
 func withExtension(e string) stageOpt { return func(r []driver.Value) { r[21] = e } }
 
@@ -139,7 +138,7 @@ func TestWaitingReason_Precedence(t *testing.T) {
 		{"debouncing", func(i *stageInputs) { i.Live.Pending = 2 }, WaitDebouncing, false},
 		{"backoff", func(i *stageInputs) { i.Live.Pending, i.Live.Backoff = 2, 1 }, WaitBackoff, false},
 		{"upstream", func(i *stageInputs) { i.UpstreamLive = true }, WaitUpstream, false},
-		{"idle", func(i *stageInputs) {}, WaitIdle, false},
+		{"idle", func(*stageInputs) {}, WaitIdle, false},
 		{"ready and free slot -> about to claim", func(i *stageInputs) { i.Live.Pending, i.Live.Ready = 1, 1 }, "", true},
 	}
 	for _, tc := range tests {
@@ -402,7 +401,7 @@ func TestSnapshot(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	var snap QueuesSnapshot
+	var snap Snapshot
 	decode(t, rec, &snap)
 
 	if snap.PausedAll || len(snap.Stages) != 4 || len(snap.Queues) != 4 {
