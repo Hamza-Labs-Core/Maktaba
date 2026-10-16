@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -592,8 +593,45 @@ def group_series(
     return sorted(out, key=lambda g: (-g["episodes"], g["name"]))
 
 
+_TV_CACHE: dict[str, Any] = {"at": 0.0, "url": None, "shows": None}
+
+
+def tv_shows(url: str = "http://localhost:8002") -> dict[str, str] | None:
+    """dizqueTV custom shows by folded name → name, or None when dizqueTV can't be
+    reached. Asked at most once a minute."""
+    c = _TV_CACHE
+    if c["url"] != url or time.time() - c["at"] > 60:
+        from maktaba_pipeline.text.arabic import fold
+
+        try:
+            with urllib.request.urlopen(f"{url}/api/shows", timeout=3) as r:  # noqa: S310 — local service
+                shows = {fold(x["name"]): x["name"] for x in json.load(r)}
+        except (OSError, ValueError, KeyError, TypeError):
+            shows = None
+        c.update(at=time.time(), url=url, shows=shows)
+    out: dict[str, str] | None = c["shows"]
+    return out
+
+
+def tv_names(library: str, g: dict[str, Any], shows: dict[str, str]) -> list[str]:
+    """The dizqueTV shows a series appears as: its series show and, for several seasons,
+    one per season, named as dizquetv-shows names them."""
+    from maktaba_pipeline.text.arabic import fold
+
+    from .export_plex import _title
+
+    count = len(g["seasons"])
+    wanted = [_title(library, g["name"], 1, 1)]
+    if count > 1:
+        wanted += [_title(library, g["name"], x["season"] or 0, count) for x in g["seasons"]]
+    return [shows[fold(n)] for n in wanted if fold(n) in shows]
+
+
 def item_detail(
-    conn: sqlite3.Connection, folder: str, series_key: str | None = None
+    conn: sqlite3.Connection,
+    folder: str,
+    series_key: str | None = None,
+    tv: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """The library page: counts, series with where they appear, stage status and history."""
     head = conn.execute(
@@ -626,6 +664,11 @@ def item_detail(
         ).fetchall()
     )
     series = group_series(rows, episodes, collections)
+    lib = conn.execute(
+        "SELECT library FROM series WHERE json_extract(metadata, '$.folder') = ? LIMIT 1", (folder,)
+    ).fetchone()
+    for g in series:  # None: dizqueTV not reachable, so the page says so instead of "none"
+        g["tv"] = tv_names(lib[0], g, tv) if (tv is not None and lib) else None
     kinds: dict[str, int] = {}
     for g in series:
         kinds[g["kind"]] = kinds.get(g["kind"], 0) + 1
@@ -983,7 +1026,7 @@ def serve(
                             )
                             data = stage_detail(conn, arg, lines)
                         else:
-                            data = item_detail(conn, arg, extra)
+                            data = item_detail(conn, arg, extra, tv_shows())
                     finally:
                         conn.close()
                     detail_cache[key] = (time.time(), data)
