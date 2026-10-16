@@ -38,7 +38,7 @@ func runMigrate(argv []string) error {
 	)
 	fs.StringVar(&dir, "dir", defaultMigrationsDir(), "Migrations directory")
 	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
-	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect (postgres only in v1)")
+	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect: postgres, or sqlite (chosen automatically for sqlite:// DSNs)")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 
@@ -116,11 +116,16 @@ Flags:`)
 		downToTarget = t
 	}
 
-	if dialect != "postgres" {
-		return fmt.Errorf("dialect %q is not supported (only postgres in v1)", dialect)
-	}
 	if dsn == "" {
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")
+	}
+	if dialect == "sqlite" || dialect == "sqlite3" || (dialect == "postgres" && isSQLiteDSN(dsn)) {
+		sctx, scancel := context.WithTimeout(context.Background(), timeout)
+		defer scancel()
+		return runSQLiteMigrate(sctx, dsn, dir, action)
+	}
+	if dialect != "postgres" {
+		return fmt.Errorf("dialect %q is not supported (use postgres or sqlite)", dialect)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
