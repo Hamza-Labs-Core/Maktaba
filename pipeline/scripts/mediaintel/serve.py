@@ -656,13 +656,32 @@ def item_detail(
     }
 
 
-def _read_asset(name: str) -> bytes:
-    """A page or asset file beside this module, read per request so edits show on reload."""
-    return (Path(__file__).with_name(name)).read_bytes()
+_HERE = Path(__file__).parent
+#: request path -> (file beside this module, content type). Only these files are served;
+#: they are read per request so edits show on reload.
+_STATIC: dict[str, tuple[Path, str]] = {
+    "/stage": (_HERE / "stage.html", "text/html; charset=utf-8"),
+    "/item": (_HERE / "item.html", "text/html; charset=utf-8"),
+    "/common.css": (_HERE / "common.css", "text/css; charset=utf-8"),
+    "/common.js": (_HERE / "common.js", "text/javascript; charset=utf-8"),
+}
 
 
-_PAGES = {"/stage": "stage.html", "/item": "item.html"}
-_ASSETS = {"/common.css": "text/css; charset=utf-8", "/common.js": "text/javascript; charset=utf-8"}
+_REPORT_CACHE: dict[str, Any] = {"at": 0.0, "dir": None, "files": {}}
+
+
+def _report_files(reports: Path) -> dict[str, Path]:
+    """The review pages and their thumbnails, by path inside the reports folder
+    ("x.html", "thumbs/y.jpg"): the only report files served. Listed at most every 30 s."""
+    c = _REPORT_CACHE
+    if c["dir"] != reports or time.time() - c["at"] > 30:
+        files = {}
+        if reports.is_dir():
+            for f in reports.rglob("*"):
+                if f.is_file() and f.suffix in (".html", ".jpg"):
+                    files[f.relative_to(reports).as_posix()] = f
+        c.update(at=time.time(), dir=reports, files=files)
+    return c["files"]
 
 
 PAGE = (Path(__file__).with_name("status.html")).read_text(encoding="utf-8")
@@ -1003,9 +1022,11 @@ def serve(
                 conn.close()
                 self._json(200, {"text": buf.getvalue()})
             elif url.path.startswith("/reports/"):
+                # only files listed from the reports folder, looked up by name: a request
+                # cannot name a path of its own
                 name = urllib.parse.unquote(url.path[len("/reports/") :])
-                target = (reports / name).resolve()
-                if reports.resolve() not in target.parents or not target.is_file():
+                target = _report_files(reports).get(name)
+                if target is None:
                     self.send_error(404)
                     return
                 ctype = "text/html; charset=utf-8" if target.suffix == ".html" else "image/jpeg"
@@ -1015,10 +1036,9 @@ def serve(
                 self._json(200, {"reports": names})
             elif url.path in ("/", "/index.html"):
                 self._send(200, PAGE.encode(), "text/html; charset=utf-8")
-            elif url.path in _PAGES:  # the stage and library pages sit beside this module
-                self._send(200, _read_asset(_PAGES[url.path]), "text/html; charset=utf-8")
-            elif url.path in _ASSETS:
-                self._send(200, _read_asset(url.path[1:]), _ASSETS[url.path])
+            elif url.path in _STATIC:  # pages and assets beside this module
+                file, ctype = _STATIC[url.path]
+                self._send(200, file.read_bytes(), ctype)
             elif url.path in ("/api/stage", "/api/item"):
                 self._detail(url.path, qs)
             else:
