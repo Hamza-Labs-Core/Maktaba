@@ -365,9 +365,10 @@ def apply_actions(
     metadata), then — with dizqueTV re-read so slots name the real ``custom.ID`` and
     filler ids — each channel's programmes via ``POST /api/channel-tools/time-slots``,
     saved with ``POST``/``PUT /api/channel``. Every object is read back."""
-    from .dizquetv_shows import _Dz, _metadata, _program
+    from .dizquetv_shows import _Dz, _metadata, _program, as_registered
 
     dzw = _Dz(url)
+    server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
     meta = _metadata(server, keys) if keys else {}

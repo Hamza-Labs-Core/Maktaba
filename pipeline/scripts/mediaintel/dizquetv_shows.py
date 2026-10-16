@@ -19,6 +19,7 @@ show's episodes are listed: their schedule is regenerated in dizqueTV, not here.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 import time
@@ -53,6 +54,19 @@ class _Dz:
 def _hms(ms: int) -> str:
     s = ms // 1000
     return f"{s // 3600:02d}:{s // 60 % 60:02d}:{s % 60:02d}.{ms % 1000 // 100}"
+
+
+def as_registered(server: PlexServer, registered: list[dict[str, Any]]) -> PlexServer:
+    """``server`` under the name dizqueTV registered it as: programmes name their server
+    by ``serverKey``, and ``--plex-url``/``--plex-token`` only know a placeholder."""
+    uri = server.uri.rstrip("/")
+    match = [s for s in registered if str(s.get("uri", "")).rstrip("/") == uri]
+    if not match and len(registered) == 1:
+        match = registered
+    if not match:
+        names = ", ".join(str(s.get("name")) for s in registered) or "none"
+        raise SystemExit(f"dizqueTV has no Plex server at {uri} (registered: {names})")
+    return dataclasses.replace(server, name=str(match[0]["name"]))
 
 
 def _program(m: dict[str, Any], server: PlexServer) -> dict[str, Any] | None:
@@ -151,6 +165,7 @@ def run(
     backup_dir: Path = Path("backups/dizquetv-shows"),
 ) -> None:
     dz = _Dz(url)
+    server = as_registered(server, dz.call("GET", "/api/plex-servers"))
     shows = {fold(s["name"]): s for s in dz.call("GET", "/api/shows")}
     targets = _targets(conn, library_filter)
     plan: list[tuple[str, str, list[str], dict[str, Any] | None, list[str]]] = []
