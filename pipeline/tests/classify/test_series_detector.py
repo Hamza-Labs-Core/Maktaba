@@ -313,3 +313,11 @@ def test_short_numbered_episode_in_its_playlist_stays_an_episode() -> None:
     (ser,) = det.series
     se = ser.seasons[0]
     assert "q2" in se.episodes and "t" not in se.episodes
+
+
+def test_unbranded_video_on_the_same_topic_does_not_join_a_branded_season() -> None:
+    s3 = _season("s", 8, date(2021, 4, 14), 12, "دعوة النبي ﷺ [{i:02d}] أندى العالمين موسم 1442")
+    loose = VideoFacts("x", "كيف تكون محبة النبي ﷺ ؟! | للشيخ الحويني في رمضان", 12 * 60 + 5,
+                       date(2021, 4, 20), True)  # fmt: skip
+    det = detect([*s3, loose], [_pl("P3", "البرنامج الإذاعي أندى العالمين رمضان 1442", s3)])
+    assert "x" in det.unassigned

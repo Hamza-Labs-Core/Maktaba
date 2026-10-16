@@ -362,6 +362,9 @@ class _Profile:
     weekday: int | None = None
     #: the series keeps going: a later air date is a new episode, not another show
     ongoing: bool = False
+    #: the show's own name words, and whether (almost) every member title carries them
+    name_words: tuple[str, ...] = ()
+    branded: bool = False
 
 
 def _content_words(title: str, stop: frozenset[str]) -> frozenset[str]:
@@ -378,6 +381,7 @@ def _profile(
     stop: frozenset[str],
     *,
     ongoing: bool = False,
+    name: str = "",
 ) -> _Profile:
     seg_counts: Counter[str] = Counter()
     for k in eps:
@@ -414,6 +418,9 @@ def _profile(
         frame_hashes=[h for k in eps for h in facts[k].frames],
         weekday=weekday,
         ongoing=ongoing,
+        name_words=(nw := tuple(w for w in fold(name).split() if len(w) > 2)),
+        branded=bool(nw)
+        and sum(all(w in fold(facts[k].title) for w in nw) for k in eps) >= 0.7 * max(1, len(eps)),
     )
 
 
@@ -432,6 +439,11 @@ def _attach_score(
     # title evidence
     if p.key_words and all(w in words or w in t for w in p.key_words):
         title_s = 1.0
+    elif p.branded and not all(w in t for w in p.name_words):
+        # every episode says the show's name ("… أندى العالمين موسم 1442") and this title
+        # does not: sharing a topic ("محبة النبي ﷺ") does not make it an episode. Only the
+        # signature (same intro / end song) below can still place it.
+        title_s = 0.0
     elif p.distinctive and set(segments(v.title)) & p.distinctive:
         title_s = 0.8
     else:
@@ -1192,7 +1204,9 @@ def detect(
             continue
         for se in ser.seasons:
             ongoing = ser.kind == "ongoing"
-            prof = _profile(se.episodes, ser.key, facts, seg_df, stop, ongoing=ongoing)
+            prof = _profile(
+                se.episodes, ser.key, facts, seg_df, stop, ongoing=ongoing, name=ser.name
+            )
             profiles.append((ser, se, prof))
     for i_v, v in enumerate(videos, 1):
         if progress is not None and (i_v % 250 == 0 or i_v == len(videos)):
