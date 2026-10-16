@@ -68,7 +68,11 @@ STEPS: list[tuple[str, str, str]] = [
         "Place leftover episodes by intro and end song",
         "unplaced videos join the season whose intro, end song or frames they match",
     ),
-    ("scan-youtube --exact", "Exact upload dates", "only with --exact"),
+    (
+        "scan-youtube --exact",
+        "Exact upload dates",
+        "the exact day for series episodes whose date is only \"N years ago\" (runs with --exact)",
+    ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
     ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
@@ -101,23 +105,27 @@ STAGE_APPLIES = {
 #: and a pattern for its lines in the run log
 STAGE_INFO: dict[str, dict[str, Any]] = {
     "probe": {
+        "short": "length of each file (ffprobe), where Plex had none",
         "what": "Measures each video's length with ffprobe, for the files Plex did not already measure.",
-        "flow": (1, 2, 5),
+        "flow": ("plex-index", "scan-local (", "scan-youtube ("),
         "log": r"ffprobe|probe|scan-local",
     },
     "thumbnail": {
+        "short": "a small picture fingerprint per episode, to spot look-alikes",
         "what": "Makes a small thumbnail fingerprint of each episode-length video, to find look-alikes.",
-        "flow": (1, 2, 5),
+        "flow": ("plex-index", "scan-local (", "scan-youtube ("),
         "log": r"thumb",
     },
     "signature": {
+        "short": "intro, end-song and frame fingerprints, to place leftover episodes",
         "what": "Fingerprints the intro, end song and sampled frames of a few episodes per season.",
-        "flow": (5, 6, 7),
+        "flow": ("detect", "signatures", "detect again"),
         "log": r"fingerprint|^\s*\[\d+/\d+\] \d+ per minute",
     },
     "visual_style": {
+        "short": "frames sampled per season, to rate talk / produced / cinematic",
         "what": "Rates each season's production style (talk, produced, cinematic) from sampled frames.",
-        "flow": (9, 10, 11),
+        "flow": ("report", "scan-visual", "plan-channels"),
         "log": r"sampling|^\s*\[\d+/\d+\] \d+ per minute|style",
     },
 }
@@ -580,7 +588,8 @@ def stage_detail(
         ]
     )
     pat = re.compile(info["log"], re.I)
-    before, step, after = (STEPS[i][1] for i in info["flow"])
+    titles = {pre: title for pre, title, _ in STEPS}
+    before, step, after = (titles[k] for k in info["flow"])
     return {
         "key": name,
         "title": STAGE_NAMES.get(name, name),
@@ -842,7 +851,7 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
             out["stages"].append(
                 {
                     "key": "visual_style",
-                    "stage": "visual_style",
+                    "stage": STAGE_NAMES["visual_style"],
                     "done": r["d"] or 0,
                     "failed": r["f"] or 0,
                     "of": (r["d"] or 0) + (r["f"] or 0),
@@ -938,6 +947,8 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         if has("series_tags")
         else []
     )
+    for st in out["stages"]:
+        st["what"] = STAGE_INFO.get(st["key"], {}).get("short", "")
     out["now"] = time.time()
     conn.close()
     if log_path and log_path.exists():
