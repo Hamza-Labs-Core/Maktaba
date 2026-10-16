@@ -20,6 +20,7 @@ group per channel).
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import sqlite3
@@ -170,6 +171,9 @@ def load_inputs(
             )
         )
     shorts = {r[0] for r in conn.execute("SELECT path FROM shorts")}
+    # a second file of a video (X.mkv beside X.mp4) is not a loose video
+    with contextlib.suppress(sqlite3.OperationalError):
+        hidden |= {r[0] for r in conn.execute("SELECT path FROM file_copies")}
     loose: list[LooseVideo] = []
     for path, f in files.items():
         if path in in_series or path in hidden or not f["dur"]:

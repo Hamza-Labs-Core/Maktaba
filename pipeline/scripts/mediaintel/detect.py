@@ -6,6 +6,7 @@ import json
 import sqlite3
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from maktaba_pipeline.audio.chromaprint import decode
 from maktaba_pipeline.classify.series_detector import (
@@ -20,16 +21,51 @@ from maktaba_pipeline.classify.series_detector import (
 from .db import series_id
 
 
+def pick_copies(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """One row per video: files of one name in a folder ("X.mkv" and the user's "X.mp4"
+    transcode) are the same video. The MP4 is kept (the copy made to play well), else
+    the copy linked to YouTube, else the biggest; it takes the YouTube details of any
+    copy that has them. Returns the kept rows and {other copy: kept path}."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        groups.setdefault(r["stem"], []).append(r)
+    kept_rows: list[dict[str, Any]] = []
+    copies: dict[str, str] = {}
+    for group in groups.values():
+        best = max(
+            group,
+            key=lambda r: (
+                str(r["path"]).lower().endswith(".mp4"),
+                r["upload_date"] is not None,
+                r["size"] or 0,
+            ),
+        )
+        linked = next((r for r in group if r["upload_date"] is not None), None)
+        merged = dict(best)
+        if linked is not None and linked is not best:
+            for col in ("title", "upload_date", "date_quality", "tab", "youtube_id"):
+                merged[col] = linked[col]
+            merged["dur"] = merged["dur"] or linked["dur"]
+        kept_rows.append(merged)
+        for r in group:
+            if r is not best:
+                copies[r["path"]] = best["path"]
+    return kept_rows, copies
+
+
 def load_facts(
     conn: sqlite3.Connection, folder: str
 ) -> tuple[list[VideoFacts], list[PlaylistFacts], list[str]]:
-    rows = conn.execute(
-        """SELECT f.path, COALESCE(y.title, f.stem) AS title, COALESCE(f.duration_s, y.duration_s) AS dur,
+    raw = conn.execute(
+        """SELECT f.path, f.stem, f.size, f.youtube_id, COALESCE(y.title, f.stem) AS title,
+                  COALESCE(f.duration_s, y.duration_s) AS dur,
                   y.upload_date, y.date_quality, f.thumb_dhash, y.tab, f.width, f.height,
                   f.audio_head, f.audio_tail, f.frame_hashes
            FROM files f LEFT JOIN yt_videos y ON y.youtube_id=f.youtube_id WHERE f.folder=?""",
         (folder,),
     ).fetchall()
+    rows, copies = pick_copies([dict(r) for r in raw])
+    _COPIES[folder] = copies
     videos = [
         VideoFacts(
             key=r["path"],
@@ -55,7 +91,10 @@ def load_facts(
     ).fetchall()
     by_pl: dict[str, tuple[str, list[tuple[str, int | None]]]] = {}
     for r in pl_rows:
-        by_pl.setdefault(r["playlist_id"], (r["title"], []))[1].append((r["path"], r["position"]))
+        member = copies.get(r["path"], r["path"])  # a playlist lists the video, not the file
+        items = by_pl.setdefault(r["playlist_id"], (r["title"], []))[1]
+        if all(m != member for m, _ in items):
+            items.append((member, r["position"]))
     playlists = [PlaylistFacts(pid, t, tuple(m)) for pid, (t, m) in by_pl.items()]
     ch = conn.execute("SELECT channel FROM folders WHERE folder=?", (folder,)).fetchone()
     presenter = [ch["channel"]] if ch and ch["channel"] else []
@@ -63,7 +102,16 @@ def load_facts(
     return videos, playlists, presenter
 
 
+#: folder -> {other copy: kept path}, filled by load_facts and written by store
+_COPIES: dict[str, dict[str, str]] = {}
+
+
 def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -> None:
+    conn.execute("DELETE FROM file_copies WHERE folder=?", (folder,))
+    conn.executemany(
+        "INSERT INTO file_copies (path, kept, folder) VALUES (?,?,?)",
+        [(p, k, folder) for p, k in _COPIES.get(folder, {}).items()],
+    )
     conn.execute("DELETE FROM shorts WHERE folder=?", (folder,))
     conn.executemany(
         "INSERT INTO shorts (path, folder) VALUES (?,?)", [(k, folder) for k in det.shorts]

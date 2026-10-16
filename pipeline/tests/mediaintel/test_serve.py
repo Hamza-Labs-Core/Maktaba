@@ -151,3 +151,21 @@ def test_plex_export_removes_an_episode_only_on_evidence() -> None:
     assert not removable("x", "المنهج الإصلاحي ｜ الأنفال 01", placed, shorts)
     assert not removable("x", "فايز الكندري ｜ سورة فصلت من الآية ١٣ إلى الآية ١٤", placed, shorts)
     assert not removable("x", "شرح صحيح البخاري كاملا ٥١٢", placed, shorts)
+
+
+def test_pick_copies_keeps_the_mp4_transcode_with_the_youtube_details() -> None:
+    from scripts.mediaintel.detect import pick_copies
+
+    base = {"title": "x", "dur": 979.0, "date_quality": None, "tab": None, "youtube_id": None}
+    name = "كيف تكون محبة النبي"
+    mkv = {**base, "path": f"f/{name}.mkv", "stem": name, "size": 55,
+           "upload_date": "2020-05-01", "youtube_id": "y2vMJey7UJc", "title": name}  # fmt: skip
+    mp4 = {**base, "path": "f/كيف تكون محبة النبي.mp4", "stem": "كيف تكون محبة النبي", "size": 70,
+           "upload_date": None}  # fmt: skip
+    other = {**base, "path": "f/b.mp4", "stem": "b", "size": 1, "upload_date": None}
+    rows, copies = pick_copies([mkv, mp4, other])
+    kept = {r["path"]: r for r in rows}
+    assert set(kept) == {mp4["path"], other["path"]}
+    assert copies == {mkv["path"]: mp4["path"]}
+    assert kept[mp4["path"]]["upload_date"] == "2020-05-01"  # took the original's details
+    assert kept[mp4["path"]]["youtube_id"] == "y2vMJey7UJc"

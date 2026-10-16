@@ -21,6 +21,7 @@ Safety:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
@@ -193,6 +194,16 @@ def export(
                 (library,),
             )
         }
+        # a second file of a kept video (X.mkv beside the user's X.mp4) may leave too
+        with contextlib.suppress(sqlite3.OperationalError):
+            shorts |= {
+                k
+                for (k,) in conn.execute(
+                    """SELECT f.plex_rating_key FROM file_copies c JOIN files f ON f.path = c.path
+                       WHERE f.plex_library = ? AND f.plex_rating_key IS NOT NULL""",
+                    (library,),
+                )
+            }
         planned_keys: list[set[str]] = []
         planned: list[tuple[str, list[str]]] = []
         claimed: set[str] = set()  # existing collections taken over by a planned season

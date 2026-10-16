@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS shorts (
     path   TEXT PRIMARY KEY REFERENCES files(path) ON DELETE CASCADE,
     folder TEXT NOT NULL
 );
+-- another file of the same video in the same folder (a transcode: X.mkv next to X.mp4):
+-- never an episode or a loose video; ``kept`` is the copy that is used
+CREATE TABLE IF NOT EXISTS file_copies (
+    path   TEXT PRIMARY KEY REFERENCES files(path) ON DELETE CASCADE,
+    kept   TEXT NOT NULL,
+    folder TEXT NOT NULL
+);
 """
 
 
