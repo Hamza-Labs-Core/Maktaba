@@ -122,12 +122,20 @@ def test_0091_drops_both_legacy_indexes() -> None:
         assert "processing_jobs_one_live_scan_per_library" in code
 
 
+@pytest.fixture(scope="module")
+def schema_at_87() -> sqlite3.Connection:
+    """The schema as of slot 0087, built once: applying ~90 twins is the slow part."""
+    conn = sqlite3.connect(":memory:")
+    apply_sqlite(conn, upto=87)
+    return conn
+
+
 @pytest.mark.unit
-def test_sqlite_rebuild_preserves_existing_rows() -> None:
+def test_sqlite_rebuild_preserves_existing_rows(schema_at_87: sqlite3.Connection) -> None:
     """Upgrade path: rows written under the old schema survive the 0088 rebuild."""
     conn = sqlite3.connect(":memory:")
+    schema_at_87.backup(conn)  # a private copy per test; the template stays untouched
     conn.execute("PRAGMA foreign_keys = ON")
-    apply_sqlite(conn, upto=87)
     conn.execute("INSERT INTO libraries (id, name, roots) VALUES ('L1','a','[]')")
     conn.execute(
         "INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime)"

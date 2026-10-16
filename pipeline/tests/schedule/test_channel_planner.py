@@ -264,12 +264,13 @@ def test_lanes_never_mix_tiers() -> None:
 
 
 def test_produced_and_cinematic_take_prime_talk_takes_day_and_late() -> None:
-    ch = channel(plan(), "seerah")
-    lanes = plan().lanes
-    prime = lanes[lane_at(plan(), ch, 21 * 60) or ""]
-    evening = lanes[lane_at(plan(), ch, 18 * 60) or ""]
-    morning = lanes[lane_at(plan(), ch, 9 * 60) or ""]
-    late = lanes[lane_at(plan(), ch, 1 * 60) or ""]
+    p = plan()  # planned once: every plan() call re-runs the whole planner
+    ch = channel(p, "seerah")
+    lanes = p.lanes
+    prime = lanes[lane_at(p, ch, 21 * 60) or ""]
+    evening = lanes[lane_at(p, ch, 18 * 60) or ""]
+    morning = lanes[lane_at(p, ch, 9 * 60) or ""]
+    late = lanes[lane_at(p, ch, 1 * 60) or ""]
     assert prime.tier_group == "cinematic"
     assert evening.tier_group in ("produced", "cinematic")
     assert morning.tier_group == "talk"
@@ -547,14 +548,13 @@ def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
             assert isinstance(s["start"], str) and isinstance(s["end"], str)
             assert s["source"]["type"] in ("lane", "filler")
         # read back with the 27.2 SchedulePlanner's own helpers: one slot per minute per day
+        spans = [
+            (slot_days(s), parse_hhmm(s["start"]), parse_hhmm(s["end"]) or DAY_MINUTES)
+            for s in slots
+        ]  # parsed once, not once per probed minute
         for day in range(7):
             for m in range(0, DAY_MINUTES, 15):
-                hits = [
-                    s
-                    for s in slots
-                    if day in slot_days(s)
-                    and parse_hhmm(s["start"]) <= m < (parse_hhmm(s["end"]) or DAY_MINUTES)
-                ]
+                hits = [1 for days, lo, hi in spans if day in days and lo <= m < hi]
                 assert len(hits) == 1, (ch.key, day, m)
         if ch.ramadan_slots:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}
