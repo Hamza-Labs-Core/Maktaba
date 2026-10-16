@@ -1544,11 +1544,17 @@ def _scattered(
     placed = sum(where.values())
     if placed < cfg.brand_named_share * len(members):
         return True  # most of the show sits in no season at all
+    # one series holds (nearly) all of it: named after it, or from one playlist whatever it
+    # is called ("سيرة الرسول ﷺ" holding "كنوز السيرة N"), a stray episode elsewhere or
+    # not: together. Not a series that swallowed dozens of the show's playlists under one
+    # episode's name ("مجزرة صبرا وشاتيلا" holding "شاهد على العصر").
+    top_id, top_n = where.most_common(1)[0]
+    top = next(ser for ser in series if id(ser) == top_id)
+    top_pls = {pid for se in top.seasons for pid in se.playlists}
+    if top_n >= cfg.brand_named_share * placed and (key in _ns(top.name) or len(top_pls) <= 2):
+        return False
     many = sum(1 for n in where.values() if n >= 2) >= cfg.brand_scattered_series
-    # one series holds (nearly) all of it, whatever its playlist called it ("سيرة الرسول ﷺ"
-    # holding "كنوز السيرة N"): together
-    together = max(where.values()) >= cfg.brand_named_share * placed
-    return many or not (together or named >= cfg.brand_named_share * placed)
+    return many or named < cfg.brand_named_share * placed
 
 
 def _qualifier_of(title: str, key: str, phrases: Sequence[str]) -> str:
@@ -1621,6 +1627,35 @@ def _brand_series(
             seasons_pl.append((p, qual, years[0] if len(years) == 1 else None))
         elif len(set(members) & titled_set) >= 0.4 * len(titled_set):
             umbrellas.append(p)  # just the show's name, holding much of it
+    # words every guest playlist repeats after the show's name ("… الإسلامية للجيل الصاعد -
+    # شخصيات", "… الإسلامية للجيل الصاعد - زمن الخلفاء") and a closing "مكتمل" say nothing
+    by_first: dict[str, list[list[str]]] = defaultdict(list)
+    for _, q, _ in seasons_pl:
+        if q:
+            by_first[fold(q.split()[0])].append(q.split())
+    strip_n: dict[str, int] = {}
+    for first, quals in by_first.items():
+        if len(quals) < 2:
+            continue
+        n = 0
+        while all(len(q) > n + 1 and fold(q[n]) == fold(quals[0][n]) for q in quals):
+            n += 1
+        if n:
+            strip_n[first] = n
+    seasons_pl = [
+        (
+            p,
+            (" ".join(q.split()[strip_n[fold(q.split()[0])] :]).strip(" -|｜") or q)
+            if q and fold(q.split()[0]) in strip_n
+            else q,
+            y,
+        )
+        for p, q, y in seasons_pl
+    ]
+    seasons_pl = [
+        (p, re.sub(r"\s*[-|｜]?\s*(مكتمل[ةه]?|كامل[ةه]?)\s*$", "", q) if q else q, y)
+        for p, q, y in seasons_pl
+    ]
     # global order: umbrellas by their first year, then their positions
     umbrellas.sort(key=lambda p: (min(_years_in(p.title), default=9999), -len(p.members)))
     gpos: dict[str, tuple[int, float]] = {}
@@ -1835,13 +1870,18 @@ def _under_split(
     if from_playlists < 2:
         return False
     member_set = set(members)
-    held = sum(
-        1
+    held = [
+        n
         for ser in series
         for se in ser.seasons
-        if len(member_set.intersection(se.episodes)) >= cfg.min_season_size
+        if (n := len(member_set.intersection(se.episodes))) >= cfg.min_season_size
+    ]
+    # everything in one season (the umbrella playlist swallowed the guests' playlists)
+    return (
+        from_playlists >= 3
+        and len(held) <= 1
+        and sum(held) >= cfg.brand_named_share * len(member_set)
     )
-    return held * 2 < from_playlists
 
 
 def _placed_after(
