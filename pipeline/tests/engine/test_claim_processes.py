@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 
 SRC = str(Path(__file__).resolve().parents[2] / "src")
@@ -38,7 +39,7 @@ asyncio.run(main(sys.argv[1], sys.argv[2], float(sys.argv[3])))
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_three_worker_processes_never_exceed_the_global_pool_size(db) -> None:
+async def test_three_worker_processes_never_exceed_the_global_pool_size(db: Database) -> None:
     if db.dialect != "postgres":
         pytest.skip("real processes need a shared server")
     lib = await make_library(db)

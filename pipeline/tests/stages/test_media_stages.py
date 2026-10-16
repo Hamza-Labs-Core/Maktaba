@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -17,18 +20,19 @@ from maktaba_pipeline.engine.sql import loads, to_date
 from maktaba_pipeline.engine.stages import link as link_stage
 from maktaba_pipeline.engine.stages import thumb_hash
 from maktaba_pipeline.engine.stages.link import Candidate, build_index, match_candidates
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import add_channel, core_runtime, drain_core, make_fake_media
 
 
 @pytest.fixture(autouse=True)
-def _media():
+def _media() -> Iterator[None]:
     make_fake_media({})
     yield
     reset_runner()
 
 
-async def _rows(db, stage):
+async def _rows(db: Database, stage: str) -> list[Any]:
     return list(await db.fetch("SELECT * FROM processing_jobs WHERE stage = $1 ORDER BY id", stage))
 
 
@@ -73,7 +77,9 @@ def test_a_taken_youtube_id_is_never_linked_twice() -> None:
 # ------------------------------------------------------------------------------ link (stage)
 
 
-async def _yt(db, lib, yt_id, title, dur, channel="UCx"):
+async def _yt(
+    db: Database, lib: UUID, yt_id: str, title: str, dur: float, channel: str = "UCx"
+) -> None:
     await db.execute(
         "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality,"
         " duration_s, source) VALUES ($1,$2,$3,$4,'exact',$5,'youtube')",
@@ -82,7 +88,7 @@ async def _yt(db, lib, yt_id, title, dur, channel="UCx"):
 
 
 @pytest.mark.asyncio
-async def test_link_stage_matches_by_title_and_writes_the_enrichment_row(db) -> None:
+async def test_link_stage_matches_by_title_and_writes_the_enrichment_row(db: Database) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     await add_channel(db, lib, "UCx")
@@ -115,7 +121,7 @@ async def test_link_stage_matches_by_title_and_writes_the_enrichment_row(db) -> 
 
 
 @pytest.mark.asyncio
-async def test_link_never_auto_accepts_over_a_user_edit(db) -> None:
+async def test_link_never_auto_accepts_over_a_user_edit(db: Database) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     await add_channel(db, lib, "UCx")
@@ -135,7 +141,7 @@ async def test_link_never_auto_accepts_over_a_user_edit(db) -> None:
 
 @pytest.mark.asyncio
 async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
-    db, tmp_path: Path
+    db: Database, tmp_path: Path
 ) -> None:
     rt = await core_runtime(db)
     rt.path_map = PathMap.parse(f"Y:/={tmp_path.as_posix()}/")
@@ -169,7 +175,7 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
 
 
 @pytest.mark.asyncio
-async def test_link_input_fingerprint_follows_its_inputs(db) -> None:
+async def test_link_input_fingerprint_follows_its_inputs(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib, filename="a.mp4")
     s = Subject("video", v)
@@ -183,7 +189,7 @@ async def test_link_input_fingerprint_follows_its_inputs(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_thumb_hash_hashes_the_sidecar_thumbnail(db, tmp_path: Path) -> None:
+async def test_thumb_hash_hashes_the_sidecar_thumbnail(db: Database, tmp_path: Path) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     (tmp_path / "show_01.mp4").write_bytes(b"v")
@@ -204,7 +210,7 @@ async def test_thumb_hash_hashes_the_sidecar_thumbnail(db, tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_thumb_hash_without_any_thumbnail_records_none(db, tmp_path: Path) -> None:
+async def test_thumb_hash_without_any_thumbnail_records_none(db: Database, tmp_path: Path) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     (tmp_path / "a.mp4").write_bytes(b"v")
@@ -219,8 +225,8 @@ async def test_thumb_hash_without_any_thumbnail_records_none(db, tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_thumb_hash_unreadable_image_fails_with_a_cause(db, tmp_path: Path) -> None:
-    async def bad(args, timeout):
+async def test_thumb_hash_unreadable_image_fails_with_a_cause(db: Database, tmp_path: Path) -> None:
+    async def bad(args: list[str], timeout: float) -> ProcResult:
         return ProcResult(b"", b"Invalid data found when processing input", 1)
 
     set_runner(bad)
@@ -239,7 +245,7 @@ async def test_thumb_hash_unreadable_image_fails_with_a_cause(db, tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_style_sample_stores_metrics_and_fails_cleanly_without_frames(db) -> None:
+async def test_style_sample_stores_metrics_and_fails_cleanly_without_frames(db: Database) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     v = await make_video(db, lib, filename="show_1.mp4", duration=1500.0)
@@ -251,7 +257,7 @@ async def test_style_sample_stores_metrics_and_fails_cleanly_without_frames(db) 
     m = loads(sig["style_metrics"])
     assert m["sampled_s"] > 0 and sig["style_version"] == 1
 
-    async def blank(args, timeout):
+    async def blank(args: list[str], timeout: float) -> ProcResult:
         return ProcResult(b"", b"", 0)
 
     set_runner(blank)
@@ -263,7 +269,7 @@ async def test_style_sample_stores_metrics_and_fails_cleanly_without_frames(db) 
 
 
 @pytest.mark.asyncio
-async def test_fingerprint_without_a_probed_duration_waits_for_inputs(db) -> None:
+async def test_fingerprint_without_a_probed_duration_waits_for_inputs(db: Database) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     v = await make_video(db, lib, filename="show_1.mp4", duration=None)

@@ -7,11 +7,13 @@ from pathlib import Path
 
 import pytest
 
+from maktaba_pipeline.runtime import Database
+
 SEED = Path(__file__).resolve().parents[1] / "fixtures" / "queue_seed.sql"
 
 
 @pytest.mark.asyncio
-async def test_seed_loads_on_the_migrated_schema_and_covers_every_state(db) -> None:
+async def test_seed_loads_on_the_migrated_schema_and_covers_every_state(db: Database) -> None:
     if db.dialect != "postgres":
         pytest.skip("the seed is Postgres SQL (jsonb, generate_series)")
     await db.execute(SEED.read_text(encoding="utf-8"))

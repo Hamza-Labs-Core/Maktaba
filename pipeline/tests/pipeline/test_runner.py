@@ -450,7 +450,7 @@ async def test_loop_filters_stages_per_worker() -> None:
     cfg = _make_cfg(stages=(Stage.TRANSCRIBE,))
     semaphores = {Stage.TRANSCRIBE: asyncio.Semaphore(1)}
 
-    seen: list[Stage] = []
+    seen: list[Stage | str] = []
 
     async def dispatch(job: Job) -> None:
         seen.append(job.stage)

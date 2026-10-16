@@ -2,29 +2,36 @@
 
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
+
 import pytest
 
+from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.ids import season_uuid, series_uuid
 from maktaba_pipeline.engine.sql import loads, to_ts
 from maktaba_pipeline.engine.stages.detect import compute_changes, input_fingerprint, plan_library
+from maktaba_pipeline.runtime import Database
 from tests.stages.world import core_runtime, drain_core, make_show, set_playlist
 
 SEASON_KEY = "stories of the prophets"
 
 
-async def _detect(db, rt, library, *, force=False):
+async def _detect(
+    db: Database, rt: EngineRuntime, library: UUID, *, force: bool = False
+) -> list[str]:
     await enqueue_job(db, subject_kind="library", subject_id=library, stage="detect", force=force)
     return await drain_core(db, rt, only={"detect"})
 
 
-async def _jobs(db, stage):
+async def _jobs(db: Database, stage: str) -> list[Any]:
     return list(await db.fetch("SELECT * FROM processing_jobs WHERE stage = $1 ORDER BY id", stage))
 
 
 @pytest.mark.asyncio
-async def test_detect_places_episodes_and_creates_series_and_season(db) -> None:
+async def test_detect_places_episodes_and_creates_series_and_season(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     assert await _detect(db, rt, w.library) == ["detect"]
@@ -55,7 +62,7 @@ async def test_detect_places_episodes_and_creates_series_and_season(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_detect_triggers_exactly_its_dependents(db) -> None:
+async def test_detect_triggers_exactly_its_dependents(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -74,7 +81,7 @@ async def test_detect_triggers_exactly_its_dependents(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unchanged_detection_propagates_nothing(db) -> None:
+async def test_unchanged_detection_propagates_nothing(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -86,7 +93,7 @@ async def test_unchanged_detection_propagates_nothing(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unchanged_inputs_are_skipped_without_running_the_detector(db) -> None:
+async def test_unchanged_inputs_are_skipped_without_running_the_detector(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -95,7 +102,7 @@ async def test_unchanged_inputs_are_skipped_without_running_the_detector(db) -> 
 
 
 @pytest.mark.asyncio
-async def test_membership_change_retriggers_only_the_changed_season(db) -> None:
+async def test_membership_change_retriggers_only_the_changed_season(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -134,7 +141,7 @@ async def test_membership_change_retriggers_only_the_changed_season(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_vanished_season_is_retired_and_its_dependents_run(db) -> None:
+async def test_a_vanished_season_is_retired_and_its_dependents_run(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -159,7 +166,7 @@ async def test_a_vanished_season_is_retired_and_its_dependents_run(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_user_overrides_survive_a_redetection(db) -> None:
+async def test_user_overrides_survive_a_redetection(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     await _detect(db, rt, w.library)
@@ -176,7 +183,7 @@ async def test_user_overrides_survive_a_redetection(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_input_fingerprint_follows_inputs_only(db) -> None:
+async def test_input_fingerprint_follows_inputs_only(db: Database) -> None:
     rt = await core_runtime(db)
     w = await make_show(db)
     subject = Subject("library", w.library)
@@ -215,7 +222,9 @@ def test_plan_is_deterministic_and_ids_are_stable() -> None:
         )  # fmt: skip
         for i in range(10)
     ]
-    pls = {"PL9": ("Show Alpha", [(str(r.id), i + 1) for i, r in enumerate(rows)])}
+    pls: dict[str, tuple[str, list[tuple[str, int | None]]]] = {
+        "PL9": ("Show Alpha", [(str(r.id), i + 1) for i, r in enumerate(rows)])
+    }
     a = plan_library(lib, rows, pls)
     b = plan_library(lib, rows, pls)
     assert [s.id for s in a.seasons] == [s.id for s in b.seasons]

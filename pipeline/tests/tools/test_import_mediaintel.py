@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -17,6 +18,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import SIG_VERSION
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import loads, to_ts
+from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tools.import_mediaintel import parse_path_maps, run_import
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import core_runtime, drain_core, make_fake_media
@@ -57,7 +59,7 @@ def _metrics() -> str:
     return json.dumps(m.to_dict())
 
 
-async def _library(db) -> tuple[UUID, list[UUID]]:
+async def _library(db: Database) -> tuple[UUID, list[UUID]]:
     lib = await make_library(db, "Cached")
     vids = [
         await make_video(
@@ -127,12 +129,12 @@ def _cache(path: Path, *, drop_one: bool = False) -> Path:
     return path
 
 
-async def _count(db, table: str) -> int:
+async def _count(db: Database, table: str) -> int:
     return int(await db.fetchval(f"SELECT count(*) FROM {table}"))
 
 
 @pytest.fixture(autouse=True)
-def _media():
+def _media() -> Iterator[dict[str, int]]:
     counter: dict[str, int] = {}
     make_fake_media(counter)
     yield counter
@@ -140,7 +142,7 @@ def _media():
 
 
 @pytest.mark.asyncio
-async def test_dry_run_reports_and_writes_nothing(db, tmp_path: Path) -> None:
+async def test_dry_run_reports_and_writes_nothing(db: Database, tmp_path: Path) -> None:
     lib, _ = await _library(db)
     cache = _cache(tmp_path / "cache.db")
     before = {
@@ -158,7 +160,7 @@ async def test_dry_run_reports_and_writes_nothing(db, tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_apply_imports_data_and_every_live_job_is_then_skipped(
-    db, tmp_path: Path, _media
+    db: Database, tmp_path: Path, _media: dict[str, int]
 ) -> None:
     lib, vids = await _library(db)
     cache = _cache(tmp_path / "cache.db")
@@ -248,7 +250,7 @@ async def test_apply_imports_data_and_every_live_job_is_then_skipped(
 
 
 @pytest.mark.asyncio
-async def test_a_second_apply_adds_no_duplicate_history(db, tmp_path: Path) -> None:
+async def test_a_second_apply_adds_no_duplicate_history(db: Database, tmp_path: Path) -> None:
     lib, _ = await _library(db)
     cache = _cache(tmp_path / "cache.db")
     await run_import(db, cache, ["Cached"], apply=True)
@@ -260,7 +262,9 @@ async def test_a_second_apply_adds_no_duplicate_history(db, tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_unmatched_and_changed_files_are_reported_not_imported(db, tmp_path: Path) -> None:
+async def test_unmatched_and_changed_files_are_reported_not_imported(
+    db: Database, tmp_path: Path
+) -> None:
     lib = await make_library(db, "Cached")
     await make_video(
         db, lib, filename="ep00.mp4", size=999, mtime=EPOCH, path="Y:/chan/ep00.mp4"
@@ -273,7 +277,7 @@ async def test_unmatched_and_changed_files_are_reported_not_imported(db, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_path_map_rewrites_the_cache_prefix(db, tmp_path: Path) -> None:
+async def test_path_map_rewrites_the_cache_prefix(db: Database, tmp_path: Path) -> None:
     lib = await make_library(db, "Cached")
     for i in range(N):
         await make_video(
@@ -288,7 +292,9 @@ async def test_path_map_rewrites_the_cache_prefix(db, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_failed_cache_rows_become_failed_jobs_with_a_cause(db, tmp_path: Path) -> None:
+async def test_failed_cache_rows_become_failed_jobs_with_a_cause(
+    db: Database, tmp_path: Path
+) -> None:
     lib, vids = await _library(db)
     cache = _cache(tmp_path / "cache.db", drop_one=True)
     c = sqlite3.connect(cache)

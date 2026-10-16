@@ -9,13 +9,16 @@ second time changes nothing.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
 from datetime import date, timedelta
+from typing import Any
 
 import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.engine.media import reset_runner
+from maktaba_pipeline.engine.media import ProcResult, reset_runner
 from maktaba_pipeline.engine.sql import loads
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library
 from tests.stages.world import (
     World,
@@ -29,20 +32,22 @@ from tests.stages.world import (
 
 
 @pytest.fixture(autouse=True)
-def _media():
+def _media() -> Iterator[dict[str, int]]:
     counter: dict[str, int] = {}
     make_fake_media(counter)
     yield counter
     reset_runner()
 
 
-async def _rows(db, stage=None):
+async def _rows(db: Database, stage: str | None = None) -> list[Any]:
     if stage is None:
         return list(await db.fetch("SELECT * FROM processing_jobs ORDER BY id"))
     return list(await db.fetch("SELECT * FROM processing_jobs WHERE stage = $1 ORDER BY id", stage))
 
 
-async def _library_with_candidates(db, *, n_eps=12, n_cands=4, n_decoys=2) -> World:
+async def _library_with_candidates(
+    db: Database, *, n_eps: int = 12, n_cands: int = 4, n_decoys: int = 2
+) -> World:
     lib = await make_library(db)
     await add_channel(db, lib)
     w = World(library=lib)
@@ -76,7 +81,9 @@ async def _library_with_candidates(db, *, n_eps=12, n_cands=4, n_decoys=2) -> Wo
 
 
 @pytest.mark.asyncio
-async def test_two_pass_flow_places_candidates_with_a_shared_intro(db, _media) -> None:
+async def test_two_pass_flow_places_candidates_with_a_shared_intro(
+    db: Database, _media: dict[str, int]
+) -> None:
     rt = await core_runtime(db)
     w = await _library_with_candidates(db)
     await enqueue_job(db, subject_kind="library", subject_id=w.library, stage="detect")
@@ -101,7 +108,9 @@ async def test_two_pass_flow_places_candidates_with_a_shared_intro(db, _media) -
 
 
 @pytest.mark.asyncio
-async def test_season_without_a_shared_signature_never_reads_its_candidates(db, _media) -> None:
+async def test_season_without_a_shared_signature_never_reads_its_candidates(
+    db: Database, _media: dict[str, int]
+) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
     await add_channel(db, lib)
@@ -133,7 +142,9 @@ async def test_season_without_a_shared_signature_never_reads_its_candidates(db, 
 
 
 @pytest.mark.asyncio
-async def test_running_the_cascade_twice_changes_nothing(db, _media) -> None:
+async def test_running_the_cascade_twice_changes_nothing(
+    db: Database, _media: dict[str, int]
+) -> None:
     rt = await core_runtime(db)
     w = await _library_with_candidates(db)
     await enqueue_job(db, subject_kind="library", subject_id=w.library, stage="detect")
@@ -149,12 +160,13 @@ async def test_running_the_cascade_twice_changes_nothing(db, _media) -> None:
 
 
 @pytest.mark.asyncio
-async def test_failed_sample_fingerprint_is_not_a_signature(db, _media) -> None:
+async def test_failed_sample_fingerprint_is_not_a_signature(
+    db: Database, _media: dict[str, int]
+) -> None:
     """A partial read keeps what was read, marks fp_partial and fails (cause nas_partial_read)."""
     from maktaba_pipeline.engine import media
-    from maktaba_pipeline.engine.media import ProcResult
 
-    async def flaky(args, timeout):
+    async def flaky(args: list[str], timeout: float) -> ProcResult:
         if "chromaprint" in args:
             return ProcResult(b"", b"Invalid argument reading input via ffmpeg", 1)
         return ProcResult(bytes((i * 37) % 251 for i in range(72)), b"", 0)
@@ -176,8 +188,8 @@ async def test_failed_sample_fingerprint_is_not_a_signature(db, _media) -> None:
 # ------------------------------------------------------------------ convergence property
 
 
-def _random_library_spec(rng: random.Random):
-    shows = []
+def _random_library_spec(rng: random.Random) -> list[dict[str, Any]]:
+    shows: list[dict[str, Any]] = []
     for s in range(rng.randint(1, 3)):
         shows.append(
             {
@@ -194,7 +206,9 @@ def _random_library_spec(rng: random.Random):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("seed", range(6))
-async def test_random_libraries_reach_quiescence_within_the_bound(db, _media, seed: int) -> None:
+async def test_random_libraries_reach_quiescence_within_the_bound(
+    db: Database, _media: dict[str, int], seed: int
+) -> None:
     rng = random.Random(1000 + seed)
     rt = await core_runtime(db)
     lib = await make_library(db)

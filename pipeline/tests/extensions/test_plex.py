@@ -22,6 +22,7 @@ from maktaba_pipeline.extensions.plex.collection import (
     compute_changes,
 )
 from maktaba_pipeline.integrations.plex import PlexClient
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.extensions.harness import (
     FakePlex,
@@ -94,7 +95,7 @@ def test_compute_changes_is_pure_and_typed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_creates_collection_and_stores_the_applied_change_set(db) -> None:
+async def test_creates_collection_and_stores_the_applied_change_set(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
     job = await collection_job(db, rt, w)
@@ -122,7 +123,7 @@ async def test_creates_collection_and_stores_the_applied_change_set(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_second_run_with_identical_remote_state_writes_nothing(db) -> None:
+async def test_second_run_with_identical_remote_state_writes_nothing(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
     first = await collection_job(db, rt, w)
@@ -148,7 +149,7 @@ async def test_second_run_with_identical_remote_state_writes_nothing(db) -> None
 
 
 @pytest.mark.asyncio
-async def test_reorder_deletes_before_recreating_and_reads_back(db) -> None:
+async def test_reorder_deletes_before_recreating_and_reads_back(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
     await collection_job(db, rt, w)
@@ -175,7 +176,7 @@ async def test_reorder_deletes_before_recreating_and_reads_back(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_readback_mismatch_fails_the_job(db) -> None:
+async def test_readback_mismatch_fails_the_job(db: Database) -> None:
     w = await make_world(db)
     w.fake.corrupt = True
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
@@ -189,7 +190,7 @@ async def test_readback_mismatch_fails_the_job(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_collection_the_tool_did_not_create_is_never_touched(db) -> None:
+async def test_a_collection_the_tool_did_not_create_is_never_touched(db: Database) -> None:
     w = await make_world(db)
     mine = w.fake.add_collection("Lib - Show", ["101"])  # the user's own, same title
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
@@ -202,7 +203,7 @@ async def test_a_collection_the_tool_did_not_create_is_never_touched(db) -> None
 
 
 @pytest.mark.asyncio
-async def test_a_link_not_marked_created_by_tool_is_treated_as_foreign(db) -> None:
+async def test_a_link_not_marked_created_by_tool_is_treated_as_foreign(db: Database) -> None:
     w = await make_world(db)
     mine = w.fake.add_collection("Lib - Show", ["101"])
     await db.execute(
@@ -220,7 +221,7 @@ async def test_a_link_not_marked_created_by_tool_is_treated_as_foreign(db) -> No
 
 
 @pytest.mark.asyncio
-async def test_members_missing_from_plex_wait_for_inputs(db) -> None:
+async def test_members_missing_from_plex_wait_for_inputs(db: Database) -> None:
     w = await make_world(db, in_plex=False)
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
     job = await collection_job(db, rt, w)
@@ -230,7 +231,7 @@ async def test_members_missing_from_plex_wait_for_inputs(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_partial_membership_leaves_unmatched_episodes_out(db) -> None:
+async def test_partial_membership_leaves_unmatched_episodes_out(db: Database) -> None:
     w = await make_world(db)
     del w.fake.items["102"]
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
@@ -242,7 +243,7 @@ async def test_partial_membership_leaves_unmatched_episodes_out(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retired_season_removes_only_our_collection(db) -> None:
+async def test_retired_season_removes_only_our_collection(db: Database) -> None:
     w = await make_world(db)
     other = w.fake.add_collection("Someone else's", ["101"])
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
@@ -261,7 +262,7 @@ async def test_retired_season_removes_only_our_collection(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_plex_down_is_a_retryable_failure(db) -> None:
+async def test_plex_down_is_a_retryable_failure(db: Database) -> None:
     w = await make_world(db)
     w.fake.down = True
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
@@ -271,7 +272,7 @@ async def test_plex_down_is_a_retryable_failure(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_review_mode_parks_the_change_set(db) -> None:
+async def test_review_mode_parks_the_change_set(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
     await db.execute("UPDATE job_stages SET write_mode = 'review' WHERE stage = 'plex_collection'")
@@ -285,7 +286,7 @@ async def test_review_mode_parks_the_change_set(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dry_fingerprint_is_stable_database_only_and_sensitive(db) -> None:
+async def test_dry_fingerprint_is_stable_database_only_and_sensitive(db: Database) -> None:
     w = await make_world(db)
     ext = make_extension(w.fake)
     await setup_runtime(db, [ext], SETTINGS)

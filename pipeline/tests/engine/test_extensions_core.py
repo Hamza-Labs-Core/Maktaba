@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -24,6 +25,7 @@ from maktaba_pipeline.extensions.store import (
     save_settings,
     set_enabled,
 )
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season
 
 
@@ -120,7 +122,9 @@ def test_discover_finds_nothing_broken_when_builtins_are_absent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_from_env_then_the_database_wins(db, monkeypatch) -> None:
+async def test_bootstrap_from_env_then_the_database_wins(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
     ext = FakeExt()
     monkeypatch.setenv("FAKEEXT_URL", "http://env")
     monkeypatch.setenv("FAKEEXT_TOKEN", "envtoken")
@@ -140,7 +144,9 @@ async def test_bootstrap_from_env_then_the_database_wins(db, monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_extension_starts_disabled(db, monkeypatch) -> None:
+async def test_unconfigured_extension_starts_disabled(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("FAKEEXT_URL", raising=False)
     monkeypatch.delenv("FAKEEXT_TOKEN", raising=False)
     ext = FakeExt()
@@ -150,10 +156,10 @@ async def test_unconfigured_extension_starts_disabled(db, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_registers_extension_stages_with_their_state(db) -> None:
+async def test_sync_registers_extension_stages_with_their_state(db: Database) -> None:
     graph = build_full_graph([FakeExt()])
 
-    async def stage_row():
+    async def stage_row() -> Any:
         return await db.fetchrow(
             "SELECT enabled, disabled_reason, extension FROM job_stages WHERE stage = 'fake_push'"
         )
@@ -175,7 +181,7 @@ async def test_sync_registers_extension_stages_with_their_state(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_disabled_extension_stage_refuses_enqueue_and_is_never_claimed(db) -> None:
+async def test_disabled_extension_stage_refuses_enqueue_and_is_never_claimed(db: Database) -> None:
     graph = build_full_graph([FakeExt()])
     lib = await make_library(db)
     _, season = await make_series_and_season(db, lib)
@@ -197,7 +203,7 @@ async def test_disabled_extension_stage_refuses_enqueue_and_is_never_claimed(db)
 
 
 @pytest.mark.asyncio
-async def test_an_operator_disable_survives_the_extension_sync(db) -> None:
+async def test_an_operator_disable_survives_the_extension_sync(db: Database) -> None:
     graph = build_full_graph([FakeExt()])
     on = {"fakeext": ExtensionState("fakeext", True, {"url": "x"}, True)}
     await sync_graph(db, graph, on)

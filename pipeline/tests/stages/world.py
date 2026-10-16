@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
+from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import GRAPH
@@ -193,7 +194,9 @@ async def drain_core(
     raise AssertionError(f"did not quiesce after {limit} jobs: {ran[-20:]}")
 
 
-async def _claim_any(db: Any, rt: EngineRuntime, pools: set[str], only: set[str] | None):
+async def _claim_any(
+    db: Any, rt: EngineRuntime, pools: set[str], only: set[str] | None
+) -> Job | None:
     for pool in sorted(pools):
         stages = [
             s.name

@@ -46,7 +46,7 @@ def pg_template() -> str:
     """Create (once) a migrated template database; return its name."""
     if not PG_URL:
         pytest.skip("MAKTABA_TEST_PG_URL not set")
-    import asyncpg
+    import asyncpg  # type: ignore[import-untyped]  # no stubs ship with asyncpg
 
     name = "maktaba_tpl_" + uuid.uuid4().hex[:8]
 

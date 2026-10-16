@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -11,19 +12,21 @@ import pytest
 from maktaba_pipeline.engine.enqueue import enqueue_job, merge_payload, prepend_reason
 from maktaba_pipeline.engine.graph import CATALOG_ID
 from maktaba_pipeline.engine.sql import loads, now, parse_ts, to_ts
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
 
 
-async def _row(db, job_id: int):
+async def _row(db: Database, job_id: int | None) -> Any:
+    assert job_id is not None
     return await db.fetchrow("SELECT * FROM processing_jobs WHERE id = $1", job_id)
 
 
-async def _count(db) -> int:
+async def _count(db: Database) -> int:
     return int(await db.fetchval("SELECT count(*) FROM processing_jobs"))
 
 
 @pytest.mark.asyncio
-async def test_insert_then_coalesce(db) -> None:
+async def test_insert_then_coalesce(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     first = await enqueue_job(
@@ -51,7 +54,7 @@ async def test_insert_then_coalesce(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reasons_are_capped_at_twenty(db) -> None:
+async def test_reasons_are_capped_at_twenty(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     for i in range(25):
@@ -65,7 +68,7 @@ async def test_reasons_are_capped_at_twenty(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_debounce_extends_but_is_capped(db) -> None:
+async def test_debounce_extends_but_is_capped(db: Database) -> None:
     lib = await make_library(db)
     first = await enqueue_job(db, subject_kind="library", subject_id=lib, stage="detect")
     row = await _row(db, first.job_id)
@@ -97,7 +100,7 @@ async def test_debounce_extends_but_is_capped(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_debounce_stage_has_no_not_before(db) -> None:
+async def test_no_debounce_stage_has_no_not_before(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     r = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
@@ -106,7 +109,7 @@ async def test_no_debounce_stage_has_no_not_before(db) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["claimed", "running", "resuming", "paused"])
-async def test_trigger_on_active_row_requests_rerun(db, state: str) -> None:
+async def test_trigger_on_active_row_requests_rerun(db: Database, state: str) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe", priority=100)
@@ -126,7 +129,7 @@ async def test_trigger_on_active_row_requests_rerun(db, state: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_finished_rows_do_not_block_a_new_one(db) -> None:
+async def test_finished_rows_do_not_block_a_new_one(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
@@ -136,7 +139,7 @@ async def test_finished_rows_do_not_block_a_new_one(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_disabled_and_invalid(db) -> None:
+async def test_unknown_disabled_and_invalid(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     assert (await enqueue_job(db, subject_kind="video", subject_id=v, stage="nope")).outcome == (
@@ -163,7 +166,7 @@ async def test_unknown_disabled_and_invalid(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_subject_columns_per_kind(db) -> None:
+async def test_subject_columns_per_kind(db: Database) -> None:
     lib = await make_library(db)
     series_id, season_id = await make_series_and_season(db, lib)
     r = await enqueue_job(db, subject_kind="season", subject_id=season_id, stage="tag")
@@ -177,7 +180,7 @@ async def test_subject_columns_per_kind(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fifty_concurrent_enqueues_make_one_row(db) -> None:
+async def test_fifty_concurrent_enqueues_make_one_row(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     results = await asyncio.gather(
@@ -195,7 +198,7 @@ async def test_fifty_concurrent_enqueues_make_one_row(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_payload_seasons_are_unioned_other_keys_keep_first(db) -> None:
+async def test_payload_seasons_are_unioned_other_keys_keep_first(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     a, b = str(uuid4()), str(uuid4())
@@ -213,7 +216,7 @@ async def test_payload_seasons_are_unioned_other_keys_keep_first(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_job_events_record_the_trigger(db) -> None:
+async def test_job_events_record_the_trigger(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     r = await enqueue_job(

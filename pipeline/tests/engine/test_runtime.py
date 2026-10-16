@@ -4,21 +4,35 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any
 
 import pytest
 
+from maktaba_pipeline.db.jobs import DBConn, Job, Stage
+from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.workers import live_workers, stages_without_worker
-from maktaba_pipeline.runtime import RuntimeConfig, _served_stages, _start_engine
+from maktaba_pipeline.runtime import (
+    Database,
+    RuntimeConfig,
+    StageHandler,
+    _served_stages,
+    _start_engine,
+)
 
 LEGACY_HANDLERS = {"scan", "probe", "extract", "transcribe", "subtitle_gen", "index", "thumbnail"}
 
 
-async def _boot(db, **kw):
+async def _noop_handler(db: DBConn, job: Job) -> None:
+    """Stand-in legacy handler; the booted engine never runs a job here."""
+
+
+async def _boot(db: Database, **kw: Any) -> tuple[EngineRuntime, tuple[str, ...], dict[str, str]]:
     cfg = RuntimeConfig(database_url="x", stages=(), **kw)
     stop = asyncio.Event()
+    overrides: dict[Stage | str, StageHandler] = dict.fromkeys(LEGACY_HANDLERS, _noop_handler)
     rt, stages, pools, tasks = await _start_engine(
-        db, cfg, "pc/1", cfg.host or "PC", stop, dict.fromkeys(LEGACY_HANDLERS, object())
+        db, cfg, "pc/1", cfg.host or "PC", stop, overrides
     )
     stop.set()
     for t in tasks:
@@ -30,7 +44,7 @@ async def _boot(db, **kw):
 
 
 @pytest.mark.asyncio
-async def test_default_worker_serves_every_stage_it_has_a_handler_for(db) -> None:
+async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Database) -> None:
     rt, stages, pools = await _boot(db, host="PC")
     core_engine = {
         "thumb_hash", "link", "fingerprint", "style_sample", "youtube_sync", "detect",
@@ -49,7 +63,7 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db) -> Non
 
 
 @pytest.mark.asyncio
-async def test_the_audio_chain_can_be_left_to_another_host(db) -> None:
+async def test_the_audio_chain_can_be_left_to_another_host(db: Database) -> None:
     _, stages, _ = await _boot(
         db, host="PC", exclude_stages=("extract", "transcribe", "subtitle_gen", "index")
     )

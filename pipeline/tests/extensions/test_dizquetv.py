@@ -24,6 +24,7 @@ from maktaba_pipeline.extensions.links import Link, get_link, put_link
 from maktaba_pipeline.extensions.plex import PlexExtension
 from maktaba_pipeline.integrations.dizquetv import PREFIX, DizqueTV, State
 from maktaba_pipeline.integrations.plex import PlexClient
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.extensions.harness import (
     FakeDizque,
@@ -108,7 +109,9 @@ def test_show_compute_changes_is_pure() -> None:
 
 
 @pytest.mark.asyncio
-async def test_show_is_created_from_cached_plex_keys_and_the_change_set_is_stored(db) -> None:
+async def test_show_is_created_from_cached_plex_keys_and_the_change_set_is_stored(
+    db: Database,
+) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, w.extensions, SETTINGS)
     job = await show_job(db, rt, w)
@@ -128,7 +131,7 @@ async def test_show_is_created_from_cached_plex_keys_and_the_change_set_is_store
 
 
 @pytest.mark.asyncio
-async def test_show_second_run_writes_nothing_and_reorder_updates_in_place(db) -> None:
+async def test_show_second_run_writes_nothing_and_reorder_updates_in_place(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, w.extensions, SETTINGS)
     await show_job(db, rt, w)
@@ -152,7 +155,7 @@ async def test_show_second_run_writes_nothing_and_reorder_updates_in_place(db) -
 
 
 @pytest.mark.asyncio
-async def test_show_waits_when_a_plex_key_is_missing(db) -> None:
+async def test_show_waits_when_a_plex_key_is_missing(db: Database) -> None:
     w = await make_world(db)
     await db.execute(
         "DELETE FROM external_links WHERE target = 'plex_item' AND subject_id = $1",
@@ -166,7 +169,7 @@ async def test_show_waits_when_a_plex_key_is_missing(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_show_readback_mismatch_fails(db) -> None:
+async def test_show_readback_mismatch_fails(db: Database) -> None:
     w = await make_world(db)
     w.dz.corrupt = True
     rt = await setup_runtime(db, w.extensions, SETTINGS)
@@ -176,7 +179,7 @@ async def test_show_readback_mismatch_fails(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_show_the_user_made_is_never_touched(db) -> None:
+async def test_a_show_the_user_made_is_never_touched(db: Database) -> None:
     w = await make_world(db)
     w.dz.shows["mine"] = {"name": "Lib - Show", "content": [{"ratingKey": "999"}]}
     rt = await setup_runtime(db, w.extensions, SETTINGS)
@@ -189,7 +192,7 @@ async def test_a_show_the_user_made_is_never_touched(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retired_season_deletes_only_the_show_we_made(db) -> None:
+async def test_retired_season_deletes_only_the_show_we_made(db: Database) -> None:
     w = await make_world(db)
     w.dz.shows["mine"] = {"name": "Unrelated", "content": []}
     rt = await setup_runtime(db, w.extensions, SETTINGS)
@@ -207,7 +210,7 @@ async def test_retired_season_deletes_only_the_show_we_made(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_show_without_plex_settings_fails_non_retryably(db) -> None:
+async def test_show_without_plex_settings_fails_non_retryably(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, w.extensions, {"dizquetv": SETTINGS["dizquetv"]})
     job = await show_job(db, rt, w)
@@ -216,7 +219,7 @@ async def test_show_without_plex_settings_fails_non_retryably(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dizquetv_down_is_a_retryable_failure(db) -> None:
+async def test_dizquetv_down_is_a_retryable_failure(db: Database) -> None:
     w = await make_world(db)
     w.dz.down = True
     rt = await setup_runtime(db, w.extensions, SETTINGS)
@@ -226,7 +229,7 @@ async def test_dizquetv_down_is_a_retryable_failure(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_show_dry_fingerprint_is_stable_and_database_only(db) -> None:
+async def test_show_dry_fingerprint_is_stable_and_database_only(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, w.extensions, SETTINGS)
     fp = w.extensions[1].impls()["dizquetv_show"].input_fingerprint
@@ -319,7 +322,7 @@ async def channel_world(db: Any) -> tuple[World, Any]:
 
 
 @pytest.mark.asyncio
-async def test_channels_written_from_the_latest_plan(db) -> None:
+async def test_channels_written_from_the_latest_plan(db: Database) -> None:
     w, rt = await channel_world(db)
     job = await channels_job(db, rt)
     assert job["state"] == "done" and job["outcome"] == "changed", error_of(job)
@@ -345,7 +348,7 @@ async def test_channels_written_from_the_latest_plan(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_channels_second_run_with_identical_remote_state_writes_nothing(db) -> None:
+async def test_channels_second_run_with_identical_remote_state_writes_nothing(db: Database) -> None:
     w, rt = await channel_world(db)
     first = await channels_job(db, rt)
     writes = list(w.dz.writes)
@@ -360,7 +363,7 @@ async def test_channels_second_run_with_identical_remote_state_writes_nothing(db
 
 
 @pytest.mark.asyncio
-async def test_channels_update_keeps_user_settings_and_rewrites_the_lane(db) -> None:
+async def test_channels_update_keeps_user_settings_and_rewrites_the_lane(db: Database) -> None:
     w, rt = await channel_world(db)
     await channels_job(db, rt)
     w.dz.channels[5]["name"] = "My own name"  # the user renamed it in dizqueTV
@@ -380,7 +383,7 @@ async def test_channels_update_keeps_user_settings_and_rewrites_the_lane(db) -> 
 
 
 @pytest.mark.asyncio
-async def test_a_channel_the_user_made_is_never_overwritten(db) -> None:
+async def test_a_channel_the_user_made_is_never_overwritten(db: Database) -> None:
     w, rt = await channel_world(db)
     w.dz.channels[5] = {"number": 5, "name": "Mine", "programs": []}  # no maktabaPlan marker
     job = await channels_job(db, rt)
@@ -394,7 +397,7 @@ async def test_a_channel_the_user_made_is_never_overwritten(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_channels_wait_for_a_plan(db) -> None:
+async def test_channels_wait_for_a_plan(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, w.extensions, SETTINGS)
     job = await channels_job(db, rt)
@@ -403,7 +406,7 @@ async def test_channels_wait_for_a_plan(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_channels_readback_mismatch_fails(db) -> None:
+async def test_channels_readback_mismatch_fails(db: Database) -> None:
     w, rt = await channel_world(db)
     w.dz.corrupt = True
     job = await channels_job(db, rt)
@@ -412,7 +415,7 @@ async def test_channels_readback_mismatch_fails(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_channels_dry_fingerprint_follows_plan_and_write_mode(db) -> None:
+async def test_channels_dry_fingerprint_follows_plan_and_write_mode(db: Database) -> None:
     w, rt = await channel_world(db)
     fp = w.extensions[1].impls()["dizquetv_channels"].input_fingerprint
     assert fp is not None
@@ -469,7 +472,7 @@ def test_manifest_and_configuration() -> None:
 
 
 @pytest.mark.asyncio
-async def test_plan_videos_are_resolved_to_plex_keys_through_external_links(db) -> None:
+async def test_plan_videos_are_resolved_to_plex_keys_through_external_links(db: Database) -> None:
     w, rt = await channel_world(db)
     plan = make_plan()
     eps = plan["lanes"]["L1"]["units"][0]["episodes"]

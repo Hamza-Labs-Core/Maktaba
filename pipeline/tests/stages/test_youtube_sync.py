@@ -18,6 +18,7 @@ from maktaba_pipeline.integrations.youtube import (
     classify_error,
     list_channel,
 )
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 from tests.extensions.harness import error_of, events, run_stage, setup_runtime, summary_of
 
@@ -169,7 +170,9 @@ def test_classify_and_list_channel_with_a_fake_fetcher() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lists_channels_and_stores_rows(db, tmp_path, fetcher) -> None:
+async def test_lists_channels_and_stores_rows(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     rt = await setup_runtime(db, [])
     job = await sync_job(db, rt, lib)
@@ -195,7 +198,9 @@ async def test_lists_channels_and_stores_rows(db, tmp_path, fetcher) -> None:
 
 
 @pytest.mark.asyncio
-async def test_identical_listing_is_unchanged_and_propagates_nothing(db, tmp_path, fetcher) -> None:
+async def test_identical_listing_is_unchanged_and_propagates_nothing(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     await link_video(db, lib, A)
     rt = await setup_runtime(db, [])
@@ -207,7 +212,9 @@ async def test_identical_listing_is_unchanged_and_propagates_nothing(db, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_changed_rows_name_the_linked_videos(db, tmp_path, fetcher) -> None:
+async def test_changed_rows_name_the_linked_videos(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     va = await link_video(db, lib, A)
     vb = await link_video(db, lib, B)
@@ -215,7 +222,9 @@ async def test_changed_rows_name_the_linked_videos(db, tmp_path, fetcher) -> Non
     first = await sync_job(db, rt, lib)
     assert await link_jobs(db, first["id"]) == {str(va), str(vb)}
 
-    entries = fetcher.pages[CHANNEL_URL + "/videos"]["entries"]  # type: ignore[index]
+    page = fetcher.pages[CHANNEL_URL + "/videos"]
+    assert page is not None
+    entries = page["entries"]
     entries[0]["title"] = "Video A (renamed)"
     job = await sync_job(db, rt, lib)
     assert job["outcome"] == "changed"
@@ -225,7 +234,9 @@ async def test_changed_rows_name_the_linked_videos(db, tmp_path, fetcher) -> Non
 
 
 @pytest.mark.asyncio
-async def test_bot_check_is_recorded_and_fails_without_retry(db, tmp_path, fetcher) -> None:
+async def test_bot_check_is_recorded_and_fails_without_retry(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     fetcher.errors[CHANNEL_URL + "/videos"] = "ERROR: Sign in to confirm you're not a bot"
     rt = await setup_runtime(db, [])
@@ -237,7 +248,9 @@ async def test_bot_check_is_recorded_and_fails_without_retry(db, tmp_path, fetch
 
 
 @pytest.mark.asyncio
-async def test_gone_channel_is_recorded_and_skipped_until_refresh(db, tmp_path, fetcher) -> None:
+async def test_gone_channel_is_recorded_and_skipped_until_refresh(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     fetcher.errors[CHANNEL_URL + "/videos"] = "ERROR: This channel does not exist"
     rt = await setup_runtime(db, [])
@@ -256,7 +269,9 @@ async def test_gone_channel_is_recorded_and_skipped_until_refresh(db, tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_other_errors_are_recorded_as_error(db, tmp_path, fetcher) -> None:
+async def test_other_errors_are_recorded_as_error(
+    db: Database, tmp_path: Path, fetcher: FakeFetcher
+) -> None:
     lib = await make_library_with_folder(db, tmp_path)
     fetcher.errors[CHANNEL_URL + "/videos"] = "ERROR: unexpected breakage"
     rt = await setup_runtime(db, [])
@@ -269,7 +284,7 @@ async def test_other_errors_are_recorded_as_error(db, tmp_path, fetcher) -> None
 
 
 @pytest.mark.asyncio
-async def test_missing_yt_dlp_fails_without_retry(db, tmp_path) -> None:
+async def test_missing_yt_dlp_fails_without_retry(db: Database, tmp_path: Path) -> None:
     def broken() -> Any:
         raise ImportError("no yt_dlp")
 

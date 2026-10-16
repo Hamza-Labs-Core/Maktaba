@@ -6,18 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from maktaba_pipeline.engine.graph import GRAPH, GraphBuilder, validate
+from maktaba_pipeline.engine.graph import GRAPH, GraphBuilder, StageDef, validate
 from maktaba_pipeline.engine.loader import build_full_graph
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.extensions import discover
 from maktaba_pipeline.extensions.dizquetv import extension as dizquetv
 from maktaba_pipeline.extensions.plex import extension as plex
 from maktaba_pipeline.extensions.store import ExtensionState
+from maktaba_pipeline.runtime import Database
 
 EXT_STAGES = {"plex_collection", "dizquetv_show", "dizquetv_channels"}
 
 
-def edges(graph: tuple, name: str) -> set[tuple[str, str]]:
+def edges(graph: tuple[StageDef, ...], name: str) -> set[tuple[str, str]]:
     stage = next(s for s in graph if s.name == name)
     return {(e.to, e.map) for e in stage.edges}
 
@@ -91,7 +92,7 @@ def test_manifest_stages_match_registration() -> None:
         assert set(ext.impls()) == set(ext.manifest.stages)
 
 
-async def stage_state(db, name: str) -> tuple[bool, str | None]:
+async def stage_state(db: Database, name: str) -> tuple[bool, str | None]:
     row = await db.fetchrow(
         "SELECT enabled, disabled_reason FROM job_stages WHERE stage = $1", name
     )
@@ -99,7 +100,7 @@ async def stage_state(db, name: str) -> tuple[bool, str | None]:
 
 
 @pytest.mark.asyncio
-async def test_sync_marks_stages_enabled_disabled_or_unconfigured(db) -> None:
+async def test_sync_marks_stages_enabled_disabled_or_unconfigured(db: Database) -> None:
     graph = build_full_graph([plex, dizquetv])
     states = {
         "plex": ExtensionState("plex", True, {"url": "u", "token": "t"}, True),
@@ -128,7 +129,7 @@ async def test_sync_marks_stages_enabled_disabled_or_unconfigured(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_extension_removed_from_the_graph_leaves_core_intact(db) -> None:
+async def test_extension_removed_from_the_graph_leaves_core_intact(db: Database) -> None:
     await sync_graph(db, build_full_graph([plex]), {"plex": ExtensionState("plex", True, {}, True)})
     await sync_graph(db, build_full_graph([]), {})
     assert await stage_state(db, "detect") == (True, None)

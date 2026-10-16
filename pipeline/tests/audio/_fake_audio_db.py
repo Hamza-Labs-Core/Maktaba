@@ -687,8 +687,8 @@ class FakeAudioDB:
             return _Row({"job_id": new_id, "outcome": "inserted"})
 
         if s.startswith("SELECT library_id FROM processing_jobs WHERE id"):
-            pj = self.processing_jobs.get(int(args[0]))
-            return None if pj is None else _Row({"library_id": pj.library_id})
+            job_row = self.processing_jobs.get(int(args[0]))
+            return None if job_row is None else _Row({"library_id": job_row.library_id})
 
         if s.startswith(("INSERT INTO job_events", "INSERT INTO events")):
             return None

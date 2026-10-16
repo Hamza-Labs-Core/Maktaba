@@ -7,18 +7,21 @@ import json
 
 import pytest
 
+from maktaba_pipeline.db.jobs import DBConn, Job
 from maktaba_pipeline.engine.claim import claim_for_pool
+from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.dispatch import dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import CATALOG_ID, Request, StageResult
 from maktaba_pipeline.engine.sql import loads
 from maktaba_pipeline.engine.sync import sync_graph
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 
 
 @pytest.mark.asyncio
-async def test_changed_output_enqueues_exactly_the_declared_edges(db) -> None:
+async def test_changed_output_enqueues_exactly_the_declared_edges(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     lib = await make_library(db)
@@ -35,7 +38,7 @@ async def test_changed_output_enqueues_exactly_the_declared_edges(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unchanged_output_enqueues_nothing(db) -> None:
+async def test_unchanged_output_enqueues_nothing(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -52,7 +55,7 @@ async def test_unchanged_output_enqueues_nothing(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_output_change_propagates_again(db) -> None:
+async def test_output_change_propagates_again(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -66,7 +69,7 @@ async def test_output_change_propagates_again(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_skipped_unchanged_when_inputs_and_version_match(db) -> None:
+async def test_skipped_unchanged_when_inputs_and_version_match(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in-1"})
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -88,7 +91,7 @@ async def test_skipped_unchanged_when_inputs_and_version_match(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_changed_input_reruns(db) -> None:
+async def test_changed_input_reruns(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in-1"})
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -101,7 +104,7 @@ async def test_changed_input_reruns(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_force_reruns_but_propagates_only_on_change(db) -> None:
+async def test_force_reruns_but_propagates_only_on_change(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in-1"})
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -115,7 +118,7 @@ async def test_force_reruns_but_propagates_only_on_change(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_force_cascade_reaches_the_leaves_even_when_unchanged(db) -> None:
+async def test_force_cascade_reaches_the_leaves_even_when_unchanged(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in-1", "t_b": "in-b", "t_c": "in-c"})
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -131,7 +134,7 @@ async def test_force_cascade_reaches_the_leaves_even_when_unchanged(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_version_bump_reruns_once_per_subject(db) -> None:
+async def test_version_bump_reruns_once_per_subject(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in-1"})
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -149,12 +152,12 @@ async def test_version_bump_reruns_once_per_subject(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_trigger_during_run_creates_exactly_one_follow_up(db) -> None:
+async def test_trigger_during_run_creates_exactly_one_follow_up(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
 
-    async def during(db_, job, ctx) -> StageResult:
+    async def during(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         for i in range(3):  # three triggers while running coalesce into one rerun flag
             res = await enqueue_job(
                 db_, subject_kind="video", subject_id=v, stage="t_a",
@@ -166,6 +169,7 @@ async def test_trigger_during_run_creates_exactly_one_follow_up(db) -> None:
     rec.hooks["t_a"] = during
     first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="t_a")
     job = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["t_a"], scope="per_worker")
+    assert job is not None
     await dispatch_job(db, job, runtime=rt, legacy_handlers={})
     a_rows = await rows(db, "t_a")
     assert len(a_rows) == 2
@@ -178,13 +182,13 @@ async def test_trigger_during_run_creates_exactly_one_follow_up(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_undeclared_request_fails_with_graph_violation(db) -> None:
+async def test_undeclared_request_fails_with_graph_violation(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     lib = await make_library(db)
     v = await make_video(db, lib)
 
-    async def bad(db_, job, ctx) -> StageResult:
+    async def bad(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         # t_a declares no may_request at all
         return StageResult(
             output_hash="x",
@@ -201,13 +205,13 @@ async def test_undeclared_request_fails_with_graph_violation(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_declared_request_is_enqueued(db) -> None:
+async def test_declared_request_is_enqueued(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     lib = await make_library(db)
     v = await make_video(db, lib)
 
-    async def ask(db_, job, ctx) -> StageResult:
+    async def ask(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         return StageResult(
             output_hash="x",
             requests=(Request("t_a", "video", v, "sample of season", payload={"role": "sample"}),),
@@ -222,12 +226,12 @@ async def test_declared_request_is_enqueued(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_waiting_inputs_never_propagates(db) -> None:
+async def test_waiting_inputs_never_propagates(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
 
-    async def wait(db_, job, ctx) -> StageResult:
+    async def wait(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         return StageResult(output_hash="x", outcome="waiting_inputs")
 
     rec.hooks["t_a"] = wait
@@ -238,12 +242,12 @@ async def test_waiting_inputs_never_propagates(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retryable_failure_sets_cause_backoff_and_events(db) -> None:
+async def test_retryable_failure_sets_cause_backoff_and_events(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
 
-    async def boom(db_, job, ctx) -> StageResult:
+    async def boom(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         raise OSError("[WinError 121] The semaphore timeout period has expired: Y:/a/b.mp4")
 
     rec.hooks["t_a"] = boom
@@ -259,12 +263,12 @@ async def test_retryable_failure_sets_cause_backoff_and_events(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_terminal_failure_with_pending_trigger_gets_a_follow_up(db) -> None:
+async def test_terminal_failure_with_pending_trigger_gets_a_follow_up(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
 
-    async def boom(db_, job, ctx) -> StageResult:
+    async def boom(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
         await enqueue_job(db_, subject_kind="video", subject_id=v, stage="t_a")
         from maktaba_pipeline.engine.context import StageFailure
 
@@ -279,7 +283,7 @@ async def test_terminal_failure_with_pending_trigger_gets_a_follow_up(db) -> Non
 
 
 @pytest.mark.asyncio
-async def test_job_lifecycle_events_are_published(db) -> None:
+async def test_job_lifecycle_events_are_published(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db), title="Episode 1")
@@ -295,7 +299,7 @@ async def test_job_lifecycle_events_are_published(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_disabled_stage_is_never_claimed(db) -> None:
+async def test_disabled_stage_is_never_claimed(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
@@ -307,7 +311,7 @@ async def test_disabled_stage_is_never_claimed(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_preserves_operator_columns_and_reasons(db) -> None:
+async def test_sync_preserves_operator_columns_and_reasons(db: Database) -> None:
     rec = Recorder()
     rt = await setup(db, rec)
     await db.execute(

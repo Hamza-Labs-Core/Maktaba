@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from maktaba_pipeline.engine.graph import CATALOG_ID, GRAPH, POOLS
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.engine.migrate import apply_sqlite, list_migrations, up_statements
 
@@ -155,7 +156,7 @@ def test_sqlite_rebuild_preserves_existing_rows() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_matches_graph(db) -> None:
+async def test_seed_matches_graph(db: Database) -> None:
     rows = await db.fetch(
         "SELECT stage, pool, lane, lane_order, version, legacy, write_mode FROM job_stages"
     )
@@ -179,7 +180,7 @@ async def test_seed_matches_graph(db) -> None:
 @pytest.mark.parametrize(
     "stage", ["topic_recluster", "topic_assign", "categorize", "chapter_infer"]
 )
-async def test_f6_epic9_stages_are_accepted(db, stage: str) -> None:
+async def test_f6_epic9_stages_are_accepted(db: Database, stage: str) -> None:
     lib = await make_library(db)
     if stage == "topic_recluster":
         col, kind, sid = "library_id", "library", lib
@@ -196,7 +197,7 @@ async def test_f6_epic9_stages_are_accepted(db, stage: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_f7_updated_at_exists(db) -> None:
+async def test_f7_updated_at_exists(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     await db.execute(
@@ -210,7 +211,7 @@ async def test_f7_updated_at_exists(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_insert_without_subject_is_bridged(db) -> None:
+async def test_legacy_insert_without_subject_is_bridged(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     await db.execute("INSERT INTO processing_jobs (video_id, stage) VALUES ($1,'probe')", str(v))
@@ -226,7 +227,7 @@ async def test_legacy_insert_without_subject_is_bridged(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_f5_library_scoped_scan_row_persists(db) -> None:
+async def test_f5_library_scoped_scan_row_persists(db: Database) -> None:
     lib = await make_library(db)
     await db.execute(
         "INSERT INTO processing_jobs (library_id, video_id, stage, subject_kind, subject_id)"
@@ -237,7 +238,7 @@ async def test_f5_library_scoped_scan_row_persists(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_subject_check_rejects_mismatched_pair(db) -> None:
+async def test_subject_check_rejects_mismatched_pair(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     other = await make_video(db, lib)
@@ -251,7 +252,7 @@ async def test_subject_check_rejects_mismatched_pair(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_one_live_row_per_subject_stage(db) -> None:
+async def test_one_live_row_per_subject_stage(db: Database) -> None:
     lib = await make_library(db)
     _, season = await make_series_and_season(db, lib)
     sql = (
@@ -264,7 +265,7 @@ async def test_one_live_row_per_subject_stage(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_catalog_subject_pairing(db) -> None:
+async def test_catalog_subject_pairing(db: Database) -> None:
     await db.execute(
         "INSERT INTO processing_jobs (stage, subject_kind, subject_id)"
         " VALUES ('plan_channels','catalog',$1)",
@@ -279,7 +280,7 @@ async def test_catalog_subject_pairing(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_new_tables_exist(db) -> None:
+async def test_new_tables_exist(db: Database) -> None:
     for table in (
         "queue_control", "job_events", "health_samples", "workers", "extensions",
         "video_signals", "youtube_channels", "youtube_videos", "youtube_playlists",

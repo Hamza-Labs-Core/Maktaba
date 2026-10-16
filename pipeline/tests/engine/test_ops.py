@@ -26,6 +26,7 @@ from maktaba_pipeline.engine.workers import (
     register_worker,
     stages_without_worker,
 )
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 
@@ -33,13 +34,14 @@ from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 
 
 @pytest.mark.asyncio
-async def test_reconciler_repairs_a_crash_between_legacy_done_and_propagation(db) -> None:
+async def test_reconciler_repairs_a_crash_between_legacy_done_and_propagation(db: Database) -> None:
     await sync_graph(db, GRAPH)
     graph = {s.name: s for s in GRAPH}
     lib = await make_library(db)
     v = await make_video(db, lib, duration=600.0)
     await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
     job = await claim_for_pool(db, worker_id="w", pool="nas_read", stages=["probe"])
+    assert job is not None
     await mark_done(db, job_id=job.id)  # the handler finished; the process died right here
     await db.execute(
         "UPDATE processing_jobs SET finished_at = $2 WHERE id = $1",
@@ -62,7 +64,7 @@ async def test_reconciler_repairs_a_crash_between_legacy_done_and_propagation(db
 
 
 @pytest.mark.asyncio
-async def test_reconciler_version_sweep_queues_each_stale_subject_once(db) -> None:
+async def test_reconciler_version_sweep_queues_each_stale_subject_once(db: Database) -> None:
     rec = Recorder(inputs={"t_a": "in"})
     rt = await setup(db, rec)
     lib = await make_library(db)
@@ -83,7 +85,7 @@ async def test_reconciler_version_sweep_queues_each_stale_subject_once(db) -> No
 
 
 @pytest.mark.asyncio
-async def test_reconciler_schedules_youtube_refresh(db) -> None:
+async def test_reconciler_schedules_youtube_refresh(db: Database) -> None:
     await sync_graph(db, GRAPH)
     graph = {s.name: s for s in GRAPH}
     lib = await make_library(db)
@@ -113,7 +115,7 @@ async def test_reconciler_schedules_youtube_refresh(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_prune_applies_retention_and_keeps_latest_done(db) -> None:
+async def test_prune_applies_retention_and_keeps_latest_done(db: Database) -> None:
     await sync_graph(db, GRAPH)
     lib = await make_library(db)
     v = await make_video(db, lib)
@@ -237,7 +239,7 @@ async def test_nas_probe_times_a_real_file_and_counts_stderr(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_sample_once_writes_health_samples(db) -> None:
+async def test_sample_once_writes_health_samples(db: Database) -> None:
     c = HealthCollector()
     c.record_open(12.0)
     c.record_timeout()
@@ -257,7 +259,7 @@ async def test_sample_once_writes_health_samples(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_registry_and_stages_without_a_worker(db) -> None:
+async def test_worker_registry_and_stages_without_a_worker(db: Database) -> None:
     await sync_graph(db, GRAPH)
     await register_worker(
         db, worker_id="pc/1", host="PC", stages=["probe", "detect"], pools=["nas_read", "cpu"]

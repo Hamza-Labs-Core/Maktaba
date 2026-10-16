@@ -20,15 +20,16 @@ import pytest
 from maktaba_pipeline.db import JOBS_NEW, Stage, enqueue, get_bus, reset_bus
 from maktaba_pipeline.db.jobs import enqueue_scan
 from maktaba_pipeline.engine.sql import to_ts
+from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 
 
-async def _count(db) -> int:
+async def _count(db: Database) -> int:
     return int(await db.fetchval("SELECT count(*) FROM processing_jobs"))
 
 
 @pytest.mark.asyncio
-async def test_enqueue_inserts_pending_row(db) -> None:
+async def test_enqueue_inserts_pending_row(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     res = await enqueue(db, video_id=video, stage=Stage.PROBE)
     assert res.outcome == "inserted"
@@ -39,7 +40,7 @@ async def test_enqueue_inserts_pending_row(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_idempotent_returns_same_id(db) -> None:
+async def test_enqueue_idempotent_returns_same_id(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     a = await enqueue(db, video_id=video, stage=Stage.PROBE)
     b = await enqueue(db, video_id=video, stage=Stage.PROBE)
@@ -48,7 +49,7 @@ async def test_enqueue_idempotent_returns_same_id(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_concurrent_idempotent(db) -> None:
+async def test_enqueue_concurrent_idempotent(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     results = await asyncio.gather(
         *[enqueue(db, video_id=video, stage=Stage.PROBE) for _ in range(20)]
@@ -59,7 +60,7 @@ async def test_enqueue_concurrent_idempotent(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_skips_when_done_and_source_unchanged(db) -> None:
+async def test_enqueue_skips_when_done_and_source_unchanged(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     first = await enqueue(db, video_id=video, stage=Stage.PROBE)
     finished = datetime.now(UTC) + timedelta(seconds=5)
@@ -74,7 +75,7 @@ async def test_enqueue_skips_when_done_and_source_unchanged(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_creates_new_when_source_changed(db) -> None:
+async def test_enqueue_creates_new_when_source_changed(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     first = await enqueue(db, video_id=video, stage=Stage.PROBE)
     finished = datetime.now(UTC) - timedelta(days=1)
@@ -91,7 +92,7 @@ async def test_enqueue_creates_new_when_source_changed(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_payload_round_trips(db) -> None:
+async def test_enqueue_payload_round_trips(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     res = await enqueue(db, video_id=video, stage=Stage.TRANSCRIBE, payload={"model": "x", "n": 3})
     raw = await db.fetchval("SELECT payload FROM processing_jobs WHERE id = $1", res.id)
@@ -99,14 +100,14 @@ async def test_enqueue_payload_round_trips(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_payload_none_stores_null(db) -> None:
+async def test_enqueue_payload_none_stores_null(db: Database) -> None:
     video = await make_video(db, await make_library(db))
     res = await enqueue(db, video_id=video, stage=Stage.PROBE)
     assert await db.fetchval("SELECT payload FROM processing_jobs WHERE id = $1", res.id) is None
 
 
 @pytest.mark.asyncio
-async def test_enqueue_priority_default_and_override(db) -> None:
+async def test_enqueue_priority_default_and_override(db: Database) -> None:
     lib = await make_library(db)
     a = await enqueue(db, video_id=await make_video(db, lib), stage=Stage.PROBE)
     b = await enqueue(db, video_id=await make_video(db, lib), stage=Stage.PROBE, priority=50)
@@ -115,7 +116,7 @@ async def test_enqueue_priority_default_and_override(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_accepts_stages_beyond_the_original_seven(db) -> None:
+async def test_enqueue_accepts_stages_beyond_the_original_seven(db: Database) -> None:
     """Regression for F6: the epic-9 stages used to violate the stage CHECKs."""
     video = await make_video(db, await make_library(db))
     res = await enqueue(db, video_id=video, stage="categorize")
@@ -123,7 +124,7 @@ async def test_enqueue_accepts_stages_beyond_the_original_seven(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_emits_pubsub_event_on_sqlite(db) -> None:
+async def test_enqueue_emits_pubsub_event_on_sqlite(db: Database) -> None:
     if db.dialect != "sqlite":
         pytest.skip("Postgres publishes through the AFTER INSERT trigger")
     reset_bus()
@@ -138,7 +139,7 @@ async def test_enqueue_emits_pubsub_event_on_sqlite(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_scan_is_library_scoped_and_idempotent(db) -> None:
+async def test_enqueue_scan_is_library_scoped_and_idempotent(db: Database) -> None:
     lib = await make_library(db)
     a = await enqueue_scan(db, library_id=lib, priority=50)
     b = await enqueue_scan(db, library_id=lib)

@@ -3,29 +3,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
 
 from maktaba_pipeline.classify.production_style import STYLE_VERSION, StyleMetrics
+from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import CATALOG_ID
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import dumps, loads
 from maktaba_pipeline.engine.stages.write_channels import content_hash
-from tests.stages.world import core_runtime, drain_core, make_fake_media, make_show
+from maktaba_pipeline.runtime import Database
+from tests.stages.world import World, core_runtime, drain_core, make_fake_media, make_show
 
 
 @pytest.fixture(autouse=True)
-def _media():
+def _media() -> Iterator[None]:
     make_fake_media({})
     yield
     reset_runner()
 
 
-async def _rows(db, stage):
+async def _rows(db: Database, stage: str) -> list[Any]:
     return list(await db.fetch("SELECT * FROM processing_jobs WHERE stage = $1 ORDER BY id", stage))
 
 
-async def _events(db, kind, stage):
+async def _events(db: Database, kind: str, stage: str) -> list[Any]:
     return [
         loads(r["data"])
         for r in await db.fetch(
@@ -34,7 +39,9 @@ async def _events(db, kind, stage):
     ]
 
 
-async def _pipeline(db, *, name="قصص الأنبياء", episodes=30):
+async def _pipeline(
+    db: Database, *, name: str = "قصص الأنبياء", episodes: int = 30
+) -> tuple[EngineRuntime, World]:
     """detect -> everything it triggers, run to quiescence."""
     rt = await core_runtime(db)
     w = await make_show(db, name=name, episodes=episodes, loose=4)
@@ -47,7 +54,7 @@ async def _pipeline(db, *, name="قصص الأنبياء", episodes=30):
 
 
 @pytest.mark.asyncio
-async def test_tag_stores_season_and_loose_video_tags_with_a_change_set(db) -> None:
+async def test_tag_stores_season_and_loose_video_tags_with_a_change_set(db: Database) -> None:
     _, w = await _pipeline(db)
     tags = await db.fetch("SELECT tag, score FROM season_tags")
     assert tags, "an Arabic prophets series must get topic tags"
@@ -61,7 +68,7 @@ async def test_tag_stores_season_and_loose_video_tags_with_a_change_set(db) -> N
 
 
 @pytest.mark.asyncio
-async def test_tag_rerun_with_same_content_changes_nothing(db) -> None:
+async def test_tag_rerun_with_same_content_changes_nothing(db: Database) -> None:
     rt, _ = await _pipeline(db)
     n_events = len(await _events(db, "applied", "tag"))
     sid = await db.fetchval("SELECT id FROM series_seasons")
@@ -75,8 +82,8 @@ async def test_tag_rerun_with_same_content_changes_nothing(db) -> None:
 # ------------------------------------------------------------------------------ rate_style
 
 
-def _metrics(**kw) -> dict:
-    base = dict(
+def _metrics(**kw: float) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
         sampled_s=120.0, cuts_per_min=0.2, motion=0.8, motion_p90=1.5, still_share=0.1,
         luma_mean=120.0, luma_std=5.0, dark_share=0.0, sat_mean=40.0, sat_std=3.0,
         chroma_spread=2.0, looks_per_min=0.5, top3_share=0.9, revisit_share=0.8,
@@ -87,7 +94,7 @@ def _metrics(**kw) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_rate_style_waits_for_samples_then_rates_the_season(db) -> None:
+async def test_rate_style_waits_for_samples_then_rates_the_season(db: Database) -> None:
     rt, w = await _pipeline(db)
     # the pipeline already ran style_sample through the fake ffmpeg: a style exists
     row = await db.fetchrow("SELECT style, tier, sampled, style_version FROM season_style")
@@ -102,7 +109,7 @@ async def test_rate_style_waits_for_samples_then_rates_the_season(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_user_override_wins_and_needs_no_sampling(db) -> None:
+async def test_a_user_override_wins_and_needs_no_sampling(db: Database) -> None:
     rt, _ = await _pipeline(db)
     sid = await db.fetchval("SELECT season_id FROM season_style")
     n_samples = len(await _rows(db, "style_sample"))
@@ -118,10 +125,10 @@ async def test_a_user_override_wins_and_needs_no_sampling(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_samples_that_fail_for_good_do_not_block_the_rating(db) -> None:
+async def test_samples_that_fail_for_good_do_not_block_the_rating(db: Database) -> None:
     from maktaba_pipeline.engine.media import ProcResult, set_runner
 
-    async def broken(args, timeout):
+    async def broken(args: list[str], timeout: float) -> ProcResult:
         return ProcResult(b"", b"decode error", 1)
 
     set_runner(broken)
@@ -143,7 +150,7 @@ async def test_samples_that_fail_for_good_do_not_block_the_rating(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_plan_channels_stores_a_plan_and_write_channels_creates_live_tv(db) -> None:
+async def test_plan_channels_stores_a_plan_and_write_channels_creates_live_tv(db: Database) -> None:
     rt, _ = await _pipeline(db, episodes=40)
     plans = await db.fetch("SELECT plan, input_hash, planner_version FROM channel_plans")
     assert len(plans) >= 1
@@ -169,7 +176,7 @@ async def test_plan_channels_stores_a_plan_and_write_channels_creates_live_tv(db
 
 
 @pytest.mark.asyncio
-async def test_unchanged_lineup_stores_and_writes_nothing(db) -> None:
+async def test_unchanged_lineup_stores_and_writes_nothing(db: Database) -> None:
     rt, _ = await _pipeline(db, episodes=40)
     plans = await db.fetchval("SELECT count(*) FROM channel_plans")
     writes = len(await _rows(db, "write_channels"))
@@ -185,7 +192,7 @@ async def test_unchanged_lineup_stores_and_writes_nothing(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_write_channels_leaves_other_channels_and_user_edits_alone(db) -> None:
+async def test_write_channels_leaves_other_channels_and_user_edits_alone(db: Database) -> None:
     rt, _ = await _pipeline(db, episodes=40)
     mine = await db.fetchrow(
         "SELECT external_id, subject_id FROM external_links WHERE target = 'maktaba_channel' LIMIT 1"
@@ -217,7 +224,9 @@ async def test_write_channels_leaves_other_channels_and_user_edits_alone(db) -> 
 
 
 @pytest.mark.asyncio
-async def test_a_number_held_by_a_foreign_channel_is_a_conflict_not_an_overwrite(db) -> None:
+async def test_a_number_held_by_a_foreign_channel_is_a_conflict_not_an_overwrite(
+    db: Database,
+) -> None:
     rt = await core_runtime(db)
     w = await make_show(db, name="قصص الأنبياء", episodes=40, loose=4)
     for n in range(95, 160):  # squat on every number the planner might pick
@@ -238,7 +247,9 @@ async def test_a_number_held_by_a_foreign_channel_is_a_conflict_not_an_overwrite
 
 
 @pytest.mark.asyncio
-async def test_channels_the_plan_no_longer_has_are_removed_only_if_the_tool_made_them(db) -> None:
+async def test_channels_the_plan_no_longer_has_are_removed_only_if_the_tool_made_them(
+    db: Database,
+) -> None:
     rt, _ = await _pipeline(db, episodes=40)
     n = await db.fetchval("SELECT count(*) FROM channels")
     assert n >= 1
