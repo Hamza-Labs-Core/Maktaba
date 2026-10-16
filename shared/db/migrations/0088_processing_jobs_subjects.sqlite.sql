@@ -58,7 +58,7 @@ DROP TABLE IF EXISTS processing_jobs__new;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TABLE processing_jobs__new (
+CREATE TABLE IF NOT EXISTS processing_jobs__new (
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id                 TEXT REFERENCES videos(id) ON DELETE CASCADE,
     library_id               TEXT REFERENCES libraries(id) ON DELETE CASCADE,

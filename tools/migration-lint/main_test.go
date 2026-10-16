@@ -36,6 +36,7 @@ func TestIdempotencyAcceptsGuarded(t *testing.T) {
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx ON foo(id)",
 		"DROP TABLE IF EXISTS foo",
 		"DROP INDEX IF EXISTS idx",
+		"DROP INDEX CONCURRENTLY IF EXISTS idx",
 		"ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar int",
 	}
 	for _, stmt := range cases {
