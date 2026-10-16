@@ -117,6 +117,12 @@ def _lane_json(ln: Lane) -> dict[str, Any]:
         "order": ln.order,
         "ramadan": ln.ramadan,
         "special": ln.special or None,
+        # the TV grid: the slot this lane is the queue of, its shows' cadence, its shows in
+        # queue order (one after the other, never interleaved)
+        "pattern": ln.pattern or None,
+        "cadence": ln.cadence or None,
+        "slot_minutes": ln.slot_minutes,
+        "shows": list(ln.shows),
         "hours": round(ln.hours, 2),
         "episode_count": ln.episode_count,
         "max_episode_minutes": round(ln.max_episode_s / 60, 1),

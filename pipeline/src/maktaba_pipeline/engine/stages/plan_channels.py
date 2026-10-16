@@ -84,6 +84,7 @@ _EPISODES_SQL = """
 SELECT ss.id AS season_id, v.id AS vid, v.path AS path,
        COALESCE(yv.title, v.title, v.filename) AS title,
        COALESCE(v.duration_sec, yv.duration_s) AS dur, yv.upload_date AS upload_date,
+       yv.date_quality AS date_quality,
        e.season AS season, e.episode AS episode, yc.title AS channel
   FROM series_episodes e
   JOIN series_seasons ss ON ss.series_id = e.series_id
@@ -177,6 +178,8 @@ async def load_inputs(
                 season=None if x["season"] is None else int(x["season"]),
                 episode=None if x["episode"] is None else int(x["episode"]),
                 air_date=_iso(x["upload_date"]),
+                # the grid reads a show's cadence (daily strip, weekly) from exact dates only
+                date_exact=x["date_quality"] == "exact",
             )
             for x in rows
             if x["dur"]
@@ -200,6 +203,10 @@ async def load_inputs(
                 tier=st[1] if st else None,
                 style_confidence=st[2] if st else 0.0,
                 episodes=episodes,
+                # the TV grid keeps a title-brand talk show in one slot, named seasons
+                # as its guests
+                brand=bool(meta.get("brand") or series_meta.get("brand")),
+                season_name=meta.get("season_name") or None,
             )
         )
 

@@ -242,3 +242,19 @@ async def test_named_seasons_are_stored_and_titled(
     # a one-season series keeps the plain title; a numbered one without a name "الموسم N"
     assert collection_title("L", "S", 1, 1, "x") == "L - S"
     assert collection_title("L", "S", 2, 3) == "L - S - الموسم 2"
+
+
+@pytest.mark.asyncio
+async def test_the_grid_planner_gets_brands_season_names_and_exact_dates(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    w = await make_catalog(db)
+    await _run_all(db, w["lib"])
+    await db.execute(
+        "UPDATE series_seasons SET metadata = $1",
+        '{"brand": true, "season_name": "ضيف"}',
+    )
+    seasons, _loose, _notes = await load_inputs(db)
+    assert seasons and all(s.brand and s.season_name == "ضيف" for s in seasons)
+    eps = [e for s in seasons for e in s.episodes]
+    assert eps and all(e.date_exact for e in eps)  # the fixtures' dates are exact
