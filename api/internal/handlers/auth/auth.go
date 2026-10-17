@@ -495,10 +495,19 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 // meResponse is the public projection of the request principal.
 // libraries is `omitempty`-free so it serializes as [] not null,
 // letting clients iterate without a nil guard.
+//
+// Clients read it in three shapes, all served: the principal fields
+// (user_id, is_admin, libraries); the flat user the Android TV app
+// decodes (id, username, is_admin); and {user: …}, the login response's
+// shape, which the web app's session restore reads. Without `user` a
+// page reload signed the web app out.
 type meResponse struct {
-	UserID    string   `json:"user_id"`
-	IsAdmin   bool     `json:"is_admin"`
-	Libraries []string `json:"libraries"`
+	UserID    string       `json:"user_id"`
+	IsAdmin   bool         `json:"is_admin"`
+	Libraries []string     `json:"libraries"`
+	ID        string       `json:"id"`
+	Username  string       `json:"username"`
+	User      userResponse `json:"user"`
 }
 
 // Me returns the authenticated principal's projection. The global
@@ -520,10 +529,26 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	if libs == nil {
 		libs = []string{}
 	}
+	// A principal with no user row (the admin-token bypass) has no
+	// username; any other lookup failure is a server error.
+	username := ""
+	if h.Users != nil {
+		u, err := h.Users.GetByID(r.Context(), p.UserID)
+		switch {
+		case err == nil:
+			username = u.Username
+		case !errors.Is(err, users.ErrNotFound):
+			httperror.Write(w, r, httperror.Internal("load user"))
+			return
+		}
+	}
 	common.WriteJSON(w, r, http.StatusOK, meResponse{
 		UserID:    p.UserID,
 		IsAdmin:   p.IsAdmin,
 		Libraries: libs,
+		ID:        p.UserID,
+		Username:  username,
+		User:      userResponse{ID: p.UserID, Username: username, IsAdmin: p.IsAdmin},
 	})
 }
 
