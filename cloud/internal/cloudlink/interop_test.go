@@ -12,23 +12,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 )
 
-// readBodyWithKeepalive reads resp.Body while the cloud-side stream is
-// still registered.
-//
-// Why this helper exists: cloud/internal/relay/tunnel.go:115 does
-// `defer t.streams.Delete(streamID)`, so the cloud DROPS any
-// RESPONSE_BODY frame that arrives AFTER Tunnel.Proxy returns (the
-// stream is already gone from the demux map). The production cloud
-// consumer (cloud/internal/handlers/relay/proxy.go) has the same
-// latent race; it only "works" because body frames are usually already
-// buffered before Proxy returns. That is a pre-existing CLOUD relay
-// defect (Story 25.8/25.9), OUT OF SCOPE for the Epic 25 cloudlink
-// CLIENT and intentionally not modified here. These tests therefore
-// validate that the CLIENT produces the exact, correct frames the
-// cloud expects — which is the client's contract — without asserting
-// through the cloud's buggy stream-lifetime. Frame-level correctness of
-// the client body stream is covered deterministically by
-// TestProxyServe_StreamsResponseFrames.
+// readBodyWithKeepalive reads resp.Body to EOF. The cloud relay keeps
+// the stream registered until its body is consumed, so RESPONSE_BODY
+// frames arriving after Tunnel.Proxy returns are still delivered.
 func readBodyWithKeepalive(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	b, err := io.ReadAll(resp.Body)
@@ -43,10 +29,7 @@ func readBodyWithKeepalive(t *testing.T, resp *http.Response) string {
 // wires the production cloud-side relay.Tunnel (the same type
 // relay/ws.go constructs after AUTH_OK) to the production
 // cloudlink.Multiplexer over an in-memory pipe and drives a real
-// request via Tunnel.Proxy (the production call site). The status line
-// and headers travel HEAD-frame only, so this assertion is immune to
-// the cloud tunnel.go:115 stream-delete race and is fully
-// deterministic under -race.
+// request via Tunnel.Proxy (the production call site).
 func TestEndToEnd_RealRelayTunnel_HeaderRoundTrip(t *testing.T) {
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/books" {
@@ -166,21 +149,9 @@ func TestEndToEnd_PingPong(t *testing.T) {
 }
 
 // TestEndToEnd_BodyRoundTrip_HappyPath asserts a full body round-trip
-// through the REAL cloud relay.Tunnel on the fast path (small response
-// whose frames are buffered in the cloud stream before Tunnel.Proxy
-// returns). It is documented-skippable under -race because the cloud
-// relay tunnel.go:115 stream-delete race (a pre-existing CLOUD defect,
-// not a client defect, see readBodyWithKeepalive) makes body delivery
-// non-deterministic when the race detector reschedules the client to
-// emit body frames after Proxy returns. The client-side body framing
-// itself is proven deterministically by
-// TestProxyServe_StreamsResponseFrames.
+// through the REAL cloud relay.Tunnel, including body frames that the
+// client emits after Tunnel.Proxy has already returned the response head.
 func TestEndToEnd_BodyRoundTrip_HappyPath(t *testing.T) {
-	if raceEnabled {
-		t.Skip("skipped under -race: exercises pre-existing cloud relay tunnel.go:115 " +
-			"stream-delete race (Story 25.8/25.9, out of Epic 25 client scope); " +
-			"client body framing is covered by TestProxyServe_StreamsResponseFrames")
-	}
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusCreated)
