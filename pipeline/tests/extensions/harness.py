@@ -152,6 +152,8 @@ class FakePlex:
     #: drop the last child of every collection built through the API (read-back mismatch)
     corrupt: bool = False
     down: bool = False
+    #: items Plex answers 400 for when they are added to a collection
+    refuse: set[str] = field(default_factory=set)
     _next: int = 9000
 
     def add_item(self, rk: str, title: str, file: str, section: str = "1") -> None:
@@ -191,6 +193,11 @@ class FakePlex:
         path, _, query = url[len(self.base) :].partition("?")
         q = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
         self.calls.append((method, path))
+        adding = method in ("POST", "PUT") and (
+            path == "/library/collections" or path.endswith("/items")
+        )
+        if adding and self.refuse & set(q.get("uri", "").rsplit("/", 1)[-1].split(",")):
+            return 400, b""
         out = self._route(method, path, q)
         return (200, json.dumps(out).encode()) if out is not None else (404, b"")
 
@@ -270,9 +277,12 @@ class FakePlex:
             return {}
         if parts[:2] == ["library", "collections"] and len(parts) == 6 and parts[5] == "move":
             c = self.collections[parts[2]]
-            cur, after = parts[4], q["after"]
+            cur = parts[4]
             c["children"].remove(cur)
-            c["children"].insert(c["children"].index(after) + 1, cur)
+            if "after" in q:
+                c["children"].insert(c["children"].index(q["after"]) + 1, cur)
+            else:  # no "after": to the front
+                c["children"].insert(0, cur)
             return {}
         if parts[:2] == ["library", "metadata"] and parts[3:] == ["prefs"]:
             return {}

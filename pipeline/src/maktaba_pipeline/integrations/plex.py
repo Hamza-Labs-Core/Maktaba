@@ -10,6 +10,7 @@ leak into logs or error messages.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.parse
@@ -83,6 +84,34 @@ class UrllibTransport:
 
 def quote(s: str) -> str:
     return urllib.parse.quote(s, safe="")
+
+
+def in_order(got: list[str], target: list[str]) -> set[str]:
+    """The items of ``got`` already in ``target``'s order: the longest increasing run of
+    their target positions. They stay; the others are moved."""
+    pos = {k: i for i, k in enumerate(target)}
+    seq = [k for k in got if k in pos]
+    tails: list[int] = []  # tails[j]: index in seq ending the best run of length j + 1
+    prev = [-1] * len(seq)
+    for i, k in enumerate(seq):
+        lo, hi = 0, len(tails)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if pos[seq[tails[mid]]] < pos[k]:
+                lo = mid + 1
+            else:
+                hi = mid
+        prev[i] = tails[lo - 1] if lo else -1
+        if lo == len(tails):
+            tails.append(i)
+        else:
+            tails[lo] = i
+    out: set[str] = set()
+    i = tails[-1] if tails else -1
+    while i >= 0:
+        out.add(seq[i])
+        i = prev[i]
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,12 +270,22 @@ class PlexClient:
         self.send("DELETE", f"/library/metadata/{rating_key}")
 
     def create_collection(self, machine: str, section_key: str, title: str, keys: list[str]) -> str:
-        """Create a manual collection holding ``keys`` in order; returns its rating key.
+        """Create a manual collection holding ``keys`` in order; returns its rating key
+        (items Plex refuses stay out: :meth:`create_collection_report` names them).
 
         Plex stores manual-collection membership as a tag named after the
         collection, so a same-named collection must be deleted *before* this is
         called, never after.
         """
+        return self.create_collection_report(machine, section_key, title, keys)[0]
+
+    def create_collection_report(
+        self, machine: str, section_key: str, title: str, keys: list[str]
+    ) -> tuple[str, dict[str, str]]:
+        """:meth:`create_collection`, returning also the items Plex refused (HTTP 400)
+        with what it said: a refused item never stops the others. A batch Plex refuses is
+        added item by item. Only the items out of place are moved (one call each); Plex
+        keeps the order items were added in, so usually none are."""
         if not keys:
             raise ValueError("a Plex collection needs at least one member")
 
@@ -255,18 +294,59 @@ class PlexClient:
                 f"server://{machine}/com.plexapp.plugins.library/library/metadata/{','.join(ks)}"
             )
 
-        created = self.send(
-            "POST",
-            f"/library/collections?type=1&title={quote(title)}&smart=0"
-            f"&sectionId={section_key}&uri={uri(keys[:1])}",
-        )
-        new = str(created["MediaContainer"]["Metadata"][0]["ratingKey"])
-        for i in range(1, len(keys), 100):
-            self.send("PUT", f"/library/collections/{new}/items?uri={uri(keys[i : i + 100])}")
+        refused: dict[str, str] = {}
+        new = ""
+        rest: list[str] = []
+        for at, first in enumerate(keys):  # created with its first item Plex accepts
+            try:
+                created = self.send(
+                    "POST",
+                    f"/library/collections?type=1&title={quote(title)}&smart=0"
+                    f"&sectionId={section_key}&uri={uri([first])}",
+                )
+            except PlexError as e:
+                if e.status != 400:
+                    raise
+                refused[first] = str(e)
+                continue
+            new = str(created["MediaContainer"]["Metadata"][0]["ratingKey"])
+            rest = keys[at + 1 :]
+            break
+        if not new:
+            raise PlexError(f"plex refused every item of {title!r}", 400)
+        for i in range(0, len(rest), 100):
+            part = rest[i : i + 100]
+            try:
+                self.send("PUT", f"/library/collections/{new}/items?uri={uri(part)}")
+            except PlexError as e:
+                if e.status != 400:
+                    raise
+                for k in part:  # one by one: only the item Plex refuses stays out
+                    try:
+                        self.send("PUT", f"/library/collections/{new}/items?uri={uri([k])}")
+                    except PlexError as e1:
+                        if e1.status != 400:
+                            raise
+                        refused[k] = str(e1)
+        placed = [k for k in keys if k not in refused]
         self.send("PUT", f"/library/metadata/{new}/prefs?collectionSort=2")
-        for prev, cur in zip(keys, keys[1:], strict=False):
-            self.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
-        return new
+        got = self.collection_children(new)
+        if got != placed:
+            keep = in_order(got, placed)
+            for i, cur in enumerate(placed):
+                if cur in keep:  # in target order: its predecessor is already in place
+                    continue
+                if i:
+                    self.send(
+                        "PUT", f"/library/collections/{new}/items/{cur}/move?after={placed[i - 1]}"
+                    )
+                else:  # to the front; rare, the collection was made with it
+                    with contextlib.suppress(PlexError):
+                        self.send("PUT", f"/library/collections/{new}/items/{cur}/move")
+            if self.collection_children(new) != placed:  # Plex did not follow: every item
+                for prev, cur in zip(placed, placed[1:], strict=False):
+                    self.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
+        return new, refused
 
     def add_label(self, section_key: str, rating_key: str, label: str) -> None:
         """Put a (locked) label on a collection. Plex shows the first letter capitalised

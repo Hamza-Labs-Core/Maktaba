@@ -179,3 +179,44 @@ async def test_a_gone_group_whose_items_went_nowhere_is_kept(db: Database) -> No
     s = summary_of(row)
     assert s["retired"] == [] and s["kept_old"] == ["Lib - مقاطع - لقطات"]
     assert any(c["title"] == "Lib - مقاطع - لقطات" for c in w.fake.collections.values())
+
+
+@pytest.mark.asyncio
+async def test_an_item_plex_refuses_stays_out_and_the_stage_goes_on(db: Database) -> None:
+    w = await make_world(db)
+    w.fake.refuse = {"203"}
+    rt = await setup_runtime(db, [w.ext], SETTINGS)
+    await run_stage(db, rt, "plex_index", "library", w.library)
+    row = await run_stage(db, rt, "plex_groups", "library", w.library)
+    assert row["state"] == "done", error_of(row)
+    by_title = {c["title"]: c for c in w.fake.collections.values()}
+    assert by_title["Lib - مقاطع - لقطات"]["children"] == ["201", "202", "204", "205"]
+    assert "Lib - ملف - الشأن الفلسطيني" in by_title  # the other collections are written
+    assert summary_of(row)["status"].get("items_refused") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_group_over_two_plex_sections_is_a_collection_in_each(db: Database) -> None:
+    w = await make_world(db)
+    w.fake.sections["2"] = "TV 2"
+    for rk in ("204", "205"):  # two clips live in a second Plex library of the same name
+        w.fake.items[rk]["section"] = "2"
+    rt = await setup_runtime(db, [w.ext], SETTINGS)
+    await run_stage(db, rt, "plex_index", "library", w.library)
+    row = await run_stage(db, rt, "plex_groups", "library", w.library)
+    assert row["state"] == "done", error_of(row)
+    clips = {c["section"]: c["children"] for c in w.fake.collections.values()
+             if c["title"] == "Lib - مقاطع - لقطات"}  # fmt: skip
+    assert clips == {"1": ["201", "202", "203"], "2": ["204", "205"]}
+    again = await run_stage(db, rt, "plex_groups", "library", w.library)
+    assert again["state"] == "done", error_of(again)
+    assert sum(c["title"] == "Lib - مقاطع - لقطات" for c in w.fake.collections.values()) == 2
+
+
+def test_a_collection_in_order_needs_no_moves() -> None:
+    fake = FakePlex()
+    client = PlexClient("http://plex.test", "T", transport=fake)
+    keys = [str(300 + i) for i in range(40)]
+    new, refused = client.create_collection_report("m", "1", "x", keys)
+    assert fake.collections[new]["children"] == keys and not refused
+    assert not any(path.endswith("/move") for _, path in fake.calls)

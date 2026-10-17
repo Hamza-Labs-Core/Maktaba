@@ -155,15 +155,24 @@ def apply_collection(client: PlexClient, desired: Desired, remote: PlexRemote) -
     The old collection is deleted **before** the new one is created (Plex strips
     the membership tag of a same-named collection when it is deleted).
     """
+    return apply_collection_report(client, desired, remote)[0]
+
+
+def apply_collection_report(
+    client: PlexClient, desired: Desired, remote: PlexRemote
+) -> tuple[str | None, dict[str, str]]:
+    """:func:`apply_collection`, returning also the items Plex refused (and why)."""
     ours = remote.ours
     machine = client.machine_identifier() if not desired.delete else ""
     if ours is not None:
         client.delete_metadata(ours.rating_key)
     if desired.delete:
-        return None
-    new = client.create_collection(machine, desired.section, desired.title, list(desired.keys))
+        return None, {}
+    new, refused = client.create_collection_report(
+        machine, desired.section, desired.title, list(desired.keys)
+    )
     client.add_label(desired.section, new, LABEL)
-    return new
+    return new, refused
 
 
 # ------------------------------------------------------------------ handler

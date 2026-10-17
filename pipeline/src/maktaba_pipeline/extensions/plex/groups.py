@@ -43,6 +43,7 @@ from .collection import (
     _read_remote,
     _wrap,
     apply_collection,
+    apply_collection_report,
     collection_hash,
     compute_changes,
     resolve_members,
@@ -156,8 +157,10 @@ async def _write_one(
     kind: str,
     sid: str,
     desired: Desired,
+    refused: dict[str, str] | None = None,
 ) -> str:
-    """Create, update or leave one collection; returns the status."""
+    """Create, update or leave one collection; returns the status. Items Plex refuses
+    stay out, are logged and added to ``refused``; they never fail the stage."""
     link = await get_link(db, target, kind, sid)
     remote: PlexRemote = await asyncio.to_thread(
         _read_remote, client, desired.section, link, desired.title
@@ -176,15 +179,20 @@ async def _write_one(
     async def apply(_cs: Any) -> None:
         if remote.ours is not None:
             await delete_link(db, target, kind, sid)
-        new = await asyncio.to_thread(apply_collection, client, desired, remote)
+        new, said = await asyncio.to_thread(apply_collection_report, client, desired, remote)
         if new is None:
             return
         await put_link(db, Link(target, kind, sid, new, desired.title, content, True))
+        for k, why in said.items():
+            await ctx.log("warn", f"{desired.title}: Plex refused item {k}: {why}", {"item": k})
+        if refused is not None:
+            refused.update(said)
+        placed = tuple(k for k in desired.keys if k not in said)
         got = await asyncio.to_thread(client.collection_children, new)
-        if tuple(got) != desired.keys:
+        if tuple(got) != placed:
             raise StageFailure(
                 "readback_mismatch",
-                f"{desired.title}: Plex holds {len(got)} items (expected {len(desired.keys)})",
+                f"{desired.title}: Plex holds {len(got)} items (expected {len(placed)})",
             )
 
     status = await apply_or_review(ctx, changes, apply)
@@ -214,19 +222,44 @@ async def run_groups(db: Any, job: Any, ctx: StageContext, service: PlexService)
     try:
         for n, (key, title, sid, members) in enumerate(objects, 1):
             target, kind, _ = key.split("|", 2)
-            live.add((target, sid))
             resolved = await resolve_members(db, service, settings, members)
             keyed = [resolved[m.video_id] for m in members if m.video_id in resolved]
             if not keyed:
+                live.add((target, sid))
                 counts["waiting_plex"] += 1
                 continue
+            # a library can be two Plex sections of one name: each section's members are a
+            # collection there (the biggest keeps the object's id, the others take
+            # "<id>@<section>"), never dropped
             sections = Counter(section_of(lk) for lk in keyed)
-            section = sorted(sections.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-            keys = tuple(dict.fromkeys(lk.external_id for lk in keyed if section_of(lk) == section))
-            covered.update(keys)
-            desired = Desired(title, keys, section)
-            counts[await _write_one(db, ctx, client, library_id, target, kind, sid, desired)] += 1
-            written.append([key, title, list(keys)])
+            for i, (section, _n) in enumerate(
+                sorted(sections.items(), key=lambda kv: (-kv[1], kv[0]))
+            ):
+                sid_s = sid if i == 0 else f"{sid}@{section}"
+                live.add((target, sid_s))
+                keys = tuple(
+                    dict.fromkeys(lk.external_id for lk in keyed if section_of(lk) == section)
+                )
+                desired = Desired(title, keys, section)
+                refused: dict[str, str] = {}
+                try:
+                    status = await _write_one(
+                        db, ctx, client, library_id, target, kind, sid_s, desired, refused
+                    )
+                except PlexError as exc:  # this collection only; the others go on
+                    if exc.status != 400:
+                        raise
+                    await ctx.log("warn", f"{title}: not written, Plex refused it: {exc}")
+                    counts["refused"] += 1
+                    continue
+                counts[status] += 1
+                if refused:
+                    counts["items_refused"] += len(refused)
+                # only what Plex holds covers anything: an older collection is never
+                # retired for an item that did not make it into the new one
+                kept_keys = [k for k in keys if k not in refused]
+                covered.update(kept_keys)
+                written.append([key if i == 0 else f"{key}@{section}", title, kept_keys])
             await ctx.progress("write", n, len(objects), title)
         retired, kept = await _retire(db, ctx, client, library_id, live, covered)
     except (PlexError, TransportError) as exc:
