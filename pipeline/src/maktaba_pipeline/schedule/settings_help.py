@@ -326,6 +326,23 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_logo_dir": Help(
+        DZ,
+        "Channel logos folder",
+        "The guide's channel logos: <channel key>.png (quran.png, "
+        "kids.png …), else default.png. Uploaded to dizqueTV with the channels. Empty: none.",
+    ),
+    "dz_watermark_file": Help(
+        DZ,
+        "Corner logo (watermark)",
+        "A picture shown in a corner of the video on every "
+        "channel, like a TV station's logo; an animated GIF loops. Empty: none.",
+    ),
+    "dz_watermark_position": Help(
+        DZ, "Corner logo position", choices=("top-right", "top-left", "bottom-right", "bottom-left")
+    ),
+    "dz_watermark_width": Help(DZ, "Corner logo width (% of the picture)"),
+    "dz_watermark_margin": Help(DZ, "Corner logo margin (% from the edges)"),
     "dz_filler_max_items": Help(
         DZ,
         "Filler list size (most clips)",
@@ -349,6 +366,7 @@ _MINIMUM: dict[str, float] = {
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
+    "dz_watermark_width": 1, "dz_watermark_margin": 0,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
     "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
 }  # fmt: skip

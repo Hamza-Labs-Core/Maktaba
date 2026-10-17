@@ -341,6 +341,7 @@ def plan_actions(
             "fillerRepeatCooldown": dzc["fillerRepeatCooldown"],
             "scheduleBackup": sch,
             "maktabaPlan": {"key": c["key"], "planner_version": plan["planner_version"]},
+            **channel_art(plan, c["key"]),
         }
         per = int(sch["period"])
         names = {lane_ids.get(k): lanes[k]["name"] for k in lanes}
@@ -373,7 +374,8 @@ def plan_actions(
                     "tool: needs --replace-existing (or renumber the plan)"], ref=c["key"]))  # fmt: skip
             continue
         upd = {**ex, **{k: body[k] for k in ("programs", "fillerCollections", "scheduleBackup",
-                                             "maktabaPlan", "fillerRepeatCooldown")}}  # fmt: skip
+                                             "maktabaPlan", "fillerRepeatCooldown", "icon",
+                                             "watermark") if k in body}}  # fmt: skip
         actions.append(Action("update", "channel", f"#{c['number']} {dzc['name']}", "PUT",
                               "/api/channel", upd, detail + [
                                   f"keeps name '{ex.get('name')}', icon, watermark, transcoding; "
@@ -405,6 +407,53 @@ def _removals(plan: Mapping[str, Any], state: State, actions: Sequence[Action], 
                 out.append(Action("delete", kind, name, "DELETE", f"/api/{kind}/{info['id']}",
                                   None, ["made by this tool, not in the plan"]))  # fmt: skip
     return out
+
+
+def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """The channel's logo and corner watermark from the plan's settings, as local files
+    (``apply`` uploads them): ``{"icon": path, "watermark": {...}}``, only what is set."""
+    cfg = plan.get("config") or {}
+    out: dict[str, Any] = {}
+    if folder := str(cfg.get("dz_logo_dir") or ""):
+        for name in (f"{key}.png", "default.png"):
+            if (Path(folder) / name).is_file():
+                out["icon"] = str(Path(folder) / name)
+                break
+    if (wm := str(cfg.get("dz_watermark_file") or "")) and Path(wm).is_file():
+        margin = float(cfg.get("dz_watermark_margin", 2.0))
+        out["watermark"] = {
+            "enabled": True, "url": wm, "width": float(cfg.get("dz_watermark_width", 12.0)),
+            "verticalMargin": margin, "horizontalMargin": margin, "duration": 0,
+            "position": str(cfg.get("dz_watermark_position") or "top-right"),
+            "fixedSize": False, "animated": wm.lower().endswith(".gif"),
+        }  # fmt: skip
+    return out
+
+
+def _upload(base: str, path: str, name: str) -> str:
+    """``POST /api/upload/image`` (multipart, field ``image``) → the file's URL."""
+    import uuid
+
+    boundary = uuid.uuid4().hex
+    data = Path(path).read_bytes()
+    ctype = "image/gif" if name.lower().endswith(".gif") else "image/png"
+    payload = (
+        (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\n'
+            f"Content-Type: {ctype}\r\n\r\n"
+        ).encode()
+        + data
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    req = urllib.request.Request(
+        base.rstrip("/") + "/api/upload/image", data=payload, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )  # fmt: skip
+    with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 — local API
+        res = json.loads(r.read().decode("utf-8"))
+    if not res.get("status"):
+        raise RuntimeError(f"upload {name}: {res.get('message')}")
+    return str(res["data"]["fileUrl"])
 
 
 def _new_channel_defaults() -> dict[str, Any]:
@@ -466,6 +515,15 @@ def apply_actions(
               + ", ".join(f"{sum(a.kind == k for a in removals)} {k}(s)"
                           for k in ("channel", "show", "filler")))  # fmt: skip
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
+    urls: dict[str, str] = {}
+
+    def uploaded(path: str) -> str:
+        """Upload a logo once per run, under a name of its own (maktaba-<file>)."""
+        if path not in urls:
+            urls[path] = _upload(url, path, f"maktaba-{Path(path).name}")
+            print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
+        return urls[path]
+
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
     # the plex-index step's saved records first: only what it lacks is asked of Plex
@@ -502,6 +560,14 @@ def apply_actions(
             continue
         assert c_act.body is not None
         body = dict(c_act.body)
+        # the logo and the corner watermark: local files uploaded once, then their URLs
+        if isinstance(body.get("icon"), str) and not body["icon"].startswith("http"):
+            body["icon"] = uploaded(body["icon"])
+        if isinstance(body.get("watermark"), dict) and body["watermark"].get("enabled"):
+            wm = dict(body["watermark"])
+            if not str(wm["url"]).startswith("http"):
+                wm["url"] = uploaded(wm["url"])
+            body["watermark"] = wm
         sched = body["scheduleBackup"]
         programs: list[dict[str, Any]] = []
         slot_ms = slot_lengths(sched)
@@ -530,6 +596,8 @@ def apply_actions(
         back = dzw.call("GET", f"/api/channel/programless/{body['number']}")
         if not isinstance(back.get("maktabaPlan"), dict) or back.get("name") != body["name"]:
             raise RuntimeError(f"channel {body['number']}: read-back does not match")
+        if "icon" in body and back.get("icon") != body["icon"]:
+            raise RuntimeError(f"channel {body['number']}: its logo did not stick")
         print(f"  ✓  channel {c_act.name}: {len(res['programs'])} programmes, "
               f"{len(body['fillerCollections'])} filler lists")  # fmt: skip
 

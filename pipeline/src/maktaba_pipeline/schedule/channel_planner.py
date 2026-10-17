@@ -581,6 +581,15 @@ class PlannerConfig:
     #: is in priority order): a pool can hold 75,000 clips, more than dizqueTV accepts in
     #: one request (50 MB) and far more than a filler list needs
     dz_filler_max_items: int = 2000
+    #: a folder of channel logos (the guide's channel picture): <channel key>.png, else
+    #: default.png; "" = no logos
+    dz_logo_dir: str = ""
+    #: the picture in a corner of the video on every channel (an animated GIF loops);
+    #: "" = none
+    dz_watermark_file: str = ""
+    dz_watermark_position: str = "top-right"
+    dz_watermark_width: float = 12.0  # % of the picture's width
+    dz_watermark_margin: float = 2.0  # % from the edges
 
 
 # --------------------------------------------------------------------------- outputs

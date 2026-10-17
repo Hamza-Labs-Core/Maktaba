@@ -58,3 +58,21 @@ def test_prune_deletes_only_this_tools_leftovers_and_clear_every_other_channel()
     cleared = {a.name for a in _removals(plan, state, planned, clear_channels=True)
                if a.kind == "channel"}  # fmt: skip
     assert cleared == {"#150 old presenter", "#7 mine, by hand"}  # never #101: it is planned
+
+
+def test_a_channel_gets_its_own_logo_else_the_default_and_the_corner_watermark(
+    tmp_path: Path,
+) -> None:
+    from scripts.mediaintel.export_dizquetv import channel_art
+
+    (tmp_path / "quran.png").write_bytes(b"png")
+    (tmp_path / "default.png").write_bytes(b"png")
+    (tmp_path / "wm.gif").write_bytes(b"gif")
+    cfg = {"dz_logo_dir": str(tmp_path), "dz_watermark_file": str(tmp_path / "wm.gif"),
+           "dz_watermark_position": "top-left", "dz_watermark_width": 10.0}  # fmt: skip
+    art = channel_art({"config": cfg}, "quran")
+    assert art["icon"].endswith("quran.png")
+    assert channel_art({"config": cfg}, "fiqh")["icon"].endswith("default.png")
+    wm = art["watermark"]
+    assert wm["animated"] and wm["position"] == "top-left" and wm["width"] == 10.0
+    assert channel_art({"config": {}}, "quran") == {}  # nothing set: no logos
