@@ -1299,7 +1299,8 @@ def _show_grid(
 ) -> tuple[list[Slot], list[Lane], list[str]]:
     """A TV week: every slot is owned by a show and keeps a queue.
 
-    ``busy``: the times of day (minutes) each show already holds on the channels
+    ``busy``: the times of day (minutes) each show (by name: two uploads of one series
+    are one show to a viewer) already holds on the channels
     planned before this one; a show never takes an overlapping slot here (one show on
     two channels airs at different times). Filled in as this channel's slots are taken.
 
@@ -1364,7 +1365,7 @@ def _show_grid(
         n = s.slot_minutes if minutes is None else minutes
         return busy is not None and any(
             x + k < a + n and a < y + k
-            for x, y in busy.get(s.key, ())
+            for x, y in busy.get(s.name, ())
             for k in (-DAY_MINUTES, 0, DAY_MINUTES)
         )
 
@@ -1468,7 +1469,7 @@ def _show_grid(
                     used.add(s.key)
                     heads.add(s.presenter)
                     if busy is not None:
-                        busy.setdefault(s.key, []).append(
+                        busy.setdefault(s.name, []).append(
                             (t % DAY_MINUTES, t % DAY_MINUTES + s.slot_minutes)
                         )
                     where = grp[0] if pattern == "weekly" else pattern
@@ -1493,7 +1494,7 @@ def _show_grid(
                     if q is not None:
                         q.extra += len(grp)
                         if busy is not None:
-                            busy.setdefault(q.shows[0].key, []).append(
+                            busy.setdefault(q.shows[0].name, []).append(
                                 (t % DAY_MINUTES, t % DAY_MINUTES + q.slot_minutes)
                             )
                         why = (f"{d.label or d.key}: extra airing of {q.shows[0].name} — the "
@@ -1513,7 +1514,7 @@ def _show_grid(
                         for sg in last:
                             sg.end = stop
                         if busy is not None:
-                            busy.setdefault(run_on.shows[0].key, []).append(
+                            busy.setdefault(run_on.shows[0].name, []).append(
                                 (t % DAY_MINUTES, t % DAY_MINUTES + stop - t)
                             )
                     else:
