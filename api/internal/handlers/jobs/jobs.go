@@ -27,6 +27,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -48,7 +49,18 @@ type Job struct {
 	LastHeartbeatAt       *time.Time `json:"last_heartbeat_at,omitempty"`
 	EstimatedRemainingSec *float64   `json:"estimated_remaining_sec,omitempty"`
 	Error                 *string    `json:"error,omitempty"`
+	SubjectKind           string     `json:"subject_kind,omitempty"`
+	SubjectID             string     `json:"subject_id,omitempty"`
 }
+
+// jobColumns is the SELECT list scanJob expects. error and
+// estimated_remaining_sec used to be declared on Job but never
+// selected; the subject pair falls back to the video for rows written
+// before the subject columns were backfilled.
+const jobColumns = `id, video_id, library_id, stage, state, priority, attempts,
+	             pause_requested, cancel_requested, created_at, not_before,
+	             claimed_by, last_heartbeat_at, error, estimated_remaining_sec,
+	             COALESCE(subject_kind, 'video'), COALESCE(subject_id, video_id)::text`
 
 // Handler bundles deps.
 type Handler struct {
@@ -120,9 +132,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 	args = append(args, limit)
-	q := `SELECT id, video_id, library_id, stage, state, priority, attempts,
-	             pause_requested, cancel_requested, created_at, not_before,
-	             claimed_by, last_heartbeat_at
+	q := `SELECT ` + jobColumns + `
 	      FROM processing_jobs` + where + ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
@@ -265,16 +275,27 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	_, err = h.DB.ExecContext(r.Context(), `
-		UPDATE processing_jobs SET state='pending', attempts=0, error=NULL,
-		       not_before=$2, updated_at=$2
-		WHERE id=$1
-	`, id, h.now())
+	// Retry never updates the failed row in place: it re-enqueues the
+	// subject through the same SQL function Python uses (forced), so the
+	// failed row stays as history and the two languages cannot disagree
+	// on coalescing (plan-06-11 section 4.2).
+	res, err := queues.Enqueue(r.Context(), h.DB, queues.EnqueueParams{
+		SubjectKind: j.SubjectKind, SubjectID: j.SubjectID, Stage: j.Stage, Force: true,
+		Reason: queues.ReasonFor(r.Context(), "retry", map[string]any{"of_job": id}),
+	})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("retry: "+err.Error()))
 		return
 	}
-	j2, _ := h.loadJob(r, id)
+	if !res.Accepted() || res.JobID == nil {
+		httperror.Write(w, r, httperror.Conflict("", "retry not accepted: "+res.Outcome))
+		return
+	}
+	j2, err := h.loadJob(r, strconv.FormatInt(*res.JobID, 10))
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("retry: "+err.Error()))
+		return
+	}
 	common.WriteJSON(w, r, http.StatusOK, j2)
 }
 
@@ -347,6 +368,17 @@ type StageStats struct {
 	Paused  int `json:"paused"`
 	Failed  int `json:"failed"`
 	Done24h int `json:"done_24h"`
+	// Extension is the optional extension that owns the stage (nil = core).
+	Extension *string `json:"extension"`
+	// ServedWorkers / ServedHosts: online workers that serve the stage.
+	// NoWorker is true when the stage is enabled but nothing serves it,
+	// so the UI can say "waiting for a worker that serves transcribe".
+	ServedWorkers int      `json:"served_workers"`
+	ServedHosts   []string `json:"served_hosts"`
+	NoWorker      bool     `json:"no_worker"`
+
+	ready int
+	rate  int
 }
 
 // WorkerInfo is the AC-1 workers[] shape.
@@ -357,17 +389,60 @@ type WorkerInfo struct {
 	CurrentJobID  *string    `json:"current_job_id,omitempty"`
 }
 
-// Stats implements 7.13.
-func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
-	resp := StatsResponse{
-		ByStage: map[string]StageStats{},
+// rateWindowMin is the window of the throughput estimate behind eta_sec.
+const rateWindowMin = 10
+
+// workerHost extracts the host from a claimed_by value shaped
+// "host/pid/uuid"; anything else is returned unchanged.
+func workerHost(claimedBy string) string {
+	if i := strings.IndexByte(claimedBy, '/'); i > 0 {
+		return claimedBy[:i]
 	}
-	// Ensure all known stages appear (AC EC: zero rows still listed).
-	for _, s := range []string{"scan", "probe", "audio_extract", "transcribe", "subtitle", "index", "embed", "rehash"} {
-		resp.ByStage[s] = StageStats{}
+	return claimedBy
+}
+
+// etaSeconds is the sum over stages of ready / rate, using only stages
+// that completed work in the window (a stage with no rate has no
+// estimate and contributes nothing).
+func etaSeconds(stages map[string]StageStats) float64 {
+	var total float64
+	for _, st := range stages {
+		if st.rate > 0 && st.ready > 0 {
+			perSec := float64(st.rate) / (rateWindowMin * 60)
+			total += float64(st.ready) / perSec
+		}
+	}
+	return total
+}
+
+// Stats implements 7.13. Stage names come from job_stages (so new and
+// extension stages appear without code changes); stages that only show
+// up in processing_jobs are still reported.
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	now := h.now()
+	resp := StatsResponse{ByStage: map[string]StageStats{}, Workers: []WorkerInfo{}}
+
+	enabled := map[string]bool{}
+	if srows, err := h.DB.QueryContext(ctx, `SELECT stage, extension, enabled FROM job_stages`); err == nil {
+		for srows.Next() {
+			var stage string
+			var ext sql.NullString
+			var en bool
+			if srows.Scan(&stage, &ext, &en) == nil {
+				st := StageStats{ServedHosts: []string{}}
+				if ext.Valid {
+					v := ext.String
+					st.Extension = &v
+				}
+				resp.ByStage[stage] = st
+				enabled[stage] = en
+			}
+		}
+		srows.Close()
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT stage, state, COUNT(*) FROM processing_jobs GROUP BY stage, state
 	`)
 	if err != nil {
@@ -382,10 +457,13 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		st := resp.ByStage[stage]
+		if st.ServedHosts == nil {
+			st.ServedHosts = []string{}
+		}
 		switch state {
 		case "pending":
 			st.Pending += cnt
-		case "running":
+		case "claimed", "running", "resuming":
 			st.Running += cnt
 			resp.TotalInFlight += cnt
 		case "paused":
@@ -396,12 +474,12 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		resp.ByStage[stage] = st
 	}
 
-	// done_24h counts.
-	rows2, err := h.DB.QueryContext(r.Context(), `
+	// done_24h counts successful completions only.
+	rows2, err := h.DB.QueryContext(ctx, `
 		SELECT stage, COUNT(*) FROM processing_jobs
-		WHERE state IN ('done','failed') AND finished_at > $1
+		WHERE state = 'done' AND finished_at > $1
 		GROUP BY stage
-	`, h.now().Add(-24*time.Hour))
+	`, now.Add(-24*time.Hour))
 	if err == nil {
 		defer rows2.Close()
 		for rows2.Next() {
@@ -415,41 +493,77 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Throughput and backlog for the ETA.
+	rows3, err := h.DB.QueryContext(ctx, `
+		SELECT stage,
+		       COUNT(*) FILTER (WHERE state = 'done' AND outcome IS DISTINCT FROM 'skipped_unchanged' AND finished_at > $2),
+		       COUNT(*) FILTER (WHERE state = 'pending' AND (not_before IS NULL OR not_before <= $1))
+		  FROM processing_jobs
+		 WHERE state = 'pending' OR (state = 'done' AND finished_at > $2)
+		 GROUP BY stage
+	`, now, now.Add(-rateWindowMin*time.Minute))
+	if err == nil {
+		defer rows3.Close()
+		for rows3.Next() {
+			var stage string
+			var rate, ready int
+			if err := rows3.Scan(&stage, &rate, &ready); err == nil {
+				st := resp.ByStage[stage]
+				st.rate, st.ready = rate, ready
+				resp.ByStage[stage] = st
+			}
+		}
+	}
+	resp.EtaSec = etaSeconds(resp.ByStage)
+
 	// oldest pending age (seconds).
 	var oldest sql.NullTime
-	if err := h.DB.QueryRowContext(r.Context(), `
+	if err := h.DB.QueryRowContext(ctx, `
 		SELECT MIN(created_at) FROM processing_jobs WHERE state = 'pending'
 	`).Scan(&oldest); err == nil && oldest.Valid {
-		resp.OldestPendingAgeSec = h.now().Sub(oldest.Time).Seconds()
+		resp.OldestPendingAgeSec = now.Sub(oldest.Time).Seconds()
 	}
 
-	// Worker snapshot.
-	wrows, werr := h.DB.QueryContext(r.Context(), `
-		SELECT claimed_by, last_heartbeat_at, id
+	// Workers: one entry per distinct claimed_by, not one per job.
+	wrows, werr := h.DB.QueryContext(ctx, `
+		SELECT claimed_by, MAX(last_heartbeat_at), MIN(id)
 		FROM processing_jobs
-		WHERE state = 'running' AND claimed_by IS NOT NULL
-		ORDER BY last_heartbeat_at DESC
+		WHERE state IN ('claimed','running','resuming') AND claimed_by IS NOT NULL
+		GROUP BY claimed_by
+		ORDER BY MAX(last_heartbeat_at) DESC
 	`)
 	if werr == nil {
 		defer wrows.Close()
 		for wrows.Next() {
-			var w WorkerInfo
+			var wi WorkerInfo
 			var hb sql.NullTime
 			var jobID string
-			var claimed sql.NullString
+			var claimed string
 			if err := wrows.Scan(&claimed, &hb, &jobID); err != nil {
 				continue
 			}
-			if claimed.Valid {
-				w.ID = claimed.String
-				w.Host = claimed.String
-			}
+			wi.ID, wi.Host = claimed, workerHost(claimed)
 			if hb.Valid {
 				t := hb.Time
-				w.LastHeartbeat = &t
+				wi.LastHeartbeat = &t
 			}
-			w.CurrentJobID = &jobID
-			resp.Workers = append(resp.Workers, w)
+			wi.CurrentJobID = &jobID
+			resp.Workers = append(resp.Workers, wi)
+		}
+	}
+
+	// Registry coverage (best effort: the workers table may not exist
+	// yet on an older schema, in which case no_worker stays false).
+	if reg, err := queues.LoadWorkers(ctx, h.DB, now); err == nil {
+		served := queues.ServedByStage(reg)
+		for stage, st := range resp.ByStage {
+			sb := served[stage]
+			st.ServedWorkers = sb.Workers
+			if sb.Hosts != nil {
+				st.ServedHosts = sb.Hosts
+			}
+			st.NoWorker = enabled[stage] && st.Pending > 0 && sb.Workers == 0
+			resp.ByStage[stage] = st
 		}
 	}
 
@@ -459,9 +573,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 // loadJob reads a single row.
 func (h *Handler) loadJob(r *http.Request, id string) (Job, error) {
 	row := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, video_id, library_id, stage, state, priority, attempts,
-		       pause_requested, cancel_requested, created_at, not_before,
-		       claimed_by, last_heartbeat_at
+		SELECT `+jobColumns+`
 		FROM processing_jobs WHERE id = $1
 	`, id)
 	return scanJob(row)
@@ -474,11 +586,12 @@ type rowScanner interface {
 func scanJob(rs rowScanner) (Job, error) {
 	var j Job
 	var videoID, libraryID, claimedBy sql.NullString
-	var errStr sql.NullString
+	var errStr, subjKind, subjID sql.NullString
+	var est sql.NullFloat64
 	var notBefore, hb sql.NullTime
 	if err := rs.Scan(&j.ID, &videoID, &libraryID, &j.Stage, &j.State, &j.Priority,
 		&j.Attempts, &j.PauseRequested, &j.CancelRequested, &j.CreatedAt,
-		&notBefore, &claimedBy, &hb); err != nil {
+		&notBefore, &claimedBy, &hb, &errStr, &est, &subjKind, &subjID); err != nil {
 		return Job{}, err
 	}
 	if videoID.Valid {
@@ -501,6 +614,11 @@ func scanJob(rs rowScanner) (Job, error) {
 	if errStr.Valid {
 		j.Error = &errStr.String
 	}
+	if est.Valid {
+		v := est.Float64
+		j.EstimatedRemainingSec = &v
+	}
+	j.SubjectKind, j.SubjectID = subjKind.String, subjID.String
 	return j, nil
 }
 

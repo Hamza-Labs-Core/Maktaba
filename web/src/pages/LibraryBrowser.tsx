@@ -52,16 +52,22 @@ const SERVER_SORT: Record<SortField, string> = {
   duration_sec: "updated_at",
 };
 
-const BADGE_TONE: Record<string, "neutral" | "accent" | "success" | "warn" | "error"> = {
-  ready: "success",
-  processing: "accent",
-  pending: "neutral",
+// Only states a viewer should notice get a badge. The rest
+// (discovered → probed → … → ready) are processing steps, shown on the
+// Processing page, not on every card.
+const PROBLEM_TONE: Record<string, "warn" | "error"> = {
   missing: "error",
-  ready_no_audio: "warn",
-  superseded: "warn",
   corrupted: "error",
   failed: "error",
+  ready_no_audio: "warn",
+  superseded: "warn",
 };
+
+function StateBadge({ state }: { state: string }) {
+  const { t } = useI18n();
+  const tone = PROBLEM_TONE[state];
+  return tone ? <Badge tone={tone}>{t(`video.state.${state}`)}</Badge> : null;
+}
 
 function readView(): View {
   try {
@@ -295,7 +301,7 @@ export function LibraryBrowser() {
                   )}
                   {v.detected_language && <span> · {v.detected_language}</span>}
                 </div>
-                <Badge tone={BADGE_TONE[v.state] ?? "neutral"}>{v.state}</Badge>
+                <StateBadge state={v.state} />
               </Link>
             </li>
           ))}
@@ -320,9 +326,7 @@ export function LibraryBrowser() {
                 </td>
                 <td>{typeof v.duration_sec === "number" ? formatDuration(v.duration_sec) : "—"}</td>
                 <td>{v.detected_language ?? "—"}</td>
-                <td>
-                  <Badge tone={BADGE_TONE[v.state] ?? "neutral"}>{v.state}</Badge>
-                </td>
+                <td>{PROBLEM_TONE[v.state] ? <StateBadge state={v.state} /> : "—"}</td>
               </tr>
             ))}
           </tbody>

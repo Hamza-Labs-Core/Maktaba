@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -125,6 +126,19 @@ type Response struct {
 	// omitted otherwise so the default response is byte-identical to the
 	// pre-26.8 shape.
 	YouTube *YTBlock `json:"youtube,omitempty"`
+
+	// Videos are the title matches, apart from the segment hits: a video is
+	// not a timestamped passage, so it is not fused into the ranked list.
+	Videos []VideoHit `json:"videos"`
+}
+
+// VideoHit is a whole-video match on its title. Titles exist from the first
+// scan (or import); transcripts only once Whisper has run, so without this a
+// fresh library finds nothing at all.
+type VideoHit struct {
+	VideoID     string   `json:"video_id"`
+	Title       string   `json:"title"`
+	DurationSec *float64 `json:"duration_sec,omitempty"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -297,7 +311,9 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 			req.Filters.LibraryID = intersected
 		}
 		if len(req.Filters.LibraryID) == 0 {
-			common.WriteJSON(w, r, http.StatusOK, Response{Hits: []Hit{}, Mode: req.Mode, Filters: req.Filters})
+			common.WriteJSON(w, r, http.StatusOK, Response{
+				Hits: []Hit{}, Videos: []VideoHit{}, Mode: req.Mode, Filters: req.Filters,
+			})
 			return
 		}
 	}
@@ -324,6 +340,15 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		took.Semantic = time.Since(t1).Milliseconds()
 	}
 
+	videos := []VideoHit{}
+	if h.DB != nil {
+		var err error
+		if videos, err = h.runTitles(r.Context(), req.Q, 20, req.Filters); err != nil {
+			httperror.Write(w, r, httperror.Internal("titles: "+err.Error()))
+			return
+		}
+	}
+
 	t2 := time.Now()
 	var fused []Hit
 	switch req.Mode {
@@ -344,7 +369,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 
 	resp := Response{
 		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode,
-		Filters: req.Filters, Degraded: degraded,
+		Filters: req.Filters, Degraded: degraded, Videos: videos,
 	}
 	// Story 26.8: the YouTube augmentation is purely additive and never
 	// blocks or mutates the local results computed above. It runs only
@@ -410,6 +435,67 @@ func (h *Handler) runFTS(ctx context.Context, q string, limit int, f Filters) ([
 		hits = append(hits, h)
 	}
 	return hits, nil
+}
+
+// runTitles matches video titles by substring (case-insensitive), most similar
+// first. On Postgres the trigram index (0098) serves both the ILIKE and the
+// ordering; SQLite scans with LIKE.
+func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters) ([]VideoHit, error) {
+	like := "%" + escapeLike(q) + "%"
+	args := []any{like, q}
+	where := []string{"v.title ILIKE $1 ESCAPE '\\'", "v.deleted_at IS NULL"}
+	if len(f.LibraryID) > 0 {
+		ph := make([]string, len(f.LibraryID))
+		for i, lid := range f.LibraryID {
+			args = append(args, lid)
+			ph[i] = "$" + strconv.Itoa(len(args))
+		}
+		where = append(where, "v.library_id IN ("+strings.Join(ph, ",")+")")
+	}
+	if len(f.Language) > 0 {
+		ph := make([]string, len(f.Language))
+		for i, l := range f.Language {
+			args = append(args, l)
+			ph[i] = "$" + strconv.Itoa(len(args))
+		}
+		where = append(where, "v.detected_language IN ("+strings.Join(ph, ",")+")")
+	}
+	args = append(args, limit)
+	tail := " WHERE " + strings.Join(where, " AND ") + " %s LIMIT $" + strconv.Itoa(len(args))
+	pg := "SELECT v.id, v.title, v.duration_sec FROM videos v" +
+		fmt.Sprintf(tail, "ORDER BY similarity(v.title, $2) DESC, v.title")
+	rows, err := h.DB.QueryContext(ctx, pg, args...)
+	if err != nil {
+		// SQLite: no ILIKE / similarity(); LIKE is case-insensitive for ASCII there.
+		// Shortest title first; $2 stays bound so the argument list is unchanged.
+		lite := strings.Replace(pg, "ILIKE", "LIKE", 1)
+		lite = strings.Replace(lite, "similarity(v.title, $2) DESC, ", "length(v.title) + 0 * length($2), ", 1)
+		if rows, err = h.DB.QueryContext(ctx, lite, args...); err != nil {
+			return nil, err
+		}
+	}
+	defer rows.Close()
+	out := []VideoHit{}
+	for rows.Next() {
+		var v VideoHit
+		var title sql.NullString
+		var dur sql.NullFloat64
+		if err := rows.Scan(&v.VideoID, &title, &dur); err != nil {
+			continue
+		}
+		v.Title = title.String
+		if dur.Valid {
+			d := dur.Float64
+			v.DurationSec = &d
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// escapeLike makes q literal inside a LIKE pattern (ESCAPE '\\').
+func escapeLike(q string) string {
+	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(q)
 }
 
 // runFTSFallback runs a LIKE-based query for SQLite test environments

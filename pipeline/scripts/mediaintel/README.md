@@ -5,6 +5,15 @@ everything the files, their sidecars, Plex and YouTube know about each video,
 detect **series → seasons → ordered episodes**, review the result visually,
 and write one Plex collection per season.
 
+> **Superseded by the queue graph (plan 06-11).** Inside Maktaba every step below is a stage of the
+> job queue (`maktaba_pipeline.engine`): `thumb_hash`, `link`, `fingerprint`, `style_sample`,
+> `youtube_sync`, `detect`, `fp_gate`, `tag`, `rate_style`, `plan_channels`, `write_channels`, with
+> Plex and dizqueTV as extensions (`maktaba_pipeline.extensions`). Re-queueing a library re-adds it
+> to the right queue and only changed work runs. `run` here (`pipeline.py`) stays for stand-alone
+> use until the queue has replaced it; `explain` stays. To bring an existing cache into Maktaba
+> without recomputing anything: `python -m maktaba_pipeline.tools.import_mediaintel --help`
+> (a dry run unless `--apply`).
+
 The detection core is the Story 26.3 implementation
 (`maktaba_pipeline.classify.series_detector`), written as a pure module
 so the pipeline's `classify` stage can call it once Maktaba ingests these

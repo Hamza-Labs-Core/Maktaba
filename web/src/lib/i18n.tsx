@@ -42,7 +42,8 @@ export interface I18nState {
   locale: Locale;
   dir: Direction;
   t: (key: string, vars?: Record<string, string | number>) => string;
-  n: (value: number) => string;
+  /** A number in the locale's digits; years pass `{ useGrouping: false }`. */
+  n: (value: number, opts?: Intl.NumberFormatOptions) => string;
   formatDate: (value: string | number | Date) => string;
   setLocale: (l: Locale) => void;
 }
@@ -98,7 +99,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
 
   const n = useCallback(
-    (value: number) => new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en").format(value),
+    (value: number, opts?: Intl.NumberFormatOptions) =>
+      new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en", opts).format(value),
     [locale]
   );
 

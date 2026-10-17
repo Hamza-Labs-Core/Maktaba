@@ -235,6 +235,14 @@ def _m_static() -> StyleMetrics:
     return compute_metrics(_static_episode())
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _warm_metric_caches() -> None:
+    """Build the cached episodes once, outside any test's timed call phase."""
+    _m_talk()
+    _m_cinematic()
+    _m_static()
+
+
 class TestMetrics:
     def test_talk_metrics(self) -> None:
         m = _m_talk()

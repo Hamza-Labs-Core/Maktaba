@@ -121,7 +121,7 @@ export function SeriesDetail() {
         <div>
           <h1 dir="auto">{title}</h1>
           <div className="mkt-series-detail__flags">
-            {header?.year && <Badge tone="neutral">{n(header.year)}</Badge>}
+            {header?.year && <Badge tone="neutral">{n(header.year, { useGrouping: false })}</Badge>}
             {data.numbering === "absolute" && <Badge tone="neutral">{t("series.absolute")}</Badge>}
           </div>
           <div className="mkt-series-detail__actions">

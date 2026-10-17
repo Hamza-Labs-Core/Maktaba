@@ -167,6 +167,12 @@ class FakeDB:
             self._claim_lock = asyncio.Lock()
         return self._claim_lock
 
+    async def fetch(self, sql: str, *args: Any) -> list[Any]:
+        raise NotImplementedError("claim_one only issues fetchrow")
+
+    async def execute(self, sql: str, *args: Any) -> Any:
+        raise NotImplementedError("claim_one only issues fetchrow")
+
     async def fetchrow(self, sql: str, *args: Any) -> _FakeRow | None:
         if self.yield_in_fetchrow:
             await asyncio.sleep(0)

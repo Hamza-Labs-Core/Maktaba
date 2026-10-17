@@ -20,7 +20,7 @@ const iso = (ms: number) => new Date(NOW + ms).toISOString();
 
 const payload = {
   server_time: new Date(NOW).toISOString(),
-  items: [
+  channels: [
     {
       channel: {
         id: "c1",
@@ -36,16 +36,16 @@ const payload = {
         kind: "program",
         video_id: "v1",
         title: "Now Airing",
-        start_at: iso(-5 * 60_000),
-        end_at: iso(25 * 60_000),
+        start: iso(-5 * 60_000),
+        stop: iso(25 * 60_000),
       },
       next: {
         channel_id: "c1",
         seq: 1,
         kind: "program",
         title: "Up Next Show",
-        start_at: iso(25 * 60_000),
-        end_at: iso(85 * 60_000),
+        start: iso(25 * 60_000),
+        stop: iso(85 * 60_000),
       },
     },
   ],
@@ -77,7 +77,7 @@ describe("WhatsOnNow rail", () => {
 
   // TC6 — hidden entirely when there are no accessible channels.
   it("renders nothing when there are no channels", async () => {
-    get.mockResolvedValue({ server_time: new Date(NOW).toISOString(), items: [] });
+    get.mockResolvedValue({ server_time: new Date(NOW).toISOString(), channels: [] });
     const { container } = renderRail();
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(container.querySelector(".mkt-won")).toBeNull();

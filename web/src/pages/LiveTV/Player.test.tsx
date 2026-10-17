@@ -27,7 +27,7 @@ const lineup = {
 
 const nowPayload = {
   server_time: new Date(NOW).toISOString(),
-  items: [
+  channels: [
     {
       channel: lineup.items[0],
       current: {
@@ -36,16 +36,16 @@ const nowPayload = {
         kind: "program",
         video_id: "v1",
         title: "Now on One",
-        start_at: iso(-5 * 60_000),
-        end_at: iso(25 * 60_000),
+        start: iso(-5 * 60_000),
+        stop: iso(25 * 60_000),
       },
       next: {
         channel_id: "c1",
         seq: 1,
         kind: "program",
         title: "Next on One",
-        start_at: iso(25 * 60_000),
-        end_at: iso(85 * 60_000),
+        start: iso(25 * 60_000),
+        stop: iso(85 * 60_000),
       },
     },
     { channel: lineup.items[1], current: null, next: null },

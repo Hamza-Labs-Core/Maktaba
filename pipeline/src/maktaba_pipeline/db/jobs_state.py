@@ -171,8 +171,14 @@ async def mark_paused(
     on it without surprise values.
     """
     if db.dialect == "postgres":
-        return await db.fetchrow(_MARK_PAUSED_PG, job_id, at_sec, reason)
-    return await db.fetchrow(_MARK_PAUSED_SQLITE, at_sec, reason, job_id)
+        out = await db.fetchrow(_MARK_PAUSED_PG, job_id, at_sec, reason)
+    else:
+        out = await db.fetchrow(_MARK_PAUSED_SQLITE, at_sec, reason, job_id)
+    if out is not None and _hooked(db):
+        from ..engine.hooks import on_paused
+
+        await on_paused(db, job_id, reason)
+    return out
 
 
 _MARK_CANCELLED_PG = """
@@ -201,7 +207,15 @@ RETURNING id, state
 async def mark_cancelled(db: DBConn, *, job_id: int) -> Any | None:
     """Terminal cancel transition triggered by the worker."""
     sql = _MARK_CANCELLED_PG if db.dialect == "postgres" else _MARK_CANCELLED_SQLITE
-    return await db.fetchrow(sql, job_id)
+    if not _hooked(db):
+        return await db.fetchrow(sql, job_id)
+    from ..engine.hooks import on_cancelled
+
+    async with db.transaction():
+        out = await db.fetchrow(sql, job_id)
+        if out is not None:
+            await on_cancelled(db, job_id)
+    return out
 
 
 _MARK_DONE_PG = """
@@ -286,7 +300,41 @@ async def mark_failed_or_retry(
     INFO and exit cleanly.
 
     ``now`` and ``rng`` are dependency-injection seams for tests.
+
+    On an engine connection (``db.engine_hooks``) the whole transition runs in
+    one transaction together with the engine bookkeeping: the normalised
+    ``error_cause``, the ``job_events`` / ``events`` rows and, when a trigger
+    arrived mid-run, the follow-up job (``engine/hooks.py``).
     """
+    if not _hooked(db):
+        return await _fail_or_retry(db, job_id, error, rng, now)
+    from ..engine.hooks import on_failure
+
+    async with db.transaction():
+        outcome = await _fail_or_retry(db, job_id, error, rng, now)
+        if outcome.state in ("pending", "failed"):
+            await on_failure(
+                db,
+                job_id,
+                kind=error.kind,
+                message=error.message,
+                new_state=outcome.state,
+                not_before=outcome.not_before,
+            )
+    return outcome
+
+
+def _hooked(db: DBConn) -> bool:
+    return bool(getattr(db, "engine_hooks", False))
+
+
+async def _fail_or_retry(
+    db: DBConn,
+    job_id: int,
+    error: StageError,
+    rng: random.Random | None,
+    now: datetime | None,
+) -> FailureOutcome:
     sql_read = _READ_ATTEMPTS_PG if db.dialect == "postgres" else _READ_ATTEMPTS_SQLITE
     row = await db.fetchrow(sql_read, job_id)
     if row is None:

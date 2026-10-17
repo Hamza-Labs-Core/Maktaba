@@ -28,10 +28,26 @@
   --color-subtle: var(--color-neutral-100);
   --color-accent: var(--color-brand-500);
   --color-accent-fg: var(--color-neutral-0);
-  --color-success: #0e8c4f;
-  --color-warn: #b0790e;
+  --color-success: #0b6e3f;
+  --color-warn: #8f5600;
   --color-error: #b6253a;
   --color-border: var(--color-neutral-200);
+
+  /* queue states (plan 06-11 §9.1): running = saffron, done = blue.
+     Waiting is --color-muted, failing is --color-error. */
+  --color-running: #a35f00;
+  --color-info: #1e5ad8;
+
+  /* The design-system components read --color-semantic-*; alias them to
+     the app tokens so Badge/Card/ProgressBar follow data-theme (F23). */
+  --color-semantic-bg: var(--color-bg);
+  --color-semantic-fg: var(--color-fg);
+  --color-semantic-muted: var(--color-muted);
+  --color-semantic-subtle: var(--color-subtle);
+  --color-semantic-accent: var(--color-accent);
+  --color-semantic-success: var(--color-success);
+  --color-semantic-warn: var(--color-warn);
+  --color-semantic-error: var(--color-error);
 
   /* type */
   --font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -66,8 +82,45 @@
   --color-accent: #5478e5;
   --color-accent-fg: #ffffff;
   --color-border: #27272a;
+  /* AA (>= 4.5:1) on --color-bg and on --color-subtle (F23). */
+  --color-success: #4cc38a;
+  --color-warn: #e0a53a;
+  --color-error: #f0707f;
+  --color-running: #ffb454;
+  --color-info: #6f93ff;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
+}
+
+/* The design-system surfaces paint with --color-neutral-0 / -200, which
+   also serve as white label text (Button, Toast) and as greys on the
+   always-black player, so the dark theme cannot remap them; their
+   surfaces follow the app tokens here instead. */
+[data-theme="dark"] .mk-card,
+[data-theme="dark"] .mk-modal,
+[data-theme="dark"] .mk-drawer,
+[data-theme="dark"] .mk-menu__list,
+[data-theme="dark"] .mk-context-menu {
+  background-color: var(--color-subtle);
+  border-color: var(--color-border);
+  color: var(--color-fg);
+}
+[data-theme="dark"] .mk-control,
+[data-theme="dark"] .mk-choice__control {
+  background-color: var(--color-bg);
+  border-color: var(--color-neutral-700);
+}
+[data-theme="dark"] .mk-progress,
+[data-theme="dark"] .mkt-state--queued {
+  background-color: var(--color-border);
+}
+
+/* Solid semantic fills in app.css pair these tokens with a hard-coded
+   white label; the brighter dark-theme values need a dark label. */
+[data-theme="dark"] .mkt-alert,
+[data-theme="dark"] .mkt-state--completed,
+[data-theme="dark"] .mkt-state--failed {
+  color: var(--color-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {

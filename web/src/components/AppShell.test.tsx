@@ -75,3 +75,14 @@ describe("AppShell SW-update affordance", () => {
     expect(postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
   });
 });
+
+describe("AppShell admin navigation", () => {
+  it("links the Extensions page for admins", async () => {
+    get.mockResolvedValue({
+      user: { id: "u1", username: "root", is_admin: true, roles: [] },
+    });
+    renderShell();
+    const link = await screen.findByRole("link", { name: en["nav.admin.extensions"] });
+    expect(link).toHaveAttribute("href", "/admin/extensions");
+  });
+});

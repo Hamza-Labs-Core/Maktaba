@@ -133,9 +133,10 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 		out = append(out, chanGuide{Channel: toHeader(c), Blocks: blocks})
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
-		"start":    start.UTC().Format(time.RFC3339),
-		"end":      end.UTC().Format(time.RFC3339),
-		"channels": out,
+		"server_time": now.UTC().Format(time.RFC3339),
+		"start":       start.UTC().Format(time.RFC3339),
+		"end":         end.UTC().Format(time.RFC3339),
+		"channels":    out,
 	})
 }
 
@@ -176,8 +177,9 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 		blocks = collapseFiller(blocks)
 	}
 	resp := map[string]any{
-		"channel": toHeader(c),
-		"blocks":  blocks,
+		"server_time": now.UTC().Format(time.RFC3339),
+		"channel":     toHeader(c),
+		"blocks":      blocks,
 	}
 	if hu, ok := h.repo().horizonUntil(r.Context(), id); ok {
 		resp["horizon_until"] = hu.UTC().Format(time.RFC3339)
@@ -220,7 +222,10 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, e)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"channels": out})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"server_time": now.UTC().Format(time.RFC3339),
+		"channels":    out,
+	})
 }
 
 // ChannelHeader is the channel descriptor embedded in guide payloads.

@@ -22,6 +22,7 @@ interface SeriesItem {
   id: string;
   name: string;
   poster_path?: string;
+  poster_video_id?: string;
   library_id?: string;
   year?: number;
   numbering: string;
@@ -83,20 +84,14 @@ export function SeriesBrowser() {
               <Link to={`/series/${s.id}`} className="mkt-series-card-link">
                 <Card interactive className="mkt-series-card">
                   <div className="mkt-series-card__poster">
-                    {s.poster_path ? (
-                      <img src={s.poster_path} alt="" loading="lazy" />
-                    ) : (
-                      <div className="mkt-series-card__poster--ph" aria-hidden="true">
-                        ▤
-                      </div>
-                    )}
+                    <SeriesPoster series={s} />
                   </div>
                   <div className="mkt-series-card__meta">
                     <span className="mkt-series-card__name" dir="auto">
                       {s.name}
                     </span>
                     <div className="mkt-series-card__flags">
-                      {s.year && <Badge tone="neutral">{n(s.year)}</Badge>}
+                      {s.year && <Badge tone="neutral">{n(s.year, { useGrouping: false })}</Badge>}
                       <Badge tone="neutral">
                         {n(s.season_count)} · {n(s.episode_count)}
                       </Badge>
@@ -117,4 +112,24 @@ export function SeriesBrowser() {
       )}
     </section>
   );
+}
+
+// The series' own art when it is a URL, else its first episode's poster
+// (videos/{id}/poster resolves the thumbnail cache), else a placeholder.
+function SeriesPoster({ series }: { series: SeriesItem }) {
+  const [broken, setBroken] = useState(false);
+  const own =
+    series.poster_path && /^(https?:\/\/|\/api\/)/.test(series.poster_path)
+      ? series.poster_path
+      : null;
+  const src =
+    own ?? (series.poster_video_id ? `/api/videos/${series.poster_video_id}/poster` : null);
+  if (!src || broken) {
+    return (
+      <div className="mkt-series-card__poster--ph" aria-hidden="true">
+        ▤
+      </div>
+    );
+  }
+  return <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />;
 }

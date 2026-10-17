@@ -40,13 +40,14 @@ import asyncio
 import os
 import signal
 import socket
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
+from ..engine.claim import PoolConfig, claim_for_pool, load_pools
 from ..log import bind_job_id, get_logger
 from .signals import install_shutdown_handlers
 from .wakeup import PgListenWakeup, PubsubWakeup, WakeupSource
@@ -92,10 +93,16 @@ class WorkerConfig:
       queue still gets checked at least once per ``claim_poll_max_sec``.
     """
 
-    supported_stages: tuple[Stage, ...]
+    supported_stages: tuple[Stage | str, ...]
     worker_id: str = field(default_factory=default_worker_id)
     claim_poll_sec: float = 1.0
     claim_poll_max_sec: float = 30.0
+    #: Pool mode (plan 06-11 section 5): claim per resource pool through
+    #: ``engine.claim.claim_for_pool``. ``stage_pools`` maps every supported
+    #: stage to its pool. Off by default so the original per-stage loop (and its
+    #: tests) keep working; the daemon turns it on.
+    pool_mode: bool = False
+    stage_pools: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.supported_stages:
@@ -120,7 +127,7 @@ class ClaimLoop:
         cfg: WorkerConfig,
         dispatch: Dispatch,
         *,
-        semaphores: dict[Stage, asyncio.Semaphore] | None = None,
+        semaphores: dict[Any, asyncio.Semaphore] | None = None,
         shutdown_event: asyncio.Event | None = None,
         wakeup: WakeupSource | None = None,
     ) -> None:
@@ -132,6 +139,10 @@ class ClaimLoop:
         }
         self.shutdown_event = shutdown_event or asyncio.Event()
         self._wakeup: WakeupSource = wakeup or self._default_wakeup()
+        self._pools: dict[str, PoolConfig] = {}
+        self._pool_sems: dict[str, asyncio.Semaphore] = {}
+        self._pool_sem_size: dict[str, int] = {}
+        self._pool_inflight: dict[str, int] = {}
 
     def _default_wakeup(self) -> WakeupSource:
         dialect = getattr(self.db, "dialect", "sqlite")
@@ -150,7 +161,7 @@ class ClaimLoop:
         _log.info(
             "claim_loop_started",
             worker_id=self.cfg.worker_id,
-            stages=[s.value for s in self.cfg.supported_stages],
+            stages=[str(s) for s in self.cfg.supported_stages],
             poll_sec=self.cfg.claim_poll_sec,
         )
         in_flight: set[asyncio.Task[None]] = set()
@@ -176,8 +187,103 @@ class ClaimLoop:
                 await asyncio.gather(*in_flight, return_exceptions=True)
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
 
+    #: Pools are visited in a fixed order so a slow pool cannot starve the others.
+    POOL_ORDER: tuple[str, ...] = (
+        "gpu",
+        "nas_read",
+        "network_plex",
+        "network_tv",
+        "network_yt",
+        "cpu",
+    )
+
+    async def reload_pools(self) -> None:
+        """Re-read ``worker_pools``; resize per-worker semaphores whose size changed.
+
+        A resized semaphore is *replaced* (jobs in flight release into the one
+        they acquired), sized so that in-flight plus free slots equals the new size.
+        """
+        self._pools = await load_pools(self.db)
+        for name, pool in self._pools.items():
+            if pool.scope != "per_worker":
+                continue
+            size = pool.effective_size
+            if self._pool_sem_size.get(name) == size and name in self._pool_sems:
+                continue
+            free = max(0, size - self._pool_inflight.get(name, 0))
+            self._pool_sems[name] = asyncio.Semaphore(free)
+            self._pool_sem_size[name] = size
+
+    def _pool_order(self) -> list[str]:
+        used = {self.cfg.stage_pools.get(str(s)) for s in self.cfg.supported_stages}
+        known = [p for p in self.POOL_ORDER if p in used]
+        extra = sorted(p for p in used if p is not None and p not in self.POOL_ORDER)
+        return known + extra
+
+    async def _drain_pools(self, in_flight: set[asyncio.Task[None]]) -> int:
+        await self.reload_pools()
+        count = 0
+        for pool_name in self._pool_order():
+            pool = self._pools.get(pool_name)
+            if pool is None:
+                continue
+            stages = [
+                str(s)
+                for s in self.cfg.supported_stages
+                if self.cfg.stage_pools.get(str(s)) == pool_name
+            ]
+            while not self.shutdown_event.is_set():
+                sem = self._pool_sems.get(pool_name) if pool.scope == "per_worker" else None
+                if pool.scope == "per_worker" and (sem is None or self._sem_value(sem) <= 0):
+                    break
+                job = await claim_for_pool(
+                    self.db,
+                    worker_id=self.cfg.worker_id,
+                    pool=pool_name,
+                    stages=stages,
+                    scope=pool.scope,
+                )
+                if job is None:
+                    break
+                count += 1
+                if sem is not None:
+                    await sem.acquire()
+                self._pool_inflight[pool_name] = self._pool_inflight.get(pool_name, 0) + 1
+                task = asyncio.create_task(
+                    self._run_pool_job(job, sem, pool_name),
+                    name=f"job-{job.id}-{job.stage}",
+                )
+                in_flight.add(task)
+                task.add_done_callback(in_flight.discard)
+        return count
+
+    async def _run_pool_job(self, job: Job, sem: asyncio.Semaphore | None, pool_name: str) -> None:
+        try:
+            await self._dispatch_job(job)
+        finally:
+            self._pool_inflight[pool_name] = max(0, self._pool_inflight.get(pool_name, 1) - 1)
+            if sem is not None:
+                sem.release()
+
+    async def _dispatch_job(self, job: Job) -> None:
+        try:
+            with bind_job_id(str(job.id)):
+                _log.info(
+                    "job_dispatched",
+                    job_id=job.id,
+                    stage=str(job.stage),
+                    attempts=job.attempts,
+                    worker_id=self.cfg.worker_id,
+                )
+                await self.dispatch(job)
+        except Exception:
+            _log.exception("job_dispatch_raised", job_id=job.id, stage=str(job.stage))
+            raise
+
     async def _drain(self, in_flight: set[asyncio.Task[None]]) -> int:
-        """Claim every eligible row the per-stage caps permit. Return the count."""
+        """Claim every eligible row the capacity caps permit. Return the count."""
+        if self.cfg.pool_mode:
+            return await self._drain_pools(in_flight)
         count = 0
         while not self.shutdown_event.is_set():
             eligible = self._stages_with_capacity()
@@ -195,13 +301,13 @@ class ClaimLoop:
             await sem.acquire()
             task = asyncio.create_task(
                 self._run_job(job, sem),
-                name=f"job-{job.id}-{job.stage.value}",
+                name=f"job-{job.id}-{job.stage}",
             )
             in_flight.add(task)
             task.add_done_callback(in_flight.discard)
         return count
 
-    def _stages_with_capacity(self) -> tuple[Stage, ...]:
+    def _stages_with_capacity(self) -> tuple[Stage | str, ...]:
         """Stages whose semaphore has at least one free slot.
 
         Filtering before the claim avoids the wasted UPDATE that would
@@ -234,7 +340,7 @@ class ClaimLoop:
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,
-                    stage=job.stage.value,
+                    stage=str(job.stage),
                     attempts=job.attempts,
                     worker_id=self.cfg.worker_id,
                 )
@@ -247,7 +353,7 @@ class ClaimLoop:
             _log.exception(
                 "job_dispatch_raised",
                 job_id=job.id,
-                stage=job.stage.value,
+                stage=str(job.stage),
             )
             raise
         finally:

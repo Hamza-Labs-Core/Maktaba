@@ -66,6 +66,9 @@ type Item struct {
 	EpisodeCount int    `json:"episode_count"`
 	WatchedCount int    `json:"watched_count"`
 	InProgress   int    `json:"in_progress"`
+	// PosterVideoID is the first episode: the card shows its poster
+	// (GET /api/videos/{id}/poster) when the series has no art of its own.
+	PosterVideoID string `json:"poster_video_id,omitempty"`
 }
 
 type epRow struct {
@@ -139,7 +142,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		item := hd
 		seasons := map[int]bool{}
-		for _, e := range group {
+		var first *epRow
+		for i, e := range group {
+			if first == nil || lessEpisode(e, *first, hd.Numbering) {
+				first = &group[i]
+			}
 			item.EpisodeCount++
 			if s, ok := e.effSeason(); ok {
 				seasons[s] = true
@@ -151,6 +158,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		item.SeasonCount = len(seasons)
+		if first != nil {
+			item.PosterVideoID = first.videoID
+		}
 		items = append(items, item)
 	}
 

@@ -25,6 +25,18 @@ func (s *statusCapture) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Flush passes through to the wrapped writer: streaming handlers (the
+// SSE channels under /ws/*) need an http.Flusher, and this wrapper sits
+// on every request.
+func (s *statusCapture) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (s *statusCapture) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // SLogLogger emits one structured log line per request. Story 7.1 AC-2
 // requires every line during the request to carry request_id; this
 // middleware seeds the value on the context via shared/log/go so the

@@ -38,6 +38,7 @@ interface Video {
   state: string;
   detected_language?: string | null;
   duration_sec?: number | null;
+  library_id?: string | null;
 }
 interface Chapter {
   id: number;
@@ -152,7 +153,7 @@ export function VideoDetail() {
     {
       id: "processing",
       label: t("video.tab.processing"),
-      content: <ProcessingTab videoId={videoId} />,
+      content: <ProcessingTab videoId={videoId} libraryId={video.library_id ?? null} />,
     },
     {
       id: "stats",
@@ -266,7 +267,7 @@ function TranscriptTab({ videoId }: { videoId: string }) {
   );
 }
 
-function ProcessingTab({ videoId }: { videoId: string }) {
+function ProcessingTab({ videoId, libraryId }: { videoId: string; libraryId: string | null }) {
   const { t, n } = useI18n();
   const [jobs, setJobs] = useState<Job[] | null>(null);
 
@@ -280,24 +281,27 @@ function ProcessingTab({ videoId }: { videoId: string }) {
       .catch(() => {
         if (alive) setJobs([]);
       });
-    // Live per-library updates (AC-3 {type,at,payload}).
-    const off = subscribe(`library/${videoId}`, (ev) => {
-      const job = ev.payload?.job as Job | undefined;
-      if (!job || job.video_id !== videoId) return;
-      setJobs((prev) => {
-        if (!prev) return prev;
-        const idx = prev.findIndex((j) => j.id === job.id);
-        if (idx < 0) return [job, ...prev];
-        const next = prev.slice();
-        next[idx] = job;
-        return next;
-      });
-    });
+    // Live per-library updates (AC-3 {type,at,payload}). The channel is
+    // keyed by LIBRARY id, not video id (F24); no library => no stream.
+    const off = libraryId
+      ? subscribe(`library/${libraryId}`, (ev) => {
+          const job = ev.payload?.job as Job | undefined;
+          if (!job || job.video_id !== videoId) return;
+          setJobs((prev) => {
+            if (!prev) return prev;
+            const idx = prev.findIndex((j) => j.id === job.id);
+            if (idx < 0) return [job, ...prev];
+            const next = prev.slice();
+            next[idx] = job;
+            return next;
+          });
+        })
+      : () => {};
     return () => {
       alive = false;
       off();
     };
-  }, [videoId]);
+  }, [videoId, libraryId]);
 
   if (!jobs) return <p className="mkt-loading">{t("common.loading")}</p>;
   if (jobs.length === 0) return <EmptyState title={t("common.empty")} />;

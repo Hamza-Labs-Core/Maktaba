@@ -35,8 +35,10 @@ from .channel_planner import (
     simulate,
     suggest_channels,
 )
+from .entry import plan_catalog
 
 __all__ = [
+    "plan_catalog",
     "DEFAULT_DAYPARTS",
     "DEFAULT_RAMADAN_DAYPARTS",
     "DEFAULT_THEMES",

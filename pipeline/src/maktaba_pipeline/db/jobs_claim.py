@@ -44,7 +44,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from .jobs import DBConn, Job, JobState, Stage
+from .jobs import DBConn, Job, Stage
 
 __all__ = [
     "claim_one",
@@ -86,12 +86,12 @@ async def claim_one_pg(
     db: DBConn,
     *,
     worker_id: str,
-    supported_stages: Sequence[Stage],
+    supported_stages: Sequence[Stage | str],
 ) -> Job | None:
     """Postgres-side claim. See module docstring for semantics."""
     if not supported_stages:
         raise ValueError("claim_one: supported_stages must not be empty")
-    stages = [s.value for s in supported_stages]
+    stages = [str(s) for s in supported_stages]
     row = await db.fetchrow(_CLAIM_SQL_PG, worker_id, stages)
     return _row_to_job(row) if row is not None else None
 
@@ -152,12 +152,12 @@ async def claim_one_sqlite(
     db: DBConn,
     *,
     worker_id: str,
-    supported_stages: Sequence[Stage],
+    supported_stages: Sequence[Stage | str],
 ) -> Job | None:
     """SQLite-side claim. See module docstring for the asyncio-lock + BEGIN IMMEDIATE pattern."""
     if not supported_stages:
         raise ValueError("claim_one: supported_stages must not be empty")
-    stages = [s.value for s in supported_stages]
+    stages = [str(s) for s in supported_stages]
     placeholders = ",".join("?" * len(stages))
     select_sql = _SQLITE_CLAIM_SELECT.format(placeholders=placeholders)
 
@@ -174,7 +174,7 @@ async def claim_one(
     db: DBConn,
     *,
     worker_id: str,
-    supported_stages: Sequence[Stage],
+    supported_stages: Sequence[Stage | str],
 ) -> Job | None:
     """Atomic single-job claim. Dispatches to the dialect-specific impl.
 
@@ -197,46 +197,11 @@ async def claim_one(
 
 
 def _row_to_job(row: Any) -> Job:
-    """Build a :class:`Job` from a row mapping, tolerating both drivers.
+    """Row -> :class:`Job`; the mapping lives in :mod:`maktaba_pipeline.engine.claim`
+    (it must not coerce unknown stages through the ``Stage`` enum)."""
+    from ..engine.claim import row_to_job
 
-    asyncpg returns parsed JSON, native ``datetime``, native ``UUID``;
-    aiosqlite returns ``TEXT``/``str`` for the same shapes. We coerce
-    in one place so the rest of the pipeline doesn't care which driver
-    served the row.
-    """
-    return Job(
-        id=int(row["id"]),
-        video_id=_optional_uuid(row["video_id"]),
-        library_id=_optional_uuid(_row_get(row, "library_id")),
-        stage=Stage(row["stage"]),
-        state=JobState(row["state"]),
-        priority=int(row["priority"]),
-        attempts=int(row["attempts"]),
-        max_attempts=int(row["max_attempts"]),
-        claimed_by=_optional_str(row["claimed_by"]),
-        claimed_at=_to_datetime(row["claimed_at"]),
-        last_heartbeat_at=_to_datetime(row["last_heartbeat_at"]),
-        not_before=_to_datetime(row["not_before"]),
-        error=_optional_str(row["error"]),
-        total_duration_seconds=_optional_float(row["total_duration_seconds"]),
-        processed_seconds=float(row["processed_seconds"]),
-        segments_completed=int(row["segments_completed"]),
-        last_segment_end_sec=float(row["last_segment_end_sec"]),
-        estimated_remaining_sec=_optional_float(row["estimated_remaining_sec"]),
-        realtime_factor=_optional_float(row["realtime_factor"]),
-        progress_updated_at=_to_datetime(row["progress_updated_at"]),
-        pause_requested=bool(row["pause_requested"]),
-        cancel_requested=bool(row["cancel_requested"]),
-        paused_at=_to_datetime(row["paused_at"]),
-        paused_at_sec=_optional_float(row["paused_at_sec"]),
-        paused_reason=_optional_str(row["paused_reason"]),
-        resumed_at=_to_datetime(row["resumed_at"]),
-        resume_count=int(row["resume_count"]),
-        metrics=_to_json_dict(row["metrics"]),
-        payload=_to_json_dict(row["payload"]),
-        created_at=_required_datetime(row["created_at"]),
-        finished_at=_to_datetime(row["finished_at"]),
-    )
+    return row_to_job(row)
 
 
 def _optional_uuid(value: Any) -> UUID | None:
