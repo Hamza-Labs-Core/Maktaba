@@ -25,6 +25,7 @@ class StageImpl:
 #: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it
 #: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
 CORE_MODULES: dict[str, str] = {
+    "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "thumb_small": "maktaba_pipeline.engine.stages.thumb_small",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",

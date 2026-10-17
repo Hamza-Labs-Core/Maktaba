@@ -51,9 +51,10 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 from .. import rules
@@ -75,7 +76,8 @@ from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
 from ..engine.stages import thumb_small as thumb_small_stage
 from ..engine.stages import youtube_sync as yt_stage
-from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path
+from ..engine.stages.content_hash import PENDING, is_pending
+from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_path
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 __all__ = ["ImportReport", "main", "run_import"]
@@ -92,7 +94,7 @@ TABLES = (
     "video_signals", "youtube_channels", "youtube_videos", "youtube_playlists",
     "youtube_playlist_items", "media_metadata_enrichment", "series", "series_seasons",
     "series_episodes", "season_tags", "video_topic_tags", "season_style", "external_links",
-    "processing_jobs", "app_settings",
+    "processing_jobs", "app_settings", "libraries", "library_roots", "videos",
 )  # fmt: skip
 
 
@@ -117,6 +119,9 @@ class ImportReport:
     thumbs_copied: int = 0
     thumbs_present: int = 0
     thumbs_missing: int = 0
+    libraries_created: int = 0
+    videos_created: int = 0
+    hash_jobs_queued: int = 0
 
     def render(self) -> str:
         out = [
@@ -133,6 +138,12 @@ class ImportReport:
             f"synthetic jobs: {self.jobs_imported} done, {self.jobs_failed} failed, "
             f"{self.jobs_skipped_existing} already imported; detect queued for {self.detect_queued} libraries"
         )
+        if self.libraries_created or self.videos_created:
+            out.append(
+                f"created from the cache: {self.libraries_created} libraries,"
+                f" {self.videos_created} videos (file identity queued: {self.hash_jobs_queued}"
+                " content_hash jobs)"
+            )
         if self.settings_imported or self.settings_skipped:
             got = ", ".join(f"{k} {n}" for k, n in sorted(self.settings_imported.items()))
             out.append(f"rules imported: {got or 'none'}")
@@ -150,7 +161,9 @@ class ImportReport:
 
 
 def _open_cache(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    # immutable: a copied snapshot of a WAL database has no -shm beside it, and a plain
+    # read-only open would need to create one; the copy never changes during an import
+    conn = sqlite3.connect(f"file:{quote(path.as_posix())}?immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -199,6 +212,121 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
     return out
 
 
+# --------------------------------------------------------------------------- libraries and videos
+
+
+def _map(p: str, maps: list[tuple[str, str]]) -> str:
+    """``p`` as Maktaba stores it: the cache prefix rewritten, the case kept."""
+    s = p.replace("\\", "/")
+    for src, dst in maps:
+        if s.lower().startswith(src.lower()):
+            return dst + s[len(src) :]
+    return s
+
+
+def _library_of(f: Any) -> str:
+    """The Maktaba library a cache file goes to: its Plex library, else its folder."""
+    plex = f["plex_library"] if "plex_library" in f.keys() else None
+    return str(plex or posixpath.basename(str(f["folder"]).rstrip("/")) or f["folder"])
+
+
+def stand_in_hash(library: str, path: str) -> str:
+    """A unique, well-formed ``content_hash`` for a video whose file has not been read yet
+    (``metadata.hash_pending``); ``content_hash`` replaces it with the real one."""
+    return hashlib.sha256(f"pending|{library}|{path}".encode()).hexdigest()
+
+
+async def _create_libraries(
+    db: Any,
+    cache: sqlite3.Connection,
+    only: list[str],
+    maps: list[tuple[str, str]],
+    report: ImportReport,
+) -> list[tuple[UUID, str]]:
+    """The cache's libraries and videos as Maktaba rows (no read of the share). A library
+    that exists by name is reused; a video that exists by path is left as it is."""
+    from ..library_mgmt.roots import canonicalise
+
+    groups: dict[str, list[Any]] = defaultdict(list)
+    for f in cache.execute("SELECT * FROM files ORDER BY path"):
+        groups[_library_of(f)].append(f)
+    wanted = set(only)
+    out: list[tuple[UUID, str]] = []
+    for name in sorted(groups):
+        if wanted and name not in wanted:
+            continue
+        files = groups[name]
+        roots = sorted({_map(str(f["folder"]), maps).rstrip("/") for f in files})
+        row = await db.fetchrow("SELECT id FROM libraries WHERE name = $1", name)
+        if row is not None:
+            lib = UUID(str(row["id"]))
+        else:
+            lib = uuid.uuid4()
+            await db.execute(
+                "INSERT INTO libraries (id, name, roots) VALUES ($1, $2, $3)",
+                uid(lib), name, roots if is_pg(db) else dumps(roots),
+            )  # fmt: skip
+            for r in roots:
+                await db.execute(
+                    "INSERT INTO library_roots (library_id, path, path_canonical) VALUES ($1, $2, $3)",
+                    uid(lib), r, canonicalise(r),
+                )  # fmt: skip
+            report.libraries_created += 1
+        out.append((lib, name))
+        have = {
+            str(r["path"]).lower()
+            for r in await db.fetch("SELECT path FROM videos WHERE library_id = $1", uid(lib))
+        }
+        for f in files:
+            path = _map(str(f["path"]), maps)
+            if path.lower() in have:
+                continue
+            have.add(path.lower())
+            await db.execute(
+                "INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime,"
+                " duration_sec, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+                uid(uuid.uuid4()), uid(lib), stand_in_hash(name, path), path, posixpath.basename(path),
+                int(f["size"]), to_ts(db, datetime.fromtimestamp(float(f["mtime"]), UTC)),
+                None if f["duration_s"] is None else float(f["duration_s"]),
+                dumps({PENDING: True, "source": "mediaintel"}),
+            )  # fmt: skip
+            report.videos_created += 1
+    if wanted - {n for _, n in out}:
+        raise SystemExit(f"not in the cache: {', '.join(sorted(wanted - {n for _, n in out}))}")
+    return out
+
+
+async def _queue_content_hash(db: Any, libs: list[tuple[UUID, str]]) -> int:
+    """One ``content_hash`` job per video still on a stand-in hash (one statement, not one
+    enqueue per video: there are ~150k). A live job for a video is left as it is."""
+    pending = (
+        "v.metadata ->> 'hash_pending' = 'true'"
+        if is_pg(db)
+        else "json_extract(v.metadata, '$.hash_pending') = 1"
+    )
+    n = 0
+    for lib, _ in libs:
+        before = int(
+            await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'content_hash'")
+        )
+        await db.execute(
+            "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id, stage,"
+            " state, priority, max_attempts, reasons)"
+            " SELECT 'video', v.id, v.id, v.library_id, 'content_hash', 'pending', 100, 3,"
+            " $2 FROM videos v"
+            f" WHERE v.library_id = $1 AND v.deleted_at IS NULL AND {pending}"
+            " AND NOT EXISTS (SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'video'"
+            "  AND j.subject_id = v.id AND j.stage = 'content_hash'"
+            "  AND j.state IN ('pending','claimed','running','resuming','paused'))",
+            uid(lib), dumps([{"why": "import: file not read yet", "by": "system", "from_stage": "import"}]),
+        )  # fmt: skip
+        after = int(
+            await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'content_hash'")
+        )
+        n += after - before
+    return n
+
+
 # --------------------------------------------------------------------------- the import
 
 
@@ -211,20 +339,28 @@ async def run_import(
     apply: bool = False,
     settings: Path | None = None,
     thumbs: Path | None = None,
+    create: bool = False,
 ) -> ImportReport:
     """Run the import; with ``apply=False`` everything is rolled back after counting.
 
     ``settings`` / ``thumbs`` default to ``settings.json`` / ``thumbs/`` beside the cache,
-    when they exist."""
+    when they exist. ``create`` makes the libraries (one per Plex library of the cache,
+    or only those named) and their videos from the cache itself: nothing is read from the
+    share, and each new video's file identity is a queued ``content_hash`` job."""
     maps = path_maps or []
     conn = _open_cache(cache)
     try:
-        libs = await _resolve_libraries(db, libraries)
         report = ImportReport(applied=apply)
         before = {t: int(await db.fetchval(f"SELECT count(*) FROM {t}")) for t in TABLES}
         try:
             async with db.transaction():
+                if create:
+                    libs = await _create_libraries(db, conn, libraries, maps, report)
+                else:
+                    libs = await _resolve_libraries(db, libraries)
                 await _import(db, conn, libs, maps, report)
+                if create:
+                    report.hash_jobs_queued = await _queue_content_hash(db, libs)
                 await _settings(db, _beside(cache, settings, "settings.json"), report)
                 with ThumbSource.open(_thumbs_at(cache, thumbs)) as source:
                     await _thumbs(db, conn, libs, maps, source, report, apply)
@@ -784,19 +920,23 @@ async def _thumbs(
     videos: dict[str, tuple[UUID, UUID, str | None]] = {}
     for lib_id, _ in libs:
         for r in await db.fetch(
-            "SELECT id, path, content_hash FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
+            "SELECT id, path, content_hash, metadata FROM videos WHERE library_id = $1"
+            " AND deleted_at IS NULL",
             uid(lib_id),
         ):
             key = str(r["path"]).replace("\\", "/").lower()
-            ch = None if r["content_hash"] is None else str(r["content_hash"])
+            # a stand-in hash names no cache folder: the copy waits under the video's id
+            ch = (
+                None
+                if is_pending(loads(r["metadata"])) or r["content_hash"] is None
+                else str(r["content_hash"])
+            )
             videos[key] = (UUID(str(r["id"])), lib_id, ch)
     for f in cache.execute("SELECT path, thumb_path FROM files ORDER BY path"):
         hit = videos.get(_norm(f["path"], maps))
         if hit is None:
             continue
         vid, lib, content_hash = hit
-        if content_hash is None:  # not hashed by the scan yet: thumb_small makes it later
-            continue
         src = next(
             (n for n in (thumbs_name(x) for x in (f["thumb_path"], f["path"]) if x) if n in source),
             None,
@@ -804,7 +944,8 @@ async def _thumbs(
         if src is None:
             report.thumbs_missing += 1
             continue
-        dst = small_path(content_hash)
+        # not hashed yet: staged by the video's id; thumb_small moves it in after content_hash
+        dst = small_path(content_hash) if content_hash else staged_path(vid)
         if dst.is_file() and dst.stat().st_size > 0:
             report.thumbs_present += 1
         else:
@@ -814,6 +955,8 @@ async def _thumbs(
                 tmp = dst.with_name(dst.stem + ".part.jpg")
                 source.copy(src, tmp)
                 tmp.replace(dst)
+        if content_hash is None:
+            continue  # thumb_small is not done until the real hash names its folder
         size = dst.stat().st_size if dst.is_file() else source.size(src)
         ih = await thumb_small_stage.input_fingerprint(db, Subject("video", vid))
         await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="thumb_small",
@@ -895,7 +1038,11 @@ def _parser() -> argparse.ArgumentParser:
         "--cache", required=True, type=Path, help="mediaintel cache database (opened read-only)"
     )
     p.add_argument(
-        "--library", action="append", required=True, help="Maktaba library id or name (repeatable)"
+        "--library",
+        action="append",
+        default=[],
+        help="Maktaba library id or name (repeatable); with --create, a Plex library name of"
+        " the cache (default: all of them)",
     )
     p.add_argument(
         "--path-map", action="append", default=[], help="CACHE_PREFIX=MAKTABA_PREFIX (repeatable)"
@@ -909,6 +1056,12 @@ def _parser() -> argparse.ArgumentParser:
         help="mediaintel's thumbs/ folder or thumbs.tar (default: either, beside the cache)",
     )
     p.add_argument("--database-url", default=os.environ.get("MAKTABA_DATABASE_URL", ""))
+    p.add_argument(
+        "--create",
+        action="store_true",
+        help="make the libraries and videos from the cache (no scan, no read of the share);"
+        " each video's file identity is queued as a content_hash job",
+    )
     p.add_argument("--apply", action="store_true", help="commit (default: dry run, rolled back)")
     return p
 
@@ -923,7 +1076,7 @@ async def _amain(args: argparse.Namespace) -> int:
     try:
         report = await run_import(
             db, args.cache, args.library, path_maps=parse_path_maps(args.path_map),
-            apply=args.apply, settings=args.settings, thumbs=args.thumbs,
+            apply=args.apply, settings=args.settings, thumbs=args.thumbs, create=args.create,
         )  # fmt: skip
     finally:
         await db.close()

@@ -412,3 +412,45 @@ async def test_thumbnails_go_to_the_cache_and_thumb_small_is_done(
         "SELECT count(*) FROM processing_jobs WHERE stage = 'thumb_small' AND outcome = 'imported'"
     )
     assert int(done) == 3 and vids
+
+
+@pytest.mark.asyncio
+async def test_create_makes_libraries_and_videos_and_the_queue_reads_the_files(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No scan first: the import makes the library and its videos from the cache with
+    stand-in hashes, and queues one content_hash job per video; running the queue reads
+    each file once, stores its real hash and moves the imported thumbnail in."""
+    from maktaba_pipeline.engine.stages import thumb_small
+    from maktaba_pipeline.identity.hasher import hash_file
+
+    monkeypatch.setattr(thumb_small, "ROOT", str(tmp_path / "thumbcache"))
+    media = tmp_path / "media" / "chan"
+    media.mkdir(parents=True)
+    for i in range(N):
+        (media / f"ep{i:02d}.mp4").write_bytes(bytes([i]) * (1000 + i))
+    cache = _cache(tmp_path / "cache.db")
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    (thumbs / thumbs_name("Y:/chan/ep00.mp4")).write_bytes(b"\xff\xd8imported")
+    maps = [("Y:/", f"{tmp_path.as_posix()}/media/")]
+
+    dry = await run_import(db, cache, [], path_maps=maps, create=True)
+    assert dry.libraries_created == 1 and dry.videos_created == N and dry.matched == N
+    assert int(await db.fetchval("SELECT count(*) FROM videos")) == 0  # rolled back
+
+    report = await run_import(db, cache, [], path_maps=maps, create=True, apply=True)
+    assert report.videos_created == N and report.hash_jobs_queued == N
+    assert report.tables["series_seasons"][1] == 1  # the detection came across too
+    again = await run_import(db, cache, [], path_maps=maps, create=True, apply=True)
+    assert again.libraries_created == 0 and again.videos_created == 0  # idempotent
+
+    rt = await core_runtime(db)
+    await drain_core(db, rt, only={"content_hash", "thumb_small"})
+    rows = await db.fetch("SELECT path, content_hash, metadata FROM videos ORDER BY path")
+    for r in rows:
+        assert not (loads(r["metadata"]) or {}).get("hash_pending")
+        assert r["content_hash"] == hash_file(r["path"]).content_hash
+    first = rows[0]["content_hash"]
+    assert thumb_small.small_path(str(first)).read_bytes() == b"\xff\xd8imported"
+    assert not any((tmp_path / "thumbcache" / "imported").glob("*.jpg"))  # moved, not copied

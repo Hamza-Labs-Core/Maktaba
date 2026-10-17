@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from .context import StageContext
 
 __all__ = [
+    "CONTENT_HASH_VERSION",
     "CATALOG_ID",
     "GRAPH",
     "MONOTONE_STAGES",
@@ -63,6 +64,7 @@ SIG_VERSION: int = AUDIO_FP_VERSION * 100 + FRAMES_VERSION
 LINK_VERSION = 1
 #: thumb_small / review_pages versions (stages/thumb_small.py, stages/review_pages.py)
 THUMB_SMALL_VERSION = 1
+CONTENT_HASH_VERSION = 1
 REVIEW_VERSION = 1
 #: topic_collections / promo_links / clip_groups (plan 06-11 section 17)
 TOPIC_VERSION = 1
@@ -234,6 +236,18 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=3600,
     ),
     # ---- episodes lane -------------------------------------------------
+    StageDef(
+        name="content_hash",
+        label="File identity",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="episodes",
+        lane_order=0,
+        version=CONTENT_HASH_VERSION,
+        # a video imported from mediaintel exists before its file was read; its small
+        # thumbnail lives under the real hash
+        edges=(Edge("thumb_small", "same"),),
+    ),
     _legacy(
         "probe",
         "Length",

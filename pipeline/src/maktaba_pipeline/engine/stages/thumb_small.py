@@ -28,10 +28,19 @@ from ..hashing import canonical_hash
 from ..media import FFMPEG, run_media
 from ..sql import uid
 from ._common import load_video, require_video
+from .content_hash import is_pending
 from .registry import StageImpl
 from .thumb_hash import find_thumbnail
 
-__all__ = ["IMPL", "SMALL_NAME", "THUMB_SMALL_VERSION", "WIDTH", "small_args", "small_path"]
+__all__ = [
+    "IMPL",
+    "SMALL_NAME",
+    "THUMB_SMALL_VERSION",
+    "WIDTH",
+    "small_args",
+    "small_path",
+    "staged_path",
+]
 
 WIDTH = 320
 SMALL_NAME = "small.jpg"
@@ -43,6 +52,12 @@ ROOT: str | None = os.environ.get("MAKTABA_THUMBNAIL_ROOT") or None
 def small_path(content_hash: str) -> Path:
     """Where a video's small copy lives (exists or not)."""
     return thumbnail_dir_for(content_hash, root=ROOT) / SMALL_NAME
+
+
+def staged_path(video_id: Any) -> Path:
+    """Where the mediaintel import leaves a video's small copy while its real hash is
+    still pending (the final folder is named after that hash); the stage moves it in."""
+    return thumbnail_dir_for("imported", root=ROOT) / f"{video_id}.jpg"
 
 
 def small_args(src: str, *, binary: str = FFMPEG) -> list[str]:
@@ -75,8 +90,21 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
+    if is_pending(v.metadata):
+        # imported without reading the file: content_hash queues this stage again once
+        # the real hash (the cache folder's name) is known
+        return StageResult(
+            output_hash=canonical_hash({"small": None, "waiting": "content_hash"}),
+            outcome="waiting_inputs",
+            summary={"small": None, "waiting": "content_hash"},
+        )
     dst = small_path(await _content_hash(db, v.id))
-    if dst.is_file() and dst.stat().st_size > 0:  # made by an earlier run: adopted
+    staged = staged_path(v.id)
+    if staged.is_file() and staged.stat().st_size > 0 and not dst.is_file():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        staged.replace(dst)  # the import's copy: no read of the share
+    if dst.is_file() and dst.stat().st_size > 0:  # made by an earlier run or imported
+        staged.unlink(missing_ok=True)
         return StageResult(
             output_hash=canonical_hash({"small": dst.name, "size": dst.stat().st_size}),
             summary={"small": str(dst), "adopted": True},

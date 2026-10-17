@@ -103,6 +103,7 @@ land at the next free integer (no gaps, no reservations).
 | `0090` | `0090_media_intel_store.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0088 | Analysis store: `video_signals`, `youtube_*`, `season_tags`, `video_topic_tags` (not `video_tags`, owned by 0034), `season_style`, `external_links`, `channel_plans`. |
 | `0091` | `0091_drop_legacy_live_indexes.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0088 | Drops the two legacy live-row unique indexes. Merge only after A and B both enqueue through the function. |
 | `0096` | `0096_processing_jobs_rerun_cascade.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0088 | `processing_jobs.rerun_force_cascade`: a mid-run "force cascade" trigger is kept for the follow-up; `processing_jobs_enqueue()` sets it. |
+| `0097` | `0097_content_hash_stage.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0093 | `job_stages` row for `content_hash`: one `nas_read` job per video reads the file's identity; the mediaintel import queues it for the videos it creates with a stand-in hash. |
 
 ---
 
