@@ -24,6 +24,8 @@ from maktaba_pipeline.schedule.channel_planner import (
     suggest_channels,
 )
 
+from ._legacy import SMALL
+
 pytestmark = pytest.mark.unit
 
 
@@ -75,7 +77,7 @@ def clip(i: int, *, genre: str = "seerah", seconds: float = 120, promo_of: str =
 
 def plan(seasons: Sequence[SeasonCandidate], loose: Sequence[LooseVideo] = (),
          **cfg: object) -> PlanResult:  # fmt: skip
-    base: dict[str, object] = {"theme_min_hours": 1.0, "presenter_channels": False}
+    base: dict[str, object] = {**SMALL, "theme_min_hours": 1.0, "presenter_channels": False}
     base.update(cfg)
     return suggest_channels(seasons, loose, PlannerConfig(**base))  # type: ignore[arg-type]
 

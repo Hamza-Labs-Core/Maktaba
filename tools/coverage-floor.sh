@@ -14,6 +14,7 @@
 # Env (passed from the Makefile, with standalone fallbacks):
 #   GO_MODULES   space-separated Go module roots (relative to repo root)
 #   PIPELINE_DIR python pipeline dir (default: pipeline)
+#   COVERAGE_PYTHON  Python the pipeline coverage runs on (default: 3.13)
 
 set -euo pipefail
 
@@ -92,13 +93,19 @@ if [[ -d "$REPO_ROOT/$pipeline_dir" ]]; then
   covxml="$covdir/pipeline.cov.txt"
   covlog="$covdir/pipeline.cov.log"
   set +e
-  # sys.monitoring (Python 3.12+) records each line once and then stops tracing
-  # it; the default tracer slows hot loops ~10x, pushing unit tests past their
-  # per-test cap only when measured for coverage
+  # sys.monitoring records each line once and then stops tracing it; the default
+  # tracer slows hot loops ~10x, pushing unit tests past their per-test cap only
+  # when measured for coverage. On Python 3.12 a line keeps a cost even after it
+  # is disabled (the TV-grid planner: 0.06 s plain, 0.32 s measured; 3.13: 0.05 s),
+  # so coverage runs on COVERAGE_PYTHON in its own environment; the unit job
+  # still tests on pipeline/.python-version.
+  covpy="${COVERAGE_PYTHON:-3.13}"
   ( cd "$REPO_ROOT/$pipeline_dir" && export COVERAGE_CORE=sysmon && \
-    uv run --all-extras --with pytest-cov pytest -m unit \
+    export UV_PROJECT_ENVIRONMENT="$covdir/pipeline-venv-$covpy" && \
+    uv run --python "$covpy" --all-extras --with pytest-cov pytest -m unit \
       --cov=src/maktaba_pipeline --cov-report= -q >"$covlog" 2>&1 && \
-    uv run --all-extras --with pytest-cov coverage report --format=total > "$covxml" 2>>"$covlog" )
+    uv run --python "$covpy" --all-extras --with pytest-cov coverage report --format=total \
+      > "$covxml" 2>>"$covlog" )
   py_rc=$?
   set -e
   if [[ $py_rc -ne 0 || ! -s "$covxml" ]]; then

@@ -31,6 +31,8 @@ from maktaba_pipeline.schedule.channel_planner import (
     suggest_channels,
 )
 
+from ._legacy import SMALL
+
 pytestmark = pytest.mark.unit
 
 PRESENTER = "الشيخ نبيل العوضي"
@@ -184,7 +186,7 @@ def plan(
     loose: Sequence[LooseVideo] = (),
     **cfg: object,
 ) -> PlanResult:
-    config = PlannerConfig(**cfg)  # type: ignore[arg-type]
+    config = PlannerConfig(**{**SMALL, **cfg})  # type: ignore[arg-type]
     return suggest_channels(library() if seasons is None else seasons, loose, config)
 
 
@@ -214,7 +216,7 @@ def test_themed_channels_need_enough_hours() -> None:
     assert "history" not in keys
     p2 = plan(theme_min_hours=60.0)
     assert "seerah" not in {c.key for c in p2.channels}
-    assert any(w[0] == "theme seerah" and "< 60 h" in w[1] for w in p2.unplaced)
+    assert any(w[0] == "theme seerah" and "needs 60 h" in w[1] for w in p2.unplaced)
 
 
 def test_every_suggestion_has_reasons() -> None:
@@ -237,7 +239,7 @@ def test_channel_numbers_are_stable_per_theme() -> None:
 def test_current_affairs_stays_off_mix_and_themes() -> None:
     p = plan()
     for c in p.channels:
-        if c.kind == "presenter":
+        if c.kind == "presenter" or c.key in ("news", "talk"):  # news; talk shows by format
             continue
         for k in c.lanes:
             assert all(u.genre != "current_affairs" for u in p.lanes[k].units), (c.key, k)
@@ -367,9 +369,9 @@ def test_ramadan_seasons_flagged_and_moved_after_iftar() -> None:
     iftar = slot_at(ch.ramadan_slots, 19 * 60)  # the first block after iftar
     lane = p.lanes[iftar.lane or ""]
     assert lane.ramadan and lane.pattern == "strip7"
+    assert iftar.days == ()  # every day of the week
     # the Ramadan show heads the after-iftar slot every day; its whole series follows
     assert lane.units[0].series_id == "s-hab1" and lane.units[0].ramadan
-    assert iftar.days == ()  # every day of the week
     assert any("Ramadan" in r for r in ch.reasons)
     # no Ramadan seasons on history-less channels → no Ramadan grid
     raq = channel(p, "raqaiq")
@@ -537,3 +539,21 @@ def test_dizquetv_weekly_schedule_puts_khutbah_on_friday() -> None:
     kh = [s for s in dz["slots"] if s["showId"] == "lane:library.khutbah"]
     # dizqueTV's weekly period starts on Thursday: Friday is day 1
     assert [s["time"] for s in kh] == [1 * day + 12 * 3_600_000]
+
+
+def test_a_recitation_joins_a_theme_only_by_its_genre() -> None:
+    """A recitation with a secondary nasheed tag is still the Quran: the Quran
+    theme takes it, the anasheed theme never does (a weak tag is not enough)."""
+    from maktaba_pipeline.schedule.channel_planner import DEFAULT_THEMES, PlannerConfig, _in_theme
+
+    cfg = PlannerConfig()
+    themes = {t.key: t for t in DEFAULT_THEMES}
+    rec = season(
+        "r1", "تلاوات صلاة التهجد", genre="quran_recitation",
+        tags={"format:recitation": 1.0, "topic:nasheed": 0.78, "topic:fiqh": 0.92},
+    )  # fmt: skip
+    assert _in_theme(rec, themes["quran"], cfg)
+    assert not _in_theme(rec, themes["nasheed"], cfg)
+    assert not _in_theme(rec, themes["fiqh"], cfg)
+    nasheed = season("n1", "أناشيد", genre="nasheed")
+    assert _in_theme(nasheed, themes["nasheed"], cfg)

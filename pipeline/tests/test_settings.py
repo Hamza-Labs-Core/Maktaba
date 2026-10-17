@@ -113,9 +113,11 @@ def _season(sid: str, library: str, recitation: bool) -> SeasonCandidate:
 def test_the_quran_fallback_is_a_setting() -> None:
     # a scholar's library: mostly lessons, a few recitations, no reciter's library at all
     seasons = [_season(f"l{i}", "شيخ", False) for i in range(4)] + [_season("q", "شيخ", True)]
-    on = suggest_channels(seasons, (), PlannerConfig(theme_min_hours=1.0))
+    on = suggest_channels(seasons, (), PlannerConfig(theme_min_hours=1.0, channel_min_days=0))
     off = suggest_channels(
-        seasons, (), PlannerConfig(theme_min_hours=1.0, quran_fallback_any_recitation=False)
+        seasons,
+        (),
+        PlannerConfig(theme_min_hours=1.0, channel_min_days=0, quran_fallback_any_recitation=False),
     )
     assert "library.quran" in on.lanes
     assert "library.quran" not in off.lanes
