@@ -14,6 +14,7 @@ from datetime import date, timedelta
 import pytest
 
 from maktaba_pipeline.classify.topic_tags import (
+    SUBTOPICS,
     TOPICS,
     Tag,
     boilerplate_phrases,
@@ -328,7 +329,7 @@ def test_scores_evidence_and_one_genre() -> None:
     assert top is not None and top.tag == "topic:prophets_stories"
     assert all(t.tag.split(":")[0] in {"topic", "format", "audience", "occasion", "genre"}
                for t in tags)  # fmt: skip
-    assert all(t.tag[6:] in TOPICS for t in tags if t.tag.startswith("topic:"))
+    assert all(t.tag[6:] in TOPICS + SUBTOPICS for t in tags if t.tag.startswith("topic:"))
     assert tag_series("قصص الأنبياء", episode_titles=["قصة نوح عليه السلام"]) == tag_series(
         "قصص الأنبياء", episode_titles=["قصة نوح عليه السلام"]
     )

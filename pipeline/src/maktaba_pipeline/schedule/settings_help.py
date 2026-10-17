@@ -20,13 +20,62 @@ WHAT = "Programmes and filler"
 DZ = "dizqueTV"
 
 PLANNER_HELP: dict[str, Help] = {
+    # the lineup
+    "max_channels": Help(
+        CH,
+        "Channels (most)",
+        "At most this many channels in all. Candidates with enough "
+        "content are taken in the kind order below: themes in their order, presenters "
+        "largest first; the rest is listed as not placed.",
+    ),
+    "channel_kind_order": Help(
+        CH,
+        "Lineup order",
+        "Which kinds of channel get the places first: quran, theme, mix, "
+        "presenter. A kind left out gets no channel.",
+    ),
+    "channel_min_days": Help(
+        CH,
+        "Days without a repeat",
+        "A channel needs enough content for this many days "
+        "without a repeat (at the programme hours a day below); one with less gets no "
+        "channel and its shows air on the others.",
+    ),
+    "channel_day_hours": Help(
+        CH,
+        "Programme hours a day",
+        "How many hours of a channel's day are programmes (the "
+        "rest is filler): with the days above, the hours a channel needs.",
+    ),
+    "library_tags": Help(
+        CH,
+        "Library tags",
+        "Tags for every video of a library, by the library's exact name: "
+        "audience:kids (made for children), audience:kids_friendly (fine for them), "
+        "audience:adults (kept off the kids' channel and the kids' hour), or any topic tag.",
+    ),
+    "slot_owner": Help(
+        CH,
+        "A slot belongs to",
+        "show: a slot keeps its show, then the shows left over. "
+        "presenter: a slot is one sheikh's or source's (8 pm every day): his next show "
+        "follows in the same slot, else one on the same topic.",
+        choices=("presenter", "show"),
+    ),
+    "presenter_max_channels": Help(
+        CH,
+        "Presenter channels (most)",
+        "Only the largest libraries get a channel of their "
+        "own; the others air on the theme channels.",
+    ),
     # channels
     "themes": Help(
         CH,
         "Themed channels",
-        "One channel per theme: its number, names, and the "
-        "topics / audiences / formats whose shows it takes. Leave min hours empty to "
-        "use the general minimum.",
+        "One channel per theme, in priority order: its number, names, and the "
+        "topics / audiences / formats / occasions whose shows it takes, and the tags it "
+        "never takes (exclude, e.g. audience:adults). Leave min hours empty to use the "
+        "general minimum.",
     ),
     "topic_min_score": Help(
         CH,
@@ -67,9 +116,10 @@ PLANNER_HELP: dict[str, Help] = {
         GRID,
         "Day parts",
         "The day's windows. Role: quran (recitation), high (the "
-        "strongest shows first), low (the daypart's own topics first). Pattern: "
-        "weekly (each day its own show), strip (one show every weekday), strip7 "
-        "(every day), quran.",
+        "strongest shows first), low (the daypart's own topics first), block (a fixed "
+        "block like the kids' hour: shows matching its topics first, in their order, "
+        "never one with an exclude tag). Pattern: weekly (each day its own show), strip "
+        "(one show every weekday), strip7 (every day), quran.",
         choices=(),
     ),
     "min_slot_minutes": Help(GRID, "Shortest slot (min)"),
@@ -166,6 +216,12 @@ PLANNER_HELP: dict[str, Help] = {
     ),
     "dead_air_warn_minutes": Help(FILL, "Warn about gaps over (min)"),
     # special lanes
+    "recitation_genres": Help(
+        SPECIAL,
+        "Recitation genres",
+        "Seasons of these genres are recitation (the Quran "
+        "lanes and channel); tajweed lessons are not, they air on Quran Learning.",
+    ),
     "recitation_min_score": Help(SPECIAL, "Recitation score"),
     "dawn_quran": Help(
         SPECIAL,
@@ -262,7 +318,8 @@ _MINIMUM: dict[str, float] = {
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
-    "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1,
+    "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
+    "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)

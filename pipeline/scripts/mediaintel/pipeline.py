@@ -261,8 +261,14 @@ def _run(
         from . import export_dizquetv
 
         _step("export-dizquetv (channels)")
+        # the planner's own channels and lists the new plan no longer has go (--prune)
         export_dizquetv.run(
-            report_dir / "channel-plan.json", url=tv_url, apply=True, server=server, conn=conn
+            report_dir / "channel-plan.json",
+            url=tv_url,
+            apply=True,
+            server=server,
+            conn=conn,
+            prune=True,
         )
     if side is not None and side.is_alive():
         print("waiting for the review pages to finish", flush=True)

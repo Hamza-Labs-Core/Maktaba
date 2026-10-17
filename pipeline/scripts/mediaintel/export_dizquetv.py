@@ -30,6 +30,11 @@ create (no ``maktaba-plan · `` name prefix, or a channel without the
 ``maktabaPlan`` marker) is never touched unless ``--replace-existing``;
 existing channels keep every setting except ``programs``, ``fillerCollections``
 and ``scheduleBackup``.
+
+``--prune`` deletes what this tool made earlier and the plan no longer has (its
+channels, ``maktaba-plan · `` shows and filler lists); ``--clear-channels`` also
+deletes every other channel that is not in the plan (a fresh lineup). Neither
+runs with ``--channel``.
 """
 
 from __future__ import annotations
@@ -105,7 +110,7 @@ def read_state(dz: DizqueTV) -> State:
 
 @dataclass(slots=True)
 class Action:
-    verb: str  # create | update | unchanged | conflict | skip
+    verb: str  # create | update | unchanged | conflict | skip | delete
     kind: str  # filler | show | channel
     name: str
     method: str | None = None
@@ -236,6 +241,8 @@ def plan_actions(
     ramadan: bool = False,
     tz_offset: int = 0,
     replace_existing: bool = False,
+    prune: bool = False,
+    clear_channels: bool = False,
 ) -> list[Action]:
     lanes: Mapping[str, Any] = plan["lanes"]
     pools: Mapping[str, Any] = plan["filler_pools"]
@@ -371,7 +378,33 @@ def plan_actions(
                               "/api/channel", upd, detail + [
                                   f"keeps name '{ex.get('name')}', icon, watermark, transcoding; "
                                   "replaces programs, filler lists and schedule"], c["key"]))  # fmt: skip
+    if (prune or clear_channels) and not only:
+        actions.extend(_removals(plan, state, actions, clear_channels=clear_channels))
     return actions
+
+
+def _removals(plan: Mapping[str, Any], state: State, actions: Sequence[Action], *,
+              clear_channels: bool) -> list[Action]:  # fmt: skip
+    """What the plan no longer has: this tool's channels, shows and filler lists, and
+    with ``clear_channels`` every other channel too."""
+    out: list[Action] = []
+    numbers = {int(c["number"]) for c in plan["channels"]}
+    for n, ch in sorted(state.channels.items()):
+        if n in numbers:
+            continue
+        ours = isinstance(ch.get("maktabaPlan"), dict)
+        if ours or clear_channels:
+            out.append(Action("delete", "channel", f"#{n} {ch.get('name', '')}", "DELETE",
+                              "/api/channel", {"number": n},
+                              ["made by this tool, not in the plan" if ours
+                               else "not in the plan (--clear-channels)"]))  # fmt: skip
+    planned = {a.name for a in actions if a.kind in ("show", "filler")}
+    for kind, have in (("show", state.shows), ("filler", state.fillers)):
+        for name, info in sorted(have.items()):
+            if name.startswith(PREFIX) and name not in planned:
+                out.append(Action("delete", kind, name, "DELETE", f"/api/{kind}/{info['id']}",
+                                  None, ["made by this tool, not in the plan"]))  # fmt: skip
+    return out
 
 
 def _new_channel_defaults() -> dict[str, Any]:
@@ -412,6 +445,21 @@ def apply_actions(
     from .dizquetv_shows import _Dz, _metadata, _program, as_registered
 
     dzw = _Dz(url)
+    # what the plan no longer has goes first: channels (they name the shows and lists),
+    # then the shows and filler lists; each removal is checked
+    for a in sorted((a for a in actions if a.verb == "delete"),
+                    key=lambda a: a.kind != "channel"):  # fmt: skip
+        assert a.endpoint is not None
+        dzw.call("DELETE", a.endpoint, a.body)
+        if a.kind == "channel":
+            gone = int((a.body or {})["number"]) not in {int(n) for n in dzw.call(
+                "GET", "/api/channels")}  # fmt: skip
+        else:
+            gone = all(str(x.get("id")) != a.endpoint.rsplit("/", 1)[-1]
+                       for x in dzw.call("GET", f"/api/{a.kind}s"))  # fmt: skip
+        if not gone:
+            raise RuntimeError(f"{a.kind} {a.name}: still there after DELETE")
+        print(f"  ✓  deleted {a.kind} {a.name}")
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
@@ -523,6 +571,8 @@ def run(
     apply: bool = False,
     server: Any = None,
     conn: Any = None,
+    prune: bool = False,
+    clear_channels: bool = False,
 ) -> list[Action]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     dz = DizqueTV(url)
@@ -534,6 +584,8 @@ def run(
         ramadan=ramadan,
         tz_offset=tz_offset_minutes() if tz_offset is None else tz_offset,
         replace_existing=replace_existing,
+        prune=prune,
+        clear_channels=clear_channels,
     )
     print(render(actions, base=url, online=state.online))
     if apply:
@@ -570,11 +622,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ramadan", action="store_true", help="use the Ramadan grids")
     ap.add_argument("--tz-offset", type=int, help="minutes, UTC − local (default: this machine)")
     ap.add_argument("--replace-existing", action="store_true")
+    ap.add_argument(
+        "--prune",
+        action="store_true",
+        help="delete this tool's channels / shows / filler lists the plan no longer has",
+    )
+    ap.add_argument(
+        "--clear-channels",
+        action="store_true",
+        help="also delete every other channel that is not in the plan",
+    )
     ap.add_argument("--dump", type=Path, help="write the request bodies to this folder")
     a = ap.parse_args(argv)
     run(a.plan, url=a.url, offline=a.offline, only=set(a.channel or []) or None,
         ramadan=a.ramadan, tz_offset=a.tz_offset, replace_existing=a.replace_existing,
-        dump=a.dump)  # fmt: skip
+        dump=a.dump, prune=a.prune, clear_channels=a.clear_channels)  # fmt: skip
     return 0
 
 

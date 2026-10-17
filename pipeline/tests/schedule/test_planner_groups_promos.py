@@ -7,11 +7,14 @@ import pytest
 from maktaba_pipeline.schedule.channel_planner import (
     EpisodeRef,
     LooseVideo,
+    PlannerConfig,
     PlanResult,
     SeasonCandidate,
     simulate,
     suggest_channels,
 )
+
+from ._legacy import SMALL
 
 pytestmark = pytest.mark.unit
 
@@ -45,7 +48,7 @@ def _plan() -> PlanResult:
     ]
     clips = [_clip(i, group="أحمد - مقاطع - السيرة النبوية") for i in range(20)]
     promos = [_clip(100 + i, promo_of="Y:/a|كنوز السيرة") for i in range(3)]
-    return suggest_channels(seasons, clips + promos)
+    return suggest_channels(seasons, clips + promos, PlannerConfig(**SMALL))  # type: ignore[arg-type]
 
 
 def test_lane_names_are_arabic_and_keys_stay_stable() -> None:

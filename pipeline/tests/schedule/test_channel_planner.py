@@ -31,6 +31,8 @@ from maktaba_pipeline.schedule.channel_planner import (
     suggest_channels,
 )
 
+from ._legacy import SMALL
+
 pytestmark = pytest.mark.unit
 
 PRESENTER = "الشيخ نبيل العوضي"
@@ -184,7 +186,7 @@ def plan(
     loose: Sequence[LooseVideo] = (),
     **cfg: object,
 ) -> PlanResult:
-    config = PlannerConfig(**cfg)  # type: ignore[arg-type]
+    config = PlannerConfig(**{**SMALL, **cfg})  # type: ignore[arg-type]
     return suggest_channels(library() if seasons is None else seasons, loose, config)
 
 
@@ -214,7 +216,7 @@ def test_themed_channels_need_enough_hours() -> None:
     assert "history" not in keys
     p2 = plan(theme_min_hours=60.0)
     assert "seerah" not in {c.key for c in p2.channels}
-    assert any(w[0] == "theme seerah" and "< 60 h" in w[1] for w in p2.unplaced)
+    assert any(w[0] == "theme seerah" and "needs 60 h" in w[1] for w in p2.unplaced)
 
 
 def test_every_suggestion_has_reasons() -> None:
@@ -237,7 +239,7 @@ def test_channel_numbers_are_stable_per_theme() -> None:
 def test_current_affairs_stays_off_mix_and_themes() -> None:
     p = plan()
     for c in p.channels:
-        if c.kind == "presenter":
+        if c.kind == "presenter" or c.key in ("news", "talk"):  # news; talk shows by format
             continue
         for k in c.lanes:
             assert all(u.genre != "current_affairs" for u in p.lanes[k].units), (c.key, k)

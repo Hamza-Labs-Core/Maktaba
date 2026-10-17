@@ -35,3 +35,26 @@ def test_a_show_sends_only_what_its_slots_air_in_max_days() -> None:
     # 30-minute episodes, two 1-hour slots a week, two weeks: (2 + 1) per slot × 2 × 2 = 12
     assert airable(sched, lengths["custom.a"], [1_800_000] * 500) == 12
     assert airable(sched, [], []) == 0
+
+
+def test_prune_deletes_only_this_tools_leftovers_and_clear_every_other_channel() -> None:
+    from scripts.mediaintel.export_dizquetv import PREFIX, State, _removals
+
+    plan = {"channels": [{"number": 101}]}
+    state = State(
+        channels={101: {"name": "Quran", "maktabaPlan": {}},
+                  150: {"name": "old presenter", "maktabaPlan": {}},
+                  7: {"name": "mine, by hand"}},
+        shows={PREFIX + "kept": {"id": "s1"}, PREFIX + "old": {"id": "s2"},
+               "a season show": {"id": "s3"}},
+        fillers={PREFIX + "old list": {"id": "f1"}},
+    )  # fmt: skip
+    from scripts.mediaintel.export_dizquetv import Action
+
+    planned = [Action("unchanged", "show", PREFIX + "kept")]
+    pruned = {(a.kind, a.name) for a in _removals(plan, state, planned, clear_channels=False)}
+    assert pruned == {("channel", "#150 old presenter"), ("show", PREFIX + "old"),
+                      ("filler", PREFIX + "old list")}  # fmt: skip
+    cleared = {a.name for a in _removals(plan, state, planned, clear_channels=True)
+               if a.kind == "channel"}  # fmt: skip
+    assert cleared == {"#150 old presenter", "#7 mine, by hand"}  # never #101: it is planned
