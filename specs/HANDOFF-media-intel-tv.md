@@ -1,6 +1,6 @@
 # Handover: library intelligence, Plex/dizqueTV extensions and the TV channel grid
 
-Status as of 2026-10-16. Read this first, then `specs/epics/06-job-queue/plan-06-11-queue-graph.md`.
+Status as of 2026-10-17 (updated after #48 merged). Read this first, then `specs/epics/06-job-queue/plan-06-11-queue-graph.md`.
 
 ## 1. What this work is
 
@@ -19,17 +19,18 @@ The shared rules live in `maktaba_pipeline`:
 | Topic tags | `classify/topic_tags.py` |
 | Clip groups and promo rules | `classify/clip_groups.py` |
 | Channel planner | `schedule/` (one entry point: `schedule/entry.py::plan_catalog`) |
+| The rules as settings | `settings.py` (configs ↔ JSON, checked), `rules.py` (sections, schema, reader), `classify/settings_help.py`, `schedule/settings_help.py` |
 
 ## 2. Branches and PRs, and the order to merge them
 
 | PR | Branch → base | What it carries |
 |---|---|---|
 | #46 | `feat/series-intel` → `main` | mediaintel: scan, YouTube, link, detect, fingerprints, tags, the Plex/dizqueTV writes, the control centre, the plex-index step, the thumbnail cache, review pages run in parallel |
-| #48 (draft) | `feat/clip-groups` → `feat/series-intel` | talk shows by title brand, numbered shows without playlists, ordinal and yearly seasons, topic collections (ملف), clip and stand-alone groups (filler), promo links, the `maktaba-auto` label, and 100% collection coverage |
+| #48 (**merged into #46**, 427c132) | `feat/clip-groups` → `feat/series-intel` | talk shows by title brand, numbered shows without playlists, ordinal and yearly seasons, topic collections (ملف), clip and stand-alone groups (filler), promo links, the `maktaba-auto` label, and 100% collection coverage |
 | #50 (merged) | `feat/tv-grid` → `feat/clip-groups` | channel planner redesign (planner v2): show slots, cadence, continuity across years, fillers, Quran non-stop channels. Merged into `feat/clip-groups` (ac252c7). |
 | #47 (draft) | `feat/queue-engine` → `feat/series-intel` | the Maktaba queue engine and every stage as a queue (plex_index, thumb_small, review_pages, topic_collections, promo_links, clip_groups, plex_groups, plan_channels running the TV grid); Go API; web control centre |
 
-Merge in this order: #48 (it now carries #50) → #46 → main. Then rebase or merge #47 onto main. `feat/queue-engine` already contains #46, #48 and #50 (merge 52ba0c7).
+#48 is merged into #46, and #46's CI is green (3998c13). Next: #46 → main, then #47 onto main. `feat/queue-engine` contains #46 with #48 and #50 (merge cc15b57, 2026-10-17).
 
 Worktrees on the dev PC:
 
@@ -63,6 +64,7 @@ Worktrees on the dev PC:
 7. **Production style (talk/produced/cinematic) is optional.** The user did not ask for it as a grouping, so it is never a primary rule.
 8. **Job-made collections carry the Plex label `maktaba-auto`.** Plex displays it as "Maktaba-auto".
 9. **Existing collections are protected.** An episode leaves one only if it is placed in another season, is a short, matches the promo/teaser title rule, or the collection is branded and the episode's title lacks the show name. A copy (mkv beside an mp4) is swapped for its kept twin.
+10. **No hard-coded rules.** Every threshold, word list, schedule rule and policy is a setting with a UI, its default the current behaviour (detect / groups / planner sections). When a reviewer disputes an intended behaviour, make it a setting rather than change it (e.g. `quran_fallback_any_recitation`).
 
 ## 4. Running mediaintel (the live install)
 
@@ -85,11 +87,17 @@ Control centre:
 … serve --log E:/tv/mediaintel/run-plex.log --port 8770 --dizquetv-db E:/tv/dizquetv/.dizquetv --reports E:/tv/mediaintel/reports
 ```
 
-Restart it after changing serve.py or the html files.
+Restart it after changing serve.py or the html files. Its **Settings** page (`/settings`) edits the rules; they are saved in `E:/tv/mediaintel/settings.json` (only what was changed) and every step reads its section. **Preview channels** there plans into `reports/preview/` without writing anything.
+
+`run --skip STEP` leaves a step out (e.g. `--skip scan-visual` while the NAS is slow).
 
 Never print or commit the Plex token. It lives in `E:\tv\dizquetv\.dizquetv\plex-servers.json`.
 
-## 5. State of the real library (2026-10-16)
+## 5. State of the real library
+
+**2026-10-17, 01:00:** the live install (`E:\tv\Maktaba`, detached at 2fffb4d) is re-running from export-plex (`run … --from-step export-plex --skip scan-visual --no-youtube --plex --tv`): the PR #48 collections (talk shows, topics, clip and stand-alone groups, promos) are being written to Plex; then dizquetv-shows, review pages, plan-channels (TV grid) and export-dizquetv (the channels). Log: `E:/tv/mediaintel/run-plex.log`. Plex refused nothing so far; 49 old junk collections (e.g. أحمد منصور's) were retired after their items were confirmed in the new ones.
+
+Earlier (2026-10-16):
 
 - **Plex:** the export-plex run of 2026-10-16 03:24 wrote the season collections for 57 libraries: 2,214 new, 128 updated and 426 unchanged, with 982 mkv copies swapped for their mp4.
   - **Media Masters** was written with the PR #48 code and verified: 6 collections, all labelled.
@@ -97,7 +105,7 @@ Never print or commit the Plex token. It lives in `E:\tv\dizquetv\.dizquetv\plex
 - **dizqueTV:** the custom shows per series and season were updated on 2026-10-16. The channels have not been created with any planner. The only planner object is the Oct-14 trial, `maktaba-plan · Mix · unknown 6` on channel 100, which the next export replaces.
 - **The 2026-10-16 run** was stopped during scan-visual, on purpose, before export-dizquetv wrote channels with the old planner.
   - Review pages stopped at تامر اللبان after an NAS timeout (now handled).
-  - Resume with `--from-step report` once the live install (`E:\tv\Maktaba`, still on `feat/series-intel`) runs code that has the TV grid, i.e. after #48 is merged into series-intel or the install is switched to `feat/clip-groups`.
+  - Done 2026-10-17: the install was moved to the #48 code and the run restarted from `detect` (not `report`, so the new detection and the group step run), then from export-plex after the Plex fixes.
   - scan-visual can be skipped; it is optional.
 - **Libraries that still need their YouTube channel read:** القناة الرسمية للشيخ فيصل بن قزار الجاسم, مركز رواسخ, Alshakhanah Alshangy. In the cache, Alshangy is wrongly mapped to the "Alsh5anah weekly" channel; take the correct channel from its videos' saved details.
 - **Upload dates:** about 2,700 dates for أحمد منصور (and many on other channels) are approximate, "N years ago" turned into YYYY-10-15. `--exact` fixes series members.
@@ -106,6 +114,7 @@ Never print or commit the Plex token. It lives in `E:\tv\dizquetv\.dizquetv\plex
 
 - **The NAS stalls.** SMB timeouts appear as Microsoft-Windows-SMBClient/Connectivity events 30809 and 30807, with 25 s directory listings. They happen even with nothing of ours running. Keep NAS reads at 2 at a time.
 - **Plex runs its own maintenance.** Plex's Butler tasks ("Generating loudness data") slow Plex badly. Plex calls retry 5 times, waiting 0/10/30/60/120 s.
+- **One library, two Plex sections.** إياد قنيبي is two Plex libraries of one name (sections 14, 15). mediaintel and the Maktaba `plex_groups` stage now write each collection in the section holding its items (fixed 2026-10-17).
 - **Plex apps cache library views.** After a big collection write, restart the Plex app to see the changes.
 - **Windows-only Go test failures,** all pre-existing: serverkeys, the graphql schema test, libraries `canonicalPath`, and `system` `TestDiskFreeBytes_RealPath`.
 - **Repeated real-Postgres runs.** The real-Postgres Go test fails when run twice on the same database; use a fresh one.
@@ -128,8 +137,9 @@ Never print or commit the Plex token. It lives in `E:\tv\dizquetv\.dizquetv\plex
    3. Write Plex one library first, check it, then all.
    4. dizqueTV channels with the new planner: preview first.
 4. Make PRs #47 and #48 ready for review once CI is green, and review them. #50 is merged into #48.
-5. Maktaba one-library trial on this PC (e.g. Nabil): `import_mediaintel`, queues with the Plex extension, compare against mediaintel's collections, then switch over library by library.
-6. Later: the review/approval system in Maktaba, serving review pages through the API, the optional LLM helper, and running the Mac worker for transcription.
+5. ~~Rules as settings in Maktaba.~~ **Done** (2026-10-17): stages read `app_settings` `rules.<section>` (`StageContext.rules()`, `rules.read()`), a changed rule changes the stage fingerprints; Go `GET /api/rules`, `PATCH /api/rules/{section}` (admin) validating against `api/internal/handlers/rules/schema.json` (regenerate with `python -m maktaba_pipeline.rules --schema api/internal/handlers/rules/schema.json`; a test checks it is current); web Settings → Rules. Plex: refused items stay out, per-section collections, only out-of-place items are moved.
+6. Maktaba one-library trial on this PC (e.g. Nabil): `import_mediaintel`, queues with the Plex extension, compare against mediaintel's collections, then switch over library by library.
+7. Later: the review/approval system in Maktaba, serving review pages through the API, the optional LLM helper, and running the Mac worker for transcription.
 
 ## 8. The TV grid (planner v2, PR #50)
 
