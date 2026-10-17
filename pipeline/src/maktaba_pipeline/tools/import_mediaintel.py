@@ -20,7 +20,8 @@ The user's rule changes (``settings.json``, beside the cache unless ``--settings
 otherwise) become the ``rules.<section>`` rows of ``app_settings``, each value checked with
 :func:`maktaba_pipeline.rules.config` (unusable ones are reported, never imported; a value
 already set in Maktaba is kept). The small thumbnails (``thumbs/``, named
-``sha1(<thumb source>)[:16].jpg``) are copied into Maktaba's thumbnail cache, so
+``sha1(<thumb source>)[:16].jpg``, as a folder or the ``thumbs.tar`` it ships as) are copied
+into Maktaba's thumbnail cache, so
 ``thumb_small`` never reads them from the NAS again (copied on ``--apply`` only).
 
 For every ``(subject, stage)`` that was done in the cache one **synthetic ``processing_jobs`` row**
@@ -41,11 +42,14 @@ import contextlib
 import hashlib
 import json
 import os
+import posixpath
 import shutil
 import sqlite3
 import sys
+import tarfile
 import uuid
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -222,7 +226,8 @@ async def run_import(
             async with db.transaction():
                 await _import(db, conn, libs, maps, report)
                 await _settings(db, _beside(cache, settings, "settings.json"), report)
-                await _thumbs(db, conn, libs, maps, _beside(cache, thumbs, "thumbs"), report, apply)
+                with ThumbSource.open(_thumbs_at(cache, thumbs)) as source:
+                    await _thumbs(db, conn, libs, maps, source, report, apply)
                 report.tables = {
                     t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}")))
                     for t in TABLES
@@ -767,14 +772,14 @@ async def _thumbs(
     cache: sqlite3.Connection,
     libs: list[tuple[UUID, str]],
     maps: list[tuple[str, str]],
-    folder: Path | None,
+    source: ThumbSource | None,
     report: ImportReport,
     apply: bool,
 ) -> None:
     """mediaintel's small copies into Maktaba's thumbnail cache, each recorded as a done
     ``thumb_small`` job. A copy is named after its source (the sidecar image, else the
     video) as the cache stores it; files are written on ``--apply`` only."""
-    if folder is None or not folder.is_dir():
+    if source is None:
         return
     videos: dict[str, tuple[UUID, UUID, str | None]] = {}
     for lib_id, _ in libs:
@@ -793,10 +798,9 @@ async def _thumbs(
         if content_hash is None:  # not hashed by the scan yet: thumb_small makes it later
             continue
         src = next(
-            (folder / thumbs_name(s) for s in (f["thumb_path"], f["path"]) if s
-             and (folder / thumbs_name(s)).is_file()),
+            (n for n in (thumbs_name(x) for x in (f["thumb_path"], f["path"]) if x) if n in source),
             None,
-        )  # fmt: skip
+        )
         if src is None:
             report.thumbs_missing += 1
             continue
@@ -808,13 +812,71 @@ async def _thumbs(
             if apply:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dst.with_name(dst.stem + ".part.jpg")
-                shutil.copyfile(src, tmp)
+                source.copy(src, tmp)
                 tmp.replace(dst)
-        size = dst.stat().st_size if dst.is_file() else src.stat().st_size
+        size = dst.stat().st_size if dst.is_file() else source.size(src)
         ih = await thumb_small_stage.input_fingerprint(db, Subject("video", vid))
         await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="thumb_small",
                          version=THUMB_SMALL_VERSION, input_hash=ih,
                          output_hash=canonical_hash({"small": dst.name, "size": size}))  # fmt: skip
+
+
+def _thumbs_at(cache: Path, given: Path | None) -> Path | None:
+    """``--thumbs``, else ``thumbs/`` beside the cache, else ``thumbs.tar`` beside it."""
+    if given is not None:
+        return given
+    return next(
+        (p for p in (cache.parent / "thumbs", cache.parent / "thumbs.tar") if p.exists()), None
+    )
+
+
+class ThumbSource:
+    """mediaintel's thumbnail copies by file name: a ``thumbs/`` folder, or the
+    ``thumbs.tar`` it ships as (81k tiny files copy slowly over SMB; the archive is read
+    in place, nothing is unpacked besides the copies the import writes)."""
+
+    def __init__(self, folder: Path | None = None, archive: tarfile.TarFile | None = None) -> None:
+        self._folder = folder
+        self._tar = archive
+        self._members: dict[str, tarfile.TarInfo] = {}
+        if archive is not None:
+            for m in archive.getmembers():
+                if m.isfile():
+                    self._members[posixpath.basename(m.name)] = m
+
+    @classmethod
+    @contextlib.contextmanager
+    def open(cls, path: Path | None) -> Iterator[ThumbSource | None]:
+        if path is None or not path.exists():
+            yield None
+        elif path.is_dir():
+            yield cls(folder=path)
+        else:
+            with tarfile.open(path) as tf:
+                yield cls(archive=tf)
+
+    def __contains__(self, name: object) -> bool:
+        if not isinstance(name, str):
+            return False
+        if self._folder is not None:
+            return (self._folder / name).is_file()
+        return name in self._members
+
+    def size(self, name: str) -> int:
+        if self._folder is not None:
+            return (self._folder / name).stat().st_size
+        return int(self._members[name].size)
+
+    def copy(self, name: str, dst: Path) -> None:
+        if self._folder is not None:
+            shutil.copyfile(self._folder / name, dst)
+            return
+        assert self._tar is not None
+        src = self._tar.extractfile(self._members[name])
+        if src is None:
+            raise FileNotFoundError(name)
+        with src, dst.open("wb") as out:
+            shutil.copyfileobj(src, out)
 
 
 def thumbs_name(source: str) -> str:
@@ -842,7 +904,9 @@ def _parser() -> argparse.ArgumentParser:
         "--settings", type=Path, help="mediaintel's settings.json (default: beside the cache)"
     )
     p.add_argument(
-        "--thumbs", type=Path, help="mediaintel's thumbs/ folder (default: beside the cache)"
+        "--thumbs",
+        type=Path,
+        help="mediaintel's thumbs/ folder or thumbs.tar (default: either, beside the cache)",
     )
     p.add_argument("--database-url", default=os.environ.get("MAKTABA_DATABASE_URL", ""))
     p.add_argument("--apply", action="store_true", help="commit (default: dry run, rolled back)")

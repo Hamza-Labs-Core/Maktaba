@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import tarfile
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -380,8 +382,9 @@ async def test_rule_changes_are_imported_checked_and_never_overwrite_maktaba(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("packed", [False, True], ids=["folder", "tar"])
 async def test_thumbnails_go_to_the_cache_and_thumb_small_is_done(
-    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, packed: bool
 ) -> None:
     from maktaba_pipeline.engine.stages import thumb_small
 
@@ -392,6 +395,10 @@ async def test_thumbnails_go_to_the_cache_and_thumb_small_is_done(
     thumbs.mkdir()
     for i in range(3):  # three of the videos have a copy (named after the video's cache path)
         (thumbs / thumbs_name(f"Y:/chan/ep{i:02d}.mp4")).write_bytes(b"\xff\xd8jpeg" + bytes([i]))
+    if packed:  # as mediaintel ships it: thumbs.tar holding thumbs/…, read in place
+        with tarfile.open(tmp_path / "thumbs.tar", "w") as tf:
+            tf.add(thumbs, arcname="thumbs")
+        shutil.rmtree(thumbs)
     dry = await run_import(db, cache, ["Cached"], apply=False)
     assert dry.thumbs_copied == 3 and dry.thumbs_missing == N - 3
     assert not (tmp_path / "cache").exists()  # a dry run writes no files
