@@ -439,6 +439,11 @@ async def _import(
     detect_hashes: dict[UUID, str] = {}
     seasons = await _series(db, cache, match, report, detect_hashes)
     await _tags_styles_plex(db, cache, match, seasons)
+    if is_pg(db):
+        # the tables were just filled inside this transaction and carry no statistics:
+        # without them the planner joins 180k playlist rows the slow way, once per library
+        for t in TABLES:
+            await db.execute(f"ANALYZE {t}")
     await _jobs(db, cache, files, match, libs, seasons, report, detect_hashes)
     for lib_id, _ in libs:
         res = await enqueue_job(
