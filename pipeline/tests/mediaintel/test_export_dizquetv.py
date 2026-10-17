@@ -90,3 +90,57 @@ def test_uploaded_logo_links_use_the_network_address() -> None:
     assert art_link(cfg, "http://127.0.0.1:8002", got) == (
         "http://192.168.50.24:8002/images/uploads/maktaba-quran.png"
     )  # another host name
+
+
+def _ch(start: str, durs: list[tuple[str, int]]) -> dict:
+    return {"startTime": start, "programs": [
+        {"ratingKey": k, "duration": d, "customShowId": "s"} if k else
+        {"duration": d, "isOffline": True} for k, d in durs]}  # fmt: skip
+
+
+T0 = 1_800_000_000_000  # ms
+ISO0 = "2027-01-15T08:00:00Z"
+
+
+def test_aired_finds_the_programme_on_air() -> None:
+    from scripts.mediaintel.export_dizquetv import aired
+
+    old = _ch(ISO0, [("a", 600_000), ("b", 600_000), ("c", 600_000)])
+    so_far, s, e = aired(old, T0 + 700_000)
+    assert [p["ratingKey"] for p in so_far] == ["a", "b"]
+    assert (s, e) == (T0 + 600_000, T0 + 1_200_000)
+    assert [p["ratingKey"] for p in aired(old, T0 + 1_900_000)[0]] == ["a"]  # it loops
+
+
+def test_a_show_resumes_after_the_episode_it_aired_last() -> None:
+    from scripts.mediaintel.export_dizquetv import resume
+
+    content = [{"ratingKey": k} for k in ("e1", "e2", "e3", "e4")]
+    so_far = [{"ratingKey": "e1", "customShowId": "s"}, {"ratingKey": "e2", "customShowId": "s"}]
+    assert [p["ratingKey"] for p in resume(content, so_far, "s")] == ["e3", "e4", "e1", "e2"]
+    assert resume(content, so_far, "other") == content  # never aired: from the start
+
+
+def test_a_rewrite_lets_the_programme_on_air_finish() -> None:
+    from scripts.mediaintel.export_dizquetv import splice
+
+    old = _ch(ISO0, [("a", 600_000), ("b", 600_000)])
+    new = _ch(ISO0, [("x", 300_000), ("y", 600_000), ("z", 600_000)])
+    got = splice(old, new, T0 + 700_000, 0)
+    assert got["startTime"] == "2027-01-15T08:10:00Z"  # b started at 08:10, it goes on
+    seq = [(p.get("ratingKey"), p["duration"]) for p in got["programs"]]
+    assert seq == [("b", 600_000)]  # b ends 08:20: x, y are over, z (08:15-08:25) is cut
+    later = _ch(ISO0, [("x", 300_000), ("y", 600_000), ("z", 600_000), ("w", 600_000)])
+    seq = [(p.get("ratingKey"), p["duration"])
+           for p in splice(old, later, T0 + 700_000, 0)["programs"]]  # fmt: skip
+    assert seq == [("b", 600_000), (None, 300_000), ("w", 600_000)]  # filler till w at 08:25
+    off = _ch(ISO0, [(None, 900_000), ("b", 600_000)])
+    assert splice(off, new, T0 + 100_000, 0) == new  # filler on air: the new one at once
+
+
+def test_the_same_timeline_has_the_same_fingerprint() -> None:
+    from scripts.mediaintel.export_dizquetv import fingerprint
+
+    sched = {"period": 86_400_000, "slots": [{"time": 0, "showId": "custom.s"}]}
+    assert fingerprint(sched, [("a", 5, "s")]) == fingerprint(dict(sched), [("a", 5, "s")])
+    assert fingerprint(sched, [("a", 5, "s")]) != fingerprint(sched, [("a", 6, "s")])

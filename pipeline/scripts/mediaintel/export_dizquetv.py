@@ -39,13 +39,15 @@ runs with ``--channel``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -457,6 +459,92 @@ def _hosted(base: str, path: str) -> str:
     return link
 
 
+# ------------------------------------------------------------ continuity on a rewrite
+
+
+def fingerprint(sched: Mapping[str, Any], programs: Sequence[tuple[str, int, str]]) -> str:
+    """What a channel's timeline is computed from: the same schedule and programmes give
+    the same timeline, so the channel keeps the one it airs (a logo change is no reason
+    to rebuild it). ``programs``: (ratingKey, duration, show id) in each show's order."""
+    src = {"schedule": sched, "programs": [list(p) for p in programs]}
+    return hashlib.sha1(json.dumps(src, sort_keys=True).encode()).hexdigest()
+
+
+def aired(old: Mapping[str, Any], now_ms: int) -> tuple[list[Mapping[str, Any]], int, int]:
+    """The old timeline up to now: the programmes aired so far (the one on air last),
+    and when the one on air started and ends (ms). Nothing on air: ``([], now, now)``."""
+    progs = old.get("programs") or []
+    total = sum(int(p.get("duration", 0)) for p in progs)
+    try:
+        start = int(datetime.fromisoformat(str(old["startTime"]).replace("Z", "+00:00"))
+                    .timestamp() * 1000)  # fmt: skip
+    except (KeyError, ValueError):
+        return [], now_ms, now_ms
+    if not progs or total <= 0 or start > now_ms:
+        return [], now_ms, now_ms
+    loops, elapsed = divmod(now_ms - start, total)
+    t = start + loops * total
+    for i, p in enumerate(progs):
+        d = int(p.get("duration", 0))
+        if elapsed < d:
+            return list(progs[: i + 1]), t, t + d
+        elapsed -= d
+        t += d
+    return list(progs), now_ms, now_ms
+
+
+def resume(content: Sequence[Mapping[str, Any]], so_far: Sequence[Mapping[str, Any]],
+           show_id: str) -> list[Mapping[str, Any]]:  # fmt: skip
+    """A show's episodes from the one after the last it aired (its queue goes on where
+    the channel left it, instead of from episode 1 on every rewrite)."""
+    keys = [str(p.get("ratingKey")) for p in content]
+    for p in reversed(so_far):
+        if str(p.get("customShowId")) == show_id and not p.get("isOffline"):
+            k = str(p.get("ratingKey"))
+            if k in keys:
+                i = keys.index(k) + 1
+                return list(content[i:]) + list(content[:i])
+            break
+    return list(content)
+
+
+def splice(old: Mapping[str, Any], new: Mapping[str, Any], now_ms: int,
+           period: int) -> dict[str, Any]:  # fmt: skip
+    """The new timeline, but what is on air now finishes first: the new one takes over
+    when it ends (the time until the new one's next programme is filler), so a rewrite
+    never cuts a programme a viewer is watching."""
+    so_far, on_start, on_end = aired(old, now_ms)
+    if not so_far or so_far[-1].get("isOffline"):
+        return dict(new)
+    n0 = int(datetime.fromisoformat(str(new["startTime"]).replace("Z", "+00:00"))
+             .timestamp() * 1000)  # fmt: skip
+    out: list[Mapping[str, Any]] = [so_far[-1]]
+    t = n0
+    gap_from = on_end
+    for p in new["programs"]:
+        d = int(p.get("duration", 0))
+        if t + d <= on_end:  # over before the old programme ends
+            t += d
+            continue
+        if t < on_end:  # straddles the switch: its time is filler
+            t += d
+            continue
+        if t > gap_from:
+            out.append({"duration": t - gap_from, "isOffline": True})
+        gap_from = t + d
+        out.append(p)
+        t += d
+    total = sum(int(p.get("duration", 0)) for p in out)
+    if period > 0 and total % period:  # keep the loop on the schedule's period
+        out.append({"duration": period - total % period, "isOffline": True})
+    return {
+        "programs": out,
+        "startTime": datetime.fromtimestamp(on_start / 1000, tz=UTC)
+        .isoformat()
+        .replace("+00:00", "Z"),
+    }
+
+
 def _upload(base: str, path: str, name: str) -> str:
     """``POST /api/upload/image`` (multipart, field ``image``) → the file's URL."""
     import uuid
@@ -606,6 +694,12 @@ def apply_actions(
         sched = body["scheduleBackup"]
         programs: list[dict[str, Any]] = []
         slot_ms = slot_lengths(sched)
+        number = int(body["number"])
+        old = (dzw.call("GET", f"/api/channel/{number}")
+               if number in state.channels else None)  # fmt: skip
+        now_ms = int(time.time() * 1000)
+        so_far: list[Mapping[str, Any]] = aired(old, now_ms)[0] if old else []
+        base: list[tuple[str, int, str]] = []  # the programmes before any queue goes on
         for sid in dict.fromkeys(s["showId"] for s in sched["slots"]):
             if not sid.startswith("custom."):
                 continue
@@ -617,16 +711,32 @@ def apply_actions(
             # only what the schedule can air before dizqueTV repeats it (maxDays): the mix
             # channel's whole archive (55,000 episodes) is past its 50 MB request limit
             cap = airable(sched, slot_ms.get(sid, []), [int(p["duration"]) for p in content])
+            base.extend((str(p.get("ratingKey")), int(p.get("duration", 0)), show_id)
+                        for p in content[:cap])  # fmt: skip
+            content = [dict(p) for p in resume(content, so_far, show_id)]
             for n, prog in enumerate(content[:cap]):
                 programs.append({**prog, "customShowId": show_id,
                                  "customShowName": show["name"], "customOrder": n})  # fmt: skip
         if not programs:
             print(f"  -  channel {c_act.name}: nothing playable yet, skipped")
             continue
-        res = dzw.call("POST", "/api/channel-tools/time-slots",
-                       {"programs": programs, "schedule": sched})  # fmt: skip
-        body["programs"] = res["programs"]
-        body["startTime"] = res["startTime"]
+        fp = fingerprint(sched, base)
+        body["maktabaPlan"] = {**body["maktabaPlan"], "fingerprint": fp}
+        if old and (old.get("maktabaPlan") or {}).get("fingerprint") == fp:
+            # the same timeline: kept as it airs (only the name, logo … change)
+            body["programs"] = old["programs"]
+            body["startTime"] = old["startTime"]
+            res = {"programs": old["programs"]}
+            if all(old.get(k) == v for k, v in body.items()):
+                print(f"  =  channel {c_act.name}: unchanged, left as it airs")
+                continue  # a save restarts the stream of anyone watching: none at all
+        else:
+            res = dzw.call("POST", "/api/channel-tools/time-slots",
+                           {"programs": programs, "schedule": sched})  # fmt: skip
+            if old:  # what is on air finishes; the queues went on above
+                res = splice(old, res, int(time.time() * 1000), int(sched["period"]))
+            body["programs"] = res["programs"]
+            body["startTime"] = res["startTime"]
         dzw.call(c_act.method or "POST", "/api/channel", body)
         back = dzw.call("GET", f"/api/channel/programless/{body['number']}")
         if not isinstance(back.get("maktabaPlan"), dict) or back.get("name") != body["name"]:
