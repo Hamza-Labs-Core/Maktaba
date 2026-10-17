@@ -226,7 +226,8 @@ def _map(p: str, maps: list[tuple[str, str]]) -> str:
 
 def _library_of(f: Any) -> str:
     """The Maktaba library a cache file goes to: its Plex library, else its folder."""
-    plex = f["plex_library"] if "plex_library" in f.keys() else None
+    # sqlite3.Row: ``in`` looks at the values, the column names are ``keys()``
+    plex = f["plex_library"] if "plex_library" in f.keys() else None  # noqa: SIM118
     return str(plex or posixpath.basename(str(f["folder"]).rstrip("/")) or f["folder"])
 
 
