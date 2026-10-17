@@ -643,7 +643,10 @@ def apply_actions(
                 print(f"  ✓  {Path(path).name} at {urls[path]}")
             else:
                 got = _upload(url, path, f"maktaba-{Path(path).name}")
-                urls[path] = art_link(cfg, url, got)
+                # the file's version in the link: a new picture is a new link, so Plex
+                # and the TVs fetch it instead of showing the one they cached
+                ver = hashlib.sha1(Path(path).read_bytes()).hexdigest()[:10]
+                urls[path] = f"{art_link(cfg, url, got)}?v={ver}"
                 print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
         return urls[path]
 
