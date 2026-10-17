@@ -169,6 +169,16 @@ def _diff(old: Sequence[str] | None, new: Sequence[str]) -> tuple[str, list[str]
     return "update", [f"+{add} −{rem}" + (" (reordered)" if reorder else "")]
 
 
+def filler_items(
+    plan: Mapping[str, Any], items: Sequence[Mapping[str, Any]]
+) -> Sequence[Mapping[str, Any]]:
+    """A dizqueTV filler list needs variety, not the whole pool: the first
+    ``dz_filler_max_items`` of it (the pool is in priority order: own promos, then
+    on-topic clips). A whole pool can be 75,000 clips, past dizqueTV's 50 MB request limit."""
+    cap = int((plan.get("config") or {}).get("dz_filler_max_items") or 2000)
+    return items[: max(1, cap)]
+
+
 def _items_with_keys(items: Sequence[Mapping[str, Any]]) -> tuple[list[Mapping[str, Any]], int]:
     keep = [i for i in items if i.get("plex_rating_key")]
     return keep, len(items) - len(keep)
@@ -259,7 +269,10 @@ def plan_actions(
 
     for k in used_pools:
         p = pools[k]
-        object_action("filler", k, f"{p['name']} [{k}]", p["items"], state.fillers, "clips")
+        object_action(
+            "filler", k, f"{p['name']} [{k}]", filler_items(plan, p["items"]), state.fillers,
+            "clips",
+        )  # fmt: skip
     for k in used_lanes:
         ln = lanes[k]
         eps = [e for u in ln["units"] for e in u["episodes"]]

@@ -240,6 +240,9 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_filler_max_items": Help(DZ, "Filler list size (most clips)", "A dizqueTV filler list "
+                                "holds the first this many clips of its pool (own promos, then "
+                                "on-topic clips). dizqueTV takes at most 50 MB per request."),
 }
 
 #: the smallest value each number may take: below it a rule divides by zero, takes the
@@ -255,7 +258,7 @@ _MINIMUM: dict[str, float] = {
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
-    "dz_filler_cooldown_ms": 0,
+    "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)
