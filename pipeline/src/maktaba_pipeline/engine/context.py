@@ -47,6 +47,7 @@ class StageContext:
     path_map: PathMap = field(default_factory=PathMap)
     clock: Callable[[], float] = time.monotonic
     _last_progress: float = field(default=float("-inf"), repr=False)
+    _rules: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def local_path(self, db_path: str) -> str:
         """This host's file-system path for a path stored in the database."""
@@ -54,6 +55,22 @@ class StageContext:
 
     def extension_settings(self, name: str) -> Mapping[str, str]:
         return self.settings.get(name, {})
+
+    async def rules(self, section: str) -> Any:
+        """The rules of ``section`` (``detect`` / ``groups`` / ``planner``): the built-in
+        defaults with what was changed in the settings (``app_settings`` key
+        ``rules.<section>``), read once per job. A stored value that cannot be used is
+        skipped and logged; its default applies."""
+        if section not in self._rules:
+            from ..rules import read
+
+            cfg, changes, bad = await read(self.db, section)
+            if changes:
+                await self.log("info", f"rules.{section}: {', '.join(sorted(changes))} changed")
+            for name, why in bad.items():
+                await self.log("warn", f"rules.{section}.{name} skipped, default used: {why}")
+            self._rules[section] = cfg
+        return self._rules[section]
 
     async def progress(
         self,

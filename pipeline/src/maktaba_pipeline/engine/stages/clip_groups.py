@@ -20,8 +20,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from ...classify.clip_groups import Group, group_title, plan_groups
+from ... import settings
+from ...classify.clip_groups import Group, group_title, is_promo, plan_groups
 from ...db.jobs import Job
+from ...rules import read as read_rules
 from ..context import StageContext
 from ..graph import CLIP_GROUPS_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -31,6 +33,11 @@ from ._leftovers import library_name, load_leftovers
 from .registry import StageImpl
 
 __all__ = ["IMPL", "plan_library_groups"]
+
+
+async def _rules(db: Any) -> tuple[Any, Any]:
+    """The grouping and detection rules as set (settings ``rules.groups`` / ``rules.detect``)."""
+    return (await read_rules(db, "groups"))[0], (await read_rules(db, "detect"))[0]
 
 
 async def plan_library_groups(db: Any, library_id: UUID) -> list[Group]:
@@ -46,10 +53,13 @@ async def plan_library_groups(db: Any, library_id: UUID) -> list[Group]:
             "SELECT video_id FROM promo_links WHERE library_id = $1", uid(library_id)
         )
     }
-    left = await load_leftovers(db, library_id, skip_playlists=topic_pls)
-    linked = [left.items[v] for v in promos if v in left.items]
-    items = [it for v, it in left.items.items() if v not in promos]
-    groups = plan_groups(items, left.playlist_titles)
+    gcfg, dcfg = await _rules(db)
+    left = await load_leftovers(db, library_id, skip_playlists=topic_pls, groups=gcfg, detect=dcfg)
+    # every promo is in the promos' collection: a linked one airs by its show, one whose
+    # show was not found advertises nothing and never becomes an ordinary clip (filler)
+    linked = [it for v, it in left.items.items() if v in promos or is_promo(it.title, gcfg)]
+    items = [it for v, it in left.items.items() if v not in promos and not is_promo(it.title, gcfg)]
+    groups = plan_groups(items, left.playlist_titles, gcfg)
     if linked:  # linked promos air next to their show, and are one collection per library
         linked.sort(key=lambda i: (i.upload or "9999", i.path))
         groups.append(Group("clips", "promo", "إعلانات", None, [i.path for i in linked]))
@@ -87,6 +97,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "tags": [[str(r["v"]), str(r["t"]), round(float(r["s"]), 3)] for r in tags],
             "topics": [str(r["playlist_id"]) for r in topics],
             "promos": [str(r["video_id"]) for r in promos],
+            # the rules as set: a changed grouping setting groups again
+            "rules": [settings.to_json(c) for c in await _rules(db)],
             "v": CLIP_GROUPS_VERSION,
         }
     )

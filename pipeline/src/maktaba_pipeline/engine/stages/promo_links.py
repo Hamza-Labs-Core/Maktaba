@@ -18,8 +18,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from ... import settings
 from ...classify.clip_groups import is_promo, link_promo, promo_season
 from ...db.jobs import Job
+from ...rules import read as read_rules
 from ..context import StageContext
 from ..graph import PROMO_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -32,13 +34,19 @@ __all__ = ["IMPL", "plan_links"]
 Link = tuple[str, str, int | None, float, str]  # video, series id, season, score, evidence
 
 
+async def _rules(db: Any) -> tuple[Any, Any]:
+    """The grouping and detection rules as set (settings ``rules.groups`` / ``rules.detect``)."""
+    return (await read_rules(db, "groups"))[0], (await read_rules(db, "detect"))[0]
+
+
 async def plan_links(db: Any, library_id: UUID) -> list[Link]:
-    left = await load_leftovers(db, library_id)
+    gcfg, dcfg = await _rules(db)
+    left = await load_leftovers(db, library_id, groups=gcfg, detect=dcfg)
     shows = await load_shows(db)
     by_id = {s.series_key: s for s in shows}
     out: list[Link] = []
     for vid, it in sorted(left.items.items()):
-        if not is_promo(it.title):
+        if not is_promo(it.title, gcfg):
             continue
         with_season = left.extras_of.get(vid)
         if with_season is not None and with_season[0] in by_id:
@@ -68,6 +76,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
         {
             "seasons": [[str(r["id"]), str(r["membership_hash"])] for r in seasons],
             "videos": [[str(r["id"]), int(r["size_bytes"]), str(r["mtime"])] for r in vids],
+            # the rules as set: changed promo words link again
+            "rules": [settings.to_json(c) for c in await _rules(db)],
             "v": PROMO_VERSION,
         }
     )

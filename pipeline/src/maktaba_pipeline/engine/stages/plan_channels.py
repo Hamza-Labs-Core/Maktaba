@@ -27,14 +27,14 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from ...classify.series_detector import DetectorConfig, VideoFacts
+from ...classify.series_detector import VideoFacts
 from ...classify.series_detector import is_short as detector_is_short
 from ...db.jobs import Job
+from ...rules import read as read_rules
 from ...schedule.channel_planner import (
     PLANNER_VERSION,
     EpisodeRef,
     LooseVideo,
-    PlannerConfig,
     SeasonCandidate,
 )
 from ...schedule.entry import plan_catalog
@@ -114,6 +114,7 @@ async def load_inputs(
     db: Any,
 ) -> tuple[list[SeasonCandidate], list[LooseVideo], list[str]]:
     """Seasons and loose videos from the database, plus notes on what was missing."""
+    detect_cfg = (await read_rules(db, "detect"))[0]
     notes: list[str] = []
     tags: dict[str, dict[str, float]] = defaultdict(dict)
     for r in await db.fetch("SELECT season_id, tag, score FROM season_tags"):
@@ -257,7 +258,7 @@ async def load_inputs(
                 tags=t,
                 genre=next((x[6:] for x in sorted(t) if x.startswith("genre:")), "general"),
                 air_date=_iso(r["upload_date"]),
-                is_short=detector_is_short(facts, DetectorConfig()),
+                is_short=detector_is_short(facts, detect_cfg),
                 vertical=vertical,
                 group=group,
                 promo_of=promo_of.get(vid, ""),
@@ -330,7 +331,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     return canonical_hash(
         {
             "outputs": [[r["stage"], str(r["sid"]), r["h"]] for r in rows],
-            "config": canonical_hash(config_json(PlannerConfig())),
+            # the rules as set: a changed planner setting plans the channels again
+            "config": canonical_hash(config_json((await read_rules(db, "planner"))[0])),
             "exporters": sorted(_EXPORTERS),
             "v": PLANNER_VERSION,
         }
@@ -342,8 +344,10 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     exporters = plan_exporters()
     plan_input = await input_fingerprint(db, job.subject) or ""
 
+    planner = await ctx.rules("planner")
+
     def build() -> dict[str, Any]:
-        result = plan_catalog(seasons, loose, PlannerConfig())
+        result = plan_catalog(seasons, loose, planner)
         return build_plan_json(result, source="catalog", notes=notes, exporters=exporters)
 
     plan = await asyncio.to_thread(build)

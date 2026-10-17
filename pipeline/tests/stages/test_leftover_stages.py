@@ -258,3 +258,33 @@ async def test_the_grid_planner_gets_brands_season_names_and_exact_dates(
     assert seasons and all(s.brand and s.season_name == "ضيف" for s in seasons)
     eps = [e for s in seasons for e in s.episodes]
     assert eps and all(e.date_exact for e in eps)  # the fixtures' dates are exact
+
+
+@pytest.mark.asyncio
+async def test_a_promo_whose_show_is_not_found_never_becomes_a_clip(db: Database) -> None:
+    w = await make_catalog(db)
+    stray = await _video(db, w["lib"], "برومو برنامج لا يعرفه أحد", 900, 40.0, date(2020, 1, 1))
+    await _run_all(db, w["lib"])
+    groups = {r["name"]: str(r["id"]) for r in await db.fetch("SELECT id, name FROM clip_groups")}
+    members = {
+        str(r["video_id"]): str(r["group_id"])
+        for r in await db.fetch("SELECT group_id, video_id FROM clip_group_items")
+    }
+    assert members[str(stray[0])] == groups["إعلانات"]  # with the promos, not a clip group
+
+
+@pytest.mark.asyncio
+async def test_the_grouping_rules_are_settings(db: Database) -> None:
+    from maktaba_pipeline.engine.sql import dumps, now, to_ts
+
+    w = await make_catalog(db)
+    # "برومو" is no longer a promo word: that video is an ordinary clip, linked to nothing
+    await db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.groups', $1, $2)",
+        dumps({"promo_words": ["إعلان"]}),
+        to_ts(db, now()),
+    )
+    await _run_all(db, w["lib"])
+    assert await db.fetch("SELECT * FROM promo_links") == []
+    names = {r["name"] for r in await db.fetch("SELECT name FROM clip_groups")}
+    assert "إعلانات" not in names

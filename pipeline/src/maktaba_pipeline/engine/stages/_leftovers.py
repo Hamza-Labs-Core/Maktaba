@@ -18,14 +18,13 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from ...classify.clip_groups import FILLER_MAX_S, Item, Show, is_qa, name_words
+from ...classify.clip_groups import DEFAULT, GroupConfig, Item, Show, is_qa, name_words
 from ...classify.series_detector import DetectorConfig, VideoFacts, is_short
 from ..sql import loads, uid
 from .detect import _playlists
 
 __all__ = ["Leftovers", "load_leftovers", "load_shows", "library_name"]
 
-_CFG = DetectorConfig()
 
 _VIDEOS_SQL = """
 SELECT v.id AS vid, COALESCE(yv.title, v.title, v.filename) AS title,
@@ -58,11 +57,18 @@ def _iso(v: Any) -> str | None:
 
 
 async def load_leftovers(
-    db: Any, library_id: UUID, *, skip_playlists: set[str] | None = None
+    db: Any,
+    library_id: UUID,
+    *,
+    skip_playlists: set[str] | None = None,
+    groups: GroupConfig = DEFAULT,
+    detect: DetectorConfig | None = None,
 ) -> Leftovers:
     """The library's leftovers with their titles, lengths, playlists, topic tags and
     whether each is a clip or a question. ``skip_playlists`` (the topic collections'
-    own playlists) are not grouping candidates: one playlist, one collection."""
+    own playlists) are not grouping candidates: one playlist, one collection.
+    ``groups`` / ``detect``: the rules as set (clip length, Q&A phrases, shorts)."""
+    det = detect or DetectorConfig()
     placed: set[str] = set()
     clip_members: set[str] = set()
     hidden: set[str] = set()
@@ -110,14 +116,14 @@ async def load_leftovers(
                 duration_s=dur,
                 is_short=r["tab"] == "shorts" or bool(w and h and h > w),
             ),
-            _CFG,
+            det,
         )
         it = Item(vid, title, dur, _iso(r["upload_date"]))
-        it.clip = short or vid in clip_members or dur < FILLER_MAX_S
+        it.clip = short or vid in clip_members or dur < groups.filler_max_minutes * 60
         t = tags.get(vid, {})
         genres = sorted((sc, g[6:]) for g, sc in t.items() if g.startswith("genre:"))
         it.genre = genres[-1][1] if genres else None
-        it.qa = t.get("format:qa_fatwa", 0.0) >= 0.5 or is_qa(title)
+        it.qa = t.get("format:qa_fatwa", 0.0) >= 0.5 or is_qa(title, groups)
         items[vid] = it
     titles: dict[str, str] = {}
     skip = skip_playlists or set()

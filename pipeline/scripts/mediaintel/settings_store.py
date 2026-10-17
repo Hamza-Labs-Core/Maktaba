@@ -11,38 +11,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-import maktaba_pipeline.classify.settings_help  # noqa: F401 — registers the help
-import maktaba_pipeline.schedule.settings_help  # noqa: F401
 from maktaba_pipeline import settings
-from maktaba_pipeline.classify.series_detector import DetectorConfig
-from maktaba_pipeline.schedule.channel_planner import PlannerConfig
-
-from . import group_clips
-
-#: section → (config class, title, what it decides)
-SECTIONS: dict[str, tuple[type, str, str]] = {
-    "planner": (PlannerConfig, "Channels", "how channels, slots, fillers and the Quran channel "
-                "are planned (plan-channels)"),
-    "groups": (group_clips.GroupConfig, "Grouping", "clip and stand-alone collections, promos, "
-               "questions and fatwas (group)"),
-    "detect": (DetectorConfig, "Detection", "how shows, seasons and talk shows are found "
-               "(detect)"),
-}  # fmt: skip
-
-
-G = "Grouping"
-settings.register(group_clips.GroupConfig, {
-    "filler_max_minutes": settings.Help(G, "Clip up to (min)", "Longer leftovers are stand-alone "
-                                        "programmes (منفردات), shorter ones clips (filler)."),
-    "min_playlist": settings.Help(G, "Playlist group from (videos)", minimum=1),
-    "min_topic": settings.Help(G, "Topic group from (videos)", minimum=1),
-    "qa_phrases": settings.Help(G, "Question / fatwa phrases", "A title with one of these goes to "
-                                "\"فتاوى ومسائل\". A phrase matches the start of a word (ما رأي "
-                                "→ ما رأيك); end it with a space to match it only as a whole "
-                                "word (\"حكم \" is not حكمة)."),
-    "promo_words": settings.Help(G, "Promo words", "A title with one of these advertises a show; "
-                                 "it is linked to the show it names."),
-})  # fmt: skip
+from maktaba_pipeline.rules import SECTIONS  # noqa: F401 — the sections and their help
 
 
 def path_of(db_file: str | Path) -> Path:

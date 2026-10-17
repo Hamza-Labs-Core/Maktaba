@@ -32,6 +32,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from ... import settings
 from ...audio.chromaprint import decode
 from ...classify.series_detector import (
     DETECTOR_VERSION,
@@ -42,6 +43,7 @@ from ...classify.series_detector import (
     detect,
 )
 from ...db.jobs import Job
+from ...rules import read as read_rules
 from ..changes import ChangeSet, apply_or_review
 from ..context import StageContext
 from ..graph import SIG_VERSION, Request, StageResult, Subject
@@ -669,6 +671,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "signals": [[str(r["vid"]), r["stage"], r["h"]] for r in signals],
             "sync": None if sync is None else sync["output_hash"],
             "overrides": [[str(r["vid"]), r["so"], r["eo"]] for r in overrides],
+            # the rules as set: a changed detection setting detects again
+            "rules": settings.to_json((await read_rules(db, "detect"))[0]),
             "v": DETECTOR_VERSION,
         }
     )
@@ -691,7 +695,10 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     prog = _Progress()
     task = asyncio.create_task(_report_progress(ctx, prog))
     try:
-        plan = await asyncio.to_thread(plan_library, library_id, rows, playlists, progress=prog)
+        detect_cfg = await ctx.rules("detect")
+        plan = await asyncio.to_thread(
+            plan_library, library_id, rows, playlists, config=detect_cfg, progress=prog
+        )
     finally:
         task.cancel()
     current = await load_current(db, library_id)

@@ -1,0 +1,144 @@
+"""The rules as settings: the sections (detect, groups, planner), their help, the schema
+the API and the web settings page are built from, and a tolerant reader for stored changes.
+
+Each section is a frozen config dataclass whose defaults are the built-in rules; what a
+user changed is stored as ``{setting: value}`` (Maktaba: ``app_settings`` key
+``rules.<section>``; mediaintel: ``settings.json`` beside the cache).
+
+``python -m maktaba_pipeline.rules --schema [FILE]`` writes the schema (every setting's
+kind, default, help and limits) the Go API serves; a test keeps the checked-in copy
+current.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import sys
+import typing
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from . import settings
+from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
+from .classify.clip_groups import GroupConfig
+from .classify.series_detector import DetectorConfig
+from .schedule import settings_help as _planner_help  # noqa: F401
+from .schedule.channel_planner import PlannerConfig
+
+__all__ = ["SECTIONS", "config", "read", "schema"]
+
+_G = "Grouping"
+settings.register(GroupConfig, {
+    "filler_max_minutes": settings.Help(_G, "Clip up to (min)", "Longer leftovers are "
+                                        "stand-alone programmes (منفردات), shorter ones clips "
+                                        "(filler).", minimum=0),
+    "min_playlist": settings.Help(_G, "Playlist group from (videos)", minimum=1),
+    "min_topic": settings.Help(_G, "Topic group from (videos)", minimum=1),
+    "qa_phrases": settings.Help(_G, "Question / fatwa phrases", "A title with one of these goes "
+                                "to \"فتاوى ومسائل\". A phrase matches the start of a word (ما "
+                                "رأي → ما رأيك); end it with a space to match it only as a "
+                                "whole word (\"حكم \" is not حكمة)."),
+    "promo_words": settings.Help(_G, "Promo words", "A title with one of these advertises a "
+                                 "show; it is linked to the show it names."),
+})  # fmt: skip
+
+#: section → (config class, title, what it decides)
+SECTIONS: dict[str, tuple[type, str, str]] = {
+    "planner": (PlannerConfig, "Channels", "how channels, slots, fillers and the Quran channel "
+                "are planned"),
+    "groups": (GroupConfig, "Grouping", "clip and stand-alone collections, promos, questions "
+               "and fatwas"),
+    "detect": (DetectorConfig, "Detection", "how shows, seasons and talk shows are found"),
+}  # fmt: skip
+
+
+def config(section: str, changes: Mapping[str, Any] | None) -> tuple[Any, dict[str, str]]:
+    """The section's config with the stored ``changes`` applied, each on its own: a value
+    that cannot be used (an unknown name, a wrong shape) is skipped and returned with why,
+    so one bad edit never stops a stage; the default applies for it."""
+    cls = SECTIONS[section][0]
+    good: dict[str, Any] = {}
+    bad: dict[str, str] = {}
+    for name, value in (changes or {}).items():
+        try:
+            settings.apply(cls, {name: value})
+            good[name] = value
+        except settings.SettingsError as e:
+            bad[name] = str(e)
+    return settings.apply(cls, good), bad
+
+
+async def read(db: Any, section: str) -> tuple[Any, dict[str, Any], dict[str, str]]:
+    """The section's config from Maktaba's settings (``app_settings`` key
+    ``rules.<section>``): (config, the stored changes, the ones skipped and why). A
+    database without the table gives the defaults."""
+    from .engine.sql import loads
+
+    try:
+        row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", f"rules.{section}")
+    except Exception:  # noqa: BLE001 — no app_settings table (an old or bare database)
+        row = None
+    stored = loads(row["value"]) if row is not None else None
+    changes = stored if isinstance(stored, dict) else {}
+    cfg, bad = config(section, changes)
+    return cfg, changes, bad
+
+
+def schema() -> dict[str, Any]:
+    """Every section and setting with its kind, default, help and limits (no values)."""
+    out = []
+    for key, (cls, title, what) in SECTIONS.items():
+        fields = settings.describe(cls())
+        for f in fields:
+            for k in ("value", "changed"):
+                f.pop(k, None)
+        help_ = settings._HELP.get(cls, {})  # noqa: SLF001 — the registry this module feeds
+        hints = typing.get_type_hints(cls)
+        for f in fields:
+            h = help_.get(f["name"])
+            if h is not None and h.time_columns:
+                f["time_columns"] = list(h.time_columns)
+            if f["kind"] == "rows":
+                f["column_kinds"] = _column_kinds(hints[f["name"]], h)
+        out.append({"key": key, "title": title, "what": what, "fields": fields})
+    return {"sections": out}
+
+
+def _column_kinds(tp: Any, h: settings.Help | None) -> list[str]:
+    """The kind of each column of a list-of-rows setting (time, int, float, str, list …)."""
+    item = typing.get_args(tp)[0]
+    if dataclasses.is_dataclass(item):
+        ih = typing.get_type_hints(item)
+        return [
+            "time" if f.name in ("start", "end") and ih[f.name] is int
+            else settings._kind(ih[f.name])  # noqa: SLF001
+            for f in dataclasses.fields(item)
+        ]  # fmt: skip
+    times = set(h.time_columns) if h else set()
+    return [
+        "time" if i in times else settings._kind(t)  # noqa: SLF001
+        for i, t in enumerate(typing.get_args(item))
+    ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="python -m maktaba_pipeline.rules")
+    p.add_argument("--schema", nargs="?", const="-", metavar="FILE",
+                   help="write the rules schema (JSON) to FILE, or stdout")  # fmt: skip
+    a = p.parse_args(argv)
+    if a.schema is None:
+        p.print_help()
+        return 2
+    text = json.dumps(schema(), ensure_ascii=False, indent=1) + "\n"
+    if a.schema == "-":
+        sys.stdout.write(text)
+    else:
+        Path(a.schema).write_text(text, encoding="utf-8", newline="\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
