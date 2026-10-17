@@ -7,6 +7,7 @@ import pytest
 from maktaba_pipeline.schedule.channel_planner import (
     EpisodeRef,
     LooseVideo,
+    PlanResult,
     SeasonCandidate,
     simulate,
     suggest_channels,
@@ -36,7 +37,7 @@ def _clip(i: int, *, group: str = "", promo_of: str = "", genre: str = "seerah")
     )  # fmt: skip
 
 
-def _plan():  # type: ignore[no-untyped-def]
+def _plan() -> PlanResult:
     seasons = [
         _season("s1", "شاهد على العصر", "islamic_history", 1),
         _season("s2", "كنوز السيرة", "seerah", 2),

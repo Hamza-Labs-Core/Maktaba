@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -81,7 +82,7 @@ def test_dayparts_and_themes_are_rows_of_named_values() -> None:
         ({"khutbah_day": "friday"}, "khutbah_day"),
     ],
 )
-def test_a_wrong_shape_is_refused_naming_the_field(changes: dict, field: str) -> None:
+def test_a_wrong_shape_is_refused_naming_the_field(changes: dict[str, Any], field: str) -> None:
     with pytest.raises(settings.SettingsError) as e:
         settings.apply(PlannerConfig, changes)
     assert e.value.field == field

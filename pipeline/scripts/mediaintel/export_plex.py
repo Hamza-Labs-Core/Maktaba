@@ -38,7 +38,7 @@ from typing import Any
 
 from maktaba_pipeline.text.arabic import fold
 
-from .scan_plex import PlexError, PlexServer, quote
+from .scan_plex import PlexApi, PlexError, quote
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plex_collections (
@@ -76,7 +76,7 @@ def removable(key: str, title: str, placed: set[str], shorts: set[str]) -> bool:
     return key in placed or key in shorts or bool(_NOT_EPISODE_RE.search(title.strip()))
 
 
-def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
+def _children_titled(server: PlexApi, key: str) -> list[tuple[str, str]]:
     """Items of a collection; [] when Plex no longer has it (deleted meanwhile → 404)."""
     try:
         got = server.get(f"/library/collections/{key}/children")
@@ -89,7 +89,7 @@ def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
     return [(m["ratingKey"], m.get("title", "")) for m in md]
 
 
-def _children(server: PlexServer, key: str) -> list[str]:
+def _children(server: PlexApi, key: str) -> list[str]:
     return [k for k, _ in _children_titled(server, key)]
 
 
@@ -137,7 +137,7 @@ def _in_order(got: list[str], target: list[str]) -> set[str]:
 
 
 def _recreate(
-    server: PlexServer, machine: str, section: str, title: str, keys: list[str], old: str | None
+    server: PlexApi, machine: str, section: str, title: str, keys: list[str], old: str | None
 ) -> tuple[str, dict[str, str]]:
     """The collection, made anew with ``keys`` in order. Returns its rating key and the
     items Plex refused ({key: what Plex said}); a refused item never stops the others."""
@@ -217,7 +217,7 @@ def _recreate(
 LABEL = "maktaba-auto"
 
 
-def _label(server: PlexServer, section: str, key: str) -> None:
+def _label(server: PlexApi, section: str, key: str) -> None:
     server.send(
         "PUT",
         f"/library/sections/{section}/all?type=18&id={key}"
@@ -281,7 +281,7 @@ class _Sync:
     def __init__(
         self,
         conn: sqlite3.Connection,
-        server: PlexServer,
+        server: PlexApi,
         machine: str,
         section: str,
         existing: dict[str, Any],
@@ -441,7 +441,7 @@ class _Sync:
 
 def export(
     conn: sqlite3.Connection,
-    server: PlexServer,
+    server: PlexApi,
     *,
     apply: bool,
     library_filter: str | None,

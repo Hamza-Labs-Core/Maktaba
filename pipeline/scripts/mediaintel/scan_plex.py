@@ -15,7 +15,15 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+
+class PlexApi(Protocol):
+    """What the Plex writers need: a GET and any other call (PlexServer, or a stand-in)."""
+
+    def get(self, path: str) -> dict[str, Any]: ...
+
+    def send(self, method: str, path: str) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
