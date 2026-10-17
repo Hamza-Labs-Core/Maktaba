@@ -45,7 +45,14 @@ _ensured: set[int] = set()
 def ensure(conn: sqlite3.Connection) -> None:
     """Create the table and adopt work done before jobs were tracked, so it is never
     repeated. Cheap after the first call per connection."""
-    if id(conn) in _ensured:
+    # an id() alone is not enough: Python reuses the id of a closed connection for a new
+    # one (a fresh database in the next test, or after a reconnect), so check the table
+    if (
+        id(conn) in _ensured
+        and conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='index_jobs'"
+        ).fetchone()
+    ):
         return
     conn.executescript(SCHEMA)
     _ensured.add(id(conn))
