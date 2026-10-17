@@ -104,7 +104,11 @@ async def execute(
             input_hash=input_hash,
             changed_subjects=result.changed_subjects,
             requests=result.requests,
-            summary=result.summary,
+            summary=(
+                {**(result.summary or {}), "review_digests": ctx.review_digests}
+                if ctx.review_digests
+                else result.summary
+            ),
         )
     except JobCancelled:
         await mark_cancelled(db, job_id=job.id)

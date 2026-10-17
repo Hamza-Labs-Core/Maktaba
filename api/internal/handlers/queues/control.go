@@ -2,6 +2,7 @@ package queues
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -204,13 +205,20 @@ SELECT id, subject_kind, subject_id::text, error_cause, error
  ORDER BY id
  LIMIT ` + "20000"
 
+// failedByIDsSQL: the listed rows, each only while it is still the latest
+// row of its subject and stage (a failure a later run has superseded is
+// history, not something to redo - with force, for external writes).
 const failedByIDsSQL = `
-SELECT id, subject_kind, subject_id::text, state
-  FROM processing_jobs
- WHERE stage = $1 AND id = ANY($2::bigint[])`
+SELECT j.id, j.subject_kind, j.subject_id::text, j.state
+  FROM processing_jobs j
+ WHERE j.stage = $1 AND j.id = ANY($2::bigint[])
+   AND NOT EXISTS (SELECT 1 FROM processing_jobs n
+                    WHERE n.subject_kind = j.subject_kind AND n.subject_id = j.subject_id
+                      AND n.stage = j.stage AND n.id > j.id)`
 
 const reviewRowsSQL = `
-SELECT j.id, j.subject_kind, j.subject_id::text, COALESCE(j.output_hash, '')
+SELECT j.id, j.subject_kind, j.subject_id::text,
+       COALESCE((j.output_summary -> 'review_digests')::text, '[]')
   FROM processing_jobs j
  WHERE j.stage = $1 AND j.state = 'done' AND j.outcome = 'awaiting_review'
    AND ($2::boolean OR j.id = ANY($3::bigint[]))
@@ -324,8 +332,11 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 }
 
 // Apply implements POST /api/queues/{stage}/apply {job_ids?, all?}: the
-// operator approves a reviewed external write. The follow-up job is
-// forced and carries {"apply": true, "plan_hash": <output_hash>}.
+// operator approves a reviewed write. The follow-up job is forced and
+// carries {"apply": true, "plan_digests": [...]}: the digests of the
+// change sets the reviewed run parked (output_summary.review_digests).
+// The stage applies a change set only if its digest is one of them; a
+// plan that changed since the review is parked again.
 func (h *Handler) Apply(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
@@ -385,8 +396,25 @@ func (h *Handler) Apply(w http.ResponseWriter, r *http.Request) {
 type targetOpt func(t target, p *EnqueueParams)
 
 func withApplyPayload(t target, p *EnqueueParams) {
-	p.Payload = map[string]any{"apply": true, "plan_hash": t.hash}
+	var digests []string
+	if err := json.Unmarshal([]byte(t.hash), &digests); err != nil || digests == nil {
+		digests = []string{}
+	}
+	p.Payload = map[string]any{"apply": true, "plan_digests": digests}
 }
+
+// mergeApprovalSQL adds an approval to the job the enqueue landed on. The
+// enqueue function keeps an existing pending / running row's payload (it
+// merges only "seasons"), so without this an Apply that coalesced would
+// be dropped; a running row hands its payload to its follow-up.
+const mergeApprovalSQL = `
+UPDATE processing_jobs
+   SET payload = COALESCE(payload, '{}'::jsonb)
+       || jsonb_build_object('apply', true, 'plan_digests', (
+            SELECT COALESCE(jsonb_agg(DISTINCT d), '[]'::jsonb)
+              FROM jsonb_array_elements(
+                     COALESCE(payload -> 'plan_digests', '[]'::jsonb) || $2::jsonb) AS d))
+ WHERE id = $1`
 
 // enqueueTargets enqueues every target in ONE transaction and tallies
 // the outcomes: enqueued = inserted, coalesced = coalesced or
@@ -414,6 +442,15 @@ func (h *Handler) enqueueTargets(r *http.Request, stage string, targets []target
 		res, err := Enqueue(ctx, tx, p)
 		if err != nil {
 			return 0, 0, err
+		}
+		if res.JobID != nil && p.Payload != nil && p.Payload["apply"] == true {
+			digests, err := json.Marshal(p.Payload["plan_digests"])
+			if err != nil {
+				return 0, 0, err
+			}
+			if _, err := tx.ExecContext(ctx, mergeApprovalSQL, *res.JobID, string(digests)); err != nil {
+				return 0, 0, err
+			}
 		}
 		switch res.Outcome {
 		case OutcomeInserted:

@@ -372,10 +372,12 @@ def apply_actions(
 
     Returns one record per written channel (``key``, ``number``, ``name``, ``digest``).
     """
-    server = dz.plex_server_name()
+    server = dz.plex_server_name(plex.uri)
     if server is None:
         raise StageFailure(
-            "dizquetv_no_plex_server", "dizqueTV has no Plex server configured", retryable=False
+            "dizquetv_no_plex_server",
+            f"dizqueTV has no Plex server registered at {plex.uri}",
+            retryable=False,
         )
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})

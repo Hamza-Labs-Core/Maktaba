@@ -313,7 +313,8 @@ func TestRetry(t *testing.T) {
 			name: "by ids: only failed rows are retried; coalesced counted",
 			body: `{"job_ids":[7,8]}`,
 			rules: []*queuestest.Rule{
-				{Match: "id = any($2::bigint[])", Cols: []string{"id", "kind", "sid", "state"}, Rows: [][]driver.Value{
+				// only rows still latest for their subject and stage (a superseded failure is history)
+				{Match: "j.id = any($2::bigint[]) and not exists", Cols: []string{"id", "kind", "sid", "state"}, Rows: [][]driver.Value{
 					{int64(7), "video", uidA, "failed"}, {int64(8), "video", uidB, "done"}}},
 				enqueueRule([]driver.Value{int64(60), "coalesced"}),
 			},
@@ -377,7 +378,7 @@ func TestRetry(t *testing.T) {
 func TestApply(t *testing.T) {
 	ext := stageRow("plex_collection", "seasons", 4, "network_plex", withExternal())
 	reviewRows := &queuestest.Rule{Match: "outcome = 'awaiting_review'", Cols: []string{"id", "kind", "sid", "hash"},
-		Rows: [][]driver.Value{{int64(31), "season", uidA, "abc123"}, {int64(32), "season", uidB, ""}}}
+		Rows: [][]driver.Value{{int64(31), "season", uidA, `["d1","d2"]`}, {int64(32), "season", uidB, "[]"}}}
 	tests := []struct {
 		name     string
 		stage    []driver.Value
@@ -412,8 +413,15 @@ func TestApply(t *testing.T) {
 			}
 			var payload map[string]any
 			_ = json.Unmarshal([]byte(a[8].(string)), &payload)
-			if payload["apply"] != true || payload["plan_hash"] != "abc123" {
+			digests, _ := payload["plan_digests"].([]any)
+			if payload["apply"] != true || len(digests) != 2 || digests[0] != "d1" || digests[1] != "d2" {
 				t.Errorf("payload = %v", payload)
+			}
+			// the approval is merged into the row the enqueue landed on (it may have
+			// coalesced into a pending or running job, whose payload the function keeps)
+			merges := f.db.Find("'plan_digests'")
+			if len(merges) != 2 || merges[0].Args[0] != int64(90) || merges[0].Args[1] != `["d1","d2"]` {
+				t.Errorf("approval merges = %+v", merges)
 			}
 		})
 	}

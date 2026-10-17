@@ -46,6 +46,9 @@ class StageContext:
     settings: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     path_map: PathMap = field(default_factory=PathMap)
     clock: Callable[[], float] = time.monotonic
+    #: digests of the change sets this run parked for review (``apply_or_review``); the
+    #: job's ``output_summary.review_digests``, which an operator's Apply approves
+    review_digests: list[str] = field(default_factory=list)
     _last_progress: float = field(default=float("-inf"), repr=False)
     _rules: dict[str, Any] = field(default_factory=dict, repr=False)
 

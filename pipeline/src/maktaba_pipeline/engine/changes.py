@@ -26,7 +26,7 @@ from .hashing import canonical_hash
 if TYPE_CHECKING:
     from .context import StageContext
 
-__all__ = ["ChangeSet", "apply_or_review", "diff_keyed", "diff_order"]
+__all__ = ["ChangeSet", "apply_or_review", "approved_digests", "diff_keyed", "diff_order"]
 
 _MAX_ITEMS = 200  # keep one job_events row small; the counts stay exact
 
@@ -120,8 +120,12 @@ async def apply_or_review(
     job = ctx.job
     if changes.is_empty:
         return "noop"
-    data = {"changes": changes.to_json(), "digest": changes.digest()}
-    if ctx.write_mode == "review":
+    digest = changes.digest()
+    data = {"changes": changes.to_json(), "digest": digest}
+    if ctx.write_mode == "review" and digest not in approved_digests(job.payload):
+        # parked; an operator's Apply re-runs the job with this digest approved. A plan
+        # that changed since (another digest) comes back here for a fresh review.
+        ctx.review_digests.append(digest)
         await log_event(
             ctx.db,
             job_id=job.id,
@@ -149,6 +153,14 @@ async def apply_or_review(
         data=data,
     )
     return "applied"
+
+
+def approved_digests(payload: Mapping[str, Any] | None) -> frozenset[str]:
+    """The change-set digests an operator approved (``POST /api/queues/{stage}/apply``
+    puts ``{"apply": true, "plan_digests": [...]}`` on the job)."""
+    if not payload or not payload.get("apply"):
+        return frozenset()
+    return frozenset(str(d) for d in payload.get("plan_digests") or [])
 
 
 def _summary(c: ChangeSet) -> str:

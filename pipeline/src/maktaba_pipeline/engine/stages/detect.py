@@ -259,8 +259,8 @@ def _membership_hash(
 
 
 def _fp_plan(
-    det: Detection, rows: dict[str, Row], season_eps: dict[tuple[str, int], list[UUID]]
-) -> dict[tuple[str, int], dict[str, list[str]]]:
+    det: Detection, rows: dict[str, Row], season_eps: dict[tuple[int, int], list[UUID]]
+) -> dict[tuple[int, int], dict[str, list[str]]]:
     """Samples and candidates per season (port of ``signatures.plan``).
 
     Candidates are the group's long-enough, dated videos that no season took, whose length
@@ -269,18 +269,16 @@ def _fp_plan(
     airing - matching the detector's own ``_fingerprint_worth_it``).
     """
     placed = {k for s in det.series for se in s.seasons for k in se.episodes} | set(det.shorts)
-    seasons: list[tuple[tuple[str, int], float | None, int, int | None]] = []
-    for ser in det.series:
+    seasons: list[tuple[tuple[int, int], float | None, int, int | None]] = []
+    for i, ser in enumerate(det.series):
         if ser.kind == "clips":
             continue
         for se in ser.seasons:
             if not (se.first_air and se.last_air):
                 continue
             last = None if ser.kind == "ongoing" else se.last_air.toordinal()
-            seasons.append(
-                ((ser.key, se.number), se.median_duration_s, se.first_air.toordinal(), last)
-            )
-    plan: dict[tuple[str, int], dict[str, list[str]]] = {}
+            seasons.append(((i, se.number), se.median_duration_s, se.first_air.toordinal(), last))
+    plan: dict[tuple[int, int], dict[str, list[str]]] = {}
     for key, row in rows.items():
         if key in placed or row.air_date is None:
             continue
@@ -296,6 +294,26 @@ def _fp_plan(
         plan[sk]["samples"] = [str(v) for v in _spread(season_eps[sk], PER_SEASON)]
         plan[sk]["candidates"].sort()
     return plan
+
+
+def distinct_series_key(
+    library_id: UUID,
+    key: str,
+    kind: str,
+    numbers: Sequence[int],
+    folder: str,
+    first_episode: str,
+    used: set[UUID],
+) -> str:
+    """The key a series' ids are made from: its own, unless one of its seasons' ids is
+    taken already (the same name in another folder, or a second show of that name the
+    detector split by length): then ``key@folder``, then ``key@folder#<first episode>``.
+    """
+    base = posixpath.basename(folder) or "root"
+    for cand in (key, f"{key}@{base}", f"{key}@{base}#{first_episode}"):
+        if not any(season_uuid(library_id, cand, kind, n) in used for n in numbers):
+            return cand
+    return cand
 
 
 def plan_library(
@@ -333,20 +351,25 @@ def plan_library(
             config=cfg,
             progress=progress,
         )
-        season_eps: dict[tuple[str, int], list[UUID]] = {}
-        for ser in det.series:
+        # keyed by the series' position: two shows of one name (split by length) are two series
+        season_eps: dict[tuple[int, int], list[UUID]] = {}
+        for i, ser in enumerate(det.series):
             for se in ser.seasons:
                 # samples come from the seed members, not from videos the detector attached: a
                 # sample set that moved whenever a candidate joined would re-read the NAS forever
                 seed = [k for k in se.episodes if k not in set(se.attached)] or list(se.episodes)
-                season_eps[(ser.key, se.number)] = [UUID(k) for k in seed]
+                season_eps[(i, se.number)] = [UUID(k) for k in seed]
         fp = _fp_plan(det, by_key, season_eps)
-        for ser in det.series:
-            key = ser.key
-            if any(
-                season_uuid(library_id, key, ser.kind, se.number) in used_ids for se in ser.seasons
-            ):
-                key = f"{ser.key}@{posixpath.basename(folder) or 'root'}"
+        for i, ser in enumerate(det.series):
+            key = distinct_series_key(
+                library_id,
+                ser.key,
+                ser.kind,
+                [se.number for se in ser.seasons],
+                folder,
+                min((k for se in ser.seasons for k in se.episodes), default=""),
+                used_ids,
+            )
             for se in ser.seasons:
                 sid = season_uuid(library_id, key, ser.kind, se.number)
                 used_ids.add(sid)
@@ -378,7 +401,7 @@ def plan_library(
                         membership_hash=_membership_hash(
                             ser.name, ser.kind, se.number, eps, nums, extras, se.name
                         ),
-                        fp_plan=fp.get((ser.key, se.number)),
+                        fp_plan=fp.get((i, se.number)),
                         season_name=se.name,
                         season_year=se.year,
                         brand=ser.brand,

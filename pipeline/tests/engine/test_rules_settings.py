@@ -68,3 +68,27 @@ def test_the_api_schema_is_current() -> None:
     assert json.loads(SCHEMA.read_text(encoding="utf-8")) == json.loads(
         json.dumps(rules.schema(), ensure_ascii=False)
     )
+
+
+class _Failing:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    async def fetchrow(self, *_: Any) -> Any:
+        raise self.exc
+
+
+@pytest.mark.asyncio
+async def test_only_a_missing_table_falls_back_to_the_defaults() -> None:
+    import sqlite3
+
+    cfg, changes, _ = await rules.read(
+        _Failing(sqlite3.OperationalError("no such table: app_settings")), "planner"
+    )
+    assert (
+        changes == {}
+        and cfg
+        == (await rules.read(_Failing(sqlite3.OperationalError("no such table: x")), "planner"))[0]
+    )
+    with pytest.raises(ConnectionResetError):
+        await rules.read(_Failing(ConnectionResetError("server closed the connection")), "planner")

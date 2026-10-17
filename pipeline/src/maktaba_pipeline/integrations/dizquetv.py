@@ -69,9 +69,17 @@ class DizqueTV:
         """Raise unless the server lists its channels."""
         self.get("/api/channels")
 
-    def plex_server_name(self) -> str | None:
-        servers = self.get("/api/plex-servers")
-        return str(servers[0]["name"]) if servers else None
+    def plex_server_name(self, plex_uri: str | None = None) -> str | None:
+        """The name dizqueTV registered the Plex server at ``plex_uri`` under (programmes
+        name their server by it). Without a match, the only registered server; None when
+        there is none, or several and none at ``plex_uri``."""
+        servers = list(self.get("/api/plex-servers") or [])
+        if plex_uri:
+            want = plex_uri.rstrip("/").lower()
+            for s in servers:
+                if str(s.get("uri", "")).rstrip("/").lower() == want:
+                    return str(s["name"])
+        return str(servers[0]["name"]) if len(servers) == 1 else None
 
 
 @dataclass(slots=True)

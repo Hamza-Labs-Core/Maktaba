@@ -397,22 +397,50 @@ async def _series(
         eps[e["series_id"]].append(e)
     per_lib: dict[UUID, list[detect_stage.PlannedSeason]] = defaultdict(list)
     out: dict[str, tuple[UUID, UUID]] = {}
-    for s in cache.execute("SELECT * FROM series"):
+    # one cache show = its seasons under one id_key (mediaintel gives two shows of one name,
+    # split by length, distinct id_keys); its id key comes from the live detector's rule, so
+    # twins never share a season id
+    shows: dict[tuple[UUID, str, str], list[tuple[Any, dict[str, Any], list[Any]]]] = defaultdict(
+        list
+    )
+    for s in cache.execute("SELECT * FROM series ORDER BY id"):
         meta = json.loads(s["metadata"] or "{}")
         rows = [e for e in eps.get(s["id"], []) if e["path"] in match]
         if not rows:
             continue
         lib = match[rows[0]["path"]][1]
-        key, kind, number = (
-            str(meta.get("series_key") or s["name"]),
-            str(meta.get("kind") or "episodic"),
-            int(meta.get("season") or 1),
+        show = str(meta.get("id_key") or meta.get("series_key") or s["name"])
+        shows[(lib, show, str(meta.get("kind") or "episodic"))].append((s, meta, rows))
+    used: dict[UUID, set[UUID]] = defaultdict(set)
+    keys: dict[str, str] = {}
+    for (lib, _show, kind), members in sorted(
+        shows.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])
+    ):
+        _s0, meta0, _r0 = members[0]
+        key = detect_stage.distinct_series_key(
+            lib,
+            str(meta0.get("series_key") or members[0][0]["name"]),
+            kind,
+            [int(m.get("season") or 1) for _, m, _ in members],
+            str(meta0.get("folder") or ""),
+            min(str(match[e["path"]][0]) for _, _, rows in members for e in rows),
+            used[lib],
         )
-        ids = tuple(match[e["path"]][0] for e in rows)
-        nums = tuple(int(e["episode"] or i) for i, e in enumerate(rows, 1))
-        extras = tuple(match[p][0] for p in meta.get("extras") or [] if p in match)
-        sid = season_uuid(lib, key, kind, number)
-        per_lib[lib].append(
+        for s, meta, _rows in members:
+            keys[s["id"]] = key
+            used[lib].add(season_uuid(lib, key, kind, int(meta.get("season") or 1)))
+    for (lib, _show, _kind), members in shows.items():
+        for s, meta, rows in members:
+            key, kind, number = (
+                keys[s["id"]],
+                str(meta.get("kind") or "episodic"),
+                int(meta.get("season") or 1),
+            )
+            ids = tuple(match[e["path"]][0] for e in rows)
+            nums = tuple(int(e["episode"] or i) for i, e in enumerate(rows, 1))
+            extras = tuple(match[p][0] for p in meta.get("extras") or [] if p in match)
+            sid = season_uuid(lib, key, kind, number)
+            per_lib[lib].append(
             detect_stage.PlannedSeason(
                 id=sid, series_id=series_uuid(lib, key, kind), series_key=key, series_name=str(s["name"]),
                 kind=kind, number=number, episodes=ids, numbers=nums, extras=extras,
@@ -429,8 +457,8 @@ async def _series(
                 brand=bool(meta.get("brand")),
             )
         )  # fmt: skip
-        out[s["id"]] = (sid, lib)
-        overrides[s["id"]] = [e for e in rows if e["is_user_override"]]
+            out[s["id"]] = (sid, lib)
+            overrides[s["id"]] = [e for e in rows if e["is_user_override"]]
     for lib, seasons in per_lib.items():
         plan = detect_stage.LibraryPlan(tuple(seasons), (), ())
         current = await detect_stage.load_current(db, lib)

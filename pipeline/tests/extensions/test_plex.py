@@ -11,7 +11,7 @@ import pytest
 
 from maktaba_pipeline.engine.changes import ChangeSet
 from maktaba_pipeline.engine.graph import Subject
-from maktaba_pipeline.engine.sql import now, to_ts
+from maktaba_pipeline.engine.sql import loads, now, to_ts
 from maktaba_pipeline.extensions.links import get_link, get_links
 from maktaba_pipeline.extensions.plex import PlexExtension, health_probes
 from maktaba_pipeline.extensions.plex import extension as default_extension
@@ -280,6 +280,30 @@ async def test_review_mode_parks_the_change_set(db: Database) -> None:
     assert job["outcome"] == "awaiting_review"
     assert w.fake.writes == []
     assert len(await events(db, job["id"], "review")) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_writes_exactly_the_reviewed_change_set(db: Database) -> None:
+    w = await make_world(db)
+    rt = await setup_runtime(db, [make_extension(w.fake)], SETTINGS)
+    await db.execute("UPDATE job_stages SET write_mode = 'review' WHERE stage = 'plex_collection'")
+    parked = await collection_job(db, rt, w)
+    digests = (loads(parked["output_summary"]) or {})["review_digests"]
+    assert parked["outcome"] == "awaiting_review" and len(digests) == 1
+
+    # an approval for another plan (it changed since the review) is parked again
+    stale = await collection_job(
+        db, rt, w, force=True, payload={"apply": True, "plan_digests": ["not-this-plan"]}
+    )
+    assert stale["outcome"] == "awaiting_review" and w.fake.writes == []
+
+    # the operator's Apply: the reviewed digest is approved, the stage stays in review mode
+    applied = await collection_job(
+        db, rt, w, force=True, payload={"apply": True, "plan_digests": digests}
+    )
+    assert applied["state"] == "done" and applied["outcome"] != "awaiting_review"
+    assert w.fake.writes != []
+    assert len(await events(db, applied["id"], "applied")) == 1
 
 
 # ------------------------------------------------------------------ fingerprints and health

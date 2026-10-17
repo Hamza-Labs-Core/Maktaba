@@ -321,3 +321,28 @@ def test_path_map_parsing() -> None:
     with pytest.raises(SystemExit):
         parse_path_maps(["nonsense"])
     assert loads(None) is None and to_ts is not None
+
+
+@pytest.mark.asyncio
+async def test_two_shows_of_one_name_import_as_two_seasons(db: Database, tmp_path: Path) -> None:
+    """mediaintel splits two same-named shows by length and gives them distinct id_keys;
+    the import must not fold them into one season id."""
+    await _library(db)
+    cache = _cache(tmp_path / "cache.db")
+    c = sqlite3.connect(cache)
+    half = N // 2
+    c.execute(
+        "UPDATE series_episodes SET series_id = 's2' WHERE path >= ?",
+        (f"Y:/chan/ep{half:02d}.mp4",),
+    )
+    meta = {"series_key": "prophets", "id_key": "prophets|Y:/chan/ep06.mp4", "kind": "episodic",
+            "season": 1, "playlists": [], "extras": [], "attached": [], "duplicates": [],
+            "folder": "Y:/chan"}  # fmt: skip
+    c.execute("INSERT INTO series VALUES ('s2','Cached','Prophets',2024,?,2)", (json.dumps(meta),))
+    c.commit()
+    c.close()
+    report = await run_import(db, cache, ["Cached"], apply=True)
+    assert report.applied
+    rows = await db.fetch("SELECT id, episode_count FROM series_seasons ORDER BY episode_count")
+    assert len(rows) == 2 and len({r["id"] for r in rows}) == 2
+    assert sorted(int(r["episode_count"]) for r in rows) == [N - half, half]

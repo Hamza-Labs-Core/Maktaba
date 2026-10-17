@@ -798,7 +798,7 @@ All routes are under `/api` and require authentication through the existing chai
 | POST | `/api/queues/resume-all` | – | `204` |
 | PATCH | `/api/queues/{stage}` | `{enabled?: boolean, write_mode?: "apply"\|"review"}` | `StageInfo` |
 | POST | `/api/queues/{stage}/retry` | `{cause?: string, job_ids?: number[]}` (one required) | `{enqueued: number, coalesced: number}` |
-| POST | `/api/queues/{stage}/apply` | `{job_ids?: number[], all?: boolean}` | `{enqueued: number}` (enqueue with `payload={"apply":true,"plan_hash":<output_hash>}`, force) |
+| POST | `/api/queues/{stage}/apply` | `{job_ids?: number[], all?: boolean}` | `{enqueued: number}` (enqueue with `payload={"apply":true,"plan_digests":<output_summary.review_digests>}`, force; merged into a job it coalesces into; a change set is applied only if its digest was approved) |
 | GET | `/api/pools` | – | `{pools: Pool[]}` |
 | PUT | `/api/pools/{pool}` | `{size: number \| null}` (0–64) | `Pool` |
 | POST | `/api/queue/retrigger` | `RetriggerRequest` | `RetriggerResponse` |

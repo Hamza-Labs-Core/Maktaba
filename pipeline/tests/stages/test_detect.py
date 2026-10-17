@@ -13,7 +13,12 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.ids import season_uuid, series_uuid
 from maktaba_pipeline.engine.sql import is_pg, loads, now, to_ts
-from maktaba_pipeline.engine.stages.detect import compute_changes, input_fingerprint, plan_library
+from maktaba_pipeline.engine.stages.detect import (
+    compute_changes,
+    distinct_series_key,
+    input_fingerprint,
+    plan_library,
+)
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import core_runtime, drain_core, make_show, set_playlist
 
@@ -291,3 +296,16 @@ async def test_a_corrected_air_date_changes_the_output_channels_plan_from(db: Da
     await _detect(db, rt, w.library, force=True)
     done = [j for j in await _jobs(db, "detect") if j["state"] == "done"]
     assert len(done) == 2 and done[0]["output_hash"] != done[1]["output_hash"]
+
+
+@pytest.mark.unit
+def test_same_named_shows_each_get_their_own_ids() -> None:
+    lib = UUID("00000000-0000-0000-0000-0000000000aa")
+    used: set[UUID] = set()
+    keys = []
+    for first in ("v1", "v2", "v3"):  # three shows of one name in one folder
+        k = distinct_series_key(lib, "show", "episodic", [1, 2], "Y:/chan", first, used)
+        used |= {season_uuid(lib, k, "episodic", n) for n in (1, 2)}
+        keys.append(k)
+    assert keys == ["show", "show@chan", "show@chan#v3"]
+    assert len(used) == 6

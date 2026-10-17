@@ -149,10 +149,12 @@ def apply_show(
         if ours is not None:
             dz.call("DELETE", f"/api/show/{ours.id}")
         return None, 0
-    server = dz.plex_server_name()
+    server = dz.plex_server_name(plex.uri)
     if server is None:
         raise StageFailure(
-            "dizquetv_no_plex_server", "dizqueTV has no Plex server configured", retryable=False
+            "dizquetv_no_plex_server",
+            f"dizqueTV has no Plex server registered at {plex.uri}",
+            retryable=False,
         )
     meta: dict[str, Mapping[str, Any]] = dict(saved or {})
     missing = [k for k in desired.keys if k not in meta]

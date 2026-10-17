@@ -503,3 +503,25 @@ def test_exporter_builds_the_dizquetv_block_from_a_real_plan() -> None:
     assert block["number"] == plan.channels[0].number
     assert block["schedule"]["slots"] and "fillerCollections" in block
     assert block["fillerRepeatCooldown"] == plan.config.dz_filler_cooldown_ms
+
+
+def test_plex_server_name_is_the_one_at_the_configured_plex_url() -> None:
+    class Listed(DizqueTV):
+        def __init__(self, servers: list[dict[str, Any]]) -> None:
+            super().__init__("http://dz")
+            self.servers = servers
+
+        def get(self, path: str) -> Any:
+            assert path == "/api/plex-servers"
+            return self.servers
+
+    two = [
+        {"name": "old", "uri": "http://old:32400"},
+        {"name": "home", "uri": "http://plex:32400/"},
+    ]
+    assert Listed(two).plex_server_name("http://PLEX:32400") == "home"
+    assert Listed(two).plex_server_name("http://elsewhere") is None  # ambiguous: never guess
+    assert Listed(two).plex_server_name() is None
+    one = [{"name": "only", "uri": "http://x"}]
+    assert Listed(one).plex_server_name("http://elsewhere") == "only"
+    assert Listed([]).plex_server_name("http://plex:32400") is None

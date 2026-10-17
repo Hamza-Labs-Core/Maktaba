@@ -79,12 +79,25 @@ async def read(db: Any, section: str) -> tuple[Any, dict[str, Any], dict[str, st
 
     try:
         row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", f"rules.{section}")
-    except Exception:  # noqa: BLE001 — no app_settings table (an old or bare database)
+    except Exception as exc:
+        # an old or bare database has no app_settings table: the defaults. Any other
+        # error (a dropped connection, a timeout) is raised: running a stage, or
+        # fingerprinting its inputs, with the defaults instead of the rules as set
+        # would quietly write a different plan.
+        if not _missing_table(exc):
+            raise
         row = None
     stored = loads(row["value"]) if row is not None else None
     changes = stored if isinstance(stored, dict) else {}
     cfg, bad = config(section, changes)
     return cfg, changes, bad
+
+
+def _missing_table(exc: BaseException) -> bool:
+    """Postgres ``undefined_table`` (SQLSTATE 42P01) or SQLite's "no such table"."""
+    if getattr(exc, "sqlstate", None) == "42P01" or type(exc).__name__ == "UndefinedTableError":
+        return True
+    return "no such table" in str(exc).lower()
 
 
 def schema() -> dict[str, Any]:
