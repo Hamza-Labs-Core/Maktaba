@@ -566,11 +566,11 @@ class ProgramUnit:
 
     @property
     def duration_s(self) -> float:
-        return sum(e.duration_s for e in self.episodes)
+        return _unit_stats(self)[1]
 
     @property
     def max_episode_s(self) -> float:
-        return max((e.duration_s for e in self.episodes), default=0.0)
+        return _unit_stats(self)[2]
 
     @property
     def label(self) -> str:
@@ -1168,6 +1168,21 @@ class _Queue:
 
     def weeks_left(self) -> float:
         return self.minutes() / max(1, self.airings * self.slot_minutes)
+
+
+_UNIT_STATS: dict[int, tuple[ProgramUnit, float, float]] = {}
+
+
+def _unit_stats(u: ProgramUnit) -> tuple[ProgramUnit, float, float]:
+    """(unit, total seconds, longest episode seconds), summed once per unit: the grid
+    asks for them tens of thousands of times per plan."""
+    hit = _UNIT_STATS.get(id(u))
+    if hit is None or hit[0] is not u:
+        if len(_UNIT_STATS) > 100_000:
+            _UNIT_STATS.clear()
+        secs = [e.duration_s for e in u.episodes]
+        hit = _UNIT_STATS[id(u)] = (u, sum(secs), max(secs, default=0.0))
+    return hit
 
 
 _SHOW_MINUTES: dict[int, tuple[Show, float]] = {}

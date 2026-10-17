@@ -501,14 +501,13 @@ def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
             assert isinstance(s["start"], str) and isinstance(s["end"], str)
             assert s["source"]["type"] in ("lane", "filler")
         # read back with the 27.2 SchedulePlanner's own helpers: one slot per minute per day
+        spans = [
+            (slot_days(s), parse_hhmm(s["start"]), parse_hhmm(s["end"]) or DAY_MINUTES)
+            for s in slots
+        ]
         for day in range(7):
             for m in range(0, DAY_MINUTES, 15):
-                hits = [
-                    s
-                    for s in slots
-                    if day in slot_days(s)
-                    and parse_hhmm(s["start"]) <= m < (parse_hhmm(s["end"]) or DAY_MINUTES)
-                ]
+                hits = [1 for days, a, b in spans if day in days and a <= m < b]
                 assert len(hits) == 1, (ch.key, day, m)
         if ch.ramadan_slots:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}

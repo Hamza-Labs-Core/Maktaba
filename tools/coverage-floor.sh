@@ -92,7 +92,10 @@ if [[ -d "$REPO_ROOT/$pipeline_dir" ]]; then
   covxml="$covdir/pipeline.cov.txt"
   covlog="$covdir/pipeline.cov.log"
   set +e
-  ( cd "$REPO_ROOT/$pipeline_dir" && \
+  # sys.monitoring (Python 3.12+) records each line once and then stops tracing
+  # it; the default tracer slows hot loops ~10x, pushing unit tests past their
+  # per-test cap only when measured for coverage
+  ( cd "$REPO_ROOT/$pipeline_dir" && export COVERAGE_CORE=sysmon && \
     uv run --all-extras --with pytest-cov pytest -m unit \
       --cov=src/maktaba_pipeline --cov-report= -q >"$covlog" 2>&1 && \
     uv run --all-extras --with pytest-cov coverage report --format=total > "$covxml" 2>>"$covlog" )
