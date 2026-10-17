@@ -22,4 +22,5 @@ def test_a_decomposed_name_on_disk_is_found_from_the_composed_one(tmp_path: Path
     found = on_disk(str(tmp_path / composed))
     assert found is not None and os.path.samefile(found, real)
     assert on_disk(str(tmp_path / "nope.mp4")) is None
-    assert on_disk(str(tmp_path / "missing-dir" / "a.mp4")) is None
+    with pytest.raises(OSError):  # a folder that cannot be listed is not a missing file
+        on_disk(str(tmp_path / "missing-dir" / "a.mp4"))

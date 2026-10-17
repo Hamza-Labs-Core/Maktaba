@@ -46,7 +46,9 @@ def is_pending(metadata: dict[str, Any] | None) -> bool:
 
 def on_disk(path: str) -> str | None:
     """``path`` as the file system names it: as given, else its NFD / NFC form, else the
-    entry of its folder whose normalised name is the same; None when there is none."""
+    entry of its folder whose normalised name is the same; None when the folder lists no
+    such entry. A folder that cannot be listed (the share stalled) raises ``OSError``:
+    that is not a missing file."""
     if os.path.exists(path):
         return path
     parent, name = os.path.split(path)
@@ -54,10 +56,7 @@ def on_disk(path: str) -> str | None:
         alt = os.path.join(parent, unicodedata.normalize(form, name))
         if os.path.exists(alt):
             return alt
-    try:
-        entries = os.listdir(parent)
-    except OSError:
-        return None
+    entries = os.listdir(parent)
     want = unicodedata.normalize("NFC", name)
     return next(
         (os.path.join(parent, e) for e in entries if unicodedata.normalize("NFC", e) == want),
@@ -78,7 +77,10 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
     local = ctx.local_path(v.path)
-    found = await asyncio.to_thread(on_disk, local)
+    try:
+        found = await asyncio.to_thread(on_disk, local)
+    except OSError as exc:  # a stalled share, not a missing file: retried
+        raise StageFailure("nas_unavailable", f"{local}: {exc}") from exc
     if found is None:
         raise StageFailure("file_missing", f"{local}: not found", retryable=False)
     if found != local:  # the name on disk differs in normalisation only: store that one
