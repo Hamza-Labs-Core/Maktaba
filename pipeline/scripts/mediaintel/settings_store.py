@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from maktaba_pipeline import settings
-from maktaba_pipeline.rules import SECTIONS  # noqa: F401 — the sections and their help
+from maktaba_pipeline.rules import SECTIONS as SECTIONS  # the sections and their help
 
 
 def path_of(db_file: str | Path) -> Path:
