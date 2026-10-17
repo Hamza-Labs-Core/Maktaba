@@ -74,8 +74,9 @@ PLANNER_HELP: dict[str, Help] = {
         "Themed channels",
         "One channel per theme, in priority order: its number, names, and the "
         "topics / audiences / formats / occasions whose shows it takes, and the tags it "
-        "never takes (exclude, e.g. audience:adults). Leave min hours empty to use the "
-        "general minimum.",
+        "never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum "
+        "instead of the days-without-a-repeat rule (the Quran channel repeats by nature); "
+        "empty: the rule.",
     ),
     "topic_min_score": Help(
         CH,

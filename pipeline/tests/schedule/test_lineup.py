@@ -125,3 +125,10 @@ def test_tajweed_lessons_are_not_recitation_by_default() -> None:
     themes = (ThemeSpec("quran_learning", "Quran Learning", "تعليم القرآن", 118, ("tajweed",)),)
     p = plan(lib, themes=themes, mix_channel=False, presenter_channels=False)
     assert [c.key for c in p.channels] == ["quran_learning"]
+
+
+def test_a_themes_own_minimum_replaces_the_month_rule() -> None:
+    lib = [season("f1", "فقه", n=10)]  # 5 h: short of the 10 h rule
+    own = (ThemeSpec("fiqh", "Fiqh", "الفقه", 111, ("fiqh",), min_hours=2.0),)
+    p = plan(lib, themes=own, mix_channel=False, presenter_channels=False)
+    assert [c.key for c in p.channels] == ["fiqh"]

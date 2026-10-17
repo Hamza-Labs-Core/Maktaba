@@ -263,7 +263,9 @@ class ThemeSpec:
     audiences: tuple[str, ...] = ()
     formats: tuple[str, ...] = ()
     category: str = "general"
-    min_hours: float | None = None  # None → PlannerConfig.theme_min_hours
+    #: set: this theme's own minimum, instead of the month rule (a Quran channel repeats
+    #: by nature: reciters rotate, a khatma starts again); None: the month rule
+    min_hours: float | None = None
     occasions: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
 
@@ -272,7 +274,7 @@ class ThemeSpec:
 #: for (:attr:`PlannerConfig.max_channels`), the earlier ones get a channel.
 DEFAULT_THEMES: tuple[ThemeSpec, ...] = (
     ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",),
-              formats=("recitation",), category="quran"),
+              formats=("recitation",), category="quran", min_hours=100.0),
     ThemeSpec("kids", "Kids & Family", "الأطفال والأسرة", 110, ("seerah", "prophets_stories"),
               audiences=("kids", "kids_friendly", "beginners"), category="kids",
               exclude=("audience:adults",)),
@@ -2123,7 +2125,7 @@ def suggest_channels(
         return whole_shows(ids)
 
     for n_t, t in enumerate(cfg.themes):
-        need = max(t.min_hours if t.min_hours is not None else cfg.theme_min_hours, month_h)
+        need = t.min_hours if t.min_hours is not None else max(cfg.theme_min_hours, month_h)
         if t.key == "quran":
             q_hours = sum(units[i].duration_s for i in quran_ids) / 3600
             if not quran_ids:

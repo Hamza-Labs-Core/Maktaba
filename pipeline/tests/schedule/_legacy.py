@@ -3,7 +3,9 @@ rules the tests were written against (the defaults now favour a 20-channel lineu
 
 from __future__ import annotations
 
-from maktaba_pipeline.schedule.channel_planner import Daypart, _hm
+from dataclasses import replace
+
+from maktaba_pipeline.schedule.channel_planner import DEFAULT_THEMES, Daypart, _hm
 
 DAYPARTS: tuple[Daypart, ...] = (
     Daypart("dawn", _hm("04:00"), _hm("07:00"), "quran", "Dawn: Quran", "quran"),
@@ -21,4 +23,6 @@ SMALL: dict[str, object] = {
     "slot_owner": "show",
     "recitation_genres": ("quran_recitation", "tajweed"),
     "dayparts": DAYPARTS,
+    # the general minimum for every theme, the Quran channel too
+    "themes": tuple(replace(t, min_hours=None) for t in DEFAULT_THEMES),
 }
