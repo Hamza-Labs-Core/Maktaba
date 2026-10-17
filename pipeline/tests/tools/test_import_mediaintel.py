@@ -442,6 +442,11 @@ async def test_create_makes_libraries_and_videos_and_the_queue_reads_the_files(
     report = await run_import(db, cache, [], path_maps=maps, create=True, apply=True)
     assert report.videos_created == N and report.hash_jobs_queued == N
     assert report.tables["series_seasons"][1] == 1  # the detection came across too
+    titles = [r["title"] for r in await db.fetch("SELECT title FROM videos ORDER BY path LIMIT 2")]
+    assert titles == [
+        "Prophets - Episode 1",
+        "Prophets - Episode 2",
+    ]  # YouTube's, not the file name
     again = await run_import(db, cache, [], path_maps=maps, create=True, apply=True)
     assert again.libraries_created == 0 and again.videos_created == 0  # idempotent
 

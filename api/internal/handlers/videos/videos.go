@@ -104,6 +104,7 @@ type AuditWriter interface {
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/videos", h.List)
 	r.Get("/api/videos/{id}", h.Detail)
+	r.Get("/api/videos/{id}/poster", h.Poster)
 	r.Patch("/api/videos/{id}", h.Patch)
 	r.Delete("/api/videos/{id}", h.Delete)
 	r.Post("/api/videos/{id}/process", h.Process)

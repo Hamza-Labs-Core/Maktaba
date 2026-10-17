@@ -603,12 +603,15 @@ async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
     }
     stamp = to_ts(db, now())
     rows: list[tuple[Any, ...]] = []
+    titles: list[tuple[Any, ...]] = []
     for path, (vid, _lib) in match.items():
         f = files[path]
         if not f["youtube_id"]:
             continue
         method = f["link_method"] or "info_json"
         yv = yt.get(str(f["youtube_id"]))
+        if yv is not None and yv["title"]:
+            titles.append((uid(vid), str(yv["title"])))
         mapped = {
             "link_method": method,
             "title": None if yv is None else yv["title"],
@@ -628,6 +631,9 @@ async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
         " ON CONFLICT (video_id, provider, external_id) DO NOTHING",
         rows,
     )
+    # the YouTube title, where the video has none yet (a library shows the file name
+    # otherwise); a title the user set is never replaced
+    await _many(db, "UPDATE videos SET title = $2 WHERE id = $1 AND title IS NULL", titles)
 
 
 # --------------------------------------------------------------------------- series
