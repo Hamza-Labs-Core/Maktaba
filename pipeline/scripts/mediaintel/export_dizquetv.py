@@ -359,7 +359,12 @@ def _new_channel_defaults() -> dict[str, Any]:
 
 
 def apply_actions(
-    url: str, actions: Sequence[Action], server: Any, plan: Mapping[str, Any], **plan_kw: Any
+    url: str,
+    actions: Sequence[Action],
+    server: Any,
+    plan: Mapping[str, Any],
+    conn: Any = None,
+    **plan_kw: Any,
 ) -> None:
     """Write the plan: shows and filler lists first (programmes built from Plex
     metadata), then — with dizqueTV re-read so slots name the real ``custom.ID`` and
@@ -371,7 +376,9 @@ def apply_actions(
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
-    meta = _metadata(server, keys) if keys else {}
+    # the plex-index step's saved records first: only what it lacks is asked of Plex
+    # (all of a big plan from Plex is 100k+ lookups, hours while Plex is busy)
+    meta = _metadata(server, keys, conn=conn) if keys else {}
     for a in objs:
         assert a.body is not None and a.endpoint is not None
         content = [
@@ -471,6 +478,7 @@ def run(
     dump: Path | None = None,
     apply: bool = False,
     server: Any = None,
+    conn: Any = None,
 ) -> list[Action]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     dz = DizqueTV(url)
@@ -493,7 +501,7 @@ def run(
         apply_actions(
             url, actions, server, plan, only=only, ramadan=ramadan,
             tz_offset=tz_offset_minutes() if tz_offset is None else tz_offset,
-            replace_existing=replace_existing,
+            replace_existing=replace_existing, conn=conn,
         )  # fmt: skip
     if dump is not None:  # local files only: the request bodies --apply would send
         dump.mkdir(parents=True, exist_ok=True)
