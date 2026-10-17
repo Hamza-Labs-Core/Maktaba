@@ -242,6 +242,20 @@ class Database:
             await self._conn.execute(sql_q, params)
         return None
 
+    async def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
+        """One statement for many parameter rows, in one round trip per batch (bulk
+        imports: a row-by-row ``execute`` pays a round trip per row)."""
+        if not rows:
+            return
+        if self.dialect == "postgres":
+            async with self._pg_conn() as conn:
+                await conn.executemany(sql, rows)
+            return
+        sql_q, _ = _rewrite_for_sqlite(sql, tuple(rows[0]))
+        params = [_rewrite_for_sqlite(sql, tuple(r))[1] for r in rows]
+        async with self._sqlite_guard():
+            await self._conn.executemany(sql_q, params)
+
     async def acquire_listener(self) -> Any:
         # LISTEN/NOTIFY needs a dedicated, long-lived connection.
         # `pool.acquire()` returns a context manager whose lifetime is

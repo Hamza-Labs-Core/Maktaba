@@ -122,6 +122,9 @@ class ImportReport:
     libraries_created: int = 0
     videos_created: int = 0
     hash_jobs_queued: int = 0
+    #: synthetic job rows not written yet, and the newest imported row per subject + stage
+    _job_rows: list[tuple[Any, ...]] = field(default_factory=list, repr=False)
+    _imported: dict[tuple[str, str, str], tuple[Any, Any]] | None = field(default=None, repr=False)
 
     def render(self) -> str:
         out = [
@@ -212,6 +215,18 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
     return out
 
 
+# --------------------------------------------------------------------------- batching
+
+_BATCH = 2000
+
+
+async def _many(db: Any, sql: str, rows: list[tuple[Any, ...]]) -> None:
+    """``rows`` through one statement, ``_BATCH`` at a time (a round trip per batch, not
+    per row: the cache holds ~150k files and twice as many YouTube rows)."""
+    for i in range(0, len(rows), _BATCH):
+        await db.executemany(sql, rows[i : i + _BATCH])
+
+
 # --------------------------------------------------------------------------- libraries and videos
 
 
@@ -278,20 +293,25 @@ async def _create_libraries(
             str(r["path"]).lower()
             for r in await db.fetch("SELECT path FROM videos WHERE library_id = $1", uid(lib))
         }
+        rows: list[tuple[Any, ...]] = []
         for f in files:
             path = _map(str(f["path"]), maps)
             if path.lower() in have:
                 continue
             have.add(path.lower())
-            await db.execute(
-                "INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime,"
-                " duration_sec, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            rows.append((
                 uid(uuid.uuid4()), uid(lib), stand_in_hash(name, path), path, posixpath.basename(path),
                 int(f["size"]), to_ts(db, datetime.fromtimestamp(float(f["mtime"]), UTC)),
                 None if f["duration_s"] is None else float(f["duration_s"]),
                 dumps({PENDING: True, "source": "mediaintel"}),
-            )  # fmt: skip
-            report.videos_created += 1
+            ))  # fmt: skip
+        await _many(
+            db,
+            "INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime,"
+            " duration_sec, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            rows,
+        )
+        report.videos_created += len(rows)
     if wanted - {n for _, n in out}:
         raise SystemExit(f"not in the cache: {', '.join(sorted(wanted - {n for _, n in out}))}")
     return out
@@ -365,6 +385,7 @@ async def run_import(
                 await _settings(db, _beside(cache, settings, "settings.json"), report)
                 with ThumbSource.open(_thumbs_at(cache, thumbs)) as source:
                     await _thumbs(db, conn, libs, maps, source, report, apply)
+                await _flush_jobs(db, report)
                 report.tables = {
                     t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}")))
                     for t in TABLES
@@ -462,38 +483,46 @@ async def _youtube(
         if _has(cache, "folders")
         else set()
     )
-    for v in cache.execute("SELECT * FROM yt_videos"):
-        if v["youtube_id"] not in wanted_ids and v["channel_id"] not in channel_ids:
-            continue
-        await db.execute(
-            "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality,"
-            " duration_s, tab, description, source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"
-            " ON CONFLICT (youtube_id) DO NOTHING",
-            v["youtube_id"], v["channel_id"], v["title"], _d(db, v["upload_date"]), v["date_quality"],
-            v["duration_s"], v["tab"], v["description"], v["source"], to_ts(db, now()),
-        )  # fmt: skip
+    stamp = to_ts(db, now())
+    await _many(
+        db,
+        "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality,"
+        " duration_s, tab, description, source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"
+        " ON CONFLICT (youtube_id) DO NOTHING",
+        [
+            (v["youtube_id"], v["channel_id"], v["title"], _d(db, v["upload_date"]), v["date_quality"],
+             v["duration_s"], v["tab"], v["description"], v["source"], stamp)
+            for v in cache.execute("SELECT * FROM yt_videos")
+            if v["youtube_id"] in wanted_ids or v["channel_id"] in channel_ids
+        ],
+    )  # fmt: skip
     if _has(cache, "yt_playlists"):
         pls = {
             r["playlist_id"]
             for r in cache.execute("SELECT playlist_id, youtube_id FROM yt_playlist_items")
             if r["youtube_id"] in wanted_ids
         }
-        for p in cache.execute("SELECT * FROM yt_playlists"):
-            if p["playlist_id"] not in pls:
-                continue
-            await db.execute(
-                "INSERT INTO youtube_playlists (playlist_id, channel_id, title, item_count, is_real,"
-                " source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (playlist_id) DO NOTHING",
-                p["playlist_id"], p["channel_id"], p["title"], p["item_count"],
-                bool(p["is_real"]) if is_pg(db) else int(p["is_real"]), p["source"], to_ts(db, now()),
-            )  # fmt: skip
-        for i in cache.execute("SELECT * FROM yt_playlist_items"):
-            if i["playlist_id"] in pls:
-                await db.execute(
-                    "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position)"
-                    " VALUES ($1,$2,$3) ON CONFLICT (playlist_id, youtube_id) DO NOTHING",
-                    i["playlist_id"], i["youtube_id"], i["position"],
-                )  # fmt: skip
+        await _many(
+            db,
+            "INSERT INTO youtube_playlists (playlist_id, channel_id, title, item_count, is_real,"
+            " source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (playlist_id) DO NOTHING",
+            [
+                (p["playlist_id"], p["channel_id"], p["title"], p["item_count"],
+                 bool(p["is_real"]) if is_pg(db) else int(p["is_real"]), p["source"], stamp)
+                for p in cache.execute("SELECT * FROM yt_playlists")
+                if p["playlist_id"] in pls
+            ],
+        )  # fmt: skip
+        await _many(
+            db,
+            "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position)"
+            " VALUES ($1,$2,$3) ON CONFLICT (playlist_id, youtube_id) DO NOTHING",
+            [
+                (i["playlist_id"], i["youtube_id"], i["position"])
+                for i in cache.execute("SELECT * FROM yt_playlist_items")
+                if i["playlist_id"] in pls
+            ],
+        )
 
 
 # --------------------------------------------------------------------------- signals + links
@@ -505,6 +534,9 @@ async def _signals(
     vm = {}
     if _has(cache, "visual_metrics"):
         vm = {r["path"]: r for r in cache.execute("SELECT * FROM visual_metrics")}
+    # one upsert per set of columns (upsert_signals' statement), many videos per round trip
+    by_cols: dict[tuple[str, ...], list[tuple[Any, ...]]] = defaultdict(list)
+    stamp = to_ts(db, now())
     for path, (vid, _lib) in match.items():
         f = files[path]
         cols: dict[str, Any] = {}
@@ -523,21 +555,41 @@ async def _signals(
                 style_version=int(m["version"]),
             )
         if cols:
-            from ..engine.stages._common import upsert_signals
-
-            await upsert_signals(db, vid, **cols)
+            names = tuple(cols)
+            by_cols[names].append((uid(vid), *[cols[c] for c in names], stamp))
+    for names, rows in by_cols.items():
+        insert_cols = ", ".join(["video_id", *names, "updated_at"])
+        params = ", ".join(f"${i + 1}" for i in range(len(names) + 2))
+        updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in [*names, "updated_at"])
+        await _many(
+            db,
+            f"INSERT INTO video_signals ({insert_cols}) VALUES ({params})"
+            f" ON CONFLICT (video_id) DO UPDATE SET {updates}",
+            rows,
+        )
 
 
 async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
+    yt = {
+        str(r["youtube_id"]): r
+        for r in await db.fetch(
+            "SELECT youtube_id, title, upload_date, date_quality FROM youtube_videos"
+        )
+    }
+    user_edited = {
+        str(r["video_id"])
+        for r in await db.fetch(
+            "SELECT DISTINCT video_id FROM media_field_provenance WHERE origin = 'user'"
+        )
+    }
+    stamp = to_ts(db, now())
+    rows: list[tuple[Any, ...]] = []
     for path, (vid, _lib) in match.items():
         f = files[path]
         if not f["youtube_id"]:
             continue
         method = f["link_method"] or "info_json"
-        yv = await db.fetchrow(
-            "SELECT title, upload_date, date_quality FROM youtube_videos WHERE youtube_id = $1",
-            f["youtube_id"],
-        )
+        yv = yt.get(str(f["youtube_id"]))
         mapped = {
             "link_method": method,
             "title": None if yv is None else yv["title"],
@@ -546,17 +598,17 @@ async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
             else str(yv["upload_date"]),
             "date_quality": None if yv is None else yv["date_quality"],
         }
-        user_edit = await db.fetchrow(
-            "SELECT 1 AS x FROM media_field_provenance WHERE video_id = $1 AND origin = 'user' LIMIT 1",
-            uid(vid),
-        )
-        await db.execute(
-            "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id, mapped, confidence,"
-            " is_accepted, fetched_at) VALUES ($1,$2,'youtube',$3,$4,$5,$6,$7)"
-            " ON CONFLICT (video_id, provider, external_id) DO NOTHING",
+        rows.append((
             str(uuid.uuid4()), uid(vid), f["youtube_id"], dumps(mapped), LINK_CONFIDENCE.get(method, 0.6),
-            user_edit is None, to_ts(db, now()),
-        )  # fmt: skip
+            str(vid) not in user_edited, stamp,
+        ))  # fmt: skip
+    await _many(
+        db,
+        "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id, mapped, confidence,"
+        " is_accepted, fetched_at) VALUES ($1,$2,'youtube',$3,$4,$5,$6,$7)"
+        " ON CONFLICT (video_id, provider, external_id) DO NOTHING",
+        rows,
+    )
 
 
 # --------------------------------------------------------------------------- series
@@ -663,21 +715,27 @@ async def _tags_styles_plex(
 ) -> None:
     stamp = to_ts(db, now())
     if _has(cache, "series_tags"):
-        for t in cache.execute("SELECT * FROM series_tags"):
-            if t["series_id"] in seasons:
-                await db.execute(
-                    "INSERT INTO season_tags (season_id, tag, score, evidence) VALUES ($1,$2,$3,$4)"
-                    " ON CONFLICT (season_id, tag) DO NOTHING",
-                    uid(seasons[t["series_id"]][0]), t["tag"], t["score"], dumps({"why": t["evidence"] or ""}),
-                )  # fmt: skip
+        await _many(
+            db,
+            "INSERT INTO season_tags (season_id, tag, score, evidence) VALUES ($1,$2,$3,$4)"
+            " ON CONFLICT (season_id, tag) DO NOTHING",
+            [
+                (uid(seasons[t["series_id"]][0]), t["tag"], t["score"], dumps({"why": t["evidence"] or ""}))
+                for t in cache.execute("SELECT * FROM series_tags")
+                if t["series_id"] in seasons
+            ],
+        )  # fmt: skip
     if _has(cache, "video_tags"):
-        for t in cache.execute("SELECT * FROM video_tags"):
-            if t["path"] in match:
-                await db.execute(
-                    "INSERT INTO video_topic_tags (video_id, tag, score) VALUES ($1,$2,$3)"
-                    " ON CONFLICT (video_id, tag) DO NOTHING",
-                    uid(match[t["path"]][0]), t["tag"], t["score"],
-                )  # fmt: skip
+        await _many(
+            db,
+            "INSERT INTO video_topic_tags (video_id, tag, score) VALUES ($1,$2,$3)"
+            " ON CONFLICT (video_id, tag) DO NOTHING",
+            [
+                (uid(match[t["path"]][0]), t["tag"], t["score"])
+                for t in cache.execute("SELECT * FROM video_tags")
+                if t["path"] in match
+            ],
+        )
     ov = {}
     if _has(cache, "style_overrides"):
         ov = {
@@ -731,35 +789,51 @@ async def _write_job(
     output_hash: str | None,
     error: str | None = None,
 ) -> None:
-    prev = await db.fetchrow(
-        "SELECT input_hash, stage_version FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2"
-        " AND stage = $3 AND state = 'done' AND outcome = 'imported' ORDER BY id DESC LIMIT 1",
-        kind, uid(subject_id), stage,
-    )  # fmt: skip
-    if (
-        prev is not None
-        and prev["input_hash"] == input_hash
-        and prev["stage_version"] == version
-        and not error
-    ):
+    """Buffer one synthetic ``processing_jobs`` row (written by :func:`_flush_jobs`); one the
+    database already holds as imported with the same input and version is skipped."""
+    if report._imported is None:
+        report._imported = {
+            (str(r["subject_kind"]), str(r["subject_id"]), str(r["stage"])): (
+                r["input_hash"], r["stage_version"],
+            )
+            for r in await db.fetch(
+                "SELECT subject_kind, subject_id, stage, input_hash, stage_version FROM processing_jobs"
+                " WHERE state = 'done' AND outcome = 'imported' ORDER BY id"
+            )
+        }  # fmt: skip
+    key = (kind, str(subject_id), stage)
+    if not error and report._imported.get(key) == (input_hash, version):
         report.jobs_skipped_existing += 1
         return
     t = to_ts(db, now())
     failed = error is not None
-    await db.execute(
-        "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id, season_id, stage, state,"
-        " attempts, max_attempts, stage_version, input_hash, output_hash, outcome, propagated_at, started_at,"
-        " finished_at, error, error_cause) VALUES ($1,$2,$3,$4,$5,$6,$7,1,3,$8,$9,$10,$11,$12,$12,$12,$13,$14)",
+    report._job_rows.append((
         kind, uid(subject_id), uid(subject_id) if kind == "video" else None, uid(library_id),
         uid(subject_id) if kind == "season" else None, stage, "failed" if failed else "done", version,
         input_hash, output_hash, None if failed else "imported", t,
         None if not failed else json.dumps({"kind": "import", "message": error, "retryable": True}),
         None if not failed else classify("import", error or ""),
-    )  # fmt: skip
+    ))  # fmt: skip
+    if not failed:
+        report._imported[key] = (input_hash, version)
     if failed:
         report.jobs_failed += 1
     else:
         report.jobs_imported += 1
+
+
+async def _flush_jobs(db: Any, report: ImportReport) -> None:
+    """Write the buffered synthetic rows. Called before any stage fingerprint that reads
+    earlier jobs (a video's link reads its library's youtube_sync, detect reads every
+    video stage, the season stages read detect), so the hashes match the live stages'."""
+    rows, report._job_rows = report._job_rows, []
+    await _many(
+        db,
+        "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id, season_id, stage, state,"
+        " attempts, max_attempts, stage_version, input_hash, output_hash, outcome, propagated_at, started_at,"
+        " finished_at, error, error_cause) VALUES ($1,$2,$3,$4,$5,$6,$7,1,3,$8,$9,$10,$11,$12,$12,$12,$13,$14)",
+        rows,
+    )  # fmt: skip
 
 
 async def _jobs(
@@ -816,6 +890,7 @@ async def _jobs(
                 )
                 ver = int(j["version"]) if j["version"] else STYLE_VERSION
             await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage=stage, version=ver, input_hash=ih, output_hash=oh)  # fmt: skip
+        await _flush_jobs(db, report)  # the next stage's fingerprint may read this one
     # 2. youtube_sync + link per linked video
     for lib_id, _ in libs:
         chans = await db.fetchval(
@@ -825,6 +900,7 @@ async def _jobs(
             snap = await yt_stage._snapshot(db, lib_id)
             await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="youtube_sync",
                              version=1, input_hash=None, output_hash=snap.digest())  # fmt: skip
+    await _flush_jobs(db, report)  # link's fingerprint reads its library's youtube_sync
     for path, (vid, lib) in sorted(match.items()):
         f = files[path]
         if not f["youtube_id"]:
@@ -833,6 +909,7 @@ async def _jobs(
         ih = await link_stage.input_fingerprint(db, Subject("video", vid))
         await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="link", version=1,
                          input_hash=ih, output_hash=canonical_hash({"youtube_id": f["youtube_id"], "method": method}))  # fmt: skip
+    await _flush_jobs(db, report)  # detect's fingerprint reads every video stage
     # 3. detect (library), then the season stages that depend on it
     for lib_id, _ in libs:
         rows = await db.fetch(
@@ -843,6 +920,7 @@ async def _jobs(
             ih = await detect_stage.input_fingerprint(db, Subject("library", lib_id))
             await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="detect",
                              version=DETECTOR_VERSION, input_hash=ih, output_hash=detect_hashes[lib_id])  # fmt: skip
+    await _flush_jobs(db, report)
     for sid, lib in seasons.values():
         tags = await db.fetch("SELECT tag, score FROM season_tags WHERE season_id = $1", uid(sid))
         if tags:
@@ -857,6 +935,7 @@ async def _jobs(
             await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="rate_style",
                              version=int(st["style_version"] or STYLE_VERSION), input_hash=ih,
                              output_hash=canonical_hash({"style": st["style"], "tier": int(st["tier"])}))  # fmt: skip
+    await _flush_jobs(db, report)
 
 
 # --------------------------------------------------------------------------- rules and thumbnails
