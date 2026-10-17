@@ -15,6 +15,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
+from ...schedule.channel_planner import PlannerConfig
 from ..base import BlockKind, ChannelDef, ContentItem, PlanItem
 
 __all__ = ["SchedulePlanner", "parse_hhmm", "slot_days"]
@@ -70,6 +71,12 @@ class SchedulePlanner:
         self._rng = random.Random(seed)
         self._slots: list[dict[str, Any]] = list(channel.mode_config.get("slots", []))
         self._slot_content = slot_content
+        # how far an item may run past its slot: the planner's rule, written into the
+        # channel (an older channel without it: the planner's default)
+        tol = channel.mode_config.get("overrun_tolerance_minutes")
+        if not isinstance(tol, int | float) or tol < 0:
+            tol = PlannerConfig().overrun_tolerance_minutes
+        self._tolerance_ms = int(tol * 60_000)
         cursor = cursor or {}
         # Round-robin cursor so a top-up doesn't restart a slot. Keyed by the
         # slot's lane when it has one: a lane airing in several slots (days)
@@ -144,12 +151,19 @@ class SchedulePlanner:
             used = sum(p.duration_ms for p in emitted)
             if used < window_ms:
                 out.append(self._pad_ms(window_ms - used))
-            t = window_end
+            # items play back to back: an episode that ran past the slot (by the
+            # overrun tolerance) delays the next slot's start, which absorbs it, so
+            # the grid never drifts from the clock
+            t = max(window_end, t + timedelta(milliseconds=used))
         return out
 
     def _fill_window(
         self, slot_idx: int, pool: list[ContentItem], window_ms: int
     ) -> list[PlanItem]:
+        """The slot's queue, in order, for as long as each item fits what is left of
+        the window (an item may run past the end by the planner's overrun tolerance).
+        An item longer than the whole window can never air in this slot and is passed
+        over; one that would fit an empty window waits for the next airing."""
         pool = [c for c in pool if c.duration_ms > 0]
         if not pool:
             return []
@@ -157,15 +171,22 @@ class SchedulePlanner:
         acc = 0
         key = self._queue_key(slot_idx)
         rr = self._rr.get(key, 0) % len(pool)
-        guard = 0
-        while acc < window_ms and guard < 100_000:
-            guard += 1
+        room = window_ms + self._tolerance_ms
+        passed = 0  # items in a row too long for the slot: all of them means none fits
+        while acc < window_ms and passed < len(pool):
             c = pool[rr % len(pool)]
+            if c.duration_ms > room:
+                rr += 1
+                passed += 1
+                continue
+            if acc + c.duration_ms > room:
+                break  # its turn comes at the next airing; the rest is padded
             items.append(
                 PlanItem(video_id=c.video_id, duration_ms=c.duration_ms, snapshot=c.to_snapshot())
             )
             acc += c.duration_ms
             rr += 1
+            passed = 0
         self._rr[key] = rr
         return items
 

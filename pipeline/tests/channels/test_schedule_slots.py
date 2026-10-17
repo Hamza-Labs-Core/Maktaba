@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from maktaba_pipeline.channels.base import BlockKind, ChannelMode
+from maktaba_pipeline.channels.base import BlockKind, ChannelMode, ContentItem
 from maktaba_pipeline.channels.planner.schedule import (
     SchedulePlanner,
     parse_hhmm,
@@ -135,3 +135,61 @@ def test_file_name_fallback_title_drops_the_extension() -> None:
     assert _bare("شرح عمدة الفقه.mp4") == "شرح عمدة الفقه"
     assert _bare("Vol. 2 of 3") == "Vol. 2 of 3"
     assert _bare("no extension") == "no extension"
+
+
+def test_an_item_longer_than_its_slot_never_runs_into_the_next() -> None:
+    """Al-Baqara (4 h) in a 2 h dawn slot is passed over; nothing airs past the slot
+    beyond the planner's overrun tolerance; a surah that only misses the remainder
+    waits for the next airing, in order."""
+    cfg = {"slots": [{"start": "05:00", "end": "07:00", "source": _lane("q")}],
+           "overrun_tolerance_minutes": 5}  # fmt: skip
+    ch = mk_channel(ChannelMode.SCHEDULE, mode_config=cfg)
+    from uuid import uuid4
+
+    def surah(minutes: float) -> ContentItem:
+        return ContentItem(video_id=uuid4(), duration_ms=int(minutes * 60_000))
+
+    baqara, a, b, c, d = surah(263), surah(50), surah(60), surah(40), surah(30)
+    lane = [baqara, a, b, c, d]
+    p = SchedulePlanner(ch, slot_content=[lane])
+    day1 = p.plan([], start_at=dt("2026-06-14T05:00:00"), until=dt("2026-06-14T07:00:00"))
+    progs = [i for i in day1 if i.kind == BlockKind.PROGRAM]
+    assert [i.video_id for i in progs] == [a.video_id, b.video_id]  # 110 min; c (40) waits
+    assert sum(i.duration_ms for i in day1) == 120 * 60_000  # the rest is padding
+    day2 = SchedulePlanner(ch, cursor=p.export_state(), slot_content=[lane]).plan(
+        [], start_at=dt("2026-06-15T05:00:00"), until=dt("2026-06-15T07:00:00"))  # fmt: skip
+    assert [i.video_id for i in day2 if i.kind == BlockKind.PROGRAM][:2] == [c.video_id, d.video_id]
+    assert baqara.video_id not in {i.video_id for i in day1 + day2}
+
+
+def test_an_episode_within_the_overrun_tolerance_still_airs() -> None:
+    cfg = {"slots": [{"start": "20:00", "end": "20:30"}], "overrun_tolerance_minutes": 5}
+    ch = mk_channel(ChannelMode.SCHEDULE, mode_config=cfg)
+    ep = mk_content(3, dur_ms=34 * 60_000)  # 4 min over a 30 min slot
+    items = SchedulePlanner(ch, slot_content=[ep]).plan(
+        ep, start_at=dt("2026-06-14T20:00:00"), until=dt("2026-06-14T20:30:00"))  # fmt: skip
+    assert [i.video_id for i in items if i.kind == BlockKind.PROGRAM] == [ep[0].video_id]
+
+
+def test_overruns_never_drift_the_grid_from_the_clock() -> None:
+    """Every 30 min slot runs 4 min over: the next slot starts late and absorbs it,
+    so the 20:00 slot still starts at 20:00 after a day of overruns."""
+
+    def hhmm(minute: int) -> str:
+        return f"{minute // 60:02d}:{minute % 60:02d}"
+
+    slots = [{"start": hhmm(m), "end": hhmm(m + 30)} for m in range(0, 23 * 60 + 30, 30)]
+    cfg = {"slots": slots, "overrun_tolerance_minutes": 5}
+    ch = mk_channel(ChannelMode.SCHEDULE, mode_config=cfg)
+    eps = mk_content(60, dur_ms=34 * 60_000)
+    start = dt("2026-06-14T00:00:00")
+    items = SchedulePlanner(ch, slot_content=[eps] * 47).plan(
+        [], start_at=start, until=start + timedelta(hours=24))  # fmt: skip
+    t = start
+    starts = []
+    for i in items:
+        if i.kind == BlockKind.PROGRAM:
+            starts.append(t)
+        t += timedelta(milliseconds=i.duration_ms)
+    late = max((s - start).total_seconds() % 1800 for s in starts) / 60
+    assert late <= 5, f"a slot started {late:.0f} min late"

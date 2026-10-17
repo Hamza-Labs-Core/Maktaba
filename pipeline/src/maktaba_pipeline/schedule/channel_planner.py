@@ -2700,6 +2700,8 @@ def maktaba_channel_definition(channel: ChannelSuggestion, plan: PlanResult) -> 
             "pool": channel.filler_pools[0] if channel.filler_pools else None,
         },
         "planner_version": plan.version,
+        # the scheduler lets an episode run this far past its slot, as the grid did
+        "overrun_tolerance_minutes": cfg.overrun_tolerance_minutes,
     }
     if cfg.timezone:
         mode_config["timezone"] = cfg.timezone

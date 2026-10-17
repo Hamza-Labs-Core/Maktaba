@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..log import get_logger
 from . import packer, slate
@@ -51,6 +52,18 @@ TOPUP_ADVISORY_LOCK_KEY = 0x6D6B_7470  # "mktp"
 
 # Per-channel seed so a regen is deterministic for a given channel (the
 # shuffle bag still varies channel-to-channel) without a wall-clock seed.
+def channel_tz(mode_config: dict[str, Any]) -> tzinfo:
+    """The channel's ``timezone`` (IANA), else the server's local zone."""
+    name = mode_config.get("timezone")
+    if isinstance(name, str) and name:
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            _log.warning("channel.unknown_timezone", timezone=name)
+    local = datetime.now().astimezone().tzinfo
+    return local if local is not None else UTC
+
+
 def _seed_for(channel_id: UUID) -> int:
     return int(channel_id.int & 0x7FFFFFFF)
 
@@ -97,7 +110,10 @@ async def run_schedule(
     content = await repo.resolve_content(channel)
     filler = await repo.load_filler(channel)
 
-    items = planner.plan(content, start_at=anchor, until=until)
+    # slot times are wall-clock times in the channel's timezone (server local when
+    # the plan names none): the planner reads hours and weekdays off these datetimes
+    tz = channel_tz(channel.mode_config)
+    items = planner.plan(content, start_at=anchor.astimezone(tz), until=until.astimezone(tz))
     base_seq = await repo.max_seq_before(channel_id, anchor) + 1
     blocks = packer.pack(
         items,
