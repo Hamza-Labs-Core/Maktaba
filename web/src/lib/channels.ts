@@ -198,7 +198,10 @@ function serverTime(t?: string): string {
 }
 
 async function guideFrom(
-  req: Promise<{ server_time?: string; channels?: Array<{ channel: WireHeader; blocks?: WireBlock[] }> }>
+  req: Promise<{
+    server_time?: string;
+    channels?: Array<{ channel: WireHeader; blocks?: WireBlock[] }>;
+  }>
 ): Promise<GuideResponse> {
   const r = await req;
   return {
@@ -254,9 +257,11 @@ export const channelsApi = {
     // The per-channel guide answers one `{channel, blocks}`, not a list.
     return guideFrom(
       api
-        .get<{ server_time?: string; channel: WireHeader; blocks?: WireBlock[] }>(
-          `/api/channels/${encodeURIComponent(id)}/guide?${q.toString()}`
-        )
+        .get<{
+          server_time?: string;
+          channel: WireHeader;
+          blocks?: WireBlock[];
+        }>(`/api/channels/${encodeURIComponent(id)}/guide?${q.toString()}`)
         .then((r) => ({ server_time: r.server_time, channels: [r] }))
     );
   },
