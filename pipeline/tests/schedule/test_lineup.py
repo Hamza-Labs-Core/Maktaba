@@ -176,3 +176,29 @@ def test_a_show_goes_to_its_topics_channel_before_an_audience_one() -> None:
     on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
     assert "100 سؤال في التاريخ" in on["history"]
     assert "100 سؤال في التاريخ" not in on["kids"]
+
+
+def test_talk_shows_give_up_a_special_runs_episodes_a_topic_channel_keeps_its_show() -> None:
+    from dataclasses import replace
+
+    talk = season("bh", "بلا حدود", genre="current_affairs", presenter="أحمد منصور", n=40,
+                  minutes=50, tags={"format:program": 0.9})  # fmt: skip
+    eps = [replace(e, tags={"topic:palestine": 0.9}) if i % 2 else e
+           for i, e in enumerate(talk.episodes)]  # fmt: skip
+    talk = replace(talk, episodes=tuple(eps))
+    themes = (
+        ThemeSpec("palestine", "Palestine", "فلسطين", 125, ("palestine",)),
+        ThemeSpec("news", "News", "الأخبار", 124, ("current_affairs",)),
+        ThemeSpec("talk", "Talk", "البرامج الحوارية", 126, formats=("program",)),
+    )
+    # one show: the same-time rule would leave a second channel no time for it
+    p = plan([talk], themes=themes, mix_channel=False, presenter_channels=False,
+             show_same_time=True)  # fmt: skip
+
+    def eps_on(key: str) -> int:
+        c = next(c for c in p.channels if c.key == key)
+        return sum(len(u.episodes) for k in c.lanes for u in p.lanes[k].units
+                   if u.name == "بلا حدود")  # fmt: skip
+
+    assert eps_on("talk") == 20  # without the 20 the Palestine channel runs specially
+    assert eps_on("news") == 40  # its topic's channel keeps the show whole

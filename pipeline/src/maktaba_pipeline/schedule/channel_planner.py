@@ -1359,9 +1359,12 @@ def _show_grid(
     prefix = f"{ck}.ramadan" if ramadan else ck
 
     def clash(s: Show, at: int) -> bool:
+        """It holds an overlapping time of day on another channel (across midnight too)."""
         a = at % DAY_MINUTES
         return busy is not None and any(
-            x < a + s.slot_minutes and a < y for x, y in busy.get(s.key, ())
+            x + k < a + s.slot_minutes and a < y + k
+            for x, y in busy.get(s.key, ())
+            for k in (-DAY_MINUTES, 0, DAY_MINUTES)
         )
 
     def pick(cands: Sequence[Show], d: Daypart, prev: str | None, room: int,
@@ -2003,9 +2006,10 @@ def suggest_channels(
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
-        if dropped:  # episodes another channel airs as a special run ("بلا حدود · فلسطين")
+        if dropped:  # episodes another channel airs as a special run ("بلا حدود · فلسطين"),
+            # out of the shows this channel took by audience or format only
             reg = [replace(u, episodes=tuple(e for e in u.episodes if e.path not in dropped))
-                   for u in reg]  # fmt: skip
+                   if u.series_id in drop_in else u for u in reg]  # fmt: skip
             reg = [u for u in reg if u.episodes]
         label = name_ar or name
         shows = _shows(reg, tags_of, cfg)
@@ -2129,6 +2133,7 @@ def suggest_channels(
     # ---- single episodes about a theme, from the shows it does not take whole
     synthetic: set[str] = set()
     dropped: set[str] = set()  # while a channel is built: episodes others run specially
+    drop_in: set[str] = set()  # … taken out of these of its seasons (audience/format ones)
     held: dict[str, list[tuple[int, int]]] = {}  # show → times it holds on channels so far
     held_r: dict[str, list[tuple[int, int]]] = {}  # the same on the Ramadan grids
 
@@ -2410,11 +2415,16 @@ def suggest_channels(
                          for e in units[i].episodes} for c in chosen}  # fmt: skip
     for c in chosen:
         dropped.clear()
+        drop_in.clear()
         for other, paths in runs_of.items():
             if other != c.label:
                 dropped.update(paths)
+        # a topic channel keeps its shows whole; one that took a show by its audience or
+        # format (Kids, Talk Shows, the mix, a presenter) gives up the special-run episodes
+        drop_in.update(i for i in owned[c.label] if i not in synthetic and claim(c, i) >= 2)
         placed |= c.build(owned[c.label])
     dropped.clear()
+    drop_in.clear()
 
     for i in sorted(set(units) - placed - synthetic):
         u = units[i]
