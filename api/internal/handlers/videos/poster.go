@@ -74,29 +74,40 @@ func (h *Handler) Poster(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, herr)
 		return
 	}
+	// The video's own poster comes from the library, not from the request.
+	if servePoster(w, r, posterPath.String) {
+		return
+	}
+	// Cache candidates are built from the id and the hash: cleaned, and kept
+	// inside the cache folder before they reach the file system.
 	root := thumbnailRoot()
-	for _, p := range posterCandidates(root, id, contentHash, posterPath.String) {
-		// The video's own poster_path is the library's; every other candidate
-		// is built from the id and hash and must stay inside the cache folder.
-		if p != posterPath.String && !withinBase(root, p) {
+	if root == "" {
+		httperror.Write(w, r, httperror.NotFound("no poster for video "+id))
+		return
+	}
+	base := filepath.Clean(root) + string(filepath.Separator)
+	for _, c := range posterCandidates(root, id, contentHash, "") {
+		p := filepath.Clean(c)
+		if !strings.HasPrefix(p, base) {
 			continue
 		}
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
-			w.Header().Set("Cache-Control", "private, max-age=3600")
-			http.ServeFile(w, r, p)
+		if servePoster(w, r, p) {
 			return
 		}
 	}
 	httperror.Write(w, r, httperror.NotFound("no poster for video "+id))
 }
 
-// withinBase reports whether p, cleaned, lies inside base. The id is a parsed
-// UUID and content_hash is 64 hex per the schema, so this never rejects a real
-// candidate; it is the explicit barrier at the file-system sink.
-func withinBase(base, p string) bool {
-	if base == "" {
+// servePoster serves p when it is a non-empty regular file.
+func servePoster(w http.ResponseWriter, r *http.Request, p string) bool {
+	if p == "" {
 		return false
 	}
-	b := filepath.Clean(base) + string(filepath.Separator)
-	return strings.HasPrefix(filepath.Clean(p), b)
+	st, err := os.Stat(p)
+	if err != nil || !st.Mode().IsRegular() || st.Size() == 0 {
+		return false
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	http.ServeFile(w, r, p)
+	return true
 }

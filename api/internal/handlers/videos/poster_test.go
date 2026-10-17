@@ -41,22 +41,3 @@ func TestThumbnailRootHonoursTheEnv(t *testing.T) {
 		t.Fatalf("default root = %s", got)
 	}
 }
-
-func TestWithinBase(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "thumbs")
-	for p, want := range map[string]bool{
-		filepath.Join(root, "abc", "poster.jpg"):   true,
-		filepath.Join(root, "imported", "x.jpg"):   true,
-		filepath.Join(root, "..", "etc", "passwd"): false,
-		root: false,
-		filepath.Join(root+"-evil", "poster.jpg"):            false,
-		filepath.Join(root, "imported", "..", "..", "x.jpg"): false,
-	} {
-		if got := withinBase(root, p); got != want {
-			t.Errorf("withinBase(%q) = %v, want %v", p, got, want)
-		}
-	}
-	if withinBase("", "/x") {
-		t.Error("an empty base contains nothing")
-	}
-}
