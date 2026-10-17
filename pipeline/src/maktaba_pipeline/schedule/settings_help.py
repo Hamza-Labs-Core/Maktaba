@@ -240,9 +240,13 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
-    "dz_filler_max_items": Help(DZ, "Filler list size (most clips)", "A dizqueTV filler list "
-                                "holds the first this many clips of its pool (own promos, then "
-                                "on-topic clips). dizqueTV takes at most 50 MB per request."),
+    "dz_filler_max_items": Help(
+        DZ,
+        "Filler list size (most clips)",
+        "A dizqueTV filler list "
+        "holds the first this many clips of its pool (own promos, then "
+        "on-topic clips). dizqueTV takes at most 50 MB per request.",
+    ),
 }
 
 #: the smallest value each number may take: below it a rule divides by zero, takes the
