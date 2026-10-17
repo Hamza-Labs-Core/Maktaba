@@ -534,6 +534,10 @@ class PlannerConfig:
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
+    #: a dizqueTV filler list holds at most this many clips (the first of the pool, which
+    #: is in priority order): a pool can hold 75,000 clips, more than dizqueTV accepts in
+    #: one request (50 MB) and far more than a filler list needs
+    dz_filler_max_items: int = 2000
 
 
 # --------------------------------------------------------------------------- outputs

@@ -31,6 +31,8 @@ def cache_dir(conn: sqlite3.Connection) -> Path:
 
 
 def _copy(src: str, dst: Path) -> str | None:
+    """Copy one image; returns why it failed, or None. A failure of one copy is recorded
+    for that video and never stops the others."""
     tmp = dst.with_suffix(".part.jpg")
     try:
         r = subprocess.run(
@@ -41,10 +43,17 @@ def _copy(src: str, dst: Path) -> str | None:
     except subprocess.TimeoutExpired:  # a stalled share: recorded as failed, retried next run
         tmp.unlink(missing_ok=True)
         return "read timed out (60 s)"
-    if r.returncode or not tmp.exists() or tmp.stat().st_size == 0:
+    try:
+        size = tmp.stat().st_size
+    except OSError:
+        size = 0
+    if r.returncode or size == 0:
         tmp.unlink(missing_ok=True)
         return (r.stderr.decode(errors="replace").strip().splitlines() or ["no image"])[-1][:200]
-    tmp.replace(dst)  # never a half-written copy under the real name
+    try:
+        tmp.replace(dst)  # never a half-written copy under the real name
+    except OSError as e:
+        return f"could not store the copy: {e}"[:200]
     return None
 
 
@@ -77,14 +86,25 @@ def ensure(
     if not todo:
         return out
     print(f"  {label}: {len(todo)} thumbnails to copy ({adopted} already cached)", flush=True)
+    # one copy per image: two videos can share an image (an .mkv beside its .mp4), and two
+    # copies of one image into one file race (one renames it, the other finds it gone)
+    by_src: dict[str, list[tuple[str, int, float]]] = {}
+    for p, src, sz, mt in todo:
+        by_src.setdefault(src, []).append((p, sz, mt))
+    done = 0
     with ThreadPoolExecutor(max(1, workers)) as pool:
-        futs = {pool.submit(_copy, src, out / name(src)): (p, sz, mt)
-                for p, src, sz, mt in todo}  # fmt: skip
-        for n, fut in enumerate(as_completed(futs), 1):
-            p, sz, mt = futs[fut]
-            jobs.record(conn, p, STAGE, VERSION, sz, mt, fut.result())
-            if n % 100 == 0 or n == len(todo):
+        futs = {pool.submit(_copy, src, out / name(src)): src for src in by_src}
+        for fut in as_completed(futs):
+            try:
+                error = fut.result()
+            except Exception as e:  # noqa: BLE001 — this image only; the others go on
+                error = f"{type(e).__name__}: {e}"[:200]
+            before = done
+            for p, sz, mt in by_src[futs[fut]]:
+                jobs.record(conn, p, STAGE, VERSION, sz, mt, error)
+                done += 1
+            if done // 100 > before // 100 or done == len(todo):
                 conn.commit()
-                print(f"  [{n}/{len(todo)}] {label}: thumbnails", flush=True)
+                print(f"  [{done}/{len(todo)}] {label}: thumbnails", flush=True)
     conn.commit()
     return out
