@@ -23,6 +23,7 @@ import { useAuth } from "../lib/auth";
 import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
+import { RulesSection } from "./Settings/RulesSection";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -61,6 +62,7 @@ export function Settings() {
         <Link to="appearance">{t("settings.section.appearance")}</Link>
         <Link to="privacy">{t("settings.section.privacy")}</Link>
         <Link to="models">{t("settings.section.models")}</Link>
+        <Link to="rules">{t("settings.section.rules")}</Link>
         <Link to="about">{t("settings.section.about")}</Link>
       </nav>
       <Routes>
@@ -69,6 +71,7 @@ export function Settings() {
         <Route path="appearance" element={<AppearanceTab />} />
         <Route path="privacy" element={<PrivacyTab />} />
         <Route path="models" element={<ModelsSection />} />
+        <Route path="rules" element={<RulesSection />} />
         <Route path="about" element={<AboutTab />} />
       </Routes>
     </section>
