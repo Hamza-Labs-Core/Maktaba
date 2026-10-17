@@ -49,6 +49,11 @@ func TestExecSQLiteStatement_AddColumnIfNotExists(t *testing.T) {
 // `ADD COLUMN IF NOT EXISTS` ones and slot 0004, must apply, and a second run
 // must be a no-op.
 func TestSQLiteMigrate_AppliesEveryTwinToAFreshDatabase(t *testing.T) {
+	if testing.Short() {
+		// applies all ~90 twins to a real file twice: seconds, not a unit test.
+		// The integration tier (go test without -short) runs it.
+		t.Skip("applies every migration to a real SQLite file; integration tier")
+	}
 	dir := repoMigrationsDir(t)
 	path := filepath.Join(t.TempDir(), "maktaba.db")
 	dsn := "sqlite://" + filepath.ToSlash(path)

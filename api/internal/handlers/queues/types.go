@@ -122,8 +122,8 @@ const (
 	// external service (Plex, dizqueTV) did not answer ("Plex not
 	// answering, retrying"); QueueSummary.RetryingService names it.
 	WaitServiceRetrying WaitingReason = "service_retrying"
-	WaitUpstream       WaitingReason = "upstream"
-	WaitIdle           WaitingReason = "idle"
+	WaitUpstream        WaitingReason = "upstream"
+	WaitIdle            WaitingReason = "idle"
 )
 
 // Counts are the per-stage job counters.

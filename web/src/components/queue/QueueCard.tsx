@@ -9,7 +9,11 @@ import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
 
 /** Display name of an external service named by the API ("plex" -> "Plex"). */
-const SERVICE_NAMES: Record<string, string> = { plex: "Plex", dizquetv: "dizqueTV", youtube: "YouTube" };
+const SERVICE_NAMES: Record<string, string> = {
+  plex: "Plex",
+  dizquetv: "dizqueTV",
+  youtube: "YouTube",
+};
 
 export function serviceName(service: string): string {
   return SERVICE_NAMES[service] ?? service;
