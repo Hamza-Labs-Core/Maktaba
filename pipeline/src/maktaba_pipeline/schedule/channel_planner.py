@@ -1152,13 +1152,19 @@ class _Queue:
     shows: list[Show]
     airings: int = 0  # occurrences per week
     extra: int = 0  # occurrences beyond the shows' cadence (a channel short of shows)
+    # (show count, total minutes): shows are only ever appended, so the count says
+    # whether the cached total is current. The grid asks for it a few hundred
+    # thousand times per plan.
+    _mins: tuple[int, float] = field(default=(-1, 0.0), repr=False, compare=False)
 
     @property
     def family(self) -> str:
         return "strip" if self.pattern in STRIP_FAMILY else "weekly"
 
     def minutes(self) -> float:
-        return sum(_show_minutes(s) for s in self.shows)
+        if self._mins[0] != len(self.shows):
+            self._mins = (len(self.shows), sum(_show_minutes(s) for s in self.shows))
+        return self._mins[1]
 
     def weeks_left(self) -> float:
         return self.minutes() / max(1, self.airings * self.slot_minutes)

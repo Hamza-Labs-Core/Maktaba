@@ -6,7 +6,7 @@ import json
 import sys
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -20,7 +20,7 @@ from scripts.mediaintel.group_clips import (  # noqa: E402
     name_words,
     plan_groups,
 )
-from scripts.mediaintel.scan_plex import PlexError  # noqa: E402
+from scripts.mediaintel.scan_plex import PlexError, PlexServer  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -143,6 +143,11 @@ class FakePlex:
         raise AssertionError(f"unexpected {method} {path}")
 
 
+def _srv(fake: FakePlex) -> PlexServer:
+    """FakePlex quacks like the PlexServer export-plex is typed for."""
+    return cast(PlexServer, fake)
+
+
 def _db(tmp_path: Path) -> Any:
     conn = db.connect(tmp_path / "mi.db")
     lib, folder = "قناة", "Y:/قناة"
@@ -189,12 +194,12 @@ def test_export_writes_topic_and_clip_collections_with_the_label(tmp_path: Path)
     plex.add("قناة - برنامج", ["1", "2", "4"])
     # a collection this job made for a season detection no longer has: all inside the new ones
     old = plex.add("قناة - مجزرة صبرا وشاتيلا", ["1", "2", "3"])
-    export_plex.export(conn, plex, apply=False, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=False, library_filter=None, include_clips=False,
                        replace_existing=True, remove_superseded=False)  # fmt: skip
     conn.execute("INSERT INTO plex_collections (series_id, section, rating_key, title) "
                  "VALUES ('GONE', '5', ?, 'قناة - مجزرة صبرا وشاتيلا')", (old,))  # fmt: skip
     conn.commit()
-    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=True, library_filter=None, include_clips=False,
                        replace_existing=True, remove_superseded=False)  # fmt: skip
     by_title = {c["title"]: c for c in plex.cols.values()}
     # v4 sits in a topic collection, which is not placement: it stays in the season's one
@@ -253,12 +258,12 @@ def test_a_blocked_replacement_never_retires_the_old_collection(tmp_path: Path) 
     plex = FakePlex()
     plex.add("قناة - برنامج", ["1", "2"])  # the user's own: without --replace-existing, kept
     old = plex.add("قناة - مجزرة صبرا وشاتيلا", ["1", "2", "3"])
-    export_plex.export(conn, plex, apply=False, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=False, library_filter=None, include_clips=False,
                        replace_existing=False, remove_superseded=False)  # fmt: skip
     conn.execute("INSERT INTO plex_collections (series_id, section, rating_key, title) "
                  "VALUES ('GONE', '5', ?, 'قناة - مجزرة صبرا وشاتيلا')", (old,))  # fmt: skip
     conn.commit()
-    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=True, library_filter=None, include_clips=False,
                        replace_existing=False, remove_superseded=False)  # fmt: skip
     # the season's collection was not written, so the old one is still the only home of v3
     assert old not in plex.deleted
@@ -296,12 +301,12 @@ def test_an_item_plex_refuses_stays_out_and_the_run_goes_on(
     plex = FakePlex()
     plex.refuse = {"3"}  # v3 is in the season only
     old = plex.add("قناة - مجزرة صبرا وشاتيلا", ["1", "2", "3"])
-    export_plex.export(conn, plex, apply=False, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=False, library_filter=None, include_clips=False,
                        replace_existing=True, remove_superseded=False)  # fmt: skip
     conn.execute("INSERT INTO plex_collections (series_id, section, rating_key, title) "
                  "VALUES ('GONE', '5', ?, 'قناة - مجزرة صبرا وشاتيلا')", (old,))  # fmt: skip
     conn.commit()
-    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=True, library_filter=None, include_clips=False,
                        replace_existing=True, remove_superseded=False)  # fmt: skip
     by_title = {c["title"]: c for c in plex.cols.values()}
     assert by_title["قناة - برنامج"]["kids"] == ["1", "2"]  # written without the refused one
@@ -337,7 +342,7 @@ def test_a_library_split_over_two_plex_sections_writes_each_collection_in_its_ow
         )
     conn.commit()
     plex = FakePlex()
-    export_plex.export(conn, plex, apply=True, library_filter=None, include_clips=False,
+    export_plex.export(conn, _srv(plex), apply=True, library_filter=None, include_clips=False,
                        replace_existing=True, remove_superseded=False)  # fmt: skip
     by_title = {c["title"]: c for c in plex.cols.values()}
     assert by_title["قناة - مسابقة"]["section"] == "6"
@@ -407,7 +412,7 @@ def test_only_items_out_of_place_are_moved(shuffled: bool) -> None:
     plex = FakePlex()
     plex.shuffle_adds = shuffled
     keys = [str(i) for i in range(1, 41)]
-    new, refused = export_plex._recreate(plex, "m", "5", "x - y", keys, None)
+    new, refused = export_plex._recreate(_srv(plex), "m", "5", "x - y", keys, None)
     assert plex.cols[new]["kids"] == keys and not refused
     if not shuffled:
         assert plex.moves == 0  # added in order: nothing to move
