@@ -452,9 +452,12 @@ class PlannerConfig:
     presenter_min_hours: float = 30.0
     presenter_min_genres: int = 3
     presenter_first_number: int = 150
-    #: a show airs on at most this many channels: the most specific ones that have it
-    #: (fewest hours: Fasting before Ramadan, Palestine before News), like real channels
-    show_max_channels: int = 1
+    #: a show airs on at most this many channels (0: no limit), the closest first: its
+    #: topic's channel before an audience or format one, then the fewest hours. Wherever
+    #: it airs, never at the same time on two channels.
+    show_max_channels: int = 0
+    #: False: a show never holds the same time of day on two channels
+    show_same_time: bool = False
     #: presenter channels only for the largest libraries: at most this many
     presenter_max_channels: int = 3
     # what counts as a programme vs filler
@@ -1292,8 +1295,13 @@ def _show_grid(
     cfg: PlannerConfig,
     *,
     ramadan: bool = False,
+    busy: dict[str, list[tuple[int, int]]] | None = None,
 ) -> tuple[list[Slot], list[Lane], list[str]]:
     """A TV week: every slot is owned by a show and keeps a queue.
+
+    ``busy``: the times of day (minutes) each show already holds on the channels
+    planned before this one; a show never takes an overlapping slot here (one show on
+    two channels airs at different times). Filled in as this channel's slots are taken.
 
     Dayparts are filled strongest first (Ramadan after iftar, then prime time and
     the evening, then the rest). A ``strip`` daypart gives each block one strip
@@ -1350,14 +1358,22 @@ def _show_grid(
     weekly_c = [s for s in shows if s.cadence == "weekly"]
     prefix = f"{ck}.ramadan" if ramadan else ck
 
+    def clash(s: Show, at: int) -> bool:
+        a = at % DAY_MINUTES
+        return busy is not None and any(
+            x < a + s.slot_minutes and a < y for x, y in busy.get(s.key, ())
+        )
+
     def pick(cands: Sequence[Show], d: Daypart, prev: str | None, room: int,
-             *, ramadan_first: bool = False) -> Show | None:  # fmt: skip
+             *, ramadan_first: bool = False, at: int = -1) -> Show | None:  # fmt: skip
         topics = cfg.mix_daypart_topics.get(d.key, ())
         block = d.role == "block" and bool(d.topics)
         best: tuple[Any, ...] | None = None
         out: Show | None = None
         for i, s in enumerate(cands):
             if s.key in used or s.slot_minutes > room:
+                continue
+            if at >= 0 and clash(s, at):  # it holds this time on another channel
                 continue
             if d.exclude and _excluded(s.tags, d.exclude, cfg):
                 continue
@@ -1378,7 +1394,7 @@ def _show_grid(
         return out
 
     def extra_pick(family: str, room: int, prev_q: str | None, day_qs: set[str],
-                   prev: str | None) -> _Queue | None:  # fmt: skip
+                   prev: str | None, at: int = -1) -> _Queue | None:  # fmt: skip
         if not cfg.extra_airings:
             return None
 
@@ -1386,7 +1402,8 @@ def _show_grid(
             return q.minutes() / max(1, (q.airings + 1) * q.slot_minutes)
 
         fits = [q for q in queues.values() if q.slot_minutes <= room and q.key != prev_q
-                and q.key not in day_qs]  # fmt: skip
+                and q.key not in day_qs
+                and not (at >= 0 and clash(q.shows[0], at))]  # fmt: skip
         # prefer queues that keep 8+ weeks of content; if none does, the deepest one
         # (a channel of repeats beats a channel of clips)
         cands = [q for q in fits if weeks_after(q) >= cfg.extra_min_weeks_left] or fits
@@ -1437,14 +1454,19 @@ def _show_grid(
                 room = stop - t
                 if pattern in STRIP_FAMILY:
                     s = pick(strip_c if pattern == "strip" else shows, d, prev, room,
-                             ramadan_first=pattern == "strip7")  # fmt: skip
+                             ramadan_first=pattern == "strip7", at=t)  # fmt: skip
                 else:  # a strip show may air weekly; a weekly show never daily
-                    s = pick(weekly_c, d, prev, room) or pick(strip_c, d, prev, room)
+                    s = pick(weekly_c, d, prev, room, at=t) or pick(strip_c, d, prev, room,
+                                                                     at=t)  # fmt: skip
                 q: _Queue | None = None
                 why = ""
                 if s is not None:
                     used.add(s.key)
                     heads.add(s.presenter)
+                    if busy is not None:
+                        busy.setdefault(s.key, []).append(
+                            (t % DAY_MINUTES, t % DAY_MINUTES + s.slot_minutes)
+                        )
                     where = grp[0] if pattern == "weekly" else pattern
                     key = f"{prefix}.{where}.{_fhm(t).replace(':', '')}"
                     q = _Queue(
@@ -1463,9 +1485,13 @@ def _show_grid(
                     )
                 elif pattern == "weekly" or not (strip_c or shows):
                     q = extra_pick(pattern if pattern == "weekly" else "strip", room, prev_q,
-                                   day_qs, prev)  # fmt: skip
+                                   day_qs, prev, at=t)  # fmt: skip
                     if q is not None:
                         q.extra += len(grp)
+                        if busy is not None:
+                            busy.setdefault(q.shows[0].key, []).append(
+                                (t % DAY_MINUTES, t % DAY_MINUTES + q.slot_minutes)
+                            )
                         why = (f"{d.label or d.key}: extra airing of {q.shows[0].name} — the "
                                "channel has fewer shows than slots")  # fmt: skip
                 elif pattern == "strip":  # no strip show left: the weekdays take weekly shows,
@@ -1977,11 +2003,16 @@ def suggest_channels(
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
+        if dropped:  # episodes another channel airs as a special run ("بلا حدود · فلسطين")
+            reg = [replace(u, episodes=tuple(e for e in u.episodes if e.path not in dropped))
+                   for u in reg]  # fmt: skip
+            reg = [u for u in reg if u.episodes]
         label = name_ar or name
         shows = _shows(reg, tags_of, cfg)
         q = quran_lane if cfg.dawn_quran else None
         k = khutbah_lane if (khutbah_lane and (mix or member_ids & khutbah_ids)) else None
-        slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg)
+        slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg,
+                                       busy=None if cfg.show_same_time else held)  # fmt: skip
         r_slots: list[Slot] = []
         r_used: list[Lane] = []
         # the Ramadan grid sees every show, also those ramadan_exclusive keeps off the
@@ -1994,7 +2025,9 @@ def suggest_channels(
         ram = [s for s in r_shows if s.ramadan]
         if cfg.ramadan_grid and ram:
             r_slots, r_used, w2 = _show_grid(key, label, r_shows, cfg.ramadan_dayparts, q, k,
-                                             pool_keys, cfg, ramadan=True)  # fmt: skip
+                                             pool_keys, cfg, ramadan=True,
+                                             busy=None if cfg.show_same_time
+                                             else held_r)  # fmt: skip
             warn += w2
             why.append(
                 f"{len(ram)} Ramadan-tagged show(s) (occasion:ramadan ≥ {cfg.ramadan_min_score}): "
@@ -2095,6 +2128,9 @@ def suggest_channels(
 
     # ---- single episodes about a theme, from the shows it does not take whole
     synthetic: set[str] = set()
+    dropped: set[str] = set()  # while a channel is built: episodes others run specially
+    held: dict[str, list[tuple[int, int]]] = {}  # show → times it holds on channels so far
+    held_r: dict[str, list[tuple[int, int]]] = {}  # the same on the Ramadan grids
 
     def theme_episode_units(t: ThemeSpec, have: set[str]) -> set[str]:
         """One collection per presenter of the episodes whose own title is about the
@@ -2116,15 +2152,32 @@ def suggest_channels(
                     by_src[u.presenter or u.library or u.folder].append((u, e))
         out: set[str] = set()
         label = t.name_ar or t.name
-        for src, pairs in sorted(by_src.items()):
+        # a show with enough such episodes gets its own special run ("بلا حدود · فلسطين");
+        # a presenter's scattered ones are pooled ("أحمد منصور · فلسطين")
+        runs: dict[tuple[str, str], list[tuple[ProgramUnit, EpisodeRef]]] = {}
+        for src, pairs in by_src.items():
+            per_show: dict[str, list[tuple[ProgramUnit, EpisodeRef]]] = defaultdict(list)
+            for u, e in pairs:
+                per_show[u.name].append((u, e))
+            rest: list[tuple[ProgramUnit, EpisodeRef]] = []
+            for show_name, ps in per_show.items():
+                if len(ps) >= cfg.theme_episode_min_count and len(per_show) > 1:
+                    runs[(f"{src}|{show_name}", show_name)] = ps
+                else:
+                    rest.extend(ps)
+            if rest and len(per_show) == 1:
+                runs[(f"{src}|{rest[0][0].name}", rest[0][0].name)] = rest
+            elif rest:
+                runs[(src, src)] = rest
+        for (key, title), pairs in sorted(runs.items()):
             if len(pairs) < cfg.theme_episode_min_count:
                 continue
             pairs.sort(key=lambda p: (p[1].air_date or p[0].first_air, p[0].first_air,
                                       p[0].season, p[1].episode or 0))  # fmt: skip
             first = pairs[0][0]
-            sid = f"{t.key}~{_slug(src)}"
+            sid = f"{t.key}~{_slug(key)}"
             nu = ProgramUnit(
-                series_id=sid, name=f"{src} · {label}", season=1, presenter=first.presenter,
+                series_id=sid, name=f"{title} · {label}", season=1, presenter=first.presenter,
                 folder=first.folder, kind="loose", genre=t.topics[0] if t.topics else first.genre,
                 tier=None, style=None, ramadan=any(u.ramadan for u, _ in pairs),
                 first_air=min(u.first_air for u, _ in pairs), series_key=sid,
@@ -2150,11 +2203,12 @@ def suggest_channels(
                                 "day without a repeat, or the kind's own minimum)"))  # fmt: skip
 
     def offer(kind: str, order: float, label: str, ids: set[str], need: float,
-              build: Callable[[set[str]], set[str]]) -> None:  # fmt: skip
+              build: Callable[[set[str]], set[str]],
+              theme: ThemeSpec | None = None) -> None:  # fmt: skip
         if kind not in kind_rank:
             unplaced.append((label, f"{kind} is not in channel_kind_order"))
             return
-        cands.append(_Cand((kind_rank[kind], order), label, ids, need, build))
+        cands.append(_Cand((kind_rank[kind], order), label, ids, need, build, theme))
 
     def hours_of(ids: Iterable[str]) -> float:
         return sum(units[i].duration_s for i in ids if i in units) / 3600
@@ -2211,7 +2265,7 @@ def suggest_channels(
         if hours < need:
             short(f"theme {t.key}", hours, need)
             continue
-        offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_theme, t))
+        offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_theme, t), t)
 
     # ---- mix channel
     excluded = set(cfg.mix_exclude_topics)
@@ -2295,16 +2349,39 @@ def suggest_channels(
         u = units[i]
         return (u.folder, u.series_key)
 
+    def claim(c: _Cand, i: str) -> int:
+        """How closely a channel matches a show: its genre's theme (0), one of its topics
+        or occasions (1), its audience (2: kids), a format or no theme (3: talk shows,
+        the mix, a presenter)."""
+        t = c.theme
+        if t is None:
+            return 3
+        u, tg = units[i], tags_of.get(i, {})
+        if u.genre in t.topics:
+            return 0
+        if (_score(tg, "topic", t.topics) >= cfg.topic_min_score
+                or _score(tg, "occasion", t.occasions) >= cfg.topic_min_score):  # fmt: skip
+            return 1
+        if _score(tg, "audience", t.audiences) >= cfg.topic_min_score:
+            return 2
+        return 3
+
     def share(chosen: Sequence[_Cand]) -> dict[str, set[str]]:
-        """Each show on its show_max_channels most specific channels (fewest hours)."""
+        """Each show on its show_max_channels closest channels: the channel of its own
+        topic before an audience or format channel, then the most specific (fewest hours)."""
         width = {c.label: hours_of(c.ids) for c in chosen}
-        homes: dict[tuple[str, str], list[_Cand]] = defaultdict(list)
+        homes: dict[tuple[str, str], list[tuple[int, _Cand]]] = defaultdict(list)
         for c in chosen:
-            for show in {show_of(i) for i in c.ids}:
-                homes[show].append(c)
+            best: dict[tuple[str, str], int] = {}
+            for i in c.ids:
+                k = show_of(i)
+                best[k] = min(best.get(k, 9), claim(c, i))
+            for k, r in best.items():
+                homes[k].append((r, c))
+        most = cfg.show_max_channels if cfg.show_max_channels > 0 else len(chosen)
         keep: dict[tuple[str, str], set[str]] = {
-            show: {c.label for c in sorted(cs, key=lambda c: (width[c.label], c.order))
-                   [: max(1, cfg.show_max_channels)]}
+            show: {c.label for _, c in sorted(cs, key=lambda rc: (rc[0], width[rc[1].label],
+                                                                  rc[1].order))[:most]}
             for show, cs in homes.items()
         }  # fmt: skip
         return {c.label: {i for i in c.ids if c.label in keep[show_of(i)]} for c in chosen}
@@ -2327,8 +2404,17 @@ def suggest_channels(
     for c in live[cfg.max_channels :]:
         unplaced.append((c.label, f"past max_channels ({cfg.max_channels}): the channels "
                                   "before it in the lineup order took the places"))  # fmt: skip
+    # a special run's episodes leave their show on the other channels (Talk Shows airs
+    # بلا حدود without the episodes the Palestine channel runs as «بلا حدود · فلسطين»)
+    runs_of = {c.label: {e.path for i in owned[c.label] if i in synthetic
+                         for e in units[i].episodes} for c in chosen}  # fmt: skip
     for c in chosen:
+        dropped.clear()
+        for other, paths in runs_of.items():
+            if other != c.label:
+                dropped.update(paths)
         placed |= c.build(owned[c.label])
+    dropped.clear()
 
     for i in sorted(set(units) - placed - synthetic):
         u = units[i]
@@ -2354,6 +2440,7 @@ class _Cand:
     ids: set[str]  # empty: no shows to share (the Quran channel's own lanes)
     need: float
     build: Callable[[set[str]], set[str]]
+    theme: ThemeSpec | None = None
 
 
 # --------------------------------------------------------------------------- simulation

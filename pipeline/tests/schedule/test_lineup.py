@@ -146,24 +146,33 @@ def test_a_theme_takes_a_talk_shows_episodes_about_it_as_one_collection() -> Non
     p = plan([talk], themes=pal, mix_channel=False, presenter_channels=False)
     ch = p.channels[0]
     units = [u for k in ch.lanes for u in p.lanes[k].units]
-    assert {u.name for u in units} == {"أحمد منصور · فلسطين"}
+    assert {u.name for u in units} == {"بلا حدود · فلسطين"}  # a special run of the show
     assert sum(len(u.episodes) for u in units) == 20  # only its Palestine episodes
     off = plan([talk], themes=pal, mix_channel=False, presenter_channels=False,
                theme_episodes=False)  # fmt: skip
     assert off.channels == ()
 
 
-def test_a_show_airs_on_its_most_specific_channel_only() -> None:
+def test_a_show_on_two_channels_never_airs_at_the_same_time() -> None:
     fiqh = ThemeSpec("fiqh", "Fiqh", "الفقه", 111, ("fiqh",))
     salah = ThemeSpec("salah", "Salah", "فقه الصلاة", 121, ("salah",))
-    lib = [season(f"f{i}", f"فقه {i}", n=40, minutes=60) for i in range(3)]
-    lib += [season(f"s{i}", f"صلاة {i}", tags={"topic:salah": 1.0}, n=40, minutes=60)
-            for i in range(2)]  # fmt: skip
+    lib = [season(f"s{i}", f"صلاة {i}", tags={"topic:salah": 1.0}, n=200, minutes=60)
+           for i in range(3)]  # fmt: skip
     p = plan(lib, themes=(fiqh, salah), mix_channel=False, presenter_channels=False)
+    assert {c.key for c in p.channels} == {"fiqh", "salah"}  # the shows air on both
+    by_ch = {c.key: {(sl.start, p.lanes[sl.lane].shows[0]) for sl in c.slots
+                     if sl.lane and sl.kind == "program"} for c in p.channels}  # fmt: skip
+    assert not by_ch["fiqh"] & by_ch["salah"]  # never the same show at the same time
+
+
+def test_a_show_goes_to_its_topics_channel_before_an_audience_one() -> None:
+    hist = ThemeSpec("history", "History", "التاريخ", 108, ("islamic_history",))
+    kids = ThemeSpec("kids", "Kids", "الأطفال", 110, ("seerah",), audiences=("beginners",))
+    lib = [season("h1", "100 سؤال في التاريخ", genre="islamic_history", n=40, minutes=60,
+                  tags={"audience:beginners": 1.0}),
+           season("k1", "سيرة", genre="seerah", n=40, minutes=60)]  # fmt: skip
+    p = plan(lib, themes=(hist, kids), mix_channel=False, presenter_channels=False,
+             show_max_channels=1)  # fmt: skip
     on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
-    assert on["salah"] == {"صلاة 0", "صلاة 1"}
-    assert on["fiqh"] == {"فقه 0", "فقه 1", "فقه 2"}  # the salah shows left for Salah
-    both = plan(lib, themes=(fiqh, salah), mix_channel=False, presenter_channels=False,
-                show_max_channels=2)  # fmt: skip
-    assert "صلاة 0" in {u.name for c in both.channels if c.key == "fiqh"
-                        for k in c.lanes for u in both.lanes[k].units}  # fmt: skip
+    assert "100 سؤال في التاريخ" in on["history"]
+    assert "100 سؤال في التاريخ" not in on["kids"]

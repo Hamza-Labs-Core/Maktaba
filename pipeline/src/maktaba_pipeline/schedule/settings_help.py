@@ -65,9 +65,17 @@ PLANNER_HELP: dict[str, Help] = {
     "show_max_channels": Help(
         CH,
         "Channels per show (most)",
-        "A show airs on at most this many channels: the "
-        "most specific that have it (the fewest hours: Fasting before Ramadan, Palestine "
-        "before News). A channel left without enough content of its own drops out.",
+        "A show airs on at most this many channels (0: no "
+        "limit), the closest first: the channel of its own topic before an audience or "
+        "format channel (History before Kids, Palestine before Talk Shows), then the one "
+        "with fewer hours. Wherever it airs, never at the same time on two channels. A "
+        "channel left without enough content of its own drops out.",
+    ),
+    "show_same_time": Help(
+        CH,
+        "Same show, same time on two channels",
+        "Off: a show on more than one channel "
+        "always airs at different times (8 pm here, 6 pm there), its repeats too.",
     ),
     "presenter_max_channels": Help(
         CH,
@@ -342,7 +350,7 @@ _MINIMUM: dict[str, float] = {
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
-    "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 1,
+    "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)

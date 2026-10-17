@@ -369,9 +369,9 @@ def test_ramadan_seasons_flagged_and_moved_after_iftar() -> None:
     iftar = slot_at(ch.ramadan_slots, 19 * 60)  # the first block after iftar
     lane = p.lanes[iftar.lane or ""]
     assert lane.ramadan and lane.pattern == "strip7"
+    assert iftar.days == ()  # every day of the week
     # the Ramadan show heads the after-iftar slot every day; its whole series follows
     assert lane.units[0].series_id == "s-hab1" and lane.units[0].ramadan
-    assert iftar.days == ()  # every day of the week
     assert any("Ramadan" in r for r in ch.reasons)
     # no Ramadan seasons on history-less channels → no Ramadan grid
     raq = channel(p, "raqaiq")

@@ -21,6 +21,7 @@ SMALL: dict[str, object] = {
     "max_channels": 99,
     "presenter_max_channels": 99,
     "show_max_channels": 99,
+    "show_same_time": True,
     "slot_owner": "show",
     "recitation_genres": ("quran_recitation", "tajweed"),
     "dayparts": DAYPARTS,
