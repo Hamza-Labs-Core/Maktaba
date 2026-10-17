@@ -75,6 +75,7 @@ def test_every_slot_queue_is_one_ordered_show() -> None:
         ln = plan["lanes"][a.ref]
         assert a.name == f"{PREFIX}{ln['name']} [{a.ref}]"
         expect = [str(e["plex_rating_key"]) for u in ln["units"] for e in u["episodes"]]
+        assert a.body is not None
         assert [p["ratingKey"] for p in a.body["content"]] == expect  # shows back to back
         assert ln["pattern"] or ln["special"]  # a slot queue, or the dawn Quran / khutbah lane
 

@@ -33,13 +33,12 @@ import contextlib
 import json
 import re
 import sqlite3
-import urllib.error
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 from maktaba_pipeline.text.arabic import fold
 
-from .scan_plex import PlexServer, quote
+from .scan_plex import PlexApi, PlexError, quote
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plex_collections (
@@ -77,12 +76,12 @@ def removable(key: str, title: str, placed: set[str], shorts: set[str]) -> bool:
     return key in placed or key in shorts or bool(_NOT_EPISODE_RE.search(title.strip()))
 
 
-def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
+def _children_titled(server: PlexApi, key: str) -> list[tuple[str, str]]:
     """Items of a collection; [] when Plex no longer has it (deleted meanwhile → 404)."""
     try:
         got = server.get(f"/library/collections/{key}/children")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
+    except PlexError as e:
+        if e.status == 404:
             print(f"     (collection {key} is gone from Plex; skipped)", flush=True)
             return []
         raise
@@ -90,7 +89,7 @@ def _children_titled(server: PlexServer, key: str) -> list[tuple[str, str]]:
     return [(m["ratingKey"], m.get("title", "")) for m in md]
 
 
-def _children(server: PlexServer, key: str) -> list[str]:
+def _children(server: PlexApi, key: str) -> list[str]:
     return [k for k, _ in _children_titled(server, key)]
 
 
@@ -109,39 +108,116 @@ def _print_diff(
             print(f"       + {titles.get(k, k)}")
 
 
+def _in_order(got: list[str], target: list[str]) -> set[str]:
+    """The items of ``got`` that already stand in ``target``'s order: the longest
+    increasing run of their target positions (they stay; the rest move)."""
+    pos = {k: i for i, k in enumerate(target)}
+    seq = [k for k in got if k in pos]
+    tails: list[int] = []  # tails[j]: index in seq ending the best run of length j + 1
+    prev: list[int] = [-1] * len(seq)
+    for i, k in enumerate(seq):
+        lo, hi = 0, len(tails)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if pos[seq[tails[mid]]] < pos[k]:
+                lo = mid + 1
+            else:
+                hi = mid
+        prev[i] = tails[lo - 1] if lo else -1
+        if lo == len(tails):
+            tails.append(i)
+        else:
+            tails[lo] = i
+    out: set[str] = set()
+    i = tails[-1] if tails else -1
+    while i >= 0:
+        out.add(seq[i])
+        i = prev[i]
+    return out
+
+
 def _recreate(
-    server: PlexServer, machine: str, section: str, title: str, keys: list[str], old: str | None
-) -> str:
+    server: PlexApi, machine: str, section: str, title: str, keys: list[str], old: str | None
+) -> tuple[str, dict[str, str]]:
+    """The collection, made anew with ``keys`` in order. Returns its rating key and the
+    items Plex refused ({key: what Plex said}); a refused item never stops the others."""
+
     def uri(ks: list[str]) -> str:
         return quote(
             f"server://{machine}/com.plexapp.plugins.library/library/metadata/{','.join(ks)}"
         )
 
+    refused: dict[str, str] = {}
     if old:
         server.send("DELETE", f"/library/metadata/{old}")  # before creating (tag semantics)
-    created = server.send(
-        "POST",
-        f"/library/collections?type=1&title={quote(title)}&smart=0&sectionId={section}&uri={uri(keys[:1])}",
-    )
-    new = created["MediaContainer"]["Metadata"][0]["ratingKey"]
-    for i in range(1, len(keys), 100):
-        server.send("PUT", f"/library/collections/{new}/items?uri={uri(keys[i : i + 100])}")
+    new = None
+    for at, first in enumerate(keys):  # created with its first item Plex accepts
+        try:
+            created = server.send(
+                "POST",
+                f"/library/collections?type=1&title={quote(title)}&smart=0"
+                f"&sectionId={section}&uri={uri([first])}",
+            )
+        except PlexError as e:
+            if e.status != 400:
+                raise
+            refused[first] = str(e)
+            continue
+        new = created["MediaContainer"]["Metadata"][0]["ratingKey"]
+        rest = keys[at + 1 :]
+        break
+    if new is None:
+        raise PlexError("POST", "/library/collections", 400, "Plex refused every item")
+    for i in range(0, len(rest), 100):
+        part = rest[i : i + 100]
+        try:
+            server.send("PUT", f"/library/collections/{new}/items?uri={uri(part)}")
+        except PlexError as e:
+            if e.status != 400:
+                raise
+            for k in part:  # one by one: only the item Plex refuses stays out
+                try:
+                    server.send("PUT", f"/library/collections/{new}/items?uri={uri([k])}")
+                except PlexError as e1:
+                    if e1.status != 400:
+                        raise
+                    refused[k] = str(e1)
+    placed = [k for k in keys if k not in refused]
     server.send("PUT", f"/library/metadata/{new}/prefs?collectionSort=2")
-    for prev, cur in zip(keys, keys[1:], strict=False):
-        server.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
+    # only the items out of place move (one call each): those outside the longest run
+    # already in order. Plex usually keeps the order items were added in, so a big
+    # collection needs few moves, or none
     got = _children(server, new)
-    if got != keys:
+    if got != placed:
+        keep = _in_order(got, placed)
+        for i, cur in enumerate(placed):
+            if cur in keep:  # in target order: its predecessor is already in place
+                continue
+            if i:
+                server.send(
+                    "PUT", f"/library/collections/{new}/items/{cur}/move?after={placed[i - 1]}"
+                )
+            else:  # to the front; the collection was made with it, so this is rare
+                with contextlib.suppress(PlexError):
+                    server.send("PUT", f"/library/collections/{new}/items/{cur}/move")
+        got = _children(server, new)
+    if got != placed:  # Plex did not follow: every item after its predecessor, as before
+        for prev, cur in zip(placed, placed[1:], strict=False):
+            server.send("PUT", f"/library/collections/{new}/items/{cur}/move?after={prev}")
+        got = _children(server, new)
+    if got != placed:
         raise RuntimeError(
-            f"{title}: Plex holds {len(got)} items (expected {len(keys)}), order ok={got == keys}"
+            f"{title}: Plex holds {len(got)} items (expected {len(placed)}), "
+            f"order ok={got == placed}"
         )
-    return str(new)
+    return str(new), refused
 
 
 #: every collection the job makes carries this Plex label, so people can tell them apart
 LABEL = "maktaba-auto"
 
 
-def _label(server: PlexServer, section: str, key: str) -> None:
+def _label(server: PlexApi, section: str, key: str) -> None:
     server.send(
         "PUT",
         f"/library/sections/{section}/all?type=18&id={key}"
@@ -173,23 +249,29 @@ def _group_plans(conn: sqlite3.Connection, library: str) -> list[tuple[str, str,
     """(track id, title, ordered Plex keys) of the library's clip / stand-alone groups."""
     from .group_clips import group_title
 
-    out = []
+    # two folders of one library can make groups of one title ("<lib> - مقاطع متنوعة"): in
+    # one Plex section they are one collection, tracked by the first group's id; in two
+    # sections (a library split over two Plex libraries) each stays its own
+    merged: dict[tuple[str, str | None], tuple[str, list[str]]] = {}
     with contextlib.suppress(sqlite3.OperationalError):
         for gid, kind, basis, name in conn.execute(
-            "SELECT id, kind, basis, name FROM clip_groups WHERE library=? ORDER BY kind, name",
+            "SELECT id, kind, basis, name FROM clip_groups WHERE library=? ORDER BY kind, name, id",
             (library,),
         ).fetchall():
-            keys = [
-                k
-                for (k,) in conn.execute(
-                    """SELECT f.plex_rating_key FROM clip_group_items g JOIN files f ON f.path = g.path
-                       WHERE g.group_id = ? AND f.plex_rating_key IS NOT NULL ORDER BY g.position""",
-                    (gid,),
-                )
-            ]
-            if keys:
-                out.append((gid, group_title(library, kind, basis, name), keys))
-    return out
+            rows = conn.execute(
+                """SELECT f.plex_rating_key, f.plex_section FROM clip_group_items g
+                   JOIN files f ON f.path = g.path
+                   WHERE g.group_id = ? AND f.plex_rating_key IS NOT NULL ORDER BY g.position""",
+                (gid,),
+            ).fetchall()
+            if not rows:
+                continue
+            secs = Counter(sec for _, sec in rows)
+            home = min(secs, key=lambda s: (-secs[s], str(s)))
+            title = group_title(library, kind, basis, name)
+            _, keys = merged.setdefault((title, home), (gid, []))
+            keys += [k for k, _ in rows if k not in keys]
+    return [(tid, title, keys) for (title, _), (tid, keys) in merged.items()]
 
 
 class _Sync:
@@ -199,7 +281,7 @@ class _Sync:
     def __init__(
         self,
         conn: sqlite3.Connection,
-        server: PlexServer,
+        server: PlexApi,
         machine: str,
         section: str,
         existing: dict[str, Any],
@@ -212,7 +294,12 @@ class _Sync:
         apply: bool,
         diff: bool,
         replace_existing: bool,
+        failed: list[str] | None = None,
+        key_section: dict[str, str] | None = None,
     ) -> None:
+        self.failed: list[str] = failed if failed is not None else []
+        #: the Plex section of each item, when the library spans several sections
+        self.key_section = key_section or {}
         self.conn, self.server, self.machine, self.section = conn, server, machine, section
         self.existing, self.ours, self.titles = existing, ours, titles
         self.shorts, self.copy_of, self.placed = shorts, copy_of, placed
@@ -234,7 +321,17 @@ class _Sync:
         """Create or update one collection, keeping what an existing one holds
         unless there is positive evidence it does not belong (:func:`removable`)."""
         leave_ok = self.placed if leave_ok is None else leave_ok
-        self.everything.append((title, keys))
+        if self.key_section:
+            # a collection lives in one Plex section: the one holding most of its items
+            # (it is written in that section's pass); items of another section stay out
+            secs = Counter(self.key_section[k] for k in keys if k in self.key_section)
+            if secs and min(secs, key=lambda x: (-secs[x], x)) != self.section:
+                return
+            away = [k for k in keys if self.key_section.get(k, self.section) != self.section]
+            if away:
+                print(f"  ~  {title}: {len(away)} item(s) are in another Plex library of the "
+                      "same name and stay out", flush=True)  # fmt: skip
+                keys = [k for k in keys if k not in away]
         mine = self.ours.get(track_id)
         same_name = self.existing.get(title)
         if same_name is None and alt_title:
@@ -248,6 +345,8 @@ class _Sync:
                       f"({same_name.get('childCount', '?')} items) — use --replace-existing")  # fmt: skip
                 return
             old_key = same_name["ratingKey"]
+        # counted as coverage for retiring older collections only once it will be written
+        self.everything.append((title, keys))
         current_t = (
             _children_titled(self.server, old_key)
             if old_key and old_key in self.existing_keys
@@ -275,7 +374,12 @@ class _Sync:
             elif not removable(k, t, leave_ok, self.shorts):
                 kept.append(k)
         keys = keys + kept
-        if current == keys:
+        # same episodes is not enough: a season 1 that gained a season 2 still has
+        # to move from "<lib> - X" to "<lib> - X - الموسم 1"
+        now_titled = next(
+            (t for t, c in self.existing.items() if old_key and c["ratingKey"] == old_key), None
+        )
+        if current == keys and now_titled == title:
             print(f"  =  {title} ({len(keys)})")
             if (
                 self.apply
@@ -290,6 +394,8 @@ class _Sync:
                 self.conn.commit()
             return
         verb = "update" if current else "new"
+        if current == keys:
+            verb = f"rename from {now_titled}"
         print(
             f"  +  {title}: {verb}, {len(keys)} items"
             + (f" (was {len(current)})" if current else "")
@@ -301,14 +407,29 @@ class _Sync:
             else:
                 _print_diff(current_t, keys, self.titles, covered=leave_ok)
         if self.apply:
-            new = _recreate(
-                self.server,
-                self.machine,
-                self.section,
-                title,
-                keys,
-                old_key if current or same_name else None,
-            )
+            try:
+                new, refused = _recreate(
+                    self.server,
+                    self.machine,
+                    self.section,
+                    title,
+                    keys,
+                    old_key if current or same_name else None,
+                )
+            except PlexError as e:  # this collection only; the run goes on
+                print(f"  !  {title}: not written — {e}", flush=True)
+                self.failed.append(title)
+                # not written, so it covers nothing: no older collection retires for it
+                self.everything[:] = [p for p in self.everything if p[0] != title]
+                return
+            for k, why in refused.items():
+                print(f"       ! Plex refused {self.titles.get(k, k)}: {why}", flush=True)
+            if refused:
+                self.failed.append(f"{title} ({len(refused)} item(s) refused)")
+                self.everything[:] = [
+                    (t, [k for k in ks if k not in refused]) if t == title else (t, ks)
+                    for t, ks in self.everything
+                ]
             _label(self.server, self.section, new)
             self.conn.execute(
                 "INSERT OR REPLACE INTO plex_collections "
@@ -320,7 +441,7 @@ class _Sync:
 
 def export(
     conn: sqlite3.Connection,
-    server: PlexServer,
+    server: PlexApi,
     *,
     apply: bool,
     library_filter: str | None,
@@ -339,6 +460,7 @@ def export(
     conn.executescript(SCHEMA)
     with contextlib.suppress(sqlite3.OperationalError):
         conn.execute("ALTER TABLE plex_collections ADD COLUMN labeled INTEGER")
+    failed: list[str] = []  # collections Plex refused (in part), named at the end
     machine = server.get("/identity")["MediaContainer"]["machineIdentifier"]
     rows = conn.execute(
         "SELECT id, library, name, metadata FROM series ORDER BY library, name"
@@ -358,16 +480,34 @@ def export(
                 libraries.add(lib)
     live_ids = {r["id"] for r in rows}
 
+    # a library can be several Plex sections of one name: each gets its own pass, and a
+    # collection goes to the section holding its items
+    passes: list[tuple[str, str | None, dict[str, str]]] = []
     for library in sorted(libraries):
-        items = by_lib.get(library, [])
-        sec = conn.execute(
-            "SELECT plex_section FROM files WHERE plex_library=? AND plex_section IS NOT NULL LIMIT 1",
+        secs = conn.execute(
+            "SELECT plex_section, COUNT(*) FROM files WHERE plex_library=? AND plex_section "
+            "IS NOT NULL GROUP BY plex_section ORDER BY COUNT(*) DESC, plex_section",
             (library,),
-        ).fetchone()
-        if not sec:
+        ).fetchall()
+        key_section = (
+            {
+                k: sec
+                for k, sec in conn.execute(
+                    "SELECT plex_rating_key, plex_section FROM files WHERE plex_library=? "
+                    "AND plex_rating_key IS NOT NULL AND plex_section IS NOT NULL",
+                    (library,),
+                )
+            }
+            if len(secs) > 1
+            else {}
+        )
+        passes += [(library, sec, key_section) for sec, _ in secs] or [(library, None, {})]
+    for library, section_or_none, key_section in passes:
+        items = by_lib.get(library, [])
+        if section_or_none is None:
             print(f"\n=== {library}: no Plex section known (run scan-plex) — skipped")
             continue
-        section = sec[0]
+        section = section_or_none
         existing = {
             c["title"]: c
             for c in server.get(f"/library/sections/{section}/collections")["MediaContainer"].get(
@@ -381,7 +521,8 @@ def export(
         }
         topic_plans = _topic_plans(conn, library) if topics else []
         group_plans = _group_plans(conn, library) if clip_groups else []
-        print(f"\n=== {library}  ({len(items)} seasons, {len(topic_plans)} topics, "
+        print(f"\n=== {library}" + (f" (Plex section {section})" if key_section else "")
+              + f"  ({len(items)} seasons, {len(topic_plans)} topics, "
               f"{len(group_plans)} clip groups)")  # fmt: skip
         titles = {
             k: t
@@ -424,7 +565,6 @@ def export(
                     (library,),
                 )
             }
-        planned_keys: list[set[str]] = []
         planned: list[tuple[str, list[str]]] = []
         everything: list[tuple[str, list[str]]] = []  # seasons, topics and groups
         claimed: set[str] = set()  # existing collections taken over by a planned one
@@ -443,6 +583,8 @@ def export(
             apply=apply,
             diff=diff,
             replace_existing=replace_existing,
+            failed=failed,
+            key_section=key_section,
         )
         everything, claimed = sync.everything, sync.claimed
 
@@ -458,7 +600,6 @@ def export(
             ]
             if not keys:
                 continue
-            planned_keys.append(set(keys))
             planned.append((title, keys))
             # the series grew a season: its old single collection ("<lib> - X") becomes
             # season 1 ("<lib> - X - الموسم 1")
@@ -506,8 +647,11 @@ def export(
                     print(f"  ?  kept: {row['title']} ({len(kids)} items, only {inside} in the "
                           "new collections)")  # fmt: skip
 
-        # older collections whose content is (almost) entirely inside one new season
+        # older collections whose content is (almost) entirely inside one new season: only
+        # seasons as written count (a blocked or failed one, or a refused item, covers nothing)
         planned_titles = {t for t, _ in everything} | claimed  # replaced above
+        season_titles = {t for t, _ in planned}
+        confirmed = [(t, ks) for t, ks in everything if t in season_titles]
         our_keys = {
             r["rating_key"]
             for r in conn.execute(
@@ -523,19 +667,22 @@ def export(
             kids = {k for k, _ in kids_t}
             if len(kids) < 3:
                 continue
-            best = max(planned, key=lambda p: len(kids & set(p[1])), default=None)
+            best = max(confirmed, key=lambda p: len(kids & set(p[1])), default=None)
             if best and len(kids & set(best[1])) >= 0.8 * len(kids):
                 print(
                     f"  ~  superseded: {c['title']} ({len(kids)} items) by {best[0]}"
                     + (" — removed" if apply and remove_superseded else "")
                 )
                 if diff:
-                    covered = set().union(*planned_keys)
+                    covered = set().union(*(set(ks) for _, ks in confirmed))
                     for k, t in kids_t:
                         if k not in covered:
                             print(f"       - {t}   (NOT in any new season)")
                 if apply and remove_superseded:
                     server.send("DELETE", f"/library/metadata/{c['ratingKey']}")
+    if failed:
+        print(f"\n! {len(failed)} collection(s) not fully written (Plex refused): "
+              + "; ".join(failed), flush=True)  # fmt: skip
     if not apply:
         print(
             "\nDry run. Re-run with --apply to write (see --help for --replace-existing / --remove-superseded)."

@@ -156,6 +156,33 @@ def _upsert_playlist(
     )
 
 
+def _work_left(conn: sqlite3.Connection, folder_s: str, *, probe: bool, signatures: bool) -> bool:
+    """True when a job of this folder's files is still due: a failed one with attempts
+    left, or (for the stages this pass runs) one never run, run on another file state,
+    or made by an older stage version."""
+    if conn.execute(
+        """SELECT 1 FROM index_jobs j JOIN files f ON f.path = j.path
+           WHERE f.folder=? AND j.state='failed' AND j.attempts < j.max_attempts LIMIT 1""",
+        (folder_s,),
+    ).fetchone():
+        return True
+    stages: list[tuple[str, int, str]] = []
+    if probe:
+        stages.append(("probe", 1, ""))
+        if signatures:
+            sig_v = AUDIO_FP_VERSION * 100 + FRAMES_VERSION
+            stages.append(("signature", sig_v, " AND f.duration_s >= 180"))
+    for stage, version, only in stages:
+        if conn.execute(
+            f"""SELECT 1 FROM files f LEFT JOIN index_jobs j ON j.path = f.path AND j.stage=?
+                WHERE f.folder=?{only} AND (j.path IS NULL OR j.version != ?
+                  OR j.size IS NOT f.size OR j.mtime IS NOT f.mtime) LIMIT 1""",
+            (stage, folder_s, version),
+        ).fetchone():
+            return True
+    return False
+
+
 def scan_folder(
     conn: sqlite3.Connection,
     folder: Path,
@@ -175,8 +202,15 @@ def scan_folder(
     done = conn.execute(
         "SELECT done_mtime, done_probe FROM folders WHERE folder=?", (folder_s,)
     ).fetchone()
-    if done and done[0] == dir_mtime and (done[1] or not probe):
-        # nothing added, removed or renamed since a complete scan: skip the per-file stats
+    if (
+        done
+        and done[0] == dir_mtime
+        and (done[1] or not probe)
+        and not _work_left(conn, folder_s, probe=probe, signatures=signatures)
+    ):
+        # nothing added, removed or renamed since a complete scan, and no job is due
+        # (retry, new stage version): skip the per-file stats. A file rewritten in place
+        # under the same name keeps the folder's mtime and is not noticed here.
         return {"videos": 0, "skipped": 1}
     try:
         with os.scandir(folder) as it:
@@ -342,10 +376,12 @@ def scan_folder(
                             None if head or tail or frames else "no audio or frames decoded")  # fmt: skip
                 conn.commit()
                 stats["signatures"] = stats.get("signatures", 0) + 1
+    # a listing-only pass over a changed folder leaves its new files unprobed: the
+    # earlier complete probe no longer covers it
     conn.execute(
-        "UPDATE folders SET done_mtime=?, done_probe=MAX(COALESCE(done_probe, 0), ?) "
-        "WHERE folder=?",
-        (dir_mtime, int(probe), folder_s),
+        "UPDATE folders SET done_mtime=?, done_probe=CASE WHEN done_mtime IS ? "
+        "THEN MAX(COALESCE(done_probe, 0), ?) ELSE ? END WHERE folder=?",
+        (dir_mtime, dir_mtime, int(probe), int(probe), folder_s),
     )
     conn.commit()
     return stats

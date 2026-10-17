@@ -10,6 +10,7 @@ page); this page is the stand-in until these stages run there.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -222,7 +223,11 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             )
             unit = "channels"
         elif STEPS[current][0] == "plex-index":
-            return out, _counted(body, r"^reading (\d+) Plex libraries")
+            plex_m = [x for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
+            tot = next((int(x.group(1)) for ln in body
+                        if (x := re.match(r"^reading (\d+) Plex libraries", ln))), None)  # fmt: skip
+            return out, {"done": int(plex_m[-1].group(1)) if plex_m else 0, "total": tot,
+                         "unit": "libraries"}  # fmt: skip
         elif STEPS[current][0] == "group (":
             return out, _counted(body, r"^grouping clips in (\d+) libraries")
         elif STEPS[current][0] == "dizquetv-shows":
@@ -848,6 +853,7 @@ _HERE = Path(__file__).parent
 _STATIC: dict[str, tuple[Path, str]] = {
     "/stage": (_HERE / "stage.html", "text/html; charset=utf-8"),
     "/item": (_HERE / "item.html", "text/html; charset=utf-8"),
+    "/settings": (_HERE / "settings.html", "text/html; charset=utf-8"),
     "/common.css": (_HERE / "common.css", "text/css; charset=utf-8"),
     "/common.js": (_HERE / "common.js", "text/javascript; charset=utf-8"),
 }
@@ -1099,10 +1105,16 @@ def _alive(pid: int) -> bool:
 def _run_args(
     db_path: str, body: dict[str, Any], dizquetv_db: Path | None, reports: Path
 ) -> list[str]:
-    """The exact ``mediaintel run`` command a page request maps to (no free-form input)."""
+    """The exact ``mediaintel run`` command a page request maps to (no free-form input).
+
+    Folders go last, after ``--``, so none can be read as an option; one that starts
+    with '-' is refused outright (ValueError) rather than silently dropped."""
     args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path, "run"]
-    folders = [str(f) for f in body.get("folders") or [] if isinstance(f, str)]
-    args += folders or ["--from-plex", "--exclude-library", "Movies"]
+    folders = [f for f in body.get("folders") or [] if isinstance(f, str) and f]
+    if any(f.startswith("-") for f in folders):
+        raise ValueError("A folder cannot start with '-'.")
+    if not folders:
+        args += ["--from-plex", "--exclude-library", "Movies"]
     if dizquetv_db:
         args += ["--dizquetv-db", str(dizquetv_db)]
     args += ["--out", str(reports)]
@@ -1114,7 +1126,105 @@ def _run_args(
         args.append("--exact")
     if not body.get("youtube", True):
         args.append("--no-youtube")
+    if folders:
+        args += ["--", *folders]
     return args
+
+
+def _tail(path: Path, n: int) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+
+
+def settings_payload(db_path: str) -> dict[str, Any]:
+    """Every settings section for the settings page: its fields, values and defaults."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    file = settings_store.path_of(db_path)
+    out = []
+    for key, (cls, title, what) in settings_store.SECTIONS.items():
+        error = None
+        try:
+            changes = settings_store.changed(file, key)
+        except settings.SettingsError as e:  # not {section: {setting: value}} at all
+            changes, error = {}, str(e)
+        # each change on its own: a value this page cannot use (a hand edit) is shown with
+        # why and a way back to the default, and the others still apply
+        valid: dict[str, Any] = {}
+        invalid: dict[str, str] = {}
+        for name, value in changes.items():
+            try:
+                settings.apply(cls, {name: value})
+                valid[name] = value
+            except settings.SettingsError as e:
+                invalid[name] = str(e)
+        fields = settings.describe(settings.apply(cls, valid))
+        for f in fields:
+            if f["name"] in invalid:
+                f["invalid"] = invalid[f["name"]]
+                f["changed"] = True  # offers "Back to default"
+        out.append({"key": key, "title": title, "what": what, "error": error,
+                    "unknown": sorted(k for k in invalid if k not in {f["name"] for f in fields}),
+                    "fields": fields})  # fmt: skip
+    return {"file": str(file), "sections": out}
+
+
+#: one save at a time: each reads the file, changes its section and replaces it
+_SETTINGS_LOCK = threading.Lock()
+
+
+def save_settings(db_path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Apply ``{"section", "set": {name: value}, "reset": [name, …]}`` to the settings
+    file. Every value is checked first; nothing is written when one is refused
+    (``SettingsError``)."""
+    from maktaba_pipeline import settings
+
+    from . import settings_store
+
+    key = body.get("section")
+    if key not in settings_store.SECTIONS:
+        raise settings.SettingsError("section", f"no such section {key!r}")
+    set_ = body.get("set") or {}
+    reset = body.get("reset") or []
+    if not isinstance(set_, dict) or not isinstance(reset, list):
+        raise settings.SettingsError("body", 'send {"section", "set": {...}, "reset": [...]}')
+    file = settings_store.path_of(db_path)
+    cls = settings_store.SECTIONS[key][0]
+    names = {f.name for f in dataclasses.fields(cls)}
+    with _SETTINGS_LOCK:
+        before = settings_store.changed(file, key)
+        # a name that is no longer a setting can never apply: it is dropped, not kept
+        kept = {k: v for k, v in before.items() if k not in reset and k in names}
+        cfg = settings.apply(cls, {**kept, **set_})
+        written = settings.save(file, key, cfg)
+    return {"section": key, "changed": sorted(written),
+            "dropped": sorted(k for k in before if k not in names)}  # fmt: skip
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def request_problem(method: str, headers: Any, port: int) -> str | None:
+    """Why a request must be refused, or None. The server is reachable only from this
+    machine, but any web page open in a browser here can still send it requests:
+    a Host other than ours means DNS rebinding, an Origin other than ours means a
+    cross-site request, and a POST that is not JSON is a CORS "simple" request that
+    skipped the preflight. ``headers`` is anything with ``.get`` (an HTTPMessage)."""
+    allowed = {f"{h}:{port}" for h in _LOCAL_HOSTS}
+    if (headers.get("Host") or "").lower() not in allowed:
+        return "Unexpected Host header."
+    origin = headers.get("Origin")
+    if origin is not None and origin.lower() not in {f"http://{a}" for a in allowed}:
+        return "Cross-origin requests are not allowed."
+    if method == "POST":
+        ctype = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if ctype != "application/json":
+            return "Send the body as application/json."
+    return None
 
 
 def serve(
@@ -1127,11 +1237,17 @@ def serve(
 ) -> None:
     """The control centre: status, start / stop a run, explain a video, pin a style,
     open review pages. Binds to localhost only."""
+    # absolute: the runs and the preview start in pipeline/, wherever the server started
+    db_path = str(Path(db_path).resolve())
+    reports = reports.resolve()
     log = log_path or Path(db_path + ".run.log")
     cache: dict[str, Any] = {"at": 0.0, "st": {}}
     cache_lock = threading.Lock()
     detail_cache: dict[tuple[str, str, str | None], tuple[float, dict[str, Any] | None]] = {}
     pipeline_dir = Path(__file__).resolve().parents[2]
+    #: the settings page's "Preview channels": plan-channels into reports/preview (no writes)
+    preview: dict[str, Any] = {"proc": None}
+    preview_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -1174,7 +1290,16 @@ def serve(
             else:
                 self._json(200, {**data, "running_pid": _running_pid(db_path)})
 
+        def _refused(self, method: str) -> bool:
+            """Answer 403 and return True when the request is not from our own page."""
+            problem = request_problem(method, self.headers, port)
+            if problem:
+                self._json(403, {"error": problem})
+            return problem is not None
+
         def do_GET(self) -> None:  # noqa: N802 — http.server API
+            if self._refused("GET"):
+                return
             url = urllib.parse.urlsplit(self.path)
             qs = urllib.parse.parse_qs(url.query)
             if url.path == "/api/status":
@@ -1223,11 +1348,28 @@ def serve(
             elif url.path.startswith(("/thumbs/", "/reports/thumbs/")):
                 # the app's thumbnail cache: a fixed name pattern, never a path
                 name = url.path.rsplit("/", 1)[-1]
-                f = Path(db_path).parent / "thumbs" / name
-                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name) or not f.is_file():
+                if not re.fullmatch(r"[0-9a-f]{16}\.jpg", name):
                     self.send_error(404)
                     return
-                self._send(200, f.read_bytes(), "image/jpeg")
+                thumbs = os.path.normpath(Path(db_path).parent / "thumbs")
+                f = os.path.normpath(os.path.join(thumbs, name))
+                if not f.startswith(thumbs + os.sep) or not os.path.isfile(f):
+                    self.send_error(404)
+                    return
+                self._send(200, Path(f).read_bytes(), "image/jpeg")
+            elif url.path == "/api/settings":
+                self._json(200, settings_payload(db_path))
+            elif url.path == "/preview/channel-plan.html":
+                plan_page = reports / "preview" / "channel-plan.html"
+                if plan_page.is_file():
+                    self._send(200, plan_page.read_bytes(), "text/html; charset=utf-8")
+                else:
+                    self.send_error(404, "No preview yet: press Preview channels.")
+            elif url.path == "/api/plan-preview":
+                self._json(200, {"running": preview["proc"] is not None
+                                 and preview["proc"].poll() is None,
+                                 "ready": (reports / "preview" / "channel-plan.html").is_file(),
+                                 "log": _tail(reports / "preview" / "plan.log", 30)})  # fmt: skip
             elif url.path == "/api/reports":
                 names = sorted(f.name for f in reports.glob("*.html")) if reports.exists() else []
                 self._json(200, {"reports": names})
@@ -1242,17 +1384,25 @@ def serve(
                 self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
+            if self._refused("POST"):
+                return
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
-                self._json(400, {"error": "The request body must be JSON."})
+                body = None
+            if not isinstance(body, dict):
+                self._json(400, {"error": "The request body must be a JSON object."})
                 return
             if self.path == "/api/run":
                 if _running_pid(db_path):
                     self._json(409, {"error": "A run is already in progress. Stop it first."})
                     return
-                args = _run_args(db_path, body, dizquetv_db, reports)
+                try:
+                    args = _run_args(db_path, body, dizquetv_db, reports)
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                    return
                 env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
                 with log.open("w", encoding="utf-8") as fh:
                     subprocess.Popen(  # noqa: S603 — fixed argv built by _run_args
@@ -1279,6 +1429,29 @@ def serve(
                     return
                 os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows; finished work is saved
                 self._json(200, {"stopped": pid})
+            elif self.path == "/api/settings":
+                from maktaba_pipeline import settings
+
+                try:
+                    self._json(200, save_settings(db_path, body))
+                except settings.SettingsError as e:
+                    self._json(400, {"error": str(e), "field": e.field})
+            elif self.path == "/api/plan-preview":
+                # one check-and-launch at a time: two clicks never start two planners
+                with preview_lock:
+                    if preview["proc"] is not None and preview["proc"].poll() is None:
+                        self._json(409, {"error": "A preview is already being planned."})
+                        return
+                    out = reports / "preview"
+                    out.mkdir(parents=True, exist_ok=True)
+                    args = [sys.executable, "-m", "scripts.mediaintel", "--db", db_path,
+                            "plan-channels", "--out", str(out)]  # fmt: skip
+                    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+                    with (out / "plan.log").open("w", encoding="utf-8") as fh:
+                        preview["proc"] = subprocess.Popen(  # noqa: S603 — fixed argv
+                            args, cwd=pipeline_dir, stdout=fh, stderr=subprocess.STDOUT, env=env
+                        )
+                self._json(202, {"started": True})
             elif self.path == "/api/style":
                 from . import db, scan_visual
 

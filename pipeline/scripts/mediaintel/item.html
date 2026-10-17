@@ -23,6 +23,7 @@
   <section class="top">
     <div><h1 id="title" dir="auto">Library</h1><div class="muted num" id="folder" dir="auto"></div></div>
     <div>
+      <a class="btn" id="review" hidden target="_blank" rel="noopener">Review page</a>
       <button class="btn primary" id="rerun">Re-run this library</button>
       <span id="rerun-confirm" hidden class="confirm">Start a run for only this library?
         <button class="btn primary" id="rerun-yes">Start</button><button class="btn ghost" id="rerun-no">Cancel</button></span>
@@ -68,8 +69,16 @@ function seasonsText(g) {
 }
 function render(d) {
   data = d;
-  document.title = d.name + " - Library Control Centre";
-  $("crumb").textContent = d.name; $("title").textContent = d.name; $("folder").textContent = d.folder;
+  const one = d.focus && d.list.length === 1 ? d.list[0] : null;  // a series page
+  const libUrl = `item?folder=${encodeURIComponent(d.folder)}`;
+  document.title = (one ? one.name + " · " + d.name : d.name) + " - Library Control Centre";
+  $("title").textContent = one ? one.name : d.name;
+  $("folder").innerHTML = one ? `${esc(one.kind)} in <a href="${libUrl}">${esc(d.name)}</a>` : esc(d.folder);
+  $("crumb").innerHTML = one ? `<a href="${libUrl}">${esc(d.name)}</a><span aria-hidden="true"> / </span>${esc(one.name)}` : esc(d.name);
+  const leaf = d.folder.replace(/[\/]+$/, "").split(/[\/]/).pop() + ".html";
+  fetch("api/reports").then(r => r.json()).then(j => {
+    if ((j.reports || []).includes(leaf)) { $("review").href = "reports/" + encodeURIComponent(leaf); $("review").hidden = false; }
+  }).catch(() => {});
   $("kpis").innerHTML = kbox("Files", fmt(d.files)) + kbox("Episode-length", fmt(d.long), "3 min or longer") + kbox("Seasons", fmt(d.seasons), `${fmt(d.series)} series`) +
     kbox("Ongoing shows", fmt(d.ongoing)) + kbox("Shorts", fmt(d.shorts), "short-form series");
   $("stages").innerHTML = Object.keys(STAGE_TITLES).filter(k => d.stages[k]).map(k => {
@@ -78,7 +87,7 @@ function render(d) {
       <span class="num">${fmt(s.done)} done${s.failed ? ` · <span style="color:var(--bad)">${fmt(s.failed)} failed</span>` : ""}</span></div>
       <div class="bar"><i class="done" style="width:${of ? 100 * s.done / of : 0}%"></i><i class="fail" style="width:${of ? 100 * s.failed / of : 0}%"></i></div></div>`;
   }).join("") || `<div class="empty">No per-file work saved for this library yet.</div>`;
-  $("series-h").textContent = d.focus ? "Series" : "Series and seasons";
+  $("series-h").textContent = one ? "Seasons" : d.focus ? "Series" : "Series and seasons";
   $("series-sub").innerHTML = d.focus ? `showing one series · <a href="item?folder=${encodeURIComponent(d.folder)}">show all</a>` : `${fmt(d.series)} series`;
   $("series").innerHTML = d.list.length ? `<tr><th>Series</th><th>Kind</th><th>Seasons</th><th>Episodes</th><th>Aired</th><th>Where it appears</th></tr>` + d.list.map(g => {
     const cols = [...new Set(g.seasons.map(x => x.collection).filter(Boolean))];
@@ -88,6 +97,10 @@ function render(d) {
       <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}
         ${g.tv === null ? `<span class="muted">dizqueTV not reachable</span>` : g.tv.length ? g.tv.map(c => `<span class="chip good">dizqueTV: ${esc(c)}</span>`).join(" ") : `<span class="muted">no dizqueTV show yet</span>`}</td></tr>`;
   }).join("") : `<tr><td class="empty">No series detected in this library yet.</td></tr>`;
+  if (one) $("series").innerHTML = `<tr><th>Season</th><th>Episodes</th><th>Aired</th><th>Plex collection</th></tr>` + one.seasons.map(x =>
+    `<tr><td dir="auto">${esc(x.name || (x.season != null ? "Season " + x.season : "—"))}</td><td class="n">${fmt(x.episodes)}</td>
+      <td class="num">${esc(span(x.first_air, x.last_air))}</td>
+      <td dir="auto">${x.collection ? `<span class="chip good">${esc(x.collection)}</span>` : `<span class="muted">none yet</span>`}</td></tr>`).join("");
   const plexCell = c => c ? `<span class="chip good">Plex: ${esc(c)}</span>` : `<span class="muted">no Plex collection yet</span>`;
   $("extra-sub").textContent = `${fmt(d.topics.length)} topics · ${fmt(d.clip_groups.length)} clip groups · ${fmt(d.promos.length)} promos linked`;
   $("topics").innerHTML = d.topics.length ? `<tr><th>Topic (across shows)</th><th>Videos</th><th>Where it appears</th></tr>` + d.topics.map(t =>

@@ -28,12 +28,14 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from maktaba_pipeline.classify.clip_groups import (  # noqa: F401 - re-exported
+    DEFAULT,
     FILLER_MAX_S,
     MIN_PLAYLIST,
     MIN_TOPIC,
     PROMO_RE,
     QA_RE,
     Group,
+    GroupConfig,
     Item,
     Show,
     group_id,
@@ -44,6 +46,27 @@ from maktaba_pipeline.classify.clip_groups import (  # noqa: F401 - re-exported
     promo_season,
 )
 from maktaba_pipeline.text.arabic import fold
+
+__all__ = [
+    "DEFAULT",
+    "FILLER_MAX_S",
+    "MIN_PLAYLIST",
+    "MIN_TOPIC",
+    "PROMO_RE",
+    "QA_RE",
+    "Group",
+    "GroupConfig",
+    "Item",
+    "Show",
+    "group_id",
+    "group_title",
+    "link_promo",
+    "name_words",
+    "plan_groups",
+    "promo_season",
+    "group_folder",
+    "run",
+]
 
 
 def _shows(conn: sqlite3.Connection) -> list[Show]:
@@ -63,7 +86,10 @@ def _shows(conn: sqlite3.Connection) -> list[Show]:
 
 
 def run(
-    conn: sqlite3.Connection, only_folder: str | None = None, folders: list[str] | None = None
+    conn: sqlite3.Connection,
+    only_folder: str | None = None,
+    folders: list[str] | None = None,
+    cfg: GroupConfig = DEFAULT,
 ) -> dict[str, int]:
     """Group every folder's leftovers (those under ``folders`` / matching ``only_folder``)
     and link its promos. Returns totals."""
@@ -75,6 +101,11 @@ def run(
         and "/." not in r[0]
     ]
     shows = _shows(conn)
+    if cfg is DEFAULT:
+        from . import settings_store
+
+        cfg = settings_store.get(conn, "groups")
+        settings_store.note(conn, "groups")
     totals: Counter[str] = Counter()
     print(f"grouping clips in {len(folders)} libraries", flush=True)
     for n, folder in enumerate(folders, 1):
@@ -83,7 +114,7 @@ def run(
             (folder,),
         ).fetchone()
         library = lib[0] if lib else Path(folder).name
-        got = group_folder(conn, library, folder, shows)
+        got = group_folder(conn, library, folder, shows, cfg)
         totals.update(got)
         print(f"  [{n}/{len(folders)}] {library}: {got['groups']} groups "
               f"({got['clips']} clips, {got['standalone']} stand-alone), "
@@ -92,8 +123,13 @@ def run(
 
 
 def group_folder(
-    conn: sqlite3.Connection, library: str, folder: str, shows: list[Show]
+    conn: sqlite3.Connection,
+    library: str,
+    folder: str,
+    shows: list[Show],
+    cfg: GroupConfig = DEFAULT,
 ) -> Counter[str]:
+    promo_re, qa_re = cfg.promo_re(), cfg.qa_re()
     placed: set[str] = set()
     clip_members: set[str] = set()
     extras_of: dict[str, tuple[Show, int]] = {}
@@ -130,14 +166,17 @@ def group_folder(
         if path in placed or path in copies or not dur:
             continue
         items[path] = Item(path, title or "", float(dur), upload)
-        items[path].clip = path in shorts or path in clip_members or float(dur) < FILLER_MAX_S
+        items[path].clip = (
+            path in shorts or path in clip_members or float(dur) < cfg.filler_max_minutes * 60
+        )
         if yid:
             yt_of[yid] = path
     # promos: linked to the show, not grouped
     links: list[tuple[str, Show, int | None, float, str]] = []
+    unmatched: list[str] = []  # promos whose show is not found: kept out of clip groups
     promo_upload = {p: it.upload for p, it in items.items()}
     for path, it in list(items.items()):
-        if not PROMO_RE.search(fold(it.title)):
+        if not promo_re.search(fold(it.title)):
             continue
         with_season = extras_of.get(path)
         if with_season is not None:
@@ -146,7 +185,7 @@ def group_folder(
         elif (hit := link_promo(it.title, folder, shows)) is not None:
             links.append((path, hit[0], promo_season(it.title, hit[0]), hit[1], hit[2]))
         else:
-            continue
+            unmatched.append(path)
         del items[path]
     titles: dict[str, str] = {}
     # a topic collection ("ملف") already holds its playlist's episodes: its clips are grouped
@@ -170,26 +209,41 @@ def group_folder(
             if path in items and pid not in topic_pls:
                 items[path].playlists.setdefault(pid, pos if pos is not None else 10**6)
                 titles[pid] = ptitle
-    for path, tag in conn.execute(
-        """SELECT t.path, t.tag FROM video_tags t JOIN files f ON f.path = t.path
+    # the tag step makes video_tags; without it every clip is untagged
+    tagged = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_tags'"
+    ).fetchone()
+    genre_rows = (
+        conn.execute(
+            """SELECT t.path, t.tag FROM video_tags t JOIN files f ON f.path = t.path
            WHERE f.folder = ? AND t.tag LIKE 'genre:%' ORDER BY t.score""",
-        (folder,),
-    ):
-        if path in items:
-            items[path].genre = tag.split(":", 1)[1]  # highest score last wins
-    qa_tagged = {
-        p
-        for (p,) in conn.execute(
-            """SELECT t.path FROM video_tags t JOIN files f ON f.path = t.path
-               WHERE f.folder = ? AND t.tag = 'format:qa_fatwa' AND t.score >= 0.5""",
             (folder,),
         )
-    }
+        if tagged
+        else []
+    )
+    for path, tag in genre_rows:
+        if path in items:
+            items[path].genre = tag.split(":", 1)[1]  # highest score last wins
+    qa_tagged = (
+        {
+            p
+            for (p,) in conn.execute(
+                """SELECT t.path FROM video_tags t JOIN files f ON f.path = t.path
+               WHERE f.folder = ? AND t.tag = 'format:qa_fatwa' AND t.score >= 0.5""",
+                (folder,),
+            )
+        }
+        if tagged
+        else set()
+    )
     for path, it in items.items():
-        it.qa = path in qa_tagged or bool(QA_RE.search(fold(it.title)))
-    groups = plan_groups(list(items.values()), titles)
+        it.qa = path in qa_tagged or bool(qa_re.search(fold(it.title)))
+    groups = plan_groups(list(items.values()), titles, cfg)
     # linked promos air next to their show, and they are also one collection per library
-    promo_paths = sorted((p for p, *_ in links), key=lambda p: (promo_upload.get(p) or "9999", p))
+    promo_paths = sorted(
+        [p for p, *_ in links] + unmatched, key=lambda p: (promo_upload.get(p) or "9999", p)
+    )
     if promo_paths:
         groups.append(Group("clips", "promo", "إعلانات", None, promo_paths))
     conn.execute("DELETE FROM clip_groups WHERE folder=?", (folder,))

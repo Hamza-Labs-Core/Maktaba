@@ -88,9 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     root_args(p)
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
     p.add_argument("--from-step", default="scan", metavar="STEP",
-                   help="start at this step, keeping what earlier steps cached: scan, youtube, "
-                        "link, detect, signatures, exact, tag, group, scan-visual, report, export-plex, "
-                        "dizquetv-shows, plan-channels, export-dizquetv")  # fmt: skip
+                   help="start at this step, keeping what earlier steps cached: scan, plex, "
+                        "youtube, link, detect, signatures, exact, tag, group, export-plex, "
+                        "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv")  # fmt: skip
+    p.add_argument("--skip", action="append", default=[], metavar="STEP",
+                   help="leave this step out (repeatable), e.g. scan-visual while the NAS is slow")  # fmt: skip
     p.add_argument("--exact", action="store_true",
                    help="also fetch exact upload dates for series members (slow, polite)")  # fmt: skip
     p.add_argument("--lang", default="ar")
@@ -162,8 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("detect", help="group videos into series and seasons")
     p.add_argument("--folder", help="only folders whose path contains this")
     p.add_argument(
-        "--min-episode-minutes", type=float, default=3.0,
-        help="shorter videos are shorts: never episodes, left out of series (default 3)",
+        "--min-episode-minutes", type=float, default=None,
+        help="shorter videos are shorts: never episodes, left out of series (default: the "
+             "detect setting min_episode_s, 180 s)",
     )  # fmt: skip
 
     p = sub.add_parser("set-style", help="pin a series' production style (overrides scan-visual)")
@@ -270,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                 exact=a.exact, lang=a.lang, delay_s=a.delay, report_dir=a.out, workers=a.workers,
                 plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
                 from_step=a.from_step,
+                skip=tuple(a.skip),
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(
@@ -318,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "set-style":
         from . import scan_visual
 
+        if not a.clear and not a.style:
+            ap.error("set-style needs STYLE, or --clear to remove the override")
         scan_visual.set_override(conn, a.library, a.series, None if a.clear else a.style)
         print(f"{a.library} / {a.series}: " + ("cleared" if a.clear else a.style))
     elif a.cmd == "scan-visual":

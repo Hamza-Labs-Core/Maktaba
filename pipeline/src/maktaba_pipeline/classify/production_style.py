@@ -47,6 +47,7 @@ import re
 import statistics
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
+from operator import add, sub
 from typing import Any, Literal
 
 __all__ = [
@@ -343,23 +344,28 @@ def _look_vec(thumb: bytes) -> tuple[int, ...]:
     for by in range(_LOOK_H):
         rows = [thumb[(by * bh + r) * THUMB_W : (by * bh + r + 1) * THUMB_W] for r in range(bh)]
         for bx in range(_LOOK_W):
-            out.append(sum(sum(row[bx * bw : (bx + 1) * bw]) for row in rows) // (bw * bh))
+            out.append(sum(map(sum, [row[bx * bw : (bx + 1) * bw] for row in rows])) // (bw * bh))
     return tuple(out)
 
 
 def _dist(a: Sequence[int], b: Sequence[int]) -> float:
-    return sum(abs(x - y) for x, y in zip(a, b, strict=True)) / len(a)
+    if len(a) != len(b):
+        raise ValueError("look vectors differ in length")
+    total: int = sum(map(abs, map(sub, a, b)))
+    return total / len(a)
 
 
 def _edge_share(thumb: bytes) -> float:
     w, h = THUMB_W, THUMB_H
     edges = 0
+    # per row in C (map/operator), not per pixel in Python: this runs for every
+    # sampled thumbnail of every season
     for y in range(h - 1):
         row, nxt = y * w, (y + 1) * w
-        for x in range(w - 1):
-            p = thumb[row + x]
-            if abs(p - thumb[row + x + 1]) + abs(p - thumb[nxt + x]) >= EDGE_GRADIENT:
-                edges += 1
+        px = thumb[row : row + w - 1]
+        right = map(abs, map(sub, px, thumb[row + 1 : row + w]))
+        down = map(abs, map(sub, px, thumb[nxt : nxt + w - 1]))
+        edges += sum(map(EDGE_GRADIENT.__le__, map(add, right, down)))
     return edges / ((w - 1) * (h - 1))
 
 

@@ -49,6 +49,7 @@ from maktaba_pipeline.schedule.channel_planner import (
     slot_timeline,
     suggest_channels,
 )
+from maktaba_pipeline.text.arabic import fold
 
 from .report import CSS as REPORT_CSS
 
@@ -121,6 +122,20 @@ def load_inputs(
         eps_by_series[r[0]].append(r)
     in_series = {r[1] for rs in eps_by_series.values() for r in rs}
     hidden: set[str] = set()  # promos / trailers / second uploads: never programmes or filler
+    from . import settings_store
+
+    promo_re = settings_store.get(conn, "groups").promo_re()
+    promo_of: dict[str, str] = {}
+    if "promo_links" in tables:
+        promo_of = {
+            p: f"{folder}|{key}"
+            for p, folder, key in conn.execute(
+                "SELECT path, series_folder, series_key FROM promo_links"
+            )
+        }
+    # a promo inside a clip playlist is not one of its clips: linked, it airs next to
+    # its show (a loose video with promo_of); unlinked, it never airs
+    clip_promos: set[str] = set()
     seasons: list[SeasonCandidate] = []
     for sid, library, name, year, meta_raw in conn.execute(
         "SELECT id, library, name, year, metadata FROM series"
@@ -136,6 +151,11 @@ def load_inputs(
         for r in eps_by_series.get(sid, []):
             f = files.get(r[1])
             if f is None or not f["dur"]:
+                continue
+            if meta.get("kind") == "clips" and (
+                r[1] in promo_of or promo_re.search(fold(f["title"] or ""))
+            ):
+                clip_promos.add(r[1])
                 continue
             eps.append(
                 EpisodeRef(
@@ -176,7 +196,7 @@ def load_inputs(
     shorts = {r[0] for r in conn.execute("SELECT path FROM shorts")}
     # the group step's clip / stand-alone groups (filler by topic) and promo links
     group_of: dict[str, tuple[str, str | None]] = {}
-    promo_of: dict[str, str] = {}
+    in_series -= clip_promos
     if "clip_groups" in tables:
         from .group_clips import group_title
 
@@ -185,13 +205,6 @@ def load_inputs(
                JOIN clip_groups g ON g.id = i.group_id"""
         ):
             group_of[path] = (group_title(lib, kind, basis, gname), topic)
-    if "promo_links" in tables:
-        promo_of = {
-            p: f"{folder}|{key}"
-            for p, folder, key in conn.execute(
-                "SELECT path, series_folder, series_key FROM promo_links"
-            )
-        }
     # a second file of a video (X.mkv beside X.mp4) is not a loose video
     with contextlib.suppress(sqlite3.OperationalError):
         hidden |= {r[0] for r in conn.execute("SELECT path FROM file_copies")}
@@ -201,6 +214,8 @@ def load_inputs(
             continue
         if path in hidden and path not in promo_of:
             continue  # a promo linked to its show airs next to it; other extras never air
+        if path not in promo_of and promo_re.search(fold(f["title"] or "")):
+            continue  # a promo whose show was not found advertises nothing on air
         tags = dict(video_tags.get(path, {}))
         group, group_topic = group_of.get(path, ("", None))
         if group_topic and not any(t.startswith("topic:") for t in tags):
@@ -669,6 +684,11 @@ def run(
     """Plan channels from the cache behind ``conn`` (read-only) into ``out_dir``.
     ``review``: also write the plain-text review (:func:`review_text`) there.
     Returns the JSON path."""
+    if config is None:
+        from . import settings_store
+
+        config = settings_store.get(conn, "planner")
+        settings_store.note(conn, "planner")
     seasons, loose, notes = load_inputs(conn)
     plan = suggest_channels(seasons, loose, config)
     src = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")

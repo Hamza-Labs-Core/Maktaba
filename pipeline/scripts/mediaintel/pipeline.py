@@ -47,8 +47,10 @@ def run(
     tv_url: str = "http://localhost:8002",
     backup_dir: Path = Path("backups"),
     from_step: str = "scan",
+    skip: tuple[str, ...] = (),
 ) -> None:
-    """``from_step``: start at that step (see :data:`STEPS`); earlier steps are left as the
+    """``skip``: steps to leave out (e.g. ``scan-visual`` while the NAS is slow).
+    ``from_step``: start at that step (see :data:`STEPS`); earlier steps are left as the
     cache holds them, e.g. to finish a stopped run without listing and detecting again.
     ``plex``: write the season collections (``export-plex --apply --replace-existing``;
     older collections are listed as superseded, never deleted). ``tv``: update dizqueTV
@@ -59,7 +61,7 @@ def run(
     try:
         _run(conn, roots, server=server, path_map=path_map, youtube=youtube, exact=exact,
              lang=lang, delay_s=delay_s, report_dir=report_dir, workers=workers, plex=plex,
-             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step)  # fmt: skip
+             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step, skip=skip)  # fmt: skip
     finally:
         pid_file.unlink(missing_ok=True)
 
@@ -82,12 +84,17 @@ def _run(
     backup_dir: Path,
     t0: float,
     from_step: str = "scan",
+    skip: tuple[str, ...] = (),
 ) -> None:
     if from_step not in STEPS:
         raise ValueError(f"--from-step must be one of {', '.join(STEPS)}")
+    if bad := [s for s in skip if s not in STEPS]:
+        raise ValueError(f"--skip {bad[0]!r}: must be one of {', '.join(STEPS)}")
+    if skip:
+        print(f"leaving out: {', '.join(skip)}")
 
     def want(step: str) -> bool:
-        return STEPS.index(step) >= STEPS.index(from_step)
+        return step not in skip and STEPS.index(step) >= STEPS.index(from_step)
 
     folders = [r.as_posix() for r in roots]
     if from_step != "scan":
@@ -203,6 +210,8 @@ def _run(
                 conn, server, apply=True, library_filter=lib, include_clips=False,
                 replace_existing=True, remove_superseded=False, diff=True,
             )  # fmt: skip
+        print("Plex apps keep their old library view: restart the Plex app (or refresh "
+              "the library) to see the new collections", flush=True)  # fmt: skip
     if tv and server is not None and want("dizquetv-shows"):
         from . import dizquetv_shows
 
