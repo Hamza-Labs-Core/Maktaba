@@ -47,6 +47,7 @@ import shutil
 import sqlite3
 import sys
 import tarfile
+import unicodedata
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
@@ -183,7 +184,13 @@ def _norm(p: str, maps: list[tuple[str, str]]) -> str:
         if s.lower().startswith(src.lower()):
             s = dst + s[len(src) :]
             break
-    return s.lower()
+    return _key(s)
+
+
+def _key(path: str) -> str:
+    """How two paths are compared: ``/`` separators, composed Unicode (the share may hold a
+    name decomposed, and content_hash then stores that form), case folded."""
+    return unicodedata.normalize("NFC", path.replace("\\", "/")).lower()
 
 
 def parse_path_maps(values: list[str]) -> list[tuple[str, str]]:
@@ -299,15 +306,15 @@ async def _create_libraries(
             report.libraries_created += 1
         out.append((lib, name))
         have = {
-            str(r["path"]).lower()
+            _key(str(r["path"]))
             for r in await db.fetch("SELECT path FROM videos WHERE library_id = $1", uid(lib))
         }
         rows: list[tuple[Any, ...]] = []
         for f in files:
             path = _map(str(f["path"]), maps)
-            if path.lower() in have:
+            if _key(path) in have:
                 continue
-            have.add(path.lower())
+            have.add(_key(path))
             rows.append((
                 uid(uuid.uuid4()), uid(lib), stand_in_hash(name, path), path, posixpath.basename(path),
                 int(f["size"]), to_ts(db, datetime.fromtimestamp(float(f["mtime"]), UTC)),
@@ -424,7 +431,7 @@ async def _import(
             "SELECT id, path, size_bytes, mtime FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
             uid(lib_id),
         ):
-            by_norm[str(r["path"]).replace("\\", "/").lower()] = (
+            by_norm[_key(str(r["path"]))] = (
                 UUID(str(r["id"])), lib_id, int(r["size_bytes"]), _epoch(r["mtime"]),
             )  # fmt: skip
     # cache path -> (video id, library id)
@@ -1016,7 +1023,7 @@ async def _thumbs(
             " AND deleted_at IS NULL",
             uid(lib_id),
         ):
-            key = str(r["path"]).replace("\\", "/").lower()
+            key = _key(str(r["path"]))
             # a stand-in hash names no cache folder: the copy waits under the video's id
             ch = (
                 None

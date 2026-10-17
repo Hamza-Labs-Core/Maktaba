@@ -454,3 +454,16 @@ async def test_create_makes_libraries_and_videos_and_the_queue_reads_the_files(
     first = rows[0]["content_hash"]
     assert thumb_small.small_path(str(first)).read_bytes() == b"\xff\xd8imported"
     assert not any((tmp_path / "thumbcache" / "imported").glob("*.jpg"))  # moved, not copied
+
+
+@pytest.mark.unit
+def test_paths_compare_across_unicode_forms_and_case() -> None:
+    """content_hash may store a name as the share spells it (decomposed); a later import
+    must still see that video as the cache's file, not create a second one."""
+    import unicodedata
+
+    from maktaba_pipeline.tools.import_mediaintel import _key
+
+    composed = "/Volumes/Y/قناة/ألش خانة ｜ ١٤.MP4"
+    assert _key(unicodedata.normalize("NFD", composed)) == _key(composed)
+    assert _key("Y:\\a\\B.mp4") == _key("y:/a/b.mp4")
