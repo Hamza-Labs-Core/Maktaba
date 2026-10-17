@@ -49,6 +49,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // reachable from phones and other machines while developing: Bonjour names on
+    // the LAN and Tailscale (MagicDNS) names; Vite refuses unknown hosts otherwise
+    allowedHosts: [".local", ".ts.net"],
     proxy: {
       // In dev, point /api/* and /ws/* at the local Go API.
       "/api": {
