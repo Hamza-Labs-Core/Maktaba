@@ -80,6 +80,7 @@ __all__ = [
     "NAMESPACES",
     "OCCASIONS",
     "TAGGER_VERSION",
+    "SUBTOPICS",
     "TOPICS",
     "TOPIC_NAMES_AR",
     "Tag",
@@ -93,7 +94,7 @@ __all__ = [
     "tag_video",
 ]
 
-TAGGER_VERSION: int = 1
+TAGGER_VERSION: int = 3
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -103,6 +104,13 @@ TOPICS: tuple[str, ...] = (
     "sahaba", "islamic_history", "aqeedah", "shubuhat", "akhirah", "fiqh", "raqaiq",
     "akhlaq", "dua_dhikr", "ruqyah", "family_marriage", "youth", "women", "dawah",
     "current_affairs", "arabic_language", "stories", "nasheed", "poetry",
+)  # fmt: skip
+#: Finer topics inside a broad one (fiqh → salah, zakat …; Ramadan → fasting, qiyam):
+#: emitted as ``topic:`` tags for themed channels, never as the ``genre:`` (the broad
+#: topic stays the genre, so collections and the mix balance keep their topics).
+SUBTOPICS: tuple[str, ...] = (
+    "fasting", "qiyam", "zakat", "salah", "family_fiqh", "muamalat", "quran_competition",
+    "palestine",
 )  # fmt: skip
 #: Arabic names of the topics, for collection and channel titles ("<lib> - مقاطع - الفقه")
 TOPIC_NAMES_AR: dict[str, str] = {
@@ -114,12 +122,17 @@ TOPIC_NAMES_AR: dict[str, str] = {
     "family_marriage": "الأسرة والزواج", "youth": "الشباب", "women": "المرأة",
     "dawah": "الدعوة", "current_affairs": "قضايا معاصرة", "arabic_language": "اللغة العربية",
     "stories": "قصص", "nasheed": "أناشيد", "poetry": "شعر", "general": "منوعات",
+    "fasting": "الصيام", "qiyam": "التراويح والقيام", "zakat": "الزكاة والصدقة",
+    "salah": "فقه الصلاة", "family_fiqh": "فقه الأسرة", "muamalat": "فقه المعاملات",
+    "quran_competition": "مسابقات القرآن", "palestine": "فلسطين",
 }  # fmt: skip
 FORMATS: tuple[str, ...] = (
     "program", "lecture", "khutbah", "qa_fatwa", "recitation", "clips",
     "documentary", "drama", "interview", "podcast", "live",
 )  # fmt: skip
-AUDIENCES: tuple[str, ...] = ("general", "kids", "women", "youth")
+#: ``kids_friendly``: not made for children but fine for them (a seerah series, a
+#: reciter's or a history channel); ``beginners``: a basics programme
+AUDIENCES: tuple[str, ...] = ("general", "kids", "kids_friendly", "beginners", "women", "youth")
 OCCASIONS: tuple[str, ...] = (
     "ramadan", "hajj", "eid", "ashura", "jumuah", "isra_miraj", "hijri_new_year",
 )  # fmt: skip
@@ -199,6 +212,10 @@ _CONTEXT: dict[str, str] = {
     "eschat": "القبر الأخيرة الآخرة الملكين القيامة",
     # "شهر الرحمة" is Ramadan, not the virtue of mercy
     "month": "شهر",
+    # "تحفة الأطفال" is a tajweed poem, not a children's programme
+    "tuhfa": "تحفة التحفة",
+    # "الصلاة على النبي" is a dhikr, not the prayer
+    "nabi": "النبي نبي محمد الحبيب رسول الرسول المصطفى",
 }
 
 _LEXICON: dict[str, dict[float, str]] = {
@@ -383,6 +400,82 @@ _LEXICON: dict[str, dict[float, str]] = {
             "| الصيام | صيام | الحج | العمرة | الطلاق | النكاح | الحجاب | سنن | مسائل | المسائل"
         ),
     },
+    # finer fiqh / Ramadan / Quran topics (SUBTOPICS): tags only, never a genre ----------
+    "topic:fasting": {
+        1.0: (
+            "الصيام | صيام | الصوم | صوم | فقه الصيام | أحكام الصيام | المفطرات | مفطرات "
+            "| الصائم | الصائمين | للصائم | السحور | الإفطار | إفطار | زكاة الفطر | الاعتكاف "
+            "| ليلة القدر | صيام التطوع | صيام الست | يوم عرفة | fasting | sawm"
+        ),
+        0.5: "رمضان | رمضانيات | الصائمون | الفطر",
+    },
+    "topic:qiyam": {
+        1.0: (
+            "التراويح | تراويح | صلاة التراويح | قيام الليل | قيام رمضان | التهجد | تهجد "
+            "| صلاة الوتر | الشفع والوتر | دعاء القنوت | القنوت | taraweeh | tarawih | qiyam "
+            "| tahajjud"
+        ),
+        0.5: "الوتر | القيام | ليالي رمضان",
+    },
+    "topic:zakat": {
+        1.0: (
+            "الزكاة | زكاة | زكاة المال | زكاة الفطر | زكاة الذهب | النصاب | نصاب | الصدقة "
+            "| الصدقات | صدقة | صدقة جارية | الإنفاق | إنفاق | الإنفاق في سبيل الله | zakat "
+            "| sadaqah | charity"
+        ),
+        0.5: "الفقراء والمساكين | المحتاجين | الوقف",
+    },
+    "topic:salah": {
+        1.0: (
+            "فقه الصلاة | أحكام الصلاة | صفة الصلاة | صفة صلاة النبي | الطهارة | الوضوء | الغسل "
+            "| التيمم | سجود السهو | سجود التلاوة | الأذان | صلاة الجماعة | صلاة الجمعة "
+            "| صلاة المسافر | قصر الصلاة | الجمع بين الصلاتين | أخطاء المصلين | المسح على الخفين "
+            "| النجاسة | نجاسات | مواقيت الصلاة | شروط الصلاة | أركان الصلاة | واجبات الصلاة "
+            "| مبطلات الصلاة | الخشوع في الصلاة | صلاة الاستخارة | صلاة الكسوف | صلاة الاستسقاء "
+            "| السنن الرواتب | تارك الصلاة | كتاب الطهارة | كتاب الصلاة | salah | prayer | wudu"
+        ),
+        0.6: "الصلاة ~nabi | صلاة ~nabi | الصلوات | المصلي | المصلين | المسجد | المساجد",
+    },
+    "topic:family_fiqh": {
+        1.0: (
+            "النكاح | كتاب النكاح | عقد النكاح | عقد الزواج | الطلاق | طلاق | الخلع | العدة "
+            "| الحضانة | النفقة | الرضاع | الرضاعة | المواريث | الميراث | الفرائض | علم الفرائض "
+            "| تقسيم التركة | التركة | الوصية | الولي | المهر | الصداق | تعدد الزوجات | التعدد "
+            "| الظهار | الإيلاء | اللعان | حقوق الزوج | حقوق الزوجة | حقوق الزوجين | فقه الأسرة "
+            "| أحكام الأسرة | inheritance | divorce"
+        ),
+        0.5: "الزوجين | الزواج | الزوجة | الزوج",
+    },
+    "topic:muamalat": {
+        1.0: (
+            "المعاملات | المعاملات المالية | فقه المعاملات | البيوع | كتاب البيوع | فقه البيوع "
+            "| الربا | الفوائد البنكية | البنوك | البنوك الإسلامية | بنك | التجارة | تجارة "
+            "| التداول | تداول | الأسهم | البورصة | العملات الرقمية | البيتكوين | الفوركس "
+            "| التقسيط | القرض | القروض | الديون | الإجارة | التأمين | الغرر "
+            "| الاحتكار | الكسب الحلال | المال الحرام | الاقتصاد الإسلامي | الشركات | المضاربة "
+            "| المرابحة | الصرف | riba | trading | finance | crypto | stocks"
+        ),
+        0.6: "بيع | البيع | المال | الأموال | الاقتصاد | الأرباح | الربح | السوق | الأسواق",
+    },
+    "topic:quran_competition": {
+        1.0: (
+            "مسابقة القرآن | مسابقة قرآنية | مسابقات القرآن | المسابقة القرآنية | مسابقة حفظ "
+            "| مسابقة تحفيظ | جائزة دبي الدولية للقرآن | جائزة دبي | المسابقة الدولية "
+            "| مسابقة دولية | جائزة القرآن | المتسابق | المتسابقين | المتسابقة | المتسابقون "
+            "| تحدي القراء | quran competition"
+        ),
+        0.6: "مسابقة | مسابقات | المسابقة | جائزة | الجائزة | التصفيات | التحكيم | لجنة التحكيم",
+    },
+    "topic:palestine": {
+        1.0: (
+            "فلسطين | الفلسطينية | الفلسطيني | الفلسطينيين | غزة | قطاع غزة | القدس "
+            "| المسجد الأقصى | الأقصى | طوفان الأقصى | الضفة الغربية | الكيان الصهيوني "
+            "| الصهيونية | الصهاينة | المقاومة الفلسطينية | القسام | الانتفاضة | النكبة | نابلس "
+            "| جنين | رفح | خان يونس | بيت المقدس | palestine | gaza | aqsa | jerusalem"
+        ),
+        # alone these name Israel, not Palestine (another country's ties with it)
+        0.3: "الاحتلال | الصهيوني | إسرائيل <bani | المستوطنين | المستوطنون | الضفة",
+    },
     "topic:raqaiq": {
         1.0: (
             "الرقائق | رقائق | التزكية | تزكية النفس | تزكية | أعمال القلوب | محاسبة النفس "
@@ -490,7 +583,9 @@ _LEXICON: dict[str, dict[float, str]] = {
             "نشيد | أناشيد | الأناشيد | أنشودة | انشودة | إنشاد | منشد | المنشد | بدون موسيقى "
             "| بدون إيقاع | nasheed | nasheeds | anasheed | نشيدة | انشوده | نشيده"
         ),
-        0.6: "ابتهالات | ابتهال | مدائح | مديح | إيقاع | بصوت",
+        # not «بصوت» ("in the voice of"): it credits any voice, a reciter's
+        # (بصوت القارئ) or an audiobook narrator's as much as a munshid's
+        0.6: "ابتهالات | ابتهال | مدائح | مديح | إيقاع",
     },
     # formats -------------------------------------------------------------
     "format:program": {
@@ -556,9 +651,17 @@ _LEXICON: dict[str, dict[float, str]] = {
     # audiences -----------------------------------------------------------
     "audience:kids": {
         1.0: (
-            "أطفال | الأطفال | للأطفال | الطفل | للطفل | الصغار | للصغار | براعم | أشبال | كرتون "
+            "أطفال ~tuhfa | الأطفال ~tuhfa | للأطفال | الطفل | للطفل | الصغار | للصغار | براعم "
+            "| أشبال | كرتون "
             "| رسوم متحركة | أنيميشن | أنشودة أطفال | kids | children | child | for kids "
             "| nursery | أناشيد أطفال"
+        ),
+    },
+    "audience:beginners": {
+        1.0: (
+            "أساسيات | الأساسيات | للمبتدئين | المبتدئين | مبادئ | المبادئ | مدخل إلى | مدخل "
+            "| بداية الطريق | خطوة بخطوة | تعلم | تعليم | تبسيط | مبسط | المبسط | ميسر | الميسر "
+            "| basics | beginners | introduction | intro to"
         ),
     },
     "audience:women": {
@@ -1178,9 +1281,10 @@ def tag_video(
 
 
 def primary_topic(tags: Iterable[Tag]) -> Tag | None:
-    """The highest-scoring ``topic:`` tag (ties → :data:`TOPICS` order)."""
+    """The highest-scoring ``topic:`` tag of :data:`TOPICS` (ties → its order); a
+    :data:`SUBTOPICS` tag never is: its broad topic is the genre."""
     order = {f"topic:{t}": i for i, t in enumerate(TOPICS)}
-    topics = [t for t in tags if t.tag.startswith("topic:")]
+    topics = [t for t in tags if t.tag in order]
     if not topics:
         return None
     return min(topics, key=lambda t: (-t.score, order.get(t.tag, 99)))

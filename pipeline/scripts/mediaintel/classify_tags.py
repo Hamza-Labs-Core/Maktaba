@@ -56,7 +56,18 @@ CREATE TABLE IF NOT EXISTS video_tags (
     PRIMARY KEY (path, tag)
 );
 CREATE INDEX IF NOT EXISTS video_tags_tag_idx ON video_tags (tag, score);
+-- an episode of a series by its own title: a Palestine episode of a talk show, a tajweed
+-- lesson inside a lecture series (themed channels take such episodes one by one)
+CREATE TABLE IF NOT EXISTS episode_tags (
+    path  TEXT NOT NULL,
+    tag   TEXT NOT NULL,
+    score REAL NOT NULL,
+    PRIMARY KEY (path, tag)
+);
 """
+
+#: what an episode keeps of its own tags: what it is about, for whom, for when
+_EPISODE_NAMESPACES = ("topic:", "audience:", "occasion:")
 
 
 def _channel_names(conn: sqlite3.Connection, folder: str) -> list[str]:
@@ -152,6 +163,20 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
             (folder,),
         )
     }
+    conn.execute("DELETE FROM episode_tags WHERE path IN (SELECT path FROM files WHERE folder=?)",
+                 (folder,))  # fmt: skip
+    ep_rows: list[tuple[str, str, float]] = []
+    for p in in_series:
+        r = by_path.get(p)
+        if r is None:
+            continue
+        for t in tag_video(r["title"], r["description"] or "", r["dur"], channel=channel,
+                           noise=noise):  # fmt: skip
+            if t.tag.startswith(_EPISODE_NAMESPACES) and t.tag != "audience:general":
+                ep_rows.append((p, t.tag, t.score))
+    conn.executemany("INSERT OR REPLACE INTO episode_tags (path, tag, score) VALUES (?,?,?)",
+                     ep_rows)  # fmt: skip
+    print(f"  episodes tagged by their own titles: {len(in_series)} ({len(ep_rows)} tags)")
     shorts = {p for (p,) in conn.execute("SELECT path FROM shorts WHERE folder=?", (folder,))}
     conn.execute("DELETE FROM video_tags WHERE path IN (SELECT path FROM files WHERE folder=?)",
                  (folder,))  # fmt: skip

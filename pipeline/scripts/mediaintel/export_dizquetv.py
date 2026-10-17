@@ -30,17 +30,24 @@ create (no ``maktaba-plan · `` name prefix, or a channel without the
 ``maktabaPlan`` marker) is never touched unless ``--replace-existing``;
 existing channels keep every setting except ``programs``, ``fillerCollections``
 and ``scheduleBackup``.
+
+``--prune`` deletes what this tool made earlier and the plan no longer has (its
+channels, ``maktaba-plan · `` shows and filler lists); ``--clear-channels`` also
+deletes every other channel that is not in the plan (a fresh lineup). Neither
+runs with ``--channel``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +112,7 @@ def read_state(dz: DizqueTV) -> State:
 
 @dataclass(slots=True)
 class Action:
-    verb: str  # create | update | unchanged | conflict | skip
+    verb: str  # create | update | unchanged | conflict | skip | delete
     kind: str  # filler | show | channel
     name: str
     method: str | None = None
@@ -236,6 +243,8 @@ def plan_actions(
     ramadan: bool = False,
     tz_offset: int = 0,
     replace_existing: bool = False,
+    prune: bool = False,
+    clear_channels: bool = False,
 ) -> list[Action]:
     lanes: Mapping[str, Any] = plan["lanes"]
     pools: Mapping[str, Any] = plan["filler_pools"]
@@ -334,6 +343,7 @@ def plan_actions(
             "fillerRepeatCooldown": dzc["fillerRepeatCooldown"],
             "scheduleBackup": sch,
             "maktabaPlan": {"key": c["key"], "planner_version": plan["planner_version"]},
+            **channel_art(plan, c["key"]),
         }
         per = int(sch["period"])
         names = {lane_ids.get(k): lanes[k]["name"] for k in lanes}
@@ -366,12 +376,199 @@ def plan_actions(
                     "tool: needs --replace-existing (or renumber the plan)"], ref=c["key"]))  # fmt: skip
             continue
         upd = {**ex, **{k: body[k] for k in ("programs", "fillerCollections", "scheduleBackup",
-                                             "maktabaPlan", "fillerRepeatCooldown")}}  # fmt: skip
+                                             "maktabaPlan", "fillerRepeatCooldown", "icon",
+                                             "watermark") if k in body}}  # fmt: skip
         actions.append(Action("update", "channel", f"#{c['number']} {dzc['name']}", "PUT",
                               "/api/channel", upd, detail + [
                                   f"keeps name '{ex.get('name')}', icon, watermark, transcoding; "
                                   "replaces programs, filler lists and schedule"], c["key"]))  # fmt: skip
+    if (prune or clear_channels) and not only:
+        actions.extend(_removals(plan, state, actions, clear_channels=clear_channels))
     return actions
+
+
+def _removals(plan: Mapping[str, Any], state: State, actions: Sequence[Action], *,
+              clear_channels: bool) -> list[Action]:  # fmt: skip
+    """What the plan no longer has: this tool's channels, shows and filler lists, and
+    with ``clear_channels`` every other channel too."""
+    out: list[Action] = []
+    numbers = {int(c["number"]) for c in plan["channels"]}
+    for n, ch in sorted(state.channels.items()):
+        if n in numbers:
+            continue
+        ours = isinstance(ch.get("maktabaPlan"), dict)
+        if ours or clear_channels:
+            out.append(Action("delete", "channel", f"#{n} {ch.get('name', '')}", "DELETE",
+                              "/api/channel", {"number": n},
+                              ["made by this tool, not in the plan" if ours
+                               else "not in the plan (--clear-channels)"]))  # fmt: skip
+    planned = {a.name for a in actions if a.kind in ("show", "filler")}
+    for kind, have in (("show", state.shows), ("filler", state.fillers)):
+        for name, info in sorted(have.items()):
+            if name.startswith(PREFIX) and name not in planned:
+                out.append(Action("delete", kind, name, "DELETE", f"/api/{kind}/{info['id']}",
+                                  None, ["made by this tool, not in the plan"]))  # fmt: skip
+    return out
+
+
+def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """The channel's logo and corner watermark from the plan's settings, as local files
+    (``apply`` uploads them): ``{"icon": path, "watermark": {...}}``, only what is set."""
+    cfg = plan.get("config") or {}
+    out: dict[str, Any] = {}
+    if folder := str(cfg.get("dz_logo_dir") or ""):
+        for name in (f"{key}.png", "default.png"):
+            if (Path(folder) / name).is_file():
+                out["icon"] = str(Path(folder) / name)
+                break
+    if (wm := str(cfg.get("dz_watermark_file") or "")) and Path(wm).is_file():
+        margin = float(cfg.get("dz_watermark_margin", 2.0))
+        out["watermark"] = {
+            "enabled": True, "url": wm, "width": float(cfg.get("dz_watermark_width", 12.0)),
+            "verticalMargin": margin, "horizontalMargin": margin, "duration": 0,
+            "position": str(cfg.get("dz_watermark_position") or "top-right"),
+            "fixedSize": False, "animated": wm.lower().endswith(".gif"),
+        }  # fmt: skip
+    return out
+
+
+def art_link(cfg: Mapping[str, Any], api_url: str, uploaded_url: str) -> str:
+    """An uploaded logo's link as the TVs reach it: dizqueTV's own answer names the host
+    the export talked to (localhost); ``dz_public_url`` replaces it."""
+    pub = str(cfg.get("dz_public_url") or "").rstrip("/")
+    if not pub:
+        return uploaded_url
+    base = api_url.rstrip("/")
+    if uploaded_url.startswith(base):
+        return pub + uploaded_url[len(base) :]
+    i = uploaded_url.find("/", uploaded_url.find("//") + 2)
+    return pub + (uploaded_url[i:] if i > 0 else "")
+
+
+def _hosted(base: str, path: str) -> str:
+    """A logo on a web host (``dz_art_url``): its link, checked to answer."""
+    link = f"{base.rstrip('/')}/{urllib.parse.quote(Path(path).name)}"
+    req = urllib.request.Request(link, method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 — the user's host
+            ok = 200 <= r.status < 300
+    except OSError as e:
+        raise RuntimeError(f"logo {Path(path).name} is not at {link}: {e}") from e
+    if not ok:
+        raise RuntimeError(f"logo {Path(path).name} is not at {link}")
+    return link
+
+
+# ------------------------------------------------------------ continuity on a rewrite
+
+
+def fingerprint(sched: Mapping[str, Any], programs: Sequence[tuple[str, int, str]]) -> str:
+    """What a channel's timeline is computed from: the same schedule and programmes give
+    the same timeline, so the channel keeps the one it airs (a logo change is no reason
+    to rebuild it). ``programs``: (ratingKey, duration, show id) in each show's order."""
+    src = {"schedule": sched, "programs": [list(p) for p in programs]}
+    return hashlib.sha1(json.dumps(src, sort_keys=True).encode()).hexdigest()
+
+
+def aired(old: Mapping[str, Any], now_ms: int) -> tuple[list[Mapping[str, Any]], int, int]:
+    """The old timeline up to now: the programmes aired so far (the one on air last),
+    and when the one on air started and ends (ms). Nothing on air: ``([], now, now)``."""
+    progs = old.get("programs") or []
+    total = sum(int(p.get("duration", 0)) for p in progs)
+    try:
+        start = int(datetime.fromisoformat(str(old["startTime"]).replace("Z", "+00:00"))
+                    .timestamp() * 1000)  # fmt: skip
+    except (KeyError, ValueError):
+        return [], now_ms, now_ms
+    if not progs or total <= 0 or start > now_ms:
+        return [], now_ms, now_ms
+    loops, elapsed = divmod(now_ms - start, total)
+    t = start + loops * total
+    for i, p in enumerate(progs):
+        d = int(p.get("duration", 0))
+        if elapsed < d:
+            return list(progs[: i + 1]), t, t + d
+        elapsed -= d
+        t += d
+    return list(progs), now_ms, now_ms
+
+
+def resume(content: Sequence[Mapping[str, Any]], so_far: Sequence[Mapping[str, Any]],
+           show_id: str) -> list[Mapping[str, Any]]:  # fmt: skip
+    """A show's episodes from the one after the last it aired (its queue goes on where
+    the channel left it, instead of from episode 1 on every rewrite)."""
+    keys = [str(p.get("ratingKey")) for p in content]
+    for p in reversed(so_far):
+        if str(p.get("customShowId")) == show_id and not p.get("isOffline"):
+            k = str(p.get("ratingKey"))
+            if k in keys:
+                i = keys.index(k) + 1
+                return list(content[i:]) + list(content[:i])
+            break
+    return list(content)
+
+
+def splice(old: Mapping[str, Any], new: Mapping[str, Any], now_ms: int,
+           period: int) -> dict[str, Any]:  # fmt: skip
+    """The new timeline, but what is on air now finishes first: the new one takes over
+    when it ends (the time until the new one's next programme is filler), so a rewrite
+    never cuts a programme a viewer is watching."""
+    so_far, on_start, on_end = aired(old, now_ms)
+    if not so_far or so_far[-1].get("isOffline"):
+        return dict(new)
+    n0 = int(datetime.fromisoformat(str(new["startTime"]).replace("Z", "+00:00"))
+             .timestamp() * 1000)  # fmt: skip
+    out: list[Mapping[str, Any]] = [so_far[-1]]
+    t = n0
+    gap_from = on_end
+    for p in new["programs"]:
+        d = int(p.get("duration", 0))
+        if t + d <= on_end:  # over before the old programme ends
+            t += d
+            continue
+        if t < on_end:  # straddles the switch: its time is filler
+            t += d
+            continue
+        if t > gap_from:
+            out.append({"duration": t - gap_from, "isOffline": True})
+        gap_from = t + d
+        out.append(p)
+        t += d
+    total = sum(int(p.get("duration", 0)) for p in out)
+    if period > 0 and total % period:  # keep the loop on the schedule's period
+        out.append({"duration": period - total % period, "isOffline": True})
+    return {
+        "programs": out,
+        "startTime": datetime.fromtimestamp(on_start / 1000, tz=UTC)
+        .isoformat()
+        .replace("+00:00", "Z"),
+    }
+
+
+def _upload(base: str, path: str, name: str) -> str:
+    """``POST /api/upload/image`` (multipart, field ``image``) → the file's URL."""
+    import uuid
+
+    boundary = uuid.uuid4().hex
+    data = Path(path).read_bytes()
+    ctype = "image/gif" if name.lower().endswith(".gif") else "image/png"
+    payload = (
+        (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\n'
+            f"Content-Type: {ctype}\r\n\r\n"
+        ).encode()
+        + data
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    req = urllib.request.Request(
+        base.rstrip("/") + "/api/upload/image", data=payload, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )  # fmt: skip
+    with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 — local API
+        res = json.loads(r.read().decode("utf-8"))
+    if not res.get("status"):
+        raise RuntimeError(f"upload {name}: {res.get('message')}")
+    return str(res["data"]["fileUrl"])
 
 
 def _new_channel_defaults() -> dict[str, Any]:
@@ -412,7 +609,44 @@ def apply_actions(
     from .dizquetv_shows import _Dz, _metadata, _program, as_registered
 
     dzw = _Dz(url)
+    # what the plan no longer has goes first: channels (they name the shows and lists),
+    # then the shows and filler lists; all are checked gone with one re-read per kind
+    removals = sorted((a for a in actions if a.verb == "delete"),
+                      key=lambda a: a.kind != "channel")  # fmt: skip
+    for a in removals:
+        assert a.endpoint is not None
+        dzw.call("DELETE", a.endpoint, a.body)
+    if removals:
+        channels_left = {int(n) for n in dzw.call("GET", "/api/channels")}
+        ids_left = {k: {str(x.get("id")) for x in dzw.call("GET", f"/api/{k}s")}
+                    for k in ("show", "filler") if any(a.kind == k for a in removals)}  # fmt: skip
+        for a in removals:
+            assert a.endpoint is not None
+            gone = (int((a.body or {})["number"]) not in channels_left if a.kind == "channel"
+                    else a.endpoint.rsplit("/", 1)[-1] not in ids_left[a.kind])  # fmt: skip
+            if not gone:
+                raise RuntimeError(f"{a.kind} {a.name}: still there after DELETE")
+        print(f"  ✓  deleted {len(removals)}: "
+              + ", ".join(f"{sum(a.kind == k for a in removals)} {k}(s)"
+                          for k in ("channel", "show", "filler")))  # fmt: skip
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
+    urls: dict[str, str] = {}
+
+    cfg = plan.get("config") or {}
+
+    def uploaded(path: str) -> str:
+        """A logo's link, once per run: on the logos' web host (dz_art_url), else
+        uploaded to dizqueTV under a name of its own (maktaba-<file>)."""
+        if path not in urls:
+            if host := str(cfg.get("dz_art_url") or ""):
+                urls[path] = _hosted(host, path)
+                print(f"  ✓  {Path(path).name} at {urls[path]}")
+            else:
+                got = _upload(url, path, f"maktaba-{Path(path).name}")
+                urls[path] = art_link(cfg, url, got)
+                print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
+        return urls[path]
+
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
     # the plex-index step's saved records first: only what it lacks is asked of Plex
@@ -449,9 +683,23 @@ def apply_actions(
             continue
         assert c_act.body is not None
         body = dict(c_act.body)
+        # the logo and the corner watermark: local files uploaded once, then their URLs
+        if isinstance(body.get("icon"), str) and not body["icon"].startswith("http"):
+            body["icon"] = uploaded(body["icon"])
+        if isinstance(body.get("watermark"), dict) and body["watermark"].get("enabled"):
+            wm = dict(body["watermark"])
+            if not str(wm["url"]).startswith("http"):
+                wm["url"] = uploaded(wm["url"])
+            body["watermark"] = wm
         sched = body["scheduleBackup"]
         programs: list[dict[str, Any]] = []
         slot_ms = slot_lengths(sched)
+        number = int(body["number"])
+        old = (dzw.call("GET", f"/api/channel/{number}")
+               if number in state.channels else None)  # fmt: skip
+        now_ms = int(time.time() * 1000)
+        so_far: list[Mapping[str, Any]] = aired(old, now_ms)[0] if old else []
+        base: list[tuple[str, int, str]] = []  # the programmes before any queue goes on
         for sid in dict.fromkeys(s["showId"] for s in sched["slots"]):
             if not sid.startswith("custom."):
                 continue
@@ -463,20 +711,38 @@ def apply_actions(
             # only what the schedule can air before dizqueTV repeats it (maxDays): the mix
             # channel's whole archive (55,000 episodes) is past its 50 MB request limit
             cap = airable(sched, slot_ms.get(sid, []), [int(p["duration"]) for p in content])
+            base.extend((str(p.get("ratingKey")), int(p.get("duration", 0)), show_id)
+                        for p in content[:cap])  # fmt: skip
+            content = [dict(p) for p in resume(content, so_far, show_id)]
             for n, prog in enumerate(content[:cap]):
                 programs.append({**prog, "customShowId": show_id,
                                  "customShowName": show["name"], "customOrder": n})  # fmt: skip
         if not programs:
             print(f"  -  channel {c_act.name}: nothing playable yet, skipped")
             continue
-        res = dzw.call("POST", "/api/channel-tools/time-slots",
-                       {"programs": programs, "schedule": sched})  # fmt: skip
-        body["programs"] = res["programs"]
-        body["startTime"] = res["startTime"]
+        fp = fingerprint(sched, base)
+        body["maktabaPlan"] = {**body["maktabaPlan"], "fingerprint": fp}
+        if old and (old.get("maktabaPlan") or {}).get("fingerprint") == fp:
+            # the same timeline: kept as it airs (only the name, logo … change)
+            body["programs"] = old["programs"]
+            body["startTime"] = old["startTime"]
+            res = {"programs": old["programs"]}
+            if all(old.get(k) == v for k, v in body.items()):
+                print(f"  =  channel {c_act.name}: unchanged, left as it airs")
+                continue  # a save restarts the stream of anyone watching: none at all
+        else:
+            res = dzw.call("POST", "/api/channel-tools/time-slots",
+                           {"programs": programs, "schedule": sched})  # fmt: skip
+            if old:  # what is on air finishes; the queues went on above
+                res = splice(old, res, int(time.time() * 1000), int(sched["period"]))
+            body["programs"] = res["programs"]
+            body["startTime"] = res["startTime"]
         dzw.call(c_act.method or "POST", "/api/channel", body)
         back = dzw.call("GET", f"/api/channel/programless/{body['number']}")
         if not isinstance(back.get("maktabaPlan"), dict) or back.get("name") != body["name"]:
             raise RuntimeError(f"channel {body['number']}: read-back does not match")
+        if "icon" in body and back.get("icon") != body["icon"]:
+            raise RuntimeError(f"channel {body['number']}: its logo did not stick")
         print(f"  ✓  channel {c_act.name}: {len(res['programs'])} programmes, "
               f"{len(body['fillerCollections'])} filler lists")  # fmt: skip
 
@@ -523,6 +789,8 @@ def run(
     apply: bool = False,
     server: Any = None,
     conn: Any = None,
+    prune: bool = False,
+    clear_channels: bool = False,
 ) -> list[Action]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     dz = DizqueTV(url)
@@ -534,6 +802,8 @@ def run(
         ramadan=ramadan,
         tz_offset=tz_offset_minutes() if tz_offset is None else tz_offset,
         replace_existing=replace_existing,
+        prune=prune,
+        clear_channels=clear_channels,
     )
     print(render(actions, base=url, online=state.online))
     if apply:
@@ -570,11 +840,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ramadan", action="store_true", help="use the Ramadan grids")
     ap.add_argument("--tz-offset", type=int, help="minutes, UTC − local (default: this machine)")
     ap.add_argument("--replace-existing", action="store_true")
+    ap.add_argument(
+        "--prune",
+        action="store_true",
+        help="delete this tool's channels / shows / filler lists the plan no longer has",
+    )
+    ap.add_argument(
+        "--clear-channels",
+        action="store_true",
+        help="also delete every other channel that is not in the plan",
+    )
     ap.add_argument("--dump", type=Path, help="write the request bodies to this folder")
     a = ap.parse_args(argv)
     run(a.plan, url=a.url, offline=a.offline, only=set(a.channel or []) or None,
         ramadan=a.ramadan, tz_offset=a.tz_offset, replace_existing=a.replace_existing,
-        dump=a.dump)  # fmt: skip
+        dump=a.dump, prune=a.prune, clear_channels=a.clear_channels)  # fmt: skip
     return 0
 
 

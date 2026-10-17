@@ -105,6 +105,12 @@ def load_inputs(
             video_tags[path][tag] = float(score)
     else:
         notes.append("no video_tags table: filler and loose videos are untagged")
+    episode_tags: dict[str, dict[str, float]] = defaultdict(dict)
+    if "episode_tags" in tables:
+        for path, tag, score in conn.execute("SELECT path, tag, score FROM episode_tags"):
+            episode_tags[path][tag] = float(score)
+    else:
+        notes.append("no episode_tags table: themes take whole shows only (run `tag`)")
     style: dict[str, tuple[str, int, float]] = {}
     if "series_style" in tables:
         for sid, st, tier, conf in conn.execute(
@@ -168,6 +174,7 @@ def load_inputs(
                     plex_library=f["plex_library"],
                     air_date=f["upload_date"],
                     date_exact=f["date_quality"] == "exact",
+                    tags=episode_tags.get(r[1], {}),
                 )
             )
         seasons.append(
