@@ -133,7 +133,13 @@ export function AppShell() {
       <div className="mkt-shell__body">
         <nav className="mkt-shell__nav" aria-label={t("nav.primary")}>
           {NAV.map((item) => (
-            <NavLink key={item.to} to={item.to} className="mkt-nav-link">
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className="mkt-nav-link"
+              title={t(item.key)}
+              aria-label={t(item.key)}
+            >
               <span className="mkt-nav-link__icon" aria-hidden="true">
                 {item.icon}
               </span>
@@ -141,7 +147,13 @@ export function AppShell() {
             </NavLink>
           ))}
           {SECONDARY.map((item) => (
-            <NavLink key={item.to} to={item.to} className="mkt-nav-link">
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className="mkt-nav-link"
+              title={t(item.key)}
+              aria-label={t(item.key)}
+            >
               <span className="mkt-nav-link__icon" aria-hidden="true">
                 {item.icon}
               </span>
@@ -154,7 +166,13 @@ export function AppShell() {
                 {t("nav.admin")}
               </span>
               {ADMIN.map((item) => (
-                <NavLink key={item.to} to={item.to} className="mkt-nav-link">
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className="mkt-nav-link"
+                  title={t(item.key)}
+                  aria-label={t(item.key)}
+                >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
                   </span>
