@@ -20,13 +20,78 @@ WHAT = "Programmes and filler"
 DZ = "dizqueTV"
 
 PLANNER_HELP: dict[str, Help] = {
+    # the lineup
+    "max_channels": Help(
+        CH,
+        "Channels (most)",
+        "At most this many channels in all. Candidates with enough "
+        "content are taken in the kind order below: themes in their order, presenters "
+        "largest first; the rest is listed as not placed.",
+    ),
+    "channel_kind_order": Help(
+        CH,
+        "Lineup order",
+        "Which kinds of channel get the places first: quran, theme, mix, "
+        "presenter. A kind left out gets no channel.",
+    ),
+    "channel_min_days": Help(
+        CH,
+        "Days without a repeat",
+        "A channel needs enough content for this many days "
+        "without a repeat (at the programme hours a day below); one with less gets no "
+        "channel and its shows air on the others.",
+    ),
+    "channel_day_hours": Help(
+        CH,
+        "Programme hours a day",
+        "How many hours of a channel's day are programmes (the "
+        "rest is filler): with the days above, the hours a channel needs.",
+    ),
+    "library_tags": Help(
+        CH,
+        "Library tags",
+        "Tags for every video of a library, by the library's exact name: "
+        "audience:kids (made for children), audience:kids_friendly (fine for them), "
+        "audience:adults (kept off the kids' channel and the kids' hour), or any topic tag.",
+    ),
+    "slot_owner": Help(
+        CH,
+        "A slot belongs to",
+        "show: a slot keeps its show, then the shows left over. "
+        "presenter: a slot is one sheikh's or source's (8 pm every day): his next show "
+        "follows in the same slot, else one on the same topic.",
+        choices=("presenter", "show"),
+    ),
+    "show_max_channels": Help(
+        CH,
+        "Channels per show (most)",
+        "A show airs on at most this many channels (0: no "
+        "limit), the closest first: the channel of its own topic before an audience or "
+        "format channel (History before Kids, Palestine before Talk Shows), then the one "
+        "with fewer hours. Wherever it airs, never at the same time on two channels. A "
+        "channel left without enough content of its own drops out.",
+    ),
+    "show_same_time": Help(
+        CH,
+        "Same show, same time on two channels",
+        "Off: a show on more than one channel "
+        "always airs at different times (8 pm here, 6 pm there), its repeats too.",
+    ),
+    "presenter_max_channels": Help(
+        CH,
+        "Presenter channels (most)",
+        "Only the largest libraries get a channel of their "
+        "own; the others air on the theme channels.",
+    ),
     # channels
     "themes": Help(
         CH,
         "Themed channels",
-        "One channel per theme: its number, names, and the "
-        "topics / audiences / formats whose shows it takes. Leave min hours empty to "
-        "use the general minimum.",
+        "One channel per theme, in priority order: its number, names, and the "
+        "topics / audiences / formats / occasions whose shows it takes, and the tags it "
+        "never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum "
+        "instead of the days-without-a-repeat rule (the Quran channel repeats by nature); "
+        "empty: the rule.",
     ),
     "topic_min_score": Help(
         CH,
@@ -36,6 +101,20 @@ PLANNER_HELP: dict[str, Help] = {
     ),
     "theme_min_hours": Help(
         CH, "Themed channel minimum (hours)", "A theme with fewer hours of shows gets no channel."
+    ),
+    "theme_episodes": Help(
+        CH,
+        "Themes take single episodes",
+        "A theme also takes the episodes whose own title "
+        "is about it from every other show (a talk show's Palestine episodes, a tajweed "
+        "lesson in a lecture series): one collection per presenter, in air order.",
+    ),
+    "theme_episode_min_score": Help(CH, "Single episode: topic score"),
+    "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
+    "theme_episode_min_count": Help(
+        CH,
+        "Single episodes per presenter (fewest)",
+        "A presenter's collection for a theme needs at least this many episodes.",
     ),
     "show_member_min_share": Help(
         CH,
@@ -67,9 +146,10 @@ PLANNER_HELP: dict[str, Help] = {
         GRID,
         "Day parts",
         "The day's windows. Role: quran (recitation), high (the "
-        "strongest shows first), low (the daypart's own topics first). Pattern: "
-        "weekly (each day its own show), strip (one show every weekday), strip7 "
-        "(every day), quran.",
+        "strongest shows first), low (the daypart's own topics first), block (a fixed "
+        "block like the kids' hour: shows matching its topics first, in their order, "
+        "never one with an exclude tag). Pattern: weekly (each day its own show), strip "
+        "(one show every weekday), strip7 (every day), quran.",
         choices=(),
     ),
     "min_slot_minutes": Help(GRID, "Shortest slot (min)"),
@@ -166,6 +246,12 @@ PLANNER_HELP: dict[str, Help] = {
     ),
     "dead_air_warn_minutes": Help(FILL, "Warn about gaps over (min)"),
     # special lanes
+    "recitation_genres": Help(
+        SPECIAL,
+        "Recitation genres",
+        "Seasons of these genres are recitation (the Quran "
+        "lanes and channel); tajweed lessons are not, they air on Quran Learning.",
+    ),
     "recitation_min_score": Help(SPECIAL, "Recitation score"),
     "dawn_quran": Help(
         SPECIAL,
@@ -240,6 +326,37 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_logo_dir": Help(
+        DZ,
+        "Channel logos folder",
+        "The guide's channel logos: <channel key>.png (quran.png, "
+        "kids.png …), else default.png. Uploaded to dizqueTV with the channels. Empty: none.",
+    ),
+    "dz_watermark_file": Help(
+        DZ,
+        "Corner logo (watermark)",
+        "A picture shown in a corner of the video on every "
+        "channel, like a TV station's logo; an animated GIF loops. Empty: none.",
+    ),
+    "dz_watermark_position": Help(
+        DZ, "Corner logo position", choices=("top-right", "top-left", "bottom-right", "bottom-left")
+    ),
+    "dz_watermark_width": Help(DZ, "Corner logo width (% of the picture)"),
+    "dz_watermark_margin": Help(DZ, "Corner logo margin (% from the edges)"),
+    "dz_art_url": Help(
+        DZ,
+        "Logos web address",
+        "Where the logos are served from, e.g. a Cloudflare R2 or Pages address: the "
+        "files sit there under their own names (…/quran.png, …/watermark.gif) and are "
+        "checked before use. Empty: uploaded to dizqueTV and served by it.",
+    ),
+    "dz_public_url": Help(
+        DZ,
+        "dizqueTV address on the network",
+        "How the TVs and Plex reach dizqueTV, e.g. http://192.168.1.20:8002 or a "
+        "Tailscale address; used for the links of logos dizqueTV serves. Empty: the "
+        "address the export uses (localhost works on this PC only).",
+    ),
     "dz_filler_max_items": Help(
         DZ,
         "Filler list size (most clips)",
@@ -262,7 +379,10 @@ _MINIMUM: dict[str, float] = {
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
-    "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1,
+    "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
+    "dz_watermark_width": 1, "dz_watermark_margin": 0,
+    "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
+    "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)

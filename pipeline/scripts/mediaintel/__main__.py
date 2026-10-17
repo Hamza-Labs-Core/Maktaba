@@ -102,6 +102,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="write season collections to Plex (replaces same-named ones, deletes none)")  # fmt: skip
     p.add_argument("--tv", action="store_true", help="update/create dizqueTV custom shows")
     p.add_argument("--tv-url", default="http://localhost:8002")
+    p.add_argument(
+        "--clear-channels",
+        action="store_true",
+        help="the channel export deletes every dizqueTV channel not in the plan",
+    )
     p.add_argument("--backup-dir", type=Path, default=Path("backups"))
 
     p = sub.add_parser("explain", help="why a video is where it is")
@@ -217,6 +222,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ramadan", action="store_true", help="use the Ramadan grids")
     p.add_argument("--tz-offset", type=int, help="minutes, UTC - local (default: this machine)")
     p.add_argument("--replace-existing", action="store_true")
+    p.add_argument(
+        "--prune",
+        action="store_true",
+        help="delete this tool's channels / shows / filler lists the plan no longer has",
+    )
+    p.add_argument(
+        "--clear-channels",
+        action="store_true",
+        help="also delete every other channel that is not in the plan",
+    )
     p.add_argument("--dump", type=Path, help="write the request bodies to this folder")
     p.add_argument(
         "--apply", action="store_true", help="create/update the channels (default: dry run)"
@@ -274,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
                 plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
                 from_step=a.from_step,
                 skip=tuple(a.skip),
+                clear_channels=a.clear_channels,
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(
@@ -318,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             ramadan=a.ramadan, tz_offset=a.tz_offset, replace_existing=a.replace_existing,
             dump=a.dump, apply=a.apply,
             server=scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token) if a.apply else None,
-            conn=conn,
+            conn=conn, prune=a.prune, clear_channels=a.clear_channels,
         )  # fmt: skip
     elif a.cmd == "set-style":
         from . import scan_visual
