@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -92,7 +93,7 @@ def test_uploaded_logo_links_use_the_network_address() -> None:
     )  # another host name
 
 
-def _ch(start: str, durs: list[tuple[str, int]]) -> dict:
+def _ch(start: str, durs: list[tuple[str | None, int]]) -> dict[str, Any]:
     return {"startTime": start, "programs": [
         {"ratingKey": k, "duration": d, "customShowId": "s"} if k else
         {"duration": d, "isOffline": True} for k, d in durs]}  # fmt: skip
