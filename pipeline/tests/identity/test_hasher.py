@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -231,17 +232,73 @@ class _CountingReader:
         return self._inner.seek(offset, whence)
 
 
+def _make_sparse_file(path: Path, size: int) -> None:
+    """Create a ``size``-byte file that occupies (almost) no disk.
+
+    On POSIX, ``truncate`` past EOF leaves a hole. On Windows it does
+    not: CPython implements ``truncate`` with the CRT's ``_chsize_s``,
+    which physically writes zeros (~1 minute and 30 GiB of free space
+    for this fixture). There we mark the file sparse with
+    ``FSCTL_SET_SPARSE`` and extend it with ``SetEndOfFile``, which is
+    the NTFS equivalent of a POSIX hole. The hasher under test is
+    unaffected either way — this only builds the fixture.
+    """
+    if sys.platform != "win32":
+        with open(path, "wb") as f:
+            f.truncate(size)
+        return
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    fsctl_set_sparse = 0x000900C4
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.DeviceIoControl.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPVOID,
+    ]
+    kernel32.DeviceIoControl.restype = wintypes.BOOL
+    kernel32.SetFilePointerEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_longlong,
+        ctypes.POINTER(ctypes.c_longlong),
+        wintypes.DWORD,
+    ]
+    kernel32.SetFilePointerEx.restype = wintypes.BOOL
+    kernel32.SetEndOfFile.argtypes = [wintypes.HANDLE]
+    kernel32.SetEndOfFile.restype = wintypes.BOOL
+
+    with open(path, "wb") as f:
+        handle = msvcrt.get_osfhandle(f.fileno())
+        returned = wintypes.DWORD()
+        if not kernel32.DeviceIoControl(
+            handle, fsctl_set_sparse, None, 0, None, 0, ctypes.byref(returned), None
+        ):
+            pytest.skip(f"filesystem does not support sparse files ({ctypes.get_last_error()})")
+        file_begin = 0
+        if not kernel32.SetFilePointerEx(handle, size, None, file_begin) or not (
+            kernel32.SetEndOfFile(handle)
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+
 @pytest.mark.unit
 def test_hash_io_budget_for_large_sparse_file(tmp_path: Path) -> None:
     """A 30 GiB sparse file is hashed by reading at most 2*HEAD_TAIL bytes.
 
-    We allocate the file with ``truncate`` (sparse — no actual disk
-    space) and then count the bytes our reader actually returns.
+    We allocate the file sparse (no actual disk space; see
+    :func:`_make_sparse_file`) and then count the bytes our reader actually returns.
     """
     p = tmp_path / "sparse.bin"
     size = 30 * 1024 * MiB  # 30 GiB
-    with open(p, "wb") as f:
-        f.truncate(size)
+    _make_sparse_file(p, size)
 
     with open(p, "rb") as f:
         counter = _CountingReader(f)
@@ -266,16 +323,27 @@ def test_hash_returns_size_from_stat(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_hash_rejects_non_regular_file(tmp_path: Path) -> None:
+    if sys.platform == "win32":
+        # Windows named pipes live in the pipe namespace, not on a volume,
+        # so there is no FIFO node to stat. The directory case below
+        # covers the non-regular-file rejection on every OS.
+        pytest.skip("FIFOs are not filesystem objects on Windows")
     fifo = tmp_path / "fifo"
     try:
         os.mkfifo(fifo)
-    except (AttributeError, OSError):
-        pytest.skip("FIFOs not supported on this platform")
+    except OSError:
+        pytest.skip("FIFOs not supported on this filesystem")
     try:
         with pytest.raises(ValueError, match="not a regular file"):
             hash_file(fifo)
     finally:
         os.unlink(fifo)
+
+
+@pytest.mark.unit
+def test_hash_rejects_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not a regular file"):
+        hash_file(tmp_path)
 
 
 @pytest.mark.unit

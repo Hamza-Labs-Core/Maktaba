@@ -271,7 +271,7 @@ async def extract_handler(
             video_id=job.video_id,
             audio_track_id=selected.db_id,
             content_hash=content_hash,
-            cache_path=str(dest_path),
+            cache_path=dest_path.as_posix(),  # stored with "/" on every OS
             bytes_written=bytes_written,
         )
         await mark_done(db, job_id=job.id)

@@ -48,6 +48,7 @@ from uuid import uuid4
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
 from ..log import bind_job_id, get_logger
+from .signals import install_shutdown_handlers
 from .wakeup import PgListenWakeup, PubsubWakeup, WakeupSource
 
 __all__ = [
@@ -257,30 +258,22 @@ def install_signal_handlers(
     shutdown_event: asyncio.Event,
     *,
     loop: asyncio.AbstractEventLoop | None = None,
-) -> None:
-    """Wire SIGTERM and SIGINT to set ``shutdown_event``.
+) -> Callable[[], None]:
+    """Wire the platform's shutdown signals to set ``shutdown_event``.
 
-    Idempotent — re-installing replaces the existing handler. Falls
-    back to :func:`signal.signal` on platforms without
-    :meth:`asyncio.AbstractEventLoop.add_signal_handler` (Windows).
-    Re-entrant signals are coalesced because :class:`asyncio.Event`
-    is set-once.
+    SIGTERM and SIGINT on POSIX; SIGINT, SIGBREAK and SIGTERM on
+    Windows, where :meth:`asyncio.AbstractEventLoop.add_signal_handler`
+    is unavailable and :func:`signal.signal` is used instead (see
+    :mod:`maktaba_pipeline.pipeline.signals`). Idempotent — re-installing
+    replaces the existing handler. Re-entrant signals are coalesced
+    because :class:`asyncio.Event` is set-once. Returns a callable that
+    restores the previous handlers.
     """
     loop = loop or asyncio.get_event_loop()
 
-    def _trip(sig_name: str) -> None:
+    def _trip(sig: signal.Signals) -> None:
         if not shutdown_event.is_set():
-            _log.info("shutdown_signal_received", signal=sig_name)
+            _log.info("shutdown_signal_received", signal=sig.name)
         shutdown_event.set()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, _trip, sig.name)
-        except (NotImplementedError, RuntimeError):
-            # add_signal_handler is unavailable on Windows and inside
-            # some embedded interpreters. Fall back to the sync API
-            # which still flips the event from a signal handler.
-            signal.signal(
-                sig,
-                lambda *_args, _name=sig.name: _trip(_name),
-            )
+    return install_shutdown_handlers(loop, _trip)

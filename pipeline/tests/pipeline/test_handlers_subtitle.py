@@ -35,7 +35,7 @@ from uuid import UUID, uuid4
 from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import subtitle_handler
 from maktaba_pipeline.subtitle.formats import SubtitleFormat
-from maktaba_pipeline.subtitle.manager import SubtitleSource, cache_path_for
+from maktaba_pipeline.subtitle.manager import SubtitleSource, cache_path_for, stored_path
 from tests.audio._fake_audio_db import _ProcessingJobRow
 
 from .conftest import StageDB, make_job
@@ -104,7 +104,8 @@ def test_subtitle_handler_renders_persists_and_advances(tmp_path: object) -> Non
             SubtitleFormat(r.format),
             SubtitleSource.GENERATED,
         )
-        assert r.path == str(expected)
+        # subtitle_files.path is stored POSIX-separated on every OS.
+        assert r.path == stored_path(expected)
         content = expected.read_text(encoding="utf-8")
         # Spot-check real rendered content + timestamps.
         assert "bismillah" in content

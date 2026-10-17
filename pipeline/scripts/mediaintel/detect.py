@@ -1,0 +1,273 @@
+"""detect: run series detection per folder (channel) and store the result."""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import sqlite3
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+from maktaba_pipeline.audio.chromaprint import decode
+from maktaba_pipeline.classify.series_detector import (
+    DETECTOR_VERSION,
+    Detection,
+    PlaylistFacts,
+    Series,
+    VideoFacts,
+    detect,
+)
+
+from .db import series_id
+
+
+def pick_copies(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """One row per video: files of one name in a folder ("X.mkv" and the user's "X.mp4"
+    transcode) are the same video. The MP4 is kept (the copy made to play well), else
+    the copy linked to YouTube, else the biggest; it takes the YouTube details of any
+    copy that has them. Returns the kept rows and {other copy: kept path}."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        groups.setdefault(r["stem"], []).append(r)
+    kept_rows: list[dict[str, Any]] = []
+    copies: dict[str, str] = {}
+    for group in groups.values():
+        best = max(
+            group,
+            key=lambda r: (
+                str(r["path"]).lower().endswith(".mp4"),
+                r["upload_date"] is not None,
+                r["size"] or 0,
+            ),
+        )
+        linked = next((r for r in group if r["upload_date"] is not None), None)
+        merged = dict(best)
+        if linked is not None and linked is not best:
+            for col in ("title", "upload_date", "date_quality", "tab", "youtube_id"):
+                merged[col] = linked[col]
+            merged["dur"] = merged["dur"] or linked["dur"]
+        kept_rows.append(merged)
+        for r in group:
+            if r is not best:
+                copies[r["path"]] = best["path"]
+    return kept_rows, copies
+
+
+def load_facts(
+    conn: sqlite3.Connection, folder: str
+) -> tuple[list[VideoFacts], list[PlaylistFacts], list[str]]:
+    raw = conn.execute(
+        """SELECT f.path, f.stem, f.size, f.youtube_id, COALESCE(y.title, f.stem) AS title,
+                  COALESCE(f.duration_s, y.duration_s) AS dur,
+                  y.upload_date, y.date_quality, f.thumb_dhash, y.tab, f.width, f.height,
+                  f.audio_head, f.audio_tail, f.frame_hashes
+           FROM files f LEFT JOIN yt_videos y ON y.youtube_id=f.youtube_id WHERE f.folder=?""",
+        (folder,),
+    ).fetchall()
+    rows, copies = pick_copies([dict(r) for r in raw])
+    _COPIES[folder] = copies
+    videos = [
+        VideoFacts(
+            key=r["path"],
+            title=r["title"],
+            duration_s=r["dur"],
+            air_date=date.fromisoformat(r["upload_date"]) if r["upload_date"] else None,
+            date_exact=r["date_quality"] == "exact",
+            dhash=int(r["thumb_dhash"], 16) if r["thumb_dhash"] else None,
+            is_short=r["tab"] == "shorts"
+            or bool(r["width"] and r["height"] and r["height"] > r["width"]),
+            audio_head=tuple(decode(r["audio_head"])),
+            audio_tail=tuple(decode(r["audio_tail"])),
+            frames=tuple(int(h, 16) for h in (r["frame_hashes"] or "").split(",") if h),
+        )
+        for r in rows
+    ]
+    pl_rows = conn.execute(
+        """SELECT p.playlist_id, p.title, f.path, i.position
+           FROM yt_playlists p JOIN yt_playlist_items i ON i.playlist_id=p.playlist_id
+           JOIN files f ON f.youtube_id=i.youtube_id
+           WHERE p.is_real=1 AND f.folder=? ORDER BY p.playlist_id, i.position""",
+        (folder,),
+    ).fetchall()
+    by_pl: dict[str, tuple[str, list[tuple[str, int | None]]]] = {}
+    for r in pl_rows:
+        member = copies.get(r["path"], r["path"])  # a playlist lists the video, not the file
+        items = by_pl.setdefault(r["playlist_id"], (r["title"], []))[1]
+        if all(m != member for m, _ in items):
+            items.append((member, r["position"]))
+    playlists = [PlaylistFacts(pid, t, tuple(m)) for pid, (t, m) in by_pl.items()]
+    ch = conn.execute("SELECT channel FROM folders WHERE folder=?", (folder,)).fetchone()
+    presenter = [ch["channel"]] if ch and ch["channel"] else []
+    presenter.append(Path(folder).name)
+    return videos, playlists, presenter
+
+
+def _id_keys(series: list[Series]) -> list[str]:
+    """The key each detected show's season ids hash. Shows that share a name and kind
+    (split apart by episode length) get their first episode appended, so each keeps
+    its own ids instead of overwriting the other's."""
+    count: dict[tuple[str, str], int] = {}
+    for ser in series:
+        count[(ser.key, ser.kind)] = count.get((ser.key, ser.kind), 0) + 1
+    out = []
+    for ser in series:
+        if count[(ser.key, ser.kind)] == 1:
+            out.append(ser.key)
+            continue
+        firsts = [ep for se in ser.seasons for ep in se.episodes[:1]]
+        out.append(f"{ser.key}|{min(firsts) if firsts else ser.name}")
+    return out
+
+
+#: folder -> {other copy: kept path}, filled by load_facts and written by store
+_COPIES: dict[str, dict[str, str]] = {}
+
+
+def store(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -> None:
+    conn.execute("DELETE FROM file_copies WHERE folder=?", (folder,))
+    conn.executemany(
+        "INSERT INTO file_copies (path, kept, folder) VALUES (?,?,?)",
+        [(p, k, folder) for p, k in _COPIES.get(folder, {}).items()],
+    )
+    conn.execute("DELETE FROM shorts WHERE folder=?", (folder,))
+    conn.executemany(
+        "INSERT INTO shorts (path, folder) VALUES (?,?)", [(k, folder) for k in det.shorts]
+    )
+    # Only this folder's seasons are rebuilt: other folders in the library keep theirs.
+    # Automatic memberships are re-derived; manual ones (is_user_override=1) and every
+    # row keyed by a surviving season id (style, tags, Plex collections) stay put.
+    old_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM series WHERE library=? AND json_extract(metadata, '$.folder')=?",
+            (library, folder),
+        )
+    ]
+    marks = ",".join("?" * len(old_ids))
+    if old_ids:
+        conn.execute(
+            f"DELETE FROM series_episodes WHERE is_user_override=0 AND series_id IN ({marks})",
+            old_ids,
+        )
+    keep: set[str] = set()
+    for ser, id_key in zip(det.series, _id_keys(det.series), strict=True):
+        for se in ser.seasons:
+            sid = series_id(folder, id_key, ser.kind, se.number)
+            keep.add(sid)
+            meta = {
+                "series_key": ser.key, "id_key": id_key, "kind": ser.kind, "season": se.number,
+                "season_count": len(ser.seasons), "playlists": se.playlists,
+                "extras": se.extras, "attached": se.attached, "duplicates": se.duplicates,
+                "first_air": se.first_air.isoformat() if se.first_air else None,
+                "last_air": se.last_air.isoformat() if se.last_air else None,
+                "median_duration_s": se.median_duration_s, "folder": folder,
+                "season_name": se.name, "season_year": se.year, "brand": ser.brand,
+            }  # fmt: skip
+            year = se.first_air.year if se.first_air else None
+            # an upsert, never INSERT OR REPLACE: a replace deletes the row first and the
+            # foreign keys would cascade away its manual episodes, style and tags
+            conn.execute(
+                "INSERT INTO series (id, library, name, year, metadata, detector_version) "
+                "VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET library=excluded.library, "
+                "name=excluded.name, year=excluded.year, metadata=excluded.metadata, "
+                "detector_version=excluded.detector_version",
+                (
+                    sid,
+                    library,
+                    ser.name,
+                    year,
+                    json.dumps(meta, ensure_ascii=False),
+                    DETECTOR_VERSION,
+                ),
+            )
+            numbers = se.numbers or list(range(1, len(se.episodes) + 1))
+            for n, path in zip(numbers, se.episodes, strict=True):
+                conn.execute(
+                    "INSERT OR IGNORE INTO series_episodes (series_id, path, season, episode) "
+                    "VALUES (?,?,?,?)",
+                    (sid, path, se.number, n),
+                )
+    gone = [i for i in old_ids if i not in keep]
+    if gone:
+        conn.execute(
+            f"DELETE FROM series WHERE id IN ({','.join('?' * len(gone))}) AND id NOT IN "
+            "(SELECT series_id FROM series_episodes WHERE is_user_override=1)",
+            gone,
+        )
+    store_topics(conn, library, folder, det)
+    conn.commit()
+
+
+def topic_id(folder: str, playlist_id: str) -> str:
+    import hashlib
+
+    return "topic:" + hashlib.sha1(f"{folder}|{playlist_id}".encode()).hexdigest()[:16]
+
+
+def store_topics(conn: sqlite3.Connection, library: str, folder: str, det: Detection) -> None:
+    """Curated playlists cutting across shows (``Detection.topics``), replaced per folder."""
+    conn.execute("DELETE FROM topic_collections WHERE folder=?", (folder,))
+    for t in det.topics:
+        tid = topic_id(folder, t.playlist_id)
+        conn.execute(
+            "INSERT OR REPLACE INTO topic_collections (id, library, folder, name, playlist_id) "
+            "VALUES (?,?,?,?,?)",
+            (tid, library, folder, t.name, t.playlist_id),
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO topic_items (topic_id, path, position) VALUES (?,?,?)",
+            [(tid, path, i) for i, path in enumerate(t.items, 1)],
+        )
+
+
+def run(
+    conn: sqlite3.Connection, only_folder: str | None, min_episode_minutes: float | None = None
+) -> None:
+    """``min_episode_minutes``: overrides the setting (``detect.min_episode_s``)."""
+    from . import settings_store
+
+    base = settings_store.get(conn, "detect")
+    if min_episode_minutes is not None:
+        base = dataclasses.replace(base, min_episode_s=min_episode_minutes * 60)
+    settings_store.note(conn, "detect")
+    folders = [
+        r[0]
+        for r in conn.execute("SELECT DISTINCT folder FROM files ORDER BY folder")
+        if not only_folder or only_folder in r[0]
+    ]
+    for folder in folders:
+        videos, playlists, presenter = load_facts(conn, folder)
+        cfg = base
+        name = Path(folder).name
+        print(f"  … {name}: matching {len(videos)} videos against its seasons", flush=True)
+
+        def checked(n: int, total: int, name: str = name) -> None:
+            print(f"  [{n}/{total}] {name}: videos checked", flush=True)
+
+        det = detect(videos, playlists, presenter_words=presenter, config=cfg, progress=checked)
+        lib = conn.execute(
+            "SELECT plex_library FROM files WHERE folder=? AND plex_library IS NOT NULL LIMIT 1",
+            (folder,),
+        ).fetchone()
+        library = lib[0] if lib else Path(folder).name
+        store(conn, library, folder, det)
+        eps = sum(s.episode_count for s in det.series if s.kind != "clips")
+        print(f"\n=== {library}: {len(videos)} videos, {len(det.series)} series, {eps} episodes, "
+              f"{len(det.unassigned)} unassigned, {len(det.shorts)} shorts excluded")  # fmt: skip
+        for ser in det.series:
+            seasons = ", ".join(
+                f"S{se.number}"
+                + (f" {se.name}" if se.name else "")
+                + f":{len(se.episodes)}"
+                + (f"(+{len(se.attached)})" if se.attached else "")
+                + (f"[{se.first_air:%Y-%m}]" if se.first_air else "")
+                for se in ser.seasons
+            )
+            extras = sum(len(se.extras) for se in ser.seasons)
+            print(
+                f"  {ser.kind:10} {ser.name[:60]:60} {seasons}"
+                + (f"  extras={extras}" if extras else "")
+            )
+        if det.topics:
+            print(f"  topics: {', '.join(f'{t.name} ({len(t.items)})' for t in det.topics)}")
