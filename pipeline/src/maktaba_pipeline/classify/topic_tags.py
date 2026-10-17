@@ -94,7 +94,7 @@ __all__ = [
     "tag_video",
 ]
 
-TAGGER_VERSION: int = 2
+TAGGER_VERSION: int = 3
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -212,6 +212,8 @@ _CONTEXT: dict[str, str] = {
     "eschat": "القبر الأخيرة الآخرة الملكين القيامة",
     # "شهر الرحمة" is Ramadan, not the virtue of mercy
     "month": "شهر",
+    # "تحفة الأطفال" is a tajweed poem, not a children's programme
+    "tuhfa": "تحفة التحفة",
     # "الصلاة على النبي" is a dhikr, not the prayer
     "nabi": "النبي نبي محمد الحبيب رسول الرسول المصطفى",
 }
@@ -647,7 +649,8 @@ _LEXICON: dict[str, dict[float, str]] = {
     # audiences -----------------------------------------------------------
     "audience:kids": {
         1.0: (
-            "أطفال | الأطفال | للأطفال | الطفل | للطفل | الصغار | للصغار | براعم | أشبال | كرتون "
+            "أطفال ~tuhfa | الأطفال ~tuhfa | للأطفال | الطفل | للطفل | الصغار | للصغار | براعم "
+            "| أشبال | كرتون "
             "| رسوم متحركة | أنيميشن | أنشودة أطفال | kids | children | child | for kids "
             "| nursery | أناشيد أطفال"
         ),

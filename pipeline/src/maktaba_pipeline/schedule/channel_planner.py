@@ -285,8 +285,7 @@ DEFAULT_THEMES: tuple[ThemeSpec, ...] = (
     ThemeSpec("seerah", "Seerah", "السيرة النبوية", 103, ("seerah",), category="islamic"),
     ThemeSpec("tafsir", "Tafsir", "التفسير", 105, ("tafsir",), category="islamic"),
     ThemeSpec("hadith", "Hadith", "الحديث", 102, ("hadith",), category="islamic"),
-    ThemeSpec("fiqh", "Fiqh & Fatwa", "الفقه والفتاوى", 111, ("fiqh",),
-              formats=("qa_fatwa",), category="islamic"),
+    ThemeSpec("fiqh", "Fiqh & Fatwa", "الفقه والفتاوى", 111, ("fiqh",), category="islamic"),
     ThemeSpec("aqeedah", "Aqeedah & Shubuhat", "العقيدة والشبهات", 107,
               ("aqeedah", "shubuhat"), category="islamic"),
     ThemeSpec("history", "Islamic History", "التاريخ الإسلامي", 108,
@@ -453,6 +452,9 @@ class PlannerConfig:
     presenter_min_hours: float = 30.0
     presenter_min_genres: int = 3
     presenter_first_number: int = 150
+    #: a show airs on at most this many channels: the most specific ones that have it
+    #: (fewest hours: Fasting before Ramadan, Palestine before News), like real channels
+    show_max_channels: int = 1
     #: presenter channels only for the largest libraries: at most this many
     presenter_max_channels: int = 3
     # what counts as a programme vs filler
@@ -2140,20 +2142,28 @@ def suggest_channels(
     # ---- the lineup: every candidate with enough content, at most max_channels of them
     month_h = cfg.channel_min_days * cfg.channel_day_hours
     kind_rank = {k: i for i, k in enumerate(cfg.channel_kind_order)}
-    cands: list[tuple[tuple[int, float], str, Callable[[], set[str]]]] = []
+    cands: list[_Cand] = []
 
     def short(label: str, hours: float, need: float) -> None:
         unplaced.append((label, f"only {hours:.1f} h, needs {need:.0f} h "
                                 f"({cfg.channel_min_days:g} days at {cfg.channel_day_hours:g} h a "
                                 "day without a repeat, or the kind's own minimum)"))  # fmt: skip
 
-    def offer(kind: str, order: float, label: str, build: Callable[[], set[str]]) -> None:
+    def offer(kind: str, order: float, label: str, ids: set[str], need: float,
+              build: Callable[[set[str]], set[str]]) -> None:  # fmt: skip
         if kind not in kind_rank:
             unplaced.append((label, f"{kind} is not in channel_kind_order"))
             return
-        cands.append(((kind_rank[kind], order), label, build))
+        cands.append(_Cand((kind_rank[kind], order), label, ids, need, build))
 
-    def build_theme(t: ThemeSpec, ids: set[str], hours: float) -> set[str]:
+    def hours_of(ids: Iterable[str]) -> float:
+        return sum(units[i].duration_s for i in ids if i in units) / 3600
+
+    def build_quran(t: ThemeSpec, _ids: set[str]) -> set[str]:
+        return make_quran_channel(t)
+
+    def build_theme(t: ThemeSpec, ids: set[str]) -> set[str]:
+        hours = hours_of(ids)
         topics = t.topics or ("__none__",)
         pk = channel_pools(
             t.key, t.name,
@@ -2188,7 +2198,7 @@ def suggest_channels(
             if q_hours < need:
                 short(f"theme {t.key}", q_hours, need)
                 continue
-            offer("quran", n_t, f"theme {t.key}", partial(make_quran_channel, t))
+            offer("quran", n_t, f"theme {t.key}", set(), need, partial(build_quran, t))
             continue
         ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)}
         ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
@@ -2201,7 +2211,7 @@ def suggest_channels(
         if hours < need:
             short(f"theme {t.key}", hours, need)
             continue
-        offer("theme", n_t, f"theme {t.key}", partial(build_theme, t, ids, hours))
+        offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_theme, t))
 
     # ---- mix channel
     excluded = set(cfg.mix_exclude_topics)
@@ -2215,28 +2225,29 @@ def suggest_channels(
     mix_ids = whole_shows(mix_ids)
     mix_hours = sum(units[i].duration_s for i in mix_ids if i in regular_ids) / 3600
 
-    def build_mix() -> set[str]:
+    def build_mix(ids: set[str]) -> set[str]:
         pk = channel_pools("mix", cfg.mix_name, fillers, "all on-topic filler of the library")
-        genres = {units[i].genre for i in mix_ids}
+        genres = {units[i].genre for i in ids}
         make_channel(
-            "mix", cfg.mix_number, cfg.mix_name, cfg.mix_name_ar, "mix", "general", mix_ids,
-            [f"{len(mix_ids)} season(s), {mix_hours:.1f} h across {len(genres)} genres; "
+            "mix", cfg.mix_number, cfg.mix_name, cfg.mix_name_ar, "mix", "general", ids,
+            [f"{len(ids)} season(s), {hours_of(ids):.1f} h across {len(genres)} genres; "
              "dayparts prefer genres per mix_daypart_topics, adjacent slots differ; "
              f"excluded: {', '.join(excluded) or '-'}"],
             pk, mix=True,
         )  # fmt: skip
-        return mix_ids
+        return ids
 
     if cfg.mix_channel and mix_ids:
         need = max(cfg.mix_min_hours, month_h)
         if mix_hours < need:
             short("mix", mix_hours, need)
         else:
-            offer("mix", 0, "mix", build_mix)
+            offer("mix", 0, "mix", mix_ids, need, build_mix)
 
     # ---- presenter channels: only the largest libraries
-    def build_presenter(presenter: str, ids: set[str], hours: float, genres: set[str],
-                        number: int) -> set[str]:  # fmt: skip
+    def build_presenter(presenter: str, number: int, ids: set[str]) -> set[str]:
+        hours = hours_of(i for i in ids if i in regular_ids)
+        genres = {units[i].genre for i in ids}
         key = f"presenter.{_slug(presenter)}"
         pk = channel_pools(key, presenter, (f for f in fillers if f.presenter == presenter),
                            f"filler from {presenter}'s own uploads")  # fmt: skip
@@ -2267,7 +2278,7 @@ def suggest_channels(
                 continue
             big.append((hours, presenter, ids, genres))
         big.sort(key=lambda x: (-x[0], x[1]))
-        for j, (hours, presenter, ids, genres) in enumerate(big):
+        for j, (hours, presenter, ids, _genres) in enumerate(big):
             if j >= cfg.presenter_max_channels:
                 unplaced.append(
                     (
@@ -2277,18 +2288,47 @@ def suggest_channels(
                     )
                 )
                 continue
-            offer("presenter", j, f"presenter {presenter}",
-                  partial(build_presenter, presenter, ids, hours, genres,
-                          cfg.presenter_first_number + j))  # fmt: skip
+            offer("presenter", j, f"presenter {presenter}", ids, need,
+                  partial(build_presenter, presenter, cfg.presenter_first_number + j))  # fmt: skip
+
+    def show_of(i: str) -> tuple[str, str]:
+        u = units[i]
+        return (u.folder, u.series_key)
+
+    def share(chosen: Sequence[_Cand]) -> dict[str, set[str]]:
+        """Each show on its show_max_channels most specific channels (fewest hours)."""
+        width = {c.label: hours_of(c.ids) for c in chosen}
+        homes: dict[tuple[str, str], list[_Cand]] = defaultdict(list)
+        for c in chosen:
+            for show in {show_of(i) for i in c.ids}:
+                homes[show].append(c)
+        keep: dict[tuple[str, str], set[str]] = {
+            show: {c.label for c in sorted(cs, key=lambda c: (width[c.label], c.order))
+                   [: max(1, cfg.show_max_channels)]}
+            for show, cs in homes.items()
+        }  # fmt: skip
+        return {c.label: {i for i in c.ids if c.label in keep[show_of(i)]} for c in chosen}
 
     placed: set[str] = set()
-    cands.sort(key=lambda c: c[0])
-    for n_c, (_, label, build) in enumerate(cands):
-        if n_c >= cfg.max_channels:
-            unplaced.append((label, f"past max_channels ({cfg.max_channels}): the channels "
-                                    "before it in the lineup order took the places"))  # fmt: skip
-            continue
-        placed |= build()
+    cands.sort(key=lambda c: c.order)
+    live = list(cands)
+    while True:  # a channel left short once its shows went to more specific ones drops out
+        chosen = live[: cfg.max_channels]
+        owned = share(chosen)
+        thin = [c for c in chosen if c.ids and hours_of(owned[c.label]) < c.need]
+        if not thin:
+            break
+        for c in thin:
+            unplaced.append((c.label, f"only {hours_of(owned[c.label]):.1f} h of its own once "
+                                      "each show airs on its most specific channel "
+                                      f"(show_max_channels {cfg.show_max_channels}), needs "
+                                      f"{c.need:.0f} h"))  # fmt: skip
+            live.remove(c)
+    for c in live[cfg.max_channels :]:
+        unplaced.append((c.label, f"past max_channels ({cfg.max_channels}): the channels "
+                                  "before it in the lineup order took the places"))  # fmt: skip
+    for c in chosen:
+        placed |= c.build(owned[c.label])
 
     for i in sorted(set(units) - placed - synthetic):
         u = units[i]
@@ -2303,6 +2343,17 @@ def suggest_channels(
         unplaced=tuple(unplaced),
         config=cfg,
     )
+
+
+@dataclass(slots=True)
+class _Cand:
+    """A lineup candidate: its place in the order, its shows, the hours it needs."""
+
+    order: tuple[int, float]
+    label: str
+    ids: set[str]  # empty: no shows to share (the Quran channel's own lanes)
+    need: float
+    build: Callable[[set[str]], set[str]]
 
 
 # --------------------------------------------------------------------------- simulation
