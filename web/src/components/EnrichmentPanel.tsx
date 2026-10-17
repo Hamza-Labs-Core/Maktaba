@@ -144,7 +144,7 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
           <p className="mkt-enrich-panel__headline" dir="auto">
             {t("enrich.foundMaybe", {
               title: top.title || top.external_id,
-              year: top.year ? ` (${n(top.year)})` : "",
+              year: top.year ? ` (${n(top.year, { useGrouping: false })})` : "",
             })}{" "}
             <Badge tone="accent">
               {t("enrich.matchPct", { pct: String(Math.round(top.confidence * 100)) })}

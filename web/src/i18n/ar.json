@@ -67,6 +67,8 @@
   "search.mode.semantic": "دلالي",
   "search.placeholder": "ابحث في النصوص…",
   "search.didYouMean": "لا توجد نتائج. تحقق من التهجئة أو جرّب وضعًا آخر.",
+  "search.videos": "الفيديوهات",
+  "search.passages": "في النصوص",
   "search.saved": "عمليات البحث المحفوظة",
   "search.save": "حفظ",
   "queue.col.title": "العنوان",

@@ -67,6 +67,8 @@
   "search.mode.semantic": "Semantic",
   "search.placeholder": "Search transcripts…",
   "search.didYouMean": "No results. Check spelling or try a different mode.",
+  "search.videos": "Videos",
+  "search.passages": "In transcripts",
   "search.saved": "Saved searches",
   "search.save": "Save",
   "queue.col.title": "Title",
