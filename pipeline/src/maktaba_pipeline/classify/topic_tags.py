@@ -189,7 +189,9 @@ _CONTEXT: dict[str, str] = {
     # a surah named in a title is a recitation unless the title explains it
     "explain": "تفسير التفسير تدبر التدبر تدبرات وقفات وقفة وقفه تأملات تاملات شرح معاني معنى "
     "قصة قصص خواطر خاطرة أسباب فضل فضائل إعجاز اعجاز درس دروس محاضرة لطائف هدايات "
-    "تعليق التعليق يشرح يفسر الطبري القرطبي السعدي كثير معالجة",
+    "تعليق التعليق يشرح يفسر الطبري القرطبي السعدي كثير معالجة "
+    # a sermon or a study about a surah (نظرات في سورة الأنفال) is not its recitation
+    "نظرات نظرة مدارسة دراسة إعراب اعراب مقاصد خطبة خطبه خطب الخطبة",
     # a prophet's bare name (يوسف، موسى، شعيب) is also a person's name: it counts
     # only next to story / prophet words
     "prophet": "قصة قصص عليه السلام نبي النبي الأنبياء نبيه قوم سيدنا رسول بني إسرائيل "
@@ -1144,6 +1146,7 @@ def _resolve_conflicts(acc: _Acc) -> None:
       title already; this catches series-level labels).
     - Clip series (detector ``clips``) are not ``format:program`` even though
       every clip title names its program.
+    - A khutbah is never a recitation, whatever surah it is about.
     - A reciter's nasheed is a nasheed, not a recitation.
     - Nasheeds sing about the Prophet and the Companions: their topic words
       are lyrics, so with strong nasheed evidence the other topics (and talk
@@ -1157,6 +1160,11 @@ def _resolve_conflicts(acc: _Acc) -> None:
     if raw.get("format:clips", 0.0) >= 3.0:
         # highlight clips quote their program's name; they are not the program
         raw.pop("format:program", None)
+    if raw.get("format:khutbah", 0.0):
+        # a khutbah is preaching: a surah it is about, or verses it quotes, never make
+        # it a recitation
+        raw.pop("topic:quran_recitation", None)
+        raw.pop("format:recitation", None)
     nas = raw.get("topic:nasheed", 0.0)
     if nas and nas >= raw.get("topic:quran_recitation", 0.0):
         # reciters also sing nasheeds (العفاسي): the nasheed word decides

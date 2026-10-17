@@ -842,7 +842,7 @@ def _in_theme(s: SeasonCandidate, t: ThemeSpec, cfg: PlannerConfig) -> bool:
         return False
     if s.genre in t.topics:
         return True
-    if _is_recitation(s, cfg):
+    if _is_recitation(s, cfg) and not _is_khutbah(s, cfg):
         # Quran recitation joins a theme only by its own genre (the Quran
         # channel), never by a secondary tag: a recitation tagged nasheed,
         # history or fiqh is still the Quran, not anasheed or a lecture
@@ -1917,7 +1917,7 @@ def suggest_channels(
     lib_rec: dict[str, float] = defaultdict(float)
     for s in programs:
         lib_hours[s.library] += s.duration_s
-        if _is_recitation(s, cfg):
+        if _is_recitation(s, cfg) and not _is_khutbah(s, cfg):
             lib_rec[s.library] += s.duration_s
     reciter_libs = {
         lib for lib, h in lib_rec.items() if h >= cfg.quran_library_min_share * lib_hours[lib]
@@ -1928,9 +1928,10 @@ def suggest_channels(
         # no reciter library at all: the library's own recitations still make the dawn
         # lane (a scholar's channel with a few recitations keeps them on air)
         if _is_recitation(s, cfg)
+        and not _is_khutbah(s, cfg)  # a khutbah is never the Quran lane, whatever its tags
         and (s.library in reciter_libs or (not reciter_libs and cfg.quran_fallback_any_recitation))
     }
-    khutbah_ids = {s.series_id for s in programs if _is_khutbah(s, cfg)} - quran_ids
+    khutbah_ids = {s.series_id for s in programs if _is_khutbah(s, cfg)}
 
     lanes: dict[str, Lane] = {}
     pools: dict[str, FillerPool] = {}

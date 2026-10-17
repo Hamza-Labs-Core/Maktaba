@@ -235,3 +235,20 @@ def test_the_quran_is_never_a_themes_show_or_special_run() -> None:
     assert {e.path for e in hajj.episodes} <= paths("hajj")
     assert not tahajjud_paths & paths("nasheed")
     assert not tahajjud_paths & paths("hajj")
+
+
+def test_a_khutbah_is_never_on_the_quran_lane() -> None:
+    """A khutbah series tagged recitation too (a sermon about a surah) never airs as
+    Quran recitation, though its presenter is a reciter."""
+    reciter = [season(f"q{i}", f"تلاوة {i}", genre="quran_recitation", presenter="القارئ",
+                      n=30, tags={"format:recitation": 1.0}) for i in range(3)]  # fmt: skip
+    sermon = season("k1", "نظرات في سورة الأنفال", genre="quran_recitation",
+                    presenter="القارئ", n=9,
+                    tags={"format:recitation": 1.0, "format:khutbah": 0.9})  # fmt: skip
+    p = plan([*reciter, sermon], themes=(ThemeSpec("quran", "Quran", "القرآن", 101,
+             ("quran_recitation",)),), mix_channel=False, presenter_channels=False)  # fmt: skip
+    sermon_paths = {e.path for e in sermon.episodes}
+    quran = next(c for c in p.channels if c.key == "quran")
+    on_quran = {e.path for k in quran.lanes for u in p.lanes[k].units for e in u.episodes}
+    assert {e.path for e in reciter[0].episodes} <= on_quran
+    assert not sermon_paths & on_quran

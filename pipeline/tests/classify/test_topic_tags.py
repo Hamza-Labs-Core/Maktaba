@@ -378,3 +378,35 @@ def test_a_real_nasheed_with_bisawt_stays_nasheed() -> None:
     eps = [f"أنشودة طلع البدر علينا {i} بصوت المنشد" for i in range(1, 6)]
     tags = tag_series("أناشيد إسلامية", episode_titles=eps)
     assert _genre(tags) == "genre:nasheed"
+
+
+# Friday sermons about a surah (al-Huwayni's «نظرات في سورة الأنفال»).
+_ANFAL = [
+    "استجيبوا لله وللرسول ｜ 3 ｜ نظرات في سورة الأنفال ｜  الشيخ الحويني",
+    "العزة لله ولرسوله وللمؤمنين ｜ 1 ｜ نظرات في سورة الأنفال ｜  الشيخ الحويني",
+    "العقيدة خط فاصل ｜ 2 ｜ نظرات في سورة الأنفال ｜  الشيخ الحويني",
+    "تأملات في سورة الانفال | خطبة | للشيخ أبي إسحاق الحويني",
+    "منزلة الشكر ｜ 6 ｜ نظرات في سورة الأنفال ｜  الشيخ الحويني",
+]
+
+
+def test_a_khutbah_about_a_surah_is_never_recitation() -> None:
+    tags = tag_series("نظرات حول سورة الأنفال", playlist_titles=["نظرات في سورة الأنفال"],
+                      episode_titles=_ANFAL, descriptions=["خطب الجمعة للشيخ"])  # fmt: skip
+    t = _tags(tags)
+    assert _genre(tags) != "genre:quran_recitation"
+    assert t.get("topic:quran_recitation", 0.0) == 0.0
+    assert t.get("format:recitation", 0.0) == 0.0
+
+
+def test_a_khutbah_series_is_never_recitation_even_naming_a_surah_only() -> None:
+    eps = [f"خطبة الجمعة سورة الكهف {i}" for i in range(1, 6)]
+    tags = tag_series("خطب سورة الكهف", episode_titles=eps)
+    assert _tags(tags).get("format:recitation", 0.0) == 0.0
+    assert _genre(tags) != "genre:quran_recitation"
+
+
+def test_a_plain_surah_recitation_stays_recitation() -> None:
+    eps = [f"سورة الكهف كاملة بصوت القارئ {i}" for i in range(1, 6)]
+    tags = tag_series("سورة الكهف", episode_titles=eps)
+    assert _genre(tags) == "genre:quran_recitation"
