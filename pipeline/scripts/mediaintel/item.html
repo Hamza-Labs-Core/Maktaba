@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Library - Library Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<script src="common.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="./">Control centre</a><span aria-hidden="true">/</span><span>Libraries</span><span aria-hidden="true">/</span><b id="crumb" dir="auto">…</b></nav>
+    <div class="top" style="gap:12px">
+      <span class="pill idle" id="state"><span class="pulse"></span><span id="state-t">Connecting</span></span>
+      <div class="seg" id="theme" role="group" aria-label="Colour theme"><button type="button" data-mode="light" aria-pressed="false">Light</button><button type="button" data-mode="dark" aria-pressed="false">Dark</button><button type="button" data-mode="system" aria-pressed="true">System</button></div>
+    </div>
+  </header>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="top">
+    <div><h1 id="title" dir="auto">Library</h1><div class="muted num" id="folder" dir="auto"></div></div>
+    <div>
+      <a class="btn" id="review" hidden target="_blank" rel="noopener">Review page</a>
+      <button class="btn primary" id="rerun">Re-run this library</button>
+      <span id="rerun-confirm" hidden class="confirm">Start a run for only this library?
+        <button class="btn primary" id="rerun-yes">Start</button><button class="btn ghost" id="rerun-no">Cancel</button></span>
+    </div>
+  </section>
+
+  <section class="kgrid" id="kpis" aria-label="Key numbers"></section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2>Per-file stages</h2><span class="label">files in this library</span></div>
+    <div class="stack" id="stages"></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2 id="series-h">Series</h2><span class="muted" id="series-sub"></span></div>
+    <div class="scroll"><table id="series"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2>Topics, clips and promos</h2><span class="muted" id="extra-sub"></span></div>
+    <div class="scroll"><table id="topics"></table></div>
+    <div class="scroll" style="margin-top:12px"><table id="clips"></table></div>
+    <div class="scroll" style="margin-top:12px"><table id="promos"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:8px"><h2>History</h2><span class="label">latest 50 results</span></div>
+    <ol class="tl" id="history"></ol>
+  </section>
+</div>
+<script>
+const qs = new URLSearchParams(location.search), folder = qs.get("folder") || "", focus = qs.get("series");
+const STAGE_TITLES = {probe: "Length measured", thumbnail: "Thumbnail fingerprint", signature: "Intro/end-song + frame fingerprint", visual_style: "Production style sample"};
+let data = null;
+const kbox = (label, v, sub) => `<div class="kbox"><span class="label">${esc(label)}</span><span class="v">${v}</span><span class="muted" style="font-size:12px">${sub || ""}</span></div>`;
+const span = (a, b) => !a ? "—" : (a === b || !b) ? a : `${a} → ${b}`;
+function seasonsText(g) {
+  if (g.kind === "ongoing") {   // an ongoing show is listed by the years it has aired
+    const ys = [...new Set(g.seasons.flatMap(x => [x.first_air, x.last_air]).filter(Boolean).map(d => d.slice(0, 4)))].sort();
+    return ys.length ? ys.join(", ") : `${g.seasons.length} seasons`;
+  }
+  return g.seasons.length === 1 ? `Season ${g.seasons[0].season ?? "—"}` : `${g.seasons.length} seasons`;
+}
+function render(d) {
+  data = d;
+  const one = d.focus && d.list.length === 1 ? d.list[0] : null;  // a series page
+  const libUrl = `item?folder=${encodeURIComponent(d.folder)}`;
+  document.title = (one ? one.name + " · " + d.name : d.name) + " - Library Control Centre";
+  $("title").textContent = one ? one.name : d.name;
+  $("folder").innerHTML = one ? `${esc(one.kind)} in <a href="${libUrl}">${esc(d.name)}</a>` : esc(d.folder);
+  $("crumb").innerHTML = one ? `<a href="${libUrl}">${esc(d.name)}</a><span aria-hidden="true"> / </span>${esc(one.name)}` : esc(d.name);
+  const leaf = d.folder.replace(/[\/]+$/, "").split(/[\/]/).pop() + ".html";
+  fetch("api/reports").then(r => r.json()).then(j => {
+    if ((j.reports || []).includes(leaf)) { $("review").href = "reports/" + encodeURIComponent(leaf); $("review").hidden = false; }
+  }).catch(() => {});
+  $("kpis").innerHTML = kbox("Files", fmt(d.files)) + kbox("Episode-length", fmt(d.long), "3 min or longer") + kbox("Seasons", fmt(d.seasons), `${fmt(d.series)} series`) +
+    kbox("Ongoing shows", fmt(d.ongoing)) + kbox("Shorts", fmt(d.shorts), "short-form series");
+  $("stages").innerHTML = Object.keys(STAGE_TITLES).filter(k => d.stages[k]).map(k => {
+    const s = d.stages[k], of = s.done + s.failed;
+    return `<div class="work-row"><div class="hd"><a href="stage?name=${k}">${esc(STAGE_TITLES[k])}</a>
+      <span class="num">${fmt(s.done)} done${s.failed ? ` · <span style="color:var(--bad)">${fmt(s.failed)} failed</span>` : ""}</span></div>
+      <div class="bar"><i class="done" style="width:${of ? 100 * s.done / of : 0}%"></i><i class="fail" style="width:${of ? 100 * s.failed / of : 0}%"></i></div></div>`;
+  }).join("") || `<div class="empty">No per-file work saved for this library yet.</div>`;
+  $("series-h").textContent = one ? "Seasons" : d.focus ? "Series" : "Series and seasons";
+  $("series-sub").innerHTML = d.focus ? `showing one series · <a href="item?folder=${encodeURIComponent(d.folder)}">show all</a>` : `${fmt(d.series)} series`;
+  $("series").innerHTML = d.list.length ? `<tr><th>Series</th><th>Kind</th><th>Seasons</th><th>Episodes</th><th>Aired</th><th>Where it appears</th></tr>` + d.list.map(g => {
+    const cols = [...new Set(g.seasons.map(x => x.collection).filter(Boolean))];
+    return `<tr><td class="lib" dir="auto" title="${esc(g.name)}"><a href="item?folder=${encodeURIComponent(d.folder)}&series=${encodeURIComponent(g.key)}">${esc(g.name)}</a></td>
+      <td><span class="chip k-${esc(g.kind)}">${esc(g.kind)}</span></td><td>${esc(seasonsText(g))}</td><td class="n">${fmt(g.episodes)}</td>
+      <td class="num">${esc(span(g.first_air, g.last_air))}</td>
+      <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}
+        ${g.tv === null ? `<span class="muted">dizqueTV not reachable</span>` : g.tv.length ? g.tv.map(c => `<span class="chip good">dizqueTV: ${esc(c)}</span>`).join(" ") : `<span class="muted">no dizqueTV show yet</span>`}</td></tr>`;
+  }).join("") : `<tr><td class="empty">No series detected in this library yet.</td></tr>`;
+  if (one) $("series").innerHTML = `<tr><th>Season</th><th>Episodes</th><th>Aired</th><th>Plex collection</th></tr>` + one.seasons.map(x =>
+    `<tr><td dir="auto">${esc(x.name || (x.season != null ? "Season " + x.season : "—"))}</td><td class="n">${fmt(x.episodes)}</td>
+      <td class="num">${esc(span(x.first_air, x.last_air))}</td>
+      <td dir="auto">${x.collection ? `<span class="chip good">${esc(x.collection)}</span>` : `<span class="muted">none yet</span>`}</td></tr>`).join("");
+  const plexCell = c => c ? `<span class="chip good">Plex: ${esc(c)}</span>` : `<span class="muted">no Plex collection yet</span>`;
+  $("extra-sub").textContent = `${fmt(d.topics.length)} topics · ${fmt(d.clip_groups.length)} clip groups · ${fmt(d.promos.length)} promos linked`;
+  $("topics").innerHTML = d.topics.length ? `<tr><th>Topic (across shows)</th><th>Videos</th><th>Where it appears</th></tr>` + d.topics.map(t =>
+    `<tr><td class="lib" dir="auto">${esc(t.name)}</td><td class="n">${fmt(t.items)}</td><td dir="auto">${plexCell(t.collection)}</td></tr>`).join("")
+    : `<tr><td class="empty">No topic playlists cut across this library's shows.</td></tr>`;
+  $("clips").innerHTML = d.clip_groups.length ? `<tr><th>Clips / stand-alone</th><th>Kind</th><th>Grouped by</th><th>Videos</th><th>Where it appears</th></tr>` + d.clip_groups.map(g =>
+    `<tr><td class="lib" dir="auto">${esc(g.name)}</td><td><span class="chip">${g.kind === "clips" ? "filler" : "stand-alone"}</span></td><td>${esc(g.basis)}</td>
+      <td class="n">${fmt(g.items)}</td><td dir="auto">${plexCell(g.collection)}</td></tr>`).join("")
+    : `<tr><td class="empty">No clips or stand-alone videos left over.</td></tr>`;
+  $("promos").innerHTML = d.promos.length ? `<tr><th>Promo</th><th>Advertises</th><th>Why</th></tr>` + d.promos.map(p =>
+    `<tr><td dir="auto">${esc(p.title)}</td><td dir="auto">${esc(p.show)}${p.season ? ` · S${p.season}` : ""} <span class="muted">${esc(p.library)}</span></td><td dir="auto" class="muted">${esc(p.evidence)}</td></tr>`).join("")
+    : `<tr><td class="empty">No promos linked to a show.</td></tr>`;
+  $("history").innerHTML = d.history.length ? d.history.map(h => `<li class="${h.state === "failed" ? "failed" : ""}"><span class="dot"></span>
+    <span class="t num muted">${esc(new Date(h.at).toLocaleString())}</span>
+    <span><span class="chip ${h.state === "failed" ? "badc" : "good"}">${esc(h.stage)} ${esc(h.state)}</span> <span dir="auto">${esc(h.file)}</span>${h.error ? `<div class="err">${esc(h.error)}</div>` : ""}</span></li>`).join("")
+    : `<li class="muted">Nothing has been read from this library yet.</li>`;
+  const run = !!d.running_pid;
+  $("state").className = "pill " + (run ? "running" : "idle"); $("state-t").textContent = run ? "A run is in progress" : "Not running";
+  $("rerun").disabled = run; $("rerun").title = run ? "Stop the current run first" : "";
+}
+async function load() {
+  try {
+    const r = await fetch("api/item?folder=" + encodeURIComponent(folder) + (focus ? "&series=" + encodeURIComponent(focus) : ""), {cache: "no-store"});
+    if (!r.ok) { $("title").textContent = "Unknown library"; $("folder").textContent = folder; return; }
+    render(await r.json());
+  } catch (e) { $("state-t").textContent = "Status server not reachable"; }
+}
+// the same request the control centre's wizard sends for a one-library run
+$("rerun").addEventListener("click", () => { $("rerun").hidden = true; $("rerun-confirm").hidden = false; $("rerun-yes").focus(); });
+$("rerun-no").addEventListener("click", () => { $("rerun-confirm").hidden = true; $("rerun").hidden = false; $("rerun").focus(); });
+$("rerun-yes").addEventListener("click", async () => {
+  $("rerun-confirm").hidden = true; $("rerun").hidden = false;
+  try { const j = await post("api/run", {plex: true, tv: true, youtube: true, exact: false, folders: [folder]}); toast(`Run started: ${j.command.slice(3).join(" ")}`); load(); }
+  catch (e) { toast(e.message, true); }
+});
+load(); setInterval(load, 10000);
+</script>
+</body>
+</html>

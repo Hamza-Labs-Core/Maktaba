@@ -163,7 +163,7 @@ func (d *Deps) DeleteUserData(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-func (d *Deps) live(r *http.Request) (int, int) {
+func (d *Deps) live(_ *http.Request) (int, int) {
 	if d.Live != nil {
 		return d.Live()
 	}

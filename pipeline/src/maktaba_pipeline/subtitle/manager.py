@@ -41,6 +41,7 @@ __all__ = [
     "cache_path_for",
     "register_subtitle",
     "soft_delete_subtitle",
+    "stored_path",
     "write_atomic",
 ]
 
@@ -175,6 +176,20 @@ RETURNING path
 """
 
 
+def stored_path(path: Path) -> str:
+    """Serialise a subtitle path for the ``subtitle_files.path`` column.
+
+    The stored contract is a POSIX-separated string on every OS:
+    ``Path.as_posix()`` is the identity on Linux/macOS, and on Windows it
+    renders a backslash-separated path as ``C:/cache/a.vtt``, which Windows
+    file APIs (and ``Path(row["path"])`` on read-back) accept unchanged.
+    ``str(path)`` would instead re-separate the value per host OS, so
+    the same logical path would be stored differently depending on
+    where the worker ran.
+    """
+    return path.as_posix()
+
+
 async def register_subtitle(db: _DBConn, record: SubtitleRecord) -> int:
     """Upsert a row into ``subtitle_files`` and return the row id.
 
@@ -192,7 +207,7 @@ async def register_subtitle(db: _DBConn, record: SubtitleRecord) -> int:
             record.language,
             record.format.value,
             record.source.value,
-            str(record.path),
+            stored_path(record.path),
             record.byte_size,
             record.sha256,
             is_embedded,
@@ -207,7 +222,7 @@ async def register_subtitle(db: _DBConn, record: SubtitleRecord) -> int:
             record.language,
             record.format.value,
             record.source.value,
-            str(record.path),
+            stored_path(record.path),
             record.byte_size,
             record.sha256,
             1 if is_embedded else 0,

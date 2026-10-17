@@ -6,6 +6,10 @@ module is the canonical implementation of:
 
 - :func:`canonicalise` — resolve symlinks, strip trailing slashes,
   normalise ``..`` (AC-3 rule).
+- :func:`is_within` — true if one canonical path equals, or is nested
+  under, another. Compares path *components* (not string prefixes) after
+  ``os.path.normcase``, so it is separator- and case-correct on Windows
+  and byte-exact on POSIX.
 - :func:`paths_overlap` — true if one canonical path is a prefix of the
   other (or they're equal).
 - :func:`find_overlap` — the create/update gate (AC-2): given a set of
@@ -26,6 +30,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import PurePath
 
 __all__ = [
     "Overlap",
@@ -33,8 +38,12 @@ __all__ = [
     "detect_runtime_overlap",
     "find_overlap",
     "find_self_overlap",
+    "is_within",
     "paths_overlap",
 ]
+
+
+_SEPARATORS = os.sep + (os.altsep or "")
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,10 +79,39 @@ def canonicalise(path: str) -> str:
     except OSError:
         resolved = path
     # ``os.path.realpath`` already normalises ``..`` and ``.``; strip a
-    # trailing separator (except on the root itself).
-    if len(resolved) > 1 and resolved.endswith(os.sep):
-        resolved = resolved.rstrip(os.sep)
+    # trailing separator, except on a filesystem root (``/``, ``C:\``,
+    # ``\\server\share\``), where stripping would change meaning
+    # (``C:`` is drive-relative on Windows).
+    if os.path.dirname(resolved) != resolved:
+        resolved = resolved.rstrip(_SEPARATORS)
     return resolved
+
+
+def _components(path: str) -> tuple[str, ...]:
+    """Split ``path`` into comparable components for the host OS.
+
+    ``os.path.normcase`` is the identity on POSIX (Linux and macOS), so
+    comparisons there stay byte-exact; on Windows it folds case and
+    turns ``/`` into a backslash, matching NTFS semantics.
+    ``PurePath.parts`` then gives one entry per component with the
+    anchor (``/`` or a drive such as ``C:``) first, so ``/mnt/media2``
+    can never look like it is under ``/mnt/media``.
+    """
+    return PurePath(os.path.normcase(path)).parts
+
+
+def is_within(candidate: str, root: str) -> bool:
+    """True if canonical ``candidate`` equals ``root`` or is nested under it.
+
+    Both inputs must already be canonical — call :func:`canonicalise`
+    first. This is the single path-containment primitive for the
+    library-management layer; do not compare paths with string prefixes.
+    """
+    if candidate == root:
+        return True
+    root_parts = _components(root)
+    cand_parts = _components(candidate)
+    return len(cand_parts) >= len(root_parts) and cand_parts[: len(root_parts)] == root_parts
 
 
 def paths_overlap(a: str, b: str) -> bool:
@@ -83,12 +121,7 @@ def paths_overlap(a: str, b: str) -> bool:
     first. The check is symmetric: ``paths_overlap("/x", "/x/y")`` and
     ``paths_overlap("/x/y", "/x")`` both return True.
     """
-    if a == b:
-        return True
-    sep = os.sep
-    if a.startswith(b + sep):
-        return True
-    return b.startswith(a + sep)
+    return is_within(a, b) or is_within(b, a)
 
 
 def find_self_overlap(roots: Iterable[str]) -> Overlap | None:

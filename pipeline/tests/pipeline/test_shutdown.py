@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 import signal
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +14,7 @@ from maktaba_pipeline.pipeline.shutdown import (
     DEFAULT_SHUTDOWN_GRACE_SEC,
     ShutdownOrchestrator,
 )
+from maktaba_pipeline.pipeline.signals import shutdown_signals
 
 from ..db._fake_jobs_db import FakeDB
 
@@ -171,19 +172,41 @@ def test_second_signal_calls_os_exit() -> None:
 
 @pytest.mark.asyncio
 async def test_install_wires_signal_handlers() -> None:
-    """install() registers SIGTERM and SIGINT on the loop."""
+    """install() registers SIGTERM (and the other shutdown signals) on the loop."""
     db = FakeDB(dialect="sqlite")
     orch = ShutdownOrchestrator(db, worker_id="w1", grace_sec=10.0)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     orch.install(loop)
-    # Send SIGTERM to ourselves; the orchestrator should pick it up
-    # and set the event. Wrapped in a deadline so the test can't hang.
-    os.kill(os.getpid(), signal.SIGTERM)
     try:
+        # ``signal.raise_signal`` rather than ``os.kill(getpid(), SIGTERM)``:
+        # on Windows ``os.kill`` with SIGTERM is ``TerminateProcess`` and
+        # kills the test runner outright, whereas ``raise_signal`` delivers
+        # the signal to this process's handler on every OS. Scheduled via
+        # the loop so the handler fires while we are awaiting the event.
+        loop.call_soon(signal.raise_signal, signal.SIGTERM)
         await asyncio.wait_for(orch.shutdown_event.wait(), timeout=1.0)
     finally:
-        # Restore default handlers so the next test isn't affected.
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            with contextlib.suppress(NotImplementedError, RuntimeError):
-                loop.remove_signal_handler(sig)
+        # Restore the previous handlers so the next test isn't affected.
+        orch.uninstall()
     assert orch.shutdown_event.is_set()
+
+
+@pytest.mark.asyncio
+async def test_uninstall_restores_previous_handlers() -> None:
+    before = {sig: signal.getsignal(sig) for sig in shutdown_signals()}
+    orch = ShutdownOrchestrator(FakeDB(dialect="sqlite"), worker_id="w1")
+    orch.install(asyncio.get_running_loop())
+    orch.install(asyncio.get_running_loop())  # re-install must not stack
+    orch.uninstall()
+    orch.uninstall()  # idempotent
+    assert {sig: signal.getsignal(sig) for sig in shutdown_signals()} == before
+
+
+def test_shutdown_signals_are_platform_appropriate() -> None:
+    sigs = shutdown_signals()
+    assert signal.SIGTERM in sigs
+    assert signal.SIGINT in sigs
+    if sys.platform == "win32":
+        assert signal.SIGBREAK in sigs
+    else:
+        assert len(sigs) == 2

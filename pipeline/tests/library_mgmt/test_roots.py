@@ -12,6 +12,7 @@ from maktaba_pipeline.library_mgmt.roots import (
     detect_runtime_overlap,
     find_overlap,
     find_self_overlap,
+    is_within,
     paths_overlap,
 )
 
@@ -55,7 +56,11 @@ def test_paths_overlap_handles_prefix_both_ways() -> None:
 def test_find_self_overlap_rejects_nested_in_one_library() -> None:
     overlap = find_self_overlap(["/a", "/a/b"])
     assert overlap is not None
-    assert "/a" in (overlap.existing, overlap.proposed)
+    # ``find_self_overlap`` reports *canonical* paths. On POSIX
+    # ``canonicalise("/a") == "/a"``; on Windows it gains the current
+    # drive (``"C:\a"``), so compare against the canonical form rather
+    # than the literal input.
+    assert canonicalise("/a") in (overlap.existing, overlap.proposed)
 
 
 @pytest.mark.unit
@@ -72,7 +77,11 @@ def test_find_overlap_skips_same_library_id() -> None:
 
 @pytest.mark.unit
 def test_find_overlap_detects_cross_library_collision() -> None:
-    existing = [("lib-1", "/mnt/media")]
+    # ``existing`` rows are ``library_roots.path_canonical`` values, i.e.
+    # already passed through ``canonicalise``. A bare ``"/mnt/media"`` is
+    # only canonical on POSIX (on Windows it lacks a drive), so build the
+    # fixture the way production does.
+    existing = [("lib-1", canonicalise("/mnt/media"))]
     overlap = find_overlap("lib-2", ["/mnt/media/lectures"], existing)
     assert overlap is not None
     assert overlap.existing_library_id == "lib-1"
@@ -93,3 +102,19 @@ def test_detect_runtime_overlap_picks_up_remount(tmp_path: Path) -> None:
     ]
     overlaps = detect_runtime_overlap(declared)
     assert overlaps, "expected runtime overlap for symlink-into-shared-dir"
+
+
+@pytest.mark.unit
+def test_is_within_compares_components_not_string_prefixes() -> None:
+    assert is_within("/mnt/media", "/mnt/media")
+    assert is_within("/mnt/media/sub/x.mp4", "/mnt/media")
+    assert not is_within("/mnt/media2", "/mnt/media")
+    assert not is_within("/mnt", "/mnt/media")
+    # A filesystem root contains everything below it.
+    assert is_within("/mnt/media", "/")
+
+
+@pytest.mark.unit
+def test_canonicalise_keeps_filesystem_root(tmp_path: Path) -> None:
+    anchor = tmp_path.anchor  # "/" on POSIX, "C:\\" on Windows
+    assert canonicalise(anchor) == os.path.realpath(anchor)

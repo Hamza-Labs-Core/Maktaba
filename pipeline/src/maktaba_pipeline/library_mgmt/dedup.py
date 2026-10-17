@@ -23,12 +23,11 @@ this to a `path-out-of-root` audit event.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .roots import canonicalise, paths_overlap
+from .roots import canonicalise, is_within, paths_overlap
 
 __all__ = [
     "DedupDecision",
@@ -91,16 +90,11 @@ def is_path_in_roots(candidate: str, roots_canonical: Iterable[str]) -> bool:
     """True if a canonical candidate lives under (or equals) any root.
 
     Use this *after* :func:`roots.canonicalise` on both sides — the
-    check is a string-prefix match plus a separator boundary so
-    ``/mnt/media2`` does not match ``/mnt/media``.
+    check compares path components (see :func:`roots.is_within`) so
+    ``/mnt/media2`` does not match ``/mnt/media`` and Windows separators
+    and drive-letter case are handled.
     """
-    sep = os.sep
-    for root in roots_canonical:
-        if candidate == root:
-            return True
-        if candidate.startswith(root + sep):
-            return True
-    return False
+    return any(is_within(candidate, root) for root in roots_canonical)
 
 
 def decide(

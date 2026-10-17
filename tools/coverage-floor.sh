@@ -90,15 +90,20 @@ done
 if [[ -d "$REPO_ROOT/$pipeline_dir" ]]; then
   echo "==> coverage ($pipeline_dir)"
   covxml="$covdir/pipeline.cov.txt"
+  covlog="$covdir/pipeline.cov.log"
   set +e
-  ( cd "$REPO_ROOT/$pipeline_dir" && \
+  # sys.monitoring (Python 3.12+) records each line once and then stops tracing
+  # it; the default tracer slows hot loops ~10x, pushing unit tests past their
+  # per-test cap only when measured for coverage
+  ( cd "$REPO_ROOT/$pipeline_dir" && export COVERAGE_CORE=sysmon && \
     uv run --all-extras --with pytest-cov pytest -m unit \
-      --cov=src/maktaba_pipeline --cov-report= -q >/dev/null 2>&1 && \
-    uv run --all-extras --with pytest-cov coverage report --format=total > "$covxml" 2>/dev/null )
+      --cov=src/maktaba_pipeline --cov-report= -q >"$covlog" 2>&1 && \
+    uv run --all-extras --with pytest-cov coverage report --format=total > "$covxml" 2>>"$covlog" )
   py_rc=$?
   set -e
   if [[ $py_rc -ne 0 || ! -s "$covxml" ]]; then
     echo "::error::pipeline coverage collection failed (exit $py_rc)"
+    tail -n 40 "$covlog" || true  # the quiet run's output is the only clue to why
     rc=1
   else
     pct="$(tr -d '[:space:]' < "$covxml")"

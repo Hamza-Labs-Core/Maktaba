@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Library Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Noto+Kufi+Arabic:wght@600;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<script src="common.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Library control centre</h1>
+      <div class="muted" id="sub">Series, seasons and channels for the Plex libraries</div>
+    </div>
+    <div class="top" style="gap:12px">
+      <span class="pill idle" id="state"><span class="pulse"></span><span id="state-t">Connecting</span></span>
+      <span class="muted num" id="when"></span>
+      <a class="btn ghost" href="settings">Settings</a>
+      <div class="seg" id="theme" role="group" aria-label="Colour theme"><button type="button" data-mode="light" aria-pressed="false">Light</button><button type="button" data-mode="dark" aria-pressed="false">Dark</button><button type="button" data-mode="system" aria-pressed="true">System</button></div>
+      <button class="btn" id="stop" hidden>Stop run</button>
+      <span id="stop-confirm" hidden class="confirm">Stop the run? Finished work is kept and the next run continues from it.
+        <button class="btn danger" id="stop-yes">Stop</button><button class="btn ghost" id="stop-no">Keep running</button></span>
+    </div>
+  </header>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <section class="health" id="health" aria-label="Health"></section>
+
+  <section class="panel" id="attn-panel" hidden>
+    <div class="top" style="margin-bottom:8px"><h2>Needs attention</h2><span class="muted" id="attn-sub"></span></div>
+    <div class="attn-list" id="attn"></div>
+  </section>
+
+  <section class="gauges" id="gauges" aria-label="Progress gauges"></section>
+
+  <section class="panel wizard" id="wizard">
+    <div class="top"><h2>Start a run</h2><span class="muted" id="wiz-note">Every step is saved per file, so a new run only does what is left.</span></div>
+    <ol class="wsteps">
+      <li><span class="label">1 · Libraries</span>
+        <label class="opt"><input type="radio" name="scope" id="scope-all" value="all" checked> All Plex libraries <span class="muted">(Movies left out)</span></label>
+        <label class="opt"><input type="radio" name="scope" id="scope-sel" value="sel"> Only the libraries ticked below <span class="chip" id="sel-n">0</span></label>
+      </li>
+      <li><span class="label">2 · What to write</span>
+        <label class="opt"><input type="checkbox" id="o-plex" checked> Season collections in Plex</label>
+        <label class="opt"><input type="checkbox" id="o-tv" checked> dizqueTV shows and TV channels</label>
+        <label class="opt"><input type="checkbox" id="o-yt" checked> Read YouTube playlists and dates</label>
+        <label class="opt"><input type="checkbox" id="o-exact"> <span>Exact upload dates<br><span class="muted">slow: one request per video</span></span></label>
+      </li>
+      <li><span class="label">3 · Review</span>
+        <div id="wiz-review" class="muted"></div>
+        <div><button class="btn primary" id="start">Start run</button></div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="hero">
+    <div class="panel now-step">
+      <div class="stepno" id="stepno">—</div>
+      <div class="title" id="step-title">Waiting for the first update</div>
+      <div class="muted" id="step-what"></div>
+      <div class="beat" id="beat"><span class="beat-dot"></span><span id="beat-t">—</span></div>
+      <div class="passes" id="step-passes" hidden></div>
+      <div class="bar" id="step-bar"><i class="run" style="width:0"></i></div>
+      <div class="meta-row">
+        <div><span class="label">Progress</span><span class="v" id="step-prog">—</span></div>
+        <div><span class="label">Rate</span><span class="v" id="step-rate">—</span></div>
+        <div><span class="label">Time left (estimate)</span><span class="v" id="step-eta">—</span></div>
+        <div><span class="label">Step started</span><span class="v" id="step-start">—</span></div>
+      </div>
+    </div>
+    <div class="panel kpis" id="kpis"></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:12px"><h2>Run steps</h2><span class="muted" id="run-count"></span></div>
+    <ol class="rail" id="rail"></ol>
+  </section>
+
+  <section>
+    <div class="top" style="margin-bottom:8px"><h2>Per-file stages</h2><span class="label">open one for its detail</span></div>
+    <div class="stage-cards" id="stage-cards"></div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel work">
+      <div class="top"><h2>Per-file work</h2><span class="label">saved as it goes</span></div>
+      <div id="work"></div>
+      <div class="legend"><span><i style="background:var(--lapis)"></i>done</span><span><i style="background:var(--bad)"></i>failed</span><span><i style="background:var(--track)"></i>to do</span></div>
+    </div>
+    <div class="panel">
+      <div class="top"><h2>Throughput</h2><span class="label">items per minute, this session</span></div>
+      <svg class="chart" id="thru" viewBox="0 0 520 190" role="img" aria-label="Items finished per minute"></svg>
+      <div class="legend" id="thru-legend"></div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Production style</h2><span class="label">seasons</span></div>
+      <div id="styles"></div>
+    </div>
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Topics</h2><span class="label">seasons per main topic</span></div>
+      <div id="genres"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="tools" style="margin-bottom:8px">
+      <h2>Libraries</h2>
+      <input type="search" id="q" placeholder="Filter libraries" aria-label="Filter libraries">
+    </div>
+    <div class="scroll"><table id="libs"></table></div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Explain a video</h2><span class="label">why it is where it is</span></div>
+      <form id="ex-form" class="row">
+        <input type="search" id="ex-q" placeholder="Part of a title, e.g. طلع البدر" aria-label="Title text" dir="auto">
+        <button class="btn" type="submit">Explain</button>
+      </form>
+      <pre id="ex-out" class="out" dir="auto">Search a title to see its air date, length, playlists, Plex item and which season it landed in.</pre>
+    </div>
+    <div class="panel">
+      <div class="top" style="margin-bottom:8px"><h2>Pin a show's style</h2><span class="label">overrides the automatic rating</span></div>
+      <form id="st-form" class="stack">
+        <label class="field"><span class="label">Library</span><select id="st-lib" aria-label="Library"></select></label>
+        <label class="field"><span class="label">Series name, as in the review page</span><input type="text" id="st-series" dir="auto" placeholder="الحبيب"></label>
+        <label class="field"><span class="label">Style</span>
+          <select id="st-style"><option value="cinematic">Cinematic / AI</option><option value="produced">Produced</option><option value="talk">Studio / lecture</option><option value="static">Still picture + audio</option><option value="">Clear the pin</option></select></label>
+        <div><button class="btn" type="submit">Save</button> <span class="muted">Applies from the next production-style step.</span></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details id="fails"><summary>Failures <span class="chip" id="fail-n">0</span></summary><div class="scroll"><table id="errs"></table></div></details>
+  </section>
+  <section class="panel">
+    <details id="logbox"><summary>Log</summary>
+      <div class="logfilter" style="margin-top:8px"><label class="label" for="log-filter">Show</label>
+        <select id="log-filter" aria-label="Filter the log by stage"><option value="">Everything</option><option value="probe">Length (probe)</option><option value="thumbnail">Thumbnails</option><option value="signature">Fingerprints</option><option value="visual_style">Production style</option><option value="errors">Errors only</option></select></div>
+      <pre id="log"></pre></details>
+  </section>
+</div>
+<script>
+const SERIES_COLORS = ["var(--lapis)", "var(--saffron)", "var(--ok)", "var(--muted)"];
+const STYLE_ORDER = [["static","Still picture + audio"],["talk","Studio / lecture"],["produced","Produced"],["cinematic","Cinematic / AI"]];
+const STYLE_COLORS = {static:"var(--muted)", talk:"var(--lapis)", produced:"var(--ok)", cinematic:"var(--saffron)"};
+let samples = [];
+try { samples = JSON.parse(sessionStorage.getItem("mi-samples") || "[]"); } catch (e) { samples = []; }
+let sortKey = "files", sortDir = -1, last = null;
+
+function rateOf(key) {           // items per minute over the last ~10 minutes of samples
+  const now = samples[samples.length - 1]; if (!now) return 0;
+  const old = samples.find(x => now.t - x.t <= 600) || samples[0];
+  const dt = (now.t - old.t) / 60; if (dt < 0.2) return 0;
+  return Math.max(0, ((now.v[key] || 0) - (old.v[key] || 0)) / dt);
+}
+function spark(vals) {
+  if (vals.length < 2) return "";
+  const max = Math.max(...vals), min = Math.min(...vals), r = (max - min) || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(24 - (v - min) / r * 22).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--lapis)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+// ---- gauges and counters
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const shown = {};   // last value drawn per counter, for count-up animation
+function countTo(el, key, value, digits) {
+  const from = shown[key] ?? value; shown[key] = value;
+  const show = v => el.textContent = digits ? v.toFixed(digits) : Math.round(v).toLocaleString();
+  if (reduceMotion || from === value) { show(value); return; }
+  const t0 = performance.now(), d = 700;
+  (function step(t) { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3);
+    show(from + (value - from) * e); if (k < 1) requestAnimationFrame(step); })(t0);
+}
+function gauge(id, name, pct, sub, state) {
+  // a 240° dial: 0% at lower left, 100% at lower right, ticks every 25%
+  const R = 52, C = 64, A0 = 150, SWEEP = 240, len = 2 * Math.PI * R * SWEEP / 360;
+  const pt = (deg, r) => [C + r * Math.cos(deg * Math.PI / 180), C + r * Math.sin(deg * Math.PI / 180)];
+  const [x0, y0] = pt(A0, R), [x1, y1] = pt(A0 + SWEEP, R);
+  const arc = `M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 1 1 ${x1.toFixed(1)},${y1.toFixed(1)}`;
+  const color = state === "done" || pct >= 99.95 ? "var(--ok)" : state === "running" ? "var(--saffron)" : "var(--lapis)";
+  const p = Math.max(0, Math.min(100, pct || 0));
+  let card = document.getElementById("g-" + id);
+  if (!card) {
+    card = document.createElement("div"); card.className = "gauge"; card.id = "g-" + id;
+    const ticks = [0, 25, 50, 75, 100].map(v => { const [tx, ty] = pt(A0 + SWEEP * v / 100, R + 11);
+      return `<text x="${tx.toFixed(1)}" y="${(ty + 3).toFixed(1)}" text-anchor="middle">${v}</text>`; }).join("");
+    card.innerHTML = `<svg viewBox="0 -12 128 124" role="img" aria-label="${esc(name)}">
+      <path class="track" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round"/>
+      <path class="val" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${len.toFixed(1)}"/>
+      <g class="ticks">${ticks}</g>
+      <text class="pct" x="${C}" y="${C + 6}" text-anchor="middle"><tspan class="n">0</tspan><tspan font-size="13">%</tspan></text>
+    </svg><div class="name">${esc(name)}</div><div class="sub"></div>`;
+    $("gauges").appendChild(card);
+  }
+  const val = card.querySelector(".val");
+  val.setAttribute("stroke", color);
+  val.setAttribute("stroke-dashoffset", (len * (1 - p / 100)).toFixed(1));
+  countTo(card.querySelector(".n"), "g-" + id, p, p > 0 && p < 10 ? 1 : 0);
+  card.querySelector(".sub").textContent = sub;
+}
+function drawGauges(s, cur, steps) {
+  const doneSteps = steps.filter(x => ["done", "earlier", "skipped"].includes(x.state)).length;
+  const p = s.progress, stepFrac = cur && p && p.total ? Math.min(1, p.done / p.total) : 0;
+  const runPct = steps.length ? 100 * (doneSteps + stepFrac) / steps.length : 0;
+  gauge("run", "Whole run", runPct, `${doneSteps} of ${steps.length} steps done`, cur ? "running" : doneSteps ? "done" : "");
+  gauge("step", cur ? `Step ${cur.n}: ${cur.title}` : "Current step", cur && p && p.total ? 100 * stepFrac : (cur ? 0 : 100),
+        cur && p ? (p.total ? `${fmt(p.done)} of ${fmt(p.total)} ${p.unit}` : `${fmt(p.done)} ${p.unit}`) : "no step running", cur ? "running" : "done");
+  const st = Object.fromEntries((s.stages || []).map(x => [x.stage, x]));
+  const one = (id, key, name) => { const x = st[key]; if (!x) return;
+    const of = Math.max(x.of, x.done + x.failed); gauge(id, name, of ? 100 * x.done / of : 0, `${fmt(x.done)} of ${fmt(of)}`, ""); };
+  one("len", "Length measured", "Lengths known");
+  one("thumb", "Thumbnail fingerprint", "Thumbnails");
+  one("sig", "Intro/end-song + frame fingerprint", "Intro fingerprints");
+  const withSeasons = (s.libraries || []).filter(r => r.seasons), inPlex = withSeasons.filter(r => r.collections);
+  gauge("plex", "Season collections in Plex", withSeasons.length ? 100 * inPlex.length / withSeasons.length : 0,
+        `${inPlex.length} of ${withSeasons.length} libraries with seasons have them (written in step 13)`, "");
+}
+
+function render(s) {
+  last = s;
+  const t = s.now;
+  const v = {files: s.totals.files, known: s.totals.files - (s.totals["length not known yet"] || 0),
+             seasons: s.totals.seasons, cols: s.totals["Plex collections written"], step: s.progress ? s.progress.done : 0};
+  for (const st of s.stages) v["st:" + st.stage] = st.done;
+  if (!samples.length || t - samples[samples.length - 1].t >= 15) {
+    samples.push({t, v}); samples = samples.filter(x => t - x.t < 6 * 3600);
+    try { sessionStorage.setItem("mi-samples", JSON.stringify(samples)); } catch (e) {}
+  }
+  $("when").textContent = (liveOn ? "live · " : "") + "updated " + new Date(t * 1000).toLocaleTimeString();
+
+  // status + hero
+  const steps = s.steps || [], cur = steps.find(x => x.state === "running");
+  const finished = !cur && steps.some(x => x.state === "done");
+  running = !!s.running_pid;
+  $("stop").hidden = !running || !$("stop-confirm").hidden;
+  $("wiz-note").textContent = running ? "A run is in progress. Stop it to start a different one." : "Every step is saved per file, so a new run only does what is left.";
+  review();
+  $("state").className = "pill " + (cur ? "running" : finished ? "done" : "idle");
+  $("state-t").textContent = cur ? "Running" : finished ? "Finished" : "Not running";
+  const age = s.log_age_s ?? null, beat = $("beat");
+  if (age === null || (!cur && !running)) { beat.className = "beat"; $("beat-t").textContent = "No run in progress"; }
+  else {
+    const ago = age < 60 ? `${Math.round(age)} s ago` : `${Math.round(age / 60)} min ago`;
+    const stale = age > 600;
+    beat.className = "beat " + (stale ? "stale" : "live");
+    $("beat-t").textContent = stale ? `No activity for ${ago}. The run may be stuck or stopped; check the log below.`
+                                    : `Last activity ${ago}: ${s.last_line || ""}`;
+    $("beat-t").title = s.last_line || "";
+  }
+  const nSkip = steps.filter(x => x.state === "skipped").length, nEarlier = steps.filter(x => x.state === "earlier").length;
+  $("run-count").textContent = `${steps.filter(x => x.state === "done").length + nEarlier} of ${steps.length} done` + (nEarlier ? ` · ${nEarlier} from the earlier run` : "") + (nSkip ? ` · ${nSkip} skipped` : "");
+  if (cur) {
+    $("stepno").textContent = `Step ${cur.n} of ${steps.length}`;
+    $("step-title").textContent = cur.title;
+    $("step-what").textContent = cur.what;
+    $("step-start").textContent = cur.started || "—";
+    const p = s.progress;
+    if (p && p.total) {
+      const pct = Math.min(100, 100 * p.done / p.total), r = p.per_min || rateOf("step");
+      const ps = $("step-passes");
+      ps.hidden = !p.passes;
+      $("step-what").textContent = cur.what + (p.phase && !p.passes ? " · " + p.phase : "");
+      if (p.passes) ps.innerHTML = p.passes.map((x, i) => {
+        const frac = x.total ? Math.min(1, x.done / x.total) : 0;
+        const tail = x.state === "done" ? "done"
+          : x.state === "running" ? (r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min · ${dur((x.total - x.done) / r * 60)} left` : "measuring…")
+          : "waits for pass " + i;
+        return `<div class="pass ${x.state}"><span class="pn">Pass ${i + 1} of ${p.passes.length}${x.state === "done" ? " ✓" : x.state === "running" ? " · now" : ""}</span>
+          <span>${esc(x.name)}</span><span class="pv">${x.total == null ? "sized after pass 1" : `${fmt(x.done)} of ${fmt(x.total)}`}</span>
+          <div class="bar"><i class="${x.state === "done" ? "done" : "run"}" style="width:${100 * frac}%"></i></div>
+          <span class="pr">${tail}</span></div>`;
+      }).join("");
+      $("step-bar").innerHTML = `<i class="run" style="width:${pct}%"></i>`;
+      $("step-prog").textContent = `${p.done} of ${p.total} ${p.unit}`;
+      $("step-rate").textContent = r ? `${r.toFixed(1)} / min` : "measuring…";
+      $("step-eta").textContent = r ? dur((p.total - p.done) / r * 60) : "—";
+    } else {
+      $("step-passes").hidden = true;
+      $("step-bar").innerHTML = `<i class="run" style="width:100%;opacity:.35"></i>`;
+      $("step-prog").textContent = p ? (p.phase && !p.total ? p.phase : `${p.done} ${p.unit}`) : "—";
+      $("step-rate").textContent = "—"; $("step-eta").textContent = "—";
+    }
+  } else {
+    $("stepno").textContent = finished ? "All steps" : "—";
+    $("step-title").textContent = finished ? "Run finished" : "No run in progress";
+    $("step-passes").hidden = true;
+    $("step-what").textContent = ""; $("step-bar").innerHTML = `<i class="done" style="width:${finished ? 100 : 0}%"></i>`;
+  }
+
+  // KPIs with sparklines
+  const series = k => samples.map(x => x.v[k] || 0);
+  const kp = [["Files found", v.files, "files"], ["Length known", v.known, "known"],
+              ["Seasons found", v.seasons, "seasons"], ["Plex collections", v.cols, "cols"]];
+  if (!$("kpis").children.length) $("kpis").innerHTML = kp.map(([l, , k]) => `<div class="kpi"><span class="label">${l}</span><span class="v" id="kv-${k}">0</span><span id="ks-${k}"></span></div>`).join("");
+  kp.forEach(([, n, k]) => { countTo($("kv-" + k), "kv-" + k, n || 0, 0); $("ks-" + k).innerHTML = spark(series(k)); });
+  drawGauges(s, cur, steps);
+
+  // step rail
+  $("rail").innerHTML = steps.map(x => `<li class="${x.state}"><span class="dot">${x.state === "done" || x.state === "earlier" ? "✓" : x.state === "skipped" ? "–" : x.n}</span>
+    <span><span class="t">${esc(x.title)}</span><br><span class="w">${esc(x.what)}</span>${x.note || x.started || x.state === "earlier" || x.state === "skipped" ? `<br><span class="w s">${x.note ? esc(x.note) : x.started ? "started " + esc(x.started) : x.state === "earlier" ? "done in the earlier run; its results are used" : "not part of this run"}</span>` : ""}</span></li>`).join("");
+
+  // per-file work
+  $("work").innerHTML = s.stages.length ? s.stages.map(st => {
+    const of = Math.max(st.of, st.done + st.failed), d = of ? 100 * st.done / of : 0, f = of ? 100 * st.failed / of : 0;
+    const r = st.per_min ?? rateOf("st:" + st.stage), left = of - st.done - st.failed;
+    return `<div class="work-row"><div class="hd"><span>${esc(st.stage)} <b class="num">${of ? (100 * st.done / of).toFixed(st.done / of < 0.1 ? 1 : 0) : 0}%</b></span>
+      <span class="num">${fmt(st.done)} <span class="muted">of ${fmt(of)}</span>${st.failed ? ` · <span style="color:var(--bad)">${fmt(st.failed)} failed</span>` : ""}</span></div>
+      <div class="bar"><i class="done" style="width:${d}%"></i><i class="fail" style="width:${f}%"></i></div>
+      ${st.note ? `<div class="rate">${esc(st.note)}</div>` : ""}<div class="rate">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min over the last 10 min · ${left > 0 ? dur(left / r * 60) + " left at this rate" : "done"}` : left > 0 ? "nothing finished in the last 10 min" : "complete"}</div></div>`;
+  }).join("") : `<div class="empty">Per-file work appears once the first files are measured.</div>`;
+
+  drawThroughput(s.stages.map(st => st.stage));
+  drawStyles(s.styles || {});
+  drawGenres(s.genres || []);
+  drawLibs(s.libraries || []);
+
+  $("fail-n").textContent = s.errors.length; $("fail-n").className = "chip" + (s.errors.length ? " on" : "");
+  $("errs").innerHTML = s.errors.length ? `<tr><th>work</th><th>file</th><th>error</th><th>tries</th></tr>` + s.errors.map(r =>
+    `<tr class="err"><td>${esc(r.stage)}</td><td class="lib" dir="auto">${esc(r.file)}</td><td>${esc(r.error)}</td><td class="n">${r.attempts}</td></tr>`).join("")
+    : `<tr><td class="empty">No failures.</td></tr>`;
+  drawLog();
+  drawHealth(s, cur);
+  drawAttention(s);
+  drawStageCards(s);
+}
+
+// ---- health strip, needs-attention, stage cards, log filter
+const LOG_FILTERS = {probe: /ffprobe|probe|videos'|scan-local/i, thumbnail: /thumb/i,
+  signature: /fingerprint|signature|per minute/i, visual_style: /sampling|style|visual|per minute/i, errors: /fail|error|traceback|timed? ?out/i};
+function drawLog() {
+  const f = $("log-filter").value, re = LOG_FILTERS[f];
+  $("log").textContent = ((last && last.log) || []).filter(ln => !re || re.test(ln)).join("\n");
+}
+$("log-filter").addEventListener("change", drawLog);
+function tile(label, value, sub, cls) {
+  return `<div class="tile ${cls || ""}"><span class="label">${esc(label)}</span><span class="v">${value}</span><span class="s">${sub}</span></div>`;
+}
+function minuteBars(vals) {
+  const max = Math.max(1, ...vals), w = 100 / vals.length;
+  return `<svg class="bars" viewBox="0 0 100 34" preserveAspectRatio="none" role="img" aria-label="Files finished per minute, last hour">` +
+    vals.map((v, i) => `<rect x="${(i * w).toFixed(2)}" y="${(34 - 32 * v / max).toFixed(1)}" width="${(w * 0.8).toFixed(2)}" height="${(32 * v / max + (v ? 1 : 0.5)).toFixed(1)}"/>`).join("") + `</svg>`;
+}
+function drawHealth(s, cur) {
+  const h = s.health; if (!h) return;
+  const nas = h.nas, smb = h.smb, age = s.log_age_s;
+  const failBad = nas.failed_10m > 0;
+  const smbV = !smb.available ? "not available" : smb.n === null ? "checking…" : fmt(smb.n);
+  const smbCls = smb.available && smb.n > 0 ? "bad" : "";
+  const stale = age != null && age > 600 && running;
+  const ago = age == null ? "no log" : age < 60 ? `${Math.round(age)} s ago` : `${Math.round(age / 60)} min ago`;
+  const stepName = cur ? `Step ${cur.n}: ${cur.title}` : (running ? "Between steps" : "Not running");
+  const total = h.per_minute.reduce((a, b) => a + b, 0);
+  $("health").innerHTML =
+    tile("NAS reads", `${nas.at_once} at once`, `${fmt(nas.saved_10m)} saved · <span style="${failBad ? "color:var(--bad)" : ""}">${fmt(nas.failed_10m)} failed</span> in the last 10 min`, failBad ? "warn" : "") +
+    tile("SMB timeouts, 10 min", smbV, smb.available ? "Windows SMB client events 30807 and 30809" : "Windows event log only", smbCls) +
+    tile("Run state", `<span style="font-size:14px;font-family:var(--f-body);font-weight:600">${esc(stepName)}</span>`, `last log activity ${ago}`, stale ? "bad" : "") +
+    `<div class="tile"><span class="label">Files done per minute</span>${minuteBars(h.per_minute)}<span class="s">${fmt(total)} in the last hour</span></div>`;
+}
+let attnGroups = [];
+function drawAttention(s) {
+  attnGroups = s.attention || [];
+  $("attn-panel").hidden = !attnGroups.length;
+  const failed = attnGroups.reduce((a, g) => a + g.count, 0), retry = attnGroups.reduce((a, g) => a + g.retrying, 0);
+  $("attn-sub").textContent = `${fmt(failed)} failed files in ${attnGroups.length} ${attnGroups.length === 1 ? "group" : "groups"} · ${fmt(retry)} will retry`;
+  if (!$("attn").contains(document.activeElement)) $("attn").innerHTML = attnGroups.map(attnRow).join("");
+}
+wireRetry($("attn"), () => attnGroups, () => tick());
+function ring(frac, color) {
+  const R = 26, C = 2 * Math.PI * R;
+  return `<svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="${R}" fill="none" stroke-width="7"/>
+    <circle cx="32" cy="32" r="${R}" fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/>
+    <text x="32" y="37" text-anchor="middle">${Math.round(frac * 100)}</text></svg>`;
+}
+function drawStageCards(s) {
+  $("stage-cards").innerHTML = (s.stages || []).filter(st => st.key).map(st => {
+    const of = Math.max(st.of, st.done + st.failed), frac = of ? st.done / of : 0, r = st.per_min || 0, left = of - st.done - st.failed;
+    return `<a class="scard" href="stage?name=${encodeURIComponent(st.key)}" aria-label="${esc(st.stage)}, open detail">${ring(frac, frac >= 0.9995 ? "var(--ok)" : "var(--lapis)")}
+      <div><div class="nm">${esc(st.stage)}</div>${st.what ? `<div class="ln w">${esc(st.what)}</div>` : ""}<div class="ln">${fmt(st.done)} of ${fmt(of)}</div>
+      <div class="ln">${r ? `${r < 10 ? r.toFixed(1) : r.toFixed(0)} / min · ${left > 0 ? dur(left / r * 60) + " left" : "done"}` : left > 0 ? "idle (10 min)" : "complete"}</div>
+      ${st.failed ? `<div class="ln bad">${fmt(st.failed)} failed</div>` : ""}</div></a>`;
+  }).join("");
+}
+
+function drawThroughput(stages) {
+  const svg = $("thru"), W = 520, H = 190, L = 48, B = 22, T = 10, R = 8;
+  const pts = samples.slice(-120);
+  if (pts.length < 3 || pts.every((_, i) => i === 0 || pts[i].t - pts[i - 1].t < 10)) { svg.innerHTML = `<text x="${L}" y="${H / 2}">Collecting a few minutes of samples…</text>`; $("thru-legend").innerHTML = ""; return; }
+  const lines = stages.map(st => {
+    const k = "st:" + st, out = [];
+    for (let i = 1; i < pts.length; i++) {
+      const dt = (pts[i].t - pts[i - 1].t) / 60;
+      if (dt < 10 / 60 || dt > 30) continue;  // too short to measure, or a gap while the page was closed
+      out.push([pts[i].t, Math.max(0, ((pts[i].v[k] || 0) - (pts[i - 1].v[k] || 0)) / dt)]);
+    }
+    return {st, out};
+  });
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const ymax = Math.max(1, ...lines.flatMap(l => l.out.map(p => p[1])));
+  const nice = Math.pow(10, Math.floor(Math.log10(ymax))), top = Math.ceil(ymax / nice) * nice;
+  const x = tt => L + (tt - t0) / ((t1 - t0) || 1) * (W - L - R), y = val => H - B - val / top * (H - B - T);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const val = top * i / 4, yy = y(val);
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${val >= 1000 ? (val / 1000).toFixed(val >= 10000 ? 0 : 1) + "k" : val >= 10 ? Math.round(val) : val.toFixed(1)}</text>`; }
+  [t0, (t0 + t1) / 2, t1].forEach((tt, i) => g += `<text x="${x(tt)}" y="${H - 6}" text-anchor="${["start","middle","end"][i]}">${new Date(tt * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</text>`);
+  lines.forEach((l, i) => {
+    if (!l.out.some(p => p[1] > 0)) return;
+    const d = l.out.map((p, j) => `${j ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ");
+    g += `<path d="${d}" fill="none" stroke="${SERIES_COLORS[i % 4]}" stroke-width="1.8"/>`;
+    const e = l.out[l.out.length - 1]; g += `<circle cx="${x(e[0])}" cy="${y(e[1])}" r="3" fill="${SERIES_COLORS[i % 4]}"/>`;
+  });
+  svg.innerHTML = g;
+  $("thru-legend").innerHTML = lines.map((l, i) => `<span><i style="background:${SERIES_COLORS[i % 4]}"></i>${esc(l.st)}</span>`).join("");
+}
+
+function drawStyles(styles) {
+  const total = Object.values(styles).reduce((a, b) => a + b, 0);
+  if (!total) { $("styles").innerHTML = `<div class="empty">Shown after the production-style step rates the seasons (step 9).</div>`; return; }
+  let a = -Math.PI / 2, arcs = "";
+  const R = 60, C = 75, r = 40;
+  for (const [k] of STYLE_ORDER) {
+    const n = styles[k] || 0; if (!n) continue;
+    const b = a + n / total * Math.PI * 2, large = b - a > Math.PI ? 1 : 0;
+    const p = (ang, rad) => `${(C + rad * Math.cos(ang)).toFixed(2)},${(C + rad * Math.sin(ang)).toFixed(2)}`;
+    arcs += n === total ? `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${STYLE_COLORS[k]}" stroke-width="${R - r}"/>`
+      : `<path d="M${p(a, R)} A${R},${R} 0 ${large} 1 ${p(b, R)} L${p(b, r)} A${r},${r} 0 ${large} 0 ${p(a, r)} Z" fill="${STYLE_COLORS[k]}"/>`;
+    a = b;
+  }
+  const rows = STYLE_ORDER.map(([k, label]) => `<div class="hbar"><span><i class="sw" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${STYLE_COLORS[k]};margin-inline-end:6px"></i>${label}</span>
+    <span class="track"><i style="width:${100 * (styles[k] || 0) / total}%;background:${STYLE_COLORS[k]}"></i></span><span class="num" style="text-align:end">${styles[k] || 0}</span></div>`).join("");
+  $("styles").innerHTML = `<div class="mix"><svg class="donut" viewBox="0 0 150 150" role="img" aria-label="Seasons by production style">${arcs}
+    <text x="75" y="77" text-anchor="middle">${total}</text><text class="sub" x="75" y="95" text-anchor="middle">seasons</text></svg><div style="display:grid;gap:8px">${rows}</div></div>`;
+}
+
+function drawGenres(genres) {
+  if (!genres.length) { $("genres").innerHTML = `<div class="empty">Shown after the tagging step (step 8).</div>`; return; }
+  const max = Math.max(...genres.map(g => g.seasons));
+  $("genres").innerHTML = `<div style="display:grid;gap:8px">` + genres.map(g => `<div class="hbar"><span>${esc(g.genre.replaceAll("_", " "))}</span>
+    <span class="track"><i style="width:${100 * g.seasons / max}%"></i></span><span class="num" style="text-align:end">${g.seasons}</span></div>`).join("") + `</div>`;
+}
+
+const COLS = [["name", "Library"], ["files", "Files"], ["probed", "Length known"], ["signatures", "Fingerprinted"], ["seasons", "Seasons"], ["ongoing", "Ongoing"], ["episodes", "Episodes"], ["collections", "In Plex"]];
+const selected = new Set(); let reports = new Set(), running = false;
+const KIND_ORDER = ["episodic", "ongoing", "short-form", "clips"];
+const kindTip = k => KIND_ORDER.filter(x => (k || {})[x]).map(x => `${k[x]} ${x}`).join(", ") || "no series yet";
+function drawLibs(libs) {
+  const q = $("q").value.trim().toLowerCase();
+  const rows = libs.filter(r => !q || r.name.toLowerCase().includes(q))
+    .sort((a, b) => (typeof a[sortKey] === "string" ? a[sortKey].localeCompare(b[sortKey]) : (a[sortKey] - b[sortKey])) * sortDir);
+  $("libs").innerHTML = `<tr><th aria-label="Select"></th>${COLS.map(([k, l]) => `<th data-k="${k}" ${k === sortKey ? `aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}>${l}${k === sortKey ? (sortDir > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}<th></th></tr>` +
+    (rows.length ? rows.map(r => {
+      const pk = r.files ? 100 * r.probed / r.files : 0, sg = r.long ? 100 * r.signatures / r.long : 0;
+      const rep = reports.has(r.name + ".html") ? `<a href="reports/${encodeURIComponent(r.name)}.html" target="_blank" rel="noopener">Review page</a>` : "";
+      return `<tr><td><input type="checkbox" class="pick" data-f="${esc(r.folder)}" aria-label="Select ${esc(r.name)}" ${selected.has(r.folder) ? "checked" : ""}></td>
+        <td class="lib" dir="auto" title="${esc(r.name)}"><a href="item?folder=${encodeURIComponent(r.folder)}">${esc(r.name)}</a></td><td class="n">${fmt(r.files)}</td>
+        <td class="n"><span class="mini"><i style="width:${pk}%"></i></span>${Math.round(pk)}%</td>
+        <td class="n">${r.long ? `<span class="mini"><i style="width:${sg}%"></i></span>${fmt(r.signatures)}/${fmt(r.long)}` : "—"}</td>
+        <td class="n" title="${esc(kindTip(r.kinds))}">${r.seasons || "—"}</td><td class="n" title="${esc(kindTip(r.kinds))}">${r.ongoing ? fmt(r.ongoing) : "—"}</td><td class="n">${r.episodes ? fmt(r.episodes) : "—"}</td>
+        <td class="n"><span class="chip ${r.collections ? "on" : ""}">${r.collections}</span></td>
+        <td class="act"><button class="btn sm run1" data-f="${esc(r.folder)}" ${running ? "disabled" : ""}>Run</button>${rep}</td></tr>`;
+    }).join("") : `<tr><td class="empty" colspan="10">No library matches “${esc(q)}”.</td></tr>`);
+  const libSel = $("st-lib");
+  if (libSel.options.length !== libs.length) libSel.innerHTML = libs.map(r => `<option dir="auto">${esc(r.name)}</option>`).join("");
+}
+
+// ---- controls
+function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked}; }
+function review() {
+  const o = options(), sel = $("scope-sel").checked;
+  const what = [o.plex && "write season collections to Plex", o.tv && "update dizqueTV shows and channels",
+                o.youtube ? "read YouTube playlists" : "skip YouTube", o.exact && "fetch exact dates"].filter(Boolean);
+  $("sel-n").textContent = selected.size;
+  $("wiz-review").textContent = `${sel ? `${selected.size} selected ${selected.size === 1 ? "library" : "libraries"}` : "All Plex libraries"}: scan, find seasons, tag and rate style, then ${what.join(", ")}.`;
+  $("start").disabled = running || (sel && !selected.size);
+}
+async function startRun(folders) {
+  try { const j = await post("api/run", {...options(), folders}); toast(`Run started: ${j.command.slice(3).join(" ")}`); tick(); }
+  catch (e) { toast(e.message, true); }
+}
+$("start").addEventListener("click", () => startRun($("scope-sel").checked ? [...selected] : []));
+["o-plex", "o-tv", "o-yt", "o-exact", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
+$("libs").addEventListener("change", e => { const f = e.target.closest(".pick")?.dataset.f; if (!f) return;
+  e.target.checked ? selected.add(f) : selected.delete(f); if (selected.size) $("scope-sel").checked = true; review(); });
+$("libs").addEventListener("click", e => { const b = e.target.closest(".run1"); if (b) startRun([b.dataset.f]); });
+$("stop").addEventListener("click", () => { $("stop").hidden = true; $("stop-confirm").hidden = false; });
+$("stop-no").addEventListener("click", () => { $("stop-confirm").hidden = true; $("stop").hidden = !running; });
+$("stop-yes").addEventListener("click", async () => { $("stop-confirm").hidden = true;
+  try { await post("api/stop"); toast("Run stopped. Finished work is saved."); tick(); } catch (e) { toast(e.message, true); } });
+$("ex-form").addEventListener("submit", async e => { e.preventDefault(); const q = $("ex-q").value.trim(); if (!q) return;
+  $("ex-out").textContent = "Looking it up…";
+  try { const j = await (await fetch("api/explain?q=" + encodeURIComponent(q))).json(); $("ex-out").textContent = j.text.trim() || "No video matches that text."; }
+  catch (err) { $("ex-out").textContent = "The lookup failed: " + err.message; } });
+$("st-form").addEventListener("submit", async e => { e.preventDefault();
+  const body = {library: $("st-lib").value, series: $("st-series").value.trim(), style: $("st-style").value};
+  if (!body.series) { toast("Enter the series name as it appears on the review page.", true); return; }
+  try { await post("api/style", body); toast(body.style ? `Pinned ${body.series} as ${$("st-style").selectedOptions[0].text}.` : `Cleared the pin for ${body.series}.`); }
+  catch (err) { toast(err.message, true); } });
+async function loadReports() { try { reports = new Set((await (await fetch("api/reports")).json()).reports); } catch (e) {} }
+loadReports(); setInterval(loadReports, 60000);
+$("libs").addEventListener("click", e => { const k = e.target.closest("th")?.dataset.k; if (!k) return;
+  sortDir = k === sortKey ? -sortDir : (k === "name" ? 1 : -1); sortKey = k; if (last) drawLibs(last.libraries || []); });
+$("q").addEventListener("input", () => last && drawLibs(last.libraries || []));
+
+async function tick() {
+  try { render(await (await fetch("api/status", {cache: "no-store"})).json()); }
+  catch (e) { $("state").className = "pill idle"; $("state-t").textContent = "Status server not reachable"; }
+}
+tick(); setInterval(tick, 5000);
+
+// live push: steps, heartbeat and the current step's count, about once a second
+let liveOn = false;
+if (window.EventSource) {
+  const es = new EventSource("api/live");
+  es.onmessage = e => {
+    const ev = JSON.parse(e.data); liveOn = true;
+    if (!last) return;
+    if (ev.steps) last.steps = ev.steps;
+    if ("progress" in ev) last.progress = ev.progress;
+    if ("log_age_s" in ev) { last.log_age_s = ev.log_age_s; last.last_line = ev.last_line; }
+    last.now = ev.now;
+    render(last);
+  };
+  es.onerror = () => { liveOn = false; };  // the browser reconnects on its own
+}
+</script>
+</body>
+</html>

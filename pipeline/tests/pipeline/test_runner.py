@@ -476,11 +476,13 @@ async def test_install_signal_handlers_sets_event() -> None:
     import signal as _signal
 
     event = asyncio.Event()
-    install_signal_handlers(event, loop=asyncio.get_running_loop())
-
-    # Sending SIGTERM to ourselves should set the event.
-    asyncio.get_running_loop().call_soon(_signal.raise_signal, _signal.SIGTERM)
-    await asyncio.wait_for(event.wait(), timeout=1.0)
+    uninstall = install_signal_handlers(event, loop=asyncio.get_running_loop())
+    try:
+        # Sending SIGTERM to ourselves should set the event.
+        asyncio.get_running_loop().call_soon(_signal.raise_signal, _signal.SIGTERM)
+        await asyncio.wait_for(event.wait(), timeout=1.0)
+    finally:
+        uninstall()
     assert event.is_set()
 
 
