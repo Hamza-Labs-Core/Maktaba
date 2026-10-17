@@ -446,20 +446,25 @@ def apply_actions(
 
     dzw = _Dz(url)
     # what the plan no longer has goes first: channels (they name the shows and lists),
-    # then the shows and filler lists; each removal is checked
-    for a in sorted((a for a in actions if a.verb == "delete"),
-                    key=lambda a: a.kind != "channel"):  # fmt: skip
+    # then the shows and filler lists; all are checked gone with one re-read per kind
+    removals = sorted((a for a in actions if a.verb == "delete"),
+                      key=lambda a: a.kind != "channel")  # fmt: skip
+    for a in removals:
         assert a.endpoint is not None
         dzw.call("DELETE", a.endpoint, a.body)
-        if a.kind == "channel":
-            gone = int((a.body or {})["number"]) not in {int(n) for n in dzw.call(
-                "GET", "/api/channels")}  # fmt: skip
-        else:
-            gone = all(str(x.get("id")) != a.endpoint.rsplit("/", 1)[-1]
-                       for x in dzw.call("GET", f"/api/{a.kind}s"))  # fmt: skip
-        if not gone:
-            raise RuntimeError(f"{a.kind} {a.name}: still there after DELETE")
-        print(f"  ✓  deleted {a.kind} {a.name}")
+    if removals:
+        channels_left = {int(n) for n in dzw.call("GET", "/api/channels")}
+        ids_left = {k: {str(x.get("id")) for x in dzw.call("GET", f"/api/{k}s")}
+                    for k in ("show", "filler") if any(a.kind == k for a in removals)}  # fmt: skip
+        for a in removals:
+            assert a.endpoint is not None
+            gone = (int((a.body or {})["number"]) not in channels_left if a.kind == "channel"
+                    else a.endpoint.rsplit("/", 1)[-1] not in ids_left[a.kind])  # fmt: skip
+            if not gone:
+                raise RuntimeError(f"{a.kind} {a.name}: still there after DELETE")
+        print(f"  ✓  deleted {len(removals)}: "
+              + ", ".join(f"{sum(a.kind == k for a in removals)} {k}(s)"
+                          for k in ("channel", "show", "filler")))  # fmt: skip
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})

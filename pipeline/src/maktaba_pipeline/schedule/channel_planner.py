@@ -1358,11 +1358,12 @@ def _show_grid(
     weekly_c = [s for s in shows if s.cadence == "weekly"]
     prefix = f"{ck}.ramadan" if ramadan else ck
 
-    def clash(s: Show, at: int) -> bool:
+    def clash(s: Show, at: int, minutes: int | None = None) -> bool:
         """It holds an overlapping time of day on another channel (across midnight too)."""
         a = at % DAY_MINUTES
+        n = s.slot_minutes if minutes is None else minutes
         return busy is not None and any(
-            x + k < a + s.slot_minutes and a < y + k
+            x + k < a + n and a < y + k
             for x, y in busy.get(s.key, ())
             for k in (-DAY_MINUTES, 0, DAY_MINUTES)
         )
@@ -1505,9 +1506,16 @@ def _show_grid(
                     # extra airings allowed: the previous block runs on to the daypart's
                     # end; otherwise the time is filler of its own, so a show never airs
                     # more often than its cadence
-                    if last and cfg.extra_airings:
+                    # (never into a time its show holds on another channel)
+                    run_on = queues.get(last[0].lane or "") if last else None
+                    if (run_on is not None and cfg.extra_airings
+                            and not clash(run_on.shows[0], t, stop - t)):  # fmt: skip
                         for sg in last:
                             sg.end = stop
+                        if busy is not None:
+                            busy.setdefault(run_on.shows[0].key, []).append(
+                                (t % DAY_MINUTES, t % DAY_MINUTES + stop - t)
+                            )
                     else:
                         for day in grp:
                             per_day[day].append(
