@@ -471,7 +471,8 @@ _LEXICON: dict[str, dict[float, str]] = {
             "| الصهيونية | الصهاينة | المقاومة الفلسطينية | القسام | الانتفاضة | النكبة | نابلس "
             "| جنين | رفح | خان يونس | بيت المقدس | palestine | gaza | aqsa | jerusalem"
         ),
-        0.5: "الاحتلال | الصهيوني | إسرائيل <bani | المستوطنين | المستوطنون | الضفة",
+        # alone these name Israel, not Palestine (another country's ties with it)
+        0.3: "الاحتلال | الصهيوني | إسرائيل <bani | المستوطنين | المستوطنون | الضفة",
     },
     "topic:raqaiq": {
         1.0: (

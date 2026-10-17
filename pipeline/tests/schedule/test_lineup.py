@@ -132,3 +132,22 @@ def test_a_themes_own_minimum_replaces_the_month_rule() -> None:
     own = (ThemeSpec("fiqh", "Fiqh", "الفقه", 111, ("fiqh",), min_hours=2.0),)
     p = plan(lib, themes=own, mix_channel=False, presenter_channels=False)
     assert [c.key for c in p.channels] == ["fiqh"]
+
+
+def test_a_theme_takes_a_talk_shows_episodes_about_it_as_one_collection() -> None:
+    from dataclasses import replace
+
+    talk = season("bh", "بلا حدود", genre="current_affairs", presenter="أحمد منصور", n=40,
+                  minutes=50)  # fmt: skip
+    eps = [replace(e, tags={"topic:palestine": 0.9}) if i % 2 else e
+           for i, e in enumerate(talk.episodes)]  # fmt: skip
+    talk = replace(talk, episodes=tuple(eps))
+    pal = (ThemeSpec("palestine", "Palestine", "فلسطين", 125, ("palestine",)),)
+    p = plan([talk], themes=pal, mix_channel=False, presenter_channels=False)
+    ch = p.channels[0]
+    units = [u for k in ch.lanes for u in p.lanes[k].units]
+    assert {u.name for u in units} == {"أحمد منصور · فلسطين"}
+    assert sum(len(u.episodes) for u in units) == 20  # only its Palestine episodes
+    off = plan([talk], themes=pal, mix_channel=False, presenter_channels=False,
+               theme_episodes=False)  # fmt: skip
+    assert off.channels == ()

@@ -87,6 +87,20 @@ PLANNER_HELP: dict[str, Help] = {
     "theme_min_hours": Help(
         CH, "Themed channel minimum (hours)", "A theme with fewer hours of shows gets no channel."
     ),
+    "theme_episodes": Help(
+        CH,
+        "Themes take single episodes",
+        "A theme also takes the episodes whose own title "
+        "is about it from every other show (a talk show's Palestine episodes, a tajweed "
+        "lesson in a lecture series): one collection per presenter, in air order.",
+    ),
+    "theme_episode_min_score": Help(CH, "Single episode: topic score"),
+    "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
+    "theme_episode_min_count": Help(
+        CH,
+        "Single episodes per presenter (fewest)",
+        "A presenter's collection for a theme needs at least this many episodes.",
+    ),
     "show_member_min_share": Help(
         CH,
         "Whole show share",
@@ -321,6 +335,7 @@ _MINIMUM: dict[str, float] = {
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
+    "theme_episode_min_minutes": 0, "theme_episode_min_count": 1,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)

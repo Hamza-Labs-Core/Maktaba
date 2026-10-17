@@ -140,6 +140,8 @@ class EpisodeRef:
     air_date: str | None = None
     #: the air date is the real day (YouTube's exact upload date), not "N years ago"
     date_exact: bool = False
+    #: its own tags, from its title (topic:palestine in a talk show's season)
+    tags: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,6 +416,13 @@ class PlannerConfig:
     # theme membership
     topic_min_score: float = 0.6
     theme_min_hours: float = 10.0
+    #: a theme also takes single episodes about it from every other show (a talk show's
+    #: Palestine episodes), as one collection per presenter in air order
+    theme_episodes: bool = True
+    theme_episode_min_score: float = 0.6
+    theme_episode_min_minutes: float = 10.0
+    #: a presenter's collection needs at least this many such episodes
+    theme_episode_min_count: int = 2
     # mix channel
     mix_channel: bool = True
     mix_number: int = 100
@@ -2082,6 +2091,52 @@ def suggest_channels(
         )  # fmt: skip
         return set(quran_ids)
 
+    # ---- single episodes about a theme, from the shows it does not take whole
+    synthetic: set[str] = set()
+
+    def theme_episode_units(t: ThemeSpec, have: set[str]) -> set[str]:
+        """One collection per presenter of the episodes whose own title is about the
+        theme (its topics, audiences, occasions), from every show not in ``have``."""
+        names = [*t.topics, *(f"audience:{a}" for a in t.audiences),
+                 *(f"occasion:{o}" for o in t.occasions)]  # fmt: skip
+        if not names or not cfg.theme_episodes:
+            return set()
+        keys = [n if ":" in n else f"topic:{n}" for n in names]
+        mins = cfg.theme_episode_min_minutes * 60
+        by_src: dict[str, list[tuple[ProgramUnit, EpisodeRef]]] = defaultdict(list)
+        for i, u in units.items():
+            if i in have or i in synthetic or _excluded(tags_of.get(i, {}), t.exclude, cfg):
+                continue
+            for e in u.episodes:
+                if e.duration_s < mins or not e.tags or _excluded(e.tags, t.exclude, cfg):
+                    continue
+                if max(e.tags.get(k, 0.0) for k in keys) >= cfg.theme_episode_min_score:
+                    by_src[u.presenter or u.library or u.folder].append((u, e))
+        out: set[str] = set()
+        label = t.name_ar or t.name
+        for src, pairs in sorted(by_src.items()):
+            if len(pairs) < cfg.theme_episode_min_count:
+                continue
+            pairs.sort(key=lambda p: (p[1].air_date or p[0].first_air, p[0].first_air,
+                                      p[0].season, p[1].episode or 0))  # fmt: skip
+            first = pairs[0][0]
+            sid = f"{t.key}~{_slug(src)}"
+            nu = ProgramUnit(
+                series_id=sid, name=f"{src} · {label}", season=1, presenter=first.presenter,
+                folder=first.folder, kind="loose", genre=t.topics[0] if t.topics else first.genre,
+                tier=None, style=None, ramadan=any(u.ramadan for u, _ in pairs),
+                first_air=min(u.first_air for u, _ in pairs), series_key=sid,
+                episodes=tuple(e for _, e in pairs), library=first.library,
+            )  # fmt: skip
+            units[sid] = nu
+            synthetic.add(sid)
+            regular_ids.add(sid)
+            tags_of[sid] = {**dict.fromkeys(keys, 1.0), f"genre:{nu.genre}": 1.0}
+            seasons_of_show[(nu.folder, nu.series_key)] = [sid]
+            show_hours[(nu.folder, nu.series_key)] = nu.duration_s
+            out.add(sid)
+        return out
+
     # ---- the lineup: every candidate with enough content, at most max_channels of them
     month_h = cfg.channel_min_days * cfg.channel_day_hours
     kind_rank = {k: i for i, k in enumerate(cfg.channel_kind_order)}
@@ -2135,10 +2190,11 @@ def suggest_channels(
                 continue
             offer("quran", n_t, f"theme {t.key}", partial(make_quran_channel, t))
             continue
-        ids = {i for i in regular_ids if _in_theme(by_id[i], t, cfg)}
+        ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)}
         ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
         # a show joins whole or not at all, so the hours counted are the hours it airs
         ids = {i for i in whole_shows(ids) if i in regular_ids or i in khutbah_ids}
+        ids |= theme_episode_units(t, ids)
         hours = sum(units[i].duration_s for i in ids) / 3600
         if not ids:
             continue
@@ -2152,7 +2208,8 @@ def suggest_channels(
     mix_ids = {
         i
         for i in units
-        if units[i].genre not in excluded
+        if i not in synthetic  # a theme's episode collection: the mix has the shows
+        and units[i].genre not in excluded
         and _score(tags_of[i], "topic", excluded) < cfg.topic_min_score
     }
     mix_ids = whole_shows(mix_ids)
@@ -2193,7 +2250,7 @@ def suggest_channels(
     if cfg.presenter_channels:
         by_presenter: dict[str, set[str]] = defaultdict(set)
         for i, u in units.items():
-            if u.presenter:
+            if u.presenter and i not in synthetic:
                 by_presenter[u.presenter].add(i)
         big: list[tuple[float, str, set[str], set[str]]] = []
         need = max(cfg.presenter_min_hours, month_h)
@@ -2233,7 +2290,7 @@ def suggest_channels(
             continue
         placed |= build()
 
-    for i in sorted(set(units) - placed):
+    for i in sorted(set(units) - placed - synthetic):
         u = units[i]
         unplaced.append((u.label, f"genre {u.genre}: no channel took it"))
     used_pools = {p for c in channels for p in c.filler_pools}
