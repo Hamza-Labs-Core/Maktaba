@@ -14,7 +14,10 @@ from maktaba_pipeline.extensions.dizquetv import extension as dz_extension
 from maktaba_pipeline.extensions.dizquetv.channels import plan_actions
 from maktaba_pipeline.integrations.dizquetv import PREFIX, State
 from maktaba_pipeline.schedule import PLANNER_VERSION, plan_catalog
-from maktaba_pipeline.schedule.channel_planner import EpisodeRef, SeasonCandidate
+from maktaba_pipeline.schedule.channel_planner import EpisodeRef, PlannerConfig, SeasonCandidate
+
+#: a test catalog has hours, not the month a channel needs by default
+SMALL = PlannerConfig(channel_min_days=1.0, channel_day_hours=10.0)
 
 pytestmark = pytest.mark.unit
 
@@ -51,8 +54,8 @@ def catalog() -> list[SeasonCandidate]:
 
 
 def plan_json() -> dict[str, Any]:
-    result = plan_catalog(catalog())
-    assert result.version == PLANNER_VERSION == 2
+    result = plan_catalog(catalog(), config=SMALL)
+    assert result.version == PLANNER_VERSION
     return build_plan_json(
         result, source="catalog", notes=[], exporters=dz_extension.plan_exporters()
     )
@@ -112,7 +115,7 @@ def test_filler_clips_are_stored_once_and_pools_index_them() -> None:
         for i, g in enumerate(["seerah", "fiqh", "tafsir"] * 20)
     ]  # fmt: skip
     plan = build_plan_json(
-        plan_catalog(catalog(), clips), source="catalog", notes=[],
+        plan_catalog(catalog(), clips, SMALL), source="catalog", notes=[],
         exporters=dz_extension.plan_exporters(),
     )  # fmt: skip
     assert plan["format"] == PLAN_FORMAT == 3

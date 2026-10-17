@@ -489,13 +489,16 @@ async def test_plan_videos_are_resolved_to_plex_keys_through_external_links(db: 
 def test_exporter_builds_the_dizquetv_block_from_a_real_plan() -> None:
     from maktaba_pipeline.schedule.channel_planner import (
         EpisodeRef,
+        PlannerConfig,
         SeasonCandidate,
         suggest_channels,
     )
 
     eps = tuple(EpisodeRef(path=f"v{i}", duration_s=1800.0, title=f"t{i}") for i in range(40))
     seasons = [SeasonCandidate(series_id=f"s{i}", name=f"Show {i}", episodes=eps) for i in range(3)]
-    plan = suggest_channels(seasons)
+    # 60 h: a small library's rules (the default wants a month per channel)
+    small = PlannerConfig(channel_min_days=1.0, channel_day_hours=10.0)
+    plan = suggest_channels(seasons, (), small)
     assert plan.channels
     exporters = default_extension.plan_exporters()
     assert set(exporters) == {"dizquetv"}

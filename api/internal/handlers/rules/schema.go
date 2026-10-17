@@ -38,7 +38,11 @@ type Field struct {
 	Choices     []string        `json:"choices,omitempty"`
 	Columns     []string        `json:"columns,omitempty"`
 	ColumnKinds []string        `json:"column_kinds,omitempty"`
-	TimeColumns []int           `json:"time_columns,omitempty"`
+	// ColumnOptional marks the columns a row may leave out (they have a
+	// default): a row saved before the column existed stays valid. Unlike a
+	// "?" kind, a column present must still not be null.
+	ColumnOptional []bool `json:"column_optional,omitempty"`
+	TimeColumns    []int  `json:"time_columns,omitempty"`
 
 	raw          map[string]json.RawMessage
 	def          any
@@ -82,6 +86,9 @@ func ParseSchema(b []byte) (*Schema, error) {
 				}
 				if len(f.ColumnKinds) != 0 && len(f.ColumnKinds) != len(f.Columns) {
 					return nil, fmt.Errorf("%s.%s: column_kinds/columns length mismatch", sec.Key, f.Name)
+				}
+				if len(f.ColumnOptional) != 0 && len(f.ColumnOptional) != len(f.Columns) {
+					return nil, fmt.Errorf("%s.%s: column_optional/columns length mismatch", sec.Key, f.Name)
 				}
 				f.rowsAsObject = true
 				if rows, ok := def.([]any); ok && len(rows) > 0 {
@@ -274,7 +281,7 @@ func (f *Field) validateRows(v any) error {
 				kind := f.columnKind(ci)
 				cv, present := obj[col]
 				if !present {
-					if strings.HasSuffix(kind, "?") {
+					if strings.HasSuffix(kind, "?") || (len(f.ColumnOptional) > ci && f.ColumnOptional[ci]) {
 						continue
 					}
 					return fmt.Errorf("row %d: missing column %q", n, col)

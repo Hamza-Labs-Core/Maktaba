@@ -13,7 +13,7 @@ from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import CATALOG_ID
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_pipeline.engine.sql import dumps, loads
+from maktaba_pipeline.engine.sql import dumps, loads, now, to_ts
 from maktaba_pipeline.engine.stages.write_channels import content_hash
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import World, core_runtime, drain_core, make_fake_media, make_show
@@ -44,10 +44,23 @@ async def _pipeline(
 ) -> tuple[EngineRuntime, World]:
     """detect -> everything it triggers, run to quiescence."""
     rt = await core_runtime(db)
+    await _small_library_rules(db)
     w = await make_show(db, name=name, episodes=episodes, loose=4)
     await enqueue_job(db, subject_kind="library", subject_id=w.library, stage="detect")
     await drain_core(db, rt)
     return rt, w
+
+
+async def _small_library_rules(db: Database) -> None:
+    """A test library has hours, not the month a channel needs by default: the
+    planner rules as a user with a small library would set them."""
+    await db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)"
+        " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        "rules.planner",
+        dumps({"channel_min_days": 1.0, "channel_day_hours": 10.0}),
+        to_ts(db, now()),
+    )
 
 
 # ------------------------------------------------------------------------------ tag
@@ -228,6 +241,7 @@ async def test_a_number_held_by_a_foreign_channel_is_a_conflict_not_an_overwrite
     db: Database,
 ) -> None:
     rt = await core_runtime(db)
+    await _small_library_rules(db)
     w = await make_show(db, name="قصص الأنبياء", episodes=40, loose=4)
     for n in range(95, 160):  # squat on every number the planner might pick
         await db.execute(

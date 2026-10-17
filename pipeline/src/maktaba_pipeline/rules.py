@@ -116,6 +116,9 @@ def schema() -> dict[str, Any]:
                 f["time_columns"] = list(h.time_columns)
             if f["kind"] == "rows":
                 f["column_kinds"] = _column_kinds(hints[f["name"]], h)
+                optional = _column_optional(hints[f["name"]])
+                if any(optional):
+                    f["column_optional"] = optional
         out.append({"key": key, "title": title, "what": what, "fields": fields})
     return {"sections": out}
 
@@ -134,6 +137,19 @@ def _column_kinds(tp: Any, h: settings.Help | None) -> list[str]:
     return [
         "time" if i in times else settings._kind(t)  # noqa: SLF001
         for i, t in enumerate(typing.get_args(item))
+    ]
+
+
+def _column_optional(tp: Any) -> list[bool]:
+    """Which columns of a list-of-rows setting a row may leave out: those with a
+    default, so a row saved before the column was added still applies."""
+    item = typing.get_args(tp)[0]
+    if not dataclasses.is_dataclass(item):
+        return []
+    missing = dataclasses.MISSING
+    return [
+        f.default is not missing or f.default_factory is not missing
+        for f in dataclasses.fields(item)
     ]
 
 

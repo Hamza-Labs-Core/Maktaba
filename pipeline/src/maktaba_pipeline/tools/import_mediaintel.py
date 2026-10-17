@@ -103,6 +103,13 @@ class _Rollback(Exception):
     """Raised to roll the dry-run transaction back."""
 
 
+#: The cache does not record which tagger made its tags, so they are taken as the
+#: first version: a newer tagger re-tags the imported seasons once. That reads the
+#: database only (never the share) and brings fixes made since (a khutbah is never
+#: recitation, «بصوت» is not a nasheed) to imported data.
+IMPORTED_TAGGER_VERSION = 1
+
+
 @dataclass
 class ImportReport:
     applied: bool
@@ -951,7 +958,7 @@ async def _jobs(
         if tags:
             ih = await tag_stage.input_fingerprint(db, Subject("season", sid))
             oh = canonical_hash(sorted([str(t["tag"]), round(float(t["score"]), 3)] for t in tags))
-            await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="tag", version=1, input_hash=ih, output_hash=oh)  # fmt: skip
+            await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="tag", version=IMPORTED_TAGGER_VERSION, input_hash=ih, output_hash=oh)  # fmt: skip
         st = await db.fetchrow(
             "SELECT style, tier, style_version FROM season_style WHERE season_id = $1", uid(sid)
         )

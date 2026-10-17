@@ -248,7 +248,7 @@ func TestPatch_InvalidRejected(t *testing.T) {
 		{"array row bad time column", "planner", `{"set":{"quran_time_rules":[["04:00","7pm","warsh"]]}}`, "quran_time_rules", "row 1 until"},
 		{"object row as array", "planner", `{"set":{"dayparts":[["dawn","04:00","07:00","quran","Dawn",""]]}}`, "dayparts", "must be an object"},
 		{"object row unknown column", "planner", `{"set":{"dayparts":[{"key":"d","start":"04:00","end":"07:00","role":"r","label":"l","pattern":"p","x":1}]}}`, "dayparts", "unknown column"},
-		{"object row missing column", "planner", `{"set":{"dayparts":[{"key":"d","start":"04:00","end":"07:00","role":"r","label":"l"}]}}`, "dayparts", "missing column"},
+		{"object row missing column", "planner", `{"set":{"dayparts":[{"key":"d","start":"04:00","end":"07:00","label":"l"}]}}`, "dayparts", "missing column"},
 		{"object row bad int column", "planner", `{"set":{"themes":[{"key":"q","name":"Q","name_ar":"Q","number":1.5,"topics":[],"audiences":[],"formats":[],"category":"c","min_hours":null}]}}`, "themes", "row 1 number"},
 		{"nullable non-null wrong type", "planner", `{"set":{"timezone":5}}`, "timezone", "string"},
 		{"unknown name", "planner", `{"set":{"nope":1}}`, "nope", "unknown setting"},
@@ -416,4 +416,28 @@ func toStrings(v any) []string {
 		out = append(out, x.(string))
 	}
 	return out
+}
+
+// A row saved before a column existed (dayparts gained topics / exclude) is
+// still valid: the column has a default. A column that is sent must not be null.
+func TestPatch_RowsMayLeaveOutDefaultedColumnsButNotNullThem(t *testing.T) {
+	_, srv := newServer(t)
+	code, resp := do(t, srv, http.MethodPatch, "/api/rules/planner", `{"set":{
+		"dayparts":[{"key":"d","start":"00:00","end":"24:00","role":"r"}]
+	}}`, admin)
+	if code != http.StatusOK {
+		t.Fatalf("an old row without the new columns: %d %v", code, resp)
+	}
+	code, resp = do(t, srv, http.MethodPatch, "/api/rules/planner", `{"set":{
+		"dayparts":[{"key":"d","start":"00:00","end":"24:00","role":"r","topics":null}]
+	}}`, admin)
+	if code != http.StatusBadRequest {
+		t.Fatalf("a null column: want 400, got %d %v", code, resp)
+	}
+	code, resp = do(t, srv, http.MethodPatch, "/api/rules/planner", `{"set":{
+		"dayparts":[{"start":"00:00","end":"24:00","role":"r"}]
+	}}`, admin)
+	if code != http.StatusBadRequest {
+		t.Fatalf("a required column left out: want 400, got %d %v", code, resp)
+	}
 }

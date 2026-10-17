@@ -17,12 +17,18 @@ import pytest
 from maktaba_pipeline import rules
 from maktaba_pipeline.audio.chromaprint import encode
 from maktaba_pipeline.classify.production_style import STYLE_VERSION, StyleMetrics
+from maktaba_pipeline.classify.topic_tags import TAGGER_VERSION
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import SIG_VERSION
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import loads, now, to_ts
 from maktaba_pipeline.runtime import Database
-from maktaba_pipeline.tools.import_mediaintel import parse_path_maps, run_import, thumbs_name
+from maktaba_pipeline.tools.import_mediaintel import (
+    IMPORTED_TAGGER_VERSION,
+    parse_path_maps,
+    run_import,
+    thumbs_name,
+)
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import core_runtime, drain_core, make_fake_media
 
@@ -240,8 +246,16 @@ async def test_apply_imports_data_and_every_live_job_is_then_skipped(
     await drain_core(db, rt)
     live = (await db.fetch("SELECT stage, outcome FROM processing_jobs ORDER BY id"))[before - 0 :]
     outcomes = {(r["stage"], r["outcome"]) for r in live}
-    assert {o for _, o in outcomes} <= {"skipped_unchanged"}, outcomes
-    assert _media.get("calls", 0) == 0
+    # every stage that reads the share, and the styles, stand as imported
+    for stage in ("thumb_hash", "fingerprint", "style_sample", "link", "rate_style"):
+        assert {o for st, o in outcomes if st == stage} == {"skipped_unchanged"}, outcomes
+    # the cache's tags carry no version: a newer tagger re-tags once (database only),
+    # and what depends on the tags follows; the same tagger skips them
+    if TAGGER_VERSION > IMPORTED_TAGGER_VERSION:
+        assert ("tag", "changed") in outcomes or ("tag", "unchanged") in outcomes, outcomes
+    else:
+        assert {o for _, o in outcomes} <= {"skipped_unchanged"}, outcomes
+    assert _media.get("calls", 0) == 0  # the share is never read
     # the detect queued by the import ends skipped as well: the imported seasons stand
     assert (
         await db.fetchval(
