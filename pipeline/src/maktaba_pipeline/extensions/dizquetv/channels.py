@@ -27,6 +27,7 @@ from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
 from ...engine.hashing import canonical_hash
 from ...engine.sql import loads
+from ...engine.stages._plan_json import pool_items
 from ...integrations.dizquetv import (
     PREFIX,
     DizqueError,
@@ -196,7 +197,9 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
 
     for k in used_pools:
         p = pools[k]
-        object_action("filler", k, f"{p['name']} [{k}]", p["items"], state.fillers, "clips")
+        object_action(
+            "filler", k, f"{p['name']} [{k}]", pool_items(plan, p), state.fillers, "clips"
+        )
     for k in used_lanes:
         ln = lanes[k]
         eps = [e for u in ln["units"] for e in u["episodes"]]
@@ -494,8 +497,11 @@ async def resolve_plan_keys(db: Any, plan: dict[str, Any]) -> dict[str, Any]:
     for ln in plan.get("lanes", {}).values():
         for u in ln.get("units", []):
             items.extend(u.get("episodes", []))
-    for pool in plan.get("filler_pools", {}).values():
-        items.extend(pool.get("items", []))
+    if int(plan.get("format") or 2) >= 3:
+        items.extend(plan.get("clips", []))  # each clip once, shared by its pools
+    else:
+        for pool in plan.get("filler_pools", {}).values():
+            items.extend(pool.get("items", []))
     wanted = [str(i["path"]) for i in items if not i.get("plex_rating_key") and i.get("path")]
     links = await get_links(db, "plex_item", "video", wanted)
     for i in items:

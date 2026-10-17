@@ -31,9 +31,21 @@ from ...schedule.channel_planner import (
     simulate,
 )
 
-__all__ = ["PLAN_FORMAT", "PlanExporter", "build_plan_json", "config_json", "strip_volatile"]
+__all__ = [
+    "PLAN_FORMAT",
+    "PlanExporter",
+    "build_plan_json",
+    "config_json",
+    "pool_items",
+    "strip_volatile",
+]
 
-PLAN_FORMAT = 2
+#: 3: each filler clip is stored once in ``clips``; a pool's ``items`` is one string of
+#: comma-separated hex indexes into it. In format 2 every pool repeated its clips' full
+#: records: the real 150k-video catalog's 924 pools held 13M records (3.7 GB). As a jsonb
+#: array of numbers the 13M indexes still pass Postgres's 256 MB jsonb limit; as one string
+#: per pool the whole plan is ~180 MB.
+PLAN_FORMAT = 3
 SAMPLE_WEEKDAY = "fri"
 
 PlanExporter = Callable[[ChannelSuggestion, PlanResult], dict[str, Any]]
@@ -197,6 +209,27 @@ def build_plan_json(
                 "exports": {name: fn(ch, plan) for name, fn in (exporters or {}).items()},
             }
         )
+    clips: list[dict[str, Any]] = []
+    clip_index: dict[tuple[Any, ...], int] = {}
+
+    def clip(i: Any) -> int:
+        rec = {
+            "path": i.path,
+            "plex_rating_key": i.plex_rating_key,
+            "plex_library": i.plex_library,
+            "duration_s": round(i.duration_s, 1),
+            "title": i.title,
+            "source": i.source,
+            "genre": i.genre,
+            "vertical": i.vertical,
+        }
+        key = tuple(rec.values())
+        at = clip_index.get(key)
+        if at is None:
+            at = clip_index[key] = len(clips)
+            clips.append(rec)
+        return at
+
     pools = {
         k: {
             "name": p.name,
@@ -205,19 +238,7 @@ def build_plan_json(
             "count": len(p.items),
             "minutes": round(p.duration_s / 60, 1),
             "sources": dict(Counter(i.source for i in p.items)),
-            "items": [
-                {
-                    "path": i.path,
-                    "plex_rating_key": i.plex_rating_key,
-                    "plex_library": i.plex_library,
-                    "duration_s": round(i.duration_s, 1),
-                    "title": i.title,
-                    "source": i.source,
-                    "genre": i.genre,
-                    "vertical": i.vertical,
-                }
-                for i in p.items
-            ],
+            "items": ",".join(format(clip(i), "x") for i in p.items),  # see PLAN_FORMAT
         }
         for k, p in plan.filler_pools.items()
     }
@@ -231,8 +252,20 @@ def build_plan_json(
         "channels": channels,
         "lanes": {k: _lane_json(v) for k, v in plan.lanes.items()},
         "filler_pools": pools,
+        "clips": clips,
         "unplaced": [{"what": a, "why": b} for a, b in plan.unplaced],
     }
+
+
+def pool_items(plan: Mapping[str, Any], pool: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """A pool's clips as records, from either plan format (3: indexes into ``clips``;
+    2: the records themselves). The records are shared: changing one changes it in every
+    pool that holds it."""
+    items = pool.get("items")
+    if int(plan.get("format") or 2) >= 3:
+        clips = plan.get("clips") or []
+        return [clips[int(i, 16)] for i in (items or "").split(",") if i]
+    return list(items or [])
 
 
 def strip_volatile(plan: Mapping[str, Any]) -> dict[str, Any]:

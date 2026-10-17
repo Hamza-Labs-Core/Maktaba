@@ -98,3 +98,32 @@ def test_a_show_the_user_made_is_still_never_overwritten() -> None:
     state = State(server="PlexServer", shows={first.name: {"id": "u1", "keys": None}})
     again = next(a for a in plan_actions(plan, state) if a.kind == "show" and a.ref == first.ref)
     assert again.verb == "conflict" and again.body is None
+
+
+def test_filler_clips_are_stored_once_and_pools_index_them() -> None:
+    """Plan format 3: a clip in many pools is one record in ``clips``; pools hold indexes
+    (format 2 repeated every record per pool: 3.7 GB on the real catalog)."""
+    from maktaba_pipeline.engine.stages._plan_json import PLAN_FORMAT, pool_items
+    from maktaba_pipeline.schedule.channel_planner import LooseVideo
+
+    clips = [
+        LooseVideo(path=f"Y:/a/clip{i}.mp4", duration_s=120 + i, title=f"مقطع {i}", folder="Y:/a",
+                   presenter="أحمد", tags={f"topic:{g}": 0.9}, genre=g, is_short=True)
+        for i, g in enumerate(["seerah", "fiqh", "tafsir"] * 20)
+    ]  # fmt: skip
+    plan = build_plan_json(
+        plan_catalog(catalog(), clips), source="catalog", notes=[],
+        exporters=dz_extension.plan_exporters(),
+    )  # fmt: skip
+    assert plan["format"] == PLAN_FORMAT == 3
+    pools = [p for p in plan["filler_pools"].values() if p["items"]]
+    assert pools and all(isinstance(p["items"], str) for p in pools)  # hex indexes, one string
+    paths = [c["path"] for c in plan["clips"]]
+    assert len(paths) == len(set(paths))  # every clip once
+    for p in pools:
+        recs = pool_items(plan, p)
+        assert len(recs) == p["count"] and all("duration_s" in r for r in recs)
+    # a stored format-2 plan still reads: its pools carry the records themselves
+    pool: dict[str, Any] = {"items": [{"path": "a"}]}
+    old: dict[str, Any] = {"format": 2, "filler_pools": {"x": pool}}
+    assert pool_items(old, pool) == [{"path": "a"}]
