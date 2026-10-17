@@ -76,3 +76,17 @@ def test_a_channel_gets_its_own_logo_else_the_default_and_the_corner_watermark(
     wm = art["watermark"]
     assert wm["animated"] and wm["position"] == "top-left" and wm["width"] == 10.0
     assert channel_art({"config": {}}, "quran") == {}  # nothing set: no logos
+
+
+def test_uploaded_logo_links_use_the_network_address() -> None:
+    from scripts.mediaintel.export_dizquetv import art_link
+
+    got = "http://localhost:8002/images/uploads/maktaba-quran.png"
+    assert art_link({}, "http://localhost:8002", got) == got  # not set: as dizqueTV said
+    cfg = {"dz_public_url": "http://192.168.50.24:8002/"}
+    assert art_link(cfg, "http://localhost:8002", got) == (
+        "http://192.168.50.24:8002/images/uploads/maktaba-quran.png"
+    )
+    assert art_link(cfg, "http://127.0.0.1:8002", got) == (
+        "http://192.168.50.24:8002/images/uploads/maktaba-quran.png"
+    )  # another host name

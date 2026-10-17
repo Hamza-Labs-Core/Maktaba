@@ -430,6 +430,33 @@ def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
     return out
 
 
+def art_link(cfg: Mapping[str, Any], api_url: str, uploaded_url: str) -> str:
+    """An uploaded logo's link as the TVs reach it: dizqueTV's own answer names the host
+    the export talked to (localhost); ``dz_public_url`` replaces it."""
+    pub = str(cfg.get("dz_public_url") or "").rstrip("/")
+    if not pub:
+        return uploaded_url
+    base = api_url.rstrip("/")
+    if uploaded_url.startswith(base):
+        return pub + uploaded_url[len(base) :]
+    i = uploaded_url.find("/", uploaded_url.find("//") + 2)
+    return pub + (uploaded_url[i:] if i > 0 else "")
+
+
+def _hosted(base: str, path: str) -> str:
+    """A logo on a web host (``dz_art_url``): its link, checked to answer."""
+    link = f"{base.rstrip('/')}/{urllib.parse.quote(Path(path).name)}"
+    req = urllib.request.Request(link, method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 — the user's host
+            ok = 200 <= r.status < 300
+    except OSError as e:
+        raise RuntimeError(f"logo {Path(path).name} is not at {link}: {e}") from e
+    if not ok:
+        raise RuntimeError(f"logo {Path(path).name} is not at {link}")
+    return link
+
+
 def _upload(base: str, path: str, name: str) -> str:
     """``POST /api/upload/image`` (multipart, field ``image``) → the file's URL."""
     import uuid
@@ -517,11 +544,19 @@ def apply_actions(
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     urls: dict[str, str] = {}
 
+    cfg = plan.get("config") or {}
+
     def uploaded(path: str) -> str:
-        """Upload a logo once per run, under a name of its own (maktaba-<file>)."""
+        """A logo's link, once per run: on the logos' web host (dz_art_url), else
+        uploaded to dizqueTV under a name of its own (maktaba-<file>)."""
         if path not in urls:
-            urls[path] = _upload(url, path, f"maktaba-{Path(path).name}")
-            print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
+            if host := str(cfg.get("dz_art_url") or ""):
+                urls[path] = _hosted(host, path)
+                print(f"  ✓  {Path(path).name} at {urls[path]}")
+            else:
+                got = _upload(url, path, f"maktaba-{Path(path).name}")
+                urls[path] = art_link(cfg, url, got)
+                print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
         return urls[path]
 
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]

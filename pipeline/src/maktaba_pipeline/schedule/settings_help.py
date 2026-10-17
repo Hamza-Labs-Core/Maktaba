@@ -343,6 +343,20 @@ PLANNER_HELP: dict[str, Help] = {
     ),
     "dz_watermark_width": Help(DZ, "Corner logo width (% of the picture)"),
     "dz_watermark_margin": Help(DZ, "Corner logo margin (% from the edges)"),
+    "dz_art_url": Help(
+        DZ,
+        "Logos web address",
+        "Where the logos are served from, e.g. a Cloudflare R2 or Pages address: the "
+        "files sit there under their own names (…/quran.png, …/watermark.gif) and are "
+        "checked before use. Empty: uploaded to dizqueTV and served by it.",
+    ),
+    "dz_public_url": Help(
+        DZ,
+        "dizqueTV address on the network",
+        "How the TVs and Plex reach dizqueTV, e.g. http://192.168.1.20:8002 or a "
+        "Tailscale address; used for the links of logos dizqueTV serves. Empty: the "
+        "address the export uses (localhost works on this PC only).",
+    ),
     "dz_filler_max_items": Help(
         DZ,
         "Filler list size (most clips)",

@@ -590,6 +590,14 @@ class PlannerConfig:
     dz_watermark_position: str = "top-right"
     dz_watermark_width: float = 12.0  # % of the picture's width
     dz_watermark_margin: float = 2.0  # % from the edges
+    #: where the logos are served from, as the TVs and Plex reach them:
+    #: "" = uploaded to dizqueTV and served by it at dz_public_url;
+    #: a URL (Cloudflare R2/Pages, any web host) = the files are there under their own
+    #: names (<url>/quran.png), nothing is uploaded and each is checked before it is used
+    dz_art_url: str = ""
+    #: dizqueTV's address on the network ("http://192.168.1.20:8002"), for the uploaded
+    #: logos' links; "" = the address the export talks to (localhost: this PC only)
+    dz_public_url: str = ""
 
 
 # --------------------------------------------------------------------------- outputs
