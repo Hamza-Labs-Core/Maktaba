@@ -48,20 +48,24 @@ def run(
     backup_dir: Path = Path("backups"),
     from_step: str = "scan",
     skip: tuple[str, ...] = (),
+    clear_channels: bool = False,
 ) -> None:
     """``skip``: steps to leave out (e.g. ``scan-visual`` while the NAS is slow).
     ``from_step``: start at that step (see :data:`STEPS`); earlier steps are left as the
     cache holds them, e.g. to finish a stopped run without listing and detecting again.
     ``plex``: write the season collections (``export-plex --apply --replace-existing``;
     older collections are listed as superseded, never deleted). ``tv``: update dizqueTV
-    custom shows (``dizquetv-shows --apply``). Both log every change with its diff."""
+    custom shows (``dizquetv-shows --apply``). Both log every change with its diff.
+    ``clear_channels``: the channel export also deletes every dizqueTV channel that is
+    not in the plan (a fresh lineup), not only the planner's own."""
     t0 = time.monotonic()
     pid_file = Path(conn.execute("PRAGMA database_list").fetchone()[2] + ".run.pid")
     pid_file.write_text(str(os.getpid()), encoding="utf-8")  # lets `serve` show / stop it
     try:
         _run(conn, roots, server=server, path_map=path_map, youtube=youtube, exact=exact,
              lang=lang, delay_s=delay_s, report_dir=report_dir, workers=workers, plex=plex,
-             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step, skip=skip)  # fmt: skip
+             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step, skip=skip,
+             clear_channels=clear_channels)  # fmt: skip
     finally:
         pid_file.unlink(missing_ok=True)
 
@@ -85,6 +89,7 @@ def _run(
     t0: float,
     from_step: str = "scan",
     skip: tuple[str, ...] = (),
+    clear_channels: bool = False,
 ) -> None:
     if from_step not in STEPS:
         raise ValueError(f"--from-step must be one of {', '.join(STEPS)}")
@@ -269,6 +274,7 @@ def _run(
             server=server,
             conn=conn,
             prune=True,
+            clear_channels=clear_channels,
         )
     if side is not None and side.is_alive():
         print("waiting for the review pages to finish", flush=True)

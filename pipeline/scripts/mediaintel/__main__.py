@@ -102,6 +102,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="write season collections to Plex (replaces same-named ones, deletes none)")  # fmt: skip
     p.add_argument("--tv", action="store_true", help="update/create dizqueTV custom shows")
     p.add_argument("--tv-url", default="http://localhost:8002")
+    p.add_argument(
+        "--clear-channels",
+        action="store_true",
+        help="the channel export deletes every dizqueTV channel not in the plan",
+    )
     p.add_argument("--backup-dir", type=Path, default=Path("backups"))
 
     p = sub.add_parser("explain", help="why a video is where it is")
@@ -284,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
                 plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
                 from_step=a.from_step,
                 skip=tuple(a.skip),
+                clear_channels=a.clear_channels,
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(
