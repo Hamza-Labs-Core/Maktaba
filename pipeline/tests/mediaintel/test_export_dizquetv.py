@@ -20,3 +20,18 @@ def test_a_filler_list_holds_at_most_the_setting(config: dict[str, int], expect:
     got = filler_items({"config": config}, items)
     assert len(got) == expect
     assert got[0]["plex_rating_key"] == "1000"  # the first of the pool, in its order
+
+
+def test_a_show_sends_only_what_its_slots_air_in_max_days() -> None:
+    from scripts.mediaintel.export_dizquetv import airable, slot_lengths
+
+    week, hour = 604_800_000, 3_600_000
+    slots = [(0, "a"), (hour, "b"), (2 * hour, "a"), (3 * hour, "b")]
+    sched = {"period": week, "maxDays": 14,
+             "slots": [{"time": t, "showId": f"custom.{x}"} for t, x in slots]}  # fmt: skip
+    lengths = slot_lengths(sched)
+    assert lengths["custom.a"] == [hour, hour]
+    assert lengths["custom.b"][-1] == week - 3 * hour  # the last slot runs to the period's end
+    # 30-minute episodes, two 1-hour slots a week, two weeks: (2 + 1) per slot × 2 × 2 = 12
+    assert airable(sched, lengths["custom.a"], [1_800_000] * 500) == 12
+    assert airable(sched, [], []) == 0

@@ -35,6 +35,7 @@ and ``scheduleBackup``.
 from __future__ import annotations
 
 import json
+import math
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
@@ -167,6 +168,31 @@ def _diff(old: Sequence[str] | None, new: Sequence[str]) -> tuple[str, list[str]
     rem = len(set(old) - set(new))
     reorder = not add and not rem
     return "update", [f"+{add} −{rem}" + (" (reordered)" if reorder else "")]
+
+
+def slot_lengths(sched: Mapping[str, Any]) -> dict[str, list[int]]:
+    """Each show's slot lengths (ms) in one schedule period: a slot runs until the next."""
+    period = int(sched["period"])
+    slots = sorted(sched["slots"], key=lambda s: int(s["time"]))
+    out: dict[str, list[int]] = {}
+    for i, s in enumerate(slots):
+        nxt = int(slots[(i + 1) % len(slots)]["time"]) + (period if i + 1 == len(slots) else 0)
+        out.setdefault(s["showId"], []).append(max(0, nxt - int(s["time"])))
+    return out
+
+
+def airable(
+    sched: Mapping[str, Any], lengths_ms: Sequence[int], durations_ms: Sequence[int]
+) -> int:
+    """How many of a show's episodes its slots can air before dizqueTV repeats the
+    schedule (``maxDays``): per slot and period, its length over the show's median episode
+    (plus one), times the periods in ``maxDays``. At least one."""
+    if not durations_ms:
+        return 0
+    med = max(60_000, sorted(durations_ms)[len(durations_ms) // 2])
+    periods = math.ceil(int(sched.get("maxDays") or 365) * 86_400_000 / int(sched["period"]))
+    per_period = sum(-(-ms // med) + 1 for ms in lengths_ms) or 1
+    return max(1, per_period * periods)
 
 
 def filler_items(
@@ -425,6 +451,7 @@ def apply_actions(
         body = dict(c_act.body)
         sched = body["scheduleBackup"]
         programs: list[dict[str, Any]] = []
+        slot_ms = slot_lengths(sched)
         for sid in dict.fromkeys(s["showId"] for s in sched["slots"]):
             if not sid.startswith("custom."):
                 continue
@@ -432,7 +459,11 @@ def apply_actions(
             if show_id not in shows_by_id:
                 shows_by_id[show_id] = dzw.call("GET", f"/api/show/{show_id}")
             show = shows_by_id[show_id]
-            for n, prog in enumerate(show.get("content", [])):
+            content = show.get("content", [])
+            # only what the schedule can air before dizqueTV repeats it (maxDays): the mix
+            # channel's whole archive (55,000 episodes) is past its 50 MB request limit
+            cap = airable(sched, slot_ms.get(sid, []), [int(p["duration"]) for p in content])
+            for n, prog in enumerate(content[:cap]):
                 programs.append({**prog, "customShowId": show_id,
                                  "customShowName": show["name"], "customOrder": n})  # fmt: skip
         if not programs:
