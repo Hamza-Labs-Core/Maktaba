@@ -39,6 +39,11 @@ __all__ = ["IMPL", "PENDING", "is_pending", "on_disk"]
 #: ``videos.metadata`` key: the row's ``content_hash`` is a stand-in until this stage runs
 PENDING = "hash_pending"
 
+#: longest a name lookup or the head + tail read may take. Some names (``⧸``, ``｜``) make
+#: macOS's SMB client hang instead of failing; without a limit the job holds a nas_read
+#: slot for good while its heartbeat keeps the reaper away.
+READ_TIMEOUT_S = 120.0
+
 
 def is_pending(metadata: dict[str, Any] | None) -> bool:
     return bool((metadata or {}).get(PENDING))
@@ -78,7 +83,11 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
     local = ctx.local_path(v.path)
     try:
-        found = await asyncio.to_thread(on_disk, local)
+        found = await asyncio.wait_for(asyncio.to_thread(on_disk, local), READ_TIMEOUT_S)
+    except TimeoutError as exc:
+        raise StageFailure(
+            "nas_timeout", f"{local}: no answer in {READ_TIMEOUT_S:.0f} s", retryable=False
+        ) from exc
     except OSError as exc:  # a stalled share, not a missing file: retried
         raise StageFailure("nas_unavailable", f"{local}: {exc}") from exc
     if found is None:
@@ -94,7 +103,13 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         local = found
     try:
         async with ctx.nas.timed(local):
-            res = await asyncio.to_thread(hash_file, local)
+            res = await asyncio.wait_for(asyncio.to_thread(hash_file, local), READ_TIMEOUT_S)
+    except TimeoutError as exc:
+        raise StageFailure(
+            "nas_timeout",
+            f"{local}: read did not finish in {READ_TIMEOUT_S:.0f} s",
+            retryable=False,
+        ) from exc
     except FileNotFoundError as exc:
         raise StageFailure("file_missing", f"{local}: not found", retryable=False) from exc
     except (OSError, ValueError) as exc:
