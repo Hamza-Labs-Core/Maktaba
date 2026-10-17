@@ -220,6 +220,15 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
 _BATCH = 2000
 
 
+async def _analyze(db: Any) -> None:
+    """Statistics for the tables this transaction just filled. Without them Postgres plans
+    for empty tables, and the per-library reads that follow (detect's writer, the
+    youtube_sync snapshot) take tens of seconds each instead of milliseconds."""
+    if is_pg(db):
+        for t in TABLES:
+            await db.execute(f"ANALYZE {t}")
+
+
 async def _many(db: Any, sql: str, rows: list[tuple[Any, ...]]) -> None:
     """``rows`` through one statement, ``_BATCH`` at a time (a round trip per batch, not
     per row: the cache holds ~150k files and twice as many YouTube rows)."""
@@ -377,6 +386,7 @@ async def run_import(
             async with db.transaction():
                 if create:
                     libs = await _create_libraries(db, conn, libraries, maps, report)
+                    await _analyze(db)
                 else:
                     libs = await _resolve_libraries(db, libraries)
                 await _import(db, conn, libs, maps, report)
@@ -436,14 +446,11 @@ async def _import(
     await _youtube(db, cache, files, match)
     await _signals(db, cache, files, match)
     await _links(db, files, match)
+    await _analyze(db)  # detect's writer reads videos and episodes per library
     detect_hashes: dict[UUID, str] = {}
     seasons = await _series(db, cache, match, report, detect_hashes)
     await _tags_styles_plex(db, cache, match, seasons)
-    if is_pg(db):
-        # the tables were just filled inside this transaction and carry no statistics:
-        # without them the planner joins 180k playlist rows the slow way, once per library
-        for t in TABLES:
-            await db.execute(f"ANALYZE {t}")
+    await _analyze(db)
     await _jobs(db, cache, files, match, libs, seasons, report, detect_hashes)
     for lib_id, _ in libs:
         res = await enqueue_job(
