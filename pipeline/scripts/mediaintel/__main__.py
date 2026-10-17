@@ -318,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             ramadan=a.ramadan, tz_offset=a.tz_offset, replace_existing=a.replace_existing,
             dump=a.dump, apply=a.apply,
             server=scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token) if a.apply else None,
+            conn=conn,
         )  # fmt: skip
     elif a.cmd == "set-style":
         from . import scan_visual

@@ -261,7 +261,9 @@ def _run(
         from . import export_dizquetv
 
         _step("export-dizquetv (channels)")
-        export_dizquetv.run(report_dir / "channel-plan.json", url=tv_url, apply=True, server=server)
+        export_dizquetv.run(
+            report_dir / "channel-plan.json", url=tv_url, apply=True, server=server, conn=conn
+        )
     if side is not None and side.is_alive():
         print("waiting for the review pages to finish", flush=True)
         side.join()

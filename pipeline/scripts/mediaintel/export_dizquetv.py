@@ -35,6 +35,7 @@ and ``scheduleBackup``.
 from __future__ import annotations
 
 import json
+import math
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
@@ -169,6 +170,41 @@ def _diff(old: Sequence[str] | None, new: Sequence[str]) -> tuple[str, list[str]
     return "update", [f"+{add} −{rem}" + (" (reordered)" if reorder else "")]
 
 
+def slot_lengths(sched: Mapping[str, Any]) -> dict[str, list[int]]:
+    """Each show's slot lengths (ms) in one schedule period: a slot runs until the next."""
+    period = int(sched["period"])
+    slots = sorted(sched["slots"], key=lambda s: int(s["time"]))
+    out: dict[str, list[int]] = {}
+    for i, s in enumerate(slots):
+        nxt = int(slots[(i + 1) % len(slots)]["time"]) + (period if i + 1 == len(slots) else 0)
+        out.setdefault(s["showId"], []).append(max(0, nxt - int(s["time"])))
+    return out
+
+
+def airable(
+    sched: Mapping[str, Any], lengths_ms: Sequence[int], durations_ms: Sequence[int]
+) -> int:
+    """How many of a show's episodes its slots can air before dizqueTV repeats the
+    schedule (``maxDays``): per slot and period, its length over the show's median episode
+    (plus one), times the periods in ``maxDays``. At least one."""
+    if not durations_ms:
+        return 0
+    med = max(60_000, sorted(durations_ms)[len(durations_ms) // 2])
+    periods = math.ceil(int(sched.get("maxDays") or 365) * 86_400_000 / int(sched["period"]))
+    per_period = sum(-(-ms // med) + 1 for ms in lengths_ms) or 1
+    return max(1, per_period * periods)
+
+
+def filler_items(
+    plan: Mapping[str, Any], items: Sequence[Mapping[str, Any]]
+) -> Sequence[Mapping[str, Any]]:
+    """A dizqueTV filler list needs variety, not the whole pool: the first
+    ``dz_filler_max_items`` of it (the pool is in priority order: own promos, then
+    on-topic clips). A whole pool can be 75,000 clips, past dizqueTV's 50 MB request limit."""
+    cap = int((plan.get("config") or {}).get("dz_filler_max_items") or 2000)
+    return items[: max(1, cap)]
+
+
 def _items_with_keys(items: Sequence[Mapping[str, Any]]) -> tuple[list[Mapping[str, Any]], int]:
     keep = [i for i in items if i.get("plex_rating_key")]
     return keep, len(items) - len(keep)
@@ -259,7 +295,10 @@ def plan_actions(
 
     for k in used_pools:
         p = pools[k]
-        object_action("filler", k, f"{p['name']} [{k}]", p["items"], state.fillers, "clips")
+        object_action(
+            "filler", k, f"{p['name']} [{k}]", filler_items(plan, p["items"]), state.fillers,
+            "clips",
+        )  # fmt: skip
     for k in used_lanes:
         ln = lanes[k]
         eps = [e for u in ln["units"] for e in u["episodes"]]
@@ -359,7 +398,12 @@ def _new_channel_defaults() -> dict[str, Any]:
 
 
 def apply_actions(
-    url: str, actions: Sequence[Action], server: Any, plan: Mapping[str, Any], **plan_kw: Any
+    url: str,
+    actions: Sequence[Action],
+    server: Any,
+    plan: Mapping[str, Any],
+    conn: Any = None,
+    **plan_kw: Any,
 ) -> None:
     """Write the plan: shows and filler lists first (programmes built from Plex
     metadata), then — with dizqueTV re-read so slots name the real ``custom.ID`` and
@@ -371,7 +415,9 @@ def apply_actions(
     server = as_registered(server, dzw.call("GET", "/api/plex-servers"))
     objs = [a for a in actions if a.kind in ("show", "filler") and a.verb in ("create", "update")]
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
-    meta = _metadata(server, keys) if keys else {}
+    # the plex-index step's saved records first: only what it lacks is asked of Plex
+    # (all of a big plan from Plex is 100k+ lookups, hours while Plex is busy)
+    meta = _metadata(server, keys, conn=conn) if keys else {}
     for a in objs:
         assert a.body is not None and a.endpoint is not None
         content = [
@@ -405,6 +451,7 @@ def apply_actions(
         body = dict(c_act.body)
         sched = body["scheduleBackup"]
         programs: list[dict[str, Any]] = []
+        slot_ms = slot_lengths(sched)
         for sid in dict.fromkeys(s["showId"] for s in sched["slots"]):
             if not sid.startswith("custom."):
                 continue
@@ -412,7 +459,11 @@ def apply_actions(
             if show_id not in shows_by_id:
                 shows_by_id[show_id] = dzw.call("GET", f"/api/show/{show_id}")
             show = shows_by_id[show_id]
-            for n, prog in enumerate(show.get("content", [])):
+            content = show.get("content", [])
+            # only what the schedule can air before dizqueTV repeats it (maxDays): the mix
+            # channel's whole archive (55,000 episodes) is past its 50 MB request limit
+            cap = airable(sched, slot_ms.get(sid, []), [int(p["duration"]) for p in content])
+            for n, prog in enumerate(content[:cap]):
                 programs.append({**prog, "customShowId": show_id,
                                  "customShowName": show["name"], "customOrder": n})  # fmt: skip
         if not programs:
@@ -471,6 +522,7 @@ def run(
     dump: Path | None = None,
     apply: bool = False,
     server: Any = None,
+    conn: Any = None,
 ) -> list[Action]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     dz = DizqueTV(url)
@@ -493,7 +545,7 @@ def run(
         apply_actions(
             url, actions, server, plan, only=only, ramadan=ramadan,
             tz_offset=tz_offset_minutes() if tz_offset is None else tz_offset,
-            replace_existing=replace_existing,
+            replace_existing=replace_existing, conn=conn,
         )  # fmt: skip
     if dump is not None:  # local files only: the request bodies --apply would send
         dump.mkdir(parents=True, exist_ok=True)
