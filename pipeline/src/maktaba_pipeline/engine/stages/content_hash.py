@@ -10,11 +10,19 @@ real hash. ``thumb_small`` waits for it (its cache folder is named after the has
 A file whose content another video of the library already has (the same file twice) is
 not given that hash (``UNIQUE (library_id, content_hash)``): it is recorded as
 ``metadata.duplicate_of`` and keeps its stand-in.
+
+The cache stores names composed (NFC, as Windows wrote them); the share may hold a name
+decomposed (NFD: ``أ`` as ``ا`` + U+0654), and SMB matches names byte for byte. The file
+is found by its normalised name and the video's path becomes the name on disk, as a scan
+would have stored it, so every later stage opens it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
+import posixpath
+import unicodedata
 from typing import Any
 
 from ...db.jobs import Job
@@ -26,7 +34,7 @@ from ..sql import dumps, uid
 from ._common import load_video, require_video
 from .registry import StageImpl
 
-__all__ = ["IMPL", "PENDING", "is_pending"]
+__all__ = ["IMPL", "PENDING", "is_pending", "on_disk"]
 
 #: ``videos.metadata`` key: the row's ``content_hash`` is a stand-in until this stage runs
 PENDING = "hash_pending"
@@ -34,6 +42,27 @@ PENDING = "hash_pending"
 
 def is_pending(metadata: dict[str, Any] | None) -> bool:
     return bool((metadata or {}).get(PENDING))
+
+
+def on_disk(path: str) -> str | None:
+    """``path`` as the file system names it: as given, else its NFD / NFC form, else the
+    entry of its folder whose normalised name is the same; None when there is none."""
+    if os.path.exists(path):
+        return path
+    parent, name = os.path.split(path)
+    for form in ("NFD", "NFC"):
+        alt = os.path.join(parent, unicodedata.normalize(form, name))
+        if os.path.exists(alt):
+            return alt
+    try:
+        entries = os.listdir(parent)
+    except OSError:
+        return None
+    want = unicodedata.normalize("NFC", name)
+    return next(
+        (os.path.join(parent, e) for e in entries if unicodedata.normalize("NFC", e) == want),
+        None,
+    )
 
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
@@ -49,6 +78,18 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
     local = ctx.local_path(v.path)
+    found = await asyncio.to_thread(on_disk, local)
+    if found is None:
+        raise StageFailure("file_missing", f"{local}: not found", retryable=False)
+    if found != local:  # the name on disk differs in normalisation only: store that one
+        new_path = ctx.path_map.to_db(found)
+        await db.execute(
+            "UPDATE videos SET path = $2, filename = $3 WHERE id = $1",
+            uid(v.id),
+            new_path,
+            posixpath.basename(new_path),
+        )
+        local = found
     try:
         async with ctx.nas.timed(local):
             res = await asyncio.to_thread(hash_file, local)
