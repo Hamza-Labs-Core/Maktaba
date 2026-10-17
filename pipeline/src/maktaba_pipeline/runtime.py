@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import __version__
+from .channels.pass_ import run_topup_loop
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .engine.dispatch import EngineRuntime, dispatch_job
@@ -503,6 +504,7 @@ async def _start_engine(
         asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
         asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
+        asyncio.create_task(run_topup_loop(database, shutdown), name="channel-topup"),
     ]
     return runtime, tuple(served), {s: runtime.graph[s].pool for s in served}, tasks
 

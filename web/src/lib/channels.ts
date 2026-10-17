@@ -132,6 +132,101 @@ export function isAiring(p: Program, nowMs: number): boolean {
   return nowMs >= start && nowMs < end;
 }
 
+// ─── Wire format ──────────────────────────────────────────────────────
+// The Go guide handlers (api/internal/handlers/guide) speak the XMLTV-ish
+// `Block` shape — `start`/`stop`/`desc`/`poster`, `blocks` per channel,
+// `channels` for now/next — and a channel header without mode/enabled.
+// They are mapped here, once, onto the client shapes above.
+interface WireBlock {
+  channel_id: string;
+  kind: string;
+  start: string;
+  stop: string;
+  title: string;
+  sub_title?: string;
+  desc?: string;
+  poster?: string;
+  series?: string;
+  season?: number;
+  episode?: number;
+}
+
+interface WireHeader {
+  id: string;
+  number: number;
+  name: string;
+  slug?: string;
+  logo?: string;
+}
+
+function fromHeader(h: WireHeader): Channel {
+  return {
+    id: h.id,
+    number: h.number,
+    name: h.name,
+    slug: h.slug,
+    logo_path: h.logo ?? null,
+    mode: "schedule",
+    enabled: true,
+    sort_order: h.number,
+  };
+}
+
+function episodeLabel(b: WireBlock): string | null {
+  if (b.episode == null) return b.sub_title ?? null;
+  const se = b.season != null ? `S${b.season}E${b.episode}` : `E${b.episode}`;
+  return b.sub_title ? `${se} · ${b.sub_title}` : se;
+}
+
+function fromBlock(b: WireBlock, seq: number): Program {
+  return {
+    channel_id: b.channel_id,
+    seq,
+    kind: (b.kind as ProgramKind) || "program",
+    title: b.title,
+    start_at: b.start,
+    end_at: b.stop,
+    poster_url: b.poster || null,
+    description: b.desc || null,
+    series: b.series || null,
+    episode: episodeLabel(b),
+  };
+}
+
+function serverTime(t?: string): string {
+  return t ?? new Date().toISOString();
+}
+
+async function guideFrom(
+  req: Promise<{ server_time?: string; channels?: Array<{ channel: WireHeader; blocks?: WireBlock[] }> }>
+): Promise<GuideResponse> {
+  const r = await req;
+  return {
+    server_time: serverTime(r.server_time),
+    channels: (r.channels ?? []).map((c) => ({
+      channel: fromHeader(c.channel),
+      programs: (c.blocks ?? []).map(fromBlock),
+    })),
+  };
+}
+
+async function nowFrom(
+  req: Promise<{
+    server_time?: string;
+    channels?: Array<{ channel: WireHeader; current?: WireBlock | null; next?: WireBlock | null }>;
+  }>
+): Promise<NowResponse> {
+  const r = await req;
+  return {
+    server_time: serverTime(r.server_time),
+    items: (r.channels ?? []).map((e) => ({
+      channel: fromHeader(e.channel),
+      current: e.current ? fromBlock(e.current, 0) : null,
+      next: e.next ? fromBlock(e.next, 1) : null,
+    })),
+  };
+}
+
 // ─── API helpers ──────────────────────────────────────────────────────
 export const channelsApi = {
   list: (params?: { category?: string; enabled?: boolean }) => {
@@ -152,13 +247,20 @@ export const channelsApi = {
   guide: (params: { start: string; end: string; category?: string }) => {
     const q = new URLSearchParams({ start: params.start, end: params.end });
     if (params.category) q.set("category", params.category);
-    return api.get<GuideResponse>(`/api/channels/guide?${q.toString()}`);
+    return guideFrom(api.get(`/api/channels/guide?${q.toString()}`));
   },
   channelGuide: (id: string, params: { start: string; end: string }) => {
     const q = new URLSearchParams({ start: params.start, end: params.end });
-    return api.get<GuideResponse>(`/api/channels/${encodeURIComponent(id)}/guide?${q.toString()}`);
+    // The per-channel guide answers one `{channel, blocks}`, not a list.
+    return guideFrom(
+      api
+        .get<{ server_time?: string; channel: WireHeader; blocks?: WireBlock[] }>(
+          `/api/channels/${encodeURIComponent(id)}/guide?${q.toString()}`
+        )
+        .then((r) => ({ server_time: r.server_time, channels: [r] }))
+    );
   },
-  now: () => api.get<NowResponse>("/api/channels/now"),
+  now: () => nowFrom(api.get("/api/channels/now")),
   schedulePreview: (id: string, hours = 48) =>
     api.get<GuideResponse>(
       `/api/channels/${encodeURIComponent(id)}/schedule/preview?hours=${hours}`

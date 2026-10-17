@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..base import ChannelDef, ChannelMode, Planner
+from ..base import ChannelDef, ChannelMode, ContentItem, Planner
 from .marathon import MarathonPlanner
 from .schedule import SchedulePlanner
 from .shuffle import ShufflePlanner
@@ -26,7 +26,11 @@ __all__ = [
 
 
 def make_planner(
-    channel: ChannelDef, *, cursor: dict[str, Any] | None = None, seed: int | None = None
+    channel: ChannelDef,
+    *,
+    cursor: dict[str, Any] | None = None,
+    seed: int | None = None,
+    slot_content: list[list[ContentItem] | None] | None = None,
 ) -> Planner:
     """Construct the planner for ``channel``'s mode, restoring its cursor
     (shuffle bag / marathon index) so a top-up continues (D5)."""
@@ -36,7 +40,7 @@ def make_planner(
     if channel.mode == ChannelMode.MARATHON:
         return MarathonPlanner(channel, cursor=cursor)
     if channel.mode == ChannelMode.SCHEDULE:
-        return SchedulePlanner(channel, cursor=cursor, seed=seed)
+        return SchedulePlanner(channel, cursor=cursor, seed=seed, slot_content=slot_content)
     if channel.mode == ChannelMode.SMART_MIX:
         return SmartMixPlanner(channel, cursor=cursor, seed=seed)
     raise ValueError(f"unknown channel mode: {channel.mode!r}")

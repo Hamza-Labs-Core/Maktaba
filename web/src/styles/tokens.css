@@ -92,6 +92,29 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
 }
 
+/* The design-system surfaces paint with --color-neutral-0 / -200, which
+   also serve as white label text (Button, Toast) and as greys on the
+   always-black player, so the dark theme cannot remap them; their
+   surfaces follow the app tokens here instead. */
+[data-theme="dark"] .mk-card,
+[data-theme="dark"] .mk-modal,
+[data-theme="dark"] .mk-drawer,
+[data-theme="dark"] .mk-menu__list,
+[data-theme="dark"] .mk-context-menu {
+  background-color: var(--color-subtle);
+  border-color: var(--color-border);
+  color: var(--color-fg);
+}
+[data-theme="dark"] .mk-control,
+[data-theme="dark"] .mk-choice__control {
+  background-color: var(--color-bg);
+  border-color: var(--color-neutral-700);
+}
+[data-theme="dark"] .mk-progress,
+[data-theme="dark"] .mkt-state--queued {
+  background-color: var(--color-border);
+}
+
 /* Solid semantic fills in app.css pair these tokens with a hard-coded
    white label; the brighter dark-theme values need a dark label. */
 [data-theme="dark"] .mkt-alert,

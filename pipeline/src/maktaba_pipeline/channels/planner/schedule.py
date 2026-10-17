@@ -64,20 +64,30 @@ class SchedulePlanner:
         *,
         cursor: dict[str, Any] | None = None,
         seed: int | None = None,
-        slot_content: list[list[ContentItem]] | None = None,
+        slot_content: list[list[ContentItem] | None] | None = None,
     ) -> None:
         self.channel = channel
         self._rng = random.Random(seed)
         self._slots: list[dict[str, Any]] = list(channel.mode_config.get("slots", []))
         self._slot_content = slot_content
         cursor = cursor or {}
-        # Per-slot round-robin cursor so a top-up doesn't restart a slot.
-        self._rr: dict[int, int] = {int(k): int(v) for k, v in cursor.get("rr", {}).items()}
+        # Round-robin cursor so a top-up doesn't restart a slot. Keyed by the
+        # slot's lane when it has one: a lane airing in several slots (days)
+        # is one queue that carries on, not one that restarts per slot.
+        self._rr: dict[str, int] = {str(k): int(v) for k, v in cursor.get("rr", {}).items()}
 
     def _content_for(self, slot_idx: int, default: list[ContentItem]) -> list[ContentItem]:
         if self._slot_content is not None and slot_idx < len(self._slot_content):
-            return self._slot_content[slot_idx]
+            own = self._slot_content[slot_idx]
+            if own is not None:
+                return own
         return default
+
+    def _queue_key(self, slot_idx: int) -> str:
+        src = self._slots[slot_idx].get("source")
+        if isinstance(src, dict) and src.get("lane"):
+            return f"lane:{src['lane']}"
+        return str(slot_idx)
 
     def _active_slot(self, t: datetime) -> int | None:
         tod = t.hour * 60 + t.minute
@@ -145,7 +155,8 @@ class SchedulePlanner:
             return []
         items: list[PlanItem] = []
         acc = 0
-        rr = self._rr.get(slot_idx, 0) % len(pool)
+        key = self._queue_key(slot_idx)
+        rr = self._rr.get(key, 0) % len(pool)
         guard = 0
         while acc < window_ms and guard < 100_000:
             guard += 1
@@ -155,7 +166,7 @@ class SchedulePlanner:
             )
             acc += c.duration_ms
             rr += 1
-        self._rr[slot_idx] = rr
+        self._rr[key] = rr
         return items
 
     @staticmethod
@@ -168,4 +179,4 @@ class SchedulePlanner:
         return PlanItem(video_id=None, duration_ms=max(ms, 0), kind=BlockKind.FILLER)
 
     def export_state(self) -> dict[str, Any]:
-        return {"rr": {str(k): v for k, v in self._rr.items()}}
+        return {"rr": dict(self._rr)}

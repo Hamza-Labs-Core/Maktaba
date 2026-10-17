@@ -74,6 +74,7 @@ class FakeRepo:
         *,
         filler: list[FillerItem] | None = None,
         state: ScheduleState | None = None,
+        slot_content: list[list[ContentItem] | None] | None = None,
     ) -> None:
         self.channel = channel
         self.content = content
@@ -81,6 +82,7 @@ class FakeRepo:
         self.state = state or ScheduleState(channel_id=channel.id)
         self.blocks: list[Block] = []
         self.save_calls = 0
+        self.slot_content = slot_content
 
     async def load_channel(self, channel_id: UUID) -> ChannelDef | None:
         return self.channel if channel_id == self.channel.id else None
@@ -91,8 +93,17 @@ class FakeRepo:
     async def resolve_content(self, channel: ChannelDef) -> list[ContentItem]:
         return self.content
 
+    async def resolve_slot_content(
+        self, channel: ChannelDef
+    ) -> list[list[ContentItem] | None] | None:
+        return self.slot_content
+
     async def load_filler(self, channel: ChannelDef) -> list[FillerItem]:
         return self.filler
+
+    async def airing_until(self, channel_id: UUID, at: datetime) -> datetime | None:
+        ends = [b.end_at for b in self.blocks if b.start_at <= at < b.end_at]
+        return max(ends) if ends else None
 
     async def max_seq_before(self, channel_id: UUID, anchor: datetime) -> int:
         surviving = [b.seq for b in self.blocks if b.start_at < anchor]

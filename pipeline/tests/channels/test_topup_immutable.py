@@ -85,3 +85,20 @@ async def test_topup_all_touches_due_channel() -> None:
     touched = await topup_all(repo, now=now, horizon=timedelta(hours=6))
     assert touched == 1
     assert repo.blocks
+
+
+@pytest.mark.asyncio
+async def test_stale_regen_starts_after_the_block_on_air() -> None:
+    # An edited channel (stale) is regenerated from now, but the block on air
+    # stays (D3): the new timeline follows it instead of overlapping it.
+    ch = mk_channel(ChannelMode.SHUFFLE)
+    repo = FakeRepo(ch, mk_content(6, dur_ms=20 * 60_000))
+    t0 = dt("2026-06-14T18:00:00")
+    await run_schedule(repo, ch.id, now=t0, horizon=timedelta(hours=4))
+    repo.state.stale = True
+    t1 = t0 + timedelta(minutes=10)  # mid-way through the first 20-min block
+    await run_schedule(repo, ch.id, now=t1, horizon=timedelta(hours=4))
+    blocks = sorted(repo.blocks, key=lambda b: b.start_at)
+    for a, b in zip(blocks, blocks[1:], strict=False):
+        assert a.end_at == b.start_at, (a, b)
+    assert blocks[0].start_at == t0 and blocks[1].start_at == t0 + timedelta(minutes=20)
