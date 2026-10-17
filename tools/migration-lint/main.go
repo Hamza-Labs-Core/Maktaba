@@ -379,7 +379,7 @@ var (
 	reDropTable      = regexp.MustCompile(`(?i)\bDROP\s+TABLE\b`)
 	reDropTableOK    = regexp.MustCompile(`(?i)\bDROP\s+TABLE\s+IF\s+EXISTS\b`)
 	reDropIndex      = regexp.MustCompile(`(?i)\bDROP\s+INDEX\b`)
-	reDropIndexOK    = regexp.MustCompile(`(?i)\bDROP\s+INDEX\s+IF\s+EXISTS\b`)
+	reDropIndexOK    = regexp.MustCompile(`(?i)\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?IF\s+EXISTS\b`)
 	reAddColumn      = regexp.MustCompile(`(?i)\bADD\s+COLUMN\b`)
 	reAddColumnOK    = regexp.MustCompile(`(?i)\bADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b`)
 	reCreateView     = regexp.MustCompile(`(?i)\bCREATE\s+(?:OR\s+REPLACE\s+)?VIEW\b`)

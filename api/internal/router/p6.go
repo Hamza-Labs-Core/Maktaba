@@ -27,7 +27,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/jobs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/models"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	seriesh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/series"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/settings"
@@ -157,6 +159,11 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	settingsHandler.Mount(r)
 
+	// Admin-editable pipeline rules (planner / grouping / detection),
+	// stored as per-section overrides in app_settings (rules.<section>).
+	rulesHandler := &rules.Handler{DB: d.DB}
+	rulesHandler.Mount(r)
+
 	// Model Management surface for the Settings page (catalog + async
 	// download/activate/test). Proxies to the pipeline's model service;
 	// a nil client degrades to the static fallback catalog + "pipeline
@@ -192,7 +199,20 @@ func MountP6(r chi.Router, d P6Deps) {
 	// them out to `hub`, so a client whose socket is on *this* replica
 	// receives an event published on *any* replica. The handler also
 	// replays missed events on reconnect.
-	wireEventBus(d, hub, wsHandler)
+	bus := wireEventBus(d, hub, wsHandler)
+
+	// Plan 06-11 queue control centre. The bus (when wired) carries the
+	// durable queue.control / pool.updated events; snapshots go straight
+	// to the hub every 2 s while someone is subscribed to /ws/queues.
+	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub}
+	if bus != nil {
+		queuesHandler.Events = bus
+	}
+	queuesHandler.Mount(r)
+	wsHandler.Initial = queuesHandler.InitialFrame
+	if d.BusCtx != nil {
+		go queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval)
+	}
 	wsHandler.Mount(r)
 
 	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV

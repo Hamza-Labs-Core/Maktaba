@@ -45,6 +45,22 @@ func (g *guardedWriter) Write(b []byte) (int, error) {
 // if the handler wrote nothing.
 func (g *guardedWriter) Status() int { return g.status }
 
+// Flush passes through to the wrapped writer, so streaming handlers
+// (the SSE channels under /ws/*) still see an http.Flusher. Without it
+// every stream failed with "streaming unsupported" (500). A flush sends
+// the headers, so it counts as the first write.
+func (g *guardedWriter) Flush() {
+	if !g.written {
+		g.WriteHeader(http.StatusOK)
+	}
+	if f, ok := g.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (g *guardedWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+
 // SingleWriteGuard wraps the response writer so a second WriteHeader
 // or a WriteHeader after Write is dropped with a warn log.
 func SingleWriteGuard(next http.Handler) http.Handler {

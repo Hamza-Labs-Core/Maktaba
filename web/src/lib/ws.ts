@@ -4,6 +4,7 @@
 // The API mounts SSE — NOT raw WebSocket — at:
 //
 //   /ws/jobs                 global job lifecycle
+//   /ws/queues               2 s `queues.snapshot` (ephemeral, no replay)
 //   /ws/library/{id}         per-library video changes
 //   /ws/playback/{video_id}  playback position fan-out
 //
@@ -24,7 +25,7 @@ type Listener = (ev: ServerEvent) => void;
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
-export type Channel = "jobs" | `library/${string}` | `playback/${string}`;
+export type Channel = "jobs" | "queues" | `library/${string}` | `playback/${string}`;
 
 class Subscription {
   private es: EventSource | null = null;
@@ -32,23 +33,38 @@ class Subscription {
   private backoff = 1000;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  // Last server event id seen (payload._event_id). A native EventSource
+  // reconnect replays through Last-Event-ID by itself; after a manual
+  // reopen (constructor failure / readyState CLOSED) that header is
+  // gone, so the id is passed as ?last_event_id= (ws.go accepts both).
+  private lastEventId: string | null = null;
 
-  constructor(private readonly path: string) {}
+  constructor(
+    private readonly path: string,
+    private readonly onEmpty: () => void
+  ) {}
 
   add(fn: Listener): () => void {
     this.listeners.add(fn);
-    if (!this.es && !this.closed) this.open();
+    if (!this.es && !this.closed && !this.retry) this.open();
     return () => {
       this.listeners.delete(fn);
       if (this.listeners.size === 0) this.close();
     };
   }
 
+  private url(): string {
+    if (this.lastEventId === null) return `${BASE}${this.path}`;
+    const sep = this.path.includes("?") ? "&" : "?";
+    return `${BASE}${this.path}${sep}last_event_id=${encodeURIComponent(this.lastEventId)}`;
+  }
+
   private open(): void {
     if (this.closed) return;
+    this.retry = null;
     let es: EventSource;
     try {
-      es = new EventSource(`${BASE}${this.path}`, { withCredentials: true });
+      es = new EventSource(this.url(), { withCredentials: true });
     } catch {
       this.scheduleReopen();
       return;
@@ -64,7 +80,10 @@ class Subscription {
       } catch {
         return; // ignore comment/heartbeat frames
       }
-      this.listeners.forEach((fn) => fn(ev));
+      const id = ev.payload?._event_id;
+      if (typeof id === "number" || typeof id === "string") this.lastEventId = String(id);
+      // Copy: a listener may unsubscribe while we iterate.
+      [...this.listeners].forEach((fn) => fn(ev));
     };
     es.onerror = () => {
       // EventSource retries on its own; if the browser closed it for
@@ -90,13 +109,25 @@ class Subscription {
     }
     this.es?.close();
     this.es = null;
+    this.onEmpty();
   }
 }
+
+// One Subscription (= one EventSource) per channel, ref-counted by its
+// listeners. Before this, every subscribe() opened its own connection.
+const subscriptions = new Map<string, Subscription>();
 
 // subscribe opens (or re-uses, per channel) an SSE stream and invokes
 // `fn` for every decoded envelope. The returned disposer removes the
 // listener and tears the stream down once no listeners remain.
 export function subscribe(channel: Channel, fn: Listener): () => void {
-  const sub = new Subscription(`/ws/${channel}`);
+  let sub = subscriptions.get(channel);
+  if (!sub) {
+    const created = new Subscription(`/ws/${channel}`, () => {
+      if (subscriptions.get(channel) === created) subscriptions.delete(channel);
+    });
+    subscriptions.set(channel, created);
+    sub = created;
+  }
   return sub.add(fn);
 }

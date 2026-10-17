@@ -20,6 +20,7 @@ from collections import defaultdict
 from typing import Any
 
 __all__ = [
+    "JOBS_CONTROL",
     "JOBS_FLAG_SET",
     "JOBS_FORCE_PAUSE",
     "JOBS_HEARTBEAT",
@@ -42,6 +43,8 @@ JOBS_PROGRESS = "jobs.progress"
 JOBS_HEARTBEAT = "jobs.heartbeat"
 JOBS_REAPED = "jobs.reaped"
 JOBS_FORCE_PAUSE = "jobs.force_pause"
+# Pool size / stage / global-pause changes (plan 06-11, slot 0089 triggers on Postgres).
+JOBS_CONTROL = "jobs.control"
 
 # Scanner channel — Story 1.1. Postgres fires this via the slot 0005
 # trigger; SQLite callers publish on the bus manually after commit.

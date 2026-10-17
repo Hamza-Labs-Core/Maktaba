@@ -33,6 +33,8 @@ from maktaba_pipeline.identity import (
 from maktaba_pipeline.identity.hasher import SIZE_SUFFIX_LEN
 
 MiB = 1024 * 1024
+# Tests that only need "bigger than head+tail" use this small window so they write KiBs, not MiBs.
+HT = 64 * 1024
 
 
 def _hex_from_parts(*parts: bytes) -> str:
@@ -98,49 +100,49 @@ def test_hash_zero_byte_file(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_hash_changes_on_size_change(tmp_path: Path) -> None:
     """Appending a single byte must flip the hash even if head/tail bytes match."""
-    base = b"\xee" * (12 * MiB)
+    base = b"\xee" * (4 * HT)
     a = tmp_path / "a.bin"
     b = tmp_path / "b.bin"
     a.write_bytes(base)
     b.write_bytes(base + b"\x00")  # one extra byte
 
-    ha = hash_file(a).content_hash
-    hb = hash_file(b).content_hash
+    ha = hash_file(a, head_tail=HT).content_hash
+    hb = hash_file(b, head_tail=HT).content_hash
     assert ha != hb, "size suffix did not affect hash"
 
 
 @pytest.mark.unit
 def test_hash_invariant_under_path_change(tmp_path: Path) -> None:
-    body = b"\xa5" * (10 * MiB)
+    body = b"\xa5" * (4 * HT)
     a = tmp_path / "before.bin"
     a.write_bytes(body)
-    h_before = hash_file(a).content_hash
+    h_before = hash_file(a, head_tail=HT).content_hash
 
     moved = tmp_path / "after_rename.bin"
     shutil.move(str(a), str(moved))
 
-    h_after = hash_file(moved).content_hash
+    h_after = hash_file(moved, head_tail=HT).content_hash
     assert h_before == h_after
 
 
 @pytest.mark.unit
 def test_hash_changes_when_head_byte_flips(tmp_path: Path) -> None:
     """A byte change in the head region must produce a different hash."""
-    body = bytearray(b"\xa5" * (16 * MiB))
+    body = bytearray(b"\xa5" * (4 * HT))
     p_a = tmp_path / "a.bin"
     p_a.write_bytes(bytes(body))
 
-    body[100] = 0x42  # offset 100 is well within the 4 MiB head
+    body[100] = 0x42  # offset 100 is well within the head window
     p_b = tmp_path / "b.bin"
     p_b.write_bytes(bytes(body))
 
-    assert hash_file(p_a).content_hash != hash_file(p_b).content_hash
+    assert hash_file(p_a, head_tail=HT).content_hash != hash_file(p_b, head_tail=HT).content_hash
 
 
 @pytest.mark.unit
 def test_hash_changes_when_tail_byte_flips(tmp_path: Path) -> None:
     """A byte change in the tail region must produce a different hash."""
-    body = bytearray(b"\xa5" * (16 * MiB))
+    body = bytearray(b"\xa5" * (4 * HT))
     p_a = tmp_path / "a.bin"
     p_a.write_bytes(bytes(body))
 
@@ -149,7 +151,7 @@ def test_hash_changes_when_tail_byte_flips(tmp_path: Path) -> None:
     p_b = tmp_path / "b.bin"
     p_b.write_bytes(bytes(body))
 
-    assert hash_file(p_a).content_hash != hash_file(p_b).content_hash
+    assert hash_file(p_a, head_tail=HT).content_hash != hash_file(p_b, head_tail=HT).content_hash
 
 
 @pytest.mark.unit
@@ -161,17 +163,17 @@ def test_hash_documents_middle_collision_limitation(tmp_path: Path) -> None:
     differences in files larger than 8 MiB are invisible. This test
     exists so we notice if anyone "fixes" it without updating the spec.
     """
-    head = b"\x11" * (4 * MiB)
-    tail = b"\x22" * (4 * MiB)
-    mid_a = b"\xaa" * (4 * MiB)
-    mid_b = b"\xbb" * (4 * MiB)
+    head = b"\x11" * (HT)
+    tail = b"\x22" * (HT)
+    mid_a = b"\xaa" * (HT)
+    mid_b = b"\xbb" * (HT)
 
     a = tmp_path / "a.bin"
     b = tmp_path / "b.bin"
     a.write_bytes(head + mid_a + tail)
     b.write_bytes(head + mid_b + tail)
 
-    assert hash_file(a).content_hash == hash_file(b).content_hash, (
+    assert hash_file(a, head_tail=HT).content_hash == hash_file(b, head_tail=HT).content_hash, (
         "head/tail/size collision is a documented limitation; "
         "if this fired the algorithm changed silently"
     )

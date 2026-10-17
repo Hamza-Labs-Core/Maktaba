@@ -662,6 +662,37 @@ class FakeAudioDB:
             )
             return None
 
+        # plan 06-11: enqueue() is a wrapper over the processing_jobs_enqueue() function
+        if s.startswith("SELECT job_id, outcome FROM processing_jobs_enqueue"):
+            kind, subject_id, stage, priority, _force, _fc, _reason, _trig, payload, max_att = args
+            sid = UUID(str(subject_id))
+            live = {"pending", "claimed", "running", "resuming", "paused"}
+            for pj in self.processing_jobs.values():
+                owner = pj.library_id if kind == "library" else pj.video_id
+                if owner == sid and pj.stage == stage and pj.state in live:
+                    outcome = "coalesced" if pj.state == "pending" else "rerun_requested"
+                    return _Row({"job_id": pj.id, "outcome": outcome})
+            new_id = self._job_next_id
+            self._job_next_id += 1
+            self.processing_jobs[new_id] = _ProcessingJobRow(
+                id=new_id,
+                video_id=sid if kind == "video" else None,
+                library_id=sid if kind == "library" else None,
+                stage=str(stage),
+                priority=100 if priority is None else int(priority),
+                payload=payload,
+                max_attempts=3 if max_att is None else int(max_att),
+                created_at=self._now(),
+            )
+            return _Row({"job_id": new_id, "outcome": "inserted"})
+
+        if s.startswith("SELECT library_id FROM processing_jobs WHERE id"):
+            job_row = self.processing_jobs.get(int(args[0]))
+            return None if job_row is None else _Row({"library_id": job_row.library_id})
+
+        if s.startswith(("INSERT INTO job_events", "INSERT INTO events")):
+            return None
+
         # enqueue() — done-row check
         if s.startswith("SELECT pj.id AS id, pj.finished_at"):
             return None

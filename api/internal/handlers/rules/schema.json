@@ -1,0 +1,2068 @@
+{
+ "sections": [
+  {
+   "key": "planner",
+   "title": "Channels",
+   "what": "how channels, slots, fillers and the Quran channel are planned",
+   "fields": [
+    {
+     "name": "themes",
+     "kind": "rows",
+     "group": "Channels",
+     "label": "Themed channels",
+     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule.",
+     "default": [
+      {
+       "key": "quran",
+       "name": "Quran",
+       "name_ar": "القرآن الكريم",
+       "number": 101,
+       "topics": [
+        "quran_recitation"
+       ],
+       "audiences": [],
+       "formats": [
+        "recitation"
+       ],
+       "category": "quran",
+       "min_hours": 100.0,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "kids",
+       "name": "Kids & Family",
+       "name_ar": "الأطفال والأسرة",
+       "number": 110,
+       "topics": [
+        "seerah",
+        "prophets_stories"
+       ],
+       "audiences": [
+        "kids",
+        "kids_friendly",
+        "beginners"
+       ],
+       "formats": [],
+       "category": "kids",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": [
+        "audience:adults"
+       ]
+      },
+      {
+       "key": "ramadan",
+       "name": "Ramadan",
+       "name_ar": "رمضان",
+       "number": 115,
+       "topics": [
+        "fasting",
+        "qiyam"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [
+        "ramadan"
+       ],
+       "exclude": []
+      },
+      {
+       "key": "seerah",
+       "name": "Seerah",
+       "name_ar": "السيرة النبوية",
+       "number": 103,
+       "topics": [
+        "seerah"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "tafsir",
+       "name": "Tafsir",
+       "name_ar": "التفسير",
+       "number": 105,
+       "topics": [
+        "tafsir"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "hadith",
+       "name": "Hadith",
+       "name_ar": "الحديث",
+       "number": 102,
+       "topics": [
+        "hadith"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "fiqh",
+       "name": "Fiqh & Fatwa",
+       "name_ar": "الفقه والفتاوى",
+       "number": 111,
+       "topics": [
+        "fiqh"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "aqeedah",
+       "name": "Aqeedah & Shubuhat",
+       "name_ar": "العقيدة والشبهات",
+       "number": 107,
+       "topics": [
+        "aqeedah",
+        "shubuhat"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "history",
+       "name": "Islamic History",
+       "name_ar": "التاريخ الإسلامي",
+       "number": 108,
+       "topics": [
+        "islamic_history",
+        "sahaba"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "documentaries",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "palestine",
+       "name": "Palestine",
+       "name_ar": "فلسطين",
+       "number": 125,
+       "topics": [
+        "palestine"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "news",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "news",
+       "name": "News & Current Affairs",
+       "name_ar": "الأخبار والقضايا المعاصرة",
+       "number": 124,
+       "topics": [
+        "current_affairs"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "news",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "talk",
+       "name": "Talk Shows",
+       "name_ar": "البرامج الحوارية",
+       "number": 126,
+       "topics": [],
+       "audiences": [],
+       "formats": [
+        "program",
+        "interview",
+        "podcast"
+       ],
+       "category": "general",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "prophets",
+       "name": "Prophets' Stories",
+       "name_ar": "قصص الأنبياء",
+       "number": 104,
+       "topics": [
+        "prophets_stories"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "raqaiq",
+       "name": "Raqaiq",
+       "name_ar": "الرقائق",
+       "number": 106,
+       "topics": [
+        "raqaiq",
+        "akhirah",
+        "dua_dhikr"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "akhlaq",
+       "name": "Akhlaq",
+       "name_ar": "الأخلاق",
+       "number": 113,
+       "topics": [
+        "akhlaq",
+        "dawah"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "family",
+       "name": "Family",
+       "name_ar": "الأسرة",
+       "number": 109,
+       "topics": [
+        "family_marriage",
+        "women",
+        "youth"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "salah",
+       "name": "Fiqh of Salah",
+       "name_ar": "فقه الصلاة",
+       "number": 121,
+       "topics": [
+        "salah"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "muamalat",
+       "name": "Fiqh of Money & Trade",
+       "name_ar": "فقه المعاملات",
+       "number": 123,
+       "topics": [
+        "muamalat"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "family_fiqh",
+       "name": "Fiqh of the Family",
+       "name_ar": "فقه الأسرة",
+       "number": 122,
+       "topics": [
+        "family_fiqh"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "fasting",
+       "name": "Fasting",
+       "name_ar": "الصيام",
+       "number": 116,
+       "topics": [
+        "fasting"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "qiyam",
+       "name": "Taraweeh & Qiyam",
+       "name_ar": "التراويح والقيام",
+       "number": 117,
+       "topics": [
+        "qiyam"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "quran",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "quran_learning",
+       "name": "Quran Learning",
+       "name_ar": "تعليم القرآن",
+       "number": 118,
+       "topics": [
+        "tajweed"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "quran",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "quran_competition",
+       "name": "Quran Competitions",
+       "name_ar": "مسابقات القرآن",
+       "number": 119,
+       "topics": [
+        "quran_competition"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "quran",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "zakat",
+       "name": "Zakat & Charity",
+       "name_ar": "الزكاة والصدقة",
+       "number": 120,
+       "topics": [
+        "zakat"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "hajj",
+       "name": "Hajj & Umrah",
+       "name_ar": "الحج والعمرة",
+       "number": 127,
+       "topics": [],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [
+        "hajj"
+       ],
+       "exclude": []
+      },
+      {
+       "key": "stories",
+       "name": "Stories",
+       "name_ar": "القصص",
+       "number": 112,
+       "topics": [
+        "stories"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "islamic",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      },
+      {
+       "key": "nasheed",
+       "name": "Nasheed",
+       "name_ar": "الأناشيد",
+       "number": 114,
+       "topics": [
+        "nasheed",
+        "poetry"
+       ],
+       "audiences": [],
+       "formats": [],
+       "category": "music",
+       "min_hours": null,
+       "occasions": [],
+       "exclude": []
+      }
+     ],
+     "columns": [
+      "key",
+      "name",
+      "name_ar",
+      "number",
+      "topics",
+      "audiences",
+      "formats",
+      "category",
+      "min_hours",
+      "occasions",
+      "exclude"
+     ],
+     "column_kinds": [
+      "str",
+      "str",
+      "str",
+      "int",
+      "list",
+      "list",
+      "list",
+      "str",
+      "float?",
+      "list",
+      "list"
+     ],
+     "column_optional": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "dayparts",
+     "kind": "rows",
+     "group": "Grid and slots",
+     "label": "Day parts",
+     "help": "The day's windows. Role: quran (recitation), high (the strongest shows first), low (the daypart's own topics first), block (a fixed block like the kids' hour: shows matching its topics first, in their order, never one with an exclude tag). Pattern: weekly (each day its own show), strip (one show every weekday), strip7 (every day), quran.",
+     "default": [
+      {
+       "key": "dawn",
+       "start": "05:00",
+       "end": "07:00",
+       "role": "quran",
+       "label": "Dawn: Quran",
+       "pattern": "quran",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "morning",
+       "start": "07:00",
+       "end": "12:00",
+       "role": "low",
+       "label": "Morning",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "afternoon",
+       "start": "12:00",
+       "end": "16:00",
+       "role": "low",
+       "label": "Afternoon",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "kids",
+       "start": "16:00",
+       "end": "17:00",
+       "role": "block",
+       "label": "Kids' hour",
+       "pattern": "strip",
+       "topics": [
+        "audience:kids",
+        "audience:kids_friendly",
+        "seerah",
+        "prophets_stories",
+        "audience:beginners"
+       ],
+       "exclude": [
+        "audience:adults"
+       ]
+      },
+      {
+       "key": "evening",
+       "start": "17:00",
+       "end": "20:00",
+       "role": "high",
+       "label": "Evening",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "prime",
+       "start": "20:00",
+       "end": "23:00",
+       "role": "high",
+       "label": "Prime time",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "late",
+       "start": "23:00",
+       "end": "05:00",
+       "role": "low",
+       "label": "Late night",
+       "pattern": "weekly",
+       "topics": [],
+       "exclude": []
+      }
+     ],
+     "columns": [
+      "key",
+      "start",
+      "end",
+      "role",
+      "label",
+      "pattern",
+      "topics",
+      "exclude"
+     ],
+     "column_kinds": [
+      "str",
+      "time",
+      "time",
+      "str",
+      "str",
+      "str",
+      "list",
+      "list"
+     ],
+     "column_optional": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "ramadan_dayparts",
+     "kind": "rows",
+     "group": "Ramadan",
+     "label": "Ramadan day parts",
+     "help": "",
+     "default": [
+      {
+       "key": "suhoor",
+       "start": "01:00",
+       "end": "04:00",
+       "role": "low",
+       "label": "Suhoor",
+       "pattern": "weekly",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "dawn",
+       "start": "04:00",
+       "end": "06:00",
+       "role": "quran",
+       "label": "Fajr: Quran",
+       "pattern": "quran",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "morning",
+       "start": "06:00",
+       "end": "13:00",
+       "role": "low",
+       "label": "Morning",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "afternoon",
+       "start": "13:00",
+       "end": "17:00",
+       "role": "low",
+       "label": "Afternoon",
+       "pattern": "strip",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "pre_iftar",
+       "start": "17:00",
+       "end": "19:00",
+       "role": "quran",
+       "label": "Before iftar: Quran",
+       "pattern": "quran",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "iftar_prime",
+       "start": "19:00",
+       "end": "22:00",
+       "role": "ramadan",
+       "label": "After iftar: Ramadan programs",
+       "pattern": "strip7",
+       "topics": [],
+       "exclude": []
+      },
+      {
+       "key": "night",
+       "start": "22:00",
+       "end": "01:00",
+       "role": "high",
+       "label": "After taraweeh",
+       "pattern": "weekly",
+       "topics": [],
+       "exclude": []
+      }
+     ],
+     "columns": [
+      "key",
+      "start",
+      "end",
+      "role",
+      "label",
+      "pattern",
+      "topics",
+      "exclude"
+     ],
+     "column_kinds": [
+      "str",
+      "time",
+      "time",
+      "str",
+      "str",
+      "str",
+      "list",
+      "list"
+     ],
+     "column_optional": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "max_channels",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Channels (most)",
+     "help": "At most this many channels in all. Candidates with enough content are taken in the kind order below: themes in their order, presenters largest first; the rest is listed as not placed.",
+     "default": 20,
+     "minimum": 1
+    },
+    {
+     "name": "channel_kind_order",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Lineup order",
+     "help": "Which kinds of channel get the places first: quran, theme, mix, presenter. A kind left out gets no channel.",
+     "default": [
+      "quran",
+      "theme",
+      "mix",
+      "presenter"
+     ]
+    },
+    {
+     "name": "channel_min_days",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Days without a repeat",
+     "help": "A channel needs enough content for this many days without a repeat (at the programme hours a day below); one with less gets no channel and its shows air on the others.",
+     "default": 30.0,
+     "minimum": 0
+    },
+    {
+     "name": "channel_day_hours",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Programme hours a day",
+     "help": "How many hours of a channel's day are programmes (the rest is filler): with the days above, the hours a channel needs.",
+     "default": 20.0,
+     "minimum": 0.5
+    },
+    {
+     "name": "library_tags",
+     "kind": "map",
+     "group": "Channels",
+     "label": "Library tags",
+     "help": "Tags for every video of a library, by the library's exact name: audience:kids (made for children), audience:kids_friendly (fine for them), audience:adults (kept off the kids' channel and the kids' hour), or any topic tag.",
+     "default": {}
+    },
+    {
+     "name": "slot_owner",
+     "kind": "str",
+     "group": "Channels",
+     "label": "A slot belongs to",
+     "help": "show: a slot keeps its show, then the shows left over. presenter: a slot is one sheikh's or source's (8 pm every day): his next show follows in the same slot, else one on the same topic.",
+     "default": "presenter",
+     "choices": [
+      "presenter",
+      "show"
+     ]
+    },
+    {
+     "name": "topic_min_score",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Topic match score",
+     "help": "A show belongs to a theme when its genre is one of the theme's topics, or its tag score for one reaches this.",
+     "default": 0.6
+    },
+    {
+     "name": "theme_min_hours",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Themed channel minimum (hours)",
+     "help": "A theme with fewer hours of shows gets no channel.",
+     "default": 10.0,
+     "minimum": 0
+    },
+    {
+     "name": "theme_episodes",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Themes take single episodes",
+     "help": "A theme also takes the episodes whose own title is about it from every other show (a talk show's Palestine episodes, a tajweed lesson in a lecture series): one collection per presenter, in air order.",
+     "default": true
+    },
+    {
+     "name": "theme_episode_min_score",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Single episode: topic score",
+     "help": "",
+     "default": 0.6
+    },
+    {
+     "name": "theme_episode_min_minutes",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Single episode: from (min)",
+     "help": "",
+     "default": 10.0,
+     "minimum": 0
+    },
+    {
+     "name": "theme_episode_min_count",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Single episodes per presenter (fewest)",
+     "help": "A presenter's collection for a theme needs at least this many episodes.",
+     "default": 2,
+     "minimum": 1
+    },
+    {
+     "name": "mix_channel",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Mix channel",
+     "help": "A general channel mixing every genre.",
+     "default": true
+    },
+    {
+     "name": "mix_number",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Mix channel number",
+     "help": "",
+     "default": 100
+    },
+    {
+     "name": "mix_name",
+     "kind": "str",
+     "group": "Channels",
+     "label": "Mix channel name",
+     "help": "",
+     "default": "Mix"
+    },
+    {
+     "name": "mix_name_ar",
+     "kind": "str",
+     "group": "Channels",
+     "label": "Mix channel name (Arabic)",
+     "help": "",
+     "default": "منوعات"
+    },
+    {
+     "name": "mix_min_hours",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Mix channel minimum (hours)",
+     "help": "",
+     "default": 4.0,
+     "minimum": 0
+    },
+    {
+     "name": "mix_exclude_topics",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Topics kept off the mix channel",
+     "help": "",
+     "default": [
+      "current_affairs"
+     ]
+    },
+    {
+     "name": "mix_daypart_topics",
+     "kind": "map",
+     "group": "Channels",
+     "label": "Mix channel: topics per daypart",
+     "help": "The genres the mix channel prefers in each daypart (its key: morning, prime …). The prime list also counts towards a show's prime-time rank.",
+     "default": {
+      "morning": [
+       "raqaiq",
+       "tafsir",
+       "dua_dhikr",
+       "akhirah",
+       "akhlaq"
+      ],
+      "afternoon": [
+       "fiqh",
+       "hadith",
+       "aqeedah",
+       "shubuhat",
+       "arabic_language",
+       "women",
+       "family_marriage"
+      ],
+      "evening": [
+       "stories",
+       "prophets_stories",
+       "youth",
+       "akhlaq",
+       "dawah"
+      ],
+      "prime": [
+       "seerah",
+       "prophets_stories",
+       "islamic_history",
+       "sahaba",
+       "tafsir"
+      ],
+      "late": [
+       "raqaiq",
+       "akhirah",
+       "aqeedah",
+       "shubuhat",
+       "general"
+      ]
+     }
+    },
+    {
+     "name": "presenter_channels",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Presenter channels",
+     "help": "A channel for each presenter with enough hours and genres.",
+     "default": true
+    },
+    {
+     "name": "presenter_min_hours",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Presenter channel minimum (hours)",
+     "help": "",
+     "default": 30.0,
+     "minimum": 0
+    },
+    {
+     "name": "presenter_min_genres",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Presenter channel minimum genres",
+     "help": "",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "presenter_first_number",
+     "kind": "int",
+     "group": "Channels",
+     "label": "First presenter channel number",
+     "help": "",
+     "default": 150
+    },
+    {
+     "name": "show_max_channels",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Channels per show (most)",
+     "help": "A show airs on at most this many channels (0: no limit), the closest first: the channel of its own topic before an audience or format channel (History before Kids, Palestine before Talk Shows), then the one with fewer hours. Wherever it airs, never at the same time on two channels. A channel left without enough content of its own drops out.",
+     "default": 0,
+     "minimum": 0
+    },
+    {
+     "name": "show_same_time",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Same show, same time on two channels",
+     "help": "Off: a show on more than one channel always airs at different times (8 pm here, 6 pm there), its repeats too.",
+     "default": false
+    },
+    {
+     "name": "presenter_max_channels",
+     "kind": "int",
+     "group": "Channels",
+     "label": "Presenter channels (most)",
+     "help": "Only the largest libraries get a channel of their own; the others air on the theme channels.",
+     "default": 3,
+     "minimum": 0
+    },
+    {
+     "name": "short_series_max_minutes",
+     "kind": "float",
+     "group": "Programmes and filler",
+     "label": "Series shorter than this are filler (min)",
+     "help": "",
+     "default": 9.0,
+     "minimum": 0
+    },
+    {
+     "name": "loose_programs",
+     "kind": "bool",
+     "group": "Programmes and filler",
+     "label": "Stand-alone videos as programmes",
+     "help": "Long videos in no series become programmes, grouped by topic.",
+     "default": true
+    },
+    {
+     "name": "loose_program_min_minutes",
+     "kind": "float",
+     "group": "Programmes and filler",
+     "label": "Stand-alone programme from (min)",
+     "help": "",
+     "default": 15.0,
+     "minimum": 0
+    },
+    {
+     "name": "loose_min_group_videos",
+     "kind": "int",
+     "group": "Programmes and filler",
+     "label": "Stand-alone group from (videos)",
+     "help": "",
+     "default": 6,
+     "minimum": 1
+    },
+    {
+     "name": "loose_skip_genres",
+     "kind": "list",
+     "group": "Programmes and filler",
+     "label": "Stand-alone genres never grouped",
+     "help": "",
+     "default": [
+      "general",
+      "current_affairs"
+     ]
+    },
+    {
+     "name": "filler_max_minutes",
+     "kind": "float",
+     "group": "Fillers",
+     "label": "Longest filler (min)",
+     "help": "",
+     "default": 12.0,
+     "minimum": 0
+    },
+    {
+     "name": "filler_min_s",
+     "kind": "float",
+     "group": "Fillers",
+     "label": "Shortest filler (s)",
+     "help": "",
+     "default": 20.0,
+     "minimum": 0
+    },
+    {
+     "name": "filler_topic_min_score",
+     "kind": "float",
+     "group": "Fillers",
+     "label": "Filler topic match score",
+     "help": "",
+     "default": 0.4
+    },
+    {
+     "name": "filler_exclude_topics",
+     "kind": "list",
+     "group": "Fillers",
+     "label": "Topics never used as filler",
+     "help": "",
+     "default": [
+      "current_affairs"
+     ]
+    },
+    {
+     "name": "generic_filler_topics",
+     "kind": "list",
+     "group": "Fillers",
+     "label": "General filler topics",
+     "help": "The library's general filler, used after a slot's own and the channel's.",
+     "default": [
+      "raqaiq",
+      "akhlaq",
+      "dua_dhikr",
+      "akhirah",
+      "stories",
+      "seerah",
+      "prophets_stories",
+      "tafsir"
+     ]
+    },
+    {
+     "name": "dawn_filler_topics",
+     "kind": "list",
+     "group": "Fillers",
+     "label": "Dawn filler topics",
+     "help": "",
+     "default": [
+      "quran_recitation",
+      "tajweed",
+      "dua_dhikr",
+      "raqaiq"
+     ]
+    },
+    {
+     "name": "include_vertical_shorts",
+     "kind": "bool",
+     "group": "Fillers",
+     "label": "Vertical shorts as filler",
+     "help": "",
+     "default": true
+    },
+    {
+     "name": "filler_recent_window",
+     "kind": "int",
+     "group": "Fillers",
+     "label": "No repeat of the last (fillers)",
+     "help": "",
+     "default": 8,
+     "minimum": 0
+    },
+    {
+     "name": "recitation_genres",
+     "kind": "list",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Recitation genres",
+     "help": "Seasons of these genres are recitation (the Quran lanes and channel); tajweed lessons are not, they air on Quran Learning.",
+     "default": [
+      "quran_recitation"
+     ]
+    },
+    {
+     "name": "recitation_min_score",
+     "kind": "float",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Recitation score",
+     "help": "",
+     "default": 0.5
+    },
+    {
+     "name": "khutbah_min_score",
+     "kind": "float",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Khutbah score",
+     "help": "",
+     "default": 0.5
+    },
+    {
+     "name": "dawn_quran",
+     "kind": "bool",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Quran at dawn",
+     "help": "The quran dayparts play the library's Quran recitation on every channel.",
+     "default": true
+    },
+    {
+     "name": "friday_khutbah",
+     "kind": "bool",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Friday khutbah slot",
+     "help": "",
+     "default": true
+    },
+    {
+     "name": "khutbah_day",
+     "kind": "str",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Khutbah day",
+     "help": "",
+     "default": "fri",
+     "choices": [
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat",
+      "sun"
+     ]
+    },
+    {
+     "name": "khutbah_start",
+     "kind": "time",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Khutbah from",
+     "help": "",
+     "default": "12:00"
+    },
+    {
+     "name": "khutbah_end",
+     "kind": "time",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Khutbah until",
+     "help": "",
+     "default": "13:30"
+    },
+    {
+     "name": "khutbah_only_friday",
+     "kind": "bool",
+     "group": "Quran at dawn, Friday khutbah",
+     "label": "Khutbahs only in their slot",
+     "help": "Khutbah seasons leave the regular shows.",
+     "default": true
+    },
+    {
+     "name": "ramadan_min_score",
+     "kind": "float",
+     "group": "Ramadan",
+     "label": "Ramadan tag score",
+     "help": "",
+     "default": 0.6
+    },
+    {
+     "name": "ramadan_exclusive",
+     "kind": "bool",
+     "group": "Ramadan",
+     "label": "Ramadan shows only in Ramadan",
+     "help": "",
+     "default": false
+    },
+    {
+     "name": "ramadan_grid",
+     "kind": "bool",
+     "group": "Ramadan",
+     "label": "Ramadan schedule",
+     "help": "Channels with Ramadan shows get a second grid for Ramadan.",
+     "default": true
+    },
+    {
+     "name": "min_slot_minutes",
+     "kind": "int",
+     "group": "Grid and slots",
+     "label": "Shortest slot (min)",
+     "help": "",
+     "default": 30,
+     "minimum": 5
+    },
+    {
+     "name": "slot_round_minutes",
+     "kind": "int",
+     "group": "Grid and slots",
+     "label": "Slot step (min)",
+     "help": "Slot lengths are rounded up to this.",
+     "default": 30,
+     "minimum": 1
+    },
+    {
+     "name": "max_lanes_per_daypart",
+     "kind": "int",
+     "group": "Grid and slots",
+     "label": "Shows per daypart (most)",
+     "help": "",
+     "default": 2,
+     "minimum": 1
+    },
+    {
+     "name": "max_slot_minutes",
+     "kind": "int",
+     "group": "Grid and slots",
+     "label": "Longest slot (min)",
+     "help": "",
+     "default": 120,
+     "minimum": 5
+    },
+    {
+     "name": "overrun_tolerance_minutes",
+     "kind": "int",
+     "group": "Grid and slots",
+     "label": "Overrun allowed (min)",
+     "help": "An episode this much longer than its slot still gets the slot.",
+     "default": 5,
+     "minimum": 0
+    },
+    {
+     "name": "weekend_days",
+     "kind": "list",
+     "group": "Grid and slots",
+     "label": "Weekend days",
+     "help": "Strip shows air on the other days; weekly shows take these (mon … sun).",
+     "default": [
+      "fri",
+      "sat"
+     ]
+    },
+    {
+     "name": "cadence_min_gaps",
+     "kind": "int",
+     "group": "How often shows air",
+     "label": "Exact dates needed",
+     "help": "How many exact air dates a show needs before its own rhythm (daily or weekly) is used.",
+     "default": 5,
+     "minimum": 1
+    },
+    {
+     "name": "strip_max_gap_days",
+     "kind": "float",
+     "group": "How often shows air",
+     "label": "Daily if the gap is at most (days)",
+     "help": "",
+     "default": 2.5,
+     "minimum": 0.1
+    },
+    {
+     "name": "weekly_formats",
+     "kind": "list",
+     "group": "How often shows air",
+     "label": "Weekly formats",
+     "help": "Shows of these formats air once a week.",
+     "default": [
+      "program",
+      "interview",
+      "podcast",
+      "documentary",
+      "live"
+     ]
+    },
+    {
+     "name": "strip_formats",
+     "kind": "list",
+     "group": "How often shows air",
+     "label": "Daily formats",
+     "help": "Shows of these formats air every weekday.",
+     "default": [
+      "lecture",
+      "qa_fatwa",
+      "drama"
+     ]
+    },
+    {
+     "name": "strip_max_limited_episodes",
+     "kind": "int",
+     "group": "How often shows air",
+     "label": "Short series air daily (episodes)",
+     "help": "A limited series with at most this many episodes airs every weekday.",
+     "default": 60,
+     "minimum": 0
+    },
+    {
+     "name": "extra_airings",
+     "kind": "bool",
+     "group": "How often shows air",
+     "label": "Extra airings",
+     "help": "A channel with fewer shows than slots repeats its shows. Off: the rest of the week is filler.",
+     "default": true
+    },
+    {
+     "name": "show_member_min_share",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Whole show share",
+     "help": "A show joins a channel whole (all its years) when this share of its hours matches the channel.",
+     "default": 0.5,
+     "minimum": 0
+    },
+    {
+     "name": "fill_target",
+     "kind": "float",
+     "group": "How often shows air",
+     "label": "Fill target",
+     "help": "When a channel's shows fill less than this share of its week, its biggest weekly shows move to daily strips first.",
+     "default": 0.8,
+     "minimum": 0
+    },
+    {
+     "name": "promote_min_episodes",
+     "kind": "int",
+     "group": "How often shows air",
+     "label": "Moved to daily from (episodes)",
+     "help": "",
+     "default": 26,
+     "minimum": 1
+    },
+    {
+     "name": "extra_min_weeks_left",
+     "kind": "float",
+     "group": "How often shows air",
+     "label": "Extra airings keep (weeks)",
+     "help": "An extra airing never brings a slot under this many weeks of episodes.",
+     "default": 8.0,
+     "minimum": 0
+    },
+    {
+     "name": "filler_between_episodes",
+     "kind": "bool",
+     "group": "Fillers",
+     "label": "Filler between episodes",
+     "help": "Pad between the episodes of a long block too, not only at its end.",
+     "default": true
+    },
+    {
+     "name": "slot_filler_topics",
+     "kind": "int",
+     "group": "Fillers",
+     "label": "Slot filler topics",
+     "help": "A slot's own filler matches its shows' first N topics.",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "dead_air_warn_minutes",
+     "kind": "float",
+     "group": "Fillers",
+     "label": "Warn about gaps over (min)",
+     "help": "",
+     "default": 3.0,
+     "minimum": 0
+    },
+    {
+     "name": "quran_rotation",
+     "kind": "str",
+     "group": "Quran channel",
+     "label": "Reciter rotation",
+     "help": "by_day: a reciter (or a few) per day; by_time: reciters change every few hours.",
+     "default": "by_day",
+     "choices": [
+      "by_day",
+      "by_time"
+     ]
+    },
+    {
+     "name": "quran_time_rules",
+     "kind": "rows",
+     "group": "Quran channel",
+     "label": "Styles at set times",
+     "help": "A style plays at these hours every day, rotating among its reciters (mujawwad after Fajr, warsh at night).",
+     "default": [
+      [
+       "04:00",
+       "07:00",
+       "mujawwad"
+      ],
+      [
+       "21:00",
+       "22:00",
+       "warsh"
+      ]
+     ],
+     "columns": [
+      "from",
+      "until",
+      "style"
+     ],
+     "time_columns": [
+      0,
+      1
+     ],
+     "column_kinds": [
+      "time",
+      "time",
+      "str"
+     ]
+    },
+    {
+     "name": "quran_library_min_share",
+     "kind": "float",
+     "group": "Quran channel",
+     "label": "Reciter library share",
+     "help": "A library is a reciter's when this share of its hours is recitation. Only those feed the Quran channel and Quran at dawn.",
+     "default": 0.6,
+     "minimum": 0
+    },
+    {
+     "name": "quran_fallback_any_recitation",
+     "kind": "bool",
+     "group": "Quran channel",
+     "label": "No reciter library: use any recitation",
+     "help": "When no library reaches the share, the library's recitations still make the Quran lanes. Off: no Quran lane then.",
+     "default": true
+    },
+    {
+     "name": "quran_styles",
+     "kind": "map",
+     "group": "Quran channel",
+     "label": "Recitation styles",
+     "help": "The words that name each style in a reciter's library or season names; the first match wins.",
+     "default": {
+      "warsh": [
+       "ورش",
+       "warsh"
+      ],
+      "mujawwad": [
+       "مجود",
+       "مجوّد",
+       "mojawwad",
+       "mujawwad"
+      ],
+      "murattal": [
+       "مرتل",
+       "murattal",
+       "حفص"
+      ]
+     }
+    },
+    {
+     "name": "quran_default_style",
+     "kind": "str",
+     "group": "Quran channel",
+     "label": "Style when none matches",
+     "help": "",
+     "default": "murattal"
+    },
+    {
+     "name": "quran_max_reciters_per_day",
+     "kind": "int",
+     "group": "Quran channel",
+     "label": "Reciters per day (most)",
+     "help": "More reciters than days split each day into up to this many parts.",
+     "default": 4,
+     "minimum": 1
+    },
+    {
+     "name": "quran_rotation_hours",
+     "kind": "int",
+     "group": "Quran channel",
+     "label": "by_time: change every (hours)",
+     "help": "",
+     "default": 4,
+     "minimum": 1
+    },
+    {
+     "name": "quran_filler_topics",
+     "kind": "list",
+     "group": "Quran channel",
+     "label": "Quran channel filler topics",
+     "help": "",
+     "default": [
+      "quran_recitation",
+      "tajweed",
+      "dua_dhikr"
+     ]
+    },
+    {
+     "name": "quran_filler_exclude_formats",
+     "kind": "list",
+     "group": "Quran channel",
+     "label": "Formats never filler on the Quran channel",
+     "help": "",
+     "default": [
+      "lecture",
+      "qa_fatwa",
+      "program",
+      "interview",
+      "podcast",
+      "khutbah"
+     ]
+    },
+    {
+     "name": "prime_unknown_formats",
+     "kind": "list",
+     "group": "Prime time",
+     "label": "Formats ranked like produced shows",
+     "help": "When a show's production style is unknown.",
+     "default": [
+      "program",
+      "documentary",
+      "drama"
+     ]
+    },
+    {
+     "name": "rank_formats",
+     "kind": "list",
+     "group": "Prime time",
+     "label": "Prime-time formats",
+     "help": "",
+     "default": [
+      "program",
+      "documentary",
+      "drama",
+      "interview"
+     ]
+    },
+    {
+     "name": "rank_format_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: prime-time format",
+     "help": "",
+     "default": 1.0
+    },
+    {
+     "name": "rank_prime_topic_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: prime-time topic",
+     "help": "",
+     "default": 0.4
+    },
+    {
+     "name": "rank_size_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: size (most)",
+     "help": "",
+     "default": 0.3
+    },
+    {
+     "name": "rank_size_full_hours",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Full size bonus at (hours)",
+     "help": "",
+     "default": 40.0,
+     "minimum": 0.1
+    },
+    {
+     "name": "rank_ongoing_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: ongoing programme",
+     "help": "",
+     "default": 0.2
+    },
+    {
+     "name": "rank_collection_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: lecture collection",
+     "help": "Usually negative.",
+     "default": -0.8
+    },
+    {
+     "name": "rank_style_bonus",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Bonus: produced style",
+     "help": "Production style is only a tie-breaker.",
+     "default": 0.1
+    },
+    {
+     "name": "format_min_score",
+     "kind": "float",
+     "group": "Prime time",
+     "label": "Format match score",
+     "help": "",
+     "default": 0.5
+    },
+    {
+     "name": "timezone",
+     "kind": "str?",
+     "group": "dizqueTV",
+     "label": "Time zone",
+     "help": "IANA name (Asia/Riyadh); empty: the server's.",
+     "default": null
+    },
+    {
+     "name": "dz_lateness_ms",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Allowed lateness (ms)",
+     "help": "",
+     "default": 900000,
+     "minimum": 0
+    },
+    {
+     "name": "dz_max_days",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Schedule length (days)",
+     "help": "",
+     "default": 365,
+     "minimum": 1
+    },
+    {
+     "name": "dz_pad_ms",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Pad (ms)",
+     "help": "",
+     "default": 1,
+     "minimum": 0
+    },
+    {
+     "name": "dz_filler_cooldown_ms",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler cooldown (ms)",
+     "help": "",
+     "default": 1800000,
+     "minimum": 0
+    },
+    {
+     "name": "dz_filler_max_items",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler list size (most clips)",
+     "help": "A dizqueTV filler list holds the first this many clips of its pool (own promos, then on-topic clips). dizqueTV takes at most 50 MB per request.",
+     "default": 2000,
+     "minimum": 1
+    },
+    {
+     "name": "dz_logo_dir",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Channel logos folder",
+     "help": "The guide's channel logos: <channel key>.png (quran.png, kids.png …), else default.png. Uploaded to dizqueTV with the channels. Empty: none.",
+     "default": ""
+    },
+    {
+     "name": "dz_watermark_file",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Corner logo (watermark)",
+     "help": "A picture shown in a corner of the video on every channel, like a TV station's logo; an animated GIF loops. Empty: none.",
+     "default": ""
+    },
+    {
+     "name": "dz_watermark_position",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Corner logo position",
+     "help": "",
+     "default": "top-right",
+     "choices": [
+      "top-right",
+      "top-left",
+      "bottom-right",
+      "bottom-left"
+     ]
+    },
+    {
+     "name": "dz_watermark_width",
+     "kind": "float",
+     "group": "dizqueTV",
+     "label": "Corner logo width (% of the picture)",
+     "help": "",
+     "default": 12.0,
+     "minimum": 1
+    },
+    {
+     "name": "dz_watermark_margin",
+     "kind": "float",
+     "group": "dizqueTV",
+     "label": "Corner logo margin (% from the edges)",
+     "help": "",
+     "default": 2.0,
+     "minimum": 0
+    },
+    {
+     "name": "dz_art_url",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Logos web address",
+     "help": "Where the logos are served from, e.g. a Cloudflare R2 or Pages address: the files sit there under their own names (…/quran.png, …/watermark.gif) and are checked before use. Empty: uploaded to dizqueTV and served by it.",
+     "default": ""
+    },
+    {
+     "name": "dz_public_url",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "dizqueTV address on the network",
+     "help": "How the TVs and Plex reach dizqueTV, e.g. http://192.168.1.20:8002 or a Tailscale address; used for the links of logos dizqueTV serves. Empty: the address the export uses (localhost works on this PC only).",
+     "default": ""
+    }
+   ]
+  },
+  {
+   "key": "groups",
+   "title": "Grouping",
+   "what": "clip and stand-alone collections, promos, questions and fatwas",
+   "fields": [
+    {
+     "name": "filler_max_minutes",
+     "kind": "float",
+     "group": "Grouping",
+     "label": "Clip up to (min)",
+     "help": "Longer leftovers are stand-alone programmes (منفردات), shorter ones clips (filler).",
+     "default": 9.0,
+     "minimum": 0
+    },
+    {
+     "name": "min_playlist",
+     "kind": "int",
+     "group": "Grouping",
+     "label": "Playlist group from (videos)",
+     "help": "",
+     "default": 5,
+     "minimum": 1
+    },
+    {
+     "name": "min_topic",
+     "kind": "int",
+     "group": "Grouping",
+     "label": "Topic group from (videos)",
+     "help": "",
+     "default": 10,
+     "minimum": 1
+    },
+    {
+     "name": "qa_phrases",
+     "kind": "list",
+     "group": "Grouping",
+     "label": "Question / fatwa phrases",
+     "help": "A title with one of these goes to \"فتاوى ومسائل\". A phrase matches the start of a word (ما رأي → ما رأيك); end it with a space to match it only as a whole word (\"حكم \" is not حكمة).",
+     "default": [
+      "هل يجوز",
+      "هل يصح",
+      "هل يلزم",
+      "هل يشرع",
+      "هل يجب",
+      "ما حكم",
+      "حكم ",
+      "سؤال",
+      "أسئلة",
+      "اسألة",
+      "فتوى",
+      "فتاوى",
+      "فتاوي",
+      "يسأل",
+      "ما الفرق",
+      "ما معنى",
+      "مامعنى",
+      "ما الراجح",
+      "ما رأي",
+      "ما موقف",
+      "ما صحة",
+      "استفسار"
+     ]
+    },
+    {
+     "name": "promo_words",
+     "kind": "list",
+     "group": "Grouping",
+     "label": "Promo words",
+     "help": "A title with one of these advertises a show; it is linked to the show it names.",
+     "default": [
+      "برومو",
+      "promo",
+      "اعلان",
+      "تشويق",
+      "قريبا",
+      "trailer",
+      "teaser",
+      "تتر"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "detect",
+   "title": "Detection",
+   "what": "how shows, seasons and talk shows are found",
+   "fields": [
+    {
+     "name": "generic_words",
+     "kind": "words",
+     "group": "Names and playlists",
+     "label": "Words that never name a show",
+     "help": "Ignored when a show's name is read from titles (the presenter's and channel's words are added).",
+     "default": [
+      "full",
+      "hd",
+      "ramadan",
+      "series",
+      "الحلقات",
+      "الدكتور",
+      "الرسميه",
+      "السلسله",
+      "الشيخ",
+      "برامج",
+      "برنامج",
+      "جديد",
+      "حصريا",
+      "حلقات",
+      "حلقه",
+      "د",
+      "رمضان",
+      "سلسله",
+      "علي",
+      "في",
+      "قناه",
+      "كامل",
+      "كامله",
+      "للشيخ",
+      "مع"
+     ]
+    },
+    {
+     "name": "clip_playlist_re",
+     "kind": "str",
+     "group": "Names and playlists",
+     "label": "Clip playlists (pattern)",
+     "help": "A playlist whose title matches holds clips, never a show's episodes.",
+     "default": "^(مقاطع|مقطع|مختارات|مقتطفات|بثوث|بث مباشر|shorts|clips|highlights)"
+    },
+    {
+     "name": "catch_all_re",
+     "kind": "str",
+     "group": "Names and playlists",
+     "label": "Catch-all playlists (pattern)",
+     "help": "\"All videos\", \"منوعات\": never a show once this big.",
+     "default": "(^|\\s)(جميع|كل ال|كافه|منوعات|متنوعه|المتنوعه|all videos|uploads)"
+    },
+    {
+     "name": "catch_all_min",
+     "kind": "int",
+     "group": "Names and playlists",
+     "label": "Catch-all from (videos)",
+     "help": "",
+     "default": 40,
+     "minimum": 1
+    },
+    {
+     "name": "core_band",
+     "kind": "float",
+     "group": "Seasons",
+     "label": "Episode length band",
+     "help": "A season's videos farther than this factor from its usual length are extras.",
+     "default": 2.2,
+     "minimum": 1
+    },
+    {
+     "name": "same_show_ratio",
+     "kind": "float",
+     "group": "Seasons",
+     "label": "Same show length ratio",
+     "help": "Two playlists of one name are one show only if their usual lengths are this close.",
+     "default": 2.5,
+     "minimum": 1
+    },
+    {
+     "name": "short_form_s",
+     "kind": "float",
+     "group": "Seasons",
+     "label": "Promo length (s)",
+     "help": "Shorter extras count as promos.",
+     "default": 240.0,
+     "minimum": 0
+    },
+    {
+     "name": "attach_threshold",
+     "kind": "float",
+     "group": "Matching loose videos",
+     "label": "Match score",
+     "help": "A video in no playlist joins a season from this score.",
+     "default": 0.62
+    },
+    {
+     "name": "date_window_days",
+     "kind": "int",
+     "group": "Matching loose videos",
+     "label": "Date window (days)",
+     "help": "",
+     "default": 45,
+     "minimum": 0
+    },
+    {
+     "name": "approx_window_days",
+     "kind": "int",
+     "group": "Matching loose videos",
+     "label": "Date window, approximate dates (days)",
+     "help": "",
+     "default": 400,
+     "minimum": 0
+    },
+    {
+     "name": "sig_length_band",
+     "kind": "float",
+     "group": "Matching loose videos",
+     "label": "Fingerprint length band",
+     "help": "",
+     "default": 0.35,
+     "minimum": 0
+    },
+    {
+     "name": "sig_window_days",
+     "kind": "int",
+     "group": "Matching loose videos",
+     "label": "Fingerprint date window (days)",
+     "help": "",
+     "default": 180,
+     "minimum": 0
+    },
+    {
+     "name": "dhash_close_bits",
+     "kind": "int",
+     "group": "Matching loose videos",
+     "label": "Thumbnail match (bits)",
+     "help": "",
+     "default": 10,
+     "minimum": 0
+    },
+    {
+     "name": "min_season_size",
+     "kind": "int",
+     "group": "Seasons",
+     "label": "Smallest season (episodes)",
+     "help": "",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "ongoing_min_episodes",
+     "kind": "int",
+     "group": "Ongoing programmes",
+     "label": "Ongoing from (episodes)",
+     "help": "",
+     "default": 12,
+     "minimum": 1
+    },
+    {
+     "name": "ongoing_min_number",
+     "kind": "int",
+     "group": "Ongoing programmes",
+     "label": "Ongoing when numbers reach",
+     "help": "",
+     "default": 60,
+     "minimum": 1
+    },
+    {
+     "name": "ongoing_min_span_days",
+     "kind": "int",
+     "group": "Ongoing programmes",
+     "label": "Ongoing span (days)",
+     "help": "",
+     "default": 730,
+     "minimum": 0
+    },
+    {
+     "name": "ongoing_month_coverage",
+     "kind": "float",
+     "group": "Ongoing programmes",
+     "label": "Ongoing month coverage",
+     "help": "The share of months in the span with an episode.",
+     "default": 0.5,
+     "minimum": 0
+    },
+    {
+     "name": "min_episode_s",
+     "kind": "float",
+     "group": "Seasons",
+     "label": "Shortest episode (s)",
+     "help": "Anything shorter is a short or a clip, never an episode.",
+     "default": 180.0,
+     "minimum": 0
+    },
+    {
+     "name": "brand_min",
+     "kind": "int",
+     "group": "Talk shows (title brands)",
+     "label": "Talk show from (videos)",
+     "help": "A title part (شاهد على العصر |) carried by at least this many videos names a show.",
+     "default": 20,
+     "minimum": 1
+    },
+    {
+     "name": "brand_share",
+     "kind": "float",
+     "group": "Talk shows (title brands)",
+     "label": "Talk show share of the channel",
+     "help": "",
+     "default": 0.02,
+     "minimum": 0
+    },
+    {
+     "name": "brand_scattered_series",
+     "kind": "int",
+     "group": "Talk shows (title brands)",
+     "label": "Rebuild when spread over (series)",
+     "help": "",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "brand_named_share",
+     "kind": "float",
+     "group": "Talk shows (title brands)",
+     "label": "Rebuild below this share in its own series",
+     "help": "",
+     "default": 0.7,
+     "minimum": 0
+    },
+    {
+     "name": "topic_min",
+     "kind": "int",
+     "group": "Names and playlists",
+     "label": "Topic collection from (videos)",
+     "help": "A curated playlist cutting across shows (الشأن الفلسطيني) becomes a topic collection.",
+     "default": 5,
+     "minimum": 1
+    }
+   ]
+  }
+ ]
+}

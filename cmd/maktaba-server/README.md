@@ -62,5 +62,10 @@ The `[database].url` scheme selects the driver (`internal/dsn`):
 - `postgres://…` → lib/pq (owned by the api binary)
 - `sqlite://…`   → modernc.org/sqlite (pure-Go, CGO-free)
 
-The migration tree already ships `.sqlite.sql` parity siblings, so the
-same `migrate` command works against either backend.
+The migration tree already ships `.sqlite.sql` parity siblings and the same
+`migrate up|status|version` command works against either backend. For `sqlite://`
+DSNs it applies the twins itself (`api/migrate_sqlite.go`) instead of goose: stock
+SQLite has no `ADD COLUMN IF NOT EXISTS`, which twelve legacy twins use, so the
+runner turns it into a `PRAGMA table_info`-guarded `ADD COLUMN`, and it adds the
+`videos` columns the 0004 rebuild needs before slot 0007 creates them. Old twins
+are never edited. Rollbacks (`down`) are Postgres only.

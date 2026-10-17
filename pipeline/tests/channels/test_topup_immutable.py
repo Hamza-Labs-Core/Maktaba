@@ -85,3 +85,37 @@ async def test_topup_all_touches_due_channel() -> None:
     touched = await topup_all(repo, now=now, horizon=timedelta(hours=6))
     assert touched == 1
     assert repo.blocks
+
+
+@pytest.mark.asyncio
+async def test_stale_regen_starts_after_the_block_on_air() -> None:
+    # An edited channel (stale) is regenerated from now, but the block on air
+    # stays (D3): the new timeline follows it instead of overlapping it.
+    ch = mk_channel(ChannelMode.SHUFFLE)
+    repo = FakeRepo(ch, mk_content(6, dur_ms=20 * 60_000))
+    t0 = dt("2026-06-14T18:00:00")
+    await run_schedule(repo, ch.id, now=t0, horizon=timedelta(hours=4))
+    repo.state.stale = True
+    t1 = t0 + timedelta(minutes=10)  # mid-way through the first 20-min block
+    await run_schedule(repo, ch.id, now=t1, horizon=timedelta(hours=4))
+    blocks = sorted(repo.blocks, key=lambda b: b.start_at)
+    for a, b in zip(blocks, blocks[1:], strict=False):
+        assert a.end_at == b.start_at, (a, b)
+    assert blocks[0].start_at == t0 and blocks[1].start_at == t0 + timedelta(minutes=20)
+
+
+@pytest.mark.asyncio
+async def test_slot_times_are_the_channels_wall_clock() -> None:
+    """A 05:00 dawn slot in Asia/Riyadh starts at 02:00 UTC, not at 05:00 UTC."""
+    from datetime import UTC
+
+    cfg = {"slots": [{"start": "05:00", "end": "07:00"}], "timezone": "Asia/Riyadh"}
+    ch = mk_channel(ChannelMode.SCHEDULE, mode_config=cfg)
+    repo = FakeRepo(ch, mk_content(8, dur_ms=30 * 60_000))
+    now = dt("2026-06-14T00:00:00")  # 03:00 in Riyadh
+    await run_schedule(repo, ch.id, now=now, horizon=timedelta(hours=6))
+    progs = sorted(
+        (b for b in repo.blocks if b.kind == BlockKind.PROGRAM), key=lambda b: b.start_at
+    )
+    assert progs and progs[0].start_at.astimezone(UTC) == dt("2026-06-14T02:00:00")
+    assert progs[-1].end_at.astimezone(UTC) <= dt("2026-06-14T04:00:00")

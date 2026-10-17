@@ -33,7 +33,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from typing import Any, Protocol, runtime_checkable
 
-from ..db.pubsub import JOBS_NEW, PubsubBus, get_bus
+from ..db.pubsub import JOBS_CONTROL, JOBS_NEW, PubsubBus, get_bus
 
 __all__ = [
     "PgListenWakeup",
@@ -154,12 +154,15 @@ class PgListenWakeup:
         *,
         poll_sec: float,
         channel: str = JOBS_NEW,
+        extra_channels: tuple[str, ...] = (JOBS_CONTROL,),
     ) -> None:
         if poll_sec <= 0:
             raise ValueError("poll_sec must be > 0")
         self.poll_sec = poll_sec
         self._db = db
         self._channel = channel
+        #: ``jobs.control`` wakes the loop when a pool size, stage or global pause changed
+        self._extra = extra_channels
         self._stop = asyncio.Event()
 
     async def signals(self) -> AsyncIterator[None]:
@@ -174,6 +177,8 @@ class PgListenWakeup:
                 events.put_nowait(None)
 
         await listener.add_listener(self._channel, _on_notify)
+        for extra in self._extra:
+            await listener.add_listener(extra, _on_notify)
         try:
             while not self._stop.is_set():
                 await _race(
@@ -192,6 +197,8 @@ class PgListenWakeup:
                 # have been closed, the connection may have died, or
                 # the wrapper may have removed it under us.
                 await listener.remove_listener(self._channel, _on_notify)
+                for extra in self._extra:
+                    await listener.remove_listener(extra, _on_notify)
 
     async def aclose(self) -> None:
         self._stop.set()

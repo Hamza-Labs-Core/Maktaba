@@ -94,4 +94,24 @@ describe("Search", () => {
       expect(screen.getByText(/no results/i)).toBeInTheDocument();
     });
   });
+
+  it("lists title matches, linked to the video, when no transcript matches", async () => {
+    post.mockResolvedValue({
+      hits: [],
+      videos: [{ video_id: "vid-9", title: "السيرة النبوية ( 18 )", duration_sec: 3600 }],
+      total: 0,
+      took_ms: { fts: 1, semantic: 0, fusion: 0 },
+      mode: "hybrid",
+      filters: {},
+    });
+
+    renderSearch();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("combobox", { name: /search/i }), "السيرة");
+    await user.click(screen.getByRole("button", { name: /^search$/i }));
+
+    const link = await screen.findByRole("link", { name: /السيرة النبوية/ });
+    expect(link).toHaveAttribute("href", "/videos/vid-9");
+    expect(screen.queryByText(/No results/)).not.toBeInTheDocument();
+  });
 });

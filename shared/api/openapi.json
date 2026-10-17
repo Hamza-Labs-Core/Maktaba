@@ -3763,6 +3763,1597 @@
           }
         }
       }
+    },
+    "/queues": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Queue overview snapshot",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuesSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueuesSnapshot"
+      }
+    },
+    "/queues/graph": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Stage graph and worker pools",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueStageInfo"
+                      }
+                    },
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkerPool"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueGraph"
+      }
+    },
+    "/queues/libraries": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Per-library queue progress (cached 5 s)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LibraryQueueRow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueLibraries"
+      }
+    },
+    "/queues/health": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Health metrics over time",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "default": 6
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "series": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/HealthSeries"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueHealth"
+      }
+    },
+    "/queues/pause-all": {
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Pause every queue",
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "pauseAllQueues"
+      }
+    },
+    "/queues/resume-all": {
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Resume every queue",
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "resumeAllQueues"
+      }
+    },
+    "/queues/{stage}": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "One queue: KPIs, running, next up, failures, log",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueDetail"
+      },
+      "patch": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Enable/disable a queue or set its write mode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "write_mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "apply",
+                      "review"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueStageInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Stage is not configured.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "patchQueue"
+      }
+    },
+    "/queues/{stage}/rate": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Done/failed/skipped per 10 minutes",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "default": 24
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bucket_sec": {
+                      "type": "integer"
+                    },
+                    "points": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueRatePoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueRate"
+      }
+    },
+    "/queues/{stage}/jobs": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Jobs of a queue (keyset paged, newest first)",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma separated job states."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueJobRef"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listQueueJobs"
+      }
+    },
+    "/queues/{stage}/failures": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Open failures grouped by cause",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FailureGroup"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueFailures"
+      }
+    },
+    "/queues/{stage}/pause": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Pause a queue (running jobs finish)",
+        "parameters": [
+          {
+            "name": "interrupt",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Also ask cooperative stages (transcribe) to pause mid-run."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "pauseQueue"
+      }
+    },
+    "/queues/{stage}/resume": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Resume a queue",
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "resumeQueue"
+      }
+    },
+    "/queues/{stage}/retry": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Retry failures of a cause or specific jobs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "One of cause or job_ids is required.",
+                "properties": {
+                  "cause": {
+                    "type": "string"
+                  },
+                  "job_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enqueued": {
+                      "type": "integer"
+                    },
+                    "coalesced": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "retryQueueFailures"
+      }
+    },
+    "/queues/{stage}/apply": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Apply reviewed external writes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "all": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enqueued": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "applyQueueReviews"
+      }
+    },
+    "/pools": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Worker pools",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkerPool"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listPools"
+      }
+    },
+    "/pools/{pool}": {
+      "parameters": [
+        {
+          "name": "pool",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Resize a pool",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "size"
+                ],
+                "properties": {
+                  "size": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 64
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerPool"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "putPool"
+      }
+    },
+    "/queue/retrigger": {
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Re-add subjects to their entry queues",
+        "description": "Every item is enqueued through the processing_jobs_enqueue SQL function in one transaction.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetriggerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetriggerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "retriggerQueue"
+      }
+    },
+    "/issues": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "All open issues (failures, awaiting review, stale graph)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FailureGroup"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listIssues"
+      }
+    },
+    "/activity": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Activity log (job_events)",
+        "parameters": [
+          {
+            "name": "stage",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "library_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "info",
+              "enum": [
+                "debug",
+                "info",
+                "warn",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueLogLine"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listActivity"
+      }
+    },
+    "/jobs/{id}/events": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/JobId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Log of one job",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueLogLine"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listJobEvents"
+      }
+    },
+    "/items/{kind}/{id}/history": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "video",
+              "library",
+              "series",
+              "season",
+              "catalog"
+            ]
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "History of one subject across queues",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueItemHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getItemHistory"
+      }
+    },
+    "/workers": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Registered workers and whether they are online",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/QueueWorker"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listWorkers"
+      }
+    },
+    "/extensions": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Optional extensions (Plex, dizqueTV)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ExtensionInfo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listExtensions"
+      }
+    },
+    "/extensions/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Enable/disable an extension or update its settings (secrets are write-only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "putExtension"
+      }
+    },
+    "/extensions/{name}/test": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Test an extension connection (not implemented yet)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "testExtension"
+      }
+    },
+    "/ws/queues": {
+      "get": {
+        "tags": [
+          "WebSocket"
+        ],
+        "summary": "Queue snapshot stream (Server-Sent Events)",
+        "description": "SSE. Sends one `queues.snapshot` immediately, then every 2 s while subscribed. Ephemeral: no `id:` lines, no replay.",
+        "responses": {
+          "200": {
+            "description": "text/event-stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "streamQueues"
+      }
     }
   },
   "components": {
@@ -6060,6 +7651,1050 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "QueueJobRef": {
+        "type": "object",
+        "description": "A job as shown in queue views (REST and SSE).",
+        "required": [
+          "id",
+          "stage",
+          "state",
+          "subject_kind",
+          "subject_id",
+          "subject_label",
+          "library_id",
+          "priority",
+          "attempts",
+          "max_attempts",
+          "outcome",
+          "error_cause",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "progress"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_label": {
+            "type": "string"
+          },
+          "library_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_cause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "QueueEdge": {
+        "type": "object",
+        "description": "One edge of the stage graph.",
+        "required": [
+          "to",
+          "map",
+          "when",
+          "legacy"
+        ],
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "map": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "legacy": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QueueStageInfo": {
+        "type": "object",
+        "description": "A row of job_stages plus computed fed_by.",
+        "required": [
+          "stage",
+          "label",
+          "lane",
+          "lane_order",
+          "subject_kinds",
+          "pool",
+          "version",
+          "legacy",
+          "hidden",
+          "external_write",
+          "write_mode",
+          "enabled",
+          "disabled_reason",
+          "paused",
+          "paused_at",
+          "paused_by",
+          "debounce_sec",
+          "edges",
+          "may_request",
+          "entry_for",
+          "fed_by",
+          "extension",
+          "graph_synced_at"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "lane_order": {
+            "type": "integer"
+          },
+          "subject_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pool": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "external_write": {
+            "type": "boolean"
+          },
+          "write_mode": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "paused_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paused_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "debounce_sec": {
+            "type": "integer"
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueEdge"
+            }
+          },
+          "may_request": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "entry_for": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fed_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extension": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "graph_synced_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkerPool": {
+        "type": "object",
+        "description": "A worker pool with live usage.",
+        "required": [
+          "pool",
+          "label",
+          "scope",
+          "size",
+          "effective_size",
+          "busy",
+          "stages",
+          "updated_at",
+          "updated_by"
+        ],
+        "properties": {
+          "pool": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "effective_size": {
+            "type": "integer"
+          },
+          "busy": {
+            "type": "integer"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "QueueCounts": {
+        "type": "object",
+        "description": "Per-stage counters.",
+        "required": [
+          "pending",
+          "ready",
+          "running",
+          "paused",
+          "failed_open",
+          "done_24h",
+          "skipped_24h",
+          "awaiting_review"
+        ],
+        "properties": {
+          "pending": {
+            "type": "integer"
+          },
+          "ready": {
+            "type": "integer"
+          },
+          "running": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "integer"
+          },
+          "failed_open": {
+            "type": "integer"
+          },
+          "done_24h": {
+            "type": "integer"
+          },
+          "skipped_24h": {
+            "type": "integer"
+          },
+          "awaiting_review": {
+            "type": "integer"
+          }
+        }
+      },
+      "QueueSummary": {
+        "type": "object",
+        "description": "Per-stage card data (gauge, rate, ETA, waiting reason, worker coverage).",
+        "required": [
+          "stage",
+          "counts",
+          "wave",
+          "rate_per_min",
+          "eta_sec",
+          "oldest_waiting_sec",
+          "waiting_reason",
+          "running_jobs",
+          "served_by",
+          "served_workers",
+          "no_worker",
+          "extension"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/QueueCounts"
+          },
+          "wave": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "rate_per_min": {
+            "type": "number"
+          },
+          "eta_sec": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "oldest_waiting_sec": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "waiting_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "running_jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueJobRef"
+            }
+          },
+          "served_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "served_workers": {
+            "type": "integer"
+          },
+          "no_worker": {
+            "type": "boolean"
+          },
+          "extension": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "QueueFlow": {
+        "type": "object",
+        "description": "Trigger traffic between two stages.",
+        "required": [
+          "from",
+          "to",
+          "per_min"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "per_min": {
+            "type": "number"
+          }
+        }
+      },
+      "QueueHealth": {
+        "type": "object",
+        "description": "Health strip.",
+        "required": [
+          "nas",
+          "cpu",
+          "network",
+          "backlog",
+          "spark"
+        ],
+        "properties": {
+          "nas": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "cpu": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "network": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "backlog": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "spark": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "QueuesSnapshot": {
+        "type": "object",
+        "description": "Everything the overview needs; also the queues.snapshot SSE payload.",
+        "required": [
+          "at",
+          "paused_all",
+          "stages",
+          "queues",
+          "pools",
+          "flows",
+          "health",
+          "issues_count"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "paused_all": {
+            "type": "boolean"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueStageInfo"
+            }
+          },
+          "queues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueSummary"
+            }
+          },
+          "pools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkerPool"
+            }
+          },
+          "flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueFlow"
+            }
+          },
+          "health": {
+            "$ref": "#/components/schemas/QueueHealth"
+          },
+          "issues_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "QueueRatePoint": {
+        "type": "object",
+        "description": "One 10-minute bucket.",
+        "required": [
+          "t",
+          "done",
+          "failed",
+          "skipped",
+          "nas_timeouts"
+        ],
+        "properties": {
+          "t": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "done": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "nas_timeouts": {
+            "type": "integer"
+          }
+        }
+      },
+      "QueueDetail": {
+        "type": "object",
+        "description": "One queue page.",
+        "required": [
+          "info",
+          "summary",
+          "kpis",
+          "running",
+          "next_up",
+          "failures",
+          "log"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/QueueStageInfo"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/QueueSummary"
+          },
+          "kpis": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "running": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueJobRef"
+            }
+          },
+          "next_up": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueJobRef"
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailureGroup"
+            }
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueLogLine"
+            }
+          }
+        }
+      },
+      "FailureGroup": {
+        "type": "object",
+        "description": "Open failures of a stage grouped by normalised cause (plus awaiting_review / stale_graph).",
+        "required": [
+          "stage",
+          "cause",
+          "label",
+          "count",
+          "first_at",
+          "last_at",
+          "sample_message",
+          "sample_subjects",
+          "action"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "first_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sample_message": {
+            "type": "string"
+          },
+          "sample_subjects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      },
+      "QueueLogLine": {
+        "type": "object",
+        "description": "One job_events row.",
+        "required": [
+          "id",
+          "at",
+          "job_id",
+          "stage",
+          "subject_kind",
+          "subject_id",
+          "subject_label",
+          "level",
+          "kind",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_label": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "RetriggerRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 5000,
+            "items": {
+              "type": "object",
+              "required": [
+                "subject_kind",
+                "subject_id"
+              ],
+              "properties": {
+                "subject_kind": {
+                  "type": "string",
+                  "enum": [
+                    "video",
+                    "library",
+                    "series",
+                    "season",
+                    "catalog"
+                  ]
+                },
+                "subject_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "stage": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "queue",
+              "force",
+              "force_cascade"
+            ],
+            "default": "queue"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "RetriggerResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subject_kind": {
+                  "type": "string"
+                },
+                "subject_id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                },
+                "job_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "inserted",
+                    "coalesced",
+                    "rerun_requested",
+                    "disabled",
+                    "unknown_stage",
+                    "invalid_subject"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "QueueItemHistory": {
+        "type": "object",
+        "description": "History and re-queue options of one subject.",
+        "required": [
+          "subject",
+          "kinds",
+          "queues",
+          "appears_in",
+          "timeline",
+          "next"
+        ],
+        "properties": {
+          "subject": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "queues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "appears_in": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LibraryQueueRow": {
+        "type": "object",
+        "description": "One row of the libraries table.",
+        "required": [
+          "library_id",
+          "name",
+          "videos",
+          "seasons",
+          "strip",
+          "last_activity_at"
+        ],
+        "properties": {
+          "library_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "videos": {
+            "type": "integer"
+          },
+          "seasons": {
+            "type": "integer"
+          },
+          "strip": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "last_activity_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HealthSeries": {
+        "type": "object",
+        "description": "One health metric over time (nas.open_ms_p95, cpu.pct, net.plex_ms, backlog.ready, ...).",
+        "required": [
+          "metric",
+          "points"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "QueueWorker": {
+        "type": "object",
+        "description": "A registered worker.",
+        "required": [
+          "worker_id",
+          "host",
+          "online",
+          "last_seen_at",
+          "serves",
+          "serves_label",
+          "pools",
+          "started_at",
+          "version"
+        ],
+        "properties": {
+          "worker_id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "serves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serves_label": {
+            "type": "string"
+          },
+          "pools": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExtensionInfo": {
+        "type": "object",
+        "description": "An optional extension (Plex, dizqueTV). Secret settings are never returned.",
+        "required": [
+          "name",
+          "label",
+          "description",
+          "version",
+          "enabled",
+          "configured",
+          "settings_schema",
+          "settings",
+          "secrets_set"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "settings_schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "secrets_set": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

@@ -70,9 +70,15 @@ class ScheduleRepo(Protocol):
 
     async def resolve_content(self, channel: ChannelDef) -> list[ContentItem]: ...
 
+    async def resolve_slot_content(
+        self, channel: ChannelDef
+    ) -> list[list[ContentItem] | None] | None: ...
+
     async def load_filler(self, channel: ChannelDef) -> list[FillerItem]: ...
 
     async def max_seq_before(self, channel_id: UUID, anchor: datetime) -> int: ...
+
+    async def airing_until(self, channel_id: UUID, at: datetime) -> datetime | None: ...
 
     async def replace_future_blocks(
         self, channel_id: UUID, *, from_at: datetime, blocks: list[Block]
@@ -88,6 +94,8 @@ class SqlRepo:
 
     def __init__(self, conn: DBConn) -> None:
         self._c = conn
+        # the latest plan's lanes, read once per repo (one top-up sweep)
+        self._lane_cache: dict[str, Any] | None = None
 
     async def load_channel(self, channel_id: UUID) -> ChannelDef | None:
         row = await self._c.fetchrow(
@@ -161,10 +169,119 @@ class SqlRepo:
             )
         return out
 
+    async def resolve_slot_content(
+        self, channel: ChannelDef
+    ) -> list[list[ContentItem] | None] | None:
+        """Each slot's own content, by index: a ``lane`` source (what the TV-grid
+        planner writes) is that lane's episodes, in queue order, from the latest
+        channel plan (which also holds the planner's synthetic "loose" shows, so
+        it, not ``series_episodes``, is the source); any other slot is None (the
+        channel-wide content). None when no slot names a lane."""
+        slots = channel.mode_config.get("slots") or []
+        names = [slot_lane(slot) for slot in slots]
+        wanted = sorted({n for n in names if n})
+        if not wanted:
+            return None
+        queues = {name: lane_episodes(lane) for name, lane in (await self._lanes(wanted)).items()}
+        ids = sorted({str(c.video_id) for q in queues.values() for c in q})
+        live = await self._live_videos(ids)  # id -> title (the plan's is the file name)
+        return [
+            [
+                ContentItem(c.video_id, c.duration_ms, live[str(c.video_id)] or _bare(c.title))
+                for c in queues.get(n, [])
+                if str(c.video_id) in live
+            ]
+            if n
+            else None
+            for n in names
+        ]
+
+    @property
+    def _pg(self) -> bool:
+        return getattr(self._c, "dialect", "postgres") == "postgres"
+
+    async def _lanes(self, names: list[str]) -> dict[str, Any]:
+        """The named lanes of the latest plan. The plan is large (one TOASTed
+        value), so the first call reads every lane any channel's slots name, in
+        one pass over it, and later channels of the sweep reuse them."""
+        if self._lane_cache is None:
+            self._lane_cache = await self._read_lanes(await self._all_slot_lanes())
+        missing = [n for n in names if n not in self._lane_cache]
+        if missing:  # a lane named only since the sweep began
+            self._lane_cache.update(await self._read_lanes(missing))
+        return {n: self._lane_cache[n] for n in names if n in self._lane_cache}
+
+    async def _all_slot_lanes(self) -> list[str]:
+        out: set[str] = set()
+        for r in await self._c.fetch("SELECT mode_config FROM channels WHERE enabled = true"):
+            for slot in _json(r["mode_config"]).get("slots") or []:
+                name = slot_lane(slot)
+                if name:
+                    out.add(name)
+        return sorted(out)
+
+    async def _read_lanes(self, names: list[str]) -> dict[str, Any]:
+        if not names:
+            return {}
+        if self._pg:
+            # MATERIALIZED: the plan is detoasted once, not once per lane
+            row = await self._c.fetchrow(
+                """
+                WITH l AS MATERIALIZED (
+                    SELECT plan->'lanes' AS lanes FROM channel_plans ORDER BY id DESC LIMIT 1
+                )
+                SELECT jsonb_object_agg(k, l.lanes->k) AS lanes
+                FROM l, unnest($1::text[]) AS k WHERE l.lanes ? k
+                """,
+                names,
+            )
+            return _json(row["lanes"]) if row is not None else {}
+        out: dict[str, Any] = {}
+        for name in names:
+            path = '$.lanes."' + name.replace('"', '\\"') + '"'
+            row = await self._c.fetchrow(
+                "SELECT json_extract(plan, $1) AS lane FROM channel_plans ORDER BY id DESC LIMIT 1",
+                path,
+            )
+            lane = _json(row["lane"]) if row is not None else {}
+            if lane:
+                out[name] = lane
+        return out
+
+    async def _live_videos(self, ids: list[str]) -> dict[str, str]:
+        """The ids still present, with their titles."""
+        if not ids:
+            return {}
+        if self._pg:
+            rows = await self._c.fetch(
+                "SELECT id, title FROM videos WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL",
+                ids,
+            )
+            return {str(r["id"]): r["title"] or "" for r in rows}
+        live: dict[str, str] = {}
+        for i in range(0, len(ids), 500):
+            part = ids[i : i + 500]
+            marks = ",".join(f"${n}" for n in range(1, len(part) + 1))
+            rows = await self._c.fetch(
+                f"SELECT id, title FROM videos WHERE id IN ({marks}) AND deleted_at IS NULL",
+                *part,
+            )
+            live.update((str(r["id"]), r["title"] or "") for r in rows)
+        return live
+
     async def load_filler(self, channel: ChannelDef) -> list[FillerItem]:
         # Filler pools land in slot 0085 (Story 27.10); until then there
         # is no filler and the packer falls back to slate (D6/D9).
         return []
+
+    async def airing_until(self, channel_id: UUID, at: datetime) -> datetime | None:
+        row = await self._c.fetchrow(
+            "SELECT max(end_at) AS e FROM channel_programs"
+            " WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2",
+            channel_id,
+            at,
+        )
+        return None if row is None else row["e"]
 
     async def max_seq_before(self, channel_id: UUID, anchor: datetime) -> int:
         row = await self._c.fetchrow(
@@ -239,6 +356,36 @@ class SqlRepo:
             low_water,
         )
         return [UUID(str(r["id"])) for r in rows]
+
+
+def slot_lane(slot: dict[str, Any]) -> str | None:
+    """The plan lane a slot's ``lane`` source plays, if it has one."""
+    src = slot.get("source") or {}
+    if not isinstance(src, dict) or src.get("type") != "lane" or not src.get("lane"):
+        return None
+    return str(src["lane"])
+
+
+def _bare(name: str) -> str:
+    """A file name as a title: without its extension (``….mp4``)."""
+    stem, dot, ext = name.rpartition(".")
+    return stem if dot and stem and 2 <= len(ext) <= 4 and ext.isalnum() else name
+
+
+def lane_episodes(lane: dict[str, Any]) -> list[ContentItem]:
+    """A plan lane's episodes in queue order: its shows one after the other. An
+    episode's ``path`` in the plan is the Maktaba video id."""
+    out: list[ContentItem] = []
+    for unit in lane.get("units") or []:
+        for ep in unit.get("episodes") or []:
+            try:
+                vid = UUID(str(ep.get("path")))
+            except ValueError:
+                continue
+            ms = int(float(ep.get("duration_s") or 0) * 1000)
+            if ms > 0:
+                out.append(ContentItem(video_id=vid, duration_ms=ms, title=ep.get("title") or ""))
+    return out
 
 
 def _json(val: Any) -> dict[str, Any]:

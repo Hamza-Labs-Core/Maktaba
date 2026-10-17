@@ -171,6 +171,19 @@ async def tick_progress(db: DBConn, t: ProgressTick) -> None:
         return
     if db.dialect == "sqlite":
         get_bus().publish(JOBS_PROGRESS, _build_progress_payload(row))
+    if getattr(db, "engine_hooks", False):
+        # plan 06-11 section 7: the same tick also feeds the queue UI (progress JSON + job.progress)
+        from ..engine.hooks import on_progress
+
+        total = row["total_duration_seconds"]
+        await on_progress(
+            db,
+            t.job_id,
+            step=str(row["stage"]),
+            done=float(row["processed_seconds"]),
+            total=None if total is None else float(total),
+            message=None,
+        )
 
 
 async def tick_heartbeat(db: DBConn, *, job_id: int) -> None:

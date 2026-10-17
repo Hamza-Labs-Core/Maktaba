@@ -1,0 +1,1075 @@
+{
+ "movies_section": "53",
+ "collection_section": "44",
+ "collection_id": "76964",
+ "responses": {
+  "/library/sections": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 2,
+     "allowSync": false,
+     "Directory": [
+      {
+       "allowSync": true,
+       "filters": true,
+       "refreshing": false,
+       "key": "53",
+       "type": "movie",
+       "title": "Title 1",
+       "agent": "tv.plex.agents.movie",
+       "scanner": "Plex Movie",
+       "language": "en-US",
+       "uuid": "84eaf676-3fc5-4717-8575-e1ebaef1e76b",
+       "updatedAt": 1745847747,
+       "createdAt": 1738971986,
+       "scannedAt": 1780228307,
+       "content": true,
+       "directory": true,
+       "contentChangedAt": 2053040,
+       "hidden": 0,
+       "Location": [
+        {
+         "id": 61,
+         "path": "/data/library"
+        }
+       ]
+      },
+      {
+       "allowSync": true,
+       "filters": true,
+       "refreshing": false,
+       "key": "44",
+       "type": "movie",
+       "title": "Title 2",
+       "agent": "com.plexapp.agents.none",
+       "scanner": "Plex Video Files Scanner",
+       "language": "xn",
+       "uuid": "ca60eb7a-9f98-4c73-8ba4-badc2138e58e",
+       "updatedAt": 1745847766,
+       "createdAt": 1735270242,
+       "scannedAt": 1780228305,
+       "content": true,
+       "directory": true,
+       "contentChangedAt": 3394964,
+       "hidden": 0,
+       "Location": [
+        {
+         "id": 63,
+         "path": "/data/library"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "/library/sections/53/all?type=1": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 6,
+     "allowSync": true,
+     "librarySectionID": 53,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "viewGroup": "movie",
+     "viewMode": 65592,
+     "Metadata": [
+      {
+       "ratingKey": "155771",
+       "key": "/library/metadata/155771",
+       "type": "movie",
+       "title": "Title 3",
+       "contentRating": "PG",
+       "contentRatingAge": 7,
+       "rating": 9.0,
+       "audienceRating": 9.1,
+       "viewOffset": 5069940,
+       "viewCount": 1,
+       "skipCount": 1,
+       "lastViewedAt": 1751500565,
+       "year": 2014,
+       "duration": 6112789,
+       "originallyAvailableAt": "2014-10-25",
+       "addedAt": 1750510357,
+       "updatedAt": 1790495038,
+       "Media": [
+        {
+         "id": 155599,
+         "duration": 6112789,
+         "bitrate": 2885,
+         "width": 1920,
+         "height": 804,
+         "aspectRatio": 2.35,
+         "audioChannels": 6,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mkv",
+         "videoFrameRate": "24p",
+         "audioProfile": "lc",
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155600,
+           "key": "/library/parts/155600/1750472406/file.mp4",
+           "duration": 6112789,
+           "file": "/data/library/File_4.mp4",
+           "size": 2204090346,
+           "audioProfile": "lc",
+           "container": "mkv",
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "169065",
+       "key": "/library/metadata/169065",
+       "type": "movie",
+       "title": "Title 5",
+       "titleSort": "Emperor's New Groove",
+       "contentRating": "G",
+       "contentRatingAge": 6,
+       "rating": 8.6,
+       "audienceRating": 8.4,
+       "viewCount": 2,
+       "lastViewedAt": 1752789984,
+       "year": 2000,
+       "duration": 4715925,
+       "originallyAvailableAt": "2000-11-22",
+       "addedAt": 1751488708,
+       "updatedAt": 1791267636,
+       "Media": [
+        {
+         "id": 169151,
+         "duration": 4715925,
+         "bitrate": 653,
+         "width": 848,
+         "height": 496,
+         "aspectRatio": 1.66,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169152,
+           "key": "/library/parts/169152/1751488372/file.mp4",
+           "duration": 4715925,
+           "file": "/data/library/File_6.mp4",
+           "size": 384850090,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": true,
+           "videoProfile": "high"
+          }
+         ]
+        },
+        {
+         "id": 169149,
+         "duration": 4703948,
+         "bitrate": 587,
+         "width": 720,
+         "height": 424,
+         "aspectRatio": 1.66,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "sd",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169150,
+           "key": "/library/parts/169150/1751488551/file.mp4",
+           "duration": 4703948,
+           "file": "/data/library/File_7.mp4",
+           "size": 345263814,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "hasThumbnail": "1",
+           "optimizedForStreaming": true,
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "169074",
+       "key": "/library/metadata/169074",
+       "type": "movie",
+       "title": "Title 8",
+       "titleSort": "Jungle Book",
+       "contentRating": "PG",
+       "contentRatingAge": 9,
+       "rating": 9.4,
+       "audienceRating": 8.6,
+       "year": 2016,
+       "duration": 6354805,
+       "originallyAvailableAt": "2016-04-07",
+       "addedAt": 1751499570,
+       "updatedAt": 1791267637,
+       "Media": [
+        {
+         "id": 169153,
+         "duration": 6354805,
+         "bitrate": 719,
+         "width": 640,
+         "height": 344,
+         "aspectRatio": 1.85,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "sd",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 0,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169154,
+           "key": "/library/parts/169154/1751499402/file.mp4",
+           "duration": 6354805,
+           "file": "/data/library/File_9.mp4",
+           "size": 570780116,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": false,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "155817",
+       "key": "/library/metadata/155817",
+       "type": "movie",
+       "title": "Title 10",
+       "contentRating": "PG",
+       "contentRatingAge": 6,
+       "rating": 8.7,
+       "audienceRating": 8.3,
+       "viewOffset": 825979,
+       "viewCount": 1,
+       "lastViewedAt": 1758474792,
+       "year": 2008,
+       "duration": 5529441,
+       "originallyAvailableAt": "2008-06-05",
+       "addedAt": 1750786838,
+       "updatedAt": 1790491509,
+       "Media": [
+        {
+         "id": 155727,
+         "duration": 5529441,
+         "bitrate": 701,
+         "width": 858,
+         "height": 362,
+         "aspectRatio": 2.35,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 0,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155728,
+           "key": "/library/parts/155728/1750772696/file.mp4",
+           "duration": 5529441,
+           "file": "/data/library/File_11.mp4",
+           "size": 484836181,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": false,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "155818",
+       "key": "/library/metadata/155818",
+       "type": "movie",
+       "title": "Title 12",
+       "contentRating": "PG",
+       "contentRatingAge": 6,
+       "rating": 8.2,
+       "audienceRating": 7.4,
+       "viewCount": 1,
+       "lastViewedAt": 1750877144,
+       "year": 2011,
+       "duration": 5423999,
+       "originallyAvailableAt": "2011-05-25",
+       "addedAt": 1750786839,
+       "updatedAt": 1790666683,
+       "Media": [
+        {
+         "id": 155728,
+         "duration": 5423999,
+         "bitrate": 702,
+         "width": 858,
+         "height": 364,
+         "aspectRatio": 2.35,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 0,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155729,
+           "key": "/library/parts/155729/1750774559/file.mp4",
+           "duration": 5423999,
+           "file": "/data/library/File_13.mp4",
+           "size": 475685844,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": false,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "155842",
+       "key": "/library/metadata/155842",
+       "type": "movie",
+       "title": "Title 14",
+       "contentRating": "PG",
+       "contentRatingAge": 6,
+       "rating": 8.7,
+       "audienceRating": 7.9,
+       "viewOffset": 2885196,
+       "lastViewedAt": 1759620076,
+       "year": 2016,
+       "duration": 5694976,
+       "originallyAvailableAt": "2016-01-28",
+       "addedAt": 1750786839,
+       "updatedAt": 1790405561,
+       "Media": [
+        {
+         "id": 155773,
+         "duration": 5694976,
+         "bitrate": 701,
+         "width": 858,
+         "height": 364,
+         "aspectRatio": 2.35,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 0,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155774,
+           "key": "/library/parts/155774/1750775251/file.mp4",
+           "duration": 5694976,
+           "file": "/data/library/File_15.mp4",
+           "size": 499235186,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": false,
+           "videoProfile": "main"
+          }
+         ]
+        },
+        {
+         "id": 169148,
+         "duration": 5694827,
+         "bitrate": 699,
+         "width": 848,
+         "height": 352,
+         "aspectRatio": 2.35,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 0,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169149,
+           "key": "/library/parts/169149/1751487999/file.mp4",
+           "duration": 5694827,
+           "file": "/data/library/File_16.mp4",
+           "size": 497409198,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": false,
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "totalSize": 6
+    }
+   }
+  },
+  "/library/sections/53/collections": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 0,
+     "allowSync": true,
+     "librarySectionID": 53,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "viewGroup": "movie",
+     "viewMode": 65592,
+     "Metadata": []
+    }
+   }
+  },
+  "/library/sections/46/collections": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 0,
+     "allowSync": true,
+     "librarySectionID": 46,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "viewGroup": "movie",
+     "viewMode": 65592,
+     "Metadata": []
+    }
+   }
+  },
+  "/library/sections/44/collections": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 2,
+     "allowSync": true,
+     "librarySectionID": 44,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "viewGroup": "movie",
+     "viewMode": 65592,
+     "Metadata": [
+      {
+       "ratingKey": "76964",
+       "key": "/library/collections/76964/children",
+       "type": "collection",
+       "title": "Title 17",
+       "subtype": "movie",
+       "index": 166,
+       "content": "server://193dfc785968bae501df20eec8f47fab2010ac0b/com.plexapp.plugins.library/library/sections/44/all?type=1&title=%D9%A5%20%D8%B3%D9%8A%D8%A7%D8%B3%D8%A9",
+       "ratingCount": 101,
+       "addedAt": 1735920619,
+       "updatedAt": 1736344734,
+       "childCount": 13,
+       "smart": "1"
+      },
+      {
+       "ratingKey": "256080",
+       "key": "/library/collections/256080/children",
+       "type": "collection",
+       "title": "Title 18",
+       "subtype": "movie",
+       "index": 165,
+       "ratingCount": 1,
+       "addedAt": 1792006448,
+       "updatedAt": 1792006576,
+       "childCount": 44,
+       "collectionSort": "2",
+       "maxYear": "2026",
+       "minYear": "2024"
+      }
+     ]
+    }
+   }
+  },
+  "/library/collections/76964/children": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 4,
+     "Metadata": [
+      {
+       "ratingKey": "252108",
+       "key": "/library/metadata/252108",
+       "type": "movie",
+       "title": "Title 19",
+       "librarySectionID": 44,
+       "librarySectionKey": "/library/sections/44",
+       "subtype": "clip",
+       "year": 2026,
+       "duration": 757068,
+       "originallyAvailableAt": "2026-04-12",
+       "addedAt": 1776030261,
+       "updatedAt": 1776030428,
+       "createdAtAccuracy": "epoch",
+       "createdAtTZOffset": "-14400",
+       "Media": [
+        {
+         "id": 252278,
+         "duration": 757068,
+         "bitrate": 1482,
+         "width": 3840,
+         "height": 2160,
+         "aspectRatio": 1.78,
+         "audioChannels": 2,
+         "audioCodec": "opus",
+         "videoCodec": "av1",
+         "videoResolution": "4k",
+         "container": "mkv",
+         "videoFrameRate": "24p",
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 252279,
+           "key": "/library/parts/252279/1776029137/file.webm",
+           "duration": 757068,
+           "file": "/data/library/File_20.mp4",
+           "size": 140206252,
+           "container": "mkv",
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "141977",
+       "key": "/library/metadata/141977",
+       "type": "movie",
+       "title": "Title 21",
+       "librarySectionID": 44,
+       "librarySectionKey": "/library/sections/44",
+       "subtype": "clip",
+       "year": 2025,
+       "duration": 859761,
+       "originallyAvailableAt": "2025-05-28",
+       "addedAt": 1748448745,
+       "updatedAt": 1748448791,
+       "createdAtAccuracy": "epoch",
+       "createdAtTZOffset": "-14400",
+       "Media": [
+        {
+         "id": 141806,
+         "duration": 859761,
+         "bitrate": 3017,
+         "width": 1920,
+         "height": 1080,
+         "aspectRatio": 1.78,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 141807,
+           "key": "/library/parts/141807/1748448227/file.mp4",
+           "duration": 859761,
+           "file": "/data/library/File_22.mp4",
+           "size": 324229156,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": true,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "141978",
+       "key": "/library/metadata/141978",
+       "type": "movie",
+       "title": "Title 23",
+       "librarySectionID": 44,
+       "librarySectionKey": "/library/sections/44",
+       "subtype": "clip",
+       "year": 2025,
+       "duration": 1102200,
+       "originallyAvailableAt": "2025-05-28",
+       "addedAt": 1748448745,
+       "updatedAt": 1748448793,
+       "createdAtAccuracy": "epoch",
+       "createdAtTZOffset": "-14400",
+       "Media": [
+        {
+         "id": 141807,
+         "duration": 1102200,
+         "bitrate": 3101,
+         "width": 1920,
+         "height": 1080,
+         "aspectRatio": 1.78,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 141808,
+           "key": "/library/parts/141808/1748448420/file.mp4",
+           "duration": 1102200,
+           "file": "/data/library/File_24.mp4",
+           "size": 427276861,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": true,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "141979",
+       "key": "/library/metadata/141979",
+       "type": "movie",
+       "title": "Title 25",
+       "librarySectionID": 44,
+       "librarySectionKey": "/library/sections/44",
+       "subtype": "clip",
+       "year": 2025,
+       "duration": 946289,
+       "originallyAvailableAt": "2025-05-28",
+       "addedAt": 1748448745,
+       "updatedAt": 1748448794,
+       "createdAtAccuracy": "epoch",
+       "createdAtTZOffset": "-14400",
+       "Media": [
+        {
+         "id": 141808,
+         "duration": 946289,
+         "bitrate": 2367,
+         "width": 1920,
+         "height": 1080,
+         "aspectRatio": 1.78,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "main",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 141809,
+           "key": "/library/parts/141809/1748448081/file.mp4",
+           "duration": 946289,
+           "file": "/data/library/File_26.mp4",
+           "size": 279976332,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": true,
+           "videoProfile": "main"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "/library/metadata/155771": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 1,
+     "allowSync": true,
+     "librarySectionID": 53,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "Metadata": [
+      {
+       "ratingKey": "155771",
+       "key": "/library/metadata/155771",
+       "type": "movie",
+       "title": "Title 3",
+       "librarySectionID": 53,
+       "librarySectionKey": "/library/sections/53",
+       "contentRating": "PG",
+       "contentRatingAge": 7,
+       "rating": 9.0,
+       "audienceRating": 9.1,
+       "viewOffset": 5069940,
+       "viewCount": 1,
+       "skipCount": 1,
+       "lastViewedAt": 1751500565,
+       "year": 2014,
+       "duration": 6112789,
+       "originallyAvailableAt": "2014-10-25",
+       "addedAt": 1750510357,
+       "updatedAt": 1790495038,
+       "Media": [
+        {
+         "id": 155599,
+         "duration": 6112789,
+         "bitrate": 2885,
+         "width": 1920,
+         "height": 804,
+         "aspectRatio": 2.35,
+         "audioChannels": 6,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mkv",
+         "videoFrameRate": "24p",
+         "audioProfile": "lc",
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155600,
+           "key": "/library/parts/155600/1750472406/file.mp4",
+           "duration": 6112789,
+           "file": "/data/library/File_4.mp4",
+           "size": 2204090346,
+           "audioProfile": "lc",
+           "container": "mkv",
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ],
+       "Guid": [
+        {
+         "id": "imdb://tt2245084"
+        },
+        {
+         "id": "tmdb://177572"
+        },
+        {
+         "id": "tvdb://151"
+        }
+       ],
+       "Producer": [
+        {
+         "id": 515,
+         "filter": "producer=515",
+         "tag": "Roy Conli",
+         "tagKey": "5d7768344de0ee001fccb46a"
+        }
+       ],
+       "CommonSenseMedia": [
+        {
+         "id": 946,
+         "oneLiner": "Awesome origin story is action-packed, deals with grief.",
+         "AgeRating": [
+          {
+           "type": "official",
+           "rating": 4,
+           "age": 7
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "/library/metadata/155771,169065": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 2,
+     "allowSync": true,
+     "librarySectionID": 53,
+     "mediaTagPrefix": "/system/bundle/media/flags/",
+     "mediaTagVersion": 1786914632,
+     "Metadata": [
+      {
+       "ratingKey": "155771",
+       "key": "/library/metadata/155771",
+       "type": "movie",
+       "title": "Title 3",
+       "librarySectionID": 53,
+       "librarySectionKey": "/library/sections/53",
+       "contentRating": "PG",
+       "contentRatingAge": 7,
+       "rating": 9.0,
+       "audienceRating": 9.1,
+       "viewOffset": 5069940,
+       "viewCount": 1,
+       "skipCount": 1,
+       "lastViewedAt": 1751500565,
+       "year": 2014,
+       "duration": 6112789,
+       "originallyAvailableAt": "2014-10-25",
+       "addedAt": 1750510357,
+       "updatedAt": 1790495038,
+       "Media": [
+        {
+         "id": 155599,
+         "duration": 6112789,
+         "bitrate": 2885,
+         "width": 1920,
+         "height": 804,
+         "aspectRatio": 2.35,
+         "audioChannels": 6,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "1080",
+         "container": "mkv",
+         "videoFrameRate": "24p",
+         "audioProfile": "lc",
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 155600,
+           "key": "/library/parts/155600/1750472406/file.mp4",
+           "duration": 6112789,
+           "file": "/data/library/File_4.mp4",
+           "size": 2204090346,
+           "audioProfile": "lc",
+           "container": "mkv",
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ],
+       "Guid": [
+        {
+         "id": "imdb://tt2245084"
+        },
+        {
+         "id": "tmdb://177572"
+        },
+        {
+         "id": "tvdb://151"
+        }
+       ],
+       "Producer": [
+        {
+         "id": 515,
+         "filter": "producer=515",
+         "tag": "Roy Conli",
+         "tagKey": "5d7768344de0ee001fccb46a"
+        }
+       ],
+       "CommonSenseMedia": [
+        {
+         "id": 946,
+         "oneLiner": "Awesome origin story is action-packed, deals with grief.",
+         "AgeRating": [
+          {
+           "type": "official",
+           "rating": 4,
+           "age": 7
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ratingKey": "169065",
+       "key": "/library/metadata/169065",
+       "type": "movie",
+       "title": "Title 5",
+       "titleSort": "Emperor's New Groove",
+       "librarySectionID": 53,
+       "librarySectionKey": "/library/sections/53",
+       "contentRating": "G",
+       "contentRatingAge": 6,
+       "rating": 8.6,
+       "audienceRating": 8.4,
+       "viewCount": 2,
+       "lastViewedAt": 1752789984,
+       "year": 2000,
+       "duration": 4715925,
+       "originallyAvailableAt": "2000-11-22",
+       "addedAt": 1751488708,
+       "updatedAt": 1791267636,
+       "Media": [
+        {
+         "id": 169151,
+         "duration": 4715925,
+         "bitrate": 653,
+         "width": 848,
+         "height": 496,
+         "aspectRatio": 1.66,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "480",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169152,
+           "key": "/library/parts/169152/1751488372/file.mp4",
+           "duration": 4715925,
+           "file": "/data/library/File_6.mp4",
+           "size": 384850090,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "optimizedForStreaming": true,
+           "videoProfile": "high"
+          }
+         ]
+        },
+        {
+         "id": 169149,
+         "duration": 4703948,
+         "bitrate": 587,
+         "width": 720,
+         "height": 424,
+         "aspectRatio": 1.66,
+         "audioChannels": 2,
+         "audioCodec": "aac",
+         "videoCodec": "h264",
+         "videoResolution": "sd",
+         "container": "mp4",
+         "videoFrameRate": "24p",
+         "optimizedForStreaming": 1,
+         "audioProfile": "lc",
+         "has64bitOffsets": false,
+         "videoProfile": "high",
+         "hasVoiceActivity": false,
+         "Part": [
+          {
+           "id": 169150,
+           "key": "/library/parts/169150/1751488551/file.mp4",
+           "duration": 4703948,
+           "file": "/data/library/File_7.mp4",
+           "size": 345263814,
+           "audioProfile": "lc",
+           "container": "mp4",
+           "has64bitOffsets": false,
+           "hasThumbnail": "1",
+           "optimizedForStreaming": true,
+           "videoProfile": "high"
+          }
+         ]
+        }
+       ],
+       "Guid": [
+        {
+         "id": "imdb://tt0120917"
+        },
+        {
+         "id": "tmdb://11688"
+        },
+        {
+         "id": "tvdb://952"
+        }
+       ],
+       "Producer": [
+        {
+         "id": 852,
+         "filter": "producer=852",
+         "tag": "Randy Fullmer",
+         "tagKey": "5d7768342ec6b5001f6bbcb5"
+        }
+       ],
+       "CommonSenseMedia": [
+        {
+         "id": 946,
+         "oneLiner": "Fun, goofy cartoon misrepresents Incan culture.",
+         "AgeRating": [
+          {
+           "type": "official",
+           "rating": 4,
+           "age": 6
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "/identity": {
+   "status": 200,
+   "body": {
+    "MediaContainer": {
+     "size": 0,
+     "apiVersion": "1.2.3",
+     "claimed": true,
+     "machineIdentifier": "0000000000000000000000000000000000000000",
+     "version": "1.43.4.10903-e5521bd8c"
+    }
+   }
+  }
+ }
+}

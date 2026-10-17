@@ -49,8 +49,16 @@ interface YTBlock {
   items: YTItem[];
   reason?: string;
 }
+// A whole-video match on its title (a library has titles long before it has
+// transcripts).
+interface VideoHit {
+  video_id: string;
+  title: string;
+  duration_sec?: number;
+}
 interface SearchResponse {
   hits: ServerHit[];
+  videos?: VideoHit[];
   total: number;
   youtube?: YTBlock;
 }
@@ -112,6 +120,7 @@ export function Search() {
   const [q, setQ] = useState(params.get("q") ?? "");
   const [mode, setMode] = useState<Mode>(readMode);
   const [hits, setHits] = useState<ServerHit[] | null>(null);
+  const [videos, setVideos] = useState<VideoHit[]>([]);
   const [youtube, setYoutube] = useState<YTBlock | null>(null);
   const [withYouTube, setWithYouTube] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -153,10 +162,12 @@ export function Search() {
           ...(includeYouTube ? { include: ["youtube"] } : {}),
         });
         setHits(res.hits ?? []);
+        setVideos(res.videos ?? []);
         setYoutube(includeYouTube ? (res.youtube ?? { items: [] }) : null);
       } catch (e) {
         setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
         setHits([]);
+        setVideos([]);
       } finally {
         setPending(false);
       }
@@ -256,23 +267,48 @@ export function Search() {
 
           {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
 
-          {shown && shown.length === 0 && !err && (
+          {shown && shown.length === 0 && videos.length === 0 && !err && (
             <EmptyState kind="filtered_out" title={t("search.didYouMean")} />
           )}
 
+          {videos.length > 0 && (
+            <>
+              <h2 className="mkt-results__heading">{t("search.videos")}</h2>
+              <ul className="mkt-results" data-testid="search-videos">
+                {videos.map((v) => (
+                  <li key={v.video_id} className="mkt-result">
+                    <Link to={`/videos/${v.video_id}`}>
+                      <span className="mkt-result__title" dir="auto">
+                        {v.title}
+                      </span>
+                      {v.duration_sec != null && (
+                        <span className="mkt-result__time"> · {ts(v.duration_sec)}</span>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
           {shown && shown.length > 0 && (
-            <ul className="mkt-results">
-              {shown.map((h) => (
-                <li key={h.segment_id} className="mkt-result">
-                  <Link to={`/videos/${h.video_id}/watch?t=${Math.floor(h.start_sec)}`}>
-                    <span className="mkt-result__time">
-                      [{ts(h.start_sec)} → {ts(h.end_sec)}]
-                    </span>
-                    <span className="mkt-result__snippet">{renderSnippet(h.snippet)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <>
+              {videos.length > 0 && (
+                <h2 className="mkt-results__heading">{t("search.passages")}</h2>
+              )}
+              <ul className="mkt-results">
+                {shown.map((h) => (
+                  <li key={h.segment_id} className="mkt-result">
+                    <Link to={`/videos/${h.video_id}/watch?t=${Math.floor(h.start_sec)}`}>
+                      <span className="mkt-result__time">
+                        [{ts(h.start_sec)} → {ts(h.end_sec)}]
+                      </span>
+                      <span className="mkt-result__snippet">{renderSnippet(h.snippet)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
 
           {youtube && <YouTubeSection block={youtube} onImported={() => {}} />}

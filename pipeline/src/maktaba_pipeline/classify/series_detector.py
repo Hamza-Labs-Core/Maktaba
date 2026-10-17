@@ -52,7 +52,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Container, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -82,6 +82,7 @@ __all__ = [
     "Topic",
     "VideoFacts",
     "detect",
+    "find_topics",
     "is_short",
 ]
 
@@ -1370,7 +1371,7 @@ def detect(
     series = [s for s in series if s.episode_count > 0]
     _distinct_names(series, playlists, presenter, cfg)
     series.sort(key=lambda s: (s.seasons[0].first_air or date.max, s.name))
-    topics = _topics(series, playlists, facts, cfg)
+    topics = find_topics(series, playlists, facts, cfg)
     return Detection(series=series, unassigned=unassigned, shorts=shorts, topics=topics)
 
 
@@ -1968,14 +1969,19 @@ def _apply_brands(
     return True
 
 
-def _topics(
+def find_topics(
     series: Sequence[Series],
     playlists: Sequence[PlaylistFacts],
-    facts: dict[str, VideoFacts],
-    cfg: DetectorConfig,
+    facts: Container[str],
+    cfg: DetectorConfig | None = None,
 ) -> list[Topic]:
     """Curated playlists that cut across shows: their episodes sit in two or more
-    series (or three or more seasons of one), and the playlist is no season's own."""
+    series (or three or more seasons of one), and the playlist is no season's own.
+
+    Public: the ``topic_collections`` queue stage calls it on the stored seasons, so
+    topics follow detection without re-running it. ``facts`` only needs membership
+    (the keys of the videos known to the caller)."""
+    cfg = cfg or DetectorConfig()
     season_of: dict[str, tuple[int, int]] = {}
     for ser in series:
         if ser.kind == "clips":
@@ -2012,6 +2018,9 @@ def _topics(
         ] <= 0.8 * len(hits):
             out.append(Topic(" ".join(p.title.split()), p.playlist_id, items))
     return out
+
+
+_topics = find_topics  # the name before it was public
 
 
 # --------------------------------------------------------------------------- numbered shows

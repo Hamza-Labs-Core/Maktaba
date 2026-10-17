@@ -33,15 +33,15 @@ function guidePayload() {
           enabled: true,
           sort_order: 0,
         },
-        programs: [
+        blocks: [
           {
             channel_id: "c1",
             seq: 0,
             kind: "program",
             video_id: "v-now",
             title: "Now Playing",
-            start_at: iso(-10 * 60_000),
-            end_at: iso(20 * 60_000),
+            start: iso(-10 * 60_000),
+            stop: iso(20 * 60_000),
           },
           {
             channel_id: "c1",
@@ -49,8 +49,8 @@ function guidePayload() {
             kind: "program",
             video_id: "v-later",
             title: "Later Show",
-            start_at: iso(20 * 60_000),
-            end_at: iso(140 * 60_000),
+            start: iso(20 * 60_000),
+            stop: iso(140 * 60_000),
           },
         ],
       },

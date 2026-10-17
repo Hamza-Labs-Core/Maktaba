@@ -192,3 +192,30 @@ def test_thumbnail_handler_replay_after_thumbnailed_is_noop_advance() -> None:
     # State unchanged (no illegal re-advance), job still completes.
     assert db.videos[video_id].state == "thumbnailed"
     assert db.processing_jobs[5].state == "done"
+
+
+def test_thumbnail_handler_maps_path_for_this_host() -> None:
+    from maktaba_pipeline.engine.paths import PathMap, active_path_map, set_active_path_map
+
+    db = ThumbDB(dialect="postgres")
+    video_id = db.add_video(
+        state="indexed", path="Y:/Chan/a.mp4", content_hash="d" * 64, chapters=[]
+    )
+    job = make_job(job_id=1, video_id=video_id, stage=Stage.THUMBNAIL)
+    _seed_claimed_job(db, job_id=1, video_id=video_id)
+    seen: dict[str, Any] = {}
+
+    async def fake_generate(
+        src: str, *, duration_sec: float, content_hash: str, chapters: Any
+    ) -> ThumbnailSet:
+        seen["src"] = src
+        return _fake_set(content_hash, [])
+
+    previous = active_path_map()
+    set_active_path_map(PathMap.parse("Y:/=/Volumes/Y/"))
+    try:
+        asyncio.run(thumbnail_handler(db, job, run_generate=fake_generate))
+    finally:
+        set_active_path_map(previous)
+
+    assert seen["src"] == "/Volumes/Y/Chan/a.mp4"

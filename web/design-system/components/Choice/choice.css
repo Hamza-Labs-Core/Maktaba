@@ -5,6 +5,9 @@
  * sibling selectors. */
 
 .mk-choice {
+  /* anchors the visually-hidden input: unanchored, it escapes a scrolling
+     ancestor (a table on a phone) and widens the page */
+  position: relative;
   display: inline-flex;
   align-items: flex-start;
   gap: var(--spacing-2, 8px);

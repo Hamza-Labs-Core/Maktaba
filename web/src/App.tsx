@@ -7,7 +7,7 @@
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
-import { AppShell } from "./components/AppShell";
+import { AppShell, MoreMenu } from "./components/AppShell";
 import { DesktopBridge } from "./components/DesktopBridge";
 import { I18nProvider } from "./lib/i18n";
 import { AuthProvider, RequireAuth } from "./lib/auth";
@@ -20,7 +20,10 @@ import { AdminEnrichment } from "./pages/Admin/Enrichment";
 import { VideoDetail } from "./pages/VideoDetail";
 import { VideoPlayer } from "./pages/VideoPlayer";
 import { Search } from "./pages/Search";
-import { ProcessingQueue } from "./pages/ProcessingQueue";
+import { QueueOverview } from "./pages/queue/QueueOverview";
+import { QueueDetail } from "./pages/queue/QueueDetail";
+import { ItemHistory } from "./pages/queue/ItemHistory";
+import { AdminExtensions } from "./pages/Admin/Extensions";
 import { Settings } from "./pages/Settings";
 import { AdminUsers } from "./pages/Admin/Users";
 import { AdminAuditLog } from "./pages/Admin/AuditLog";
@@ -86,8 +89,11 @@ export function App() {
                     <Route path="/search" element={<Search />} />
                     <Route path="/guide" element={<Guide />} />
                     <Route path="/live/:number" element={<Player />} />
-                    <Route path="/queue" element={<ProcessingQueue />} />
+                    <Route path="/queue" element={<QueueOverview />} />
+                    <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
+                    <Route path="/queue/:stage" element={<QueueDetail />} />
                     <Route path="/settings/*" element={<Settings />} />
+                    <Route path="/more" element={<MoreMenu />} />
                     <Route path="/account" element={<Account />} />
                     <Route path="/account/devices" element={<ConnectedDevices />} />
                     <Route path="/account/sessions" element={<Sessions />} />
@@ -96,6 +102,7 @@ export function App() {
                     <Route path="/cloud/status" element={<ServerStatus />} />
                     <Route path="/admin/users" element={<AdminUsers />} />
                     <Route path="/admin/library-acl" element={<LibraryACL />} />
+                    <Route path="/admin/extensions" element={<AdminExtensions />} />
                     <Route path="/admin/enrichment" element={<AdminEnrichment />} />
                     <Route path="/admin/channels" element={<Channels />} />
                     <Route path="/admin/analytics" element={<AdminAnalytics />} />

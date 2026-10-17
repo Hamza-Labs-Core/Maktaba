@@ -120,6 +120,21 @@ func TestMe_ProjectsPrincipal(t *testing.T) {
 	if len(got.Libraries) != 2 || got.Libraries[0] != "lib-a" || got.Libraries[1] != "lib-b" {
 		t.Fatalf("libraries = %v, want [lib-a lib-b]", got.Libraries)
 	}
+	// the shapes the clients decode: flat id (Android TV) and {user: …}
+	// (the web app's session restore — without it a reload signed out)
+	var shapes struct {
+		ID   string `json:"id"`
+		User *struct {
+			ID      string `json:"id"`
+			IsAdmin bool   `json:"is_admin"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &shapes); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if shapes.ID != "user-7" || shapes.User == nil || shapes.User.ID != "user-7" || !shapes.User.IsAdmin {
+		t.Fatalf("client shapes = %+v (body=%s)", shapes, rec.Body.String())
+	}
 }
 
 func TestMe_NoPrincipalIs401(t *testing.T) {
