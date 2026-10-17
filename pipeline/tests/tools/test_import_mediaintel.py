@@ -12,14 +12,15 @@ from uuid import UUID
 
 import pytest
 
+from maktaba_pipeline import rules
 from maktaba_pipeline.audio.chromaprint import encode
 from maktaba_pipeline.classify.production_style import STYLE_VERSION, StyleMetrics
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import SIG_VERSION
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_pipeline.engine.sql import loads, to_ts
+from maktaba_pipeline.engine.sql import loads, now, to_ts
 from maktaba_pipeline.runtime import Database
-from maktaba_pipeline.tools.import_mediaintel import parse_path_maps, run_import
+from maktaba_pipeline.tools.import_mediaintel import parse_path_maps, run_import, thumbs_name
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import core_runtime, drain_core, make_fake_media
 
@@ -346,3 +347,61 @@ async def test_two_shows_of_one_name_import_as_two_seasons(db: Database, tmp_pat
     rows = await db.fetch("SELECT id, episode_count FROM series_seasons ORDER BY episode_count")
     assert len(rows) == 2 and len({r["id"] for r in rows}) == 2
     assert sorted(int(r["episode_count"]) for r in rows) == [N - half, half]
+
+
+@pytest.mark.asyncio
+async def test_rule_changes_are_imported_checked_and_never_overwrite_maktaba(
+    db: Database, tmp_path: Path
+) -> None:
+    await _library(db)
+    cache = _cache(tmp_path / "cache.db")
+    (tmp_path / "settings.json").write_text(
+        json.dumps({
+            "planner": {"theme_min_hours": 4.0, "topic_min_score": "high", "nope": 1},
+            "detect": {"catch_all_min": 25, "core_band": 3.0},
+            "not_a_section": {"x": 1},
+        }),
+        encoding="utf-8",
+    )  # fmt: skip
+    # the user already changed one detect rule in Maktaba: that value is kept
+    await db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)",
+        "rules.detect", json.dumps({"core_band": 2.5}), to_ts(db, now()),
+    )  # fmt: skip
+    report = await run_import(db, cache, ["Cached"], apply=True)  # settings.json beside the cache
+    assert report.settings_imported == {"planner": 1, "detect": 1}
+    skipped = "\n".join(report.settings_skipped)
+    assert "planner.topic_min_score" in skipped and "planner.nope" in skipped
+    assert "not_a_section" in skipped and "detect.core_band: already set" in skipped
+    _, planner, _ = await rules.read(db, "planner")
+    _, detect, _ = await rules.read(db, "detect")
+    assert planner == {"theme_min_hours": 4.0}
+    assert detect == {"core_band": 2.5, "catch_all_min": 25}
+
+
+@pytest.mark.asyncio
+async def test_thumbnails_go_to_the_cache_and_thumb_small_is_done(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.engine.stages import thumb_small
+
+    monkeypatch.setattr(thumb_small, "ROOT", str(tmp_path / "cache"))
+    _, vids = await _library(db)
+    cache = _cache(tmp_path / "cache.db")
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    for i in range(3):  # three of the videos have a copy (named after the video's cache path)
+        (thumbs / thumbs_name(f"Y:/chan/ep{i:02d}.mp4")).write_bytes(b"\xff\xd8jpeg" + bytes([i]))
+    dry = await run_import(db, cache, ["Cached"], apply=False)
+    assert dry.thumbs_copied == 3 and dry.thumbs_missing == N - 3
+    assert not (tmp_path / "cache").exists()  # a dry run writes no files
+    report = await run_import(db, cache, ["Cached"], apply=True)
+    assert report.thumbs_copied == 3
+    hashes = [r["content_hash"] for r in await db.fetch(
+        "SELECT content_hash FROM videos ORDER BY filename LIMIT 3")]  # fmt: skip
+    for i, h in enumerate(hashes):
+        assert thumb_small.small_path(str(h)).read_bytes().endswith(bytes([i]))
+    done = await db.fetchval(
+        "SELECT count(*) FROM processing_jobs WHERE stage = 'thumb_small' AND outcome = 'imported'"
+    )
+    assert int(done) == 3 and vids

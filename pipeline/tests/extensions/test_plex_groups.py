@@ -151,6 +151,33 @@ async def test_a_foreign_collection_with_the_title_is_left_alone(db: Database) -
 
 
 @pytest.mark.asyncio
+async def test_a_labelled_collection_from_mediaintel_is_adopted(db: Database) -> None:
+    """mediaintel wrote the topic and clip collections (labelled, no link here): plex_groups
+    takes them over instead of leaving them as foreign."""
+    w = await make_world(db)
+    done = w.fake.add_collection("Lib - مقاطع - لقطات", ["201", "202", "203", "204", "205"])
+    stale = w.fake.add_collection("Lib - ملف - الشأن الفلسطيني", ["101"])
+    for rk in (done, stale):
+        w.fake.collections[rk]["labels"] = [LABEL]
+    rt = await setup_runtime(db, [w.ext], SETTINGS)
+    await run_stage(db, rt, "plex_index", "library", w.library)
+    row = await run_stage(db, rt, "plex_groups", "library", w.library)
+    assert row["state"] == "done", error_of(row)
+    assert "conflict" not in summary_of(row)["status"]
+    # already as planned: kept as is, now linked
+    assert w.fake.collections[done]["children"] == ["201", "202", "203", "204", "205"]
+    link = await get_link(db, "plex_clip_group", "clip_group", str(w.group))
+    assert link is not None and link.external_id == done and link.created_by_tool
+    # out of date: replaced by the planned collection, no duplicate title left behind
+    topics = [c for c in w.fake.collections.values() if c["title"] == "Lib - ملف - الشأن الفلسطيني"]
+    assert len(topics) == 1 and topics[0]["children"] == ["101", "102", "103"]
+    # a second run changes nothing
+    before = len(w.fake.writes)
+    again = await run_stage(db, rt, "plex_groups", "library", w.library, force=True)
+    assert len(w.fake.writes) == before and summary_of(again)["status"] == {"noop": 2}
+
+
+@pytest.mark.asyncio
 async def test_a_renamed_group_retires_its_old_collection(db: Database) -> None:
     w = await make_world(db)
     rt = await setup_runtime(db, [w.ext], SETTINGS)

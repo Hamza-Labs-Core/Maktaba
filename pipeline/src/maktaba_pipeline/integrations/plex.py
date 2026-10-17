@@ -137,6 +137,12 @@ class PlexCollection:
     title: str
     smart: bool = False
     child_count: int | None = None
+    #: label tags as listed (empty when the listing did not include them)
+    labels: tuple[str, ...] = ()
+
+
+def _tags(raw: Any) -> tuple[str, ...]:
+    return tuple(str(t["tag"]) for t in raw or () if isinstance(t, dict) and t.get("tag"))
 
 
 class PlexClient:
@@ -256,9 +262,15 @@ class PlexClient:
                 str(m.get("title", "")),
                 bool(m.get("smart")),
                 int(m["childCount"]) if m.get("childCount") is not None else None,
+                _tags(m.get("Label")),
             )
             for m in md
         ]
+
+    def collection_labels(self, rating_key: str) -> tuple[str, ...]:
+        """A collection's label tags, read from its own metadata."""
+        md = self._container(f"/library/metadata/{rating_key}").get("Metadata", [])
+        return _tags(md[0].get("Label")) if md else ()
 
     def collection_children(self, rating_key: str) -> list[str]:
         md = self._container(f"/library/collections/{rating_key}/children").get("Metadata", [])

@@ -162,8 +162,9 @@ async def _write_one(
     """Create, update or leave one collection; returns the status. Items Plex refuses
     stay out, are logged and added to ``refused``; they never fail the stage."""
     link = await get_link(db, target, kind, sid)
+    # a collection mediaintel wrote (labelled, no link) is adopted, not left as "foreign"
     remote: PlexRemote = await asyncio.to_thread(
-        _read_remote, client, desired.section, link, desired.title
+        lambda: _read_remote(client, desired.section, link, desired.title, adopt_labelled=True)
     )
     changes = compute_changes(desired, remote)
     if changes.meta.get("action") == "conflict":
@@ -196,6 +197,13 @@ async def _write_one(
             )
 
     status = await apply_or_review(ctx, changes, apply)
+    if status == "noop" and remote.adopted and remote.ours is not None:
+        # already as planned: record it as ours (a change applied above wrote its own link)
+        await put_link(
+            db, Link(target, kind, sid, remote.ours.rating_key, desired.title, content, True)
+        )
+        await ctx.log("info", f"adopted {desired.title!r} (labelled maktaba-auto)", {})
+        return status
     # unchanged, but written before collections were labelled: label it once
     if (
         status == "noop"

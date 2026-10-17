@@ -2,7 +2,8 @@
 """Import the mediaintel prototype's cache into Maktaba (plan 06-11 section 10.4).
 
     python -m maktaba_pipeline.tools.import_mediaintel --cache cache.db --library <uuid|name> \\
-        [--library ...] [--path-map CACHE_PREFIX=MAKTABA_PREFIX] [--database-url URL] [--apply]
+        [--library ...] [--path-map CACHE_PREFIX=MAKTABA_PREFIX] [--settings settings.json] \\
+        [--thumbs thumbs/] [--database-url URL] [--apply]
 
 A **dry run by default**: everything is written inside a transaction that is rolled back, and the
 per-table row counts it would change are printed. ``--apply`` commits.
@@ -15,6 +16,12 @@ What is copied: fingerprints / thumbnail hashes / style metrics (``video_signals
 the links (``media_metadata_enrichment``), series / seasons / episodes (through the same
 ``detect.apply_changes`` the live stage uses, so ids and membership hashes are identical), tags,
 styles and user style overrides, and the Plex collections the tool created (``external_links``).
+The user's rule changes (``settings.json``, beside the cache unless ``--settings`` says
+otherwise) become the ``rules.<section>`` rows of ``app_settings``, each value checked with
+:func:`maktaba_pipeline.rules.config` (unusable ones are reported, never imported; a value
+already set in Maktaba is kept). The small thumbnails (``thumbs/``, named
+``sha1(<thumb source>)[:16].jpg``) are copied into Maktaba's thumbnail cache, so
+``thumb_small`` never reads them from the NAS again (copied on ``--apply`` only).
 
 For every ``(subject, stage)`` that was done in the cache one **synthetic ``processing_jobs`` row**
 (``state='done'``, ``outcome='imported'``) is written with ``input_hash`` computed by the *same*
@@ -31,8 +38,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import uuid
@@ -43,6 +52,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from .. import rules
 from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.production_style import STYLE_VERSION, metrics_from_dict
 from ..classify.series_detector import DETECTOR_VERSION
@@ -59,7 +69,9 @@ from ..engine.stages import rate_style as rate_style_stage
 from ..engine.stages import style_sample as style_sample_stage
 from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
+from ..engine.stages import thumb_small as thumb_small_stage
 from ..engine.stages import youtube_sync as yt_stage
+from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 __all__ = ["ImportReport", "main", "run_import"]
@@ -76,7 +88,7 @@ TABLES = (
     "video_signals", "youtube_channels", "youtube_videos", "youtube_playlists",
     "youtube_playlist_items", "media_metadata_enrichment", "series", "series_seasons",
     "series_episodes", "season_tags", "video_topic_tags", "season_style", "external_links",
-    "processing_jobs",
+    "processing_jobs", "app_settings",
 )  # fmt: skip
 
 
@@ -95,6 +107,12 @@ class ImportReport:
     jobs_failed: int = 0
     jobs_skipped_existing: int = 0
     detect_queued: int = 0
+    #: section -> settings imported; and every setting skipped, with why
+    settings_imported: dict[str, int] = field(default_factory=dict)
+    settings_skipped: list[str] = field(default_factory=list)
+    thumbs_copied: int = 0
+    thumbs_present: int = 0
+    thumbs_missing: int = 0
 
     def render(self) -> str:
         out = [
@@ -111,6 +129,16 @@ class ImportReport:
             f"synthetic jobs: {self.jobs_imported} done, {self.jobs_failed} failed, "
             f"{self.jobs_skipped_existing} already imported; detect queued for {self.detect_queued} libraries"
         )
+        if self.settings_imported or self.settings_skipped:
+            got = ", ".join(f"{k} {n}" for k, n in sorted(self.settings_imported.items()))
+            out.append(f"rules imported: {got or 'none'}")
+            out.extend(f"  rule skipped: {why}" for why in self.settings_skipped)
+        if self.thumbs_copied or self.thumbs_present or self.thumbs_missing:
+            verb = "copied" if self.applied else "to copy"
+            out.append(
+                f"thumbnails: {self.thumbs_copied} {verb}, {self.thumbs_present} already cached,"
+                f" {self.thumbs_missing} not in thumbs/"
+            )
         return "\n".join(out)
 
 
@@ -177,8 +205,13 @@ async def run_import(
     *,
     path_maps: list[tuple[str, str]] | None = None,
     apply: bool = False,
+    settings: Path | None = None,
+    thumbs: Path | None = None,
 ) -> ImportReport:
-    """Run the import; with ``apply=False`` everything is rolled back after counting."""
+    """Run the import; with ``apply=False`` everything is rolled back after counting.
+
+    ``settings`` / ``thumbs`` default to ``settings.json`` / ``thumbs/`` beside the cache,
+    when they exist."""
     maps = path_maps or []
     conn = _open_cache(cache)
     try:
@@ -188,6 +221,8 @@ async def run_import(
         try:
             async with db.transaction():
                 await _import(db, conn, libs, maps, report)
+                await _settings(db, _beside(cache, settings, "settings.json"), report)
+                await _thumbs(db, conn, libs, maps, _beside(cache, thumbs, "thumbs"), report, apply)
                 report.tables = {
                     t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}")))
                     for t in TABLES
@@ -238,9 +273,10 @@ async def _import(
     await _youtube(db, cache, files, match)
     await _signals(db, cache, files, match)
     await _links(db, files, match)
-    seasons = await _series(db, cache, match, report)
+    detect_hashes: dict[UUID, str] = {}
+    seasons = await _series(db, cache, match, report, detect_hashes)
     await _tags_styles_plex(db, cache, match, seasons)
-    await _jobs(db, cache, files, match, libs, seasons, report)
+    await _jobs(db, cache, files, match, libs, seasons, report, detect_hashes)
     for lib_id, _ in libs:
         res = await enqueue_job(
             db,
@@ -385,7 +421,11 @@ async def _links(db: Any, files: dict[str, Any], match: dict[str, Any]) -> None:
 
 
 async def _series(
-    db: Any, cache: sqlite3.Connection, match: dict[str, tuple[UUID, UUID]], report: ImportReport
+    db: Any,
+    cache: sqlite3.Connection,
+    match: dict[str, tuple[UUID, UUID]],
+    report: ImportReport,
+    detect_hashes: dict[UUID, str],
 ) -> dict[str, tuple[UUID, UUID]]:
     """Series / seasons / episodes through the live ``detect`` writer. Returns cache series id ->
     (season id, library id)."""
@@ -463,6 +503,7 @@ async def _series(
         plan = detect_stage.LibraryPlan(tuple(seasons), (), ())
         current = await detect_stage.load_current(db, lib)
         await detect_stage.apply_changes(db, lib, plan, current)
+        detect_hashes[lib] = detect_stage.output_hash(seasons)  # the live stage's own hash
     for rows in overrides.values():
         for e in rows:
             await db.execute(
@@ -587,6 +628,7 @@ async def _jobs(
     libs: list[tuple[UUID, str]],
     seasons: dict[str, tuple[UUID, UUID]],
     report: ImportReport,
+    detect_hashes: dict[UUID, str],
 ) -> None:
     done: dict[tuple[str, str], Any] = {}
     if _has(cache, "index_jobs"):
@@ -655,11 +697,10 @@ async def _jobs(
             "SELECT id, membership_hash FROM series_seasons WHERE library_id = $1 AND retired_at IS NULL",
             uid(lib_id),
         )
-        if rows:
+        if rows and lib_id in detect_hashes:
             ih = await detect_stage.input_fingerprint(db, Subject("library", lib_id))
             await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="detect",
-                             version=DETECTOR_VERSION, input_hash=ih,
-                             output_hash=canonical_hash(sorted([str(r["id"]), r["membership_hash"]] for r in rows)))  # fmt: skip
+                             version=DETECTOR_VERSION, input_hash=ih, output_hash=detect_hashes[lib_id])  # fmt: skip
     for sid, lib in seasons.values():
         tags = await db.fetch("SELECT tag, score FROM season_tags WHERE season_id = $1", uid(sid))
         if tags:
@@ -674,6 +715,111 @@ async def _jobs(
             await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="rate_style",
                              version=int(st["style_version"] or STYLE_VERSION), input_hash=ih,
                              output_hash=canonical_hash({"style": st["style"], "tier": int(st["tier"])}))  # fmt: skip
+
+
+# --------------------------------------------------------------------------- rules and thumbnails
+
+
+def _beside(cache: Path, given: Path | None, name: str) -> Path | None:
+    if given is not None:
+        return given
+    p = cache.parent / name
+    return p if p.exists() else None
+
+
+async def _settings(db: Any, path: Path | None, report: ImportReport) -> None:
+    """``settings.json`` ({section: {setting: value}}, only what differs from the defaults)
+    into ``app_settings`` ``rules.<section>``. Each value is checked as the stages read it;
+    a value Maktaba already has is kept (the user may have changed it there since)."""
+    if path is None:
+        return
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        report.settings_skipped.append(f"{path.name}: not a JSON object")
+        return
+    for section, changes in sorted(raw.items()):
+        if section not in rules.SECTIONS:
+            report.settings_skipped.append(f"{section}: not a rules section")
+            continue
+        if not isinstance(changes, dict) or not changes:
+            continue
+        _, bad = rules.config(section, changes)
+        report.settings_skipped.extend(f"{section}.{k}: {why}" for k, why in sorted(bad.items()))
+        _, have, _ = await rules.read(db, section)
+        for k in sorted(set(have) & set(changes)):
+            if have[k] != changes[k]:
+                report.settings_skipped.append(f"{section}.{k}: already set in Maktaba; kept")
+        add = {k: v for k, v in changes.items() if k not in bad and k not in have}
+        if not add:
+            continue
+        await db.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)"
+            " ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            f"rules.{section}",
+            dumps({**have, **add}),
+            to_ts(db, now()),
+        )
+        report.settings_imported[section] = len(add)
+
+
+async def _thumbs(
+    db: Any,
+    cache: sqlite3.Connection,
+    libs: list[tuple[UUID, str]],
+    maps: list[tuple[str, str]],
+    folder: Path | None,
+    report: ImportReport,
+    apply: bool,
+) -> None:
+    """mediaintel's small copies into Maktaba's thumbnail cache, each recorded as a done
+    ``thumb_small`` job. A copy is named after its source (the sidecar image, else the
+    video) as the cache stores it; files are written on ``--apply`` only."""
+    if folder is None or not folder.is_dir():
+        return
+    videos: dict[str, tuple[UUID, UUID, str | None]] = {}
+    for lib_id, _ in libs:
+        for r in await db.fetch(
+            "SELECT id, path, content_hash FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
+            uid(lib_id),
+        ):
+            key = str(r["path"]).replace("\\", "/").lower()
+            ch = None if r["content_hash"] is None else str(r["content_hash"])
+            videos[key] = (UUID(str(r["id"])), lib_id, ch)
+    for f in cache.execute("SELECT path, thumb_path FROM files ORDER BY path"):
+        hit = videos.get(_norm(f["path"], maps))
+        if hit is None:
+            continue
+        vid, lib, content_hash = hit
+        if content_hash is None:  # not hashed by the scan yet: thumb_small makes it later
+            continue
+        src = next(
+            (folder / thumbs_name(s) for s in (f["thumb_path"], f["path"]) if s
+             and (folder / thumbs_name(s)).is_file()),
+            None,
+        )  # fmt: skip
+        if src is None:
+            report.thumbs_missing += 1
+            continue
+        dst = small_path(content_hash)
+        if dst.is_file() and dst.stat().st_size > 0:
+            report.thumbs_present += 1
+        else:
+            report.thumbs_copied += 1
+            if apply:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                tmp = dst.with_name(dst.stem + ".part.jpg")
+                shutil.copyfile(src, tmp)
+                tmp.replace(dst)
+        size = dst.stat().st_size if dst.is_file() else src.stat().st_size
+        ih = await thumb_small_stage.input_fingerprint(db, Subject("video", vid))
+        await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="thumb_small",
+                         version=THUMB_SMALL_VERSION, input_hash=ih,
+                         output_hash=canonical_hash({"small": dst.name, "size": size}))  # fmt: skip
+
+
+def thumbs_name(source: str) -> str:
+    """mediaintel's file name for the small copy of ``source`` (as the cache stores it)."""
+    return hashlib.sha1(source.encode()).hexdigest()[:16] + ".jpg"  # noqa: S324 - a file name
 
 
 # --------------------------------------------------------------------------- cli
@@ -692,6 +838,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--path-map", action="append", default=[], help="CACHE_PREFIX=MAKTABA_PREFIX (repeatable)"
     )
+    p.add_argument(
+        "--settings", type=Path, help="mediaintel's settings.json (default: beside the cache)"
+    )
+    p.add_argument(
+        "--thumbs", type=Path, help="mediaintel's thumbs/ folder (default: beside the cache)"
+    )
     p.add_argument("--database-url", default=os.environ.get("MAKTABA_DATABASE_URL", ""))
     p.add_argument("--apply", action="store_true", help="commit (default: dry run, rolled back)")
     return p
@@ -706,8 +858,9 @@ async def _amain(args: argparse.Namespace) -> int:
     db = await Database.connect(args.database_url)
     try:
         report = await run_import(
-            db, args.cache, args.library, path_maps=parse_path_maps(args.path_map), apply=args.apply
-        )
+            db, args.cache, args.library, path_maps=parse_path_maps(args.path_map),
+            apply=args.apply, settings=args.settings, thumbs=args.thumbs,
+        )  # fmt: skip
     finally:
         await db.close()
     sys.stdout.write(report.render() + "\n")

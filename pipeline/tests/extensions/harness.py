@@ -237,6 +237,7 @@ class FakePlex:
                     "title": c["title"],
                     "smart": c["smart"],
                     "childCount": len(c["children"]),
+                    **({"Label": [{"tag": t} for t in c["labels"]]} if c.get("labels") else {}),
                 }
                 for rk, c in self.collections.items()
                 if c["section"] == parts[2]
@@ -253,8 +254,13 @@ class FakePlex:
             md = [_meta(rk, self.items[rk]) for rk in rks if rk in self.items]
             for rk in rks:
                 if rk in self.collections:
+                    col = self.collections[rk]
                     md.append(
-                        {"ratingKey": rk, "librarySectionID": self.collections[rk]["section"]}
+                        {
+                            "ratingKey": rk,
+                            "librarySectionID": col["section"],
+                            "Label": [{"tag": t} for t in col.get("labels", [])],
+                        }
                     )
             return {"MediaContainer": {"Metadata": md}}
         if parts[:2] == ["library", "metadata"] and len(parts) == 3 and method == "DELETE":

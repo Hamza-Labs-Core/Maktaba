@@ -296,6 +296,23 @@ def _fp_plan(
     return plan
 
 
+def output_hash(seasons: Sequence[PlannedSeason]) -> str:
+    """What downstream stages read of the library's seasons: their members, and also
+    name, kind, dates and length (a corrected air date or season name re-plans the
+    channels even when no episode moved). The mediaintel import records the same hash."""
+    return canonical_hash(
+        sorted(
+            [
+                str(s.id), s.membership_hash, s.series_name, s.kind, s.season_name,
+                s.season_year, s.brand, s.first_air.isoformat() if s.first_air else None,
+                s.last_air.isoformat() if s.last_air else None,
+                round(s.median_duration_s, 1) if s.median_duration_s is not None else None,
+            ]
+            for s in seasons
+        )
+    )  # fmt: skip
+
+
 def distinct_series_key(
     library_id: UUID,
     key: str,
@@ -750,20 +767,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 
     rowmap = {r.id: r for r in rows}
     requests = _fingerprint_requests(plan, rowmap)
-    # what downstream stages read of a season: its members, and also its name, kind,
-    # dates and length (a corrected air date or season name re-plans the channels even
-    # when no episode moved)
-    out = canonical_hash(
-        sorted(
-            [
-                str(s.id), s.membership_hash, s.series_name, s.kind, s.season_name,
-                s.season_year, s.brand, s.first_air.isoformat() if s.first_air else None,
-                s.last_air.isoformat() if s.last_air else None,
-                round(s.median_duration_s, 1) if s.median_duration_s is not None else None,
-            ]
-            for s in plan.seasons
-        )
-    )  # fmt: skip
+    out = output_hash(plan.seasons)
     return StageResult(
         output_hash=out,
         changed_subjects=tuple(touched),  # type: ignore[arg-type]

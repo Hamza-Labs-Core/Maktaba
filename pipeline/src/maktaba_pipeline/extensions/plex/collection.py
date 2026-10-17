@@ -85,6 +85,8 @@ class PlexRemote:
     ours: RemoteCollection | None = None
     #: a collection the tool did not create already carries the desired title
     foreign_title: bool = False
+    #: ``ours`` was found by title + the ``maktaba-auto`` label, with no link yet
+    adopted: bool = False
 
 
 def collection_hash(desired: Desired) -> str:
@@ -284,11 +286,30 @@ async def resolve_members(
     return found
 
 
-def _read_remote(client: PlexClient, section: str, link: Link | None, title: str) -> PlexRemote:
+def _read_remote(
+    client: PlexClient,
+    section: str,
+    link: Link | None,
+    title: str,
+    *,
+    adopt_labelled: bool = False,
+) -> PlexRemote:
+    """Plex's side of one collection. With ``adopt_labelled``, a collection with no link
+    but the planned title and the ``maktaba-auto`` label (only this tool and mediaintel
+    put it on) is taken as ours; a same-titled collection without the label stays
+    foreign."""
     cols = client.collections(section)
     ours_col = None
+    adopted = False
     if link is not None and link.created_by_tool:
         ours_col = next((c for c in cols if c.rating_key == link.external_id), None)
+    if ours_col is None and adopt_labelled:
+        for c in sorted(cols, key=lambda c: c.rating_key):
+            if c.title != title or c.smart:
+                continue
+            if LABEL in (c.labels or client.collection_labels(c.rating_key)):
+                ours_col, adopted = c, True
+                break
     foreign = any(
         c.title == title and (ours_col is None or c.rating_key != ours_col.rating_key) for c in cols
     )
@@ -299,7 +320,7 @@ def _read_remote(client: PlexClient, section: str, link: Link | None, title: str
             ours_col.title,
             tuple(client.collection_children(ours_col.rating_key)),
         )
-    return PlexRemote(ours, foreign)
+    return PlexRemote(ours, foreign, adopted)
 
 
 def _wrap(exc: Exception) -> StageFailure:
