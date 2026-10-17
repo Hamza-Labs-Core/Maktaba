@@ -155,6 +155,9 @@ class Database:
         conn = await aiosqlite.connect(path, isolation_level=None)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA foreign_keys = ON")
+        # other worker processes hold the write lock briefly (a claim is BEGIN IMMEDIATE):
+        # wait for it rather than fail with "database is locked" after the 5 s default
+        await conn.execute("PRAGMA busy_timeout = 30000")
         return cls(dialect="sqlite", conn=conn)
 
     def _sqlite_lock(self) -> asyncio.Lock:

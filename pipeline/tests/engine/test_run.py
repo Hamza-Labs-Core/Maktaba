@@ -335,3 +335,48 @@ async def test_sync_preserves_operator_columns_and_reasons(db: Database) -> None
     await sync_graph(db, tuple(rt.graph.values()))
     r = await db.fetchrow("SELECT enabled, disabled_reason FROM job_stages WHERE stage='t_b'")
     assert r["enabled"] and r["disabled_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_follow_up_keeps_what_arrived_mid_run(db: Database) -> None:
+    """The follow-up takes the payload merged into the running row and a force cascade."""
+    rec = Recorder()
+    rt = await setup(db, rec)
+    v = await make_video(db, await make_library(db))
+
+    async def during(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
+        res = await enqueue_job(
+            db_, subject_kind="video", subject_id=v, stage="t_a", force_cascade=True,
+            payload={"seasons": ["B"]}, reason={"why": "mid"},
+        )  # fmt: skip
+        assert res.outcome == "rerun_requested"
+        return StageResult(output_hash="out-1")
+
+    rec.hooks["t_a"] = during
+    await enqueue_job(
+        db, subject_kind="video", subject_id=v, stage="t_a", payload={"seasons": ["A"]}
+    )
+    job = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["t_a"], scope="per_worker")
+    assert job is not None
+    await dispatch_job(db, job, runtime=rt, legacy_handlers={})
+    follow = (await rows(db, "t_a"))[1]
+    assert sorted(loads(follow["payload"])["seasons"]) == ["A", "B"]
+    assert bool(follow["force_cascade"]) is True
+
+
+@pytest.mark.asyncio
+async def test_a_retry_carries_a_force_that_arrived_mid_run(db: Database) -> None:
+    rec = Recorder()
+    rt = await setup(db, rec)
+    v = await make_video(db, await make_library(db))
+
+    async def boom(db_: DBConn, job: Job, ctx: StageContext) -> StageResult:
+        await enqueue_job(db_, subject_kind="video", subject_id=v, stage="t_a", force=True)
+        raise OSError("[WinError 121] The semaphore timeout period has expired: Y:/a/b.mp4")
+
+    rec.hooks["t_a"] = boom
+    await enqueue_job(db, subject_kind="video", subject_id=v, stage="t_a")
+    await drain(db, rt, max_jobs=1)
+    row = (await rows(db, "t_a"))[0]
+    assert row["state"] == "pending"  # the retry
+    assert bool(row["force"]) is True and bool(row["rerun_force"]) is False

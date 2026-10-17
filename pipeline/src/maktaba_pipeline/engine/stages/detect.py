@@ -463,16 +463,17 @@ def compute_changes(
             touched.append(("season", s.id))
         elif cur.membership_hash != s.membership_hash:
             old, new = list(cur.episodes), [str(e) for e in s.episodes]
+            old_set, new_set = set(old), set(new)  # once per season, not per episode
             changed.append(
                 {
                     "season_id": str(s.id),
                     "name": s.series_name,
                     "from": {"episodes": len(old), "kind": cur.kind},
                     "to": {"episodes": len(new), "kind": s.kind},
-                    "episodes_added": [e for e in new if e not in set(old)][:20],
-                    "episodes_removed": [e for e in old if e not in set(new)][:20],
-                    "reordered": [e for e in old if e in set(new)]
-                    != [e for e in new if e in set(old)],
+                    "episodes_added": [e for e in new if e not in old_set][:20],
+                    "episodes_removed": [e for e in old if e not in new_set][:20],
+                    "reordered": [e for e in old if e in new_set]
+                    != [e for e in new if e in old_set],
                 }
             )
             touched.append(("season", s.id))
@@ -595,11 +596,14 @@ async def apply_changes(
         for s in plan.seasons:
             for vid, num in zip(s.episodes, s.numbers, strict=True):
                 placed[str(vid)] = (s.series_id, s.number, num)
+        # a row the user placed by hand (an override) is never removed: detection not
+        # placing it again is no reason to undo the user's edit
         existing = {
             str(r["video_id"])
             for r in await db.fetch(
                 "SELECT e.video_id AS video_id FROM series_episodes e"
-                " JOIN videos v ON v.id = e.video_id WHERE v.library_id = $1",
+                " JOIN videos v ON v.id = e.video_id WHERE v.library_id = $1"
+                " AND e.season_override IS NULL AND e.episode_override IS NULL",
                 uid(library_id),
             )
         }
@@ -723,7 +727,20 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 
     rowmap = {r.id: r for r in rows}
     requests = _fingerprint_requests(plan, rowmap)
-    out = canonical_hash(sorted([str(s.id), s.membership_hash] for s in plan.seasons))
+    # what downstream stages read of a season: its members, and also its name, kind,
+    # dates and length (a corrected air date or season name re-plans the channels even
+    # when no episode moved)
+    out = canonical_hash(
+        sorted(
+            [
+                str(s.id), s.membership_hash, s.series_name, s.kind, s.season_name,
+                s.season_year, s.brand, s.first_air.isoformat() if s.first_air else None,
+                s.last_air.isoformat() if s.last_air else None,
+                round(s.median_duration_s, 1) if s.median_duration_s is not None else None,
+            ]
+            for s in plan.seasons
+        )
+    )  # fmt: skip
     return StageResult(
         output_hash=out,
         changed_subjects=tuple(touched),  # type: ignore[arg-type]

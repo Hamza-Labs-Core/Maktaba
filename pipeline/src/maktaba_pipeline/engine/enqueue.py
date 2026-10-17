@@ -192,7 +192,7 @@ async def _enqueue_sqlite(
         debounce = int(s["debounce_sec"])
         live = await db.fetchrow(
             "SELECT id, state, priority, force, force_cascade, reasons, created_at, payload,"
-            " rerun_force, rerun_reasons, enqueue_count FROM processing_jobs"
+            " rerun_force, rerun_force_cascade, rerun_reasons, enqueue_count FROM processing_jobs"
             " WHERE subject_kind = $1 AND subject_id = $2 AND stage = $3"
             " AND state IN ('pending','claimed','running','resuming','paused')",
             subject_kind,
@@ -269,11 +269,13 @@ async def _enqueue_sqlite(
             return EnqueueResult(int(live["id"]), "coalesced")
         await db.execute(
             "UPDATE processing_jobs SET rerun_requested = 1, rerun_force = $2, rerun_reasons = $3,"
-            " payload = $4, enqueue_count = enqueue_count + 1 WHERE id = $1",
+            " payload = $4, rerun_force_cascade = $5, enqueue_count = enqueue_count + 1"
+            " WHERE id = $1",
             live["id"],
             bool(live["rerun_force"]) or force or force_cascade,
             dumps(prepend_reason(loads(live["rerun_reasons"]) or [], entry)),
             None if new_payload is None else dumps(new_payload),
+            bool(live["rerun_force_cascade"]) or force_cascade,
         )
         return EnqueueResult(int(live["id"]), "rerun_requested")
 

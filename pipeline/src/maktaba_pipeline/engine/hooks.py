@@ -58,12 +58,27 @@ async def on_failure(
         return
     cause = classify(kind, message)
     will_retry = new_state == "pending"
-    await db.execute(
-        "UPDATE processing_jobs SET error_cause = $2, rerun_requested = $3 WHERE id = $1",
-        job_id,
-        cause,
-        bool(row["rerun_requested"]) and not will_retry,
-    )
+    if will_retry:
+        # the retry is the follow-up: it takes over a force (or force cascade) that
+        # arrived mid-run, or it could finish skipped_unchanged without the forced work
+        await db.execute(
+            "UPDATE processing_jobs SET error_cause = $2, rerun_requested = $3,"
+            " force = $4, force_cascade = $5, rerun_force = $6, rerun_force_cascade = $6"
+            " WHERE id = $1",
+            job_id,
+            cause,
+            False,
+            bool(row["force"]) or bool(row["rerun_force"]),
+            bool(row["force_cascade"]) or bool(row["rerun_force_cascade"]),
+            False,
+        )
+    else:
+        await db.execute(
+            "UPDATE processing_jobs SET error_cause = $2, rerun_requested = $3 WHERE id = $1",
+            job_id,
+            cause,
+            bool(row["rerun_requested"]),
+        )
     await log_event(
         db,
         **_common(row),

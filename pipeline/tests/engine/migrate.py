@@ -105,7 +105,10 @@ def apply_sqlite(
         slot = int(path.name[:4])
         for stmt in up_statements(path.read_text(encoding="utf-8")):
             if slot >= strict_from:
-                conn.executescript(stmt if stmt.rstrip().endswith(";") else stmt + ";")
+                # strict: any error raises. ``ADD COLUMN IF NOT EXISTS`` (which
+                # migration-lint requires) is rewritten exactly as the Go migrator does
+                # in production (api/migrate_sqlite.go), the only rewrite allowed
+                apply_statement(conn, stmt)
                 continue
             try:
                 _apply_tolerant(conn, stmt)
@@ -113,6 +116,12 @@ def apply_sqlite(
                 problems.append(f"{path.name}: {exc}")
     conn.commit()
     return problems
+
+
+def apply_statement(conn: sqlite3.Connection, stmt: str) -> None:
+    """Run one SQLite migration statement; ``ADD COLUMN IF NOT EXISTS`` is rewritten as
+    the Go migrator does (api/migrate_sqlite.go). Any error raises."""
+    _apply_tolerant(conn, stmt)
 
 
 def _apply_tolerant(conn: sqlite3.Connection, stmt: str) -> None:

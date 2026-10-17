@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.ids import season_uuid, series_uuid
-from maktaba_pipeline.engine.sql import loads, to_ts
+from maktaba_pipeline.engine.sql import is_pg, loads, now, to_ts
 from maktaba_pipeline.engine.stages.detect import compute_changes, input_fingerprint, plan_library
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import core_runtime, drain_core, make_show, set_playlist
@@ -249,3 +250,44 @@ def test_plan_is_deterministic_and_ids_are_stable() -> None:
     cs2, touched2 = compute_changes(a, {})
     assert cs2.digest() == cs.digest()
     assert to_ts is not None
+
+
+@pytest.mark.asyncio
+async def test_a_video_placed_by_hand_survives_a_redetection(db: Database) -> None:
+    rt = await core_runtime(db)
+    w = await make_show(db)
+    await _detect(db, rt, w.library)
+    row = await db.fetchrow(
+        "SELECT series_id, season FROM series_episodes WHERE video_id = $1", str(w.episodes[0])
+    )
+    series_id, season = row["series_id"], row["season"]
+    talk = str(w.loose[0])  # detection never places it
+    await db.execute(
+        "INSERT INTO series_episodes (series_id, video_id, season, episode, season_override,"
+        " episode_override, created_at) VALUES ($1, $2, $3, 50, $3, 50, $4)",
+        series_id,
+        talk,
+        season,
+        to_ts(db, now()),
+    )
+    await _detect(db, rt, w.library, force=True)
+    row = await db.fetchrow(
+        "SELECT episode_override FROM series_episodes WHERE video_id = $1", talk
+    )
+    assert row is not None and row["episode_override"] == 50  # the user's edit stays
+
+
+@pytest.mark.asyncio
+async def test_a_corrected_air_date_changes_the_output_channels_plan_from(db: Database) -> None:
+    rt = await core_runtime(db)
+    w = await make_show(db)
+    await _detect(db, rt, w.library)
+    # the season's first episode gets an earlier, exact date: no episode moves
+    await db.execute(
+        "UPDATE youtube_videos SET upload_date = $2, date_quality = 'exact' WHERE youtube_id = $1",
+        w.youtube[w.episodes[0]],
+        date(2001, 1, 1) if is_pg(db) else "2001-01-01",
+    )
+    await _detect(db, rt, w.library, force=True)
+    done = [j for j in await _jobs(db, "detect") if j["state"] == "done"]
+    assert len(done) == 2 and done[0]["output_hash"] != done[1]["output_hash"]

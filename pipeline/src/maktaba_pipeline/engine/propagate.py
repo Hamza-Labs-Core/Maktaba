@@ -163,7 +163,8 @@ async def finalize_success(
             " stage_version = $3, input_hash = $4, output_hash = $5, output_summary = $6,"
             " outcome = $7, propagated_at = $2, claimed_by = NULL"
             f" WHERE id = $1 AND {active}"
-            " RETURNING rerun_requested, rerun_force, rerun_reasons, started_at, created_at",
+            " RETURNING rerun_requested, rerun_force, rerun_force_cascade, rerun_reasons, payload,"
+            " started_at, created_at",
             job.id,
             ts,
             stage.version,
@@ -249,6 +250,7 @@ async def enqueue_follow_up(db: Any, job: Job, row: Any) -> EnqueueResult | None
         subject_id=job.subject.id,
         stage=job.stage,
         force=bool(row["rerun_force"]),
+        force_cascade=bool(row["rerun_force_cascade"]),
         reason={
             "why": "changed while running",
             "by": f"job:{job.id}",
@@ -256,7 +258,9 @@ async def enqueue_follow_up(db: Any, job: Job, row: Any) -> EnqueueResult | None
             "reasons": reasons[:5],
         },
         triggered_by=job.id,
-        payload=job.payload,
+        # the row's payload: a trigger that arrived mid-run merged its seasons into it
+        # after this job was claimed (job.payload is the claim-time copy)
+        payload=loads(row["payload"]) if row["payload"] is not None else job.payload,
     )
 
 

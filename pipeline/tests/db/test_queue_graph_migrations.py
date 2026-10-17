@@ -15,7 +15,7 @@ import pytest
 from maktaba_pipeline.engine.graph import CATALOG_ID, GRAPH, POOLS
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
-from tests.engine.migrate import apply_sqlite, list_migrations, up_statements
+from tests.engine.migrate import apply_sqlite, apply_statement, list_migrations, up_statements
 
 _MIG = Path(__file__).resolve().parents[3] / "shared" / "db" / "migrations"
 _SLOTS = {
@@ -149,7 +149,7 @@ def test_sqlite_rebuild_preserves_existing_rows(schema_at_87: sqlite3.Connection
     for p in list_migrations(sqlite=True):
         if int(p.name[:4]) >= 88:
             for stmt in up_statements(p.read_text(encoding="utf-8")):
-                conn.executescript(stmt if stmt.rstrip().endswith(";") else stmt + ";")
+                apply_statement(conn, stmt)  # ADD COLUMN IF NOT EXISTS as the Go migrator does
     rows = {
         r[0]: r
         for r in conn.execute(
