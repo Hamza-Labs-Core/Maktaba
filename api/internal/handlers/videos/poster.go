@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -73,9 +74,13 @@ func (h *Handler) Poster(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, herr)
 		return
 	}
-	// id is a parsed UUID and content_hash is checked as 64 hex by the
-	// schema, so neither can step outside the cache folder.
-	for _, p := range posterCandidates(thumbnailRoot(), id, contentHash, posterPath.String) {
+	root := thumbnailRoot()
+	for _, p := range posterCandidates(root, id, contentHash, posterPath.String) {
+		// The video's own poster_path is the library's; every other candidate
+		// is built from the id and hash and must stay inside the cache folder.
+		if p != posterPath.String && !withinBase(root, p) {
+			continue
+		}
 		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
 			w.Header().Set("Cache-Control", "private, max-age=3600")
 			http.ServeFile(w, r, p)
@@ -83,4 +88,15 @@ func (h *Handler) Poster(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httperror.Write(w, r, httperror.NotFound("no poster for video "+id))
+}
+
+// withinBase reports whether p, cleaned, lies inside base. The id is a parsed
+// UUID and content_hash is 64 hex per the schema, so this never rejects a real
+// candidate; it is the explicit barrier at the file-system sink.
+func withinBase(base, p string) bool {
+	if base == "" {
+		return false
+	}
+	b := filepath.Clean(base) + string(filepath.Separator)
+	return strings.HasPrefix(filepath.Clean(p), b)
 }
