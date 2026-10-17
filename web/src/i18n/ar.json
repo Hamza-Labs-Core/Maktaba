@@ -4,6 +4,7 @@
   "nav.search": "البحث",
   "nav.queue": "قائمة المعالجة",
   "nav.settings": "الإعدادات",
+  "nav.more": "المزيد",
   "nav.skipToContent": "تخطَّ إلى المحتوى الرئيسي",
   "nav.primary": "التنقل الرئيسي",
   "nav.signOut": "تسجيل الخروج",
@@ -1003,5 +1004,10 @@
   "queue.ext.testOk": "الاتصال يعمل: {message}",
   "queue.ext.testBad": "فشل الاتصال: {message}",
   "queue.ext.error": "تعذّر تحميل الإضافات.",
-  "queue.ext.required": "مطلوب"
+  "queue.ext.required": "مطلوب",
+  "video.state.missing": "مفقود",
+  "video.state.corrupted": "تالف",
+  "video.state.failed": "فشل",
+  "video.state.ready_no_audio": "بلا صوت",
+  "video.state.superseded": "مستبدَل"
 }

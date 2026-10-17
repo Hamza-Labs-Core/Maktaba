@@ -187,7 +187,7 @@ class SqlRepo:
         live = await self._live_videos(ids)  # id -> title (the plan's is the file name)
         return [
             [
-                ContentItem(c.video_id, c.duration_ms, live[str(c.video_id)] or c.title)
+                ContentItem(c.video_id, c.duration_ms, live[str(c.video_id)] or _bare(c.title))
                 for c in queues.get(n, [])
                 if str(c.video_id) in live
             ]
@@ -364,6 +364,12 @@ def slot_lane(slot: dict[str, Any]) -> str | None:
     if not isinstance(src, dict) or src.get("type") != "lane" or not src.get("lane"):
         return None
     return str(src["lane"])
+
+
+def _bare(name: str) -> str:
+    """A file name as a title: without its extension (``….mp4``)."""
+    stem, dot, ext = name.rpartition(".")
+    return stem if dot and stem and 2 <= len(ext) <= 4 and ext.isalnum() else name
 
 
 def lane_episodes(lane: dict[str, Any]) -> list[ContentItem]:

@@ -4,6 +4,7 @@
   "nav.search": "Search",
   "nav.queue": "Processing",
   "nav.settings": "Settings",
+  "nav.more": "More",
   "nav.skipToContent": "Skip to main content",
   "nav.primary": "Primary",
   "nav.signOut": "Sign out",
@@ -1003,5 +1004,10 @@
   "queue.ext.testOk": "Connection works: {message}",
   "queue.ext.testBad": "Connection failed: {message}",
   "queue.ext.error": "Could not load the extensions.",
-  "queue.ext.required": "Required"
+  "queue.ext.required": "Required",
+  "video.state.missing": "Missing",
+  "video.state.corrupted": "Corrupted",
+  "video.state.failed": "Failed",
+  "video.state.ready_no_audio": "No audio",
+  "video.state.superseded": "Replaced"
 }

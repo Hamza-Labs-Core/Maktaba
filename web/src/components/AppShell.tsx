@@ -4,7 +4,7 @@
 // without a user. Stories 11.7 (responsive), 11.9 (search focus ref),
 // 11.10 (update toast), 11.11 (skip-link + landmarks).
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
@@ -20,6 +20,13 @@ const NAV = [
   { to: "/search", key: "nav.search", icon: "⌕" },
   { to: "/queue", key: "nav.queue", icon: "⚙" },
   { to: "/settings", key: "nav.settings", icon: "☰" },
+] as const;
+
+// The phone tab bar has room for five tabs and "More": Settings, the
+// account pages and the admin pages live behind More (/more).
+const TABS = [
+  ...NAV.filter((item) => item.to !== "/settings"),
+  { to: "/more", key: "nav.more", icon: "⋯" },
 ] as const;
 
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
@@ -47,7 +54,20 @@ const ADMIN = [
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;
 
+// A new page opens at its top; Back / Forward (POP) leave the browser's own
+// restoration alone, so returning to a long list keeps its place.
+function useScrollTopOnNavigate(): void {
+  const { pathname } = useLocation();
+  const type = useNavigationType();
+  useEffect(() => {
+    if (type === "POP") return;
+    window.scrollTo(0, 0);
+    document.getElementById("mkt-main")?.scrollTo?.(0, 0);
+  }, [pathname, type]);
+}
+
 export function AppShell() {
+  useScrollTopOnNavigate();
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const { focusSearchRef } = useShortcuts();
@@ -187,7 +207,7 @@ export function AppShell() {
         </main>
       </div>
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
-        {NAV.map((item) => (
+        {TABS.map((item) => (
           <NavLink key={item.to} to={item.to} className="mkt-tab">
             <span className="mkt-tab__icon" aria-hidden="true">
               {item.icon}
@@ -197,5 +217,51 @@ export function AppShell() {
         ))}
       </nav>
     </div>
+  );
+}
+
+// The phone's way to everything the tab bar has no room for: Settings, the
+// account pages, the admin pages (admins only) and signing out. On a wide
+// screen the sidebar already lists them.
+export function MoreMenu() {
+  const { user, logout } = useAuth();
+  const { t } = useI18n();
+  const nav = useNavigate();
+  const groups: Array<{
+    title?: string;
+    items: ReadonlyArray<{ to: string; key: string; icon: string }>;
+  }> = [{ items: [...NAV.filter((item) => item.to === "/settings"), ...SECONDARY] }];
+  if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
+  return (
+    <section className="mkt-page mkt-more">
+      <h1>{t("nav.more")}</h1>
+      {groups.map((g, i) => (
+        <div key={i} className="mkt-more__group">
+          {g.title && <h2>{g.title}</h2>}
+          <ul className="mkt-more__list">
+            {g.items.map((item) => (
+              <li key={item.to}>
+                <NavLink to={item.to} className="mkt-more__link">
+                  <span className="mkt-nav-link__icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  {t(item.key)}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="mkt-btn mkt-btn--ghost mkt-more__signout"
+        onClick={async () => {
+          await logout();
+          nav("/login", { replace: true });
+        }}
+      >
+        {t("nav.signOut")}
+      </button>
+    </section>
   );
 }

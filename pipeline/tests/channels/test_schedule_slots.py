@@ -127,3 +127,11 @@ def test_lane_episodes_follow_the_plan_order_and_skip_unusable() -> None:
     assert eps[1].duration_ms == 90_500
     assert slot_lane({"source": {"type": "lane", "lane": "quran.x"}}) == "quran.x"
     assert slot_lane({"source": {"type": "series"}}) is None
+
+
+def test_file_name_fallback_title_drops_the_extension() -> None:
+    from maktaba_pipeline.channels.repo import _bare
+
+    assert _bare("شرح عمدة الفقه.mp4") == "شرح عمدة الفقه"
+    assert _bare("Vol. 2 of 3") == "Vol. 2 of 3"
+    assert _bare("no extension") == "no extension"
