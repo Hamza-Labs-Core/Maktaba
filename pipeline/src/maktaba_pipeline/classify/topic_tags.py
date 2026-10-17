@@ -583,7 +583,9 @@ _LEXICON: dict[str, dict[float, str]] = {
             "نشيد | أناشيد | الأناشيد | أنشودة | انشودة | إنشاد | منشد | المنشد | بدون موسيقى "
             "| بدون إيقاع | nasheed | nasheeds | anasheed | نشيدة | انشوده | نشيده"
         ),
-        0.6: "ابتهالات | ابتهال | مدائح | مديح | إيقاع | بصوت",
+        # not «بصوت» ("in the voice of"): it credits any voice, a reciter's
+        # (بصوت القارئ) or an audiobook narrator's as much as a munshid's
+        0.6: "ابتهالات | ابتهال | مدائح | مديح | إيقاع",
     },
     # formats -------------------------------------------------------------
     "format:program": {

@@ -351,3 +351,30 @@ def test_long_untitled_video_defaults_to_lecture() -> None:
     tags = tag_video("هدية السماء إلى الأرض", duration_s=2500)
     assert "format:lecture" in _tags(tags)
     assert content_type(tags) == "lecture"
+
+
+# «بصوت» ("in the voice of") credits any voice: a reciter's, a narrator's.
+def test_bisawt_reciter_mushaf_is_recitation_not_nasheed() -> None:
+    name = "المصحف كاملًا في ثلاثة مقاطع فقط بصوت القارئ (برواية حفص عن عاصم من طريق الشاطبية)"
+    eps = [
+        "المصحف كاملًا الجزء الأول بصوت القارئ برواية حفص عن عاصم",
+        "المصحف كاملًا الجزء الثاني بصوت القارئ برواية حفص عن عاصم",
+        "المصحف كاملًا الجزء الثالث بصوت القارئ برواية حفص عن عاصم",
+    ]
+    tags = tag_series(name, playlist_titles=[name], episode_titles=eps)
+    assert _genre(tags) != "genre:nasheed"
+    assert _tags(tags).get("topic:nasheed", 0.0) < 0.5
+
+
+def test_bisawt_audiobook_is_not_nasheed() -> None:
+    eps = [f"كتاب معركة الفلوجة - الفصل {i} - بصوت الراوي" for i in range(1, 11)]
+    tags = tag_series("كتاب معركة الفلوجة", playlist_titles=["كتاب معركة الفلوجة بصوت"],
+                      episode_titles=eps)  # fmt: skip
+    assert _genre(tags) != "genre:nasheed"
+    assert _tags(tags).get("topic:nasheed", 0.0) < 0.5
+
+
+def test_a_real_nasheed_with_bisawt_stays_nasheed() -> None:
+    eps = [f"أنشودة طلع البدر علينا {i} بصوت المنشد" for i in range(1, 6)]
+    tags = tag_series("أناشيد إسلامية", episode_titles=eps)
+    assert _genre(tags) == "genre:nasheed"

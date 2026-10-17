@@ -202,3 +202,36 @@ def test_talk_shows_give_up_a_special_runs_episodes_a_topic_channel_keeps_its_sh
 
     assert eps_on("talk") == 20  # without the 20 the Palestine channel runs specially
     assert eps_on("news") == 40  # its topic's channel keeps the show whole
+
+
+def test_the_quran_is_never_a_themes_show_or_special_run() -> None:
+    """A recitation outside the reciters' libraries (a scholar's تهجد recitations,
+    weakly tagged nasheed, each episode a surah about Hajj) airs on no theme channel:
+    not as a show by a secondary tag, not as a theme's special run."""
+    from dataclasses import replace
+
+    reciter = [season(f"q{i}", f"تلاوة {i}", genre="quran_recitation", presenter="القارئ",
+                      n=30, tags={"format:recitation": 1.0}) for i in range(3)]  # fmt: skip
+    tahajjud = season("t1", "تلاوات صلاة التهجد", genre="quran_recitation", presenter="الشيخ",
+                      n=30, tags={"format:recitation": 1.0, "topic:nasheed": 0.78})  # fmt: skip
+    tahajjud = replace(tahajjud, episodes=tuple(
+        replace(e, tags={"occasion:hajj": 0.9}) for e in tahajjud.episodes))  # fmt: skip
+    nasheed = season("n1", "أناشيد", genre="nasheed", presenter="المنشد", n=40)
+    hajj = season("h1", "دروس الحج", genre="fiqh", presenter="الشيخ", n=40,
+                  tags={"occasion:hajj": 1.0})  # fmt: skip
+    themes = (
+        ThemeSpec("nasheed", "Nasheed", "الأناشيد", 114, ("nasheed", "poetry")),
+        ThemeSpec("hajj", "Hajj", "الحج", 127, occasions=("hajj",)),
+    )
+    p = plan([*reciter, tahajjud, nasheed, hajj], themes=themes, mix_channel=False,
+             presenter_channels=False)  # fmt: skip
+
+    def paths(key: str) -> set[str]:
+        c = next(c for c in p.channels if c.key == key)
+        return {e.path for k in c.lanes for u in p.lanes[k].units for e in u.episodes}
+
+    tahajjud_paths = {e.path for e in tahajjud.episodes}
+    assert {e.path for e in nasheed.episodes} <= paths("nasheed")
+    assert {e.path for e in hajj.episodes} <= paths("hajj")
+    assert not tahajjud_paths & paths("nasheed")
+    assert not tahajjud_paths & paths("hajj")

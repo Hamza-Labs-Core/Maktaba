@@ -842,6 +842,11 @@ def _in_theme(s: SeasonCandidate, t: ThemeSpec, cfg: PlannerConfig) -> bool:
         return False
     if s.genre in t.topics:
         return True
+    if _is_recitation(s, cfg):
+        # Quran recitation joins a theme only by its own genre (the Quran
+        # channel), never by a secondary tag: a recitation tagged nasheed,
+        # history or fiqh is still the Quran, not anasheed or a lecture
+        return False
     return (
         _score(s.tags, "topic", t.topics) >= cfg.topic_min_score
         or _score(s.tags, "audience", t.audiences) >= cfg.topic_min_score
@@ -2176,6 +2181,8 @@ def suggest_channels(
         for i, u in units.items():
             if i in have or i in synthetic or _excluded(tags_of.get(i, {}), t.exclude, cfg):
                 continue
+            if _is_recitation(by_id[i], cfg) and by_id[i].genre not in t.topics:
+                continue  # the Quran is never a theme's special run (as in _in_theme)
             for e in u.episodes:
                 if e.duration_s < mins or not e.tags or _excluded(e.tags, t.exclude, cfg):
                     continue

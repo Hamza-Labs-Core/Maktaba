@@ -539,3 +539,21 @@ def test_dizquetv_weekly_schedule_puts_khutbah_on_friday() -> None:
     kh = [s for s in dz["slots"] if s["showId"] == "lane:library.khutbah"]
     # dizqueTV's weekly period starts on Thursday: Friday is day 1
     assert [s["time"] for s in kh] == [1 * day + 12 * 3_600_000]
+
+
+def test_a_recitation_joins_a_theme_only_by_its_genre() -> None:
+    """A recitation with a secondary nasheed tag is still the Quran: the Quran
+    theme takes it, the anasheed theme never does (a weak tag is not enough)."""
+    from maktaba_pipeline.schedule.channel_planner import DEFAULT_THEMES, PlannerConfig, _in_theme
+
+    cfg = PlannerConfig()
+    themes = {t.key: t for t in DEFAULT_THEMES}
+    rec = season(
+        "r1", "تلاوات صلاة التهجد", genre="quran_recitation",
+        tags={"format:recitation": 1.0, "topic:nasheed": 0.78, "topic:fiqh": 0.92},
+    )  # fmt: skip
+    assert _in_theme(rec, themes["quran"], cfg)
+    assert not _in_theme(rec, themes["nasheed"], cfg)
+    assert not _in_theme(rec, themes["fiqh"], cfg)
+    nasheed = season("n1", "أناشيد", genre="nasheed")
+    assert _in_theme(nasheed, themes["nasheed"], cfg)
