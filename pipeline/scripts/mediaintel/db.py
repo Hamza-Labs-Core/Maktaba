@@ -136,6 +136,58 @@ CREATE TABLE IF NOT EXISTS file_copies (
     kept   TEXT NOT NULL,
     folder TEXT NOT NULL
 );
+
+-- A curated playlist cutting across shows ("الشأن الفلسطيني"), written by detect: its own
+-- collection, overlapping seasons is fine. Plex title "<library> - ملف - <name>".
+CREATE TABLE IF NOT EXISTS topic_collections (
+    id          TEXT PRIMARY KEY,      -- "topic:" + hash(folder, playlist)
+    library     TEXT NOT NULL,
+    folder      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    playlist_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS topic_items (
+    topic_id TEXT NOT NULL REFERENCES topic_collections(id) ON DELETE CASCADE,
+    path     TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (topic_id, path)
+);
+
+-- Clips and stand-alone videos grouped for channels, written by the group step: shorts and
+-- clips (kind 'clips', filler) and longer videos in no show (kind 'standalone'). One group
+-- per video. basis: playlist | topic | rest. Plex "<library> - مقاطع - <name>" /
+-- "<library> - منفردات - <name>".
+CREATE TABLE IF NOT EXISTS clip_groups (
+    id      TEXT PRIMARY KEY,          -- "clips:" + hash(folder, kind, basis, name)
+    library TEXT NOT NULL,
+    folder  TEXT NOT NULL,
+    kind    TEXT NOT NULL,             -- clips | standalone
+    basis   TEXT NOT NULL,             -- playlist | topic | rest
+    name    TEXT NOT NULL,
+    topic   TEXT                       -- genre tag for topic groups (and the main one otherwise)
+);
+CREATE TABLE IF NOT EXISTS clip_group_items (
+    group_id TEXT NOT NULL REFERENCES clip_groups(id) ON DELETE CASCADE,
+    path     TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (group_id, path)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clip_group_items_path_idx ON clip_group_items (path);
+
+-- A promo / trailer and the show it advertises (series_key of any library), written by the
+-- group step: a channel airing the show uses it as filler near the show's slots.
+CREATE TABLE IF NOT EXISTS promo_links (
+    path       TEXT PRIMARY KEY REFERENCES files(path) ON DELETE CASCADE,
+    folder     TEXT NOT NULL,
+    library    TEXT NOT NULL,
+    series_key TEXT NOT NULL,
+    series_library TEXT NOT NULL,
+    series_folder  TEXT NOT NULL,
+    season     INTEGER,            -- the season it advertises ("برومو قصة وفكرة2" → 2)
+    score      REAL NOT NULL,
+    evidence   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS promo_links_series_idx ON promo_links (series_library, series_key);
 """
 
 
@@ -197,7 +249,9 @@ def normalize_paths(conn: sqlite3.Connection) -> int:
         meta["folder"] = new_folder
         for k in ("extras", "attached", "duplicates"):
             meta[k] = [p.replace("\\", "/") for p in meta.get(k) or []]
-        new_id = series_id(new_folder, meta["series_key"], meta["kind"], meta["season"])
+        new_id = series_id(
+            new_folder, meta.get("id_key", meta["series_key"]), meta["kind"], meta["season"]
+        )
         conn.execute(
             "UPDATE series SET id=?, metadata=? WHERE id=?",
             (new_id, json.dumps(meta, ensure_ascii=False), sid),

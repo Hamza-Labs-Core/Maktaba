@@ -81,6 +81,7 @@ __all__ = [
     "OCCASIONS",
     "TAGGER_VERSION",
     "TOPICS",
+    "TOPIC_NAMES_AR",
     "Tag",
     "TaggerConfig",
     "boilerplate_phrases",
@@ -103,6 +104,17 @@ TOPICS: tuple[str, ...] = (
     "akhlaq", "dua_dhikr", "ruqyah", "family_marriage", "youth", "women", "dawah",
     "current_affairs", "arabic_language", "stories", "nasheed", "poetry",
 )  # fmt: skip
+#: Arabic names of the topics, for collection and channel titles ("<lib> - مقاطع - الفقه")
+TOPIC_NAMES_AR: dict[str, str] = {
+    "tajweed": "التجويد", "quran_recitation": "تلاوات", "tafsir": "التفسير",
+    "hadith": "الحديث", "seerah": "السيرة النبوية", "prophets_stories": "قصص الأنبياء",
+    "sahaba": "الصحابة", "islamic_history": "التاريخ الإسلامي", "aqeedah": "العقيدة",
+    "shubuhat": "الشبهات", "akhirah": "الآخرة", "fiqh": "الفقه", "raqaiq": "الرقائق",
+    "akhlaq": "الأخلاق", "dua_dhikr": "الدعاء والذكر", "ruqyah": "الرقية",
+    "family_marriage": "الأسرة والزواج", "youth": "الشباب", "women": "المرأة",
+    "dawah": "الدعوة", "current_affairs": "قضايا معاصرة", "arabic_language": "اللغة العربية",
+    "stories": "قصص", "nasheed": "أناشيد", "poetry": "شعر", "general": "منوعات",
+}  # fmt: skip
 FORMATS: tuple[str, ...] = (
     "program", "lecture", "khutbah", "qa_fatwa", "recitation", "clips",
     "documentary", "drama", "interview", "podcast", "live",

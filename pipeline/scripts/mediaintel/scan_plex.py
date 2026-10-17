@@ -45,11 +45,22 @@ class PlexServer:
                 with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
                     body = r.read()
                 return json.loads(body) if body else {}
-            except urllib.error.HTTPError:
-                raise
+            except urllib.error.HTTPError as e:
+                said = e.read().decode("utf-8", "replace").strip()[:300] if e.fp else ""
+                raise PlexError(method, path, e.code, said) from None
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
                 last = e
         raise last
+
+
+class PlexError(RuntimeError):
+    """Plex answered a call with an error (400, 404 …): the call, the status and what Plex
+    said. Never carries the token."""
+
+    def __init__(self, method: str, path: str, status: int, said: str) -> None:
+        super().__init__(f"Plex refused {method} {path.split('?')[0]}: {status} {said}".strip())
+        self.status = status
+        self.said = said
 
 
 def load_server(dizquetv_db: Path | None, uri: str | None, token: str | None) -> PlexServer:
@@ -134,16 +145,19 @@ def scan_plex(
                 conn.execute(
                     """UPDATE files SET duration_s=?, width=?, height=?,
                          probed_size=size, probed_mtime=mtime
-                       WHERE path=? AND (duration_s IS NULL OR width IS NULL)""",
+                       WHERE path=? AND (duration_s IS NULL OR width IS NULL
+                         OR probed_size IS NOT size OR probed_mtime IS NOT mtime)""",
                     (m["duration"] / 1000, md.get("width"), md.get("height"), local),
                 )
                 from . import jobs
 
                 jobs.ensure(conn)
                 frow = conn.execute(
-                    "SELECT size, mtime FROM files WHERE path=?", (local,)
+                    "SELECT size, mtime FROM files WHERE path=? AND probed_size IS size "
+                    "AND probed_mtime IS mtime",
+                    (local,),
                 ).fetchone()
-                if frow:  # Plex measured it: the probe job is done without ffprobe
+                if frow:  # measured for this file state: the probe job is done without ffprobe
                     jobs.record(conn, local, "probe", 1, frow[0], frow[1])
         conn.execute("DELETE FROM plex_items WHERE section=?", (str(sec["key"]),))
         conn.executemany("INSERT OR REPLACE INTO plex_items VALUES (?,?,?,?,?,?)", seen)

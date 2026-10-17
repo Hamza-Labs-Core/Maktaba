@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatPercent,
-  formatPercentRatio,
-  formatWatchTime,
-  platformFromUA,
-} from "./analytics";
+import { formatPercent, formatPercentRatio, formatWatchTime, platformFromUA } from "./analytics";
 
 describe("formatWatchTime", () => {
   it("renders zero and sub-minute as 0m", () => {
