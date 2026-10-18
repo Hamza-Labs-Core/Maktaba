@@ -33,6 +33,7 @@ def test_a_home_from_its_txt_record() -> None:
         version="1.4.0",
         schema_rev=103,
         join=True,
+        urls=("http://192.168.1.20:8080", "http://[fe80::1]:8080"),
     )
     closed = home_from_service(NAME, {**TXT, b"join": b"0"}, ["192.168.1.20"], 8080)
     assert closed is not None and closed.join is False
@@ -76,3 +77,35 @@ def test_mdns_first_then_the_subnet_probe() -> None:
 
     assert discover_homes(browse=no_multicast, probe=probe) == [Home(url="http://c:8080")]
     assert len(probed) == 2
+
+
+def test_the_home_s_lan_address_wins_over_its_vpn_one() -> None:
+    import ipaddress
+
+    from maktaba_pipeline.cluster.discover import rank_addresses
+
+    lan = [ipaddress.ip_network("192.168.50.0/24")]
+    got = rank_addresses(
+        ["100.75.172.127", "fe80::1", "127.0.0.1", "10.0.0.5", "192.168.50.177", "8.8.8.8"], lan
+    )
+    # its own subnet, private, public, Tailscale (CGNAT), link-local, loopback
+    want = ["192.168.50.177", "10.0.0.5", "8.8.8.8", "100.75.172.127", "fe80::1", "127.0.0.1"]
+    assert got == want
+    # without a shared subnet a private LAN address still beats the VPN one
+    assert rank_addresses(["100.75.172.127", "192.168.1.20"], [])[0] == "192.168.1.20"
+
+
+def test_the_first_address_that_answers_is_used() -> None:
+    from maktaba_pipeline.cluster.discover import Home, _reachable
+
+    home = Home(url="http://192.168.1.20:8080",
+                urls=("http://192.168.1.20:8080", "http://100.75.0.9:8080"))  # fmt: skip
+    asked: list[str] = []
+
+    def answers(url: str) -> bool:
+        asked.append(url)
+        return "100.75" in url  # the LAN address is filtered on this network
+
+    assert _reachable(home, answers).url == "http://100.75.0.9:8080"
+    assert asked == list(home.urls)
+    assert _reachable(home, lambda u: False).url == home.url  # none answer: keep the best

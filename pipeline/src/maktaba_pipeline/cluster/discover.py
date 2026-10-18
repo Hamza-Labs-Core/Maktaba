@@ -14,7 +14,7 @@ import asyncio
 import ipaddress
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..discovery.probe import LANProbe, local_subnet_hosts, primary_iface_ip
@@ -28,6 +28,7 @@ __all__ = [
     "home_from_service",
     "home_from_url",
     "probe_lan",
+    "rank_addresses",
 ]
 
 SERVICE_TYPE = "_maktaba._tcp.local."
@@ -43,6 +44,8 @@ class Home:
     schema_rev: int = 0
     #: True / False from the TXT record; None when unknown (probe fallback, --home)
     join: bool | None = None
+    #: every address it announced, best first (``url`` is the first that answers)
+    urls: tuple[str, ...] = ()
 
     def label(self) -> str:
         bits = [self.name or self.url]
@@ -96,21 +99,100 @@ def home_from_service(
     txt = _txt(properties)
     if txt.get("role", "home") != "home" or not addresses:
         return None
-    # prefer an IPv4 address: what the database credentials will point at
-    addr = sorted(addresses, key=lambda a: (":" in a, a))[0]
+    ranked = rank_addresses(addresses)
     try:
         schema_rev = int(txt.get("schema_rev") or 0)
     except ValueError:
         schema_rev = 0
     join_raw = txt.get("join")
     return Home(
-        url=_url(addr, port),
+        url=_url(ranked[0], port),
+        urls=tuple(_url(a, port) for a in ranked),
         instance_id=txt.get("id", ""),
         name=_instance_name(service_name),
         version=txt.get("version", ""),
         schema_rev=schema_rev,
         join=None if join_raw is None else join_raw == "1",
     )
+
+
+#: Tailscale and other carrier-grade NAT addresses: reachable over a VPN, not the LAN
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _local_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """This machine's own LAN networks (not loopback, not VPN/CGNAT)."""
+    try:
+        import ifaddr  # zeroconf's own dependency
+    except ImportError:  # pragma: no cover - zeroconf always brings it
+        return []
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for adapter in ifaddr.get_adapters():
+        for ip in adapter.ips:
+            addr = ip.ip if isinstance(ip.ip, str) else ip.ip[0]
+            try:
+                cidr = f"{addr.split('%')[0]}/{ip.network_prefix}"
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                continue
+            addr0 = net.network_address
+            if addr0.is_loopback or addr0.is_link_local or addr0 in _CGNAT:
+                continue
+            if net.prefixlen >= (32 if net.version == 4 else 128):
+                continue  # a point-to-point address says nothing about the LAN
+            nets.append(net)
+    return nets
+
+
+def rank_addresses(
+    addresses: list[str],
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None,
+) -> list[str]:
+    """The home's announced addresses, best first for a machine on the same LAN: one on
+    this machine's own subnet, then private LAN ranges, then public, then VPN / CGNAT
+    (Tailscale's 100.64/10), then link-local, then loopback; IPv4 before IPv6. The
+    database credentials point at the address the machine uses, so a VPN address must
+    not win just by sorting first (``100.x`` < ``192.168.x``)."""
+    nets = _local_networks() if networks is None else networks
+
+    def key(a: str) -> tuple[int, bool, str]:
+        try:
+            ip = ipaddress.ip_address(a.split("%")[0])
+        except ValueError:
+            return (9, True, a)
+        if ip.is_loopback:
+            rank = 6
+        elif any(ip.version == n.version and ip in n for n in nets):
+            rank = 0
+        elif ip.version == 4 and ip in _CGNAT:
+            rank = 4
+        elif ip.is_link_local:
+            rank = 5
+        elif ip.is_private:
+            rank = 1
+        else:
+            rank = 2
+        return (rank, ip.version == 6, a)
+
+    return sorted(addresses, key=key)
+
+
+def _answers(url: str, timeout: float = 1.5) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{url}/api/system/version", timeout=timeout) as r:  # noqa: S310
+            return bool(200 <= r.status < 300)
+    except OSError:
+        return False
+
+
+def _reachable(home: Home, answers: Callable[[str], bool] = _answers) -> Home:
+    """The home with ``url`` set to the best of its addresses that answers."""
+    for url in home.urls:
+        if answers(url):
+            return replace(home, url=url)
+    return home
 
 
 def home_from_url(url: str) -> Home:
@@ -149,8 +231,8 @@ def browse_mdns(timeout: float = 3.0) -> list[Home]:
             if info is None or info.port is None:
                 continue
             home = home_from_service(name, info.properties, info.parsed_addresses(), info.port)
-            if home is not None:
-                found[home.url] = home
+            if home is not None:  # one home announcing several names counts once
+                found[home.instance_id or home.url] = home
     finally:
         zc.close()
     return list(found.values())
@@ -184,6 +266,7 @@ def discover_homes(
         _log.warning("cluster_mdns_browse_failed", error=str(exc))
         homes = []
     if homes:
+        homes = [_reachable(h) for h in homes]
         return sorted(homes, key=lambda h: (h.join is False, h.name, h.url))
     _log.info("cluster_mdns_nothing_found_probing_subnet")
     try:
