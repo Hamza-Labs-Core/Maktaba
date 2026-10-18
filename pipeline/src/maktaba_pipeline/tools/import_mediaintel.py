@@ -52,7 +52,7 @@ import unicodedata
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -61,6 +61,8 @@ from uuid import UUID
 
 from .. import rules
 from ..audio.chromaprint import AUDIO_FP_VERSION
+from ..classify import books as bk
+from ..classify import tag_check as tc
 from ..classify.production_style import STYLE_VERSION, metrics_from_dict
 from ..classify.series_detector import DETECTOR_VERSION
 from ..engine.causes import classify
@@ -69,6 +71,9 @@ from ..engine.graph import SIG_VERSION, Subject
 from ..engine.hashing import canonical_hash
 from ..engine.ids import season_uuid, series_uuid
 from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
+from ..engine.stages import books as books_stage
+from ..engine.stages import check_clips as check_clips_stage
+from ..engine.stages import check_tags as check_tags_stage
 from ..engine.stages import detect as detect_stage
 from ..engine.stages import fingerprint as fingerprint_stage
 from ..engine.stages import link as link_stage
@@ -78,6 +83,8 @@ from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
 from ..engine.stages import thumb_small as thumb_small_stage
 from ..engine.stages import youtube_sync as yt_stage
+from ..engine.stages._leftovers import library_name
+from ..engine.stages._tagging import season_tags_digest, video_tags_digest
 from ..engine.stages.content_hash import PENDING, is_pending
 from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_path
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
@@ -97,6 +104,7 @@ TABLES = (
     "youtube_playlist_items", "media_metadata_enrichment", "series", "series_seasons",
     "series_episodes", "season_tags", "video_topic_tags", "season_style", "external_links",
     "processing_jobs", "app_settings", "libraries", "library_roots", "videos",
+    "tag_checks", "clip_checks", "books", "series_books", "episode_tags",
 )  # fmt: skip
 
 
@@ -131,6 +139,12 @@ class ImportReport:
     libraries_created: int = 0
     videos_created: int = 0
     hash_jobs_queued: int = 0
+    #: rows brought for the model / book stages (new ones only)
+    tag_checks: int = 0
+    clip_checks: int = 0
+    books: int = 0
+    series_books: int = 0
+    episode_tags: int = 0
     #: synthetic job rows not written yet, and the newest imported row per subject + stage
     _job_rows: list[tuple[Any, ...]] = field(default_factory=list, repr=False)
     _imported: dict[tuple[str, str, str], tuple[Any, Any]] | None = field(default=None, repr=False)
@@ -155,6 +169,14 @@ class ImportReport:
                 f"created from the cache: {self.libraries_created} libraries,"
                 f" {self.videos_created} videos (file identity queued: {self.hash_jobs_queued}"
                 " content_hash jobs)"
+            )
+        if any(
+            (self.tag_checks, self.clip_checks, self.books, self.series_books, self.episode_tags)
+        ):
+            out.append(
+                f"model answers: {self.tag_checks} series, {self.clip_checks} clips; books:"
+                f" {self.books} looked up, {self.series_books} series matched; episodes tagged by"
+                f" their titles: {self.episode_tags}"
             )
         if self.settings_imported or self.settings_skipped:
             got = ", ".join(f"{k} {n}" for k, n in sorted(self.settings_imported.items()))
@@ -439,10 +461,11 @@ async def run_import(
                     await _analyze(db)
                 else:
                     libs = await _resolve_libraries(db, libraries)
-                await _import(db, conn, libs, maps, report)
+                match, seasons = await _import(db, conn, libs, maps, report)
                 if create:
                     report.hash_jobs_queued = await _queue_content_hash(db, libs)
                 await _settings(db, _beside(cache, settings, "settings.json"), report)
+                await _model_caches(db, conn, libs, match, seasons, report)  # after the settings
                 with ThumbSource.open(_thumbs_at(cache, thumbs)) as source:
                     await _thumbs(db, conn, libs, maps, source, report, apply)
                 await _flush_jobs(db, report)
@@ -465,7 +488,9 @@ async def _import(
     libs: list[tuple[UUID, str]],
     maps: list[tuple[str, str]],
     report: ImportReport,
-) -> None:
+) -> tuple[dict[str, tuple[UUID, UUID]], dict[str, tuple[UUID, UUID]]]:
+    """Copy the cache's data. Returns cache path -> (video, library) for the files matched,
+    and cache series id -> (season, library)."""
     files = {r["path"]: r for r in cache.execute("SELECT * FROM files")}
     report.files = len(files)
     by_norm: dict[str, tuple[UUID, UUID, int, float | None]] = {}
@@ -511,6 +536,205 @@ async def _import(
             reason={"why": "import", "by": "system"},
         )
         report.detect_queued += 1 if res.job_id is not None else 0
+    return match, seasons
+
+
+# --------------------------------------------------------------------------- the model's answers
+
+
+async def _model_caches(
+    db: Any,
+    cache: sqlite3.Connection,
+    libs: list[tuple[UUID, str]],
+    match: dict[str, tuple[UUID, UUID]],
+    seasons: dict[str, tuple[UUID, UUID]],
+    report: ImportReport,
+) -> None:
+    """What the prototype's ``tag``, ``check-tags``, ``check-clips`` and ``books`` steps kept:
+    the episodes' own tags, the language model's answers for series and clips, the books and
+    the series they were matched to. Each answer is a cache row (``tag_checks``,
+    ``clip_checks``, ``books``, ``series_books``) with its input hash computed **here**, from
+    Maktaba's own name, library and titles (the cache's was computed from its own library
+    labels), so the stage finds it and asks nothing. The answer is applied to the stored tags
+    where they do not carry it yet (the version sweep may have restored the keyword tags),
+    and the stages that are then complete are recorded as done. Nothing existing is
+    overwritten: a second import adds what the first did not bring."""
+    tcfg: tc.TagCheckConfig = (await rules.read(db, "tagcheck"))[0]
+    bcfg: bk.BooksConfig = (await rules.read(db, "books"))[0]
+    await _episode_tags(db, cache, match, report)
+    await _tag_checks(db, cache, seasons, tcfg, report)
+    await _flush_jobs(db, report)  # books' fingerprint reads the check_tags run
+    await _books(db, cache, seasons, bcfg, report)
+    await _flush_jobs(db, report)
+    await _clip_checks(db, cache, libs, match, tcfg, report)
+
+
+async def _episode_tags(
+    db: Any, cache: sqlite3.Connection, match: dict[str, tuple[UUID, UUID]], report: ImportReport
+) -> None:
+    if not _has(cache, "episode_tags"):
+        return
+    have = {
+        str(r["video_id"]) for r in await db.fetch("SELECT DISTINCT video_id FROM episode_tags")
+    }
+    rows = [
+        (uid(match[t["path"]][0]), t["tag"], t["score"])
+        for t in cache.execute("SELECT * FROM episode_tags")
+        if t["path"] in match and str(match[t["path"]][0]) not in have
+    ]  # an episode the tag stage has tagged since keeps its own tags
+    await _many(
+        db,
+        "INSERT INTO episode_tags (video_id, tag, score) VALUES ($1,$2,$3)"
+        " ON CONFLICT (video_id, tag) DO NOTHING",
+        rows,
+    )
+    report.episode_tags += len({r[0] for r in rows})
+
+
+async def _tag_checks(
+    db: Any,
+    cache: sqlite3.Connection,
+    seasons: dict[str, tuple[UUID, UUID]],
+    cfg: tc.TagCheckConfig,
+    report: ImportReport,
+) -> None:
+    if not _has(cache, "tag_checks"):
+        return
+    for r in cache.execute("SELECT * FROM tag_checks ORDER BY series_id"):
+        if r["series_id"] not in seasons:
+            continue
+        sid, lib = seasons[r["series_id"]]
+        got = await check_tags_stage.season_inputs(db, sid)
+        if got is None:
+            continue
+        name, library, titles = got
+        h = tc.input_hash(name, library, titles, replace(cfg, model=r["model"]))
+        row = await db.fetchrow(
+            "SELECT input_hash, answer, applied_hash FROM tag_checks WHERE season_id = $1", uid(sid)
+        )
+        if row is None:
+            await db.execute(
+                "INSERT INTO tag_checks (season_id, input_hash, model, answer, applied_hash, checked_at)"
+                " VALUES ($1,$2,$3,$4,$5,$6)",
+                uid(sid), h, r["model"], r["answer"], r["applied_hash"], to_ts(db, now()),
+            )  # fmt: skip
+            report.tag_checks += 1
+            row = {"input_hash": h, "answer": r["answer"], "applied_hash": r["applied_hash"]}
+        if row["input_hash"] != h:
+            continue  # the stage asked since, about other titles: its answer stands
+        await check_tags_stage.apply_answer(db, sid, str(row["answer"]), row["applied_hash"], cfg)
+        if r["model"] != cfg.model:
+            continue  # asked again under the model set now: the stage does that itself
+        ih = await check_tags_stage.input_fingerprint(db, Subject("season", sid))
+        await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="check_tags",
+                         version=tc.TAG_CHECK_VERSION, input_hash=ih,
+                         output_hash=await season_tags_digest(db, sid))  # fmt: skip
+
+
+async def _books(
+    db: Any,
+    cache: sqlite3.Connection,
+    seasons: dict[str, tuple[UUID, UUID]],
+    cfg: bk.BooksConfig,
+    report: ImportReport,
+) -> None:
+    if _has(cache, "books"):
+        for b in cache.execute("SELECT * FROM books ORDER BY name"):
+            if await db.fetchval("SELECT count(*) FROM books WHERE name = $1", b["name"]):
+                continue
+            await db.execute(
+                "INSERT INTO books (name, version, title, url, categories, summary, checked_at)"
+                " VALUES ($1,$2,$3,$4,$5,$6,$7)",
+                b["name"], b["version"], b["title"], b["url"], b["categories"], b["summary"], b["checked_at"],
+            )  # fmt: skip
+            report.books += 1
+    if _has(cache, "series_books"):
+        for s in cache.execute("SELECT * FROM series_books ORDER BY series_id"):
+            if s["series_id"] not in seasons:
+                continue
+            sid = seasons[s["series_id"]][0]
+            if await db.fetchval(
+                "SELECT count(*) FROM series_books WHERE season_id = $1", uid(sid)
+            ):
+                continue
+            await db.execute(
+                "INSERT INTO series_books (season_id, name, chapter, fields) VALUES ($1,$2,$3,$4)",
+                uid(sid), s["name"], s["chapter"], s["fields"],
+            )  # fmt: skip
+            report.series_books += 1
+    for sid, lib in sorted(set(seasons.values()), key=lambda x: str(x[0])):
+        got = await books_stage.book_ref(db, sid)
+        if got is None or got[1] is None:
+            continue
+        library, ref = got[0], got[1]
+        book = await books_stage.cached_book(db, ref.name, cfg)
+        if book is None:
+            continue  # never looked up: the stage does that
+        if cfg.enabled:
+            await books_stage.apply_book(db, sid, library, ref, book, cfg)
+        ih = await books_stage.input_fingerprint(db, Subject("season", sid))
+        await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="books",
+                         version=bk.BOOKS_VERSION, input_hash=ih,
+                         output_hash=await season_tags_digest(db, sid))  # fmt: skip
+
+
+async def _clip_checks(
+    db: Any,
+    cache: sqlite3.Connection,
+    libs: list[tuple[UUID, str]],
+    match: dict[str, tuple[UUID, UUID]],
+    cfg: tc.TagCheckConfig,
+    report: ImportReport,
+) -> None:
+    """A clip's question is its library's name, its title and the topics the *keyword* tagger
+    found: the cache kept the answer, not those topics (its tags are already corrected), so
+    the keyword tags are made again here, by the stage's own tagger, to compute the hash."""
+    if not _has(cache, "clip_checks"):
+        return
+    detect = (await rules.read(db, "detect"))[0]
+    by_lib: dict[UUID, list[tuple[str, Any]]] = defaultdict(list)
+    for r in cache.execute("SELECT * FROM clip_checks ORDER BY path"):
+        if r["path"] in match:
+            by_lib[match[r["path"]][1]].append((str(match[r["path"]][0]), r))
+    for lib_id, _name in libs:
+        items = by_lib.get(lib_id)
+        if not items:
+            continue
+        lib = await library_name(db, lib_id) or ""
+        raw = await tag_stage.library_tags(db, lib_id, detect)
+        titles = await check_clips_stage.video_titles(db, lib_id)
+        for vid, r in items:
+            if vid not in raw:
+                continue  # in a season now: not a clip
+            h = tc.clip_input_hash(
+                lib,
+                titles.get(vid, ""),
+                tc.clip_candidates(raw[vid]),
+                replace(cfg, model=r["model"]),
+            )
+            row = await db.fetchrow(
+                "SELECT input_hash, topics, applied_hash FROM clip_checks WHERE video_id = $1",
+                uid(vid),
+            )
+            if row is None:
+                await db.execute(
+                    "INSERT INTO clip_checks (video_id, input_hash, model, topics, applied_hash, checked_at)"
+                    " VALUES ($1,$2,$3,$4,$5,$6)",
+                    uid(vid), h, r["model"], r["topics"], r["applied_hash"], to_ts(db, now()),
+                )  # fmt: skip
+                report.clip_checks += 1
+                row = {"input_hash": h, "topics": r["topics"], "applied_hash": r["applied_hash"]}
+            if row["input_hash"] == h:
+                keep = tuple(json.loads(row["topics"]))
+                await check_clips_stage.apply_verdict(db, vid, keep, row["applied_hash"], cfg)
+        if cfg.enabled and cfg.clips:
+            plan = await check_clips_stage.plan_clips(db, lib_id, lib, cfg)
+            if plan.todo or plan.to_apply:
+                continue  # clips are left to ask: the stage runs
+        ih = await check_clips_stage.input_fingerprint(db, Subject("library", lib_id))
+        await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="check_clips",
+                         version=tc.CLIP_CHECK_VERSION, input_hash=ih,
+                         output_hash=await video_tags_digest(db, lib_id))  # fmt: skip
 
 
 # --------------------------------------------------------------------------- youtube
