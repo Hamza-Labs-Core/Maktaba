@@ -364,6 +364,12 @@ PLANNER_HELP: dict[str, Help] = {
         "A picture shown in a corner of the video on every "
         "channel, like a TV station's logo; an animated GIF loops. Empty: none.",
     ),
+    "dz_watermark_dir": Help(
+        DZ,
+        "Corner logos folder (per channel)",
+        "Each channel's own corner logo: <channel key>.gif (quran.gif, palestine.gif …) or "
+        ".png; a channel without one uses the corner logo above. Empty: that one everywhere.",
+    ),
     "dz_watermark_position": Help(
         DZ, "Corner logo position", choices=("top-right", "top-left", "bottom-right", "bottom-left")
     ),

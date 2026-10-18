@@ -602,6 +602,9 @@ class PlannerConfig:
     #: the picture in a corner of the video on every channel (an animated GIF loops);
     #: "" = none
     dz_watermark_file: str = ""
+    #: a folder of per-channel watermarks: <channel key>.gif (or .png), else
+    #: dz_watermark_file; "" = the one file on every channel
+    dz_watermark_dir: str = ""
     dz_watermark_position: str = "top-right"
     dz_watermark_width: float = 12.0  # % of the picture's width
     dz_watermark_margin: float = 2.0  # % from the edges

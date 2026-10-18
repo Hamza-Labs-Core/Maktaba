@@ -145,3 +145,14 @@ def test_the_same_timeline_has_the_same_fingerprint() -> None:
     sched = {"period": 86_400_000, "slots": [{"time": 0, "showId": "custom.s"}]}
     assert fingerprint(sched, [("a", 5, "s")]) == fingerprint(dict(sched), [("a", 5, "s")])
     assert fingerprint(sched, [("a", 5, "s")]) != fingerprint(sched, [("a", 6, "s")])
+
+
+def test_a_channel_gets_its_own_corner_logo_else_the_shared_one(tmp_path: Path) -> None:
+    from scripts.mediaintel.export_dizquetv import channel_art
+
+    (tmp_path / "wm").mkdir()
+    (tmp_path / "wm" / "palestine.gif").write_bytes(b"gif")
+    (tmp_path / "all.gif").write_bytes(b"gif")
+    cfg = {"dz_watermark_dir": str(tmp_path / "wm"), "dz_watermark_file": str(tmp_path / "all.gif")}
+    assert channel_art({"config": cfg}, "palestine")["watermark"]["url"].endswith("palestine.gif")
+    assert channel_art({"config": cfg}, "fiqh")["watermark"]["url"].endswith("all.gif")

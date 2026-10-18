@@ -1730,6 +1730,14 @@
      "default": ""
     },
     {
+     "name": "dz_watermark_dir",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Corner logos folder (per channel)",
+     "help": "Each channel's own corner logo: <channel key>.gif (quran.gif, palestine.gif …) or .png; a channel without one uses the corner logo above. Empty: that one everywhere.",
+     "default": ""
+    },
+    {
      "name": "dz_watermark_position",
      "kind": "str",
      "group": "dizqueTV",

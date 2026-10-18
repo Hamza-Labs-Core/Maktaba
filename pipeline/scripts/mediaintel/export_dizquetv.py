@@ -437,7 +437,11 @@ def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
             if (Path(folder) / name).is_file():
                 out["icon"] = str(Path(folder) / name)
                 break
-    if (wm := str(cfg.get("dz_watermark_file") or "")) and Path(wm).is_file():
+    wm = str(cfg.get("dz_watermark_file") or "")
+    if folder_wm := str(cfg.get("dz_watermark_dir") or ""):
+        own = [Path(folder_wm) / f"{key}{ext}" for ext in (".gif", ".png")]
+        wm = next((str(p) for p in own if p.is_file()), wm)
+    if wm and Path(wm).is_file():
         margin = float(cfg.get("dz_watermark_margin", 2.0))
         out["watermark"] = {
             "enabled": True, "url": wm, "width": float(cfg.get("dz_watermark_width", 12.0)),
