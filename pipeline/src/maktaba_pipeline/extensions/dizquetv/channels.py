@@ -47,6 +47,7 @@ from ...integrations.dizquetv_export import (
     DAY_MS,
     GUIDE_KEYS,
     ReadbackMismatch,
+    add_live_slots,
     art_link,
     art_version,
     channel_art,
@@ -242,7 +243,7 @@ def plan_actions(
     for c in channels:
         dzc = c["exports"]["dizquetv"]
         src = grid(c)
-        sch = resolve_slots(src, lane_ids, tz_offset)
+        sch = add_live_slots(resolve_slots(src, lane_ids, tz_offset), int(c["number"]), cfg.live)
         slots = sch["slots"]
         fillers = [
             {"id": pool_ids[f["pool"]], "weight": f["weight"], "cooldown": f["cooldown"]}

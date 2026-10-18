@@ -298,3 +298,69 @@ def test_filler_weights_are_the_planners_settings() -> None:
     assert got == {"fiqh.topic": 7, "fiqh.promos": 6, "fiqh.breaks": 5, "library.general": 4}
     quran = SimpleNamespace(kind="quran", key="quran", filler_pools=("quran.topic",))
     assert [f["weight"] for f in filler_collections(quran, cfg)] == [7]  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- live broadcasts
+
+H = 3_600_000
+M = 60_000
+
+
+def _grid(*slots: tuple[int, str]) -> dict[str, Any]:
+    return {"period": 86_400_000, "slots": [{"time": t, "showId": s, "order": "next"}
+                                           for t, s in slots]}  # fmt: skip
+
+
+def test_no_live_broadcast_leaves_the_grid_as_planned() -> None:
+    from maktaba_pipeline.integrations.dizquetv_export import add_live_slots
+    from maktaba_pipeline.schedule.tv_settings import LiveSlot
+
+    g = _grid((0, "custom.a"), (12 * H, "custom.b"))
+    assert add_live_slots(g, 5, ()) == g
+    assert add_live_slots(g, 5, (LiveSlot(channel=6, url="https://x/live"),)) == g
+
+
+def test_the_news_on_the_hour_takes_ten_minutes_and_the_show_goes_on() -> None:
+    from maktaba_pipeline.integrations.dizquetv_export import add_live_slots
+    from maktaba_pipeline.schedule.tv_settings import LiveSlot
+
+    live = LiveSlot(channel=5, url="https://www.youtube.com/@aljazeera/live",
+                    title="الجزيرة مباشر · نشرة الأخبار", start=18 * 60, end=21 * 60,
+                    minutes=10)  # fmt: skip
+    g = add_live_slots(_grid((0, "custom.a"), (19 * H + 5 * M, "custom.b")), 5, (live,))
+    got = [(s["time"], s["showId"][:5]) for s in g["slots"]]
+    assert got == [
+        (0, "custo"),
+        (18 * H, "live."), (18 * H + 10 * M, "custo"),
+        (19 * H, "live."), (19 * H + 10 * M, "custo"),  # b's 19:05 start moved after it
+        (20 * H, "live."), (20 * H + 10 * M, "custo"),
+    ]  # fmt: skip
+    assert g["slots"][4]["showId"] == "custom.b" and g["slots"][2]["showId"] == "custom.a"
+    assert g["slots"][1]["live"] == {"url": live.url, "title": live.title}
+    assert g["period"] == 86_400_000
+
+
+def test_a_broadcast_on_some_days_makes_the_grid_weekly() -> None:
+    from maktaba_pipeline.integrations.dizquetv_export import add_live_slots
+    from maktaba_pipeline.schedule.tv_settings import LiveSlot
+
+    live = LiveSlot(channel=5, url="https://x/live", start=12 * 60, end=12 * 60 + 1,
+                    minutes=30, days=("fri",))  # fmt: skip
+    g = add_live_slots(_grid((0, "custom.a")), 5, (live,))
+    assert g["period"] == 7 * 86_400_000
+    lives = [s["time"] for s in g["slots"] if s["showId"].startswith("live.")]
+    assert lives == [1 * 86_400_000 + 12 * H]  # the week starts on a Thursday in dizqueTV
+    assert len([s for s in g["slots"] if s["showId"] == "custom.a"]) == 8
+
+
+@pytest.mark.asyncio
+async def test_live_broadcasts_reach_the_channels_grid(db: Database) -> None:
+    w, rt = await channel_world(db)
+    await set_rules(db, "dizquetv", {"live": [
+        {"channel": 5, "url": "https://www.youtube.com/@aljazeera/live", "title": "News",
+         "start": "00:00", "end": "00:00", "every_minutes": 60, "minutes": 10}]})  # fmt: skip
+    job = await channels_job(db, rt)
+    assert job["state"] == "done", error_of(job)
+    sched = w.dz.channels[5]["scheduleBackup"]
+    lives = [s for s in sched["slots"] if s["showId"].startswith("live.")]
+    assert len(lives) == 24 and lives[0]["live"]["title"] == "News"

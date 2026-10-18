@@ -17,6 +17,7 @@ __all__ = [
     "ChannelAuditConfig",
     "DizqueExportConfig",
     "ExactDatesConfig",
+    "LiveSlot",
     "RepairConfig",
     "channel_numbers",
 ]
@@ -25,6 +26,24 @@ DZ = "dizqueTV export"
 EX = "Exact dates"
 AU = "Channel audit"
 RP = "Repair"
+
+
+@dataclass(frozen=True)
+class LiveSlot:
+    """A live broadcast a channel carries at set times (Al Jazeera's news on the hour on
+    the news channel): from ``start`` every ``every_minutes`` until ``end`` (00:00: until
+    midnight), ``minutes`` long, on ``days`` (``mon`` ... ``sun``; none: every day)."""
+
+    channel: int = 0
+    #: a YouTube live page (``https://www.youtube.com/@aljazeera/live``) or a stream address
+    url: str = ""
+    #: what the guide shows
+    title: str = ""
+    start: int = 0
+    end: int = 0
+    every_minutes: int = 60
+    minutes: int = 10
+    days: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,6 +62,8 @@ class DizqueExportConfig:
     keep_airing: bool = True
     #: only these channel numbers (comma separated); empty: all. Nothing is pruned then.
     only_channels: str = ""
+    #: live broadcasts in channels' grids (none: the grids as planned)
+    live: tuple[LiveSlot, ...] = ()
 
 
 def channel_numbers(text: str) -> set[int]:
@@ -124,6 +145,16 @@ register(
             DZ,
             "Only these channels",
             "Channel numbers separated by commas (101, 105). Empty: all of them.",
+        ),
+        "live": Help(
+            DZ,
+            "Live broadcasts",
+            "A live stream a channel carries at set times, such as the news on the hour: "
+            "channel number, the YouTube live page (https://www.youtube.com/@aljazeera/live) "
+            "or a stream address, the guide title, the first start (HH:MM), the end (00:00: "
+            "until midnight), how often (minutes), how long (minutes) and the days (mon ... "
+            "sun; empty: every day). What airs before it finishes first or makes way: "
+            "no programme is cut and the broadcast starts on time.",
         ),
     },
 )

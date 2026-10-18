@@ -2875,6 +2875,44 @@
      "label": "Only these channels",
      "help": "Channel numbers separated by commas (101, 105). Empty: all of them.",
      "default": ""
+    },
+    {
+     "name": "live",
+     "kind": "rows",
+     "group": "dizqueTV export",
+     "label": "Live broadcasts",
+     "help": "A live stream a channel carries at set times, such as the news on the hour: channel number, the YouTube live page (https://www.youtube.com/@aljazeera/live) or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). What airs before it finishes first or makes way: no programme is cut and the broadcast starts on time.",
+     "default": [],
+     "columns": [
+      "channel",
+      "url",
+      "title",
+      "start",
+      "end",
+      "every_minutes",
+      "minutes",
+      "days"
+     ],
+     "column_kinds": [
+      "int",
+      "str",
+      "str",
+      "time",
+      "time",
+      "int",
+      "int",
+      "list"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+     ]
     }
    ]
   },

@@ -7,7 +7,8 @@ channels from either:
 
 * the filler lists a channel uses (:func:`filler_collections`, :func:`filler_items`);
 * the time-slot grid as dizqueTV takes it (:func:`resolve_slots`: ``lane:`` show ids
-  resolved, slots merged unless the channel is padded one episode a slot);
+  resolved, slots merged unless the channel is padded one episode a slot), with the live
+  broadcasts it carries (:func:`add_live_slots`);
 * the channel's look: guide settings, logo and corner watermark (:func:`guide_settings`,
   :func:`channel_art`, :func:`art_link`);
 * what the plan no longer has (:func:`removals`: only objects this tool made, unless asked);
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ..schedule.channel_planner import ChannelSuggestion, PlannerConfig
+from ..schedule.tv_settings import LiveSlot
 
 __all__ = [
     "DAY_MS",
@@ -39,6 +41,7 @@ __all__ = [
     "ChannelWrite",
     "ReadbackMismatch",
     "Removal",
+    "add_live_slots",
     "airable",
     "aired",
     "art_link",
@@ -124,6 +127,64 @@ def resolve_slots(
         slots = slots[1:]  # the last slot runs on past midnight into the first one
     out["slots"] = slots
     out["timeZoneOffset"] = tz_offset
+    return out
+
+
+def _live_windows(live: LiveSlot, period: int) -> list[int]:
+    """When ``live`` starts in one period of the grid (ms after its start)."""
+    every = max(1, live.every_minutes) * 60_000
+    start = live.start * 60_000
+    end = (live.end or 24 * 60) * 60_000
+    if end <= start:
+        end += DAY_MS
+    times = list(range(start, end, every))
+    if period == DAY_MS:
+        return sorted({t % DAY_MS for t in times})
+    days = [d for d in (x.strip().lower()[:3] for x in live.days) if d in _DZ_DAYS] or list(
+        _DZ_DAYS
+    )
+    return sorted({(_DZ_DAYS.index(d) * DAY_MS + t) % period for d in days for t in times})
+
+
+def add_live_slots(
+    sched: Mapping[str, Any], number: int, lives: Sequence[LiveSlot]
+) -> dict[str, Any]:
+    """The grid with the live broadcasts channel ``number`` carries: a ``live.`` slot at
+    each start (dizqueTV plays the stream for the slot, and starts nothing that would run
+    into it), and the show that had the time goes on when it ends. A daily grid with a
+    broadcast on some days only becomes a weekly one. No live broadcast: unchanged."""
+    mine = [x for x in lives if x.channel == number and x.url.strip() and x.minutes > 0]
+    if not mine:
+        return dict(sched)
+    out = dict(sched)
+    period = int(sched["period"])
+    slots = sorted((dict(x) for x in sched["slots"]), key=lambda x: int(x["time"]))
+    if period == DAY_MS and any(x.days for x in mine):
+        period = 7 * DAY_MS
+        slots = [{**x, "time": int(x["time"]) + d * DAY_MS} for d in range(7) for x in slots]
+    windows: dict[int, tuple[int, dict[str, Any]]] = {}
+    for x in mine:
+        sid = "live." + hashlib.sha1(x.url.strip().encode()).hexdigest()[:10]  # noqa: S324
+        slot = {"showId": sid, "order": "next",
+                "live": {"url": x.url.strip(), "title": x.title or x.url.strip()}}  # fmt: skip
+        for t in _live_windows(x, period):
+            windows.setdefault(t, (x.minutes * 60_000, slot))
+
+    def inside(t: int) -> bool:
+        return any(0 <= (t - w) % period < d for w, (d, _) in windows.items())
+
+    def active(t: int) -> dict[str, Any]:  # the grid's own slot at t
+        before = [x for x in slots if int(x["time"]) <= t]
+        return (before or slots)[-1]
+
+    new = [x for x in slots if not inside(int(x["time"]))]
+    for w, (d, slot) in windows.items():
+        new.append({**slot, "time": w})
+        back = (w + d) % period
+        if slots and not inside(back) and all(int(x["time"]) != back for x in new):
+            new.append({**active(back), "time": back})
+    out["slots"] = sorted(new, key=lambda x: int(x["time"]))
+    out["period"] = period
     return out
 
 
