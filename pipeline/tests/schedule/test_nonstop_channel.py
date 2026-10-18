@@ -10,6 +10,8 @@ from maktaba_pipeline.schedule.channel_planner import (
     PlannerConfig,
     SeasonCandidate,
     ThemeSpec,
+    dizquetv_time_slots,
+    simulate,
     suggest_channels,
 )
 
@@ -111,3 +113,19 @@ def test_an_unknown_kind_is_reported() -> None:
                          PlannerConfig(themes=(bad,), mix_channel=False,
                                        presenter_channels=False))  # type: ignore[arg-type]  # fmt: skip
     assert "kind 'marathon'" in dict(p.unplaced)["theme x"]
+
+
+def test_dizquetv_keeps_its_hourly_slots_each_padded_to_the_hour() -> None:
+    p = _plan()
+    ch = next(c for c in p.channels if c.key == "prophets_awadi")  # type: ignore[attr-defined]
+    dz = dizquetv_time_slots(ch, p)  # type: ignore[arg-type]
+    assert len(dz["slots"]) == 24 and dz["pad"] == 60 * 60_000
+
+
+def test_one_episode_an_hour_filler_to_the_hour() -> None:
+    p = _plan()
+    ch = next(c for c in p.channels if c.key == "prophets_awadi")  # type: ignore[attr-defined]
+    day = simulate(ch, p)  # type: ignore[arg-type]
+    starts = [a.start_s for a in day if a.kind == "program"]
+    assert len(starts) == 24 and all(s % 3600 == 0 for s in starts)
+    assert any(a.kind == "filler" for a in day)

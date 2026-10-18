@@ -322,10 +322,14 @@ def plan_actions(
             if sid.startswith("lane:"):
                 lid = lane_ids.get(sid[5:])
                 sid = f"custom.{lid}" if lid else "flex."  # nothing playable yet → flex
-            if slots and slots[-1]["showId"] == sid:
-                continue  # merge with the previous slot
+            # merged with the previous slot of the show, but a padded schedule (a nonstop
+            # channel: one episode a slot) keeps every slot
+            one_a_slot = int(sch.get("pad") or 1) > 1
+            if slots and slots[-1]["showId"] == sid and not one_a_slot:
+                continue
             slots.append({**s, "showId": sid, "order": "shuffle" if sid == "flex." else s["order"]})
-        if len(slots) > 1 and slots[0]["showId"] == slots[-1]["showId"]:
+        if (len(slots) > 1 and slots[0]["showId"] == slots[-1]["showId"]
+                and int(sch.get("pad") or 1) <= 1):  # fmt: skip
             slots = slots[1:]  # the last slot runs on past midnight into the first one
         sch["slots"] = slots
         sch["timeZoneOffset"] = tz_offset

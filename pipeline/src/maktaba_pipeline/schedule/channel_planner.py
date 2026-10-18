@@ -2938,7 +2938,7 @@ def simulate(
                     picks.append((u, e))
                     tt += e.duration_s
                     c += 1
-                    if tt >= we:
+                    if tt >= we or lane.pattern == "nonstop":  # nonstop: one a slot
                         break
                 spare = max(0.0, we - tt)
                 between = cfg.filler_between_episodes and len(picks) > 1
@@ -3104,18 +3104,22 @@ def dizquetv_time_slots(
             show = f"lane:{s.lane}" if s.lane else "flex."
             raw.append((off + s.start * 60_000, show, "next" if s.lane else "shuffle"))
     raw.sort()
+    # a nonstop channel: one episode a slot, each padded to the slot (dizqueTV's pad), and
+    # its slots kept apart, so a slot started late costs that slot, never the whole day
+    lane = plan.lanes.get(src[0].lane or "") if channel.kind == "nonstop" and src else None
+    pad = lane.slot_minutes * 60_000 if lane is not None and lane.slot_minutes else cfg.dz_pad_ms
     merged: list[tuple[int, str, str]] = []
     for item in raw:
-        if merged and merged[-1][1] == item[1]:
+        if merged and merged[-1][1] == item[1] and lane is None:
             continue
         merged.append(item)
-    if len(merged) > 1 and merged[0][1] == merged[-1][1]:
+    if lane is None and len(merged) > 1 and merged[0][1] == merged[-1][1]:
         merged = merged[1:]  # the last slot wraps past the period end into the first one
     return {
         "period": period,
         "lateness": cfg.dz_lateness_ms,
         "maxDays": cfg.dz_max_days,
         "flexPreference": "distribute",
-        "pad": cfg.dz_pad_ms,
+        "pad": pad,
         "slots": [{"time": t, "showId": sh, "order": o} for t, sh, o in merged],
     }
