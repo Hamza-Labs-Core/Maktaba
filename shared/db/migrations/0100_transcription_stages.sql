@@ -22,7 +22,7 @@ UPDATE worker_pools SET size = 32, default_size = 32 WHERE pool = 'gpu';
 -- +goose StatementBegin
 UPDATE job_stages SET label = 'Transcribe', pool = 'gpu', lane = 'media', lane_order = 2,
     version = 1, legacy = false, max_attempts = 3,
-    edges = '[{"to":"subtitle_gen","map":"same","when":"output_changed","legacy":false},{"to":"index","map":"same","when":"output_changed","legacy":false},{"to":"tag","map":"season_of","when":"output_changed","legacy":false},{"to":"tag","map":"library_of","when":"output_changed","legacy":false}]'::jsonb
+    edges = '[{"to":"subtitle_gen","map":"same","when":"output_changed","legacy":false},{"to":"index","map":"same","when":"output_changed","legacy":false},{"to":"tag","map":"season_of","when":"output_changed","legacy":false},{"to":"tag","map":"loose_library_of","when":"output_changed","legacy":false}]'::jsonb
   WHERE stage = 'transcribe';
 -- +goose StatementEnd
 
@@ -34,7 +34,7 @@ UPDATE job_stages SET label = 'Subtitle files', pool = 'nas_write', lane = 'medi
 
 -- +goose StatementBegin
 UPDATE job_stages SET label = 'Search index', pool = 'cpu', lane = 'media', lane_order = 4,
-    version = 1, legacy = false
+    version = 2, legacy = false
   WHERE stage = 'index';
 -- +goose StatementEnd
 

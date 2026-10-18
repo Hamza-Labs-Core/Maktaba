@@ -41,16 +41,19 @@ def _call(service: PipelineService, method: Any, payload: dict[str, Any]) -> dic
 
 
 def test_semantic_search_rpc_returns_hits_and_validates() -> None:
-    seen: list[tuple[str, int, list[str]]] = []
+    seen: list[tuple[str, int, list[str], list[str]]] = []
 
-    async def fake(q: str, k: int, libs: list[str]) -> list[dict[str, Any]]:
-        seen.append((q, k, libs))
+    async def fake(q: str, k: int, libs: list[str], langs: list[str]) -> list[dict[str, Any]]:
+        seen.append((q, k, libs, langs))
         return [{"segment_id": 1, "video_id": "v", "start_sec": 0.0, "end_sec": 1.0, "score": 0.9}]
 
     svc = PipelineService(semantic=fake)
     out = _call(svc, svc.semantic_search, {"q": " صلاة ", "k": 5000, "library_ids": ["L"]})
     assert out["hits"][0]["segment_id"] == 1
-    assert seen == [("صلاة", grpc_server.MAX_SEMANTIC_K, ["L"])]
+    assert seen == [("صلاة", grpc_server.MAX_SEMANTIC_K, ["L"], [])]
+    _call(svc, svc.semantic_search, {"q": "x", "languages": ["en"]})
+    assert seen[-1][3] == ["en"]
+    assert "languages" in _call(svc, svc.semantic_search, {"q": "x", "languages": "en"})["error"]
     assert "q is required" in _call(svc, svc.semantic_search, {"q": ""})["error"]
     assert "k must be" in _call(svc, svc.semantic_search, {"q": "x", "k": 0})["error"]
     assert "library_ids" in _call(svc, svc.semantic_search, {"q": "x", "library_ids": "L"})["error"]
@@ -65,7 +68,7 @@ def test_default_backends_use_the_shared_index(monkeypatch: pytest.MonkeyPatch) 
     coll, emb = FakeCollection(), FakeEmbedder()
     vid, lib = uuid.uuid4(), uuid.uuid4()
     SemanticIndex(coll, emb).replace_video(
-        video_id=vid, library_id=lib, segments=_segments(uuid.uuid4(), ["صوم رمضان"])
+        video_id=vid, library_id=lib, segments=_segments(uuid.uuid4(), ["صوم رمضان"]), language="ar"
     )
     monkeypatch.setattr(semantic, "search_available", lambda: True)
     monkeypatch.setattr(semantic, "get_query_embedder", lambda model=None: emb)
@@ -77,5 +80,10 @@ def test_default_backends_use_the_shared_index(monkeypatch: pytest.MonkeyPatch) 
     svc = PipelineService(embedder=embed, semantic=search)
     out = _call(svc, svc.semantic_search, {"q": "صوم رمضان", "k": 3, "library_ids": [str(lib)]})
     assert [h["video_id"] for h in out["hits"]] == [str(vid)]
+    # the language filter applies inside the index, before the top k
+    req = {"q": "صوم رمضان", "k": 3, "library_ids": [str(lib)], "languages": ["en"]}
+    assert _call(svc, svc.semantic_search, req)["hits"] == []
+    req["languages"] = ["ar", "en"]
+    assert len(_call(svc, svc.semantic_search, req)["hits"]) == 1
     vec = _call(svc, svc.embed, {"text": "صوم"})["vector"]
     assert len(vec) > 0 and emb.queries[-1] == "صوم"

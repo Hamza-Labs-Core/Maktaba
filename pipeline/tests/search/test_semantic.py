@@ -128,6 +128,7 @@ def test_replace_video_drops_old_vectors_and_writes_in_batches() -> None:
     assert meta == {
         "video_id": str(vid),
         "library_id": str(lib),
+        "language": "",
         "transcript_id": str(new),
         "segment_id": 102,
         "seq": 2,

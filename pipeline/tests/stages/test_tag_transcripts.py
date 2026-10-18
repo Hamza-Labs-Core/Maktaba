@@ -123,3 +123,28 @@ async def test_loose_videos_read_their_transcripts(db: Database) -> None:
         )
     }
     assert "topic:seerah" not in others
+
+
+@pytest.mark.asyncio
+async def test_only_a_loose_video_s_transcript_re_tags_its_library(db: Database) -> None:
+    from maktaba_pipeline.engine.claim import row_to_job
+    from maktaba_pipeline.engine.graph import Edge
+    from maktaba_pipeline.engine.propagate import resolve_edge
+
+    w = await make_show(db, episodes=2, loose=1)
+    ep, loose = w.episodes[0], w.loose[0]
+    sid = str(uuid.uuid4())
+    await db.execute(
+        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'S')", sid, str(w.library)
+    )
+    await db.execute(
+        "INSERT INTO series_episodes (series_id, video_id, season, episode) VALUES ($1, $2, 1, 1)",
+        sid,
+        str(ep),
+    )
+    edge = Edge("tag", "loose_library_of")
+    for vid, want in ((ep, []), (loose, [("library", w.library)])):
+        r = await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+        row = await db.fetchrow("SELECT * FROM processing_jobs WHERE id = $1", r.job_id)
+        got = await resolve_edge(db, edge, row_to_job(row), [])
+        assert [(k, UUID(str(i))) for k, i in got] == want

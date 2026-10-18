@@ -11,6 +11,9 @@ func TestRealClient_SemanticSearch(t *testing.T) {
 			if req["q"] != "صلاة" || req["k"] != float64(7) {
 				t.Errorf("req=%v", req)
 			}
+			if langs, _ := req["languages"].([]any); len(langs) != 1 || langs[0] != "ar" {
+				t.Errorf("languages=%v", req["languages"])
+			}
 			libs, _ := req["library_ids"].([]any)
 			if len(libs) != 1 || libs[0] != "lib-a" {
 				t.Errorf("library_ids=%v", req["library_ids"])
@@ -25,7 +28,7 @@ func TestRealClient_SemanticSearch(t *testing.T) {
 			}}
 		},
 	})
-	hits, err := c.SemanticSearch(context.Background(), "صلاة", 7, []string{"lib-a"})
+	hits, err := c.SemanticSearch(context.Background(), "صلاة", 7, []string{"lib-a"}, []string{"ar"})
 	if err != nil {
 		t.Fatalf("SemanticSearch: %v", err)
 	}
@@ -44,7 +47,7 @@ func TestRealClient_SemanticSearch_NilLibrariesSendsEmptyList(t *testing.T) {
 			return map[string]any{"hits": []any{}}
 		},
 	})
-	hits, err := c.SemanticSearch(context.Background(), "x", 5, nil)
+	hits, err := c.SemanticSearch(context.Background(), "x", 5, nil, nil)
 	if err != nil || len(hits) != 0 {
 		t.Fatalf("hits=%v err=%v", hits, err)
 	}
@@ -59,14 +62,14 @@ func TestRealClient_SemanticSearch_Errors(t *testing.T) {
 			return map[string]any{"nothing": true}
 		},
 	})
-	if _, err := c.SemanticSearch(context.Background(), "bad", 5, nil); err == nil {
+	if _, err := c.SemanticSearch(context.Background(), "bad", 5, nil, nil); err == nil {
 		t.Fatal("in-band error must surface")
 	}
-	if _, err := c.SemanticSearch(context.Background(), "x", 5, nil); err == nil {
+	if _, err := c.SemanticSearch(context.Background(), "x", 5, nil, nil); err == nil {
 		t.Fatal("a response without hits must be an error")
 	}
 	unconnected := NewRealClient(DefaultConfig()).(SemanticSearcher)
-	if _, err := unconnected.SemanticSearch(context.Background(), "x", 5, nil); err == nil {
+	if _, err := unconnected.SemanticSearch(context.Background(), "x", 5, nil, nil); err == nil {
 		t.Fatal("an unconnected client must fail, not hang")
 	}
 }

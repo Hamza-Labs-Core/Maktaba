@@ -80,6 +80,9 @@ SUBTITLE_VERSION = 1
 EdgeMap = Literal[
     "same",
     "library_of",
+    # a video's library, only while the video is in no season (the library tag's
+    # loose videos): a series episode's transcript re-tags its season, not its library
+    "loose_library_of",
     "season_of",
     "seasons_changed",
     "videos_of",
@@ -498,7 +501,7 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("subtitle_gen", "same"),
             Edge("index", "same"),
             Edge("tag", "season_of"),
-            Edge("tag", "library_of"),
+            Edge("tag", "loose_library_of"),
         ),
         max_attempts=3,
     ),

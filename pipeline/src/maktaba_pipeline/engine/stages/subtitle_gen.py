@@ -7,12 +7,15 @@ is written atomically (a temporary file, then a rename) and recorded in
 
 A file already there that Maktaba did not write (no ``subtitle_files`` row with its
 hash) is never overwritten: the job notes it and leaves it. A rewrite replaces only a
-file whose content still matches what Maktaba last wrote.
+file whose content still matches what Maktaba last wrote. A file that is exactly what
+this run would write is Maktaba's too, recorded or not: a worker stopped between the
+write and the row, or a write that finished after its timeout, leaves such a file.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import os
 import posixpath
@@ -83,9 +86,14 @@ def _sha(data: bytes) -> str:
 
 def _write_atomic(path: str, data: bytes) -> None:
     tmp = f"{path}.maktaba-tmp"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _current_sha(path: str) -> str | None:
@@ -129,7 +137,8 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             on_share = await asyncio.wait_for(
                 asyncio.to_thread(_current_sha, target), READ_TIMEOUT_S
             )
-            if on_share is not None and (mine is None or on_share != mine["sha256"]):
+            ours = mine is not None and on_share == mine["sha256"]
+            if on_share is not None and not ours and on_share != _sha(data):
                 kept.append(posixpath.basename(target))  # not ours, or edited since
                 continue
             if on_share != _sha(data):

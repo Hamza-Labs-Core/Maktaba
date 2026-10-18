@@ -47,6 +47,9 @@ class Sentence:
 class Transcript:
     sentences: list[Sentence]
     audio_sec: float
-    language: str
+    language: str  # the language it was decoded as (forced: WhisperSettings.language)
     model: str
     gpu_sec: float  # wall time from admission to the last window
+    #: the language Whisper hears in the opening 30 s, when it is sure enough (None:
+    #: not detected, or not confident); recorded as such, never the forced one
+    detected_language: str | None = None

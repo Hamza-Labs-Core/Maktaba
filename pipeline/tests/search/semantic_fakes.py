@@ -56,6 +56,10 @@ class FakeEmbedder:
 
 def _matches(meta: dict[str, Any], where: dict[str, Any] | None) -> bool:
     for key, cond in (where or {}).items():
+        if key == "$and":
+            if not all(_matches(meta, w) for w in cond):
+                return False
+            continue
         if isinstance(cond, dict):
             if "$in" in cond and meta.get(key) not in cond["$in"]:
                 return False

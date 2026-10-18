@@ -14,7 +14,7 @@ type plainPipeline struct{ grpcpipeline.Client }
 // semanticPipeline adds the RPC.
 type semanticPipeline struct{ grpcpipeline.Client }
 
-func (semanticPipeline) SemanticSearch(context.Context, string, int, []string) ([]grpcpipeline.SemanticHit, error) {
+func (semanticPipeline) SemanticSearch(context.Context, string, int, []string, []string) ([]grpcpipeline.SemanticHit, error) {
 	return nil, nil
 }
 

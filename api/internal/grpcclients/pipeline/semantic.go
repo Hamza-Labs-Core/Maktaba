@@ -27,14 +27,16 @@ type SemanticHit struct {
 // client returned by NewRealClient satisfies both.
 type SemanticSearcher interface {
 	// SemanticSearch embeds q (e5 "query: " prefix) and returns the k
-	// nearest indexed segments, only from libraryIDs when non-empty.
-	SemanticSearch(ctx context.Context, q string, k int, libraryIDs []string) ([]SemanticHit, error)
+	// nearest indexed segments, only from libraryIDs and of languages
+	// (the video's detected language) when non-empty: the filters apply
+	// before the top k is taken, so a filtered search is not cut short.
+	SemanticSearch(ctx context.Context, q string, k int, libraryIDs, languages []string) ([]SemanticHit, error)
 }
 
 // SemanticSearch implements SemanticSearcher over the JSON-on-gRPC wire.
 // It shares Embed's per-call timeout; callers usually pass a tighter
 // context deadline (the search handler's semantic budget).
-func (c *realClient) SemanticSearch(ctx context.Context, q string, k int, libraryIDs []string) ([]SemanticHit, error) {
+func (c *realClient) SemanticSearch(ctx context.Context, q string, k int, libraryIDs, languages []string) ([]SemanticHit, error) {
 	if c.cfg.EmbedTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.cfg.EmbedTimeout)
@@ -45,7 +47,11 @@ func (c *realClient) SemanticSearch(ctx context.Context, q string, k int, librar
 		libs = []string{}
 	}
 	var resp map[string]any
-	req := map[string]any{"q": q, "k": k, "library_ids": libs}
+	langs := languages
+	if langs == nil {
+		langs = []string{}
+	}
+	req := map[string]any{"q": q, "k": k, "library_ids": libs, "languages": langs}
 	if err := c.invoke(ctx, methodSemanticSearch, req, &resp); err != nil {
 		return nil, err
 	}

@@ -61,7 +61,8 @@ __all__ = [
 
 #: bump when what a vector holds changes (text normalisation, metadata, prefixes): every
 #: video is indexed again
-INDEX_VERSION = 1
+#: 2: each vector carries its video's detected language (the search's language filter)
+INDEX_VERSION = 2
 
 DEFAULT_EMBED_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_CHROMA_DIR = "~/.maktaba/chroma"
@@ -382,6 +383,7 @@ class SemanticIndex:
         video_id: UUID | str,
         library_id: UUID | str,
         segments: Sequence[IndexedSegment],
+        language: str | None = None,
     ) -> int:
         """Embed ``segments`` (one batch) and upsert them; blank ones are skipped."""
         chunk = [s for s in segments if s.text.strip()]
@@ -396,6 +398,7 @@ class SemanticIndex:
                 {
                     "video_id": str(video_id),
                     "library_id": str(library_id),
+                    "language": language or "",
                     "transcript_id": str(s.transcript_id),
                     "segment_id": int(s.segment_id),
                     "seq": int(s.seq),
@@ -414,6 +417,7 @@ class SemanticIndex:
         library_id: UUID | str,
         segments: Sequence[IndexedSegment],
         batch: int | None = None,
+        language: str | None = None,
     ) -> int:
         """Drop the video's vectors, then embed and upsert ``segments`` in batches.
 
@@ -423,24 +427,39 @@ class SemanticIndex:
         size = batch or batch_size()
         return sum(
             self.upsert_segments(
-                video_id=video_id, library_id=library_id, segments=segments[i : i + size]
+                video_id=video_id,
+                library_id=library_id,
+                segments=segments[i : i + size],
+                language=language,
             )
             for i in range(0, len(segments), size)
         )
 
     def search(
-        self, query: str, *, k: int = 50, library_ids: Sequence[str] | None = None
+        self,
+        query: str,
+        *,
+        k: int = 50,
+        library_ids: Sequence[str] | None = None,
+        languages: Sequence[str] | None = None,
     ) -> list[SegmentHit]:
         """The ``k`` segments nearest to ``query`` (score = cosine similarity), only from
-        ``library_ids`` when given."""
+        ``library_ids`` and of ``languages`` (the video's detected language) when given:
+        both filter before the top k is taken."""
         if not query.strip() or k <= 0:
             return []
-        libs = [str(x) for x in (library_ids or []) if str(x)]
+        terms: list[dict[str, Any]] = []
+        for key, values in (("library_id", library_ids), ("language", languages)):
+            vals = [str(x) for x in (values or []) if str(x)]
+            if len(vals) == 1:
+                terms.append({key: vals[0]})
+            elif vals:
+                terms.append({key: {"$in": vals}})
         where: dict[str, Any] | None = None
-        if len(libs) == 1:
-            where = {"library_id": libs[0]}
-        elif libs:
-            where = {"library_id": {"$in": libs}}
+        if len(terms) == 1:
+            where = terms[0]
+        elif terms:
+            where = {"$and": terms}
         res = self.collection.query(
             query_embeddings=[self.embedder.embed_query(query)],
             n_results=k,

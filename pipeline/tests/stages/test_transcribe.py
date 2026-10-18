@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.engine.sql import is_pg
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.batched import Sentence, Transcript
@@ -20,6 +21,7 @@ LINES = [(0.5, 2.25, "السلام عليكم ورحمة الله"), (2.5, 5.0, 
 class FakeTranscriber:
     def __init__(self) -> None:
         self.calls = 0
+        self.detected: str | None = None
 
     async def transcribe(self, audio: np.ndarray) -> Transcript:
         self.calls += 1
@@ -29,6 +31,7 @@ class FakeTranscriber:
             language="ar",
             model="fake-whisper",
             gpu_sec=1.0,
+            detected_language=self.detected,
         )
 
 
@@ -145,3 +148,71 @@ async def test_a_missing_file_fails_for_good(
     )
     assert row["state"] == "failed" and "file_missing" in str(row["error"])
     assert fake.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_the_language_recorded_is_the_one_heard_not_the_one_forced(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    row = await db.fetchrow(
+        "SELECT t.language, t.detected_language, v.detected_language AS video_lang"
+        " FROM transcripts t JOIN videos v ON v.id = t.video_id WHERE t.video_id = $1",
+        str(vid),
+    )
+    assert (row["language"], row["detected_language"], row["video_lang"]) == ("ar", None, None)
+
+    fake.detected = "en"
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
+    await drain_core(db, rt, only={"transcribe"})
+    row = await db.fetchrow(
+        "SELECT t.detected_language, v.detected_language AS video_lang FROM transcripts t"
+        " JOIN videos v ON v.id = t.video_id WHERE t.video_id = $1 AND t.is_active",
+        str(vid),
+    )
+    assert (row["detected_language"], row["video_lang"]) == ("en", "en")
+
+
+@pytest.mark.asyncio
+async def test_a_subtitle_file_identical_to_ours_is_ours_even_unrecorded(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    """A worker stopped between writing the file and recording it."""
+    from maktaba_pipeline.engine.stages.subtitle_gen import srt
+
+    rt = await core_runtime(db)
+    vid, media = await _one_video(db, tmp_path)
+    media.with_name("درس السيرة 01.ar.srt").write_text(srt(LINES), encoding="utf-8")
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
+    rows = await db.fetch(
+        "SELECT format FROM subtitle_files WHERE video_id = $1 AND deleted_at IS NULL"
+        " ORDER BY format",
+        str(vid),
+    )
+    assert [r["format"] for r in rows] == ["srt", "vtt"]  # recorded, not kept as foreign
+    assert not list(tmp_path.glob("*.maktaba-tmp"))
+
+
+@pytest.mark.asyncio
+async def test_the_probe_s_default_audio_track_stands(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    yes: Any = True if is_pg(db) else 1
+    await db.execute(
+        "INSERT INTO audio_tracks (video_id, track_index, is_default) VALUES ($1, 1, $2)",
+        str(vid),
+        yes,
+    )
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    rows = await db.fetch(
+        "SELECT track_index, is_default FROM audio_tracks WHERE video_id = $1 ORDER BY track_index",
+        str(vid),
+    )
+    assert [(r["track_index"], bool(r["is_default"])) for r in rows] == [(0, False), (1, True)]

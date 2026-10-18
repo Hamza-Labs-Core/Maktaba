@@ -55,7 +55,7 @@ func (g *GRPCSemantic) Search(ctx context.Context, q string, k int, f Filters) (
 	if off {
 		return []Hit{}, nil
 	}
-	raw, err := g.Backend.SemanticSearch(ctx, q, k, f.LibraryID)
+	raw, err := g.Backend.SemanticSearch(ctx, q, k, f.LibraryID, f.Language)
 	if err != nil {
 		if strings.Contains(err.Error(), "backend not configured") {
 			g.mu.Lock()

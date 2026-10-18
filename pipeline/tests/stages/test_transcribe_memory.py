@@ -78,3 +78,36 @@ async def test_the_sampler_takes_a_last_round_with_the_final_readings(db: Databa
     finally:
         health._METRICS.pop("stt.test_lost", None)
         health._FINAL.pop("stt.test_lost", None)
+
+
+@pytest.mark.asyncio
+async def test_a_long_memory_shortage_gives_the_job_back_without_using_an_attempt(
+    db: Database, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.engine.enqueue import enqueue_job
+    from maktaba_pipeline.engine.stages import transcribe as tr
+    from tests.stages.world import core_runtime, drain_core, make_show
+
+    monkeypatch.setattr(tr, "system_memory", lambda: (100.0, 5.0))  # 5% free
+    monkeypatch.setenv("MAKTABA_STT_MEMORY_WAIT_S", "0")
+    rt = await core_runtime(db)
+    w = await make_show(db, episodes=1, loose=0)
+    media = tmp_path / "a.mp4"
+    media.write_bytes(b"\x00" * 64)
+    await db.execute("UPDATE videos SET path = $2 WHERE id = $1", str(w.episodes[0]), str(media))
+    await enqueue_job(db, subject_kind="video", subject_id=w.episodes[0], stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    row = await db.fetchrow(
+        "SELECT state, attempts, paused_reason, not_before FROM processing_jobs"
+        " WHERE stage = 'transcribe'"
+    )
+    assert row["state"] == "paused" and "memory" in str(row["paused_reason"])
+    assert row["not_before"] is not None
+    assert tr.audio_budget().used == 0  # the budget is given back too
+    # claiming it again later does not count as a new attempt
+    attempts = int(row["attempts"])
+    from maktaba_pipeline.engine.claim import claim_for_pool
+
+    await db.execute("UPDATE processing_jobs SET not_before = NULL WHERE stage = 'transcribe'")
+    job = await claim_for_pool(db, worker_id="w2", pool="gpu", stages=["transcribe"])
+    assert job is not None and job.attempts == attempts

@@ -252,3 +252,23 @@ async def test_a_failed_batch_counts_its_progress_as_lost() -> None:
     with pytest.raises(RuntimeError):
         await bt.transcribe(_audio(1, 3))
     assert bt.audio_lost == pytest.approx(30) == bt.audio_done  # one window in, then lost
+
+
+@pytest.mark.asyncio
+async def test_each_file_s_language_is_detected_once_from_its_first_window() -> None:
+    model = FakeModel()
+    asked: list[list[int]] = []
+
+    def detect(features: list[Any], rows: list[int]) -> list[str]:
+        asked.append([features[k][1] for k in rows])
+        return ["en" if features[k][1] // 100 == 2 else "" for k in rows]
+
+    bt = _transcriber(model)
+    bt._encode = lambda windows, cached: [
+        c if c is not None else w for w, c in zip(windows, cached, strict=True)
+    ]
+    bt._detect = detect
+    r1, r2 = await asyncio.gather(bt.transcribe(_audio(1, 3)), bt.transcribe(_audio(2, 2)))
+    assert asked == [[100, 200]]  # first windows only, in one call
+    assert r1.detected_language is None  # unsure: not recorded
+    assert r2.detected_language == "en" and r2.language == "ar"

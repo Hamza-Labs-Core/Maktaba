@@ -21,7 +21,7 @@ type fakeSearcher struct {
 	k     int
 }
 
-func (f *fakeSearcher) SemanticSearch(_ context.Context, _ string, k int, libs []string) ([]grpcpipeline.SemanticHit, error) {
+func (f *fakeSearcher) SemanticSearch(_ context.Context, _ string, k int, libs, _ []string) ([]grpcpipeline.SemanticHit, error) {
 	f.calls++
 	f.k, f.libs = k, libs
 	return f.hits, f.err

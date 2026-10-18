@@ -59,7 +59,8 @@ _log = get_logger()
 PIPELINE_SERVICE_NAME = "maktaba.pipeline.v1.Pipeline"
 
 #: ``(query, k, library_ids) -> hits`` (each hit a flat JSON dict)
-SemanticSearchFn = Callable[[str, int, list[str]], Awaitable[list[dict[str, Any]]]]
+#: ``(query, k, library_ids, languages) -> hits`` (each hit a flat JSON dict)
+SemanticSearchFn = Callable[[str, int, list[str], list[str]], Awaitable[list[dict[str, Any]]]]
 
 #: most hits one SemanticSearch call returns
 MAX_SEMANTIC_K = 200
@@ -178,7 +179,10 @@ class PipelineService:
             raise ValueError("semantic_search: library_ids must be a list of strings")
         if self._semantic is None:
             raise RuntimeError("semantic search backend not configured")
-        hits = await self._semantic(q.strip(), min(k, MAX_SEMANTIC_K), list(libs))
+        langs = payload.get("languages") or []
+        if not isinstance(langs, list) or not all(isinstance(x, str) for x in langs):
+            raise ValueError("semantic_search: languages must be a list of strings")
+        hits = await self._semantic(q.strip(), min(k, MAX_SEMANTIC_K), list(libs), list(langs))
         return {"hits": hits}
 
     async def list_backends(self, _payload: dict[str, Any]) -> dict[str, Any]:
@@ -444,9 +448,12 @@ def default_search_backends() -> tuple[
     async def embed(text: str) -> list[float]:
         return await asyncio.to_thread(embedder.embed_query, text)
 
-    async def semantic(q: str, k: int, library_ids: list[str]) -> list[dict[str, Any]]:
+    async def semantic(
+        q: str, k: int, library_ids: list[str], languages: list[str]
+    ) -> list[dict[str, Any]]:
         def _run() -> list[dict[str, Any]]:
-            return [h.to_json() for h in _index().search(q, k=k, library_ids=library_ids)]
+            hits = _index().search(q, k=k, library_ids=library_ids, languages=languages)
+            return [h.to_json() for h in hits]
 
         return await asyncio.to_thread(_run)
 

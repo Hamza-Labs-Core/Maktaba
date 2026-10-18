@@ -77,8 +77,14 @@ async def active_transcript(db: Any, video_id: UUID | str) -> tuple[str, int] | 
     return str(row["id"]), int(row["n"])
 
 
+async def video_language(db: Any, video_id: UUID | str) -> str | None:
+    """The video's detected language: each vector carries it, for the language filter."""
+    lang = await db.fetchval("SELECT detected_language FROM videos WHERE id = $1", uid(video_id))
+    return None if lang is None else str(lang)
+
+
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
-    """DB only: the active transcript, its size, the model and the index format."""
+    """DB only: the active transcript, its size, the language, the model and the format."""
     if await load_video(db, subject.id) is None:
         return None
     active = await active_transcript(db, subject.id)
@@ -86,6 +92,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
         {
             "transcript": active[0] if active else None,
             "segments": active[1] if active else 0,
+            "language": await video_language(db, subject.id),
             "model": embed_model(),
             "v": INDEX_VERSION,
         }
@@ -123,6 +130,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
         for r in rows
     ]
+    language = await video_language(db, v.id)
     size = batch_size()
     total = len(segments)
     await ctx.progress("embed", 0, total, force=True)
@@ -136,6 +144,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 video_id=v.id,
                 library_id=v.library_id,
                 segments=segments[start : start + size],
+                language=language,
             )
             await ctx.progress("embed", min(start + size, total), total)
     except SemanticUnavailable as exc:

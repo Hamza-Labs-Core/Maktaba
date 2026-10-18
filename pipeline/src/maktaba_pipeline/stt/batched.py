@@ -46,6 +46,8 @@ __all__ = [
 _log = get_logger()
 
 HOP_LENGTH = 160
+#: below this, Whisper's language guess is not recorded
+LANGUAGE_MIN_PROB = 0.5
 N_FRAMES = 3000  # one 30 s window, in mel frames
 FRAMES_PER_SECOND = SAMPLE_RATE // HOP_LENGTH  # 100
 INPUT_STRIDE = 2  # mel frames per audio token
@@ -91,6 +93,8 @@ class _Job:
     temp_idx: int = 0
     last_speech: float = 0.0
     segments: list[dict[str, Any]] = field(default_factory=list)
+    #: what Whisper hears in the first window: None until asked, "" when unsure
+    language: str | None = None
     #: the encoder output of the window at ``features_seek``, kept while that window
     #: is decoded again at a warmer temperature
     features: Any = None
@@ -277,6 +281,7 @@ class BatchedTranscriber:
         mel_of: Callable[[np.ndarray], Any] | None = None,
         window_of: Callable[[Any, int, int], Any] | None = None,
         tokenizer: _Tokenizer | None = None,
+        detect: Callable[[Any, list[int]], list[str]] | None = None,
     ) -> None:
         self.settings = settings or WhisperSettings()
         self._encode = encode
@@ -285,6 +290,8 @@ class BatchedTranscriber:
         self._mel_of = mel_of
         self._window_of = window_of
         self._tokenizer = tokenizer
+        #: (the pass's encoder output, rows) -> each row's language, "" when unsure
+        self._detect = detect
         #: every window of a pass aligned in one model call (stt/align.py)
         self._align_batch = align_batch
         self._inbox: queue.Queue[_Submission] = queue.Queue()
@@ -337,6 +344,7 @@ class BatchedTranscriber:
             DecodingOptions,
             DecodingTask,
             GreedyDecoder,
+            detect_language,
         )
         from mlx_whisper.load_models import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             load_model,
@@ -439,6 +447,17 @@ class BatchedTranscriber:
         self._encode = encode
         self._decode = run_decode
         self._align = None
+
+        def detect(features: Any, rows: list[int]) -> list[str]:
+            # one decoder step on encoder output the pass already has
+            _, probs = detect_language(model, mx.take(features, mx.array(rows), axis=0), tok)
+            out = []
+            for p in probs:
+                code, prob = max(p.items(), key=lambda kv: kv[1])
+                out.append(code if prob >= LANGUAGE_MIN_PROB else "")
+            return out
+
+        self._detect = detect
         if s.word_timestamps:
             self._align_batch = lambda items, feats: align_batch(model, tok, items, feats)
         _log.info("whisper.loaded", model=s.model, seconds=round(time.monotonic() - t0, 1))
@@ -508,6 +527,7 @@ class BatchedTranscriber:
                         language=self.settings.language,
                         model=self.settings.model,
                         gpu_sec=time.monotonic() - j.admitted,
+                        detected_language=j.language or None,
                     )
                 except Exception as exc:  # noqa: BLE001 - the thread outlives one file
                     self.audio_lost += j.progress_sec
@@ -533,6 +553,10 @@ class BatchedTranscriber:
         if self._encode is not None:
             cached = [j.features if j.features_seek == j.seek else None for j in live]
             features = self._encode(windows, cached)
+            first = [k for k, j in enumerate(live) if j.language is None]
+            if first and self._detect is not None:
+                for k, lang in zip(first, self._detect(features, first), strict=True):
+                    live[k].language = lang
         else:
             features = windows
         results = self._decode(features, [s.temperatures[j.temp_idx] for j in live])

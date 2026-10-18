@@ -25,7 +25,7 @@ from uuid import uuid4
 
 from ...db.jobs import Job
 from ...stt.settings import SAMPLE_RATE, Transcript, WhisperSettings
-from ..context import StageContext, StageFailure
+from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..health import system_memory
@@ -117,13 +117,19 @@ def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
 
 async def wait_for_memory(ctx: StageContext) -> None:
     """Back-pressure: while the host is short of memory (``MAKTABA_STT_MIN_FREE_PCT``,
-    default 20% available), a job waits before it decodes anything, and says so."""
+    default 20% available), a job waits before it decodes anything, and says so. After
+    ``MAKTABA_STT_MEMORY_WAIT_S`` (default 900) it gives the job back for 10 minutes
+    (:class:`JobDeferred`: no attempt used, its claim and audio budget freed)."""
     floor = float(os.environ.get("MAKTABA_STT_MIN_FREE_PCT", "20"))
+    limit = float(os.environ.get("MAKTABA_STT_MEMORY_WAIT_S", "900"))
     waited = 0
     while True:
         mem = system_memory()
         if mem is None or not mem[0] or 100.0 * mem[1] / mem[0] >= floor:
             return
+        if waited >= limit:
+            free = 100.0 * mem[1] / mem[0]
+            raise JobDeferred(f"memory: {free:.0f}% available, needs {floor:.0f}%", 600.0)
         if waited % 60 == 0:
             await ctx.progress(
                 "waiting", 0, 1,
@@ -235,6 +241,7 @@ async def _transcribe_file(db: Any, v: Any, found: str, ctx: StageContext) -> St
             "rtf": None if rtf is None else round(rtf, 1),
             "model": result.model,
             "language": result.language,
+            "detected_language": result.detected_language,
         },
     )
 
@@ -243,10 +250,13 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
     """The transcript replaces the video's active one, atomically."""
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
-        # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have
+        # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have: the
+        # default only when the video has none (the probe's choice of default stands)
         track = await db.fetchrow(
-            "INSERT INTO audio_tracks (video_id, track_index, is_default) VALUES ($1, 0, true)"
-            " ON CONFLICT (video_id, track_index) DO UPDATE SET is_default = true"
+            "INSERT INTO audio_tracks (video_id, track_index, is_default)"
+            " VALUES ($1, 0, NOT EXISTS (SELECT 1 FROM audio_tracks"
+            "  WHERE video_id = $1 AND is_default))"
+            " ON CONFLICT (video_id, track_index) DO UPDATE SET track_index = 0"
             " RETURNING id",
             uid(video_id),
         )
@@ -255,7 +265,7 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
             INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
                                      backend, model, backend_version, word_level, diarized,
                                      is_active, metadata)
-            VALUES ($8, $1, $7, $2, $2, 'mlx-batched', $3, $4, $5, false, false, $6)
+            VALUES ($8, $1, $7, $2, $9, 'mlx-batched', $3, $4, $5, false, false, $6)
             RETURNING id
             """,
             uid(video_id),
@@ -266,6 +276,7 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
             dumps({"audio_sec": round(result.audio_sec, 1), "plan": "03-10"}),
             track["id"],
             uid(uuid4()),  # SQLite gives the column no default
+            result.detected_language,  # what Whisper heard, not the language it was told
         )
         tid = row["id"]
         rows = []
@@ -298,11 +309,13 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
             to_ts(db, now()),
         )
         await db.execute("UPDATE transcripts SET is_active = true WHERE id = $1", tid)
-        await db.execute(
-            "UPDATE videos SET detected_language = $2 WHERE id = $1 AND detected_language IS NULL",
-            uid(video_id),
-            result.language,
-        )
+        if result.detected_language:
+            await db.execute(
+                "UPDATE videos SET detected_language = $2"
+                " WHERE id = $1 AND detected_language IS NULL",
+                uid(video_id),
+                result.detected_language,
+            )
     return str(tid)
 
 
