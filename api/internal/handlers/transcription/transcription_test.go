@@ -75,6 +75,11 @@ func segmentsRule(n int64) *queuestest.Rule {
 	return &queuestest.Rule{Match: "output_summary->'segments'", Cols: []string{"n"}, Rows: [][]driver.Value{{n}}}
 }
 
+func liveRule(sec float64, workers int64) *queuestest.Rule {
+	return &queuestest.Rule{Match: "stt.audio_sec:", Cols: []string{"sec", "workers"},
+		Rows: [][]driver.Value{{sec, workers}}}
+}
+
 func rateRule(jobs10 int64, sec10 float64, rtf10 any, jobs60 int64, sec60 float64, rtf60 any) *queuestest.Rule {
 	return &queuestest.Rule{Match: "with w as", Cols: []string{"j10", "s10", "r10", "j60", "s60", "r60"},
 		Rows: [][]driver.Value{{jobs10, sec10, rtf10, jobs60, sec60, rtf60}}}
@@ -99,6 +104,7 @@ func fullRules() []*queuestest.Rule {
 		segmentsRule(12345),
 		// 10 min: 5 h of audio -> 30x realtime; 1 h: 20 h of audio -> 20x.
 		rateRule(6, 18000.0, 31.5, 30, 72000.0, 25.0),
+		liveRule(0, 0),
 		failuresRule(
 			[]driver.Value{int64(901), vid1, "Lesson 1", "Lectures", "transcribe", "gpu_oom",
 				`{"kind":"gpu_oom","message":"CUDA out of memory"}`, t0.Add(-time.Minute), int64(3)},
@@ -195,7 +201,7 @@ func TestSummary_QueryArguments(t *testing.T) {
 }
 
 func TestSummary_Empty(t *testing.T) {
-	f := newFixture(segmentsRule(0), rateRule(0, 0.0, nil, 0, 0.0, nil))
+	f := newFixture(segmentsRule(0), rateRule(0, 0.0, nil, 0, 0.0, nil), liveRule(0, 0))
 	s := decode(t, f.get(viewer()))
 	if s.Totals != (Totals{}) || len(s.Libraries) != 0 || len(s.Failures) != 0 || len(s.Stages) != 3 {
 		t.Errorf("empty summary = %+v", s)
@@ -217,6 +223,19 @@ func TestSummary_Empty(t *testing.T) {
 	}
 }
 
+func TestSummary_LiveSpeed(t *testing.T) {
+	// two workers decoded 25 h of audio in 10 min: 150x; finished jobs say 30x
+	rules := append([]*queuestest.Rule{liveRule(90000, 2)}, fullRules()...)
+	s := decode(t, newFixture(rules...).get(viewer()))
+	if s.Rate.Live != (Live{WindowSec: 600, Workers: 2, AudioHours: 25, RealtimeFactor: 150}) {
+		t.Errorf("live = %+v", s.Rate.Live)
+	}
+	// 110 h remaining at 150x -> 44 min
+	if s.ETA.Seconds == nil || *s.ETA.Seconds != 2640 || *s.ETA.Basis != "live" {
+		t.Errorf("eta = %+v", s.ETA)
+	}
+}
+
 func TestETA(t *testing.T) {
 	ten := func(jobs int, rt float64) Window { return Window{Jobs: jobs, RealtimeFactor: rt} }
 	tests := []struct {
@@ -226,6 +245,7 @@ func TestETA(t *testing.T) {
 		wantSec   *float64
 		wantBasis string
 	}{
+		{"live speed first", 10, Rates{Live: Live{RealtimeFactor: 100}, Last10m: ten(2, 20)}, ptr(360), "live"},
 		{"10m basis", 10, Rates{Last10m: ten(2, 20), Last1h: ten(9, 5)}, ptr(1800), "10m"},
 		{"falls back to the hour", 10, Rates{Last10m: ten(0, 0), Last1h: ten(9, 5)}, ptr(7200), "1h"},
 		{"no recent work -> unknown", 10, Rates{}, nil, ""},

@@ -10,6 +10,7 @@ import {
   TRANSCRIPTION_STAGES,
   type TranscriptionLibrary,
   type TranscriptionSummary,
+  type TranscriptionLive,
   type TranscriptionWindow,
 } from "../../lib/transcriptionApi";
 import { useTranscriptionSummary } from "../../lib/useTranscriptionSummary";
@@ -145,12 +146,37 @@ function SpeedRow({ label, w }: { label: string; w: TranscriptionWindow }) {
   );
 }
 
+function LiveRow({ live }: { live: TranscriptionLive }) {
+  const { t, n } = useI18n();
+  const hours = useHours();
+  return (
+    <div className="mkt-tr-rate">
+      <dt>{t("transcription.rate.live")}</dt>
+      <dd>
+        <span className="mkt-tr-rate__x">
+          {t("transcription.rate.value", {
+            n: n(live.realtime_factor, { maximumFractionDigits: 1 }),
+          })}
+        </span>
+        <span className="mkt-tr-muted">
+          {t("transcription.rate.liveDetail", {
+            h: hours(live.audio_hours),
+            workers: n(live.workers),
+          })}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
 function Speed({ s }: { s: TranscriptionSummary }) {
   const { t } = useI18n();
+  const live = s.rate.live;
   return (
     <div className="mkt-tr-card">
       <h2 className="mkt-tr-card__title">{t("transcription.rate.title")}</h2>
       <dl className="mkt-tr-rates">
+        {live && live.workers > 0 && <LiveRow live={live} />}
         <SpeedRow label={t("transcription.rate.last10m")} w={s.rate.last_10m} />
         <SpeedRow label={t("transcription.rate.last1h")} w={s.rate.last_1h} />
       </dl>

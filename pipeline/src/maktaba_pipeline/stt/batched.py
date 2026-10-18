@@ -20,7 +20,9 @@ time in the worker's ``gpu`` pool) ``await`` :meth:`BatchedTranscriber.transcrib
 from __future__ import annotations
 
 import asyncio
+import os
 import queue
+import socket
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -311,6 +313,8 @@ class BatchedTranscriber:
         self.windows = 0  # windows decoded, for the report
         self.passes = 0
         self.in_flight = 0
+        #: seconds of audio transcribed (the seeks' advance), for the live rate
+        self.audio_done = 0.0
         self._mx: Any = None
 
     # --- public ---------------------------------------------------------------
@@ -363,8 +367,12 @@ class BatchedTranscriber:
         register_metric("stt.gpu_active_gb", lambda: round(mx.get_active_memory() / 1e9, 2))
         register_metric("stt.gpu_cache_gb", lambda: round(mx.get_cache_memory() / 1e9, 2))
         register_metric("stt.gpu_peak_gb", lambda: round(mx.get_peak_memory() / 1e9, 2))
-        register_metric("stt.files_in_flight", lambda: float(self.in_flight))
-        register_metric("stt.windows", lambda: float(self.windows))
+        # per process (two transcription workers on one host must not overwrite each
+        # other's counters): the report sums the stt.audio_sec:* series
+        tag = f"{socket.gethostname()}-{os.getpid()}"
+        register_metric(f"stt.files_in_flight:{tag}", lambda: float(self.in_flight))
+        register_metric(f"stt.windows:{tag}", lambda: float(self.windows))
+        register_metric(f"stt.audio_sec:{tag}", lambda: round(self.audio_done, 1))
         model = load_model(s.model, dtype=mx.float16)
         tok = get_tokenizer(
             model.is_multilingual,
@@ -512,6 +520,7 @@ class BatchedTranscriber:
         self.passes += 1
         self.windows += len(windows)
         pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int]] = []
+        before = {id(j): j.seek for j in live}
         for j, n, win, r in zip(live, sizes, windows, results, strict=True):
             if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
                 j.temp_idx += 1
@@ -529,6 +538,10 @@ class BatchedTranscriber:
                 self._align(cur, win, n, j.last_speech)
         for j, cur, single, offset, _, _ in pending:
             finish_window(j, cur, single, offset)
+        for j in live:
+            moved = min(j.seek, j.content_frames) - before[id(j)]
+            if moved > 0:
+                self.audio_done += moved / FRAMES_PER_SECOND
 
 
 def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:

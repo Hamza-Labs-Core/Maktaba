@@ -99,10 +99,23 @@ type StageCounts struct {
 	Failed  int    `json:"failed"`
 }
 
-// Rates holds the throughput over the two windows.
+// Rates holds the throughput over the two windows, and the live speed.
 type Rates struct {
 	Last10m Window `json:"last_10m"`
 	Last1h  Window `json:"last_1h"`
+	Live    Live   `json:"live"`
+}
+
+// Live is the speed the transcription workers report while they work: the
+// audio their decoding has moved past in the last 10 minutes, from the
+// stt.audio_sec:<host>-<pid> counters in health_samples. Finished jobs lag
+// it, since a worker decodes ~30 files side by side and each finishes only
+// at its end, so it is the better basis for the ETA.
+type Live struct {
+	WindowSec      int     `json:"window_sec"`
+	Workers        int     `json:"workers"`
+	AudioHours     float64 `json:"audio_hours"`
+	RealtimeFactor float64 `json:"realtime_factor"`
 }
 
 // Window is the transcribe throughput over one window of wall time.
@@ -120,8 +133,9 @@ type Window struct {
 	AvgJobRTF         *float64 `json:"avg_job_rtf"`
 }
 
-// ETA projects the remaining hours at the recent rate: the 10-minute
-// window when it saw work, else the hour. Null when nothing ran.
+// ETA projects the remaining hours at the recent rate: the live speed when
+// workers report one, else the 10-minute window when it saw work, else the
+// hour. Null when nothing ran.
 type ETA struct {
 	Seconds *float64   `json:"seconds"`
 	At      *time.Time `json:"at"`
@@ -223,6 +237,18 @@ SELECT count(*) FILTER (WHERE finished_at >= $2),
        COALESCE(sum(audio_sec), 0)::float8,
        avg(rtf)
   FROM w`
+
+	// Audio decoded in the window: the sum of each worker counter's rises (a
+	// restarted worker starts again from 0; that drop is not counted).
+	liveSQL = `
+WITH s AS (
+    SELECT metric, value - lag(value) OVER (PARTITION BY metric, host ORDER BY at) AS d
+      FROM health_samples
+     WHERE metric LIKE 'stt.audio_sec:%' AND at >= $1
+)
+SELECT COALESCE(sum(d) FILTER (WHERE d > 0), 0)::float8,
+       count(DISTINCT metric) FILTER (WHERE d > 0)
+  FROM s`
 
 	failuresSQL = `
 SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::text), l.name,
@@ -358,6 +384,13 @@ func (h *Handler) loadRates(ctx context.Context, s *Summary, now time.Time) erro
 	}
 	s.Rate.Last10m = window(600, jobs10, sec10, rtf10)
 	s.Rate.Last1h = window(3600, jobs60, sec60, rtf60)
+	var liveSec float64
+	var workers int
+	if err := h.DB.QueryRowContext(ctx, liveSQL, now.Add(-10*time.Minute)).Scan(&liveSec, &workers); err != nil {
+		return err
+	}
+	s.Rate.Live = Live{WindowSec: 600, Workers: workers, AudioHours: hours(liveSec),
+		RealtimeFactor: round2(liveSec / 600)}
 	return nil
 }
 
@@ -408,6 +441,8 @@ func eta(remainingHours float64, r Rates, now time.Time) ETA {
 	var basis string
 	var speed float64
 	switch {
+	case r.Live.RealtimeFactor > 0:
+		basis, speed = "live", r.Live.RealtimeFactor
 	case r.Last10m.Jobs > 0 && r.Last10m.RealtimeFactor > 0:
 		basis, speed = "10m", r.Last10m.RealtimeFactor
 	case r.Last1h.Jobs > 0 && r.Last1h.RealtimeFactor > 0:

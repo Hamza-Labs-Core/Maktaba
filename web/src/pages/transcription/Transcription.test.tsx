@@ -158,6 +158,21 @@ describe("Transcription", () => {
     expect(screen.getByRole("link", { name: "Search index" })).toBeInTheDocument();
   });
 
+  it("shows what the workers decode now and times the rest by it", async () => {
+    setup({
+      ...summaryFixture,
+      rate: {
+        ...summaryFixture.rate,
+        live: { window_sec: 600, workers: 2, audio_hours: 25, realtime_factor: 150 },
+      },
+      eta: { seconds: 2640, at: NOW, basis: "live" },
+    });
+    expect(await screen.findByText("Decoding now")).toBeInTheDocument();
+    expect(screen.getByText("150× realtime")).toBeInTheDocument();
+    expect(screen.getByText("25 h of audio in 10 minutes, 2 workers")).toBeInTheDocument();
+    expect(screen.getByText("At the speed the workers decode now")).toBeInTheDocument();
+  });
+
   it("links failures to the item history page", async () => {
     setup();
     const link = await screen.findByRole("link", { name: /Lesson 1/ });

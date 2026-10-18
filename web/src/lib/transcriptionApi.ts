@@ -33,6 +33,14 @@ export interface TranscriptionWindow {
   avg_job_rtf: number | null;
 }
 
+/** What the workers are decoding now (finished videos lag it). */
+export interface TranscriptionLive {
+  window_sec: number;
+  workers: number;
+  audio_hours: number;
+  realtime_factor: number;
+}
+
 export interface TranscriptionLibrary {
   library_id: string;
   name: string;
@@ -58,8 +66,13 @@ export interface TranscriptionSummary {
   generated_at: string;
   totals: TranscriptionTotals;
   stages: TranscriptionStageCounts[];
-  rate: { last_10m: TranscriptionWindow; last_1h: TranscriptionWindow };
-  eta: { seconds: number | null; at: string | null; basis: "10m" | "1h" | null };
+  rate: {
+    last_10m: TranscriptionWindow;
+    last_1h: TranscriptionWindow;
+    /** absent from an older API */
+    live?: TranscriptionLive;
+  };
+  eta: { seconds: number | null; at: string | null; basis: "live" | "10m" | "1h" | null };
   libraries: TranscriptionLibrary[];
   failures: TranscriptionFailure[];
 }
