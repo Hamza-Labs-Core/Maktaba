@@ -2105,6 +2105,82 @@
      "minimum": 1
     }
    ]
+  },
+  {
+   "key": "tagcheck",
+   "title": "Tag check",
+   "what": "a language model checks what each series is about",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Checking tags with a language model",
+     "label": "Check tags with a model",
+     "help": "A local model (Ollama) reads each series' name and episode titles and says what it is about; the keyword tags it does not confirm are damped. Off: keyword tags only.",
+     "default": true
+    },
+    {
+     "name": "url",
+     "kind": "str",
+     "group": "Checking tags with a language model",
+     "label": "Model server (Ollama)",
+     "help": "",
+     "default": "http://localhost:11434"
+    },
+    {
+     "name": "model",
+     "kind": "str",
+     "group": "Checking tags with a language model",
+     "label": "Model",
+     "help": "Any model the server has; it must read Arabic well.",
+     "default": "qwen2.5:7b"
+    },
+    {
+     "name": "sample_titles",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Episode titles shown per series",
+     "help": "",
+     "default": 15,
+     "minimum": 1
+    },
+    {
+     "name": "max_topics",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Topics per series (most)",
+     "help": "",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "damp",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Unconfirmed topic keeps (share of its score)",
+     "help": "0: dropped; 1: kept as it is.",
+     "default": 0.3,
+     "minimum": 0
+    },
+    {
+     "name": "added_score",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Score of a topic only the model saw",
+     "help": "",
+     "default": 0.8,
+     "minimum": 0
+    },
+    {
+     "name": "timeout_s",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Answer timeout (s)",
+     "help": "",
+     "default": 180.0,
+     "minimum": 1
+    }
+   ]
   }
  ]
 }

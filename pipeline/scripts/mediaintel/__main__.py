@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
     p.add_argument("--from-step", default="scan", metavar="STEP",
                    help="start at this step, keeping what earlier steps cached: scan, plex, "
-                        "youtube, link, detect, signatures, exact, tag, group, export-plex, "
+                        "youtube, link, detect, signatures, exact, tag, check-tags, group, export-plex, "
                         "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv, "
                         "audit-channels")  # fmt: skip
     p.add_argument("--skip", action="append", default=[], metavar="STEP",

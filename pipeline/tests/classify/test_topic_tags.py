@@ -431,3 +431,12 @@ def test_aired_in_ramadan_is_the_season_not_the_topic() -> None:
     ))  # fmt: skip
     assert tags.get("occasion:ramadan_season", 0) > 0.9
     assert "occasion:ramadan" not in tags
+
+
+def test_a_prophets_name_after_a_first_name_is_a_surname() -> None:
+    for title in ("#عدنان_إبراهيم يكذب صراحة على الرسول صلى الله عليه وسلم",
+                  "للمرة الثانية عدنان إبراهيم يكذب على الرسول لإرضاء النصارى"):  # fmt: skip
+        assert "topic:prophets_stories" not in match_text(title), title
+    for title in ("قصة إبراهيم عليه السلام", "إبراهيم عليه السلام وبناء الكعبة",
+                  "دعوة إبراهيم لقومه ｜ قصص الأنبياء", "سيدنا موسى وفرعون"):  # fmt: skip
+        assert "topic:prophets_stories" in match_text(title), title

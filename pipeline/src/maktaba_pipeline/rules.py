@@ -25,6 +25,7 @@ from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
 from .classify.clip_groups import GroupConfig
 from .classify.series_detector import DetectorConfig
+from .classify.tag_check import TagCheckConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
 
@@ -52,6 +53,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "groups": (GroupConfig, "Grouping", "clip and stand-alone collections, promos, questions "
                "and fatwas"),
     "detect": (DetectorConfig, "Detection", "how shows, seasons and talk shows are found"),
+    "tagcheck": (TagCheckConfig, "Tag check", "a language model checks what each series is "
+                 "about"),
 }  # fmt: skip
 
 

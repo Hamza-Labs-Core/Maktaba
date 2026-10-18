@@ -740,6 +740,15 @@ _PERSON_BEFORE = frozenset(
     ).split()
 )
 _PERSON_AFTER = frozenset(fold("عبد عبدال البوطي الشنوري صبحي").split())
+# a prophet's bare name right after someone's first name is a surname («عدنان إبراهيم»,
+# «أحمد موسى»): it counts at a title's start, after a story / prophet word, or after one
+# of these small words
+_PROPHET_PREV_OK = frozenset(
+    fold(
+        "في عن مع من الى إلى على و ثم حياة دعوة زوجة زوجات امرأة ابن ابنا أبناء ابناء آل ال "
+        "الله والد ام أم اخوة إخوة رؤيا مولد وفاة بعثة هجرة جد ذرية"
+    ).split()
+)
 # the word after "سورة" is a surah's name (النساء، الحج، مريم، الجمعة), not a topic
 _SURAH_WORDS = frozenset({"سوره", "سور", "لسوره", "بسوره", "وسوره"})
 
@@ -814,6 +823,8 @@ def _compile() -> tuple[dict[str, list[_Entry]], list[_Entry]]:
 
 
 _INDEX, _WILD = _compile()
+#: the context bare prophet names require (``name ^prophet``)
+_PROPHET_CTX: frozenset[str] = frozenset(fold(_CONTEXT["prophet"]).split())
 
 #: one text's hits: tag → (strength 0..1, matched phrases)
 Hits = dict[str, tuple[float, tuple[str, ...]]]
@@ -836,6 +847,10 @@ def _raw_matches(toks: list[str]) -> list[tuple[_Entry, int]]:
                 continue
             if e.require and not e.require & all_forms:
                 continue
+            if (len(e.words) == 1 and e.require == _PROPHET_CTX and prev
+                    and not _token_forms(prev) & (_PROPHET_CTX | _PROPHET_PREV_OK)
+                    and not prev.isdigit()):  # fmt: skip
+                continue  # «عدنان إبراهيم»: a surname, not the prophet
             if prev in _SURAH_WORDS and e.words[0] not in _SURAH_WORDS:
                 continue
             if e.not_after and prev and _token_forms(prev) & e.not_after:
