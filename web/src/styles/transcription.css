@@ -1,0 +1,361 @@
+/* /transcription — live transcription report. Colours come only from the
+   app tokens (tokens.css), so the dark theme follows automatically. Every
+   grid track is minmax(0, 1fr) and long titles wrap, so nothing overflows
+   a 375 px phone. */
+.mkt-tr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+.mkt-tr h1 {
+  margin: 0;
+}
+.mkt-tr__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.mkt-tr__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-tr__dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  flex: 0 0 auto;
+}
+.mkt-tr__dot--off {
+  background: var(--color-warn);
+}
+.mkt-tr-muted {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* cards */
+.mkt-tr__hero,
+.mkt-tr__grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.mkt-tr-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-subtle);
+  color: var(--color-fg);
+}
+.mkt-tr-card p {
+  margin: 0;
+}
+.mkt-tr-card__title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mkt-tr-card__title a {
+  color: inherit;
+}
+.mkt-tr-big {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.mkt-tr-big__pct {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-tr-big__of {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mkt-tr-card--big .mk-progress {
+  block-size: 12px;
+}
+
+/* speed */
+.mkt-tr-rates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+.mkt-tr-rate dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-tr-rate dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.mkt-tr-rate__x {
+  font-size: var(--font-size-h2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* sections */
+.mkt-tr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+.mkt-tr-section h2 {
+  margin: 0;
+}
+.mkt-tr-section__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* stage counters */
+.mkt-tr-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.mkt-tr-counts {
+  display: grid;
+  /* four in a row when there is room, else two by two */
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.mkt-tr-count {
+  min-inline-size: 0;
+  border-inline-start: 3px solid var(--color-muted);
+  padding-inline-start: var(--space-2);
+}
+.mkt-tr-count dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+.mkt-tr-count dd {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-tr-count--running {
+  border-color: var(--color-running);
+}
+.mkt-tr-count--done {
+  border-color: var(--color-success);
+}
+.mkt-tr-count--failed {
+  border-color: var(--color-error);
+}
+
+/* libraries */
+.mkt-tr-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-tr-sort select {
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  max-inline-size: 100%;
+}
+.mkt-tr-libs {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.mkt-tr-libs tbody th {
+  overflow-wrap: anywhere;
+}
+.mkt-tr-sortbtn {
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mkt-tr-sortbtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.mkt-tr-libbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 120px;
+}
+.mkt-tr-libbar .mk-progress {
+  flex: 1 1 auto;
+}
+.mkt-tr-libbar__pct {
+  min-inline-size: 3.5ch;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* failures */
+.mkt-tr-fails {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.mkt-tr-fail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border);
+  min-inline-size: 0;
+}
+.mkt-tr-fail:last-child {
+  border-block-end: 0;
+}
+.mkt-tr-fail p {
+  margin: 0;
+}
+.mkt-tr-fail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.mkt-tr-fail__head a {
+  font-weight: 600;
+  min-inline-size: 0;
+}
+.mkt-tr-fail__cause {
+  color: var(--color-error);
+  overflow-wrap: anywhere;
+}
+.mkt-tr-chip {
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .mkt-tr-stages {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* phone: one column; the library table becomes a stack of cards. */
+@media (max-width: 640px) {
+  .mkt-tr__hero,
+  .mkt-tr__grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mkt-tr-big__pct {
+    font-size: 1.75rem;
+  }
+  .mkt-tr-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mkt-tr-libs,
+  .mkt-tr-libs tbody,
+  .mkt-tr-libs tr,
+  .mkt-tr-libs th,
+  .mkt-tr-libs td {
+    display: block;
+  }
+  .mkt-tr-libs {
+    border: 0;
+  }
+  .mkt-tr-libs thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .mkt-tr-libs tbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .mkt-tr-libs tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-subtle);
+  }
+  .mkt-tr-libs tbody th,
+  .mkt-tr-libs tbody td {
+    padding: 0;
+    border: 0;
+    text-align: start !important;
+  }
+  .mkt-tr-libs tbody th,
+  .mkt-tr-libs tbody td:last-child {
+    grid-column: 1 / -1;
+  }
+  .mkt-tr-libs tbody td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+  .mkt-tr-libbar {
+    min-inline-size: 0;
+  }
+}
+
+/* wide screens sort through the column headers; the select is for phones. */
+@media (min-width: 641px) {
+  .mkt-tr-sort {
+    display: none;
+  }
+}

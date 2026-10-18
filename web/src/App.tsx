@@ -23,6 +23,7 @@ import { Search } from "./pages/Search";
 import { QueueOverview } from "./pages/queue/QueueOverview";
 import { QueueDetail } from "./pages/queue/QueueDetail";
 import { ItemHistory } from "./pages/queue/ItemHistory";
+import { Transcription } from "./pages/transcription/Transcription";
 import { AdminExtensions } from "./pages/Admin/Extensions";
 import { Settings } from "./pages/Settings";
 import { AdminUsers } from "./pages/Admin/Users";
@@ -92,6 +93,7 @@ export function App() {
                     <Route path="/queue" element={<QueueOverview />} />
                     <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
                     <Route path="/queue/:stage" element={<QueueDetail />} />
+                    <Route path="/transcription" element={<Transcription />} />
                     <Route path="/settings/*" element={<Settings />} />
                     <Route path="/more" element={<MoreMenu />} />
                     <Route path="/account" element={<Account />} />
