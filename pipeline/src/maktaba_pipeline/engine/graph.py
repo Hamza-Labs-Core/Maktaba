@@ -72,6 +72,9 @@ PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
 CH_WRITE_VERSION = 1
+#: exact_dates / repair_broken (plan 06-11, mediaintel parity)
+EXACT_DATES_VERSION = 1
+REPAIR_VERSION = 1
 
 EdgeMap = Literal[
     "same",
@@ -162,6 +165,10 @@ POOLS: tuple[PoolDef, ...] = (
     PoolDef("network_yt", "YouTube", "global", 1, 1),
     # review pages only: they never take a cpu or network slot from the stages that write
     PoolDef("reports", "Review pages", "global", 1, 1),
+    # the channel audit reads dizqueTV for minutes; a repair downloads for hours: neither
+    # takes the slot that writes the channels or lists YouTube
+    PoolDef("audits", "Channel audit", "global", 1, 1),
+    PoolDef("repairs", "Repairs", "global", 1, 1),
 )
 
 
@@ -230,7 +237,23 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(
             Edge("link", "videos_of"),
             Edge("detect", "same"),
+            Edge("exact_dates", "same"),
         ),
+        entry_for=("library",),
+        debounce_sec=300,
+        debounce_max_sec=3600,
+    ),
+    # Exact upload dates per video for series members (mediaintel "exact"); off until the
+    # "exactdates" rules enable it. Detect runs again on the dates it finds.
+    StageDef(
+        name="exact_dates",
+        label="Exact dates",
+        subject_kinds=("library",),
+        pool="network_yt",
+        lane="sources",
+        lane_order=1,
+        version=EXACT_DATES_VERSION,
+        edges=(Edge("detect", "same"),),
         entry_for=("library",),
         debounce_sec=300,
         debounce_max_sec=3600,
@@ -496,6 +519,21 @@ GRAPH: tuple[StageDef, ...] = (
         "nas_read",
         5,
         edges=(Edge("thumb_small", "same"),),
+    ),
+    # Files whose probe failed, fetched from YouTube again and swapped in on the share
+    # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
+    StageDef(
+        name="repair_broken",
+        label="Repair broken files",
+        subject_kinds=("library",),
+        pool="repairs",
+        lane="media",
+        lane_order=10,
+        version=REPAIR_VERSION,
+        may_request=("probe", "content_hash"),
+        # not an entry queue: a library retrigger never starts it, an operator runs it
+        external_write=True,
+        max_attempts=1,
     ),
     _legacy("topic_recluster", "Recluster topics", ("library",), "cpu", 6),
     _legacy("topic_assign", "Assign topics", ("video",), "cpu", 7),

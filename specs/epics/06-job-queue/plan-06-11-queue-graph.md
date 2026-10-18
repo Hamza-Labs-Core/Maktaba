@@ -1510,3 +1510,20 @@ Ported from mediaintel: `scripts/mediaintel/thumbs.py` (an app thumbnail cache, 
 **Independence from the Plex and dizqueTV queues** is structural, not a priority setting: the stage has its own pool (it never holds a `cpu`, `network_plex` or `network_tv` slot), no stage has an edge or request into anything because of it, and it reads only the database and the local cache. A slow or failing page leaves every write queue running (`test_a_running_review_page_never_holds_a_slot_writes_need`).
 
 **Hosts.** Both caches are per host, so `thumb_small` and `review_pages` should run on the same worker (the default single-host setup). The pages are files in that cache (the API does not serve them); the control centre shows both queues as ordinary cards (`Small thumbnail`, `Review pages`).
+
+---
+
+## 19. Mediaintel parity: the dizqueTV export, exact dates, the channel audit, repair
+
+The stand-alone tool's last TV-side steps, in the queue. Every rule is a setting (`rules.<section>`, defaults = what the tool does without its flags); the file work and the judging are the same library code the tool imports (`integrations/dizquetv_export.py`, `schedule/channel_audit.py`, `library_mgmt/repair.py`, `integrations/youtube.py`).
+
+**`dizquetv_channels`, now the same channels as `export_dizquetv`.** Settings `rules.dizquetv` (`prune`, `clear_channels`, `replace_existing`, `ramadan`, `keep_airing`, `only_channels`). Removing what the plan dropped (only objects with this tool's mark, unless `clear_channels`); logos and corner watermarks from the plan's `dz_logo_dir`, `dz_watermark_*`, uploaded once per run or checked on `dz_art_url`, linked at `dz_public_url`; the guide settings; `dz_filler_max_items`; the padded grid keeps every slot; the Ramadan grid; filler weights from `dz_weight_*`; and a rewrite that never drops a programme or leaves a gap (the queue goes on after the last episode aired, what is on air finishes, an unchanged timeline is not saved). Changing a rule re-runs the stage.
+
+**`exact_dates`** (core, library, pool `network_yt`, `youtube_sync -> exact_dates -> detect`). Per-video exact upload dates for series members whose date is approximate. Off until `rules.exactdates.enabled`; `delay_s` between requests, `max_per_run`, `scope`, `cookies_from_browser`. A bot check fails the job (`youtube_bot_check`, not retried); what was fetched stays.
+
+**`dizquetv_audit`** (dizquetv extension, catalog, pool `audits`, `dizquetv_channels -> dizquetv_audit`). Reads dizqueTV, judges every programme and filler clip against its channel's theme with the planner's rules, stores `channel_audits` / `channel_audit_channels` and writes `channel-audit.html` and `.txt` to `~/.maktaba/cache/reviews/` for the control centre. Settings `rules.audit` (`enabled`, `window_days`, `keep`).
+
+**`repair_broken`** (core, library, pool `repairs`, not an entry queue, `external_write`). Files whose probe failed are read again, then fetched from YouTube (H.264 first, at most `max_height`) into a local folder, checked, copied beside the original and swapped in; the broken file stays as `<name>.broken`; `probe` and `content_hash` are asked again; `video_repairs` records each outcome. Off until `rules.repair.enabled`.
+
+Migrations: `0106` (stages, pools `audits` and `repairs`, the `youtube_sync` edge), `0107` (`channel_audits`, `channel_audit_channels`), `0108` (`video_repairs`).
+

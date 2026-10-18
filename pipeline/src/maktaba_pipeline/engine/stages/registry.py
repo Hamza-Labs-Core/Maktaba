@@ -42,6 +42,8 @@ CORE_MODULES: dict[str, str] = {
     "rate_style": "maktaba_pipeline.engine.stages.rate_style",
     "plan_channels": "maktaba_pipeline.engine.stages.plan_channels",
     "write_channels": "maktaba_pipeline.engine.stages.write_channels",
+    "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
+    "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

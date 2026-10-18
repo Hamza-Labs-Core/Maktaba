@@ -34,6 +34,7 @@ from maktaba_pipeline.discovery.ytdlp_sidecars import (
     parse_archive,
     parse_info_json,
 )
+from maktaba_pipeline.library_mgmt.repair import probe_failure
 from maktaba_pipeline.thumbnail.dhash import (
     FRAMES_VERSION,
     dhash_from_gray,
@@ -53,18 +54,6 @@ _FORMAT_PIECE_RE = re.compile(r"\.f\d{2,4}\.[^.]+$")
 
 #: why a file had no duration (path → ffprobe's reason), for the job's error
 _PROBE_WHY: dict[str, str] = {}
-
-
-def probe_failure(stderr: str) -> str:
-    """The job error for a file ffprobe could not measure: a broken file says so (an
-    unfinished download has no index: "moov atom not found"), anything else is generic."""
-    last = next((ln.split("] ", 1)[-1].strip() for ln in reversed(stderr.splitlines())
-                 if ln.strip()), "")  # fmt: skip
-    if "moov atom not found" in stderr:
-        return "broken file: unfinished download (moov atom not found)"
-    if "Invalid data found" in stderr or "EBML header parsing failed" in stderr:
-        return f"broken file: {last}"
-    return f"ffprobe gave no duration{': ' + last if last else ''}"
 
 
 def _probe(path: str) -> tuple[float | None, int | None, int | None]:
