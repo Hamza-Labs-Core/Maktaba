@@ -32,6 +32,13 @@ dev = [
     "ruff>=0.6",
     "types-pyyaml>=6.0",
 ]
+# Semantic search (engine `index` stage + the gRPC SemanticSearch RPC):
+# embedded persistent Chroma and a sentence-transformers embedder
+# (default intfloat/multilingual-e5-small; torch picks up Apple MPS).
+search = [
+    "chromadb>=1.0,<2",
+    "sentence-transformers>=3.0,<7",
+]
 
 [build-system]
 requires = ["hatchling"]
