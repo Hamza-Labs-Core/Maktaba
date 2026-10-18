@@ -75,6 +75,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/queues/graph", h.Graph)
 	r.Get("/api/queues/libraries", h.Libraries)
 	r.Get("/api/queues/health", h.Health)
+	r.Get("/api/queues/insights", h.Insights)
+	r.Get("/api/queues/pulse", h.Pulse)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
 	r.Get("/api/queues/{stage}", h.Detail)
@@ -97,6 +99,11 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/activity", h.Activity)
 	r.Get("/api/jobs/{id}/events", h.JobEvents)
 	r.Get("/api/items/{kind}/{id}/history", h.ItemHistory)
+	// Parity with the stand-alone control centre (see explain.go, style.go, insights.go).
+	r.Get("/api/explain", h.Explain)
+	r.Get("/api/seasons/styles", h.SeasonStyles)
+	r.Put("/api/seasons/{id}/style", h.PutSeasonStyle)
+	r.Put("/api/series/{id}/style", h.PutSeriesStyle)
 }
 
 func (h *Handler) now() time.Time {

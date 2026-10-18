@@ -57,7 +57,7 @@ class PlanPreview:
         return self._task is not None and not self._task.done()
 
     def start(self, kind: str) -> dict[str, Any]:
-        """Begin ``kind`` ("preview" or "stored") in the background (``PreviewBusy`` while one runs)."""
+        """Begin ``kind`` ("preview" or "stored") in the background; ``PreviewBusy`` if one runs."""
         if kind not in KINDS:
             raise ValueError(f"plan_preview: kind must be one of {', '.join(KINDS)}")
         if self.running:
