@@ -29,7 +29,9 @@ async function post(path, body) {
 function toast(msg, bad) { const t = $("toast"); if (!t) return; t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
   clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 6000); }
 function attnRow(g, i) {              // one failure group with its Retry button
-  const parts = [g.retrying ? `${fmt(g.retrying)} will retry` : "", g.given_up ? `${fmt(g.given_up)} gave up` : ""].filter(Boolean);
+  const last = g.last ? new Date(g.last) : null;
+  const parts = [g.retrying ? `${fmt(g.retrying)} will retry` : "", g.given_up ? `${fmt(g.given_up)} gave up` : "",
+                 last && !isNaN(last) ? `last ${last.toLocaleDateString([], {day: "numeric", month: "short"})} ${last.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` : ""].filter(Boolean);
   return `<div class="attn"><div class="what"><span class="cause" dir="auto">${esc(g.cause)}</span>
     <span class="counts">${esc(g.stage)} · ${fmt(g.count)} files · ${parts.join(" · ")}</span></div>
     <button class="btn sm retry" data-i="${i}" title="Reset the tries so the next run reads these again">Retry</button></div>`;

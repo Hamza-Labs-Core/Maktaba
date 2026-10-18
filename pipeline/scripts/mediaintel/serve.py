@@ -448,18 +448,22 @@ def normalize_cause(error: str | None) -> str:
     return text[:80] or "unknown error"
 
 
-def attention_groups(rows: list[tuple[str, str | None, int, int | None]]) -> list[dict[str, Any]]:
-    """Merge ``(stage, error, count, retrying)`` rows into groups by stage and cause,
-    biggest first. ``retrying`` is how many of ``count`` still have tries left."""
+def attention_groups(rows: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
+    """Merge ``(stage, error, count, retrying[, last])`` rows into groups by stage and
+    cause, biggest first. ``retrying`` is how many of ``count`` still have tries left;
+    ``last`` when one of them last failed (an old failure is from an old run)."""
     groups: dict[tuple[str, str], dict[str, Any]] = {}
-    for stage, error, n, retrying in rows:
+    for stage, error, n, retrying, *rest in rows:
         key = (stage, normalize_cause(error))
         g = groups.setdefault(
             key,
-            {"stage": stage, "cause": key[1], "count": 0, "retrying": 0, "example": error or ""},
-        )
+            {"stage": stage, "cause": key[1], "count": 0, "retrying": 0, "example": error or "",
+             "last": None},
+        )  # fmt: skip
         g["count"] += n
         g["retrying"] += retrying or 0
+        if rest and rest[0] and (g["last"] is None or rest[0] > g["last"]):
+            g["last"] = rest[0]
     out = sorted(groups.values(), key=lambda g: (-g["count"], g["stage"], g["cause"]))
     for g in out:
         g["given_up"] = g["count"] - g["retrying"]
@@ -658,10 +662,10 @@ def stage_detail(
     ]
     groups = attention_groups(
         [
-            (r[0], r[1], r[2], r[3])
+            (r[0], r[1], r[2], r[3], r[4])
             for r in conn.execute(
-                """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts) FROM index_jobs
-                   WHERE state = 'failed' AND stage = ? GROUP BY stage, error""",
+                """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts), MAX(updated_at)
+                   FROM index_jobs WHERE state = 'failed' AND stage = ? GROUP BY stage, error""",
                 (name,),
             )
         ]
@@ -989,9 +993,10 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         out["totals"]["length not known yet"] = unknown
         out["attention"] = attention_groups(
             [
-                (r[0], r[1], r[2], r[3])
+                (r[0], r[1], r[2], r[3], r[4])
                 for r in conn.execute(
-                    """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts)
+                    """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts),
+                              MAX(updated_at)
                        FROM index_jobs WHERE state = 'failed' GROUP BY stage, error"""
                 )
             ]
