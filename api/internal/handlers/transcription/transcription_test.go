@@ -77,8 +77,9 @@ func segmentsRule(n int64) *queuestest.Rule {
 }
 
 func liveRule(sec, lost float64, workers int64) *queuestest.Rule {
-	return &queuestest.Rule{Match: "stt.audio_sec:", Cols: []string{"sec", "lost", "workers"},
-		Rows: [][]driver.Value{{sec, lost, workers}}}
+	// speed: the workers decoded sec over the whole window
+	return &queuestest.Rule{Match: "stt.audio_sec:", Cols: []string{"sec", "lost", "workers", "speed"},
+		Rows: [][]driver.Value{{sec, lost, workers, sec / 600}}}
 }
 
 func rateRule(jobs10 int64, sec10 float64, rtf10 any, jobs60 int64, sec60 float64, rtf60 any) *queuestest.Rule {
@@ -240,7 +241,7 @@ func TestSummary_LiveSpeed(t *testing.T) {
 
 func TestLive_LostAudioIsNotTheSpeed(t *testing.T) {
 	// a restart that threw away more than the window decoded: the speed is the decoding
-	if l := live(600, 1, 60000, 90000); l.RealtimeFactor != 100 || l.LostHours != 25 {
+	if l := live(600, 1, 60000, 90000, 100); l.RealtimeFactor != 100 || l.LostHours != 25 {
 		t.Errorf("live = %+v", l)
 	}
 }
