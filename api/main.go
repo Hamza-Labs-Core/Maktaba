@@ -449,6 +449,12 @@ func runServe() error {
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
+			// Epic 31 (multi-instance) — instance identity, the LAN
+			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
+			// machine join/approve/revoke surface and its housekeeping.
+			clusterClose := mountCluster(r, appDB, dsn, publicAddr, logger)
+			defer clusterClose()
+
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and
 			// hard-deletes them past the 7-day retention horizon so

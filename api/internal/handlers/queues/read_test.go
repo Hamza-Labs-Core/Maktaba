@@ -547,11 +547,11 @@ func TestHealthSeries(t *testing.T) {
 }
 
 func TestWorkers(t *testing.T) {
-	f := newFixture(&queuestest.Rule{Match: "from workers order by host",
-		Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version"},
+	f := newFixture(&queuestest.Rule{Match: "from workers w left join cluster_nodes",
+		Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version", "node_id", "node_name", "role"},
 		Rows: [][]driver.Value{
-			{"w1", "mac", "{transcribe}", `{"gpu":1}`, t0.Add(-time.Hour), t0.Add(-3 * time.Second), "1.2"},
-			{"w2", "nas", "{probe}", nil, t0.Add(-time.Hour), t0.Add(-2 * time.Minute), nil},
+			{"w1", "mac", "{transcribe}", `{"gpu":1}`, t0.Add(-time.Hour), t0.Add(-3 * time.Second), "1.2", nil, nil, "home"},
+			{"w2", "nas", "{probe}", nil, t0.Add(-time.Hour), t0.Add(-2 * time.Minute), nil, "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7", "linux-box", "node"},
 		}})
 	rec := f.do("GET", "/api/workers", "", viewer())
 	var out struct{ Workers []Worker }
@@ -564,6 +564,13 @@ func TestWorkers(t *testing.T) {
 	}
 	if string(out.Workers[1].Pools) != "null" || out.Workers[1].Version != nil || *out.Workers[0].Version != "1.2" {
 		t.Errorf("workers = %+v", out.Workers)
+	}
+	if out.Workers[0].Role != "home" || out.Workers[0].NodeID != nil || out.Workers[0].NodeName != nil {
+		t.Errorf("home worker = %+v", out.Workers[0])
+	}
+	if w := out.Workers[1]; w.Role != "node" || w.NodeID == nil || *w.NodeID != "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7" ||
+		w.NodeName == nil || *w.NodeName != "linux-box" {
+		t.Errorf("node worker = %+v", w)
 	}
 	if rec := f.do("GET", "/api/workers", "", nil); rec.Code != 403 {
 		t.Errorf("anonymous -> %d", rec.Code)
