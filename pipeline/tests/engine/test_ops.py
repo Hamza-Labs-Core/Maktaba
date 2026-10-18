@@ -271,6 +271,14 @@ async def test_a_new_worker_replaces_the_dead_ones_of_its_host(db: Database) -> 
     # the Mac's dead ones are gone, its live sibling stays, the PC's dead one still shows
     assert ids == ["mac-1-new", "mac-2-live", "pc-old"]
 
+    # a restart: the predecessor's last beat is still fresh when the new one registers,
+    # and goes at the new one's next heartbeat once it is stale
+    await register_worker(db, worker_id="mac-1-next", host="MAC", stages=["probe"], pools=["cpu"])
+    assert await db.fetchval("SELECT count(*) FROM workers WHERE id = 'mac-1-new'") == 1
+    await db.execute("UPDATE workers SET last_seen_at = $1 WHERE id = 'mac-1-new'", stale)
+    await heartbeat_worker(db, "mac-1-next", "MAC")
+    assert await db.fetchval("SELECT count(*) FROM workers WHERE id = 'mac-1-new'") == 0
+
 
 @pytest.mark.asyncio
 async def test_worker_registry_and_stages_without_a_worker(db: Database) -> None:

@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import socket
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -234,7 +233,9 @@ async def run_sampler(
     network_every: int = 6,
 ) -> None:
     """Sample every ``interval_sec`` (network probes every ``network_every`` rounds, ~60 s)."""
-    host = host or socket.gethostname()
+    from .workers import stable_hostname
+
+    host = host or stable_hostname()
     n = 0
     while not stop.is_set():
         try:
