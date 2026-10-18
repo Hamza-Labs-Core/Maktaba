@@ -260,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--url", default="http://localhost:8002", help="dizqueTV")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
 
+    p = sub.add_parser(
+        "repair-broken", help="download again the broken files (unfinished downloads)"
+    )
+    p.add_argument("--cookies-from-browser", metavar="BROWSER",
+                   help="sign yt-dlp in with this browser's YouTube cookies")  # fmt: skip
+
     p = sub.add_parser("report", help="HTML review page per folder")
     p.add_argument("--folder", help="only folders whose path contains this")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
@@ -334,6 +340,16 @@ def main(argv: list[str] | None = None) -> int:
         from . import group_clips
 
         group_clips.run(conn, a.folder)
+    elif a.cmd == "repair-broken":
+        import time
+
+        from . import repair_broken
+
+        when = time.strftime("%H:%M:%S")
+        print()
+        print(f"##### repair-broken (download broken files again)  ({when})", flush=True)
+        repair_broken.run(conn, a.cookies_from_browser)
+        print("done", flush=True)
     elif a.cmd == "audit-channels":
         from . import audit_channels
 

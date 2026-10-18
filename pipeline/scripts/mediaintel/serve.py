@@ -101,6 +101,11 @@ STEPS: list[tuple[str, str, str]] = [
     ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
     ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
     (
+        "repair-broken",
+        "Repair broken files",
+        "unfinished downloads are fetched from YouTube again, checked, then swapped in",
+    ),
+    (
         "audit-channels",
         "Audit the channels",
         "is what each channel airs about the channel? (channel-audit.html)",
@@ -259,7 +264,7 @@ _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
 
 
 #: what a step's "[n/N]" lines count
-_UNITS = {"check-tags": "series", "books": "books", "plan-channels": "channels", "export-dizquetv": "items",
+_UNITS = {"check-tags": "series", "books": "books", "repair-broken": "files", "plan-channels": "channels", "export-dizquetv": "items",
           "audit-channels": "channels"}  # fmt: skip
 _PHASE_RE = re.compile(r"^phase: (.+)$")
 _N_OF_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] ")

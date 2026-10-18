@@ -99,7 +99,7 @@ def _thumb_dhash(path: str) -> str | None:
 
 def _signature(path: str, duration_s: float) -> tuple[str | None, str | None, str]:
     """(audio head, audio tail, frame hashes) of one episode-length video."""
-    return _signature_counted(path, duration_s)[:3]  # type: ignore[return-value]
+    return _signature_counted(path, duration_s)[:3]
 
 
 def _signature_counted(path: str, duration_s: float) -> tuple[str | None, str | None, str, int]:
