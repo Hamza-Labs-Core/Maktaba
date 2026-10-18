@@ -47,6 +47,8 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 			{MethodName: "DeleteModel", Handler: mk(handlers["DeleteModel"])},
 			{MethodName: "ActivateModel", Handler: mk(handlers["ActivateModel"])},
 			{MethodName: "TestModel", Handler: mk(handlers["TestModel"])},
+			{MethodName: "PlanPreviewStart", Handler: mk(handlers["PlanPreviewStart"])},
+			{MethodName: "PlanPreviewStatus", Handler: mk(handlers["PlanPreviewStatus"])},
 		},
 	}
 	var impl any = struct{}{}
@@ -425,5 +427,38 @@ func TestRealClient_ListModels_ServerError(t *testing.T) {
 	})
 	if _, err := c.ListModels(context.Background()); err == nil {
 		t.Fatal("expected in-band error to surface")
+	}
+}
+
+func TestRealClient_PlanPreview(t *testing.T) {
+	var gotKind any
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"PlanPreviewStart": func(req map[string]any) map[string]any {
+			gotKind = req["kind"]
+			if req["kind"] == "preview" {
+				return map[string]any{"started": false, "busy": true, "detail": "A preview is already being planned."}
+			}
+			return map[string]any{"started": true, "kind": req["kind"]}
+		},
+		"PlanPreviewStatus": func(map[string]any) map[string]any {
+			return map[string]any{
+				"running": true, "kind": "preview", "phase": "writing the page",
+				"started_at": 1.5, "finished_at": nil, "summary": map[string]any{"channels": 3.0},
+				"log": []any{"a", "b"}, "ready": map[string]any{"preview": true, "plan": false},
+			}
+		},
+	})
+	busy, err := c.PlanPreviewStart(context.Background(), "stored")
+	if err != nil || busy || gotKind != "stored" {
+		t.Fatalf("stored: busy=%v err=%v kind=%v", busy, err, gotKind)
+	}
+	// an already-running preview is reported as busy, not as a failure
+	if busy, err = c.PlanPreviewStart(context.Background(), "preview"); err != nil || !busy {
+		t.Fatalf("preview: busy=%v err=%v", busy, err)
+	}
+	st, err := c.PlanPreviewStatus(context.Background())
+	if err != nil || !st.Running || st.Phase != "writing the page" || !st.Ready.Preview || st.Ready.Plan ||
+		len(st.Log) != 2 || st.Summary["channels"] != 3.0 || st.StartedAt == nil || st.FinishedAt != nil {
+		t.Fatalf("status %+v err %v", st, err)
 	}
 }

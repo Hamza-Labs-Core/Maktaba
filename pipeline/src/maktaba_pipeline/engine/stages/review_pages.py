@@ -34,7 +34,11 @@ __all__ = ["IMPL", "REVIEW_VERSION", "page_path", "render"]
 
 
 def reviews_dir() -> Path:
-    """``reviews/`` beside the thumbnail cache (``~/.maktaba/cache/reviews``)."""
+    """The reports folder: ``$MAKTABA_REVIEWS_ROOT``, else ``reviews/`` beside the thumbnail
+    cache (``~/.maktaba/cache/reviews``). The API serves every ``*.html`` in it (Reports)."""
+    env = os.environ.get("MAKTABA_REVIEWS_ROOT")
+    if env:
+        return Path(env)
     return thumb_small.small_path("x").parent.parent.parent / "reviews"
 
 
