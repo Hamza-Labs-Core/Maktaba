@@ -68,8 +68,10 @@ def test_default_backends_use_the_shared_index(monkeypatch: pytest.MonkeyPatch) 
         video_id=vid, library_id=lib, segments=_segments(uuid.uuid4(), ["صوم رمضان"])
     )
     monkeypatch.setattr(semantic, "search_available", lambda: True)
-    monkeypatch.setattr(semantic, "get_embedder", lambda model=None: emb)
-    monkeypatch.setattr(semantic.SemanticIndex, "default", classmethod(lambda cls: cls(coll, emb)))
+    monkeypatch.setattr(semantic, "get_query_embedder", lambda model=None: emb)
+    monkeypatch.setattr(
+        semantic.SemanticIndex, "for_queries", classmethod(lambda cls: cls(coll, emb))
+    )
     embed, search, warm = grpc_server.default_search_backends()
     assert embed is not None and search is not None and warm is emb
     svc = PipelineService(embedder=embed, semantic=search)

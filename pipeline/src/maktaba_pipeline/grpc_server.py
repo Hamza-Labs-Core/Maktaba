@@ -425,16 +425,20 @@ def default_search_backends() -> tuple[
     vectors always come from the same model. The model and collection open lazily on
     the first call; the third value is the embedder, for warming it up.
     """
-    from .search.semantic import SemanticIndex, get_embedder, search_available  # noqa: PLC0415
+    from .search.semantic import (  # noqa: PLC0415
+        SemanticIndex,
+        get_query_embedder,
+        search_available,
+    )
 
     if not search_available():
         return None, None, None
-    embedder = get_embedder()
+    embedder = get_query_embedder()  # the CPU by default: queries never wait for indexing
     index: list[SemanticIndex] = []
 
     def _index() -> SemanticIndex:
         if not index:
-            index.append(SemanticIndex.default())
+            index.append(SemanticIndex.for_queries())
         return index[0]
 
     async def embed(text: str) -> list[float]:

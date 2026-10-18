@@ -246,6 +246,23 @@ def get_embedder(model: str | None = None) -> E5Embedder:
         return emb
 
 
+_QUERY_EMBEDDERS: dict[tuple[str, str], E5Embedder] = {}
+
+
+def get_query_embedder(model: str | None = None) -> E5Embedder:
+    """The process-wide embedder for search queries: the same model as the index, on
+    ``MAKTABA_QUERY_EMBED_DEVICE`` (default ``cpu``). One short sentence embeds in
+    milliseconds on the CPU and never waits behind the index stage's GPU batches (one
+    Metal user per process at a time) while a library is being indexed."""
+    name = model or embed_model()
+    device = os.environ.get("MAKTABA_QUERY_EMBED_DEVICE", "cpu")
+    with _EMBEDDERS_LOCK:
+        emb = _QUERY_EMBEDDERS.get((name, device))
+        if emb is None:
+            emb = _QUERY_EMBEDDERS[(name, device)] = E5Embedder(name, device=device)
+        return emb
+
+
 # --------------------------------------------------------------------------- store
 
 
@@ -344,6 +361,12 @@ class SemanticIndex:
     def __init__(self, collection: VectorCollection, embedder: Embedder) -> None:
         self.collection = collection
         self.embedder = embedder
+
+    @classmethod
+    def for_queries(cls) -> SemanticIndex:
+        """The shared collection, read with the query embedder."""
+        model = embed_model()
+        return cls(open_collection(model), get_query_embedder(model))
 
     @classmethod
     def default(cls) -> SemanticIndex:
