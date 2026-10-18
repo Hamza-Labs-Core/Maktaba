@@ -137,6 +137,10 @@ export interface WorkerHost {
   serves: string[];
   /** Human summary, e.g. "NAS, detection, Plex". */
   serves_label: string;
+  /** Epic 31: the joined machine this worker runs on (null / absent: the home). */
+  node_id?: string | null;
+  node_name?: string | null;
+  role?: "home" | "node" | null;
 }
 
 export interface ExtensionSettingField {

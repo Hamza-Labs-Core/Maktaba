@@ -110,6 +110,11 @@ export function useAuth(): AuthState {
   return ctx;
 }
 
+/** useAuth for components that may render outside an AuthProvider (null there). */
+export function useOptionalAuth(): AuthState | null {
+  return useContext(AuthContext) ?? null;
+}
+
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
