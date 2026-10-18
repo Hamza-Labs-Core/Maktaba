@@ -110,14 +110,19 @@ $$;
 -- +goose StatementBegin
 -- A machine's own row, for its own database role only (cluster_nodes.db_role): its
 -- heartbeat (state, drain, path map), its report (capabilities, storage, inferred path
--- map), its stage switches. The home's own user (not a maktaba_worker member) may call
--- them for any machine.
+-- map), its stage switches. Fails closed: only the login that owns the cluster tables
+-- (the home's own user) or a superuser may act for any machine; every other login only
+-- for the row whose db_role it is.
 CREATE OR REPLACE FUNCTION cluster_node_guard(p_node uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 BEGIN
-    IF pg_has_role(session_user, 'maktaba_worker', 'MEMBER')
-       AND NOT EXISTS (SELECT 1 FROM cluster_nodes
-                       WHERE id = p_node AND db_role = session_user) THEN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = session_user AND rolsuper)
+       OR session_user = (SELECT tableowner FROM pg_tables
+                           WHERE schemaname = 'public' AND tablename = 'cluster_nodes') THEN
+        RETURN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM cluster_nodes
+                   WHERE id = p_node AND db_role = session_user) THEN
         RAISE EXCEPTION 'cluster node % is not this login''s', p_node
             USING ERRCODE = 'insufficient_privilege';
     END IF;
@@ -171,6 +176,22 @@ BEGIN
     RETURN QUERY SELECT s.stage, s.enabled FROM cluster_node_stages s WHERE s.node_id = p_node;
 END
 $f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- callable by the machines' group (and the owner), not by every role
+REVOKE EXECUTE ON FUNCTION cluster_node_guard(uuid), cluster_node_beat(uuid),
+    cluster_node_report(uuid, jsonb, jsonb, jsonb), cluster_node_stage_switches(uuid)
+    FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+        GRANT EXECUTE ON FUNCTION cluster_node_beat(uuid),
+            cluster_node_report(uuid, jsonb, jsonb, jsonb),
+            cluster_node_stage_switches(uuid) TO maktaba_worker;
+    END IF;
+END
+$$;
 -- +goose StatementEnd
 
 -- +goose Down
