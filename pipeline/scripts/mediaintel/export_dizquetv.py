@@ -445,6 +445,13 @@ def art_link(cfg: Mapping[str, Any], api_url: str, uploaded_url: str) -> str:
     return pub + (uploaded_url[i:] if i > 0 else "")
 
 
+def versioned(link: str, path: str) -> str:
+    """``link`` with the file's version in it: a new picture is a new link, so Plex and
+    the TVs fetch it instead of showing the one they cached."""
+    ver = hashlib.sha1(Path(path).read_bytes(), usedforsecurity=False).hexdigest()[:10]
+    return f"{link}{'&' if '?' in link else '?'}v={ver}"
+
+
 def _hosted(base: str, path: str) -> str:
     """A logo on a web host (``dz_art_url``): its link, checked to answer."""
     link = f"{base.rstrip('/')}/{urllib.parse.quote(Path(path).name)}"
@@ -639,11 +646,11 @@ def apply_actions(
         uploaded to dizqueTV under a name of its own (maktaba-<file>)."""
         if path not in urls:
             if host := str(cfg.get("dz_art_url") or ""):
-                urls[path] = _hosted(host, path)
+                urls[path] = versioned(_hosted(host, path), path)
                 print(f"  ✓  {Path(path).name} at {urls[path]}")
             else:
                 got = _upload(url, path, f"maktaba-{Path(path).name}")
-                urls[path] = art_link(cfg, url, got)
+                urls[path] = versioned(art_link(cfg, url, got), path)
                 print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
         return urls[path]
 
