@@ -314,3 +314,29 @@ def test_a_chapter_playlist_names_its_episodes_topic() -> None:
     assert chapter_tags("كتاب الصيام").get("topic:fasting", 0) > 0.8
     assert chapter_tags("كتاب الصلاة من صحيح البخاري").get("topic:salah", 0) > 0.8
     assert not chapter_tags("مجالس 1436")  # nothing named: nothing inherited
+
+
+def test_a_channel_is_mainly_its_libraries_and_never_an_excluded_one() -> None:
+    news = ThemeSpec("news", "News", "الأخبار", 124, ("current_affairs",),
+                     libraries=("أحمد منصور",), exclude_libraries=("محمد إلهامي",))  # fmt: skip
+    talk = ThemeSpec("talk", "Talk", "البرامج الحوارية", 126, formats=("program",),
+                     libraries=("محمد إلهامي",))  # fmt: skip
+    lib = [
+        season("m1", "شاهد على العصر", genre="islamic_history", presenter="أحمد منصور",
+               n=40, minutes=60),
+        season("e1", "قراءات في التاريخ", genre="current_affairs", presenter="محمد إلهامي",
+               n=40, minutes=60),
+        season("o1", "أخبار وتعليقات", genre="current_affairs", presenter="آخر", n=40,
+               minutes=60),
+    ]  # fmt: skip
+    p = plan(lib, themes=(news, talk), mix_channel=False, presenter_channels=False,
+             show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # type: ignore[arg-type]  # fmt: skip
+    on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
+    assert "شاهد على العصر" in on["news"]  # its library, though tagged history
+    assert "قراءات في التاريخ" not in on["news"]  # never on News
+    assert "قراءات في التاريخ" in on["talk"]
+    news_ch = next(c for c in p.channels if c.key == "news")
+    first = p.lanes[news_ch.slots[0].lane] if news_ch.slots[0].lane else None
+    prime = [p.lanes[s.lane].units[0].presenter for s in news_ch.slots
+             if s.lane and s.kind == "program" and s.daypart == "prime"]  # fmt: skip
+    assert prime and prime.count("أحمد منصور") >= len(prime) / 2, (first, prime)

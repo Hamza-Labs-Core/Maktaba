@@ -271,6 +271,16 @@ class ThemeSpec:
     min_hours: float | None = None
     occasions: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
+    #: libraries (part of the library's, presenter's or folder's name) this channel is
+    #: mainly made of: their shows join it, make it their home, and take its slots first
+    libraries: tuple[str, ...] = ()
+    #: libraries never on this channel, whatever their tags
+    exclude_libraries: tuple[str, ...] = ()
+
+
+def _lib_in(names: Sequence[str], *where: str) -> bool:
+    """Any of ``names`` is part of the library's / presenter's / folder's name."""
+    return any(n and any(n in w for w in where if w) for n in names)
 
 
 #: In priority order: when more themes have enough content than the lineup has room
@@ -893,6 +903,10 @@ def _tag_rank(genre: str, tags: Mapping[str, float], names: Sequence[str],
 def _in_theme(s: SeasonCandidate, t: ThemeSpec, cfg: PlannerConfig) -> bool:
     if _excluded(s.tags, t.exclude, cfg):
         return False
+    if _lib_in(t.exclude_libraries, s.library, s.presenter, s.folder):
+        return False
+    if _lib_in(t.libraries, s.library, s.presenter, s.folder) and not _is_recitation(s, cfg):
+        return True
     if s.genre in t.topics:
         return True
     if _is_recitation(s, cfg) and not _is_khutbah(s, cfg):
@@ -1375,6 +1389,7 @@ def _show_grid(
     busy: dict[str, list[tuple[int, int]]] | None = None,
     focus: tuple[str, ...] = (),
     specialist: Mapping[str, float] | None = None,
+    prefer: tuple[str, ...] = (),
 ) -> tuple[list[Slot], list[Lane], list[str]]:
     """A TV week: every slot is owned by a show and keeps a queue.
 
@@ -1471,6 +1486,8 @@ def _show_grid(
                 (0 if s.ramadan else 1) if ramadan_first else 0,
                 # a block (the kids' hour) takes its kind of show first, in its order
                 _tag_rank(s.genre, s.tags, d.topics, cfg) if block else 0,
+                # the libraries the channel is mainly made of first
+                (0 if _lib_in(prefer, s.presenter, s.folder) else 1) if prefer else 0,
                 # a topic channel: its topic's shows first, the topic's specialists first
                 (0 if s.genre in focus else 1) if core else 0,
                 -round((specialist or {}).get(s.presenter, 0.0), 1)
@@ -2149,7 +2166,7 @@ def suggest_channels(
         key: str, number: int, name: str, name_ar: str, kind: str, category: str,
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
         exclude: tuple[str, ...] = (), focus: tuple[str, ...] = (),
-        audiences: tuple[str, ...] = (),
+        audiences: tuple[str, ...] = (), prefer: tuple[str, ...] = (),
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
@@ -2165,14 +2182,15 @@ def suggest_channels(
         spec = (
             {p: specialist_share(p, focus) for p in {s.presenter for s in shows}} if focus else {}
         )
-        if focus:  # its topic's shows first, specialists first, in the queues too
+        if focus or prefer:  # its libraries, its topic's shows, specialists first
             shows = sorted(shows, key=lambda s: (
+                (0 if _lib_in(prefer, s.presenter, s.folder) else 1) if prefer else 0,
                 (0 if s.genre in focus else 1) if cfg.theme_core_first else 0,
                 -round(spec.get(s.presenter, 0.0), 1) if cfg.theme_specialists_first else 0,
                 -s.rank, s.first_air, s.name, s.key))  # fmt: skip
         slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg,
                                        busy=None if cfg.show_same_time else held,
-                                       focus=focus, specialist=spec)  # fmt: skip
+                                       focus=focus, specialist=spec, prefer=prefer)  # fmt: skip
         r_slots: list[Slot] = []
         r_used: list[Lane] = []
         # the Ramadan grid sees every show, also those ramadan_exclusive keeps off the
@@ -2186,7 +2204,7 @@ def suggest_channels(
         if cfg.ramadan_grid and ram:
             r_slots, r_used, w2 = _show_grid(key, label, r_shows, cfg.ramadan_dayparts, q, k,
                                              pool_keys, cfg, ramadan=True, focus=focus,
-                                             specialist=spec,
+                                             specialist=spec, prefer=prefer,
                                              busy=None if cfg.show_same_time
                                              else held_r)  # fmt: skip
             warn += w2
@@ -2324,6 +2342,8 @@ def suggest_channels(
         s = by_id[i]
         if cfg.theme_show_min_episode_share <= 0 or s.genre in t.topics:
             return True
+        if _lib_in(t.libraries, s.library, s.presenter, s.folder):
+            return True  # a library the channel is made of: all its shows
         lo = cfg.topic_min_score
         if (_score(s.tags, "audience", t.audiences) >= lo
                 or _score(s.tags, "format", t.formats) >= lo):  # fmt: skip
@@ -2461,7 +2481,7 @@ def suggest_channels(
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
                      mix=False, exclude=t.exclude, focus=t.topics,
-                     audiences=t.audiences)  # fmt: skip
+                     audiences=t.audiences, prefer=t.libraries)  # fmt: skip
         return whole_shows(ids)
 
     for n_t, t in enumerate(cfg.themes):
@@ -2579,6 +2599,8 @@ def suggest_channels(
         if t is None:
             return 3
         u, tg = units[i], tags_of.get(i, {})
+        if _lib_in(t.libraries, u.library, u.presenter, u.folder):
+            return -1  # a library the channel is mainly made of: its home
         if u.genre in t.topics:
             return 0
         if (_score(tg, "topic", t.topics) >= cfg.topic_min_score

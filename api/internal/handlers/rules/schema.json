@@ -10,7 +10,7 @@
      "kind": "rows",
      "group": "Channels",
      "label": "Themed channels",
-     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule.",
+     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule.",
      "default": [
       {
        "key": "quran",
@@ -27,7 +27,9 @@
        "category": "quran",
        "min_hours": 100.0,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "kids",
@@ -49,7 +51,9 @@
        "occasions": [],
        "exclude": [
         "audience:adults"
-       ]
+       ],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "ramadan",
@@ -67,7 +71,9 @@
        "occasions": [
         "ramadan"
        ],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "seerah",
@@ -82,7 +88,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "tafsir",
@@ -97,7 +105,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "hadith",
@@ -112,7 +122,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "fiqh",
@@ -127,7 +139,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "aqeedah",
@@ -143,7 +157,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "history",
@@ -159,7 +175,9 @@
        "category": "documentaries",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "palestine",
@@ -174,7 +192,9 @@
        "category": "news",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "news",
@@ -189,7 +209,9 @@
        "category": "news",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "talk",
@@ -206,7 +228,9 @@
        "category": "general",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "prophets",
@@ -221,7 +245,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "raqaiq",
@@ -238,7 +264,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "akhlaq",
@@ -254,7 +282,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "family",
@@ -271,7 +301,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "salah",
@@ -286,7 +318,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "muamalat",
@@ -301,7 +335,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "family_fiqh",
@@ -316,7 +352,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "fasting",
@@ -331,7 +369,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "qiyam",
@@ -346,7 +386,9 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "quran_learning",
@@ -361,7 +403,9 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "quran_competition",
@@ -376,7 +420,9 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "zakat",
@@ -391,7 +437,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "hajj",
@@ -406,7 +454,9 @@
        "occasions": [
         "hajj"
        ],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "stories",
@@ -421,7 +471,9 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       },
       {
        "key": "nasheed",
@@ -437,7 +489,9 @@
        "category": "music",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": []
       }
      ],
      "columns": [
@@ -451,7 +505,9 @@
       "category",
       "min_hours",
       "occasions",
-      "exclude"
+      "exclude",
+      "libraries",
+      "exclude_libraries"
      ],
      "column_kinds": [
       "str",
@@ -464,6 +520,8 @@
       "str",
       "float?",
       "list",
+      "list",
+      "list",
       "list"
      ],
      "column_optional": [
@@ -471,6 +529,8 @@
       false,
       false,
       false,
+      true,
+      true,
       true,
       true,
       true,
