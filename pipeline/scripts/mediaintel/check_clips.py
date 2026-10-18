@@ -48,10 +48,12 @@ def _apply(conn: sqlite3.Connection, path: str, keep: tuple[str, ...], applied: 
     if not tags or applied == _tags_hash(tags):
         return False
     new = tc.apply_clip(tags, keep, cfg)
+    conn.execute("UPDATE clip_checks SET applied_hash=? WHERE path=?", (_tags_hash(new), path))
+    if new == tags:
+        return False  # the model kept every topic: nothing to correct
     conn.execute("DELETE FROM video_tags WHERE path=?", (path,))
     conn.executemany("INSERT INTO video_tags (path, tag, score) VALUES (?,?,?)",
                      [(path, t, s) for t, s in new.items()])  # fmt: skip
-    conn.execute("UPDATE clip_checks SET applied_hash=? WHERE path=?", (_tags_hash(new), path))
     return True
 
 
