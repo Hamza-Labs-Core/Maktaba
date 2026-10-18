@@ -10,22 +10,26 @@ is reported and left as it is.
 
 from __future__ import annotations
 
-import glob
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import jobs
 from .bins import FFMPEG, FFPROBE
 from .scan_local import probe_failure
 
-#: the library's own format: at most 1080p; for an .mp4 the streams an mp4 holds first
-#: (vp9/opus into mp4 fails to merge on some videos), anything else after
+#: the library's own format: at most 1080p, H.264 first (what the rest of the library is
+#: and what the GPU decodes; YouTube's 1080p is often AV1), mp4-ready streams for an .mp4
 FORMAT = "bv*[height<=1080]+ba/b[height<=1080]/b"
-FORMAT_MP4 = "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/" + FORMAT
+FORMAT_MP4 = (
+    "bv*[ext=mp4][vcodec^=avc1][height<=1080]+ba[ext=m4a]/"
+    "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/" + FORMAT
+)
 #: yt-dlp's work files, never the result
 _PARTIAL = (".part", ".ytdl", ".temp")
 
@@ -61,37 +65,29 @@ def check(path: str) -> tuple[float | None, int | None, int | None, str]:
     return dur, st.get("width"), st.get("height"), ""
 
 
-def download_args(youtube_id: str, target: Path, cookies_from_browser: str | None) -> list[str]:
-    """yt-dlp argv writing the video beside ``target`` as ``.repair-<id>.<ext>``: a plain
-    name (titles with «⧸ ｜ ۞ ＂ ﷺ» failed yt-dlp's ffmpeg step), renamed once checked."""
+def download_args(youtube_id: str, target: Path, cookies_from_browser: str | None,
+                  work: Path) -> list[str]:  # fmt: skip
+    """yt-dlp argv writing the video into the local folder ``work`` under a plain name:
+    yt-dlp's merge step fails writing to the NAS share, and on titles with «⧸ ｜ ۞ ＂»."""
     ext = target.suffix.lstrip(".").lower() or "mp4"
-    # no merge into the target container here: a failed merge loses the download; a
-    # different container is remuxed afterwards (repair_one)
     args = [
         sys.executable, "-m", "yt_dlp", "--no-playlist", "--no-progress",
         "-f", FORMAT_MP4 if ext == "mp4" else FORMAT,
-        "-o", str(target.with_name(f"{_work(youtube_id)}.%(ext)s")),
+        "-o", str(work / f"{_plain(youtube_id)}.%(ext)s"),
     ]  # fmt: skip
     if cookies_from_browser:
         args += ["--cookies-from-browser", cookies_from_browser]
     return [*args, f"https://www.youtube.com/watch?v={youtube_id}"]
 
 
-def _work(youtube_id: str) -> str:
-    """The download's plain working name (the id: letters, digits, - and _)."""
-    return ".repair-" + "".join(
-        ch for ch in youtube_id if ch.isascii() and (ch.isalnum() or ch in "-_")
-    )
+def _plain(youtube_id: str) -> str:
+    """A plain file name for the download (the id: letters, digits, - and _)."""
+    return "v-" + "".join(ch for ch in youtube_id if ch.isascii() and (ch.isalnum() or ch in "-_"))
 
 
-def _made(target: Path, youtube_id: str) -> list[Path]:
-    """Everything the download left beside ``target``."""
-    return sorted(target.parent.glob(glob.escape(_work(youtube_id)) + "*"))
-
-
-def _clean(target: Path, youtube_id: str) -> None:
-    for p in _made(target, youtube_id):
-        p.unlink(missing_ok=True)
+def _made(work: Path) -> list[Path]:
+    """The downloaded files in ``work`` (never yt-dlp's work files)."""
+    return sorted(p for p in work.iterdir() if p.suffix.lower() not in _PARTIAL)
 
 
 def _backup_name(target: Path) -> Path:
@@ -106,44 +102,60 @@ def _backup_name(target: Path) -> Path:
 def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
                cookies_from_browser: str | None = None) -> str:  # fmt: skip
     """Fetch, check and swap one file; returns what happened (one line)."""
+    work = Path(tempfile.mkdtemp(prefix="maktaba-repair-"))
+    try:
+        return _repair_in(conn, path, youtube_id, cookies_from_browser, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _repair_in(conn: sqlite3.Connection, path: str, youtube_id: str,
+               cookies_from_browser: str | None, work: Path) -> str:  # fmt: skip
     target = Path(path)
     try:
-        out = subprocess.run(download_args(youtube_id, target, cookies_from_browser),
+        out = subprocess.run(download_args(youtube_id, target, cookies_from_browser, work),
                              capture_output=True, timeout=3600, check=False)  # fmt: skip
     except (subprocess.TimeoutExpired, OSError) as e:
-        _clean(target, youtube_id)
         return f"not downloaded: {type(e).__name__}"
-    got = [p for p in _made(target, youtube_id) if p.suffix.lower() not in _PARTIAL]
+    got = _made(work)
     if out.returncode != 0 or not got:
         err = out.stderr.decode("utf-8", "replace").strip().splitlines()
         why = next((ln for ln in reversed(err) if "ERROR" in ln), err[-1] if err else "")
-        _clean(target, youtube_id)
         return f"not downloaded: {why[:160]}"
-    fresh = target.with_name(f"{_work(youtube_id)}.final{target.suffix}")
-    if got[0] != fresh:  # another container: remux, then with the audio made AAC
+    local = work / f"final{target.suffix}"
+    if got[0].suffix.lower() == target.suffix.lower():
+        os.replace(got[0], local)
+    else:  # another container: remux, then with the audio made AAC
         r = None
         for audio in (["-c", "copy"], ["-c:v", "copy", "-c:a", "aac", "-b:a", "160k"]):
-            fresh.unlink(missing_ok=True)
+            local.unlink(missing_ok=True)
             try:
                 r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(got[0]),
-                                    "-map", "0:v:0", "-map", "0:a:0?", *audio, str(fresh)],
+                                    "-map", "0:v:0", "-map", "0:a:0?", *audio, str(local)],
                                    capture_output=True, timeout=1800, check=False)  # fmt: skip
             except (subprocess.TimeoutExpired, OSError):
                 r = None
-            if r is not None and r.returncode == 0 and fresh.is_file():
+            if r is not None and r.returncode == 0 and local.is_file():
                 break
-        if r is None or r.returncode != 0 or not fresh.is_file():
-            _clean(target, youtube_id)
+        if r is None or r.returncode != 0 or not local.is_file():
             return f"downloaded as {got[0].suffix}, could not put it in {target.suffix}"
-    dur, w, h, why = check(str(fresh))
+    dur, w, h, why = check(str(local))
     if dur is None:
-        _clean(target, youtube_id)
         return f"downloaded, but the new copy does not read either ({why}): left as it was"
+    # onto the share beside the file, checked there too, then swapped in
+    fresh = target.with_name(f".{_plain(youtube_id)}.repair{target.suffix}")
+    try:
+        shutil.copyfile(local, fresh)
+    except OSError as e:
+        fresh.unlink(missing_ok=True)
+        return f"could not copy it to the share ({e})"
+    if fresh.stat().st_size != local.stat().st_size:
+        fresh.unlink(missing_ok=True)
+        return "the copy on the share is incomplete: left as it was"
     backup = _backup_name(target)
     if target.exists():
         os.replace(target, backup)
     os.replace(fresh, target)
-    _clean(target, youtube_id)
     st = target.stat()
     conn.execute(
         "UPDATE files SET size=?, mtime=?, duration_s=?, width=?, height=?, probed_size=?, "
