@@ -205,7 +205,8 @@ def audit(
                     int(prog.get("duration", 0)) / 60_000)  # fmt: skip
 
     out: list[ChannelAudit] = []
-    for ch in channels:
+    for k_ch, ch in enumerate(channels, 1):
+        print(f"  [{k_ch}/{len(channels)}] {ch.get('name', '')}", flush=True)
         plan = ch.get("maktabaPlan") or {}
         theme = themes.get(str(plan.get("key", "")))
         ca = ChannelAudit(int(ch["number"]), str(ch.get("name", "")), theme)
@@ -376,7 +377,9 @@ def run(conn: sqlite3.Connection, url: str, out: Path, cfg: PlannerConfig | None
         from . import settings_store
 
         cfg = settings_store.get(conn, "planner")
+    print("phase: reading dizqueTV's channels and filler lists", flush=True)
     channels, fillers = read_dizquetv(url)
+    print("phase: judging every programme and clip", flush=True)
     audits = audit(conn, channels, fillers, cfg)
     out.mkdir(parents=True, exist_ok=True)
     text = text_report(audits)

@@ -87,6 +87,7 @@ __all__ = [
     "TaggerConfig",
     "boilerplate_phrases",
     "branding",
+    "chapter_tags",
     "content_type",
     "match_text",
     "primary_topic",
@@ -1270,6 +1271,19 @@ def tag_series(
     _default_format(acc, median_duration_s, cfg)
     _resolve_conflicts(acc)
     return _finish(acc, cfg)
+
+
+def chapter_tags(
+    title: str, *, strip: Sequence[str] = (), weight: float = 2.0, min_strength: float = 1.0
+) -> dict[str, float]:
+    """The topic a chapter playlist names («كتاب الصيام», «كتاب الصلاة من صحيح البخاري»,
+    «باب صفة الصلاة»): its episodes are about it, whatever their own titles say. Only an
+    unambiguous phrase counts (strength ≥ ``min_strength``), scored as a playlist."""
+    return {
+        tag: round(1.0 - math.exp(-weight * strength), 3)
+        for tag, (strength, _) in match_text(title, strip=strip).items()
+        if tag.startswith(("topic:", "occasion:")) and strength >= min_strength
+    }
 
 
 def _densest_window(dated: Sequence[date], days: int) -> int:

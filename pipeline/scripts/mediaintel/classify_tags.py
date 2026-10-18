@@ -36,6 +36,8 @@ from maktaba_pipeline.classify.topic_tags import (
     TAGGER_VERSION,
     Tag,
     boilerplate_phrases,
+    branding,
+    chapter_tags,
     tag_series,
     tag_video,
 )
@@ -175,15 +177,37 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
     }
     conn.execute("DELETE FROM episode_tags WHERE path IN (SELECT path FROM files WHERE folder=?)",
                  (folder,))  # fmt: skip
+    # an episode in a show's own chapter playlist («كتاب الصيام» of a hadith course) is
+    # about that chapter, whatever its own title says («المجلس 14»)
+    yt_of = dict(conn.execute("SELECT path, youtube_id FROM files WHERE folder=? "
+                              "AND youtube_id IS NOT NULL", (folder,)).fetchall())  # fmt: skip
+    pls_of: dict[str, list[str]] = {}
+    for pl, yid in conn.execute(
+        "SELECT i.playlist_id, i.youtube_id FROM yt_playlist_items i JOIN files f "
+        "ON f.youtube_id=i.youtube_id WHERE f.folder=?",
+        (folder,),
+    ):
+        pls_of.setdefault(yid, []).append(pl)
+    strip = branding(channel)
+    chapter: dict[str, dict[str, float]] = {}  # playlist → its chapter tags
     ep_rows: list[tuple[str, str, float]] = []
     for p in in_series:
         r = by_path.get(p)
         if r is None:
             continue
+        own: dict[str, float] = {}
         for t in tag_video(r["title"], r["description"] or "", r["dur"], channel=channel,
                            noise=noise):  # fmt: skip
             if t.tag.startswith(_EPISODE_NAMESPACES) and t.tag != "audience:general":
-                ep_rows.append((p, t.tag, t.score))
+                own[t.tag] = t.score
+        for pl in pls_of.get(yt_of.get(p, ""), ()):
+            if len(shows_in.get(pl, ())) > 1 or pl not in pl_titles:
+                continue  # a playlist holding several shows is a collection, not a chapter
+            if pl not in chapter:
+                chapter[pl] = chapter_tags(pl_titles[pl], strip=strip)
+            for tag, sc in chapter[pl].items():
+                own[tag] = max(own.get(tag, 0.0), sc)
+        ep_rows.extend((p, tag, sc) for tag, sc in own.items())
     conn.executemany("INSERT OR REPLACE INTO episode_tags (path, tag, score) VALUES (?,?,?)",
                      ep_rows)  # fmt: skip
     print(f"  episodes tagged by their own titles: {len(in_series)} ({len(ep_rows)} tags)")

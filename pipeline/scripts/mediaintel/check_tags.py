@@ -103,12 +103,14 @@ def run(conn: sqlite3.Connection, cfg: tc.TagCheckConfig | None = None) -> dict[
                 "UPDATE tag_checks SET applied_hash=? WHERE series_id=?", (_tags_hash(new), sid)
             )
             counts["applied"] += 1
-        if n % 100 == 0:
+        if n % 25 == 0 or n == len(series):
             conn.commit()
             per = (time.monotonic() - t0) / counts["asked"] if counts["asked"] else 0.0
             left = sum(1 for s in series[n:] if s[0] not in done) * per
             eta = f", ~{left / 60:.0f} min left" if left else ""
-            print(f"  …  {n}/{len(series)} series: {counts}{eta}", flush=True)
+            print(f"  [{n}/{len(series)}] series checked: {counts['asked']} asked, "
+                  f"{counts['cached']} cached, {counts['applied']} corrected{eta}",
+                  flush=True)  # fmt: skip
     conn.commit()
     print(
         f"  ✓  {len(series)} series: {counts['asked']} asked, {counts['cached']} cached, "

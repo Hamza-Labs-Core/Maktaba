@@ -414,7 +414,8 @@ def build_plan_json(
     plan: PlanResult, *, source: str, notes: Sequence[str], sample_weekday: str = SAMPLE_WEEKDAY
 ) -> dict[str, Any]:
     channels: list[dict[str, Any]] = []
-    for ch in plan.channels:
+    for k_ch, ch in enumerate(plan.channels, 1):
+        print(f"  [{k_ch}/{len(plan.channels)}] {ch.name_ar or ch.name}", flush=True)
         week = simulate(ch, plan, weekday="mon", days=7)
         sample = simulate(ch, plan, weekday=sample_weekday, days=1)
         channels.append(
@@ -696,13 +697,18 @@ def run(
 
         config = settings_store.get(conn, "planner")
         settings_store.note(conn, "planner")
+    print("phase: reading seasons, episodes and tags", flush=True)
     seasons, loose, notes = load_inputs(conn)
+    print(f"phase: choosing the lineup and grids from {len(seasons)} seasons", flush=True)
     plan = suggest_channels(seasons, loose, config)
     src = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
+    print(f"phase: a year of programmes per channel ({len(plan.channels)} channels)", flush=True)
     data = build_plan_json(plan, source=str(src), notes=notes)
     out_dir.mkdir(parents=True, exist_ok=True)
     jpath = out_dir / "channel-plan.json"
+    print("phase: writing channel-plan.json", flush=True)
     jpath.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("phase: writing channel-plan.html", flush=True)
     (out_dir / "channel-plan.html").write_text(render_html(data), encoding="utf-8")
     if review is not None:
         review.parent.mkdir(parents=True, exist_ok=True)

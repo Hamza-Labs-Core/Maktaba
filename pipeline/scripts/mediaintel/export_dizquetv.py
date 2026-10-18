@@ -633,6 +633,8 @@ def apply_actions(
     # then the shows and filler lists; all are checked gone with one re-read per kind
     removals = sorted((a for a in actions if a.verb == "delete"),
                       key=lambda a: a.kind != "channel")  # fmt: skip
+    if removals:
+        print(f"phase: removing {len(removals)} channels / shows / filler lists", flush=True)
     for a in removals:
         assert a.endpoint is not None
         dzw.call("DELETE", a.endpoint, a.body)
@@ -674,8 +676,10 @@ def apply_actions(
     keys = sorted({str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])})
     # the plex-index step's saved records first: only what it lacks is asked of Plex
     # (all of a big plan from Plex is 100k+ lookups, hours while Plex is busy)
+    print(f"phase: episode details for {len(objs)} shows and filler lists", flush=True)
     meta = _metadata(server, keys, conn=conn) if keys else {}
-    for a in objs:
+    print("phase: shows and filler lists", flush=True)
+    for k_obj, a in enumerate(objs, 1):
         assert a.body is not None and a.endpoint is not None
         content = [
             prog
@@ -694,15 +698,17 @@ def apply_actions(
             raise RuntimeError(
                 f"{a.name}: dizqueTV holds {len(got)} items, expected {len(content)}"
             )
-        print(f"  ✓  {a.kind} {a.name}: {len(content)} items")
+        print(f"  [{k_obj}/{len(objs)}] ✓  {a.kind} {a.name}: {len(content)} items", flush=True)
 
     # second pass: every lane / pool now exists, so channel slots resolve to real ids
     state = read_state(DizqueTV(url))
     shows_by_id: dict[str, dict[str, Any]] = {}
-    for c_act in plan_actions(plan, state, **plan_kw):
-        if c_act.kind != "channel" or c_act.verb not in ("create", "update"):
-            if c_act.kind == "channel":
-                print(f"  -  channel {c_act.name}: {c_act.verb}")
+    ch_acts = [a for a in plan_actions(plan, state, **plan_kw) if a.kind == "channel"]
+    print("phase: channels", flush=True)
+    for k_ch, c_act in enumerate(ch_acts, 1):
+        at = f"  [{k_ch}/{len(ch_acts)}]"
+        if c_act.verb not in ("create", "update"):
+            print(f"{at} -  channel {c_act.name}: {c_act.verb}", flush=True)
             continue
         assert c_act.body is not None
         body = dict(c_act.body)
@@ -741,7 +747,7 @@ def apply_actions(
                 programs.append({**prog, "customShowId": show_id,
                                  "customShowName": show["name"], "customOrder": n})  # fmt: skip
         if not programs:
-            print(f"  -  channel {c_act.name}: nothing playable yet, skipped")
+            print(f"{at} -  channel {c_act.name}: nothing playable yet, skipped", flush=True)
             continue
         fp = fingerprint(sched, base)
         body["maktabaPlan"] = {**body["maktabaPlan"], "fingerprint": fp}
@@ -751,7 +757,7 @@ def apply_actions(
             body["startTime"] = old["startTime"]
             res = {"programs": old["programs"]}
             if all(old.get(k) == v for k, v in body.items()):
-                print(f"  =  channel {c_act.name}: unchanged, left as it airs")
+                print(f"{at} =  channel {c_act.name}: unchanged, left as it airs", flush=True)
                 continue  # a save restarts the stream of anyone watching: none at all
         else:
             res = dzw.call("POST", "/api/channel-tools/time-slots",
@@ -766,7 +772,7 @@ def apply_actions(
             raise RuntimeError(f"channel {body['number']}: read-back does not match")
         if "icon" in body and back.get("icon") != body["icon"]:
             raise RuntimeError(f"channel {body['number']}: its logo did not stick")
-        print(f"  ✓  channel {c_act.name}: {len(res['programs'])} programmes, "
+        print(f"{at} ✓  channel {c_act.name}: {len(res['programs'])} programmes, "
               f"{len(body['fillerCollections'])} filler lists")  # fmt: skip
 
 

@@ -117,6 +117,19 @@ PLANNER_HELP: dict[str, Help] = {
         "whole only when at least this share of its hours are episodes about the theme "
         "themselves; otherwise only those episodes join, as a special run. 0: off.",
     ),
+    "theme_core_first": Help(
+        CH,
+        "Topic channels: their topic's shows first",
+        "On a topic channel (Hadith, Fiqh …) the shows of that topic take the time slots "
+        "before shows that joined by a tag or a few episodes; variety there means another "
+        "presenter, not another topic.",
+    ),
+    "theme_specialists_first": Help(
+        CH,
+        "Topic channels: specialists first",
+        "Among a topic channel's shows, the presenters whose library is mostly that topic "
+        "(a hadith scholar on the Hadith channel) take the slots first.",
+    ),
     "theme_general_filler": Help(
         CH,
         "Theme channels: also general filler",

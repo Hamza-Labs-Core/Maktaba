@@ -76,6 +76,11 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     (
+        "check-tags",
+        "Check tags with a language model",
+        "a local model reads each series' name and episode titles and corrects its topics",
+    ),
+    (
         "group (",
         "Group clips and promos",
         "shorts and clips into filler collections, stand-alone videos by topic, promos to shows",
@@ -90,6 +95,11 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
     ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
+    (
+        "audit-channels",
+        "Audit the channels",
+        "is what each channel airs about the channel? (channel-audit.html)",
+    ),
 ]
 
 STAGE_NAMES = {
@@ -234,14 +244,38 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
-        else:  # no counter: say so instead of counting log lines
-            return out, {"done": 0, "total": None, "unit": "",
-                         "phase": "working (this step has no counter)"}  # fmt: skip
+        else:
+            return out, _generic_progress(body, STEPS[current][0])
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
 
 
 _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+#: what a step's "[n/N]" lines count
+_UNITS = {"check-tags": "series", "plan-channels": "channels", "export-dizquetv": "items",
+          "audit-channels": "channels"}  # fmt: skip
+_PHASE_RE = re.compile(r"^phase: (.+)$")
+_N_OF_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] ")
+
+
+def _generic_progress(body: list[str], step: str) -> dict[str, Any]:
+    """Any step: its last "phase: …" line names what it is doing, and the "[n/N]" lines
+    after it count that part. A step printing neither says so."""
+    last_phase = max((i for i, ln in enumerate(body) if _PHASE_RE.match(ln)), default=-1)
+    phase = _PHASE_RE.match(body[last_phase]).group(1) if last_phase >= 0 else None  # type: ignore[union-attr]
+    counts = [m for ln in body[last_phase + 1 :] if (m := _N_OF_RE.match(ln))]
+    if not counts and phase is None:
+        return {"done": 0, "total": None, "unit": "", "phase": "working (this step has no counter)"}
+    prog: dict[str, Any] = {
+        "done": int(counts[-1].group(1)) if counts else 0,
+        "total": int(counts[-1].group(2)) if counts else None,
+        "unit": _UNITS.get(step, "") if counts else "",
+    }
+    if phase:
+        prog["phase"] = phase
+    return prog
 
 
 def _counted(body: list[str], total_re: str) -> dict[str, Any]:

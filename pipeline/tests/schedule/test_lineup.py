@@ -252,3 +252,48 @@ def test_a_khutbah_is_never_on_the_quran_lane() -> None:
     on_quran = {e.path for k in quran.lanes for u in p.lanes[k].units for e in u.episodes}
     assert {e.path for e in reciter[0].episodes} <= on_quran
     assert not sermon_paths & on_quran
+
+
+def test_a_topic_channel_puts_its_specialists_in_the_slots_first() -> None:
+    """On the Hadith channel the hadith scholars' lessons take the weekday evening slots;
+    a talk show tagged hadith, from a presenter who mostly does other things, comes after."""
+    hadith = ThemeSpec("hadith", "Hadith", "الحديث", 102, ("hadith",))
+    books = (
+        "البخاري",
+        "مسلم",
+        "أبي داود",
+        "الترمذي",
+        "النسائي",
+        "ابن ماجه",
+        "الموطأ",
+        "بلوغ المرام",
+        "عمدة الأحكام",
+        "رياض الصالحين",
+        "الأربعين",
+        "مسند أحمد",
+    )
+    lib = [season(f"a{i}", f"شرح {b}", genre="hadith", presenter=("العدوي", "الحويني")[i % 2],
+                  n=60, minutes=60) for i, b in enumerate(books)]  # fmt: skip
+    lib += [
+        season("m1", "حوار", genre="current_affairs", presenter="منصور", n=200, minutes=60,
+               tags={"topic:hadith": 0.9, "format:program": 0.9}),
+        season("m2", "بلا حدود", genre="current_affairs", presenter="منصور", n=200, minutes=60),
+    ]  # fmt: skip
+
+    def evening() -> list[str]:
+        p = plan(lib, themes=(hadith,), mix_channel=False, presenter_channels=False)
+        ch = next(c for c in p.channels if c.key == "hadith")
+        return [p.lanes[s.lane].shows[0] for s in ch.slots
+                if s.lane and s.kind == "program" and 17 * 60 <= s.start < 23 * 60
+                and len(s.days) >= 4]  # fmt: skip
+
+    got = evening()
+    assert got and not {"حوار", "بلا حدود"} & set(got)  # the evening is the scholars'
+
+
+def test_a_chapter_playlist_names_its_episodes_topic() -> None:
+    from maktaba_pipeline.classify.topic_tags import chapter_tags
+
+    assert chapter_tags("كتاب الصيام").get("topic:fasting", 0) > 0.8
+    assert chapter_tags("كتاب الصلاة من صحيح البخاري").get("topic:salah", 0) > 0.8
+    assert not chapter_tags("مجالس 1436")  # nothing named: nothing inherited
