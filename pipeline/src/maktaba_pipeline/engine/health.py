@@ -23,7 +23,14 @@ from ..log import get_logger
 from .causes import classify
 from .sql import now, to_ts
 
-__all__ = ["HealthCollector", "NasProbe", "run_sampler", "sample_once"]
+__all__ = [
+    "HealthCollector",
+    "NasProbe",
+    "register_metric",
+    "run_sampler",
+    "sample_once",
+    "system_memory",
+]
 
 _log = get_logger()
 
@@ -31,6 +38,48 @@ _WINDOW_SEC = 10.0
 _READ_BYTES = 64 * 1024
 
 ProbeFn = Callable[[], Awaitable[float]]
+
+#: metrics a subsystem of this process publishes (the transcriber's GPU memory ...),
+#: sampled with the rest every round
+_METRICS: dict[str, Callable[[], float]] = {}
+
+
+def register_metric(name: str, fn: Callable[[], float]) -> None:
+    _METRICS[name] = fn
+
+
+def system_memory() -> tuple[float, float] | None:
+    """(total bytes, available bytes) of this host, or None where unknown.
+
+    macOS: free + inactive + speculative + purgeable pages (what can be had without
+    swapping or compressing); Linux: MemAvailable."""
+    try:
+        if os.path.exists("/proc/meminfo"):
+            with open("/proc/meminfo") as f:
+                info = {
+                    k: int(v.split()[0]) * 1024
+                    for k, v in (ln.split(":", 1) for ln in f)
+                    if v.strip()
+                }
+            return float(info["MemTotal"]), float(info["MemAvailable"])
+        import subprocess
+
+        total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True,
+                                   text=True, timeout=5).stdout)  # fmt: skip
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+        page = int(out.split("page size of", 1)[1].split()[0])
+        pages = {
+            ln.split(":")[0].strip(): int(ln.split(":")[1].strip().rstrip("."))
+            for ln in out.splitlines()[1:]
+            if ":" in ln and ln.split(":")[1].strip().rstrip(".").isdigit()
+        }
+        avail = sum(
+            pages.get(k, 0)
+            for k in ("Pages free", "Pages inactive", "Pages speculative", "Pages purgeable")
+        )
+        return float(total), float(avail * page)
+    except Exception:  # noqa: BLE001 - a missing measure is no sample, never a crash
+        return None
 
 
 class HealthCollector:
@@ -136,6 +185,16 @@ async def sample_once(
     cpu = _cpu_percent()
     if cpu is not None:
         metrics["cpu.pct"] = cpu
+    mem = system_memory()
+    if mem is not None:
+        total, avail = mem
+        metrics["mem.free_pct"] = round(100.0 * avail / total, 1) if total else 0.0
+        metrics["mem.available_gb"] = round(avail / 1e9, 2)
+    for metric, read in list(_METRICS.items()):
+        try:
+            metrics[metric] = float(read())
+        except Exception:  # noqa: BLE001 - one bad probe is skipped
+            _log.debug("metric_probe_failed", metric=metric)
     if probe_network:
         for metric, fn in collector.probes.items():
             try:

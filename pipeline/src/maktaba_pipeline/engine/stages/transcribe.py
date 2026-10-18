@@ -27,6 +27,7 @@ from ...stt.batched import SAMPLE_RATE, Transcript, WhisperSettings, get_transcr
 from ..context import StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
+from ..health import system_memory
 from ..sql import dumps, now, to_ts, uid
 from ._common import load_video, require_video
 from .content_hash import READ_TIMEOUT_S, on_disk
@@ -39,6 +40,45 @@ __all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env"]
 DECODE_TIMEOUT_S = 900.0
 
 
+class AudioBudget:
+    """Hours of audio a worker holds at once (decoded audio + its spectrogram on the
+    GPU, ~0.5 GB per hour). A job waits here before decoding its file, so memory stays
+    bounded however long the videos are; a file longer than the whole budget runs alone."""
+
+    def __init__(self, seconds: float) -> None:
+        self.limit = seconds
+        self.used = 0.0
+        self._cond: asyncio.Condition | None = None
+
+    def _c(self) -> asyncio.Condition:
+        if self._cond is None:
+            self._cond = asyncio.Condition()
+        return self._cond
+
+    async def acquire(self, seconds: float) -> float:
+        need = min(max(seconds, 1.0), self.limit)
+        async with self._c():
+            await self._c().wait_for(lambda: self.used == 0 or self.used + need <= self.limit)
+            self.used += need
+        return need
+
+    async def release(self, held: float) -> None:
+        async with self._c():
+            self.used = max(0.0, self.used - held)
+            self._c().notify_all()
+
+
+_BUDGET: AudioBudget | None = None
+
+
+def audio_budget() -> AudioBudget:
+    """The process's budget: ``MAKTABA_STT_AUDIO_HOURS`` (default 6)."""
+    global _BUDGET
+    if _BUDGET is None:
+        _BUDGET = AudioBudget(float(os.environ.get("MAKTABA_STT_AUDIO_HOURS", "6")) * 3600)
+    return _BUDGET
+
+
 def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
     env = os.environ
     return WhisperSettings(
@@ -46,7 +86,28 @@ def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
         language=env.get("MAKTABA_STT_LANGUAGE", "ar"),
         word_timestamps=env.get("MAKTABA_STT_WORDS", "1") != "0",
         max_batch=max_batch or int(env.get("MAKTABA_STT_BATCH", "32")),
+        gpu_limit_gb=float(env.get("MAKTABA_STT_GPU_GB", "24")),
+        gpu_cache_gb=float(env.get("MAKTABA_STT_GPU_CACHE_GB", "2")),
     )
+
+
+async def wait_for_memory(ctx: StageContext) -> None:
+    """Back-pressure: while the host is short of memory (``MAKTABA_STT_MIN_FREE_PCT``,
+    default 20% available), a job waits before it decodes anything, and says so."""
+    floor = float(os.environ.get("MAKTABA_STT_MIN_FREE_PCT", "20"))
+    waited = 0
+    while True:
+        mem = system_memory()
+        if mem is None or not mem[0] or 100.0 * mem[1] / mem[0] >= floor:
+            return
+        if waited % 60 == 0:
+            await ctx.progress(
+                "waiting", 0, 1,
+                f"waiting for memory: {100.0 * mem[1] / mem[0]:.0f}% available, needs {floor:.0f}%",
+                force=True,
+            )  # fmt: skip
+        await asyncio.sleep(5)
+        waited += 5
 
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
@@ -104,6 +165,20 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if found is None:
         raise StageFailure("file_missing", f"{local}: not found", retryable=False)
 
+    budget = audio_budget()
+    held = await budget.acquire(float(v.duration_s or 3600))
+    try:
+        await wait_for_memory(ctx)
+    except BaseException:
+        await budget.release(held)
+        raise
+    try:
+        return await _transcribe_file(db, v, found, ctx)
+    finally:
+        await budget.release(held)
+
+
+async def _transcribe_file(db: Any, v: Any, found: str, ctx: StageContext) -> StageResult:
     try:
         audio = await decode_audio(found)
     except TimeoutError as exc:

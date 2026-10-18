@@ -58,6 +58,11 @@ class WhisperSettings:
     language: str = "ar"
     max_batch: int = 32
     word_timestamps: bool = True
+    #: MLX's GPU memory: a limit for the arrays, and a cap on its cache of freed
+    #: buffers (unbounded by default: every pass allocates differently sized buffers,
+    #: and the cache grew to 70+ GB in an hour)
+    gpu_limit_gb: float = 24.0
+    gpu_cache_gb: float = 2.0
     temperatures: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
     compression_ratio_threshold: float = 2.4
     logprob_threshold: float = -1.0
@@ -305,6 +310,8 @@ class BatchedTranscriber:
         self._lock = threading.Lock()
         self.windows = 0  # windows decoded, for the report
         self.passes = 0
+        self.in_flight = 0
+        self._mx: Any = None
 
     # --- public ---------------------------------------------------------------
 
@@ -348,6 +355,16 @@ class BatchedTranscriber:
 
         s = self.settings
         t0 = time.monotonic()
+        mx.set_memory_limit(int(s.gpu_limit_gb * 1e9))
+        mx.set_cache_limit(int(s.gpu_cache_gb * 1e9))
+        self._mx = mx
+        from ..engine.health import register_metric
+
+        register_metric("stt.gpu_active_gb", lambda: round(mx.get_active_memory() / 1e9, 2))
+        register_metric("stt.gpu_cache_gb", lambda: round(mx.get_cache_memory() / 1e9, 2))
+        register_metric("stt.gpu_peak_gb", lambda: round(mx.get_peak_memory() / 1e9, 2))
+        register_metric("stt.files_in_flight", lambda: float(self.in_flight))
+        register_metric("stt.windows", lambda: float(self.windows))
         model = load_model(s.model, dtype=mx.float16)
         tok = get_tokenizer(
             model.is_multilingual,
@@ -450,8 +467,12 @@ class BatchedTranscriber:
             self._admit(jobs, block=True)
             if not jobs:
                 continue
+            self.in_flight = len(jobs)
             try:
                 self._pass(jobs)
+                cap = self.settings.gpu_cache_gb * 1e9
+                if self._mx is not None and self._mx.get_cache_memory() > cap:
+                    self._mx.clear_cache()
             except Exception as exc:  # noqa: BLE001 - a broken batch fails its files only
                 _log.exception("whisper.batch_failed", files=len(jobs))
                 for j in jobs:

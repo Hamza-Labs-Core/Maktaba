@@ -1,0 +1,61 @@
+"""Memory safety of transcription: the audio budget, the memory wait, the metrics."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+import pytest
+
+from maktaba_pipeline.engine import health
+from maktaba_pipeline.engine.stages import transcribe as tr
+from maktaba_pipeline.runtime import Database
+
+
+@pytest.mark.asyncio
+async def test_the_audio_budget_holds_jobs_until_audio_is_released() -> None:
+    b = tr.AudioBudget(3600)
+    first = await b.acquire(3000)
+    waiter = asyncio.create_task(b.acquire(1200))  # 3000 + 1200 > 3600: waits
+    await asyncio.sleep(0.05)
+    assert not waiter.done()
+    await b.release(first)
+    assert await asyncio.wait_for(waiter, 1) == 1200
+    huge = tr.AudioBudget(3600)
+    assert await huge.acquire(10 * 3600) == 3600  # a file longer than the budget runs alone
+
+
+@pytest.mark.asyncio
+async def test_a_job_waits_while_memory_is_short(monkeypatch: pytest.MonkeyPatch) -> None:
+    readings = iter([(100.0, 5.0), (100.0, 10.0), (100.0, 50.0)])
+    monkeypatch.setattr(tr, "system_memory", lambda: next(readings))
+    monkeypatch.setenv("MAKTABA_STT_MIN_FREE_PCT", "20")
+    slept: list[float] = []
+
+    async def fast_sleep(s: float) -> None:
+        slept.append(s)
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+
+    class Ctx:
+        notes: list[str] = []
+
+        async def progress(self, *a: Any, **k: Any) -> None:
+            self.notes.append(str(a[3]))
+
+    ctx = Ctx()
+    await tr.wait_for_memory(ctx)  # type: ignore[arg-type]
+    assert len(slept) == 2 and "waiting for memory: 5%" in ctx.notes[0]
+
+
+@pytest.mark.asyncio
+async def test_registered_metrics_and_memory_are_sampled(db: Database) -> None:
+    health.register_metric("stt.test_gauge", lambda: 4.5)
+    got = await health.sample_once(db, health.HealthCollector(), host="h1")
+    assert got["stt.test_gauge"] == 4.5
+    assert 0 < got["mem.free_pct"] <= 100
+    n = await db.fetchval(
+        "SELECT count(*) FROM health_samples WHERE host = 'h1' AND metric = 'stt.test_gauge'"
+    )
+    assert n == 1
+    health._METRICS.pop("stt.test_gauge", None)
