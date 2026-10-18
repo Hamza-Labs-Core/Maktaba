@@ -1,108 +1,144 @@
 package channel
 
 import (
+	"context"
+	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-// HTTPHandler serves a channel's live HLS window (master + variant
-// playlists + segments) from the engine's on-disk dir, touching the
-// engine on every segment fetch so the warm/idle reaper sees activity.
+// HTTPHandler serves a channel's live output:
+//
+//	/stream/channel/{id}/index.m3u8     live HLS playlist (tunes lazily)
+//	/stream/channel/{id}/master.m3u8    single-rendition master (alias: manifest.m3u8)
+//	/stream/channel/{id}/seg-N.ts       HLS segments
+//	/stream/channel/{id}/live.ts        continuous MPEG-TS (shared fan-out)
+//
+// Requesting a playlist starts the channel if it is cold and waits (up
+// to the engine's ReadyTimeout) for its first segment, so no separate
+// tune call is needed. Every fetch keeps the channel warm.
 type HTTPHandler struct {
 	Engine *Engine
 }
 
-// Mount wires the channel HLS routes. The streaming server applies the
-// signed-URL auth middleware around these (same model as /stream),
-// Story 27.3 D8.
+// Mount wires the channel routes.
 func (h *HTTPHandler) Mount(r chi.Router) {
 	r.Route("/stream/channel/{id}", func(sub chi.Router) {
-		sub.Get("/master.m3u8", h.serveFile)
-		sub.Get("/manifest.m3u8", h.serveFile)
-		sub.Get("/{rendition}/index.m3u8", h.serveFile)
-		sub.Get("/{rendition}/{segment}", h.serveSegment)
+		sub.Get("/index.m3u8", h.servePlaylist)
+		sub.Get("/master.m3u8", h.servePlaylist)
+		sub.Get("/manifest.m3u8", h.servePlaylist)
+		sub.Get("/live.ts", h.serveLiveTS)
+		sub.Get("/{segment}", h.serveSegment)
 	})
 }
 
-// serveFile serves a playlist (master or variant index) from the
-// channel's HLS dir.
-func (h *HTTPHandler) serveFile(w http.ResponseWriter, r *http.Request) {
-	dir, ok := h.dirFor(w, r)
+func (h *HTTPHandler) servePlaylist(w http.ResponseWriter, r *http.Request) {
+	id, ok := channelParam(w, r)
 	if !ok {
 		return
 	}
-	name := masterOrVariant(r)
-	if name == "" {
-		http.Error(w, "bad path", http.StatusBadRequest)
+	p, err := h.Engine.EnsureReady(r.Context(), id)
+	if err != nil {
+		writeEngineError(w, err)
 		return
 	}
-	serveStatic(w, r, dir, name)
+	name := "index.m3u8"
+	if !strings.HasSuffix(r.URL.Path, "/index.m3u8") {
+		name = "master.m3u8"
+	}
+	h.Engine.Touch(id)
+	serveShared(w, r, p.Dir(), name)
 }
 
-// serveSegment serves a .ts segment and touches the engine to keep the
-// channel warm (viewer-activity signal, Story 27.3 §4).
 func (h *HTTPHandler) serveSegment(w http.ResponseWriter, r *http.Request) {
-	dir, ok := h.dirFor(w, r)
+	id, ok := channelParam(w, r)
 	if !ok {
 		return
 	}
-	rendition := chi.URLParam(r, "rendition")
-	segment := chi.URLParam(r, "segment")
-	if !safeComponent(rendition) || !safeComponent(segment) {
+	seg := chi.URLParam(r, "segment")
+	if !safeComponent(seg) || !strings.HasSuffix(seg, ".ts") {
 		http.Error(w, "bad path", http.StatusBadRequest)
 		return
 	}
-	if id, err := uuid.Parse(chi.URLParam(r, "id")); err == nil {
-		h.Engine.Touch(id)
-	}
-	serveStatic(w, r, dir, filepath.Join(rendition, segment))
+	h.Engine.Touch(id)
+	serveShared(w, r, h.Engine.HLSDir(id), seg)
 }
 
-// dirFor resolves the on-disk HLS dir for the {id} URL param.
-func (h *HTTPHandler) dirFor(w http.ResponseWriter, r *http.Request) (string, bool) {
+func (h *HTTPHandler) serveLiveTS(w http.ResponseWriter, r *http.Request) {
+	id, ok := channelParam(w, r)
+	if !ok {
+		return
+	}
+	if _, err := h.Engine.Ensure(r.Context(), id); err != nil {
+		writeEngineError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	_ = h.Engine.StreamChannelTS(r.Context(), id, w)
+}
+
+func channelParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "bad channel id", http.StatusBadRequest)
-		return "", false
+		return uuid.Nil, false
 	}
-	return h.Engine.Layout.HLSDir(channelSessionID(id)), true
+	return id, true
 }
 
-// masterOrVariant returns the file name for a playlist request, with the
-// rendition prefix when present, after validating the components.
-func masterOrVariant(r *http.Request) string {
-	rendition := chi.URLParam(r, "rendition")
-	if rendition != "" {
-		if !safeComponent(rendition) {
-			return ""
-		}
-		return filepath.Join(rendition, "index.m3u8")
+func writeEngineError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrChannelNotFound):
+		http.Error(w, "no such channel", http.StatusNotFound)
+	case errors.Is(err, ErrAtCapacity):
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, "all channel encoders busy", http.StatusServiceUnavailable)
+	case errors.Is(err, context.DeadlineExceeded):
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, "channel is starting", http.StatusServiceUnavailable)
+	default:
+		http.Error(w, "channel unavailable: "+err.Error(), http.StatusServiceUnavailable)
 	}
-	if strings.HasSuffix(r.URL.Path, "manifest.m3u8") {
-		return "master.m3u8" // alias
-	}
-	return "master.m3u8"
 }
 
-// serveStatic serves a file from base/name with traversal protection.
-func serveStatic(w http.ResponseWriter, r *http.Request, base, name string) {
+// serveShared serves base/name, opened so ffmpeg can still rotate it.
+func serveShared(w http.ResponseWriter, r *http.Request, base, name string) {
 	full := filepath.Join(base, name)
-	// Defense in depth: the resolved path must stay under base.
 	if rel, err := filepath.Rel(base, full); err != nil || strings.HasPrefix(rel, "..") {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	if strings.HasSuffix(name, ".m3u8") {
+		// Playlists are tiny and rewritten constantly: read fully, serve
+		// from memory, never cache.
+		b, err := readShared(full)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		w.Header().Set("Cache-Control", "no-cache")
-	} else if strings.HasSuffix(name, ".ts") {
-		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Cache-Control", "no-cache, no-store")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, _ = w.Write(b)
+		return
 	}
-	http.ServeFile(w, r, full)
+	f, err := openShared(full)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	http.ServeContent(w, r, name, time.Time{}, f)
 }
 
 // safeComponent rejects path components that could escape the HLS dir.
@@ -112,3 +148,5 @@ func safeComponent(s string) bool {
 	}
 	return !strings.ContainsAny(s, "/\\") && !strings.Contains(s, "..")
 }
+
+var _ io.Writer = (*packetWriter)(nil)

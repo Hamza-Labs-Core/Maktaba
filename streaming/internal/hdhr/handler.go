@@ -37,6 +37,9 @@ type Handler struct {
 	Streamer Streamer
 	Auth     Authorizer // optional
 	Now      func() time.Time
+	// PublicBase (MAKTABA_PUBLIC_BASE_URL) overrides the request-derived
+	// base in discover/lineup URLs, e.g. "http://192.168.1.10:8781".
+	PublicBase string
 
 	leases *leaseRegistry
 }
@@ -78,7 +81,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 	if h.Auth != nil {
 		auth = h.Auth.DeviceAuth()
 	}
-	writeJSON(w, buildDiscover(dev, baseURL(r), auth))
+	writeJSON(w, buildDiscover(dev, h.base(r), auth))
 }
 
 func (h *Handler) DeviceXML(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +91,7 @@ func (h *Handler) DeviceXML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/xml")
-	_, _ = io.WriteString(w, deviceXML(dev, baseURL(r)))
+	_, _ = io.WriteString(w, deviceXML(dev, h.base(r)))
 }
 
 func (h *Handler) Lineup(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +114,7 @@ func (h *Handler) Lineup(w http.ResponseWriter, r *http.Request) {
 		}
 		channels = filtered
 	}
-	writeJSON(w, buildLineup(channels, baseURL(r)))
+	writeJSON(w, buildLineup(channels, h.base(r)))
 }
 
 func (h *Handler) LineupStatus(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +190,18 @@ func parseChannelParam(s string) (int, error) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// base is PublicBase when configured, else the request-derived base.
+func (h *Handler) base(r *http.Request) string { return publicBase(h.PublicBase, r) }
+
+// publicBase returns the configured public base (trailing slash
+// trimmed) or, when empty, the base derived from the request.
+func publicBase(configured string, r *http.Request) string {
+	if b := strings.TrimRight(strings.TrimSpace(configured), "/"); b != "" {
+		return b
+	}
+	return baseURL(r)
 }
 
 // baseURL derives scheme://host from the inbound request (D4), honouring

@@ -78,6 +78,21 @@ func (r *registry) put(id uuid.UUID, stop StopFunc) {
 	r.entries[id] = &entry{channelID: id, stop: stop, viewers: 1, lastTouch: r.now()}
 }
 
+// putWith records an active channel with an initial viewer count (HLS
+// stations start at 0 viewers and live on segment-fetch touches).
+func (r *registry) putWith(id uuid.UUID, stop StopFunc, viewers int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries[id] = &entry{channelID: id, stop: stop, viewers: viewers, lastTouch: r.now()}
+}
+
+// remove drops a channel without calling its stop (it already ended).
+func (r *registry) remove(id uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.entries, id)
+}
+
 // attach increments the viewer count (a re-tune or a new viewer) and
 // refreshes the LRU touch. Returns false if the channel isn't active.
 func (r *registry) attach(id uuid.UUID) bool {
