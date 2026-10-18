@@ -409,7 +409,10 @@ func runServe() error {
 
 			// Epic 27 (Live Channels) — channel definition CRUD (27.1)
 			// and the EPG / guide + XMLTV/M3U read surface (27.4).
-			router.MountP27(r, router.P27Deps{DB: appDB})
+			router.MountP27(r, router.P27Deps{
+				DB:            appDB,
+				PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"),
+			})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 

@@ -33,6 +33,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/channels/{id}", h.Get)
 	r.Patch("/api/channels/{id}", h.Patch)
 	r.Delete("/api/channels/{id}", h.Delete)
+	r.Get("/api/channels/{id}/logo", h.Logo)
 }
 
 func (h *Handler) repo() *repo { return &repo{db: h.DB} }
@@ -110,6 +111,17 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := ValidateTransition(req.Transition); err != nil {
 		fieldErrs = append(fieldErrs, httperror.FieldError{Field: "transition", Message: err.Error()})
 	}
+	if req.LogoPath != nil {
+		if err := ValidateLogoPath(*req.LogoPath); err != nil {
+			fieldErrs = append(fieldErrs, httperror.FieldError{Field: "logo_path", Message: err.Error()})
+		}
+		if strings.TrimSpace(*req.LogoPath) == "" {
+			req.LogoPath = nil
+		} else {
+			v := strings.TrimSpace(*req.LogoPath)
+			req.LogoPath = &v
+		}
+	}
 	if len(fieldErrs) == 0 {
 		if err := ValidateModeConfig(req.Mode, req.ModeConfig); err != nil {
 			fieldErrs = append(fieldErrs, httperror.FieldError{Field: "mode_config", Message: err.Error()})
@@ -125,6 +137,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		ID:           uuid.NewString(),
 		LibraryID:    req.LibraryID,
 		Name:         req.Name,
+		LogoPath:     req.LogoPath,
 		Category:     defaultStr(req.Category, "general"),
 		Mode:         req.Mode,
 		ModeConfig:   req.ModeConfig,
@@ -143,6 +156,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Slug = slug
+	c = withLogoURL(c)
 
 	// Number: explicit if given, else next free in scope.
 	if req.Number != nil {
@@ -242,6 +256,11 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if req.Number != nil && *req.Number <= 0 {
 		fieldErrs = append(fieldErrs, httperror.FieldError{Field: "number", Message: "must be positive"})
 	}
+	if req.LogoPath != nil {
+		if err := ValidateLogoPath(*req.LogoPath); err != nil {
+			fieldErrs = append(fieldErrs, httperror.FieldError{Field: "logo_path", Message: err.Error()})
+		}
+	}
 	if len(req.ModeConfig) > 0 && len(fieldErrs) == 0 {
 		if err := ValidateModeConfig(effMode, req.ModeConfig); err != nil {
 			fieldErrs = append(fieldErrs, httperror.FieldError{Field: "mode_config", Message: err.Error()})
@@ -265,6 +284,13 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Number != nil {
 		add("number", *req.Number)
+	}
+	if req.LogoPath != nil {
+		if v := strings.TrimSpace(*req.LogoPath); v == "" {
+			add("logo_path", nil)
+		} else {
+			add("logo_path", v)
+		}
 	}
 	if req.Category != nil {
 		add("category", *req.Category)
