@@ -1113,7 +1113,7 @@
   "queue.run.write.youtube": "Read YouTube playlists and dates",
   "queue.run.notSetUp": "Not set up",
   "queue.run.exact": "Exact upload dates",
-  "queue.run.exactNote": "Not a separate option here: exact dates come from the downloaded info files when videos are linked.",
+  "queue.run.exactNote": "slow: one request per video; asked only for series episodes whose date is approximate",
   "queue.run.steps": "Steps",
   "queue.run.startAt": "Start at",
   "queue.run.firstStep": "the first step",

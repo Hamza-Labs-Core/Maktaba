@@ -4,6 +4,7 @@
 //   libraries            the subjects of POST /api/queue/retrigger
 //   write to Plex / TV   the plex / dizquetv extensions' enabled flag (PUT /api/extensions/{name})
 //   read YouTube         the youtube_sync queue's enabled flag (PATCH /api/queues/{stage})
+//   exact upload dates   the exact_dates rule's enabled setting (PATCH /api/rules/exactdates)
 //   start at <step>      a retrigger of that queue in "from here on" mode (force_cascade);
 //                        without it, each library's entry queues in the normal "only what
 //                        changed" mode
@@ -16,6 +17,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
+import { rulesApi } from "../../lib/rulesApi";
 import type {
   Extension,
   LibraryQueueRow,
@@ -30,6 +32,8 @@ import { useAction } from "./useAction";
 /** The planner's single global subject (engine.graph.CATALOG_ID). */
 export const CATALOG_ID = "00000000-0000-0000-0000-00000000ca7a";
 const YOUTUBE_STAGE = "youtube_sync";
+/** Off until its rule enables it (rules.exactdates.enabled), so the switch is that setting. */
+const EXACT_STAGE = "exact_dates";
 const WRITE_EXTENSIONS = ["plex", "dizquetv"] as const;
 const START_KINDS = ["library", "catalog", "season"] as const;
 const RUN_PRIORITY = 50;
@@ -45,7 +49,9 @@ export const canStartAt = (s: StageInfo): boolean =>
 /** Queues the "leave out" list offers: not hidden, not the YouTube read, not an extension's. */
 export const leaveOutChoices = (stages: StageInfo[]): StageInfo[] =>
   stages
-    .filter((s) => !s.hidden && !s.extension && s.stage !== YOUTUBE_STAGE)
+    .filter(
+      (s) => !s.hidden && !s.extension && s.stage !== YOUTUBE_STAGE && s.stage !== EXACT_STAGE
+    )
     .sort((a, b) => a.lane_order - b.lane_order);
 
 /**
@@ -118,6 +124,27 @@ export function RunPanel({
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<RetriggerResponse | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  // the saved exactdates.enabled setting (null: not known, e.g. the rules could not be read)
+  const [exactSaved, setExactSaved] = useState<boolean | null>(null);
+  const [exact, setExact] = useState(false);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => rulesApi.list())
+      .then((r) => {
+        const v = r.sections
+          .find((x) => x.key === "exactdates")
+          ?.fields.find((f) => f.name === "enabled")?.value;
+        if (live && typeof v === "boolean") {
+          setExactSaved(v);
+          setExact(v);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const choices = useMemo(() => leaveOutChoices(stages), [stages]);
   const byName = useMemo(() => new Map(stages.map((s) => [s.stage, s])), [stages]);
@@ -181,6 +208,10 @@ export function RunPanel({
       }
       if (yt && write[YOUTUBE_STAGE] !== undefined && yt.enabled !== write[YOUTUBE_STAGE]) {
         await queueApi.patchStage(YOUTUBE_STAGE, { enabled: write[YOUTUBE_STAGE] });
+      }
+      if (exactSaved !== null && exact !== exactSaved) {
+        await rulesApi.patch("exactdates", { enabled: exact }, []);
+        setExactSaved(exact);
       }
       for (const name of WRITE_EXTENSIONS) {
         const e = ext.get(name);
@@ -307,7 +338,12 @@ export function RunPanel({
             <span>{t("queue.run.write.youtube")}</span>
           </label>
           <label className="mkt-q-check">
-            <input type="checkbox" checked={false} disabled />
+            <input
+              type="checkbox"
+              checked={exact}
+              disabled={exactSaved === null}
+              onChange={(ev) => setExact(ev.target.checked)}
+            />
             <span>
               {t("queue.run.exact")} <span className="mkt-q-muted">{t("queue.run.exactNote")}</span>
             </span>

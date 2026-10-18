@@ -184,11 +184,30 @@ describe("RunPanel", () => {
     ]);
   });
 
-  it("exact dates is shown, switched off, with the reason", () => {
+  it("exact dates waits for its saved setting", () => {
     setup();
     const box = screen.getByRole("checkbox", { name: /Exact upload dates/ });
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
+  });
+
+  it("exact dates switches its rule on before the run", async () => {
+    get.mockImplementation(async (url: string) =>
+      url === "/api/rules"
+        ? { sections: [{ key: "exactdates", fields: [{ name: "enabled", value: false }] }] }
+        : undefined
+    );
+    patch.mockResolvedValue({ section: "exactdates", changed: ["enabled"] });
+    setup();
+    const box = screen.getByRole("checkbox", { name: /Exact upload dates/ });
+    await waitFor(() => expect(box).toBeEnabled());
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(patch).toHaveBeenCalledWith("/api/rules/exactdates", {
+      set: { enabled: true },
+      reset: [],
+    });
   });
 
   it("a non-admin sees the panel but cannot start", () => {

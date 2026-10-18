@@ -1113,7 +1113,7 @@
   "queue.run.write.youtube": "قراءة قوائم تشغيل يوتيوب وتواريخه",
   "queue.run.notSetUp": "غير مُعدّ",
   "queue.run.exact": "تواريخ الرفع الدقيقة",
-  "queue.run.exactNote": "ليس خياراً منفصلاً هنا: تأتي التواريخ الدقيقة من ملفات المعلومات المحمّلة عند ربط الفيديوهات.",
+  "queue.run.exactNote": "بطيء: طلب لكل فيديو، فقط لحلقات السلاسل ذات التاريخ التقريبي",
   "queue.run.steps": "الخطوات",
   "queue.run.startAt": "البدء من",
   "queue.run.firstStep": "الخطوة الأولى",
