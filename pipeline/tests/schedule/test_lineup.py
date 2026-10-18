@@ -262,8 +262,9 @@ def test_a_khutbah_is_never_on_the_quran_lane() -> None:
     sermon = season("k1", "نظرات في سورة الأنفال", genre="quran_recitation",
                     presenter="القارئ", n=9,
                     tags={"format:recitation": 1.0, "format:khutbah": 0.9})  # fmt: skip
-    p = plan([*reciter, sermon], themes=(ThemeSpec("quran", "Quran", "القرآن", 101,
-             ("quran_recitation",)),), mix_channel=False, presenter_channels=False)  # fmt: skip
+    quran_theme = ThemeSpec("quran", "Quran", "القرآن", 101, ("quran_recitation",), kind="quran")
+    p = plan([*reciter, sermon], themes=(quran_theme,), mix_channel=False,
+             presenter_channels=False)  # fmt: skip
     sermon_paths = {e.path for e in sermon.episodes}
     quran = next(c for c in p.channels if c.key == "quran")
     on_quran = {e.path for k in quran.lanes for u in p.lanes[k].units for e in u.episodes}

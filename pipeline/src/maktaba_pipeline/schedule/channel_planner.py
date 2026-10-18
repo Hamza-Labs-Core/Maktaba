@@ -62,6 +62,7 @@ from __future__ import annotations
 import contextlib
 import math
 import re
+import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -276,6 +277,25 @@ class ThemeSpec:
     libraries: tuple[str, ...] = ()
     #: libraries never on this channel, whatever their tags
     exclude_libraries: tuple[str, ...] = ()
+    #: shows (part of the show's name) this channel is made of; with ``libraries``, only
+    #: those shows of those libraries («قصص الأنبياء» of «نبيل العوضي»)
+    series: tuple[str, ...] = ()
+    #: the channel type. ``theme``: a show grid of the shows its tags (and libraries)
+    #: take. ``quran``: the Quran's recitation non-stop, reciter lanes. ``nonstop``: only
+    #: its own shows (``libraries`` / ``series``) one after another in their order, one
+    #: every ``slot_minutes`` all day, filler between, the first again after the last
+    #: episode; no show grid, no month rule (``min_hours`` or nothing)
+    kind: str = "theme"
+    #: nonstop: an episode starts every this many minutes and filler pads the rest
+    #: (0: the episodes' own length, rounded as a show slot is)
+    slot_minutes: int = 0
+    #: second-choice filler (its breaks), after the clips on its own topics: clips on
+    #: these topics («islamic_history») …
+    filler_topics: tuple[str, ...] = ()
+    #: … that are also one of these («nasheed», «poetry»; empty: any clip) …
+    filler_with: tuple[str, ...] = ()
+    #: … or the short clips of these libraries («استوديو القمة»; on ``filler_with`` if set)
+    filler_libraries: tuple[str, ...] = ()
 
 
 def _lib_in(names: Sequence[str], *where: str) -> bool:
@@ -283,11 +303,20 @@ def _lib_in(names: Sequence[str], *where: str) -> bool:
     return any(n and any(n in w for w in where if w) for n in names)
 
 
+def _owns(t: ThemeSpec, name: str, library: str, presenter: str, folder: str) -> bool:
+    """The show is one the channel is made of (its ``libraries`` and ``series``)."""
+    if not t.libraries and not t.series:
+        return False
+    if t.libraries and not _lib_in(t.libraries, library, presenter, folder):
+        return False
+    return not t.series or _lib_in(t.series, name)
+
+
 #: In priority order: when more themes have enough content than the lineup has room
 #: for (:attr:`PlannerConfig.max_channels`), the earlier ones get a channel.
 DEFAULT_THEMES: tuple[ThemeSpec, ...] = (
     ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",),
-              formats=("recitation",), category="quran", min_hours=100.0),
+              formats=("recitation",), category="quran", min_hours=100.0, kind="quran"),
     ThemeSpec("kids", "Kids & Family", "الأطفال والأسرة", 110, ("seerah", "prophets_stories"),
               audiences=("kids", "kids_friendly", "beginners"), category="kids",
               exclude=("audience:adults",)),
@@ -905,8 +934,10 @@ def _in_theme(s: SeasonCandidate, t: ThemeSpec, cfg: PlannerConfig) -> bool:
         return False
     if _lib_in(t.exclude_libraries, s.library, s.presenter, s.folder):
         return False
-    if _lib_in(t.libraries, s.library, s.presenter, s.folder) and not _is_recitation(s, cfg):
+    if _owns(t, s.name, s.library, s.presenter, s.folder) and not _is_recitation(s, cfg):
         return True
+    if t.kind == "nonstop":
+        return False  # only its own shows
     if s.genre in t.topics:
         return True
     if _is_recitation(s, cfg) and not _is_khutbah(s, cfg):
@@ -2048,13 +2079,30 @@ def suggest_channels(
     break_any = [f for f in break_short if f.topic_score(cfg.break_filler_topics) >= fmin]
     break_lib = [f for f in break_short if any(x in f.folder or x in f.presenter for x in libs)]
 
+    def second_choice(t: ThemeSpec) -> list[FillerItem]:
+        """A theme's second-choice filler (``filler_topics`` / ``filler_with`` /
+        ``filler_libraries``): the history poems of a prophets' stories channel."""
+        if not t.filler_topics and not t.filler_libraries:
+            return []
+
+        def ok(f: FillerItem) -> bool:
+            if f.promo_of or _excluded(f.tags, t.exclude, cfg):
+                return False
+            if t.filler_with and f.topic_score(t.filler_with) < fmin:
+                return False
+            if t.filler_topics and f.topic_score(t.filler_topics) >= fmin:
+                return True
+            return _lib_in(t.filler_libraries, f.folder, f.presenter, f.plex_library or "")
+
+        return [f for f in {f.path: f for f in [*fillers, *held_fillers]}.values() if ok(f)]
+
     def break_pool(key: str, label: str, focus: tuple[str, ...], exclude: tuple[str, ...],
-                   own: str | None, mix: bool,
-                   audiences: tuple[str, ...] = ()) -> str | None:  # fmt: skip
+                   own: str | None, mix: bool, audiences: tuple[str, ...] = (),
+                   extra: Sequence[FillerItem] = ()) -> str | None:  # fmt: skip
         """The channel's breaks: nasheeds and dua, and the chosen libraries' short clips
         that clearly belong to it: on a topic channel scored on its topic; on an audience
         or format channel (Kids) among its own filler; any on the mix or a presenter's."""
-        if not cfg.break_filler:
+        if not cfg.break_filler and not extra:
             return None
         mine = {i.path for i in pools[own].items} if own in pools else set()
 
@@ -2072,15 +2120,19 @@ def suggest_channels(
         nasheed_ok = key in cfg.break_nasheed_channels
         items = [
             f for f in {f.path: f for f in break_any + break_lib}.values()
-            if related(f) and not _excluded(f.tags, exclude, cfg)
+            if cfg.break_filler and related(f) and not _excluded(f.tags, exclude, cfg)
             and (nasheed_ok or f.topic_score(("nasheed",)) < fmin)
         ]  # fmt: skip
+        have = {f.path for f in items}
+        items += [f for f in extra if f.path not in have]  # its own settings: as they say
         if not items:
             return None
         p = _pool(f"{key}.breaks", f"{label} · فواصل", items, None,
                   f"nasheed / dua clips and short clips of {', '.join(libs) or '-'} "
                   + (f"on {'/'.join(focus)} (≥ {cfg.break_related_min_score})" if focus else "")
-                  + f" (≤ {cfg.break_filler_max_minutes:g} min)")  # fmt: skip
+                  + f" (≤ {cfg.break_filler_max_minutes:g} min)"
+                  + (f"; {len(extra)} second-choice clip(s) of its settings" if extra
+                     else ""))  # fmt: skip
         pools[p.key] = p
         return p.key
 
@@ -2167,6 +2219,7 @@ def suggest_channels(
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
         exclude: tuple[str, ...] = (), focus: tuple[str, ...] = (),
         audiences: tuple[str, ...] = (), prefer: tuple[str, ...] = (),
+        extra: Sequence[FillerItem] = (),
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
@@ -2269,7 +2322,7 @@ def suggest_channels(
                                 general.key if kind != "theme" or cfg.theme_general_filler
                                 else None,
                                 break_pool(key, label, focus, exclude, pool_keys.get("topic"),
-                                           mix, audiences)] if p is not None)),
+                                           mix, audiences, extra)] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip
@@ -2342,7 +2395,7 @@ def suggest_channels(
         s = by_id[i]
         if cfg.theme_show_min_episode_share <= 0 or s.genre in t.topics:
             return True
-        if _lib_in(t.libraries, s.library, s.presenter, s.folder):
+        if _owns(t, s.name, s.library, s.presenter, s.folder):
             return True  # a library the channel is made of: all its shows
         lo = cfg.topic_min_score
         if (_score(s.tags, "audience", t.audiences) >= lo
@@ -2483,12 +2536,85 @@ def suggest_channels(
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
                      mix=False, exclude=t.exclude, focus=t.topics,
-                     audiences=t.audiences, prefer=t.libraries)  # fmt: skip
+                     audiences=t.audiences, prefer=t.libraries,
+                     extra=second_choice(t))  # fmt: skip
         return whole_shows(ids)
 
+    def build_nonstop(t: ThemeSpec, ids: set[str]) -> set[str]:
+        """Its own shows one after another in their order: an episode every
+        ``slot_minutes`` all day, the clips on its topics (then its second choice) between."""
+        us = _order_units(units[i] for i in ids)
+        hours = sum(u.duration_s for u in us) / 3600
+        shows = tuple(dict.fromkeys(u.name for u in us))
+        longest = max((u.max_episode_s for u in us), default=0.0) / 60
+        step = cfg.slot_round_minutes or 30
+        every = t.slot_minutes or _slot_minutes(
+            statistics.median(e.duration_s for u in us for e in u.episodes), cfg
+        )
+        if every < longest:  # never cut an episode: the slot grows to the longest one
+            every = int(step * math.ceil(longest / step))
+        label = t.name_ar or t.name
+        ln = Lane(
+            key=f"{t.key}.nonstop", name=label, tier_group="mixed", units=tuple(us), rank=0.0,
+            pattern="nonstop", cadence="strip", slot_minutes=every, shows=shows,
+            reasons=(f"{', '.join(u.label for u in us)}: {sum(len(u.episodes) for u in us)} "
+                     "episodes in order; after the last the first starts again",),
+        )  # fmt: skip
+        lanes[ln.key] = ln
+        topics = t.topics or ("__none__",)
+        pk = channel_pools(
+            t.key, t.name,
+            (f for f in fillers if not f.promo_of and not _excluded(f.tags, t.exclude, cfg)
+             and f.topic_score(topics) >= fmin),
+            f"filler on {'/'.join(t.topics) or '-'} (≥ {fmin})",
+        )  # fmt: skip
+        brk = break_pool(t.key, label, t.topics, t.exclude, pk["topic"], False, t.audiences,
+                         second_choice(t))  # fmt: skip
+        starts = list(range(0, DAY_MINUTES, every))
+        slots = [Slot(a, min(a + every, DAY_MINUTES) if k < len(starts) - 1 else DAY_MINUTES,
+                      ln.key, "nonstop", pk["topic"], kind="program",
+                      reasons=(f"an episode every {every} min, filler to the hour",))
+                 for k, a in enumerate(starts)]  # fmt: skip
+        channels.append(
+            ChannelSuggestion(
+                key=t.key, number=t.number, name=t.name, name_ar=t.name_ar, kind="nonstop",
+                category=t.category, lanes=(ln.key,), slots=tuple(slots), ramadan_slots=(),
+                filler_pools=tuple(p for p in (pk["topic"], brk) if p is not None),
+                hours=hours,
+                reasons=(f"{len(us)} season(s) of {', '.join(shows)}, {hours:.1f} h: an episode "
+                         f"every {every} min all day, no show grid; the whole run every "
+                         f"{sum(len(u.episodes) for u in us) * every / DAY_MINUTES:.1f} days",
+                         f"filler: clips on {'/'.join(t.topics) or '-'}"
+                         + (", then its second choice (" + ", ".join(
+                             x for x in ("/".join(t.filler_topics), "/".join(t.filler_with),
+                                         "/".join(t.filler_libraries)) if x) + ")"
+                            if t.filler_topics or t.filler_libraries else "")),
+            )
+        )  # fmt: skip
+        return set(ids)
+
+    kinds = ("theme", "quran", "nonstop")
     for n_t, t in enumerate(cfg.themes):
+        if t.kind not in kinds:
+            unplaced.append((f"theme {t.key}", f"kind {t.kind!r} is none of {', '.join(kinds)}"))
+            continue
+        if t.kind == "nonstop":
+            # its own shows only, whole; no month rule: a run of a series repeats by nature
+            own = regular_ids | khutbah_ids
+            ids = {i for i in own if i in by_id and _in_theme(by_id[i], t, cfg)}
+            ids = {i for i in whole_shows(ids) if i in own}
+            if not ids:
+                unplaced.append((f"theme {t.key}", "non-stop: none of its libraries' / series' "
+                                                   "shows are in the library"))  # fmt: skip
+                continue
+            need = t.min_hours or 0.0
+            if hours_of(ids) < need:
+                short(f"theme {t.key}", hours_of(ids), need)
+                continue
+            offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_nonstop, t), t)
+            continue
         need = t.min_hours if t.min_hours is not None else max(cfg.theme_min_hours, month_h)
-        if t.key == "quran":
+        if t.kind == "quran":
             q_hours = sum(units[i].duration_s for i in quran_ids) / 3600
             if not quran_ids:
                 continue
@@ -2601,7 +2727,7 @@ def suggest_channels(
         if t is None:
             return 3
         u, tg = units[i], tags_of.get(i, {})
-        if _lib_in(t.libraries, u.library, u.presenter, u.folder):
+        if _owns(t, u.name, u.library, u.presenter, u.folder):
             return -1  # a library the channel is mainly made of: its home
         if u.genre in t.topics:
             return 0

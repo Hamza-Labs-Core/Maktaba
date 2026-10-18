@@ -102,9 +102,13 @@ PLANNER_HELP: dict[str, Help] = {
         "topics / audiences / formats / occasions whose shows it takes, and the tags it "
         "never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is "
         "mainly made of (their shows join it, live there and come first); exclude libraries: "
-        "never on it. Min hours: this theme's own minimum "
+        "never on it. Series: the shows the channel is made of (part of the show's name; "
+        "with libraries, only those shows of those libraries). Kind: theme (a show grid of "
+        "the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its "
+        "own libraries / series, back to back in order all day, the first again after the "
+        "last; no grid, no breaks). Min hours: this theme's own minimum "
         "instead of the days-without-a-repeat rule (the Quran channel repeats by nature); "
-        "empty: the rule.",
+        "empty: the rule (a nonstop channel: none).",
     ),
     "topic_min_score": Help(
         CH,

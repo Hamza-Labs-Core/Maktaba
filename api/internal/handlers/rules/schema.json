@@ -10,7 +10,7 @@
      "kind": "rows",
      "group": "Channels",
      "label": "Themed channels",
-     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule.",
+     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Series: the shows the channel is made of (part of the show's name; with libraries, only those shows of those libraries). Kind: theme (a show grid of the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its own libraries / series, back to back in order all day, the first again after the last; no grid, no breaks). Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule (a nonstop channel: none).",
      "default": [
       {
        "key": "quran",
@@ -29,7 +29,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "quran",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "kids",
@@ -53,7 +59,13 @@
         "audience:adults"
        ],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "ramadan",
@@ -73,7 +85,13 @@
        ],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "seerah",
@@ -90,7 +108,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "tafsir",
@@ -107,7 +131,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "hadith",
@@ -124,7 +154,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "fiqh",
@@ -141,7 +177,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "aqeedah",
@@ -159,7 +201,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "history",
@@ -177,7 +225,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "palestine",
@@ -194,7 +248,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "news",
@@ -211,7 +271,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "talk",
@@ -230,7 +296,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "prophets",
@@ -247,7 +319,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "raqaiq",
@@ -266,7 +344,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "akhlaq",
@@ -284,7 +368,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "family",
@@ -303,7 +393,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "salah",
@@ -320,7 +416,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "muamalat",
@@ -337,7 +439,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "family_fiqh",
@@ -354,7 +462,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "fasting",
@@ -371,7 +485,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "qiyam",
@@ -388,7 +508,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "quran_learning",
@@ -405,7 +531,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "quran_competition",
@@ -422,7 +554,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "zakat",
@@ -439,7 +577,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "hajj",
@@ -456,7 +600,13 @@
        ],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "stories",
@@ -473,7 +623,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       },
       {
        "key": "nasheed",
@@ -491,7 +647,13 @@
        "occasions": [],
        "exclude": [],
        "libraries": [],
-       "exclude_libraries": []
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": []
       }
      ],
      "columns": [
@@ -507,7 +669,13 @@
       "occasions",
       "exclude",
       "libraries",
-      "exclude_libraries"
+      "exclude_libraries",
+      "series",
+      "kind",
+      "slot_minutes",
+      "filler_topics",
+      "filler_with",
+      "filler_libraries"
      ],
      "column_kinds": [
       "str",
@@ -522,6 +690,12 @@
       "list",
       "list",
       "list",
+      "list",
+      "list",
+      "str",
+      "int",
+      "list",
+      "list",
       "list"
      ],
      "column_optional": [
@@ -529,6 +703,12 @@
       false,
       false,
       false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
       true,
       true,
       true,

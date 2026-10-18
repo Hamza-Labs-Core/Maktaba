@@ -159,7 +159,9 @@ def test_the_quran_channel_takes_recitations_not_talk_about_dua() -> None:
     recited = LooseVideo(path="Y:/q/r.mp4", duration_s=200, title="سورة الإخلاص", folder="Y:/q",
                          presenter="القارئ", tags={"topic:quran_recitation": 0.9},
                          genre="quran_recitation", is_short=True)  # fmt: skip
-    themes = (ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",)),)
+    themes = (
+        ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",), kind="quran"),
+    )
     plan = suggest_channels(reciter, [talk, recited],
                             PlannerConfig(**{**SMALL, "themes": themes}))  # type: ignore[arg-type]  # fmt: skip
     pool = (

@@ -237,7 +237,7 @@ def audit(
                 if it.show == "promo":
                     it.verdict, it.why = "strong", "a promo of one of the channel's shows"
                     continue
-                if theme.key != "quran" and "library.quran" in it.show:
+                if theme.kind != "quran" and "library.quran" in it.show:
                     it.verdict, it.why = "design", "the dawn Quran hour every channel has"
                     continue
                 it.verdict, it.why = judge(theme, cfg, it.title, it.library,
