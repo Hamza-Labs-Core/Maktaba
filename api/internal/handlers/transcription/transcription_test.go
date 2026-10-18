@@ -68,7 +68,7 @@ func librariesRule(rows ...[]driver.Value) *queuestest.Rule {
 }
 
 func stagesRule(rows ...[]driver.Value) *queuestest.Rule {
-	return &queuestest.Rule{Match: "distinct on (stage, subject_id)", Cols: []string{"stage", "state", "n"}, Rows: rows}
+	return &queuestest.Rule{Match: "group by stage, subject_id", Cols: []string{"stage", "p", "r", "d", "f"}, Rows: rows}
 }
 
 func segmentsRule(n int64) *queuestest.Rule {
@@ -91,16 +91,10 @@ func fullRules() []*queuestest.Rule {
 			[]driver.Value{libB, "Series", int64(50), int64(0), 180000.0, 0.0},          // 50 h
 		),
 		stagesRule(
-			[]driver.Value{"transcribe", "done", int64(40)},
-			[]driver.Value{"transcribe", "pending", int64(70)},
-			[]driver.Value{"transcribe", "paused", int64(5)},
-			[]driver.Value{"transcribe", "running", int64(2)},
-			[]driver.Value{"transcribe", "claimed", int64(1)},
-			[]driver.Value{"transcribe", "failed", int64(3)},
-			[]driver.Value{"transcribe", "cancelled", int64(9)},
-			[]driver.Value{"subtitle_gen", "done", int64(38)},
-			[]driver.Value{"index", "resuming", int64(4)},
-			[]driver.Value{"other", "done", int64(99)},
+			[]driver.Value{"transcribe", int64(75), int64(3), int64(40), int64(3)},
+			[]driver.Value{"subtitle_gen", int64(0), int64(0), int64(38), int64(0)},
+			[]driver.Value{"index", int64(0), int64(4), int64(0), int64(0)},
+			[]driver.Value{"other", int64(1), int64(1), int64(99), int64(1)},
 		),
 		segmentsRule(12345),
 		// 10 min: 5 h of audio -> 30x realtime; 1 h: 20 h of audio -> 20x.
@@ -181,7 +175,7 @@ func TestSummary_QueryArguments(t *testing.T) {
 	f := newFixture(fullRules()...)
 	decode(t, f.get(viewer()))
 
-	stage := f.db.Find("distinct on (stage, subject_id)")
+	stage := f.db.Find("group by stage, subject_id")
 	if len(stage) != 1 || stage[0].Args[0] != "{\"transcribe\",\"subtitle_gen\",\"index\"}" {
 		t.Errorf("stage counts call = %+v", stage)
 	}
