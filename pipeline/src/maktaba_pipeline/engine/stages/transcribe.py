@@ -16,14 +16,15 @@ Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import math
 import os
-from typing import Any
+import platform
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-import numpy as np
-
 from ...db.jobs import Job
-from ...stt.batched import SAMPLE_RATE, Transcript, WhisperSettings, get_transcriber
+from ...stt.settings import SAMPLE_RATE, Transcript, WhisperSettings
 from ..context import StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -33,7 +34,30 @@ from ._common import load_video, require_video
 from .content_hash import READ_TIMEOUT_S, on_disk
 from .registry import StageImpl
 
-__all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env"]
+if TYPE_CHECKING:
+    import numpy as np
+
+    from ...stt.batched import BatchedTranscriber
+
+__all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env", "unavailable"]
+
+
+def unavailable() -> str | None:
+    """Why this worker cannot run transcribe, or None: MLX-Whisper runs on Apple
+    Silicon only, with the ``stt`` extra. A worker without it never claims the stage
+    (it would fail every job), but still imports this module to enqueue it."""
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return "MLX-Whisper needs Apple Silicon"
+    for mod in ("numpy", "mlx_whisper"):
+        if importlib.util.find_spec(mod) is None:
+            return f"{mod} is not installed (the stt extra)"
+    return None
+
+
+def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
+    from ...stt.batched import get_transcriber as shared
+
+    return shared(settings)
 
 
 #: decoding the audio off the share: generous, a long lecture over a busy NAS
@@ -131,6 +155,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 
 async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarray:
     """The file's first audio track as mono float32 at 16 kHz."""
+    import numpy as np
+
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
         "-i", path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
@@ -254,7 +280,7 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
                     s.start,
                     s.end,
                     s.text,
-                    round(float(np.exp(s.avg_logprob)), 4),
+                    round(math.exp(s.avg_logprob), 4),
                     dumps(meta),
                 )
             )
@@ -289,4 +315,4 @@ def _backend_version() -> str | None:
         return None
 
 
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)
+IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint, unavailable=unavailable)

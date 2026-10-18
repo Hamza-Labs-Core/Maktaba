@@ -154,4 +154,13 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     )
 
 
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)
+def unavailable() -> str | None:
+    """Why this worker cannot index (the optional ``search`` extra is missing), or None."""
+    from ...search.semantic import search_available
+
+    if search_available():
+        return None
+    return "chromadb / sentence-transformers are not installed (the search extra)"
+
+
+IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint, unavailable=unavailable)

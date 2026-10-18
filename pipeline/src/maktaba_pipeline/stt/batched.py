@@ -33,6 +33,7 @@ import numpy as np
 from ..log import get_logger
 from .align import AlignItem, align_batch
 from .rules import TimestampRules
+from .settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings
 
 __all__ = [
     "BatchedTranscriber",
@@ -44,50 +45,11 @@ __all__ = [
 
 _log = get_logger()
 
-SAMPLE_RATE = 16_000
 HOP_LENGTH = 160
 N_FRAMES = 3000  # one 30 s window, in mel frames
 FRAMES_PER_SECOND = SAMPLE_RATE // HOP_LENGTH  # 100
 INPUT_STRIDE = 2  # mel frames per audio token
 TIME_PRECISION = INPUT_STRIDE * HOP_LENGTH / SAMPLE_RATE  # 0.02 s per timestamp token
-
-
-@dataclass(frozen=True, slots=True)
-class WhisperSettings:
-    """Whisper's knobs, as ``mlx_whisper.transcribe`` names them."""
-
-    model: str = "mlx-community/whisper-large-v3-turbo"
-    language: str = "ar"
-    max_batch: int = 32
-    word_timestamps: bool = True
-    #: MLX's GPU memory: a limit for the arrays, and a cap on its cache of freed
-    #: buffers (unbounded by default: every pass allocates differently sized buffers,
-    #: and the cache grew to 70+ GB in an hour)
-    gpu_limit_gb: float = 24.0
-    gpu_cache_gb: float = 2.0
-    temperatures: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
-    compression_ratio_threshold: float = 2.4
-    logprob_threshold: float = -1.0
-    no_speech_threshold: float = 0.6
-
-
-@dataclass(slots=True)
-class Sentence:
-    start: float
-    end: float
-    text: str
-    avg_logprob: float
-    no_speech_prob: float
-    words: list[tuple[float, float, str]] | None = None
-
-
-@dataclass(slots=True)
-class Transcript:
-    sentences: list[Sentence]
-    audio_sec: float
-    language: str
-    model: str
-    gpu_sec: float  # wall time from admission to the last window
 
 
 class _Decoded(Protocol):

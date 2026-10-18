@@ -8,6 +8,7 @@ implementations through :func:`register_impl` (see ``engine.loader``).
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..graph import InputFingerprint, OutputFingerprint, StageHandler
@@ -20,6 +21,9 @@ class StageImpl:
     run: StageHandler | None = None
     input_fingerprint: InputFingerprint | None = None
     output_fingerprint: OutputFingerprint | None = None
+    #: why this worker cannot run the stage (a platform or an optional extra it
+    #: lacks), or None; a worker never claims a stage it cannot run
+    unavailable: Callable[[], str | None] | None = None
 
 
 #: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it

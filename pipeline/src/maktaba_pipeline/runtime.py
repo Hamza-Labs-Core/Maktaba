@@ -539,6 +539,11 @@ def _served_stages(
             impl = get_impl(st.name)
             if impl is None or impl.run is None:
                 continue
+            why = impl.unavailable() if impl.unavailable is not None else None
+            if why is not None:
+                if requested is not None:
+                    _log.warning("stage_unavailable_here", stage=st.name, reason=why)
+                continue
         out.append(st.name)
     return out
 
