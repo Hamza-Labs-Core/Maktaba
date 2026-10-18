@@ -47,6 +47,7 @@ import shutil
 import sqlite3
 import sys
 import tarfile
+import tempfile
 import unicodedata
 import uuid
 from collections import defaultdict
@@ -177,6 +178,40 @@ def _open_cache(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{quote(path.as_posix())}?immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _is_live(path: Path) -> bool:
+    """A cache another process is writing keeps pages in its ``-wal`` file."""
+    wal = path.with_name(path.name + "-wal")
+    return wal.exists() and wal.stat().st_size > 0
+
+
+@contextlib.contextmanager
+def _cache_connection(path: Path) -> Iterator[sqlite3.Connection]:
+    """The cache, read-only. A live WAL cache is first copied to a consistent snapshot
+    with SQLite's backup API (an ``immutable`` open of it reads half-written pages and
+    fails with "database disk image is malformed"); the import reads the snapshot."""
+    if not _is_live(path):
+        conn = _open_cache(path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+        return
+    with tempfile.TemporaryDirectory(prefix="mediaintel-snapshot-") as tmp:
+        snap = Path(tmp) / "snapshot.db"
+        src = sqlite3.connect(f"file:{quote(path.as_posix())}?mode=ro", uri=True)
+        dst = sqlite3.connect(snap)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        conn = _open_cache(snap)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 def _has(conn: sqlite3.Connection, table: str) -> bool:
@@ -392,7 +427,8 @@ async def run_import(
     or only those named) and their videos from the cache itself: nothing is read from the
     share, and each new video's file identity is a queued ``content_hash`` job."""
     maps = path_maps or []
-    conn = _open_cache(cache)
+    snapshot = contextlib.ExitStack()
+    conn = snapshot.enter_context(_cache_connection(cache))
     try:
         report = ImportReport(applied=apply)
         before = {t: int(await db.fetchval(f"SELECT count(*) FROM {t}")) for t in TABLES}
@@ -420,7 +456,7 @@ async def run_import(
             pass
         return report
     finally:
-        conn.close()
+        snapshot.close()
 
 
 async def _import(
