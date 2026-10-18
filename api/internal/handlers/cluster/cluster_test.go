@@ -272,6 +272,24 @@ func TestJoinConflictWhenMember(t *testing.T) {
 	problemOf(t, f.do("POST", "/api/cluster/join", joinBody(nodeID, nodePubB64), nil), 409, "already_member")
 }
 
+func TestPendingRequestKeepsItsKey(t *testing.T) {
+	f := newFixture(t)
+	f.openJoins()
+	first := f.join()
+	// someone who saw the node id asks with another key: refused, the request stands
+	_, otherPub, err := cluster.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	problemOf(t, f.do("POST", "/api/cluster/join", joinBody(nodeID, cluster.EncodeKey(otherPub)), nil), 409, "pending_elsewhere")
+	// the machine itself asking again (same key) renews it
+	again := f.join()
+	if again.HomePubkey == first.HomePubkey {
+		t.Error("renewal should give a fresh home key")
+	}
+	decode(t, f.approve(nodeCode(t, again.HomePubkey)), 200, nil)
+}
+
 // ---------- poll ----------
 
 func TestPollStates(t *testing.T) {
@@ -344,11 +362,11 @@ func TestApproveSealsCredentials(t *testing.T) {
 	var nv Node
 	// The page may send the code as shown: "123 456".
 	decode(t, f.approve(code[:3]+" "+code[3:]), 200, &nv)
-	if nv.State != "approved" || nv.DBRole == nil || *nv.DBRole != "maktaba_node_6f1c2a3b" ||
+	if nv.State != "approved" || nv.DBRole == nil || *nv.DBRole != "maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7" ||
 		nv.ApprovedBy == nil || *nv.ApprovedBy != "user:u1" {
 		t.Errorf("node = %+v", nv)
 	}
-	pw, ok := f.roles.created["maktaba_node_6f1c2a3b"]
+	pw, ok := f.roles.created["maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7"]
 	if !ok || len(pw) != 43 {
 		t.Fatalf("roles = %v", f.roles.created)
 	}
@@ -376,7 +394,7 @@ func TestApproveSealsCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := f.store.Identity(context.Background())
-	wantURL := "postgres://maktaba_node_6f1c2a3b:" + pw + "@192.168.1.20:6543/maktaba?sslmode=prefer"
+	wantURL := "postgres://maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7:" + pw + "@192.168.1.20:6543/maktaba?sslmode=prefer"
 	if p.V != 1 || p.NodeID != nodeID || p.DatabaseURL != wantURL ||
 		p.Home != (cluster.PayloadHome{APIURL: "http://192.168.1.20:8080", InstanceID: id.InstanceID, Name: "home-mac"}) {
 		t.Errorf("payload = %+v", p)
@@ -436,7 +454,7 @@ func TestRejectRevokeRemove(t *testing.T) {
 
 	var nv Node
 	decode(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()), 200, &nv)
-	if nv.State != "revoked" || nv.RevokedAt == nil || len(f.roles.disabled) != 1 || f.roles.disabled[0] != "maktaba_node_6f1c2a3b" {
+	if nv.State != "revoked" || nv.RevokedAt == nil || len(f.roles.disabled) != 1 || f.roles.disabled[0] != "maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7" {
 		t.Errorf("node = %+v, disabled = %v", nv, f.roles.disabled)
 	}
 	var pr PollResponse
@@ -566,7 +584,7 @@ func TestUpdateNodeAndOverview(t *testing.T) {
 	if w["id"] != "node-6f1c2a3b-1" || w["host"] != "linux-box" || w["stages_off"].(map[string]any)["transcribe"] != "unavailable" {
 		t.Errorf("worker = %v", w)
 	}
-	if strings.Contains(rec.Body.String(), f.roles.created["maktaba_node_6f1c2a3b"]) {
+	if strings.Contains(rec.Body.String(), f.roles.created["maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7"]) {
 		t.Error("the role password must never be in the overview")
 	}
 

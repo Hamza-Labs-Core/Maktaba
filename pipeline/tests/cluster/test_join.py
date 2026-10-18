@@ -25,6 +25,7 @@ DB_URL = "postgres://maktaba_node_x:s3cr3t@192.168.1.20:5432/maktaba?sslmode=pre
 @dataclass
 class FakeHome:
     accept: bool = True
+    conflict: str | None = None
     approve_after: int = 2  # polls answered "pending" before approval
     final_state: str = "approved"
     tamper: bool = False
@@ -71,6 +72,8 @@ def _serve(home: FakeHome) -> tuple[ThreadingHTTPServer, str]:
                 return self._send(404, {"error": "not_found"})
             if not home.accept:
                 return self._send(403, {"error": "joins_closed"})
+            if home.conflict:
+                return self._send(409, {"code": home.conflict})
             home.joins.append(body)
             home.node_pub = crypto.b64d(body["pubkey"])
             self._send(
@@ -208,3 +211,34 @@ def test_pick_home() -> None:
     answers = iter(["x", "1"])
     assert pick_home([a, b], ask=lambda _: next(answers), out=out) == a
     assert "1. a" in out.getvalue()
+
+
+def test_a_request_waiting_with_another_key_is_explained(
+    fake: tuple[FakeHome, str], tmp_path: Path
+) -> None:
+    home, url = fake
+    home.conflict = "pending_elsewhere"
+    with pytest.raises(JoinError, match="another key"):
+        _join(url, tmp_path / "node.json", io.StringIO())
+    home.conflict = "already_member"
+    with pytest.raises(JoinError, match="already has this machine"):
+        _join(url, tmp_path / "node.json", io.StringIO())
+
+
+def test_windows_cuts_the_config_acl_to_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    calls: list[list[str]] = []
+    monkeypatch.setenv("USERNAME", "mahmoud")
+
+    def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    path = tmp_path / "node.json"
+    path.write_text("{}")
+    node_config._restrict_to_user(path)
+    assert calls == [["icacls", str(path), "/inheritance:r", "/grant:r", "mahmoud:F"]]

@@ -126,11 +126,11 @@ func TestSealRoundTripAndSASDiffersUnderSwap(t *testing.T) {
 }
 
 func TestRoleNameAndURL(t *testing.T) {
-	if got := RoleName("6F1C2A3B-4d5e-4f60-8a71-92b3c4d5e6f7"); got != "maktaba_node_6f1c2a3b" {
+	if got := RoleName("6F1C2A3B-4d5e-4f60-8a71-92b3c4d5e6f7"); got != "maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7" {
 		t.Errorf("role = %s", got)
 	}
-	u := DatabaseURL("maktaba_node_6f1c2a3b", "s3cr3t", "192.168.1.20", 5432, "maktaba")
-	if u != "postgres://maktaba_node_6f1c2a3b:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer" {
+	u := DatabaseURL("maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7", "s3cr3t", "192.168.1.20", 5432, "maktaba")
+	if u != "postgres://maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer" {
 		t.Errorf("url = %s", u)
 	}
 	if u := DatabaseURL("r", "p", "fe80::1", 5432, "m"); u != "postgres://r:p@[fe80::1]:5432/m?sslmode=prefer" {

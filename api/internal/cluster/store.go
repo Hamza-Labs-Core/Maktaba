@@ -36,8 +36,11 @@ type Identity struct {
 
 // Short is the first 8 hex digits of the instance id (the mDNS "id").
 func (i Identity) Short() string {
-	h := RoleName(i.InstanceID)
-	return h[len("maktaba_node_"):]
+	h := RoleName(i.InstanceID)[len("maktaba_node_"):]
+	if len(h) > 8 {
+		h = h[:8]
+	}
+	return h
 }
 
 // Node is one cluster_nodes row, secrets included: callers that render it

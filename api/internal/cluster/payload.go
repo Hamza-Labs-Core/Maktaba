@@ -42,10 +42,12 @@ func DatabaseURL(role, password, host string, port int, dbName string) string {
 	return u.String()
 }
 
-// RoleName is the machine's database role: maktaba_node_<first 8 hex of id>.
+// RoleName is the machine's database role: maktaba_node_<the id's 32 hex
+// digits>. The whole id, never a prefix: the machine chooses its id, and a
+// shared prefix would hand a second machine the first one's role.
 func RoleName(nodeID string) string {
-	hex := make([]byte, 0, 8)
-	for i := 0; i < len(nodeID) && len(hex) < 8; i++ {
+	hex := make([]byte, 0, 32)
+	for i := 0; i < len(nodeID) && len(hex) < 32; i++ {
 		c := nodeID[i]
 		switch {
 		case c >= '0' && c <= '9', c >= 'a' && c <= 'f':

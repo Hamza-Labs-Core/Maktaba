@@ -323,6 +323,8 @@ def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -
         sys.stdout.write("Start it with: maktaba-pipeline run\n")
         return 0
     run_args = parser.parse_args(["run"])
+    # it just joined: run as that node, whatever MAKTABA_DATABASE_URL says
+    run_args.database_url = None
     return asyncio.run(_serve(run_args, log))
 
 

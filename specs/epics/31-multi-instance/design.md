@@ -126,7 +126,7 @@ admin's map) and `cluster_node_stage_switches(node)`. A migration that adds a ta
 secrets revokes it from `maktaba_worker` the same way (default privileges grant data
 tables). On SQLite (tests, single-machine) the same operations are plain SQL.
 
-Approval runs `CREATE ROLE "maktaba_node_<first 8 hex of node_id>" LOGIN PASSWORD
+Approval runs `CREATE ROLE "maktaba_node_<the node id's 32 hex digits>" LOGIN PASSWORD
 '<32 random bytes, base64url>' IN ROLE maktaba_worker`. Revocation runs `ALTER ROLE …
 NOLOGIN`, rotates the password, and `pg_terminate_backend` on its sessions (when the
 home's user may; otherwise the node notices `revoked` at its next heartbeat, within
@@ -139,7 +139,12 @@ home's user may; otherwise the node notices `revoked` at its next heartbeat, wit
 - A request expires after 15 min; 5 wrong codes reject it.
 - `sealed` is kept until the node's worker first registers with that node id (or 15 min
   after approval), then cleared; the home's ephemeral private key is cleared at approval.
-- A node id that is approved cannot ask again (409) until it is removed.
+- A node id that is approved cannot ask again (409 `already_member`) until it is removed.
+- A pending request is renewed only with the key it was made with (409
+  `pending_elsewhere` otherwise): the node id travels in the poll URL, so whoever saw it
+  must not swap in their own key.
+- The role name carries the whole node id: the node chooses its id, and a shared prefix
+  would give a second machine the first one's role.
 
 ## 4. Schema (slot 0103)
 

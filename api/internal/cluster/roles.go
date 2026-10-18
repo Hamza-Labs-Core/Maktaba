@@ -57,7 +57,7 @@ func (u Unsupported) Disable(context.Context, string) (int, error) { return 0, n
 // Drop implements Roles.
 func (u Unsupported) Drop(context.Context, string) error { return nil }
 
-var roleRe = regexp.MustCompile(`^maktaba_node_[0-9a-f]{8}$`)
+var roleRe = regexp.MustCompile(`^maktaba_node_[0-9a-f]{32}$`)
 
 // ValidRole reports whether role is a machine role name.
 func ValidRole(role string) bool { return roleRe.MatchString(role) }

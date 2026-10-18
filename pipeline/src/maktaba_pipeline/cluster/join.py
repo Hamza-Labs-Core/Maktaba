@@ -57,6 +57,9 @@ _MESSAGES = {
     "already_member": "The home already has this machine. Remove it on the home's Machines "
     "page to join it again.",
     "rate_limited": "The home is refusing requests for a moment (too many). Try again in a minute.",
+    "pending_elsewhere": "The home already has a request for this machine made with another "
+    "key (another copy of its settings?). It expires within 15 minutes; or reject it on the "
+    "home's Machines page, then run this again.",
 }
 
 
@@ -176,7 +179,8 @@ def join(
     if status == 403:
         raise JoinError(_MESSAGES["joins_closed"])
     if status == 409:
-        raise JoinError(_MESSAGES["already_member"])
+        code = _error_code(resp)
+        raise JoinError(_MESSAGES.get(code) or _MESSAGES["already_member"])
     if status == 429:
         raise JoinError(_MESSAGES["rate_limited"])
     if status not in (200, 201, 202):

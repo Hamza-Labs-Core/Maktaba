@@ -98,3 +98,27 @@ def test_ffmpeg_and_ffprobe_follow_the_environment(monkeypatch: pytest.MonkeyPat
 
     assert ffmpeg_chromaprint_args("a.mp4", 0, 10)[0] == r"C:\ffmpeg\bin\ffmpeg.exe"
     assert build_poster_args("a.mp4", 1.0, "o.jpg")[0] == r"C:\ffmpeg\bin\ffmpeg.exe"
+
+
+def test_join_run_starts_as_the_node_even_with_a_database_url_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import argparse
+
+    import maktaba_pipeline.__main__ as cli
+    from maktaba_pipeline.cluster import join as join_mod
+
+    monkeypatch.setenv("MAKTABA_DATABASE_URL", "postgresql://local/standalone")
+    monkeypatch.setattr(join_mod, "join", lambda **kw: None)
+    seen: list[object] = []
+
+    def serve(args: argparse.Namespace, log: object) -> int:
+        seen.append(args.database_url)
+        return 0
+
+    monkeypatch.setattr(cli, "_serve", serve)
+    monkeypatch.setattr("maktaba_pipeline.__main__.asyncio.run", lambda result: result)
+    parser = cli._build_parser()
+    args = parser.parse_args(["join", "--run", "--home", "http://h:8080"])
+    assert cli._join(args, parser, None) == 0
+    assert seen == [None]  # node mode: the joined config's database, not the env's

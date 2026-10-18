@@ -306,6 +306,15 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, problem(http.StatusConflict, "already_member", "already a member",
 			"this machine is already known to the home; an admin must remove it before it can ask again"))
 		return
+	} else if err == nil && old.State == cluster.StatePending && !expired(old, h.now()) {
+		// a live request is only renewed by the machine that made it: anyone who
+		// saw the node id (it is in the poll URL) must not swap in their own key
+		stored, kerr := cluster.DecodeKey(old.NodePubkey)
+		if kerr != nil || subtle.ConstantTimeCompare(stored, nodePub) != 1 {
+			httperror.Write(w, r, problem(http.StatusConflict, "pending_elsewhere", "already asking",
+				"a request for this machine is waiting with another key; it expires in 15 minutes"))
+			return
+		}
 	} else if err != nil && !errors.Is(err, cluster.ErrNotFound) {
 		errInternal(w, r, "read node", err)
 		return
@@ -378,11 +387,14 @@ func (h *Handler) Poll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := h.now()
-	if err := h.Store.ClearSealed(ctx, now.Add(-SealedTTL)); err != nil {
-		errInternal(w, r, "clear sealed", err)
-		return
-	}
 	n, err := h.Store.Node(ctx, nodeID)
+	if err == nil && n.State == cluster.StateApproved && n.Sealed != nil {
+		// credentials still waiting: drop them if their machine already runs (only
+		// while there are some, so a poll is not a write each time)
+		if err = h.Store.ClearSealed(ctx, now.Add(-SealedTTL)); err == nil {
+			n, err = h.Store.Node(ctx, nodeID)
+		}
+	}
 	if errors.Is(err, cluster.ErrNotFound) {
 		notFound()
 		return
@@ -399,7 +411,10 @@ func (h *Handler) Poll(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case n.State == cluster.StatePending && expired(n, now):
 		out.State = "expired"
-	case n.State == cluster.StateApproved && n.Sealed != nil:
+	case n.State == cluster.StateApproved && n.Sealed != nil &&
+		(n.ApprovedAt == nil || now.Sub(*n.ApprovedAt) < SealedTTL):
+		// the housekeeping loop clears it after SealedTTL; until then, only its
+		// own machine (the pubkey above) can fetch it
 		var env cluster.Envelope
 		if json.Unmarshal(n.Sealed, &env) == nil {
 			out.Sealed = &env
@@ -452,10 +467,6 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	now := h.now()
-	if err := h.Store.ClearSealed(ctx, now.Add(-SealedTTL)); err != nil {
-		errInternal(w, r, "clear sealed", err)
-		return
-	}
 	id, err := h.identity(ctx)
 	if err != nil {
 		errInternal(w, r, "read identity", err)

@@ -107,6 +107,26 @@ def load(path: Path | None = None) -> NodeConfig | None:
     return NodeConfig.from_json(data)
 
 
+def _restrict_to_user(path: Path) -> None:
+    """Windows: the file holds the home's database password; chmod means nothing there,
+    so its ACL is cut to the current user (inheritance off). Best effort: a failure is
+    logged, the file stays where the OS put it (the profile directory is per user)."""
+    import subprocess
+
+    user = os.environ.get("USERNAME")
+    if not user:
+        return
+    try:
+        subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+            check=True, capture_output=True, timeout=15,
+        )  # fmt: skip
+    except (OSError, subprocess.SubprocessError) as exc:
+        from ..log import get_logger
+
+        get_logger().warning("node_config_acl_failed", path=str(path), error=str(exc))
+
+
 def save(cfg: NodeConfig, path: Path | None = None) -> Path:
     """Write atomically (temp file in the same directory, then rename), mode 0600."""
     path = path or config_path()
@@ -124,6 +144,8 @@ def save(cfg: NodeConfig, path: Path | None = None) -> Path:
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
+        if os.name == "nt":
+            _restrict_to_user(path)
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
