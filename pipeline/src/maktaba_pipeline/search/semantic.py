@@ -178,6 +178,10 @@ class E5Embedder:
         self._loader = loader
         self._model: Any = None
         self._lock = threading.Lock()
+        # Metal (MPS) must not be driven from two threads at once: index jobs run in
+        # worker threads and queries in the gRPC server's, so encoding is one at a time
+        # (a concurrent encode aborted the worker: MTLCommandBuffer status assertion)
+        self._run_lock = threading.Lock()
 
     @property
     def device(self) -> str:
@@ -209,13 +213,14 @@ class E5Embedder:
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
         model = self._load()
-        vecs = model.encode(
-            texts,
-            batch_size=self._batch,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+        with self._run_lock:
+            vecs = model.encode(
+                texts,
+                batch_size=self._batch,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
         return [[float(x) for x in v] for v in vecs]
 
     def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
