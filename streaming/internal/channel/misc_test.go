@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -166,3 +170,27 @@ func TestPTSTracker(t *testing.T) {
 		t.Errorf("span = %v", tr.span())
 	}
 }
+
+func TestRemoveUnlisted(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"seg-1.ts", "seg-2.ts", "seg-3.ts", "seg-9.ts"} {
+		_ = os.WriteFile(filepath.Join(dir, n), []byte{0x47}, 0o644)
+	}
+	pl := "#EXTM3U\n#EXT-X-DISCONTINUITY\n#EXTINF:2.0,\nseg-3.ts\n#EXTINF:2.0,\nseg-9.ts\n"
+	keep := removeUnlisted(dir, []string{"seg-1.ts", "seg-2.ts", "seg-3.ts"}, pl)
+	if len(keep) != 1 || keep[0] != "seg-3.ts" {
+		t.Errorf("keep = %v", keep)
+	}
+	for n, want := range map[string]bool{"seg-1.ts": false, "seg-2.ts": false, "seg-3.ts": true, "seg-9.ts": true} {
+		_, err := os.Stat(filepath.Join(dir, n))
+		if (err == nil) != want {
+			t.Errorf("%s exists=%v want %v", n, err == nil, want)
+		}
+	}
+	got := listSegments(dir)
+	if len(got) != 2 {
+		t.Errorf("listSegments = %v", got)
+	}
+}
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

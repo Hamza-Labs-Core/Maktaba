@@ -124,6 +124,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 
 	feeder := &Feeder{
 		Source: cfg.Repo, ChannelID: channelID, Player: s, Now: cfg.Now, LiveRetry: cfg.LiveRetry,
+		Prewarm: s.prewarmLive,
 		OnSegment: func(seg Segment) {
 			s.log.Info("channel: on air", "kind", seg.Kind, "seq", seg.Block.Seq,
 				"start", seg.Start.UTC().Format(time.RFC3339), "end", seg.End.UTC().Format(time.RFC3339),
@@ -200,6 +201,7 @@ func (s *Station) supervise(m *muxProc) {
 		}
 		s.log.Warn("channel: muxer exited; restarting", "err", errString(err), "backoff", backoff.String(),
 			"event", "channel_muxer_restart")
+		stale := listSegments(s.dir) // the dead muxer's segments
 		s.muxMu.Lock()
 		s.mux = nil // block output is dropped until the new muxer is up
 		s.muxMu.Unlock()
@@ -229,6 +231,7 @@ func (s *Station) supervise(m *muxProc) {
 			s.restarts++
 			s.muxMu.Unlock()
 			m = nm
+			go s.reapStaleSegments(stale)
 			break
 		}
 	}
@@ -262,6 +265,23 @@ func (s *Station) writeMux(b []byte) (int, error) {
 		return len(b), nil // muxer died; the supervisor restarts it
 	}
 	return len(b), nil
+}
+
+// prewarmLive resolves (yt-dlp) and probes an upcoming live block so the
+// result is cached when the block is queued; failures are left to the
+// normal path (which retries and slates).
+func (s *Station) prewarmLive(ctx context.Context, b ProgramBlock) {
+	if b.SourceURL == "" || s.cfg.Resolver == nil {
+		return
+	}
+	u, err := s.cfg.Resolver.Resolve(ctx, b.SourceURL)
+	if err != nil {
+		s.log.Info("channel: live prewarm failed", "seq", b.Seq, "err", err.Error(), "event", "channel_live_prewarm_failed")
+		return
+	}
+	if s.cfg.Prober != nil {
+		_, _ = s.cfg.Prober.Probe(ctx, u)
+	}
 }
 
 // paceMargin is how far ahead of the wall clock output may be forwarded.
@@ -345,6 +365,61 @@ func packetPTS(p []byte) (int64, bool) {
 	q := h[9:14]
 	pts := int64(q[0]>>1&0x07)<<30 | int64(q[1])<<22 | int64(q[2]>>1)<<15 | int64(q[3])<<7 | int64(q[4]>>1)
 	return pts, true
+}
+
+// staleSegmentDelay is how long a dead muxer's segments are kept after a
+// restart: the length of the HLS window plus one segment, i.e. until no
+// player can still be reading them from an old playlist.
+func (s *Station) staleSegmentDelay() time.Duration {
+	p := s.cfg.Profile
+	return time.Duration(p.HLSListSize+1) * time.Duration(p.SegmentSeconds) * time.Second
+}
+
+// reapStaleSegments deletes the previous muxer's segments once they have
+// left the HLS window (the new muxer never deletes files it didn't make).
+func (s *Station) reapStaleSegments(names []string) {
+	for len(names) > 0 {
+		select {
+		case <-s.stopping:
+			return
+		case <-time.After(s.staleSegmentDelay()):
+		}
+		pl, _ := readShared(filepath.Join(s.dir, "index.m3u8"))
+		names = removeUnlisted(s.dir, names, string(pl))
+	}
+}
+
+// removeUnlisted deletes the named segment files that the playlist no
+// longer references and returns those still listed.
+func removeUnlisted(dir string, names []string, playlist string) []string {
+	listed := map[string]bool{}
+	for _, l := range strings.Split(playlist, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			listed[l] = true
+		}
+	}
+	var keep []string
+	for _, n := range names {
+		if listed[n] {
+			keep = append(keep, n)
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, n))
+	}
+	return keep
+}
+
+// listSegments returns the HLS segment files currently in dir.
+func listSegments(dir string) []string {
+	entries, _ := os.ReadDir(dir)
+	var out []string
+	for _, e := range entries {
+		n := e.Name()
+		if !e.IsDir() && strings.HasPrefix(n, "seg-") && (strings.HasSuffix(n, ".ts") || strings.HasSuffix(n, ".ts.tmp")) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // MuxerRestarts reports how many times the muxer was restarted.

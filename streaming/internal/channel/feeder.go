@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -56,6 +57,17 @@ type Feeder struct {
 	// LiveRetry is how long a failed live block shows the "unavailable"
 	// slate before the stream is retried (default 30 s).
 	LiveRetry time.Duration
+
+	// Prewarm, if set, is called (in the background, once per block) for
+	// each live block starting within PrewarmWindow, so its yt-dlp
+	// resolution and probe are cached before the block is queued.
+	Prewarm func(ctx context.Context, b ProgramBlock)
+	// PrewarmWindow defaults to 60 s; PrewarmEvery (the scan period) to 10 s.
+	PrewarmWindow time.Duration
+	PrewarmEvery  time.Duration
+
+	warmMu sync.Mutex
+	warmed map[int64]time.Time
 }
 
 // Feeder tunables.
@@ -73,6 +85,8 @@ const (
 	scheduleErrorSlate = 10 * time.Second
 	defaultLiveRetry   = 30 * time.Second
 	defaultLead        = 3 * time.Second
+	// defaultPrewarmWindow: live blocks are resolved this long ahead.
+	defaultPrewarmWindow = 60 * time.Second
 )
 
 // running is a started segment whose Wait runs once its predecessor
@@ -101,6 +115,10 @@ func (f *Feeder) Run(ctx context.Context) {
 	liveRetry := f.LiveRetry
 	if liveRetry <= 0 {
 		liveRetry = defaultLiveRetry
+	}
+
+	if f.Prewarm != nil {
+		go f.prewarmLoop(ctx)
 	}
 
 	closed := make(chan struct{})
@@ -161,6 +179,52 @@ func (f *Feeder) start(ctx context.Context, seg Segment, prev <-chan struct{}) *
 		r.complete, _ = pb.Wait()
 	}()
 	return r
+}
+
+// prewarmLoop scans the schedule ahead for live blocks.
+func (f *Feeder) prewarmLoop(ctx context.Context) {
+	every := f.PrewarmEvery
+	if every <= 0 {
+		every = 10 * time.Second
+	}
+	for ctx.Err() == nil {
+		f.PrewarmOnce(ctx)
+		f.Sleep(ctx, every)
+	}
+}
+
+// PrewarmOnce starts Prewarm for every not-yet-warmed live block that
+// starts (or is on air) within PrewarmWindow of now.
+func (f *Feeder) PrewarmOnce(ctx context.Context) {
+	window := f.PrewarmWindow
+	if window <= 0 {
+		window = defaultPrewarmWindow
+	}
+	now := f.Now()
+	blocks, err := f.Source.ProgramsFrom(ctx, f.ChannelID, now, lookaheadBlocks*2)
+	if err != nil {
+		return
+	}
+	f.warmMu.Lock()
+	defer f.warmMu.Unlock()
+	if f.warmed == nil {
+		f.warmed = map[int64]time.Time{}
+	}
+	for id, end := range f.warmed {
+		if end.Before(now) {
+			delete(f.warmed, id)
+		}
+	}
+	for _, b := range blocks {
+		if b.Kind != KindLive || b.SourceURL == "" || b.StartAt.Sub(now) > window {
+			continue
+		}
+		if _, done := f.warmed[b.Seq]; done {
+			continue
+		}
+		f.warmed[b.Seq] = b.EndAt
+		go f.Prewarm(ctx, b)
+	}
 }
 
 func finished(c <-chan struct{}) bool {

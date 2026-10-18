@@ -411,7 +411,7 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 	repo := &syncRepo{blocks: []ProgramBlock{{Seq: 1, Kind: KindProgram, VideoID: uuid.New(), Path: clip,
 		StartAt: now, EndAt: now.Add(40 * time.Second), SourceDurationMS: 40_000}}}
 	prof := OutputProfile{Width: 640, Height: 360, FPS: 30, VideoKbps: 1000, Encoder: EncoderSoftware,
-		SegmentSeconds: 2, HLSListSize: 60}
+		SegmentSeconds: 2, HLSListSize: 4}
 	dir := filepath.Join(tmp, "hls")
 	st, err := StartStation(StationConfig{FFmpeg: "ffmpeg", Profile: prof, Repo: repo, Prober: NewFFprobe("ffprobe"),
 		Resolver: NewYtDlp(""), Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))},
@@ -439,7 +439,8 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(4 * time.Second)
-	segsBefore := countSegments(dir)
+	stale := listSegments(dir)
+	maxBefore := maxSegment(dir)
 	oldPID := st.PID()
 	killedAt := time.Now()
 	st.muxMu.Lock()
@@ -456,9 +457,8 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 	tsMu.Unlock()
 
 	time.Sleep(10 * time.Second)
-	segsAfter := countSegments(dir)
-	if segsAfter < segsBefore+3 {
-		t.Errorf("HLS stalled after restart: %d → %d segments", segsBefore, segsAfter)
+	if maxAfter := maxSegment(dir); maxAfter < maxBefore+3 {
+		t.Errorf("HLS stalled after restart: newest segment %d → %d", maxBefore, maxAfter)
 	}
 	tsMu.Lock()
 	grown := tsBytes - tsAtRestart
@@ -485,17 +485,33 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 	if !strings.Contains(string(logs), "muxer restart") {
 		t.Error("mux.log should record the restart")
 	}
+	// The dead muxer's segments are deleted once they left the window
+	// ((list size + 1) × segment = 10 s after the restart).
+	if len(stale) == 0 {
+		t.Fatal("no segments before the restart?")
+	}
+	waitForT(t, 8*time.Second, func() bool {
+		for _, n := range stale {
+			if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+				return false
+			}
+		}
+		return true
+	})
+	t.Logf("%d stale segments from the dead muxer removed", len(stale))
 }
 
-func countSegments(dir string) int {
+func maxSegment(dir string) int {
 	entries, _ := os.ReadDir(dir)
-	n := 0
+	best := 0
 	for _, e := range entries {
-		if segRe.MatchString(e.Name()) {
-			n++
+		if m := segRe.FindStringSubmatch(e.Name()); m != nil {
+			if n, _ := strconv.Atoi(m[1]); n > best {
+				best = n
+			}
 		}
 	}
-	return n
+	return best
 }
 
 func waitForT(t *testing.T, d time.Duration, cond func() bool) {

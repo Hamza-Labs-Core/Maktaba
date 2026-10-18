@@ -378,3 +378,53 @@ func TestFeeder_QueuesNextBlockBeforeBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestFeeder_PrewarmsLiveBlocksAhead(t *testing.T) {
+	t0 := tm("2026-06-14T20:00:00Z")
+	clk := newClock(t0)
+	live1 := blk(2, KindLive, t0.Add(50*time.Second), time.Hour) // inside 60 s
+	live2 := blk(4, KindLive, t0.Add(10*time.Minute), time.Hour) // too far
+	repo := &growingRepo{blocks: []ProgramBlock{
+		blk(1, KindProgram, t0, 50*time.Second), live1,
+		blk(3, KindProgram, live1.EndAt, 10*time.Minute), live2,
+	}}
+	var mu sync.Mutex
+	var warmed []int64
+	f := &Feeder{Source: repo, Now: clk.now, Prewarm: func(_ context.Context, b ProgramBlock) {
+		mu.Lock()
+		warmed = append(warmed, b.Seq)
+		mu.Unlock()
+	}}
+	f.PrewarmOnce(context.Background())
+	f.PrewarmOnce(context.Background()) // no duplicate
+	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(warmed) >= 1 })
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	if len(warmed) != 1 || warmed[0] != 2 {
+		t.Errorf("warmed %v, want only the live block starting within 60 s", warmed)
+	}
+	mu.Unlock()
+	// Ten minutes later the second live block comes into range.
+	clk.set(t0.Add(9*time.Minute + 30*time.Second))
+	f.PrewarmOnce(context.Background())
+	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(warmed) == 2 })
+	mu.Lock()
+	if warmed[1] != 4 {
+		t.Errorf("warmed %v", warmed)
+	}
+	mu.Unlock()
+}
+
+func TestYtDlp_PrewarmFillsCache(t *testing.T) {
+	y := NewYtDlp("x")
+	calls := 0
+	y.run = func(context.Context, string, ...string) ([]byte, error) {
+		calls++
+		return []byte("https://cdn/x.m3u8\n"), nil
+	}
+	st := &Station{cfg: StationConfig{Resolver: y}, log: discardLogger()}
+	st.prewarmLive(context.Background(), ProgramBlock{Seq: 1, Kind: KindLive, SourceURL: "https://www.youtube.com/watch?v=1"})
+	if u, _ := y.Resolve(context.Background(), "https://www.youtube.com/watch?v=1"); u != "https://cdn/x.m3u8" || calls != 1 {
+		t.Errorf("prewarm should populate the cache: %q calls=%d", u, calls)
+	}
+}
