@@ -535,9 +535,10 @@ def resume(content: Sequence[Mapping[str, Any]], so_far: Sequence[Mapping[str, A
 
 def splice(old: Mapping[str, Any], new: Mapping[str, Any], now_ms: int,
            period: int) -> dict[str, Any]:  # fmt: skip
-    """The new timeline, but what is on air now finishes first: the new one takes over
-    when it ends (the time until the new one's next programme is filler), so a rewrite
-    never cuts a programme a viewer is watching."""
+    """The new timeline, but what is on air now finishes first, and the new one goes on
+    the moment it ends: its programme under the switch starts then (late), and the
+    filler after it is shortened until the timeline is back on time, so a rewrite never
+    cuts a programme a viewer is watching nor leaves a gap."""
     so_far, on_start, on_end = aired(old, now_ms)
     if not so_far or so_far[-1].get("isOffline"):
         return dict(new)
@@ -545,18 +546,29 @@ def splice(old: Mapping[str, Any], new: Mapping[str, Any], now_ms: int,
              .timestamp() * 1000)  # fmt: skip
     out: list[Mapping[str, Any]] = [so_far[-1]]
     t = n0
-    gap_from = on_end
+    if t > on_end:  # the new timeline starts after the switch: filler till then
+        out.append({"duration": t - on_end, "isOffline": True})
+    late = 0  # how late the new timeline runs after the switch
     for p in new["programs"]:
         d = int(p.get("duration", 0))
         if t + d <= on_end:  # over before the old programme ends
             t += d
             continue
-        if t < on_end:  # straddles the switch: its time is filler
+        if t < on_end:  # under the switch
+            if p.get("isOffline"):
+                out.append({**p, "duration": t + d - on_end})  # the rest of its filler
+            else:
+                late = on_end - t  # it starts at the switch
+                out.append(p)
             t += d
             continue
-        if t > gap_from:
-            out.append({"duration": t - gap_from, "isOffline": True})
-        gap_from = t + d
+        if late and p.get("isOffline"):  # catching up: less filler
+            cut = min(late, d)
+            late -= cut
+            if d - cut > 0:
+                out.append({**p, "duration": d - cut})
+            t += d
+            continue
         out.append(p)
         t += d
     total = sum(int(p.get("duration", 0)) for p in out)

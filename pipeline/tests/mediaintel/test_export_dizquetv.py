@@ -130,11 +130,14 @@ def test_a_rewrite_lets_the_programme_on_air_finish() -> None:
     got = splice(old, new, T0 + 700_000, 0)
     assert got["startTime"] == "2027-01-15T08:10:00Z"  # b started at 08:10, it goes on
     seq = [(p.get("ratingKey"), p["duration"]) for p in got["programs"]]
-    assert seq == [("b", 600_000)]  # b ends 08:20: x, y are over, z (08:15-08:25) is cut
-    later = _ch(ISO0, [("x", 300_000), ("y", 600_000), ("z", 600_000), ("w", 600_000)])
+    # b ends 08:20: x, y are over; z (08:15-08:25) starts at once, 5 min late: no gap
+    assert seq == [("b", 600_000), ("z", 600_000)]
+    later = _ch(ISO0, [("x", 300_000), ("y", 600_000), ("z", 600_000), (None, 420_000),
+                       ("w", 600_000)])  # fmt: skip
     seq = [(p.get("ratingKey"), p["duration"])
            for p in splice(old, later, T0 + 700_000, 0)["programs"]]  # fmt: skip
-    assert seq == [("b", 600_000), (None, 300_000), ("w", 600_000)]  # filler till w at 08:25
+    # the filler after z is 5 min shorter: w airs at its own time (08:32)
+    assert seq == [("b", 600_000), ("z", 600_000), (None, 120_000), ("w", 600_000)]
     off = _ch(ISO0, [(None, 900_000), ("b", 600_000)])
     assert splice(off, new, T0 + 100_000, 0) == new  # filler on air: the new one at once
 
