@@ -6,6 +6,7 @@
 //   GET  /api/extensions
 //   PUT  /api/extensions/{name}      { enabled?, settings? }
 //   POST /api/extensions/{name}/test { ok, message }
+// The Plex card also has "Sign in with Plex" (PlexSignin.tsx).
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -13,6 +14,7 @@ import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import type { Extension, ExtensionSettingField } from "../../lib/queueApi";
 import { useAction } from "../../components/queue/useAction";
+import { PlexSignin } from "./PlexSignin";
 import "../../styles/queue.css";
 
 type Values = Record<string, string | number | boolean | null>;
@@ -156,6 +158,7 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
         </label>
       </div>
       <p className="mkt-q-muted">{ext.description}</p>
+      {ext.name === "plex" && <PlexSignin onSaved={onSaved} />}
       <form
         className="mkt-q-extform"
         onSubmit={(e) => {

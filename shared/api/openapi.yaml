@@ -3177,6 +3177,112 @@ paths:
         '429': *id002
         '401': *id003
       operationId: testExtension
+  /extensions/plex/signin:
+    post:
+      tags:
+      - Queue
+      summary: Start "Sign in with Plex" (creates a plex.tv PIN)
+      description: Admin-only. Open auth_url in a browser window, then poll GET /extensions/plex/signin/{id}.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  code:
+                    type: string
+                  auth_url:
+                    type: string
+        '403': *id005
+        '502':
+          description: plex.tv could not be reached
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: plexSignin
+  /extensions/plex/signin/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - Queue
+      summary: Poll a Plex sign-in; once done, lists the account's Plex servers (no tokens)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum:
+                    - waiting
+                    - done
+                  servers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        uri:
+                          type: string
+        '403': *id005
+        '404': *id007
+        '502':
+          description: plex.tv could not be reached
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: plexSigninStatus
+  /extensions/plex/signin/{id}/use:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - Queue
+      summary: Save the chosen Plex server (URL and its token) into the plex extension settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionInfo'
+        '400': *id006
+        '403': *id005
+        '404': *id007
+        '409':
+          description: The sign-in is not finished yet
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: plexSigninUse
   /ws/queues:
     get:
       tags:
