@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
+from ..classify.books import BOOKS_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
+from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..schedule.channel_planner import PLANNER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
@@ -160,6 +162,8 @@ POOLS: tuple[PoolDef, ...] = (
     PoolDef("network_plex", "Plex", "global", 2, 2),
     PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
+    # the language model (Ollama) and the encyclopedia answer one question at a time
+    PoolDef("lookup", "Model and encyclopedia", "global", 1, 1),
     # review pages only: they never take a cpu or network slot from the stages that write
     PoolDef("reports", "Review pages", "global", 1, 1),
 )
@@ -359,8 +363,50 @@ GRAPH: tuple[StageDef, ...] = (
         lane="seasons",
         lane_order=2,
         version=TAGGER_VERSION,
-        # a topic tag decides a leftover's clip group
-        edges=(Edge("plan_channels", "catalog"), Edge("clip_groups", "library_of")),
+        # a new run rewrites the tags, so the model's and the book's corrections are
+        # applied again (from their cached answers) before a clip group or a channel
+        # reads them
+        edges=(
+            Edge("plan_channels", "catalog"),
+            Edge("check_tags", "same"),
+            Edge("check_clips", "library_of"),
+        ),
+        entry_for=("season",),
+    ),
+    # ---- what a language model and the book behind a series say about the tags ----
+    StageDef(
+        name="check_tags",
+        label="Check series tags",
+        subject_kinds=("season",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=3,
+        version=TAG_CHECK_VERSION,
+        edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("season",),
+    ),
+    StageDef(
+        name="check_clips",
+        label="Check clip tags",
+        subject_kinds=("library",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=3,
+        version=CLIP_CHECK_VERSION,
+        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+    ),
+    StageDef(
+        name="books",
+        label="Books",
+        subject_kinds=("season",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=4,
+        version=BOOKS_VERSION,
+        edges=(Edge("plan_channels", "catalog"),),
         entry_for=("season",),
     ),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----

@@ -94,7 +94,9 @@ def test_graph_order_detect_to_topics_promos_clips_to_plan() -> None:
     assert {("topic_collections", "same"), ("promo_links", "same")} <= edges["detect"]
     assert ("clip_groups", "same") in edges["topic_collections"]
     assert ("clip_groups", "same") in edges["promo_links"]
-    assert ("clip_groups", "library_of") in edges["tag"]
+    # a clip's topic tags are checked by the model before a clip group reads them
+    assert ("check_clips", "library_of") in edges["tag"]
+    assert ("clip_groups", "same") in edges["check_clips"]
     for n in ("topic_collections", "promo_links", "clip_groups"):
         assert ("plan_channels", "catalog") in edges[n]
         assert by[n].subject_kinds == ("library",) and by[n].entry_for == ("library",)
