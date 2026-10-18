@@ -68,3 +68,15 @@ def test_apply_a_chapter_keeps_its_topic():
 def test_apply_without_fields_changes_nothing():
     tags = {"topic:hadith": (0.4, "kw")}
     assert bk.apply(tags, (), {}, "book", CFG) == tags
+
+
+def test_apply_twice_is_apply_once():
+    tags = {"topic:fiqh": (0.8, "kw"), "topic:salah": (0.9, "kw"), "topic:hadith": (0.5, "kw")}
+    once = bk.apply(tags, ("hadith",), {}, "book «b»", CFG)
+    assert bk.apply(once, ("hadith",), {}, "book «b»", CFG) == once
+
+
+def test_a_chapter_never_lowers_its_own_topic():
+    out = bk.apply({"topic:fasting": (0.95, "kw")}, ("hadith",), {"topic:fasting": 0.865},
+                   "book «b»", CFG)  # fmt: skip
+    assert out["topic:fasting"] == (0.95, "kw")

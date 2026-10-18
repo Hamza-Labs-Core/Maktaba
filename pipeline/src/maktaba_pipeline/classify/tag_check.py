@@ -159,7 +159,9 @@ def apply(
         ns, _, val = tag.partition(":")
         if ns == "genre":
             continue  # set below
-        if (ns == "topic" and val not in named) or (
+        if "model: not about it" in ev or "book «" in ev:
+            out[tag] = (score, ev)  # damped already, or the book it explains says so
+        elif (ns == "topic" and val not in named) or (
             ns == "occasion" and val in _OCCASIONS and val not in v.occasions
         ):
             out[tag] = (round(score * cfg.damp, 3), f"{ev}; model: not about it")

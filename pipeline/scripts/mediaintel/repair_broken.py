@@ -1,13 +1,17 @@
 """``repair-broken``: download again the files ffprobe cannot read.
 
-A file whose probe failed (an unfinished download: "moov atom not found") and that came
-from YouTube is fetched again into its folder beside it, checked with ffprobe, and only
-then put in its place; the broken file is kept as ``<name>.broken``. A video no longer on
-YouTube, or a file without a YouTube id, is reported and left as it is.
+A file whose probe failed is read again first: a passing failure (a busy share, a
+timeout) is no reason to replace it. A file that really is broken (an unfinished
+download: "moov atom not found") and came from YouTube is fetched again beside it, put in
+its container, checked with ffprobe, and only then put in its place; the broken file is
+kept as ``<name>.broken``. A video no longer on YouTube, or a file without a YouTube id,
+is reported and left as it is.
 """
 
 from __future__ import annotations
 
+import glob
+import json
 import os
 import sqlite3
 import subprocess
@@ -15,10 +19,13 @@ import sys
 from pathlib import Path
 
 from . import jobs
-from .scan_local import _probe, probe_failure
+from .bins import FFMPEG, FFPROBE
+from .scan_local import probe_failure
 
 #: the library's own format: at most 1080p, merged into the file's container
 FORMAT = "bv*[height<=1080]+ba/b[height<=1080]/b"
+#: yt-dlp's work files, never the result
+_PARTIAL = (".part", ".ytdl", ".temp")
 
 
 def broken(conn: sqlite3.Connection) -> list[tuple[str, str | None]]:
@@ -32,39 +39,94 @@ def broken(conn: sqlite3.Connection) -> list[tuple[str, str | None]]:
     ]
 
 
+def check(path: str) -> tuple[float | None, int | None, int | None, str]:
+    """(duration, width, height, why it failed) of a file read now."""
+    try:
+        out = subprocess.run(
+            [FFPROBE, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "format=duration:stream=width,height", "-of", "json", path],
+            capture_output=True, timeout=120, check=False,
+        )  # fmt: skip
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return None, None, None, f"could not read it ({type(e).__name__})"
+    err = out.stderr.decode("utf-8", "replace")
+    try:
+        j = json.loads(out.stdout)
+        dur = float(j["format"]["duration"])
+    except (ValueError, KeyError, TypeError):
+        return None, None, None, probe_failure(err)
+    st = (j.get("streams") or [{}])[0]
+    return dur, st.get("width"), st.get("height"), ""
+
+
 def download_args(youtube_id: str, target: Path, cookies_from_browser: str | None) -> list[str]:
     """yt-dlp argv writing the video beside ``target`` as ``<stem>.repair.<ext>``."""
     ext = target.suffix.lstrip(".").lower() or "mp4"
+    stem = target.stem.replace("%", "%%")  # «100% …»: % starts a template field
     args = [
         sys.executable, "-m", "yt_dlp", "--no-playlist", "--no-progress", "-f", FORMAT,
-        "--merge-output-format", ext, "-o", str(target.with_name(f"{target.stem}.repair.%(ext)s")),
+        "--merge-output-format", ext, "-o", str(target.with_name(f"{stem}.repair.%(ext)s")),
     ]  # fmt: skip
     if cookies_from_browser:
         args += ["--cookies-from-browser", cookies_from_browser]
     return [*args, f"https://www.youtube.com/watch?v={youtube_id}"]
 
 
+def _made(target: Path) -> list[Path]:
+    """Everything the download left beside ``target`` (titles hold «[…]»: escaped)."""
+    return sorted(target.parent.glob(glob.escape(target.stem) + ".repair*"))
+
+
+def _clean(target: Path) -> None:
+    for p in _made(target):
+        p.unlink(missing_ok=True)
+
+
+def _backup_name(target: Path) -> Path:
+    backup = target.with_name(target.name + ".broken")
+    n = 1
+    while backup.exists():
+        n += 1
+        backup = target.with_name(f"{target.name}.broken{n}")
+    return backup
+
+
 def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
                cookies_from_browser: str | None = None) -> str:  # fmt: skip
     """Fetch, check and swap one file; returns what happened (one line)."""
     target = Path(path)
-    out = subprocess.run(download_args(youtube_id, target, cookies_from_browser),
-                         capture_output=True, timeout=3600, check=False)  # fmt: skip
-    fresh = target.with_name(f"{target.stem}.repair{target.suffix}")
-    if out.returncode != 0 or not fresh.is_file():
+    try:
+        out = subprocess.run(download_args(youtube_id, target, cookies_from_browser),
+                             capture_output=True, timeout=3600, check=False)  # fmt: skip
+    except (subprocess.TimeoutExpired, OSError) as e:
+        _clean(target)
+        return f"not downloaded: {type(e).__name__}"
+    got = [p for p in _made(target) if p.suffix.lower() not in _PARTIAL]
+    if out.returncode != 0 or not got:
         err = out.stderr.decode("utf-8", "replace").strip().splitlines()
         why = next((ln for ln in reversed(err) if "ERROR" in ln), err[-1] if err else "")
-        for leftover in target.parent.glob(f"{target.stem}.repair.*"):
-            leftover.unlink(missing_ok=True)
+        _clean(target)
         return f"not downloaded: {why[:160]}"
-    dur, w, h = _probe(str(fresh))
+    fresh = target.with_name(f"{target.stem}.repair{target.suffix}")
+    if got[0] != fresh:  # yt-dlp kept another container (a single-file format): remux
+        try:
+            r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(got[0]), "-map", "0",
+                                "-c", "copy", str(fresh)],
+                               capture_output=True, timeout=1800, check=False)  # fmt: skip
+        except (subprocess.TimeoutExpired, OSError):
+            r = None
+        if r is None or r.returncode != 0 or not fresh.is_file():
+            _clean(target)
+            return f"downloaded as {got[0].suffix}, could not put it in {target.suffix}"
+    dur, w, h, why = check(str(fresh))
     if dur is None:
-        fresh.unlink(missing_ok=True)
-        return "downloaded, but the new copy is broken too: left as it was"
-    backup = target.with_name(target.name + ".broken")
+        _clean(target)
+        return f"downloaded, but the new copy does not read either ({why}): left as it was"
+    backup = _backup_name(target)
     if target.exists():
         os.replace(target, backup)
     os.replace(fresh, target)
+    _clean(target)
     st = target.stat()
     conn.execute(
         "UPDATE files SET size=?, mtime=?, duration_s=?, width=?, height=?, probed_size=?, "
@@ -76,26 +138,49 @@ def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
     return f"repaired: {dur / 60:.1f} min, {w}x{h} (old file kept as {backup.name})"
 
 
+def _record(conn: sqlite3.Connection, path: str, error: str | None, dur: float | None = None,
+            w: int | None = None, h: int | None = None) -> None:  # fmt: skip
+    row = conn.execute("SELECT size, mtime FROM files WHERE path=?", (path,)).fetchone()
+    size, mtime = (row[0], row[1]) if row else (None, None)
+    if dur is not None:
+        conn.execute(
+            "UPDATE files SET duration_s=?, width=?, height=?, probed_size=?, probed_mtime=? "
+            "WHERE path=?",
+            (dur, w, h, size, mtime, path),
+        )
+    jobs.record(conn, path, "probe", 1, size, mtime, error)
+    conn.commit()
+
+
 def run(conn: sqlite3.Connection, cookies_from_browser: str | None = None) -> dict[str, int]:
     rows = broken(conn)
-    counts = {"repaired": 0, "failed": 0, "no_id": 0}
-    print(f"phase: {len(rows)} broken files", flush=True)
+    counts = {"repaired": 0, "readable": 0, "failed": 0, "no_id": 0}
+    print(f"phase: {len(rows)} files whose probe failed", flush=True)
     for n, (path, yid) in enumerate(rows, 1):
         name = Path(path).name
+        at = f"  [{n}/{len(rows)}]"
+        dur, w, h, why = check(path)
+        if dur is not None:  # a passing failure: the file is fine
+            counts["readable"] += 1
+            _record(conn, path, None, dur, w, h)
+            print(f"{at} ✓  {name}: reads fine now, kept", flush=True)
+            continue
+        if not why.startswith("broken file"):  # cannot tell now: never replace on a guess
+            counts["failed"] += 1
+            print(f"{at} !  {name}: {why}; left for a later run", flush=True)
+            continue
         if not yid:
             counts["no_id"] += 1
-            print(f"  [{n}/{len(rows)}] -  {name}: no YouTube id, cannot fetch it again",
-                  flush=True)  # fmt: skip
+            _record(conn, path, f"{why}; no YouTube id, cannot fetch it again")
+            print(f"{at} -  {name}: {why}; no YouTube id, cannot fetch it again", flush=True)
             continue
         what = repair_one(conn, path, yid, cookies_from_browser)
-        counts["repaired" if what.startswith("repaired") else "failed"] += 1
-        if not what.startswith("repaired"):
-            row = conn.execute("SELECT size, mtime FROM files WHERE path=?", (path,)).fetchone()
-            jobs.record(conn, path, "probe", 1, row[0] if row else None, row[1] if row else None,
-                        probe_failure("moov atom not found") + f"; {what}")  # fmt: skip
-            conn.commit()
-        print(f"  [{n}/{len(rows)}] {'✓' if what.startswith('repaired') else '!'}  {name}: {what}",
-              flush=True)  # fmt: skip
-    print(f"  ✓  {counts['repaired']} repaired, {counts['failed']} could not be, "
-          f"{counts['no_id']} without a YouTube id")  # fmt: skip
+        if what.startswith("repaired"):
+            counts["repaired"] += 1
+        else:
+            counts["failed"] += 1
+            _record(conn, path, f"{why}; {what}")
+        print(f"{at} {'✓' if what.startswith('repaired') else '!'}  {name}: {what}", flush=True)
+    print(f"  ✓  {counts['repaired']} repaired, {counts['readable']} read fine after all, "
+          f"{counts['failed']} could not be, {counts['no_id']} without a YouTube id")  # fmt: skip
     return counts

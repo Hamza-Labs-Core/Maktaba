@@ -68,6 +68,7 @@ def run(conn: sqlite3.Connection, cfg: bk.BooksConfig | None = None) -> dict[str
     counts["series"], counts["books"] = len(refs), len(names)
     print(f"phase: looking up {len(names)} books named by {len(refs)} series", flush=True)
     found: dict[str, bk.Book] = {}
+    in_a_row = 0  # failed lookups in a row: the encyclopedia is down or limiting us
     for n, name in enumerate(names, 1):
         book = _cached(conn, name, cfg)
         if book is None:
@@ -75,18 +76,22 @@ def run(conn: sqlite3.Connection, cfg: bk.BooksConfig | None = None) -> dict[str
                 book = bk.lookup(name, cfg)
             except (OSError, urllib.error.URLError, ValueError, KeyError) as e:
                 counts["failed"] += 1
+                in_a_row += 1
                 if counts["failed"] <= 3:
                     print(f"  !  {name}: the lookup failed ({e})", flush=True)
-                if counts["failed"] >= 20 and counts["looked_up"] == 0:
-                    print("  !  the encyclopedia is not answering: stopping (tags stay)")
+                if in_a_row >= 5:
+                    print("  !  the encyclopedia is not answering: stopping (books found so far "
+                          "still correct their series; the rest next run)", flush=True)  # fmt: skip
                     break
                 continue
+            in_a_row = 0
             counts["looked_up"] += 1
             conn.execute(
                 "INSERT OR REPLACE INTO books VALUES (?,?,?,?,?,?,?)",
                 (name, bk.BOOKS_VERSION, book.title, book.url,
                  json.dumps(book.categories, ensure_ascii=False), book.summary, time.time()),
             )  # fmt: skip
+            conn.commit()  # a lookup is slow: never repeat it after a stop
             time.sleep(cfg.request_gap_s)
         found[name] = book
         if n % 10 == 0 or n == len(names):

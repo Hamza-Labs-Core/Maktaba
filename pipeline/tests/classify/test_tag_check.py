@@ -42,3 +42,12 @@ def test_the_prompt_names_the_series_and_samples_its_titles() -> None:
     assert "فك الوثاق" in text and "الحويني" in text
     assert text.count("- الحلقة ") == CFG.sample_titles
     assert "prophets_stories" in text and "palestine" in text  # topics and sub-topics
+
+
+def test_the_model_never_damps_twice_nor_against_the_book():
+    cfg = TagCheckConfig()
+    v = Verdict(("tafsir",), ())
+    tags = {"topic:hadith": (0.9, "book «بلوغ المرام»"), "topic:fiqh": (0.8, "kw")}
+    once = apply(tags, v, cfg)
+    assert once["topic:hadith"][0] == 0.9  # the book it explains says so
+    assert apply(once, v, cfg)["topic:fiqh"] == once["topic:fiqh"]

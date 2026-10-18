@@ -476,7 +476,8 @@ def _hosted(base: str, path: str) -> str:
         raise RuntimeError(f"logo {Path(path).name} is not at {link}: {e}") from e
     if not ok:
         raise RuntimeError(f"logo {Path(path).name} is not at {link}")
-    return link
+    # the picture's version: a changed logo is a new link, never a cached old picture
+    return f"{link}?v={hashlib.sha1(Path(path).read_bytes()).hexdigest()[:10]}"
 
 
 # ------------------------------------------------------------ continuity on a rewrite

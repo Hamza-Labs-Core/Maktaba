@@ -286,22 +286,27 @@ def apply(
         return dict(tags)
     keep = set(book_fields)
     out: dict[str, tuple[float, str]] = {}
+    chapter = {t if ":" in t else f"topic:{t}": sc for t, sc in chapter_topics.items()}
+    damped = f"{evidence}: not its subject"
     for tag, (score, ev) in tags.items():
         ns, _, val = tag.partition(":")
         if ns == "genre":
             continue
-        if ns == "topic" and val not in keep and val not in chapter_topics:
-            out[tag] = (round(score * cfg.damp, 3), f"{ev}; {evidence}: not its subject")
+        # damped once: the step runs again on its own output (idempotent)
+        if ns == "topic" and val not in keep and tag not in chapter and damped not in ev:
+            out[tag] = (round(score * cfg.damp, 3), f"{ev}; {damped}")
         else:
             out[tag] = (score, ev)
+
+    def raise_to(key: str, sc: float, why: str) -> None:
+        old, ev = out.get(key, (0.0, ""))
+        if old < sc:
+            out[key] = (sc, ev if why in ev else f"{ev}; {why}".lstrip("; "))
+
     for t in book_fields:
-        key = f"topic:{t}"
-        if key not in out or out[key][0] < cfg.book_score:
-            out[key] = (cfg.book_score, (out.get(key, (0, ""))[1] + f"; {evidence}").lstrip("; "))
-    for t, sc in chapter_topics.items():
-        key = t if ":" in t else f"topic:{t}"
-        if key not in out or out[key][0] < sc:
-            out[key] = (sc, (out.get(key, (0, ""))[1] + f"; {evidence}: its chapter").lstrip("; "))
+        raise_to(f"topic:{t}", cfg.book_score, evidence)
+    for key, sc in chapter.items():  # a chapter never lowers its own topic
+        raise_to(key, sc, f"{evidence}: its chapter")
     broad = next((t for t in book_fields if t in TOPICS), None)
     if broad:
         out[f"genre:{broad}"] = (out[f"topic:{broad}"][0], f"{evidence}: its subject")

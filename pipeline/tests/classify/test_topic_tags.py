@@ -482,3 +482,11 @@ def test_ramadan_content_is_still_ramadan():
     assert tags["occasion:ramadan"] > 0.9 and tags["topic:fasting"] > 0.9
     assert "occasion:ramadan" in {t.tag for t in tag_series("خواطر رمضانية")}
     assert {"topic:fasting", "occasion:ramadan"} <= set(chapter_tags("كتاب الصيام"))
+
+
+def test_a_season_label_leaves_the_next_word_whole():
+    from maktaba_pipeline.classify.topic_tags import _season_labels
+
+    for title, rest in (("رمضان 1445 مع الشيخ", "مع الشيخ"), ("رمضان 1445 هدايا", "هدايا"),
+                        ("رمضان 1445 هـ مجالس", "مجالس"), ("رمضان 2024م", "")):  # fmt: skip
+        assert _season_labels(title)[0].strip() == rest, title

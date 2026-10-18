@@ -2032,7 +2032,8 @@ def suggest_channels(
     break_lib = [f for f in break_short if any(x in f.folder or x in f.presenter for x in libs)]
 
     def break_pool(key: str, label: str, focus: tuple[str, ...], exclude: tuple[str, ...],
-                   own: str | None, mix: bool) -> str | None:  # fmt: skip
+                   own: str | None, mix: bool,
+                   audiences: tuple[str, ...] = ()) -> str | None:  # fmt: skip
         """The channel's breaks: nasheeds and dua, and the chosen libraries' short clips
         that clearly belong to it: on a topic channel scored on its topic; on an audience
         or format channel (Kids) among its own filler; any on the mix or a presenter's."""
@@ -2043,6 +2044,10 @@ def suggest_channels(
         def related(f: FillerItem) -> bool:
             if mix:
                 return True
+            if audiences:  # Kids: made for its audience (a nasheed from its own filler)
+                return _score(f.tags, "audience", audiences) >= cfg.topic_min_score or (
+                    f.path in mine and f.topic_score(("nasheed",)) >= fmin
+                )
             if focus:
                 return f.topic_score(focus) >= cfg.break_related_min_score
             return f.path in mine
@@ -2144,6 +2149,7 @@ def suggest_channels(
         key: str, number: int, name: str, name_ar: str, kind: str, category: str,
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
         exclude: tuple[str, ...] = (), focus: tuple[str, ...] = (),
+        audiences: tuple[str, ...] = (),
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
@@ -2245,7 +2251,7 @@ def suggest_channels(
                                 general.key if kind != "theme" or cfg.theme_general_filler
                                 else None,
                                 break_pool(key, label, focus, exclude, pool_keys.get("topic"),
-                                           mix)] if p is not None)),
+                                           mix, audiences)] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip
@@ -2454,7 +2460,8 @@ def suggest_channels(
             + (f", never {', '.join(t.exclude)}" if t.exclude else "")
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
-                     mix=False, exclude=t.exclude, focus=t.topics)  # fmt: skip
+                     mix=False, exclude=t.exclude, focus=t.topics,
+                     audiences=t.audiences)  # fmt: skip
         return whole_shows(ids)
 
     for n_t, t in enumerate(cfg.themes):
@@ -2625,10 +2632,12 @@ def suggest_channels(
         if not thin:
             break
         for c in thin:
-            unplaced.append((c.label, f"only {hours_of(owned[c.label]):.1f} h of its own once "
-                                      "each show airs on its most specific channel "
-                                      f"(show_max_channels {cfg.show_max_channels}), needs "
-                                      f"{c.need:.0f} h"))  # fmt: skip
+            took_back = " even after taking back every show it matches" if (
+                cfg.show_reuse_to_fill and cfg.show_max_channels > 0) else ""  # fmt: skip
+            unplaced.append((c.label, f"only {hours_of(owned[c.label]):.1f} h once each show "
+                                      "airs on its most specific channel "
+                                      f"(show_max_channels {cfg.show_max_channels}){took_back}, "
+                                      f"needs {c.need:.0f} h"))  # fmt: skip
             live.remove(c)
     for c in live[cfg.max_channels :]:
         unplaced.append((c.label, f"past max_channels ({cfg.max_channels}): the channels "

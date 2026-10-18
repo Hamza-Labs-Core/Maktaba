@@ -50,6 +50,7 @@ def run(conn: sqlite3.Connection, cfg: tc.TagCheckConfig | None = None) -> dict[
         for r in conn.execute("SELECT series_id, input_hash, answer, applied_hash FROM tag_checks")
     }
     t0 = time.monotonic()
+    in_a_row = 0  # unanswered questions in a row: the model server went away
     for n, (sid, name, library) in enumerate(series, 1):
         titles = [
             r[0]
@@ -71,12 +72,15 @@ def run(conn: sqlite3.Connection, cfg: tc.TagCheckConfig | None = None) -> dict[
                 answer = tc.ask(tc.prompt(name, library or "", titles, cfg), cfg)
             except (OSError, urllib.error.URLError, KeyError, ValueError) as e:
                 counts["failed"] += 1
+                in_a_row += 1
                 if counts["failed"] <= 3:
                     print(f"  !  {name[:50]}: the model did not answer ({e})", flush=True)
-                if counts["failed"] >= 25 and counts["asked"] == 0:
-                    print("  !  the model is not answering: stopping (tags stay as they are)")
+                if in_a_row >= 5:
+                    print("  !  the model is not answering: stopping (the answers so far are "
+                          "kept; the rest next run)", flush=True)  # fmt: skip
                     break
                 continue
+            in_a_row = 0
             applied = None
             counts["asked"] += 1
             conn.execute(

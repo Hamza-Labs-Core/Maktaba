@@ -168,3 +168,22 @@ def test_the_quran_channel_takes_recitations_not_talk_about_dua() -> None:
         else set()
     )
     assert "Y:/q/r.mp4" in pool and talk.path not in pool
+
+
+def test_kids_breaks_are_made_for_kids_not_just_on_its_topics() -> None:
+    from maktaba_pipeline.schedule.channel_planner import ThemeSpec
+
+    seasons = [_season("s2", "كنوز السيرة", "seerah", 2),
+               _season("s3", "قصص للأطفال", "seerah", 2)]  # fmt: skip
+    kamali = "Y:/قناة الشَّيخ سَعيد الكَمَلي"
+    adult = LooseVideo(path="Y:/k/adult.mp4", duration_s=120, title="درس", folder=kamali,
+                       presenter="سعيد الكملي", tags={"topic:seerah": 0.9}, genre="seerah",
+                       is_short=True)  # fmt: skip
+    child = LooseVideo(path="Y:/k/child.mp4", duration_s=120, title="للأطفال", folder=kamali,
+                       presenter="سعيد الكملي", tags={"topic:seerah": 0.9, "audience:kids": 0.9},
+                       genre="seerah", is_short=True)  # fmt: skip
+    kids = ThemeSpec("kids", "Kids", "الأطفال", 110, ("seerah",), audiences=("kids",))
+    plan = suggest_channels(seasons, [adult, child],
+                            PlannerConfig(**{**SMALL, "themes": (kids,)}))  # type: ignore[arg-type]  # fmt: skip
+    breaks = {i.path for i in plan.filler_pools["kids.breaks"].items}
+    assert breaks == {"Y:/k/child.mp4"}
