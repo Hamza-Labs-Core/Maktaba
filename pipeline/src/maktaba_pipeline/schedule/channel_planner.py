@@ -437,6 +437,14 @@ class PlannerConfig:
     break_filler_libraries: tuple[str, ...] = ("سَعيد الكَمَلي", "سعيد الكملي")
     #: … up to this long
     break_filler_max_minutes: float = 5.0
+    #: a break clip plays only where it clearly belongs: on a topic channel its topic
+    #: score is at least this; on an audience channel (Kids) it is among its own filler
+    break_related_min_score: float = 0.7
+    #: the lighter channels whose breaks may play nasheeds (still related to the channel)
+    break_nasheed_channels: tuple[str, ...] = (
+        "kids", "family", "stories", "history", "prophets", "seerah", "palestine", "akhlaq",
+        "nasheed", "mix",
+    )  # fmt: skip
     #: on a topic channel, shows of the channel's own topic take the slots first
     #: (variety there means another presenter, not another topic)
     theme_core_first: bool = True
@@ -2007,18 +2015,42 @@ def suggest_channels(
     )  # fmt: skip
     pools[dawn.key] = dawn
     libs = tuple(x for x in cfg.break_filler_libraries if x)
-    breaks = _pool(
-        "library.breaks", "فواصل: أناشيد ومقاطع قصيرة",
-        (f for f in fillers
-         if f.duration_s <= cfg.break_filler_max_minutes * 60 and not f.promo_of
-         and (f.topic_score(cfg.break_filler_topics) >= fmin
-              or any(x in f.folder or x in f.presenter for x in libs))),
-        None,
-        f"nasheed / dua clips and short clips of {', '.join(libs) or '-'} "
-        f"(≤ {cfg.break_filler_max_minutes:g} min), in every channel's breaks",
-    )  # fmt: skip
-    if cfg.break_filler and breaks.items:
-        pools[breaks.key] = breaks
+    break_short = [
+        f for f in fillers if f.duration_s <= cfg.break_filler_max_minutes * 60 and not f.promo_of
+    ]
+    break_any = [f for f in break_short if f.topic_score(cfg.break_filler_topics) >= fmin]
+    break_lib = [f for f in break_short if any(x in f.folder or x in f.presenter for x in libs)]
+
+    def break_pool(key: str, label: str, focus: tuple[str, ...], exclude: tuple[str, ...],
+                   own: str | None, mix: bool) -> str | None:  # fmt: skip
+        """The channel's breaks: nasheeds and dua, and the chosen libraries' short clips
+        that clearly belong to it: on a topic channel scored on its topic; on an audience
+        or format channel (Kids) among its own filler; any on the mix or a presenter's."""
+        if not cfg.break_filler:
+            return None
+        mine = {i.path for i in pools[own].items} if own in pools else set()
+
+        def related(f: FillerItem) -> bool:
+            if mix:
+                return True
+            if focus:
+                return f.topic_score(focus) >= cfg.break_related_min_score
+            return f.path in mine
+
+        nasheed_ok = key in cfg.break_nasheed_channels
+        items = [
+            f for f in {f.path: f for f in break_any + break_lib}.values()
+            if related(f) and not _excluded(f.tags, exclude, cfg)
+            and (nasheed_ok or f.topic_score(("nasheed",)) < fmin)
+        ]  # fmt: skip
+        if not items:
+            return None
+        p = _pool(f"{key}.breaks", f"{label} · فواصل", items, None,
+                  f"nasheed / dua clips and short clips of {', '.join(libs) or '-'} "
+                  + (f"on {'/'.join(focus)} (≥ {cfg.break_related_min_score})" if focus else "")
+                  + f" (≤ {cfg.break_filler_max_minutes:g} min)")  # fmt: skip
+        pools[p.key] = p
+        return p.key
 
     def lib_lane(key: str, name: str, ids: set[str], special: str) -> Lane | None:
         us = _order_units(units[i] for i in ids)
@@ -2202,7 +2234,8 @@ def suggest_channels(
                                 *slot_pools.values(),
                                 general.key if kind != "theme" or cfg.theme_general_filler
                                 else None,
-                                breaks.key if breaks.key in pools else None] if p is not None)),
+                                break_pool(key, label, focus, exclude, pool_keys.get("topic"),
+                                           mix)] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip

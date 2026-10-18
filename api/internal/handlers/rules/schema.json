@@ -855,6 +855,34 @@
      "minimum": 0
     },
     {
+     "name": "break_related_min_score",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Breaks: a clip's topic score on a topic channel",
+     "help": "A break clip plays only where it clearly belongs: on a topic channel scored at least this on its topic; on an audience channel (Kids) among its own filler.",
+     "default": 0.7,
+     "minimum": 0
+    },
+    {
+     "name": "break_nasheed_channels",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: channels that may play nasheeds",
+     "help": "Channel keys (kids, history, stories …); the nasheed must still be related to the channel.",
+     "default": [
+      "kids",
+      "family",
+      "stories",
+      "history",
+      "prophets",
+      "seerah",
+      "palestine",
+      "akhlaq",
+      "nasheed",
+      "mix"
+     ]
+    },
+    {
      "name": "theme_core_first",
      "kind": "bool",
      "group": "Channels",

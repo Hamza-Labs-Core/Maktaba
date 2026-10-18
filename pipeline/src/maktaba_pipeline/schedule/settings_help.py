@@ -151,6 +151,20 @@ PLANNER_HELP: dict[str, Help] = {
         "Part of the library's (or presenter's) name.",
     ),
     "break_filler_max_minutes": Help(CH, "Breaks: clips up to (min)"),
+    "break_related_min_score": Help(
+        CH,
+        "Breaks: a clip's topic score on a topic channel",
+        "A break clip plays only where it clearly belongs: on a "
+        "topic channel scored at least this on its topic; on an "
+        "audience channel (Kids) among its own filler.",
+        minimum=0,
+    ),
+    "break_nasheed_channels": Help(
+        CH,
+        "Breaks: channels that may play nasheeds",
+        "Channel keys (kids, history, stories …); the nasheed must "
+        "still be related to the channel.",
+    ),
     "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
     "theme_episode_min_count": Help(
         CH,

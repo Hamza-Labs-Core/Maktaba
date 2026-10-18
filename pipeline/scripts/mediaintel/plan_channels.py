@@ -330,7 +330,7 @@ def _filler_collections(ch: ChannelSuggestion, cfg: PlannerConfig) -> list[dict[
         return [{"pool": p, "weight": cfg.dz_weight_topic, "cooldown": 0}
                 for p in ch.filler_pools]  # fmt: skip
     want = ((f"{ch.key}.topic", cfg.dz_weight_topic), (f"{ch.key}.promos", cfg.dz_weight_promos),
-            ("library.breaks", cfg.dz_weight_breaks), ("library.general", cfg.dz_weight_general))  # fmt: skip
+            (f"{ch.key}.breaks", cfg.dz_weight_breaks), ("library.general", cfg.dz_weight_general))  # fmt: skip
     return [{"pool": p, "weight": w, "cooldown": 0} for p, w in want if p in ch.filler_pools]
 
 

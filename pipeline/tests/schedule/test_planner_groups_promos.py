@@ -82,26 +82,44 @@ def test_promos_pad_their_own_show_and_nowhere_else() -> None:
     assert any(a.kind == "filler" and a.path and "/c10" in a.path for a in day)
 
 
-def test_breaks_play_nasheeds_and_short_clips_on_every_channel() -> None:
+def test_break_clips_belong_to_their_channel() -> None:
     seasons = [
         _season("s1", "شاهد على العصر", "islamic_history", 1),
         _season("s2", "كنوز السيرة", "seerah", 2),
+        _season("s3", "دروس العقيدة", "aqeedah", 1),
     ]
-    nasheeds = [_clip(200 + i, genre="nasheed") for i in range(4)]
-    kamali = [
-        LooseVideo(path=f"Y:/k/{i}.mp4", duration_s=120, title=f"فائدة {i}",
-                   folder="Y:/قناة الشَّيخ سَعيد الكَمَلي", presenter="سعيد الكملي",
-                   tags={"topic:aqeedah": 0.9}, genre="aqeedah", is_short=True)
-        for i in range(3)
-    ]  # fmt: skip
-    long_one = LooseVideo(path="Y:/k/long.mp4", duration_s=20 * 60, title="درس",
-                          folder="Y:/قناة الشَّيخ سَعيد الكَمَلي", presenter="سعيد الكملي",
-                          tags={"topic:nasheed": 0.9}, genre="nasheed")  # fmt: skip
-    plan = suggest_channels(seasons, nasheeds + kamali + [long_one], PlannerConfig(**SMALL))  # type: ignore[arg-type]
-    breaks = plan.filler_pools["library.breaks"]
-    paths = {i.path for i in breaks.items}
-    assert {v.path for v in nasheeds + kamali} <= paths
-    assert "Y:/k/long.mp4" not in paths  # longer than a break
-    assert all("library.breaks" in c.filler_pools for c in plan.channels if c.kind != "quran")
-    off = suggest_channels(seasons, nasheeds, PlannerConfig(**{**SMALL, "break_filler": False}))  # type: ignore[arg-type]
-    assert "library.breaks" not in off.filler_pools
+
+    def clip(path: str, tags: dict[str, float], genre: str, folder: str = "Y:/a") -> LooseVideo:
+        return LooseVideo(path=path, duration_s=120, title=path, folder=folder,
+                          presenter="سعيد الكملي" if "k" in folder else "أحمد", tags=tags,
+                          genre=genre, is_short=True)  # fmt: skip
+
+    kamali = "Y:/قناة الشَّيخ سَعيد الكَمَلي"
+    vids = [
+        clip("n-seerah.mp4", {"topic:nasheed": 0.9, "topic:seerah": 0.9}, "nasheed"),
+        clip("n-plain.mp4", {"topic:nasheed": 0.9}, "nasheed"),
+        clip("d-aqeedah.mp4", {"topic:dua_dhikr": 0.9, "topic:aqeedah": 0.9}, "dua_dhikr"),
+        clip("k-seerah.mp4", {"topic:seerah": 0.9}, "seerah", kamali),
+        clip("k-aqeedah.mp4", {"topic:aqeedah": 0.9}, "aqeedah", kamali),
+        clip("k-long.mp4", {"topic:seerah": 0.9}, "seerah", kamali),
+    ]
+    vids[-1] = LooseVideo(**{**{f: getattr(vids[-1], f) for f in vids[-1].__slots__},
+                             "duration_s": 20 * 60})  # fmt: skip
+    plan = suggest_channels(seasons, vids, PlannerConfig(**SMALL))  # type: ignore[arg-type]
+
+    def breaks(key: str) -> set[str]:
+        k = f"{key}.breaks"
+        return {i.path for i in plan.filler_pools[k].items} if k in plan.filler_pools else set()
+
+    keys = {c.key for c in plan.channels}
+    assert {"seerah", "aqeedah"} <= keys, keys
+    if "seerah" in keys:  # a light channel: its nasheed and its clip, nothing else
+        assert breaks("seerah") == {"n-seerah.mp4", "k-seerah.mp4"}
+    if "aqeedah" in keys:  # not a light one: no nasheed; its dua and its clip
+        assert breaks("aqeedah") == {"d-aqeedah.mp4", "k-aqeedah.mp4"}
+    assert "k-long.mp4" not in set().union(*(breaks(k) for k in keys))  # longer than a break
+    for c in plan.channels:
+        if c.kind == "quran":
+            assert not any(p.endswith(".breaks") for p in c.filler_pools)
+    off = suggest_channels(seasons, vids, PlannerConfig(**{**SMALL, "break_filler": False}))  # type: ignore[arg-type]
+    assert not any(k.endswith(".breaks") for k in off.filler_pools)
