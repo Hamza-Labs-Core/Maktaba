@@ -1,7 +1,7 @@
 -- +goose NO TRANSACTION
 -- +goose Up
 --
--- Slot 0109 (Epic 27, dizqueTV parity): what Maktaba's own scheduler needs to air
+-- Slot 0113 (Epic 27, dizqueTV parity): what Maktaba's own scheduler needs to air
 -- what the dizqueTV channels air.
 --
 --   channel_programs.kind        admits 'live': a live broadcast (a YouTube live page or

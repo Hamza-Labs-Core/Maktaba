@@ -15,7 +15,7 @@ import pytest
 from maktaba_pipeline.channels import run_schedule
 from maktaba_pipeline.channels.pass_ import channel_tz
 from maktaba_pipeline.channels.repo import SqlRepo
-from maktaba_pipeline.engine.sql import loads
+from maktaba_pipeline.engine.sql import dumps, loads
 from maktaba_pipeline.engine.stages.write_channels import apply_changes, compute_changes
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.schedule.tv_settings import MaktabaTvConfig
@@ -139,27 +139,94 @@ async def test_filler_pools_lists_and_look_are_written_idempotently(
     assert await db.fetchval("SELECT count(*) FROM filler_items") < n_items
 
 
-@pytest.mark.asyncio
-async def test_a_channel_written_before_the_logo_was_written_is_not_taken_for_a_user_edit(
-    db: Database, tmp_path: Path
+_OVERRIDES_PG = """CREATE TABLE IF NOT EXISTS channel_art_overrides (
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('logo','watermark','loading')),
+    path TEXT, settings JSONB, base JSONB,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (channel_id, kind))"""
+_OVERRIDES_SQLITE = """CREATE TABLE IF NOT EXISTS channel_art_overrides (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('logo','watermark','loading')),
+    path TEXT, settings TEXT, base TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (channel_id, kind))"""
+
+
+async def _override(
+    db: Database, cid: str, kind: str, path: str | None, settings: Any = None
 ) -> None:
-    from maktaba_pipeline.engine.hashing import canonical_hash
-    from maktaba_pipeline.engine.stages.write_channels import _FIELDS_V1
+    """What the API's art upload does (feat/tv-access, slot 0114): the effective art on
+    the channel, the override recorded."""
+    await db.execute(
+        "INSERT INTO channel_art_overrides (channel_id, kind, path, settings) VALUES ($1,$2,$3,$4)",
+        cid, kind, path, None if settings is None else dumps(settings),
+    )  # fmt: skip
+    r = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE id = $1", cid)
+    mc = loads(r["mode_config"])
+    logo = r["logo_path"]
+    if kind == "logo":
+        logo = path
+    elif kind == "loading":
+        mc["look"]["loading_path"] = path
+    else:
+        mc["look"]["watermark"] = {
+            **(mc["look"]["watermark"] or {}),
+            **({"path": path} if path else {}),
+            **(settings or {}),
+        }
+    await db.execute(
+        "UPDATE channels SET logo_path = $2, mode_config = $3 WHERE id = $1", cid, logo, dumps(mc)
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_plan_carries_its_art_in_the_maktaba_keys(db: Database, tmp_path: Path) -> None:
+    from maktaba_pipeline.engine.stages._plan_json import _with_art
 
     plan, _, _ = await _plan(db, tmp_path)
+    m = _with_art(plan["channels"][0]["maktaba"], plan, "news")
+    assert m["logo_path"] == str(tmp_path / "logos" / "news.png")
+    assert m["mode_config"]["look"]["loading_path"] == str(tmp_path / "logos" / "loading-news.png")
+    assert m["mode_config"]["look"]["watermark"]["position"] == "bottom-left"
+    # write_channels takes the plan's art from there (and adds the loudness rule)
+    m["logo_path"] = str(tmp_path / "logos" / "default.png")
+    plan["channels"][0]["maktaba"] = m
     await _write(db, plan)
-    cid = await db.fetchval("SELECT id FROM channels WHERE number = 105")
-    r = await db.fetchrow("SELECT * FROM channels WHERE id = $1", cid)
-    row = {k: (loads(r[k]) if k == "mode_config" else r[k]) for k in _FIELDS_V1}
-    row["enabled"] = bool(row["enabled"])
-    # as write_channels 1 left it: no logo, a hash without one
-    await db.execute("UPDATE channels SET logo_path = NULL WHERE id = $1", cid)
-    await db.execute(
-        "UPDATE external_links SET content_hash = $1 WHERE target = 'maktaba_channel' AND subject_id = 'news'",
-        canonical_hash(row),
-    )
+    row = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 105")
+    assert row["logo_path"] == str(tmp_path / "logos" / "default.png")
+    assert loads(row["mode_config"])["look"]["loudnorm"] == {"enabled": True, "target_lufs": -16.0}
+
+
+@pytest.mark.asyncio
+async def test_art_set_by_hand_is_kept_and_never_a_user_edit(db: Database, tmp_path: Path) -> None:
+    plan, _, _ = await _plan(db, tmp_path)
+    await _write(db, plan)
+    await db.execute(_OVERRIDES_PG if db.dialect == "postgres" else _OVERRIDES_SQLITE)
+    cid = str(await db.fetchval("SELECT id FROM channels WHERE number = 105"))
+    await _override(db, cid, "logo", "/data/channel-art/x/logo-1.png")
+    await _override(db, cid, "watermark", None, {"position": "top-left", "width_pct": 20.0})
     cs, wp = await compute_changes(db, plan, MaktabaTvConfig())
-    assert not wp.user_edited and [c for c, _ in wp.update] == [str(cid)]
+    assert not wp.user_edited and not wp.update  # the hand-set art is what it should be
+
+    # the plan's art changes: what was set by hand stays, the rest follows the plan
+    (tmp_path / "wm2.png").write_bytes(b"png")
+    plan["config"]["dz_watermark_file"] = str(tmp_path / "wm2.png")
+    plan["config"]["dz_watermark_margin"] = 5.0
+    (tmp_path / "logos" / "loading-news.png").unlink()
+    cs, wp = await compute_changes(db, plan, MaktabaTvConfig())
+    assert not wp.user_edited and cid in [c for c, _ in wp.update]  # (and 106: same watermark)
+    assert [c["fields"] for c in cs.changed if c.get("channel_id") == cid] == [["look"]]
+    await apply_changes(db, wp)
+    row = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE id = $1", cid)
+    look_ = loads(row["mode_config"])["look"]
+    assert row["logo_path"] == "/data/channel-art/x/logo-1.png"
+    assert look_["watermark"] == {"path": str(tmp_path / "wm2.png"), "position": "top-left",
+                                  "width_pct": 20.0, "margin_pct": 5.0}  # fmt: skip
+    assert look_["loading_path"] is None
+
+    # a real edit (the name) is still a user edit
+    await db.execute("UPDATE channels SET name = 'Mine' WHERE id = $1", cid)
+    _, wp = await compute_changes(db, plan, MaktabaTvConfig())
+    assert [u["channel_id"] for u in wp.user_edited] == [cid]
 
 
 @pytest.mark.asyncio
@@ -210,7 +277,7 @@ async def test_the_scheduler_airs_the_written_filler_and_live_broadcasts(
 
 @pytest.mark.asyncio
 async def test_a_live_block_is_stored_with_its_address(db: Database) -> None:
-    """Slot 0109: channel_programs takes kind 'live' with a source_url (both dialects)."""
+    """Slot 0113: channel_programs takes kind 'live' with a source_url (both dialects)."""
     cid = "00000000-0000-0000-0000-0000000000c1"
     await db.execute(
         "INSERT INTO channels (id, number, name, slug, mode, mode_config) VALUES ($1, 901, 'n', 'n', 'schedule', '{}')",

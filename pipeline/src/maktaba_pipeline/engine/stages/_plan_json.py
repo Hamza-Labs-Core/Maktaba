@@ -30,6 +30,7 @@ from ...schedule.channel_planner import (
     maktaba_channel_definition,
     simulate,
 )
+from ...schedule.tv_channel import plan_art
 
 __all__ = [
     "PLAN_FORMAT",
@@ -173,6 +174,13 @@ def config_json(cfg: PlannerConfig) -> dict[str, Any]:
     return d
 
 
+def _with_art(m: dict[str, Any], plan: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """The Maktaba channel with the plan's art (``logo_path``, ``mode_config.look``): what
+    write_channels writes under the art set by hand, and what the API reverts to."""
+    logo, look = plan_art(plan, key)
+    return {**m, "logo_path": logo, "mode_config": {**m["mode_config"], "look": look}}
+
+
 def build_plan_json(
     plan: PlanResult,
     *,
@@ -182,6 +190,7 @@ def build_plan_json(
     sample_weekday: str = SAMPLE_WEEKDAY,
 ) -> dict[str, Any]:
     channels: list[dict[str, Any]] = []
+    art_cfg = {"config": config_json(plan.config)}
     for ch in plan.channels:
         week = simulate(ch, plan, weekday="mon", days=7)
         sample = simulate(ch, plan, weekday=sample_weekday, days=1)
@@ -205,7 +214,7 @@ def build_plan_json(
                     "weekday": sample_weekday,
                     "airings": [_airing_json(a) for a in sample],
                 },
-                "maktaba": maktaba_channel_definition(ch, plan),
+                "maktaba": _with_art(maktaba_channel_definition(ch, plan), art_cfg, ch.key),
                 "exports": {name: fn(ch, plan) for name, fn in (exporters or {}).items()},
             }
         )

@@ -15,7 +15,7 @@ from typing import Any
 
 from .channel_planner import PlannerConfig
 
-__all__ = ["channel_art", "filler_items", "filler_lists"]
+__all__ = ["channel_art", "filler_items", "filler_lists", "plan_art"]
 
 
 def filler_lists(
@@ -74,3 +74,32 @@ def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
             "fixedSize": False, "animated": wm.lower().endswith(".gif"),
         }  # fmt: skip
     return out
+
+
+def plan_art(plan: Mapping[str, Any], key: str) -> tuple[str | None, dict[str, Any]]:
+    """The plan's art for channel ``key`` as Maktaba TV takes it: ``(logo_path,
+    {"watermark": {path, position, width_pct, margin_pct} | None, "loading_path"})`` —
+    the logo and corner watermark the dizqueTV export uploads (:func:`channel_art`) and
+    the channel's own loading picture (``loading-<logo>.png`` beside the logo: the
+    dizqueTV build's ``maktaba-loading-<key>.png``), or None."""
+    art = channel_art(plan, key)
+    logo = art.get("icon")
+    wm = art.get("watermark")
+    loading = None
+    if isinstance(logo, str):
+        lp = Path(logo).with_name(f"loading-{Path(logo).name}")
+        loading = str(lp) if lp.is_file() else None
+    return (
+        logo if isinstance(logo, str) else None,
+        {
+            "watermark": None
+            if not isinstance(wm, dict)
+            else {
+                "path": str(wm["url"]),
+                "position": str(wm.get("position") or "top-right"),
+                "width_pct": float(wm.get("width") or 0),
+                "margin_pct": float(wm.get("verticalMargin") or 0),
+            },
+            "loading_path": loading,
+        },
+    )

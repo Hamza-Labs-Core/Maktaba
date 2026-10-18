@@ -31,11 +31,10 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from ...db.jobs import Job
-from ...schedule.tv_channel import channel_art, filler_items, filler_lists
+from ...schedule.tv_channel import filler_items, filler_lists, plan_art
 from ...schedule.tv_settings import MaktabaTvConfig
 from ..changes import ChangeSet, apply_or_review
 from ..context import StageContext, StageFailure
@@ -49,7 +48,7 @@ __all__ = ["IMPL", "ChannelWrite", "WritePlan", "compute_changes", "content_hash
 
 TARGET = "maktaba_channel"
 SUBJECT_KIND = "catalog"
-_FIELDS_V1 = (
+_FIELDS = (
     "number",
     "name",
     "category",
@@ -59,18 +58,101 @@ _FIELDS_V1 = (
     "enabled",
     "sort_order",
 )
-_FIELDS = (*_FIELDS_V1, "logo_path")
+#: the art is not part of the definition: a logo, watermark or loading picture set by
+#: hand (``channel_art_overrides``, slot 0114) is never a user edit; it is compared on
+#: its own (:func:`_art`)
+_ART_KINDS = ("logo", "watermark", "loading")
 
 
 def content_hash(row: dict[str, Any]) -> str:
-    """Hash of the user-visible definition of a channel (what the tool writes)."""
-    return canonical_hash({k: row.get(k) for k in _FIELDS})
+    """Hash of the user-visible definition of a channel (what the tool writes), without
+    its art (``logo_path``, ``mode_config.look``)."""
+    out = {k: row.get(k) for k in _FIELDS}
+    mc = out.get("mode_config")
+    if isinstance(mc, dict):
+        out["mode_config"] = {k: v for k, v in mc.items() if k != "look"}
+    return canonical_hash(out)
 
 
-def _written_as(row: dict[str, Any], stored: str) -> bool:
-    """The row is what the tool last wrote: its hash, or the hash a channel written
-    before the logo was part of it carries."""
-    return stored in (content_hash(row), canonical_hash({k: row.get(k) for k in _FIELDS_V1}))
+def _changed_fields(cur: dict[str, Any], want: dict[str, Any]) -> list[str]:
+    """What a rewrite changes: the definition's fields (``mode_config`` without its look),
+    then the art (``logo_path``, ``look``)."""
+
+    def bare(mc: Any) -> Any:
+        return {k: v for k, v in mc.items() if k != "look"} if isinstance(mc, dict) else mc
+
+    out = [
+        k
+        for k in _FIELDS
+        if (bare(cur.get(k)) if k == "mode_config" else cur.get(k))
+        != (bare(want.get(k)) if k == "mode_config" else want.get(k))
+    ]
+    old, new = _art(cur), _art(want)
+    return sorted(out) + [
+        n for n, a, b in zip(("logo_path", "look"), old, new, strict=True) if a != b
+    ]
+
+
+def _art(row: dict[str, Any]) -> tuple[Any, Any]:
+    """A channel's art as stored: ``(logo_path, mode_config.look)``."""
+    mc = row.get("mode_config")
+    return row.get("logo_path"), (mc.get("look") if isinstance(mc, dict) else None)
+
+
+def effective_art(
+    logo: str | None, look_: dict[str, Any] | None, overrides: dict[str, dict[str, Any]]
+) -> tuple[str | None, dict[str, Any] | None]:
+    """The plan's art with what was set by hand on top (``channel_art_overrides`` rows by
+    kind): an override's image replaces the plan's, a watermark override's settings
+    (position, width_pct, margin_pct) replace the plan's settings."""
+    if not overrides:
+        return logo, look_
+    out = dict(look_ or {})
+    if (o := overrides.get("logo")) and o.get("path"):
+        logo = str(o["path"])
+    if o := overrides.get("watermark"):
+        wm = dict(out.get("watermark") or {})
+        if o.get("path"):
+            wm["path"] = str(o["path"])
+        if isinstance(o.get("settings"), dict):
+            wm.update(o["settings"])
+        out["watermark"] = wm or None
+    if (o := overrides.get("loading")) and o.get("path"):
+        out["loading_path"] = str(o["path"])
+    return logo, out
+
+
+async def _overrides(db: Any, channel_id: str) -> dict[str, dict[str, Any]]:
+    """The art set by hand on a channel (slot 0114), by kind; none on a database that
+    does not have the table yet."""
+    if not await _has_overrides(db):
+        return {}
+    rows = await db.fetch(
+        "SELECT kind, path, settings FROM channel_art_overrides WHERE channel_id = $1", channel_id
+    )
+    return {
+        str(r["kind"]): {
+            "path": r["path"],
+            "settings": loads(r["settings"]) if r["settings"] else None,
+        }
+        for r in rows
+        if str(r["kind"]) in _ART_KINDS
+    }
+
+
+async def _has_overrides(db: Any) -> bool:
+    if is_pg(db):
+        return bool(
+            await db.fetchval(
+                "SELECT count(*) FROM information_schema.tables"
+                " WHERE table_name = 'channel_art_overrides' AND table_schema = current_schema()"
+            )
+        )
+    return bool(
+        await db.fetchval(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'channel_art_overrides'"
+        )
+    )
 
 
 def _slug(key: str) -> str:
@@ -129,35 +211,13 @@ def _filler_spec(ch: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def look(plan: dict[str, Any], key: str, tv: MaktabaTvConfig) -> tuple[str | None, dict[str, Any]]:
-    """``(logo_path, mode_config.look)`` of channel ``key``: the logo and corner
-    watermark files the dizqueTV export uploads (:func:`channel_art`), the channel's own
-    loading picture (``loading-<logo>.png`` beside the logo: the dizqueTV build's
-    ``maktaba-loading-<key>.png``) and the loudness rule."""
-    art = channel_art(plan, key)
-    logo = art.get("icon")
-    wm = art.get("watermark")
-    loading = None
-    if isinstance(logo, str):
-        lp = Path(logo).with_name(f"loading-{Path(logo).name}")
-        loading = str(lp) if lp.is_file() else None
-    return (
-        logo if isinstance(logo, str) else None,
-        {
-            "watermark": None
-            if not isinstance(wm, dict)
-            else {
-                "path": str(wm["url"]),
-                "position": str(wm.get("position") or "top-right"),
-                "width_pct": float(wm.get("width") or 0),
-                "margin_pct": float(wm.get("verticalMargin") or 0),
-            },
-            "loading_path": loading,
-            "loudnorm": {
-                "enabled": bool(tv.loudnorm),
-                "target_lufs": float(tv.loudnorm_target_lufs),
-            },
-        },
-    )
+    """``(logo_path, mode_config.look)`` of channel ``key``: the plan's art
+    (:func:`plan_art`) and the loudness rule."""
+    logo, art = plan_art(plan, key)
+    return logo, {
+        **art,
+        "loudnorm": {"enabled": bool(tv.loudnorm), "target_lufs": float(tv.loudnorm_target_lufs)},
+    }
 
 
 def _desired(plan: dict[str, Any], tv: MaktabaTvConfig | None = None) -> dict[str, ChannelWrite]:
@@ -167,6 +227,10 @@ def _desired(plan: dict[str, Any], tv: MaktabaTvConfig | None = None) -> dict[st
     for ch in plan.get("channels", []):
         m = ch["maktaba"]
         logo, ch_look = look(plan, str(ch["key"]), tv)
+        if "logo_path" in m or "look" in (m.get("mode_config") or {}):
+            # the plan's own art (what the API shows as the plan's value)
+            logo = m.get("logo_path")
+            ch_look = {**(m["mode_config"].get("look") or {}), "loudnorm": ch_look["loudnorm"]}
         mode_config = {
             **m["mode_config"],
             "filler": _filler_spec(ch, cfg),
@@ -308,6 +372,7 @@ async def compute_changes(
         )
     }
     actual = await _actual(db, [str(r["external_id"]) for r in links.values()])
+    has_ov = await _has_overrides(db)
     wp = WritePlan()
     taken_numbers = {
         int(r["number"]): str(r["id"])
@@ -331,10 +396,21 @@ async def compute_changes(
                 continue
             wp.create.append(want)
             continue
-        if not _written_as(row, str(link["content_hash"])):
+        if content_hash(row) != str(link["content_hash"]):
             wp.user_edited.append({"key": key, "channel_id": str(link["external_id"])})
             continue
-        if content_hash(row) != want.digest:
+        ov = await _overrides(db, str(link["external_id"])) if has_ov else {}
+        if ov:
+            logo, art_look = effective_art(
+                want.values["logo_path"], want.values["mode_config"].get("look"), ov
+            )
+            want = ChannelWrite(
+                want.key,
+                want.slug,
+                {**want.values, "logo_path": logo,
+                 "mode_config": {**want.values["mode_config"], "look": art_look}},
+            )  # fmt: skip
+        if content_hash(row) != want.digest or _art(row) != _art(want.values):
             n = want.values["number"]
             if taken_numbers.get(n) not in (None, str(link["external_id"])):
                 wp.conflicts.append({"key": key, "number": n, "why": "number taken"})
@@ -350,7 +426,7 @@ async def compute_changes(
             {
                 "key": want.key,
                 "channel_id": cid,
-                "fields": sorted(k for k in _FIELDS if cur.get(k) != want.values.get(k)),
+                "fields": _changed_fields(cur, want.values),
             }
         )
     wp.pools = await _pool_plan(db, plan)
@@ -513,7 +589,8 @@ async def _verify(db: Any, wp: WritePlan, written: dict[str, str]) -> None:
     want = {w.key: w for w in wp.create} | {w.key: w for _, w in wp.update}
     actual = await _actual(db, list(written.values()))
     for key, cid in written.items():
-        if content_hash(actual.get(cid, {})) != want[key].digest:
+        got = actual.get(cid, {})
+        if content_hash(got) != want[key].digest or _art(got) != _art(want[key].values):
             raise StageFailure(
                 "readback_mismatch", f"channel {key} differs after writing", retryable=True
             )

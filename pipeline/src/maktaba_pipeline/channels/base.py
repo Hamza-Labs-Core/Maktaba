@@ -53,7 +53,7 @@ class BlockKind(StrEnum):
     FILLER = "filler"
     BUMPER = "bumper"
     SLATE = "slate"
-    LIVE = "live"  # a live broadcast (slot 0109): ``source_url``, no video
+    LIVE = "live"  # a live broadcast (slot 0113): ``source_url``, no video
 
 
 @dataclass(slots=True, frozen=True)
@@ -145,7 +145,7 @@ class Block:
     video_id: UUID | None = None
     filler_item_id: UUID | None = None
     title_snapshot: dict[str, Any] = field(default_factory=dict)
-    #: a LIVE block's stream address (slot 0109); None for every other kind
+    #: a LIVE block's stream address (slot 0113); None for every other kind
     source_url: str | None = None
 
 

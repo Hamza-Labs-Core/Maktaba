@@ -1,14 +1,14 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0109 (Epic 27, dizqueTV parity).
+-- SQLite parity sibling for slot 0113 (Epic 27, dizqueTV parity).
 --
 -- SQLite cannot ALTER a CHECK constraint in place, so channel_programs is rebuilt
 -- (rename aside, recreate with 'live' in the kind CHECK and the new source_url column,
 -- copy, drop the old table, rebuild its indexes). The column list mirrors the slot-0082
 -- SQLite definition. filler_pools only gains a column.
 --
-ALTER TABLE channel_programs RENAME TO channel_programs_old_0109;
+ALTER TABLE channel_programs RENAME TO channel_programs_old_0113;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -36,11 +36,11 @@ INSERT INTO channel_programs
         source_offset, source_duration, title_snapshot)
 SELECT id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at,
        source_offset, source_duration, title_snapshot
-  FROM channel_programs_old_0109;
+  FROM channel_programs_old_0113;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TABLE IF EXISTS channel_programs_old_0109;
+DROP TABLE IF EXISTS channel_programs_old_0113;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -73,7 +73,7 @@ DROP INDEX IF EXISTS filler_pools_external_key_uniq;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE channel_programs RENAME TO channel_programs_new_0109;
+ALTER TABLE channel_programs RENAME TO channel_programs_new_0113;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -100,11 +100,11 @@ INSERT INTO channel_programs
         source_offset, source_duration, title_snapshot)
 SELECT id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at,
        source_offset, source_duration, title_snapshot
-  FROM channel_programs_new_0109 WHERE kind <> 'live';
+  FROM channel_programs_new_0113 WHERE kind <> 'live';
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TABLE IF EXISTS channel_programs_new_0109;
+DROP TABLE IF EXISTS channel_programs_new_0113;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

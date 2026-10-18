@@ -279,7 +279,7 @@ class SqlRepo:
         return live
 
     async def load_filler(self, channel: ChannelDef) -> FillerSet:
-        """The channel's filler (slots 0085/0109): its weighted lists
+        """The channel's filler (slots 0085/0113): its weighted lists
         (``mode_config.filler.lists``: a plan pool key, or a pool id, with weight and
         cooldown), its slots' own pools (``filler_pool``), ``fill.pool`` when it has no
         lists, and any pool made for this channel by hand (weight 1)."""
