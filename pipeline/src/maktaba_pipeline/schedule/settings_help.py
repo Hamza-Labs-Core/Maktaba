@@ -394,7 +394,14 @@ PLANNER_HELP: dict[str, Help] = {
     "ramadan_exclusive": Help(RAM, "Ramadan shows only in Ramadan"),
     # dizqueTV
     "timezone": Help(DZ, "Time zone", "IANA name (Asia/Riyadh); empty: the server's."),
-    "dz_lateness_ms": Help(DZ, "Allowed lateness (ms)"),
+    "dz_lateness_ms": Help(
+        DZ,
+        "Allowed lateness (ms)",
+        "How late a slot may start and still play its show: an episode that runs past the "
+        "next slot's start pushes it back. Past this, dizqueTV gives the whole slot to "
+        "filler (an hour and more of clips, no programme). A day: every slot plays its "
+        "next episode, the schedule is programmes around the clock.",
+    ),
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),

@@ -1988,8 +1988,8 @@
      "kind": "int",
      "group": "dizqueTV",
      "label": "Allowed lateness (ms)",
-     "help": "",
-     "default": 900000,
+     "help": "How late a slot may start and still play its show: an episode that runs past the next slot's start pushes it back. Past this, dizqueTV gives the whole slot to filler (an hour and more of clips, no programme). A day: every slot plays its next episode, the schedule is programmes around the clock.",
+     "default": 86400000,
      "minimum": 0
     },
     {

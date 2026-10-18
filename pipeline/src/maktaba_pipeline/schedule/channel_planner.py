@@ -651,7 +651,8 @@ class PlannerConfig:
     format_min_score: float = 0.5
     timezone: str | None = None  # IANA name written into mode_config; None = server local
     # dizqueTV schedule knobs
-    dz_lateness_ms: int = 15 * 60_000
+    #: a slot started later than this is all filler: a day, never (programmes all day)
+    dz_lateness_ms: int = 24 * 60 * 60_000
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
