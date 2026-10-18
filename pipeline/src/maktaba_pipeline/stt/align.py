@@ -6,7 +6,9 @@ time warping per window. Run per window it costs a model call each, which is mos
 what batching the decode saved. Here every window of a GPU pass is aligned in one
 forward pass (token sequences padded with end-of-text: the decoder is causal, so the
 padding changes no real position), and the per-window work after it (DTW, punctuation,
-the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence).
+the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence). The audio
+is not encoded again: the decode's encoder output is reused (encoding is the costly half
+of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ APPEND = "\"'.。,，!！?？:：”)]}、"
 @dataclass
 class AlignItem:
     segments: list[dict[str, Any]]  # one window's sentences ("seek", "start", "end", "tokens")
-    mel: Any  # the window's mel (N_FRAMES, n_mels)
+    features: Any  # the window's encoder output (n_audio_ctx, n_audio_state)
     num_frames: int
     last_speech: float
 
@@ -60,8 +62,8 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem]) -> None:
     seqs = [[*sot, tokenizer.no_timestamps, *text, tokenizer.eot] for _, _, text in work]
     width = max(len(q) for q in seqs)
     tokens = mx.array([q + [tokenizer.eot] * (width - len(q)) for q in seqs])
-    mels = mx.stack([it.mel for it, _, _ in work])
-    logits, cross_qk = model.forward_with_cross_qk(mels, tokens)
+    features = mx.stack([it.features for it, _, _ in work])
+    logits, _, cross_qk = model.decoder(tokens, features)
     heads = model.alignment_heads.tolist()
 
     for b, ((it, per_seg, text), q) in enumerate(zip(work, seqs, strict=True)):

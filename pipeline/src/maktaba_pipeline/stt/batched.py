@@ -33,6 +33,7 @@ import numpy as np
 
 from ..log import get_logger
 from .align import AlignItem, align_batch
+from .rules import TimestampRules
 
 __all__ = [
     "BatchedTranscriber",
@@ -286,13 +287,15 @@ def to_sentences(segments: list[dict[str, Any]]) -> list[Sentence]:
 class BatchedTranscriber:
     """One Whisper model, one GPU thread, many files in flight.
 
-    ``decode`` / ``align`` / ``mel_of`` / ``tokenizer`` default to MLX-Whisper's; tests
-    pass fakes to exercise the seek logic without a GPU."""
+    ``encode`` / ``decode`` / ``align`` / ``mel_of`` / ``tokenizer`` default to
+    MLX-Whisper's; tests pass fakes to exercise the seek logic without a GPU (with no
+    ``encode`` the windows go to ``decode`` as they are)."""
 
     def __init__(
         self,
         settings: WhisperSettings | None = None,
         *,
+        encode: Callable[[list[Any]], Any] | None = None,
         decode: DecodeFn | None = None,
         align: AlignFn | None = None,
         mel_of: Callable[[np.ndarray], Any] | None = None,
@@ -300,6 +303,7 @@ class BatchedTranscriber:
         tokenizer: _Tokenizer | None = None,
     ) -> None:
         self.settings = settings or WhisperSettings()
+        self._encode = encode
         self._decode = decode
         self._align = align
         self._mel_of = mel_of
@@ -346,6 +350,7 @@ class BatchedTranscriber:
             pad_or_trim,
         )
         from mlx_whisper.decoding import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
+            ApplyTimestampRules,
             DecodingOptions,
             DecodingTask,
             GreedyDecoder,
@@ -411,7 +416,11 @@ class BatchedTranscriber:
                 tokens = mx.concatenate([tokens, next_tokens[:, None]], axis=-1)
                 return tokens, mx.all(tokens[:, -1] == self.eot), sum_logprobs
 
-        def run_decode(mels: Sequence[Any], temps: Sequence[float]) -> Sequence[_Decoded]:
+        def encode(windows: list[Any]) -> Any:
+            # once a pass: the decode, and the word alignment after it, both read it
+            return model.encoder(mx.stack(windows))
+
+        def run_decode(features: Any, temps: Sequence[float]) -> Sequence[_Decoded]:
             opts = DecodingOptions(
                 language=s.language,
                 task="transcribe",
@@ -422,10 +431,16 @@ class BatchedTranscriber:
             task = DecodingTask(model, opts)
             if any(t > 0 for t in temps):
                 task.decoder = RowGreedy(temps, tok.eot)
-            return list(task.run(mx.stack(list(mels))))
+            task.logit_filters = [
+                _fast_rules(mx, f) if isinstance(f, ApplyTimestampRules) else f
+                for f in task.logit_filters
+            ]
+            # encoder output is recognised by its shape, and not encoded again
+            return list(task.run(features))
 
         self._mel_of = mel_of
         self._window_of = window_of
+        self._encode = encode
         self._decode = run_decode
         self._align = None
         if s.word_timestamps:
@@ -516,21 +531,23 @@ class BatchedTranscriber:
             return
         sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in live]
         windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(live, sizes, strict=True)]
-        results = self._decode(windows, [s.temperatures[j.temp_idx] for j in live])
+        features = self._encode(windows) if self._encode is not None else windows
+        results = self._decode(features, [s.temperatures[j.temp_idx] for j in live])
         self.passes += 1
         self.windows += len(windows)
         pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int]] = []
         before = {id(j): j.seek for j in live}
-        for j, n, win, r in zip(live, sizes, windows, results, strict=True):
+        for i, (j, n, win, r) in enumerate(zip(live, sizes, windows, results, strict=True)):
             if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
                 j.temp_idx += 1
                 continue
             j.temp_idx = 0
             got = window_segments(j, r, n, self._tokenizer, s)
             if got is not None:
-                pending.append((j, got[0], got[1], got[2], win, n))
+                feat = features[i] if self._align_batch is not None else win
+                pending.append((j, got[0], got[1], got[2], feat, n))
         if self._align_batch is not None:
-            items = [AlignItem(cur, win, n, j.last_speech) for j, cur, _, _, win, n in pending]
+            items = [AlignItem(cur, f, n, j.last_speech) for j, cur, _, _, f, n in pending]
             if items:
                 self._align_batch(items)
         elif self._align is not None:
@@ -542,6 +559,19 @@ class BatchedTranscriber:
             moved = min(j.seek, j.content_frames) - before[id(j)]
             if moved > 0:
                 self.audio_done += moved / FRAMES_PER_SECOND
+
+
+def _fast_rules(mx: Any, f: Any) -> TimestampRules:
+    """MLX-Whisper's timestamp rules, replaced by the batched ones (stt/rules.py)."""
+    tok = f.tokenizer
+    return TimestampRules(
+        mx,
+        sample_begin=f.sample_begin,
+        timestamp_begin=tok.timestamp_begin,
+        eot=tok.eot,
+        no_timestamps=tok.no_timestamps,
+        max_initial_timestamp_index=f.max_initial_timestamp_index,
+    )
 
 
 def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:
