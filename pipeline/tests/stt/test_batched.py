@@ -113,15 +113,15 @@ class FakeModel:
     calls: list[tuple[int, float]] = field(default_factory=list)
     bad_once: set[int] = field(default_factory=set)
 
-    def decode(self, mels: Sequence[Any], temperature: float) -> list[R]:
-        self.calls.append((len(mels), temperature))
+    def decode(self, mels: Sequence[Any], temps: Sequence[float]) -> list[R]:
+        self.calls.append((len(mels), max(temps)))
         out = []
-        for win in mels:
+        for win, t in zip(mels, temps, strict=True):
             tokens, wid = win
-            if wid in self.bad_once and temperature == 0.0:
+            if wid in self.bad_once and t == 0.0:
                 out.append(R(tokens, avg_logprob=-3.0))  # improbable: fall back
             else:
-                out.append(R(tokens, temperature=temperature))
+                out.append(R(tokens, temperature=t))
         return out
 
 
@@ -172,7 +172,7 @@ async def test_an_improbable_window_is_decoded_again_warmer() -> None:
     bt = _transcriber(model)
     r = await bt.transcribe(_audio(1, 3))
     assert len(r.sentences) == 3
-    assert (1, 0.2) in model.calls  # the fallback ran alone at the next temperature
+    assert (1, 0.2) in model.calls  # the same window again at the next temperature
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from ..log import get_logger
+from .align import AlignItem, align_batch
 
 __all__ = [
     "BatchedTranscriber",
@@ -90,8 +91,8 @@ class _Decoded(Protocol):
     temperature: float
 
 
-#: (mel windows, temperature) -> one result per window
-DecodeFn = Callable[[Sequence[Any], float], Sequence[_Decoded]]
+#: (mel windows, one temperature per window) -> one result per window
+DecodeFn = Callable[[Sequence[Any], Sequence[float]], Sequence[_Decoded]]
 #: (segments of one window, the window's mel, its frames, last speech end) -> adds "words"
 AlignFn = Callable[[list[dict[str, Any]], Any, int, float], None]
 
@@ -117,7 +118,6 @@ class _Job:
     admitted: float
     seek: int = 0
     temp_idx: int = 0
-    waiting_since: int = 0  # the pass a fallback window started waiting at
     last_speech: float = 0.0
     segments: list[dict[str, Any]] = field(default_factory=list)
 
@@ -134,19 +134,18 @@ def _needs_fallback(r: _Decoded, s: WhisperSettings) -> bool:
     )
 
 
-def apply_window(
+def window_segments(
     job: _Job,
     result: _Decoded,
     segment_size: int,
     tokenizer: _Tokenizer,
     settings: WhisperSettings,
-    *,
-    mel_segment: Any = None,
-    align: AlignFn | None = None,
-) -> None:
-    """One decoded window of one file: its sentences, and where the next window
-    starts. Stock ``mlx_whisper.transcribe``, minus prompts and the progress bar."""
-    time_offset = job.seek * HOP_LENGTH / SAMPLE_RATE
+) -> tuple[list[dict[str, Any]], bool, float] | None:
+    """One decoded window of one file: its sentences, and where the next window starts
+    (stock ``mlx_whisper.transcribe``, minus prompts and the progress bar). ``None``
+    when the window is silence. Returns (sentences, ends in silence, window offset)."""
+    window_seek = job.seek  # word alignment places a sentence by its window's start
+    time_offset = window_seek * HOP_LENGTH / SAMPLE_RATE
     tokens = np.array(result.tokens, dtype=np.int64)
 
     # no speech: fast-forward, unless the text is probable enough to keep anyway
@@ -154,11 +153,12 @@ def apply_window(
         result.avg_logprob > settings.logprob_threshold
     ):
         job.seek += segment_size
-        return
+        return None
 
     def new_segment(start: float, end: float, toks: np.ndarray) -> dict[str, Any]:
         text_tokens = [int(t) for t in toks.tolist() if t < tokenizer.eot]
         return {
+            "seek": window_seek,
             "start": start,
             "end": end,
             "text": tokenizer.decode(text_tokens),
@@ -201,23 +201,47 @@ def apply_window(
             duration = (int(stamps[-1]) - tokenizer.timestamp_begin) * TIME_PRECISION
         current.append(new_segment(time_offset, time_offset + duration, tokens))
         job.seek += segment_size
+    return current, single_timestamp_ending, time_offset
 
-    if align is not None and mel_segment is not None:
-        align(current, mel_segment, segment_size, job.last_speech)
-        if not single_timestamp_ending:
-            last_word_end = _last_word_end(current)
-            if last_word_end is not None and last_word_end > time_offset:
-                job.seek = round(last_word_end * FRAMES_PER_SECOND)
-        last_word_end = _last_word_end(current)
-        if last_word_end is not None:
-            job.last_speech = last_word_end
 
-    # a window at the very end can name timestamps past the audio
-    end_of_audio = job.audio_sec
+def finish_window(
+    job: _Job,
+    current: list[dict[str, Any]],
+    single_timestamp_ending: bool,
+    time_offset: float,
+) -> None:
+    """After word alignment (if any): the seek follows the last word, and the window's
+    sentences join the file's."""
+    last_word_end = _last_word_end(current)
+    if last_word_end is not None:
+        if not single_timestamp_ending and last_word_end > time_offset:
+            job.seek = round(last_word_end * FRAMES_PER_SECOND)
+        job.last_speech = last_word_end
+    end_of_audio = job.audio_sec  # a window at the very end can name times past the audio
     for seg in current:
         seg["end"] = min(seg["end"], end_of_audio)
         if seg["start"] < seg["end"] and seg["text"].strip():
             job.segments.append(seg)
+
+
+def apply_window(
+    job: _Job,
+    result: _Decoded,
+    segment_size: int,
+    tokenizer: _Tokenizer,
+    settings: WhisperSettings,
+    *,
+    mel_segment: Any = None,
+    align: AlignFn | None = None,
+) -> None:
+    """One window, aligned on its own (``align``) when given."""
+    got = window_segments(job, result, segment_size, tokenizer, settings)
+    if got is None:
+        return
+    current, single, offset = got
+    if align is not None and mel_segment is not None:
+        align(current, mel_segment, segment_size, job.last_speech)
+    finish_window(job, current, single, offset)
 
 
 def _last_word_end(segments: list[dict[str, Any]]) -> float | None:
@@ -274,6 +298,8 @@ class BatchedTranscriber:
         self._mel_of = mel_of
         self._window_of = window_of
         self._tokenizer = tokenizer
+        #: every window of a pass aligned in one model call (stt/align.py)
+        self._align_batch: Callable[[list[AlignItem]], None] | None = None
         self._inbox: queue.Queue[_Submission] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -310,13 +336,11 @@ class BatchedTranscriber:
         )
         from mlx_whisper.decoding import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             DecodingOptions,
-            decode,
+            DecodingTask,
+            GreedyDecoder,
         )
         from mlx_whisper.load_models import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             load_model,
-        )
-        from mlx_whisper.timing import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
-            add_word_timestamps,
         )
         from mlx_whisper.tokenizer import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             get_tokenizer,
@@ -340,31 +364,47 @@ class BatchedTranscriber:
         def window_of(mel: Any, seek: int, size: int) -> Any:
             return pad_or_trim(mel[seek : seek + size], N_FRAMES, axis=-2).astype(mx.float16)
 
-        def run_decode(mels: Sequence[Any], temperature: float) -> Sequence[_Decoded]:
+        class RowGreedy(GreedyDecoder):  # type: ignore[misc]
+            """Greedy decoding with a temperature per row: every window of a pass in
+            one batch, whatever fallback temperature it has reached."""
+
+            def __init__(self, temps: Sequence[float], eot: int) -> None:
+                super().__init__(1.0, eot)
+                t = mx.array(list(temps), dtype=mx.float32)
+                self.hot = t > 0
+                self.inv = mx.where(self.hot, 1.0 / mx.maximum(t, 1e-6), 1.0)[:, None]
+
+            def update(self, tokens: Any, logits: Any, sum_logprobs: Any) -> Any:
+                greedy = logits.argmax(axis=-1)
+                sampled = mx.random.categorical(logits * self.inv)
+                next_tokens = mx.where(self.hot, sampled, greedy)
+                logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+                current = logprobs[mx.arange(logprobs.shape[0]), next_tokens]
+                sum_logprobs += current * (tokens[:, -1] != self.eot)
+                eot_mask = tokens[:, -1] == self.eot
+                next_tokens = next_tokens * (1 - eot_mask) + self.eot * eot_mask
+                tokens = mx.concatenate([tokens, next_tokens[:, None]], axis=-1)
+                return tokens, mx.all(tokens[:, -1] == self.eot), sum_logprobs
+
+        def run_decode(mels: Sequence[Any], temps: Sequence[float]) -> Sequence[_Decoded]:
             opts = DecodingOptions(
                 language=s.language,
                 task="transcribe",
-                temperature=temperature,
+                temperature=max(temps) or 0.0,
                 without_timestamps=False,
                 fp16=True,
             )
-            out = decode(model, mx.stack(list(mels)), opts)
-            return list(out) if isinstance(out, list) else [out]
-
-        def align(segs: list[dict[str, Any]], mel: Any, frames: int, last_speech: float) -> None:
-            add_word_timestamps(
-                segments=segs,
-                model=model,
-                tokenizer=tok,
-                mel=mel,
-                num_frames=frames,
-                last_speech_timestamp=last_speech,
-            )
+            task = DecodingTask(model, opts)
+            if any(t > 0 for t in temps):
+                task.decoder = RowGreedy(temps, tok.eot)
+            return list(task.run(mx.stack(list(mels))))
 
         self._mel_of = mel_of
         self._window_of = window_of
         self._decode = run_decode
-        self._align = align if s.word_timestamps else None
+        self._align = None
+        if s.word_timestamps:
+            self._align_batch = lambda items: align_batch(model, tok, items)
         _log.info("whisper.loaded", model=s.model, seconds=round(time.monotonic() - t0, 1))
 
     def _admit(self, jobs: list[_Job], block: bool) -> None:
@@ -434,10 +474,8 @@ class BatchedTranscriber:
                 j.loop.call_soon_threadsafe(_set_result, j.future, result)
 
     def _pass(self, jobs: list[_Job]) -> None:
-        """One GPU pass: the main batch (every file at temperature 0) always runs; a
-        fallback temperature runs only once enough windows wait for it, or when it is
-        all that is left. Small fallback groups would otherwise each cost a pass of
-        their own and leave the GPU waiting (6 windows per pass instead of 32)."""
+        """One GPU pass: one window of every active file, each at the temperature its
+        window has reached (a fallback re-decodes the same window, warmer, next pass)."""
         s = self.settings
         assert self._decode is not None and self._window_of is not None
         assert self._tokenizer is not None
@@ -445,35 +483,31 @@ class BatchedTranscriber:
             if j.future.cancelled():
                 j.seek = j.content_frames
         live = [j for j in jobs if not j.done]
-        by_temp: dict[int, list[_Job]] = {}
-        for j in live:
-            by_temp.setdefault(j.temp_idx, []).append(j)
-        main = by_temp.pop(0, [])
-        groups: list[tuple[int, list[_Job]]] = [(0, main)] if main else []
-        enough = max(1, s.max_batch // 4)
-        for idx, group in sorted(by_temp.items()):
-            starved = any(self.passes - j.waiting_since >= 8 for j in group)
-            if not main or len(group) >= enough or starved:
-                groups.append((idx, group))
-        for idx, group in groups:
-            self._decode_group(group, s.temperatures[idx])
-
-    def _decode_group(self, group: list[_Job], temperature: float) -> None:
-        s = self.settings
-        assert self._decode is not None and self._window_of is not None
-        assert self._tokenizer is not None
-        sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in group]
-        windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(group, sizes, strict=True)]
-        results = self._decode(windows, temperature)
+        if not live:
+            return
+        sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in live]
+        windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(live, sizes, strict=True)]
+        results = self._decode(windows, [s.temperatures[j.temp_idx] for j in live])
         self.passes += 1
         self.windows += len(windows)
-        for j, n, win, r in zip(group, sizes, windows, results, strict=True):
+        pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int]] = []
+        for j, n, win, r in zip(live, sizes, windows, results, strict=True):
             if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
-                j.temp_idx += 1  # the same window again, warmer, in a later pass
-                j.waiting_since = self.passes
+                j.temp_idx += 1
                 continue
             j.temp_idx = 0
-            apply_window(j, r, n, self._tokenizer, s, mel_segment=win, align=self._align)
+            got = window_segments(j, r, n, self._tokenizer, s)
+            if got is not None:
+                pending.append((j, got[0], got[1], got[2], win, n))
+        if self._align_batch is not None:
+            items = [AlignItem(cur, win, n, j.last_speech) for j, cur, _, _, win, n in pending]
+            if items:
+                self._align_batch(items)
+        elif self._align is not None:
+            for j, cur, _, _, win, n in pending:
+                self._align(cur, win, n, j.last_speech)
+        for j, cur, single, offset, _, _ in pending:
+            finish_window(j, cur, single, offset)
 
 
 def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:
