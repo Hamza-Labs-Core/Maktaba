@@ -32,16 +32,14 @@ async def _boot(db: Database, **kw: Any) -> tuple[EngineRuntime, tuple[str, ...]
     cfg = RuntimeConfig(database_url="x", stages=(), **kw)
     stop = asyncio.Event()
     overrides: dict[Stage | str, StageHandler] = dict.fromkeys(LEGACY_HANDLERS, _noop_handler)
-    rt, stages, pools, tasks = await _start_engine(
-        db, cfg, "pc/1", cfg.host or "PC", stop, overrides
-    )
+    started = await _start_engine(db, cfg, "pc/1", cfg.host or "PC", stop, overrides)
     stop.set()
-    for t in tasks:
+    for t in started.tasks:
         t.cancel()
-    for t in tasks:
+    for t in started.tasks:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await t
-    return rt, stages, pools
+    return started.runtime, started.served, started.stage_pools
 
 
 @pytest.mark.asyncio

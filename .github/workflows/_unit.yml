@@ -60,3 +60,25 @@ jobs:
       - name: Run cloud unit tests
         working-directory: cloud
         run: go test -short -count=1 ./...
+
+  # Epic 31: a joined machine may be Windows. The cluster tests (config paths, path-map
+  # inference with drive letters and UNC, crypto vectors, stage selection, the join
+  # client) run there too; Linux runs the whole suite above.
+  pipeline-cluster-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Run cluster tests
+        working-directory: pipeline
+        run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider

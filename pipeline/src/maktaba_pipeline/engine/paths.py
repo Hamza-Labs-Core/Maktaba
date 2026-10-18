@@ -47,10 +47,12 @@ class PathMap:
         return best[1] + p[len(best[0]) :]
 
     def to_db(self, local_path: str) -> str:
+        """Map a local path back to the database's form; matched case-insensitively like
+        :meth:`to_local` (``Y:/`` and ``y:/``, ``\\\\NAS\\share`` and ``//nas/share``)."""
         p = local_path.replace("\\", "/")
         best: tuple[str, str] | None = None
         for src, dst in self.entries:
-            if p.startswith(dst) and (best is None or len(dst) > len(best[1])):
+            if p.lower().startswith(dst.lower()) and (best is None or len(dst) > len(best[1])):
                 best = (src, dst)
         if best is None:
             return p
@@ -61,6 +63,8 @@ class PathMap:
 
 
 def _norm(prefix: str) -> str:
+    """Forward slashes and a trailing ``/``: a UNC prefix ``\\\\nas\\share`` becomes
+    ``//nas/share/`` (Windows accepts it, and it round-trips through the map)."""
     p = prefix.replace("\\", "/")
     return p if p.endswith("/") else p + "/"
 

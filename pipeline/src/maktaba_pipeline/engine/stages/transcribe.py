@@ -23,6 +23,7 @@ import platform
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from ...binaries import ffmpeg_binary
 from ...db.jobs import Job
 from ...log import get_logger
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
@@ -194,7 +195,7 @@ async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarr
     import numpy as np
 
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+        ffmpeg_binary(), "-nostdin", "-hide_banner", "-loglevel", "error",
         "-i", path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
         "-f", "s16le", "-",
         stdout=asyncio.subprocess.PIPE,

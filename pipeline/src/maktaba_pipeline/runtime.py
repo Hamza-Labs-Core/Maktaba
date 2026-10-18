@@ -37,6 +37,9 @@ from typing import Any
 
 from . import __version__
 from .channels.pass_ import run_topup_loop
+from .cluster.capabilities import capabilities
+from .cluster.node import WorkerAgent
+from .cluster.stages import StageSelector, select_stages
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .engine.dispatch import EngineRuntime, dispatch_job
@@ -104,6 +107,14 @@ class RuntimeConfig:
     #: Deprecated: per-stage caps were never wired (F10). Concurrency now comes from
     #: ``worker_pools``; kept so existing callers still construct the config.
     stage_concurrency: dict[Stage, int] = field(default_factory=dict)
+    #: ``home`` (the home's own workers) or ``node`` (a machine that joined it, Epic 31):
+    #: a node never syncs the stage registry, claims no home-only stage and follows its
+    #: ``cluster_nodes`` row (revoked, drain, stage switches, path map)
+    role: str = "home"
+    #: the joined machine's id (role ``node``)
+    node_id: str | None = None
+    #: how often the served stages are re-evaluated (design section 5)
+    stage_refresh_sec: float = 30.0
 
 
 _TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn", default=None)
@@ -386,11 +397,15 @@ async def run(
     stage_names: tuple[str, ...] = tuple(str(s) for s in cfg.stages)
     stage_pools: dict[str, str] = {}
     host = cfg.host or stable_hostname()
+    selector: StageSelector | None = None
 
     if cfg.engine:
-        engine_rt, stage_names, stage_pools, background = await _start_engine(
-            database, cfg, worker_id, host, shutdown, dispatch_overrides
-        )
+        started = await _start_engine(database, cfg, worker_id, host, shutdown, dispatch_overrides)
+        engine_rt, background = started.runtime, started.tasks
+        selector = started.selector
+        stage_names = started.served
+        # every graph stage: the served set changes while the worker runs
+        stage_pools = {name: st.pool for name, st in engine_rt.graph.items()}
 
     _log.info(
         "pipeline_runtime_starting",
@@ -399,6 +414,8 @@ async def run(
         host=host,
         stages=list(stage_names),
         engine=cfg.engine,
+        role=cfg.role,
+        node_id=cfg.node_id,
     )
     if not stage_names:
         _log.warning("pipeline_no_stages_to_serve")
@@ -410,6 +427,7 @@ async def run(
         worker_id=worker_id,
         pool_mode=cfg.engine,
         stage_pools=stage_pools,
+        dynamic_stages=selector.current if selector is not None else None,
     )
 
     dispatch_for_db = build_default_dispatch(dispatch_overrides, engine=engine_rt)
@@ -434,7 +452,7 @@ async def run(
     reaper.start()
 
     try:
-        if stage_names:
+        if stage_names or selector is not None:
             await claim_loop.run()
         else:
             await shutdown.wait()
@@ -455,6 +473,24 @@ async def run(
     return 0
 
 
+@dataclass(slots=True)
+class EngineStart:
+    """What :func:`_start_engine` hands to :func:`run`."""
+
+    runtime: EngineRuntime
+    selector: StageSelector
+    agent: WorkerAgent
+    tasks: list[asyncio.Task[None]]
+
+    @property
+    def served(self) -> tuple[str, ...]:
+        return self.selector.served
+
+    @property
+    def stage_pools(self) -> dict[str, str]:
+        return {s: self.runtime.graph[s].pool for s in self.selector.served}
+
+
 async def _start_engine(
     database: Database,
     cfg: RuntimeConfig,
@@ -462,16 +498,28 @@ async def _start_engine(
     host: str,
     shutdown: asyncio.Event,
     overrides: Mapping[Stage | str, StageHandler] | None,
-) -> tuple[EngineRuntime, tuple[str, ...], dict[str, str], list[asyncio.Task[None]]]:
-    """Extension discovery, graph sync, worker registration and background tasks."""
+) -> EngineStart:
+    """Extension discovery, graph sync, worker registration and background tasks.
+
+    A node (``cfg.role == "node"``) never writes the stage registry or the extension
+    rows: the home's workers own them, and a node running older code would roll them
+    back. It still refuses stages whose database version is ahead of its code.
+    """
+    is_node = cfg.role == "node"
+    if is_node and not cfg.node_id:
+        raise ValueError("a node worker needs its node id")
     extensions = discover()
-    await ensure_rows(database, extensions)
+    if not is_node:
+        await ensure_rows(database, extensions)
     states = {e.manifest.name: await load_state(database, e) for e in extensions}
     graph = build_full_graph(extensions)
     register_extension_impls(extensions, states)
-    report = await sync_graph(database, graph, states)
-    if report.version_changes:
-        _log.info("graph_versions_changed", changes=dict(report.version_changes))
+    if is_node:
+        _log.info("node_leaves_the_stage_registry_to_the_home", node_id=cfg.node_id)
+    else:
+        report = await sync_graph(database, graph, states)
+        if report.version_changes:
+            _log.info("graph_versions_changed", changes=dict(report.version_changes))
     ahead = await stages_ahead(database, graph)
     for name, db_version in ahead.items():
         _log.warning("graph_version_ahead", stage=name, db_version=db_version)
@@ -483,8 +531,30 @@ async def _start_engine(
         extension_states=states,
         path_map=path_map,
     )
-    handlers = {str(k) for k in (overrides or {})}
-    served = _served_stages(cfg, graph, handlers, ahead)
+    handlers = frozenset(str(k) for k in (overrides or {}))
+    selector = StageSelector(
+        graph=graph,
+        requested=frozenset(str(s) for s in cfg.stages) if cfg.stages else None,
+        excluded=frozenset(cfg.exclude_stages),
+        handlers=handlers,
+        role=cfg.role,
+        ahead=dict(ahead),
+    )
+    agent = WorkerAgent(
+        db=database,
+        worker_id=worker_id,
+        selector=selector,
+        graph=graph,
+        shutdown=shutdown,
+        node_id=cfg.node_id if is_node else None,
+        explicit_path_map=bool(cfg.path_map.strip()),
+        path_map=path_map,
+        runtime=runtime,
+    )
+    caps = await asyncio.to_thread(capabilities)
+    if is_node:
+        await agent.start_node(caps)
+    selector.compute()
 
     collector = runtime.nas.collector
     for ext in extensions:
@@ -493,30 +563,34 @@ async def _start_engine(
         if callable(probes) and state is not None and state.enabled and state.configured:
             collector.probes.update(probes(state.settings))
 
-    pools = sorted({runtime.graph[s].pool for s in served})
-
     async def register() -> None:
         await register_worker(
             database,
             worker_id=worker_id,
             host=host,
-            stages=served,
-            pools=pools,
-            path_map=path_map.as_json(),
+            stages=selector.served,
+            pools=selector.pools,
+            path_map=agent.path_map.as_json(),
             version=__version__,
+            node_id=agent.node_id,
+            role=cfg.role,
+            capabilities=caps,
+            stages_off=selector.stages_off,
         )
 
     await register()
     tasks = [
         asyncio.create_task(
-            _worker_heartbeat(database, worker_id, shutdown, host, register), name="worker-hb"
+            _worker_heartbeat(database, worker_id, shutdown, host, register, agent.beat),
+            name="worker-hb",
         ),
+        asyncio.create_task(agent.run_refresher(cfg.stage_refresh_sec), name="stage-selection"),
         asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
         asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
         asyncio.create_task(run_topup_loop(database, shutdown), name="channel-topup"),
     ]
-    return runtime, tuple(served), {s: runtime.graph[s].pool for s in served}, tasks
+    return EngineStart(runtime=runtime, selector=selector, agent=agent, tasks=tasks)
 
 
 def _served_stages(
@@ -525,37 +599,22 @@ def _served_stages(
     handlers: set[str],
     ahead: Mapping[str, int],
 ) -> list[str]:
-    """Stages this worker claims.
+    """Stages this worker claims (the static part of :func:`cluster.stages.select_stages`).
 
     Default: every graph stage that has a handler here (legacy stages need an
     entry in the dispatch override map; engine stages need an implementation).
     ``cfg.stages`` narrows it; stages whose database version is ahead of this
-    worker's graph are never claimed.
+    worker's graph are never claimed; a node claims no home-only stage.
     """
-    from .engine.stages.registry import get_impl
-
-    requested = {str(s) for s in cfg.stages} if cfg.stages else None
-    excluded = set(cfg.exclude_stages)
-    out: list[str] = []
-    for st in graph:
-        if requested is not None and st.name not in requested:
-            continue
-        if st.name in ahead or st.name in excluded:
-            continue
-        if st.legacy:
-            if st.name not in handlers:
-                continue
-        else:
-            impl = get_impl(st.name)
-            if impl is None or impl.run is None:
-                continue
-            why = impl.unavailable() if impl.unavailable is not None else None
-            if why is not None:
-                if requested is not None:
-                    _log.warning("stage_unavailable_here", stage=st.name, reason=why)
-                continue
-        out.append(st.name)
-    return out
+    served, _ = select_stages(
+        graph,
+        requested={str(s) for s in cfg.stages} if cfg.stages else None,
+        excluded=set(cfg.exclude_stages),
+        handlers=handlers,
+        ahead=ahead,
+        role=cfg.role,
+    )
+    return served
 
 
 async def _worker_heartbeat(
@@ -564,6 +623,7 @@ async def _worker_heartbeat(
     stop: asyncio.Event,
     host: str | None = None,
     register: Callable[[], Awaitable[None]] | None = None,
+    node_beat: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     while not stop.is_set():
         try:
@@ -572,6 +632,11 @@ async def _worker_heartbeat(
                 await register()
         except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker
             _log.exception("worker_heartbeat_failed")
+        if node_beat is not None:
+            try:
+                await node_beat()
+            except Exception:  # noqa: BLE001
+                _log.exception("cluster_node_beat_failed")
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
             await asyncio.wait_for(stop.wait(), timeout=10.0)
 
