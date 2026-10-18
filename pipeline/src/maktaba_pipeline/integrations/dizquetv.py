@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,6 +21,7 @@ __all__ = [
     "DizqueError",
     "DizqueTV",
     "State",
+    "image_upload_body",
     "program_from_plex",
     "read_state",
     "tz_offset_minutes",
@@ -36,6 +38,19 @@ class DizqueError(Exception):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+def image_upload_body(data: bytes, name: str) -> tuple[str, bytes]:
+    """``(Content-Type, body)`` of the multipart form ``POST /api/upload/image`` takes
+    (field ``image``)."""
+    boundary = uuid.uuid4().hex
+    ctype = "image/gif" if name.lower().endswith(".gif") else "image/png"
+    head = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\n'
+        f"Content-Type: {ctype}\r\n\r\n"
+    ).encode()
+    tail = f"\r\n--{boundary}--\r\n".encode()
+    return f"multipart/form-data; boundary={boundary}", head + data + tail
 
 
 class DizqueTV:
@@ -64,6 +79,33 @@ class DizqueTV:
 
     def get(self, path: str) -> Any:
         return self.call("GET", path)
+
+    def upload_image(self, data: bytes, name: str) -> str:
+        """Upload a picture (``POST /api/upload/image``); the URL dizqueTV serves it at."""
+        ctype, body = image_upload_body(data, name)
+        try:
+            status, raw = self._transport.request(
+                "POST",
+                self.base + "/api/upload/image",
+                {"Content-Type": ctype, "Accept": "application/json"},
+                body,
+                self.timeout,
+            )
+        except TransportError as exc:
+            raise DizqueError(f"dizqueTV unreachable: {exc}") from exc
+        if status >= 400:
+            raise DizqueError(f"dizqueTV POST /api/upload/image -> HTTP {status}", status)
+        res = json.loads(raw) if raw else {}
+        if not res.get("status"):
+            raise DizqueError(f"upload {name}: {res.get('message')}")
+        return str(res["data"]["fileUrl"])
+
+    def head_status(self, url: str) -> int:
+        """HTTP status of a ``HEAD`` request to any URL (0 when unreachable)."""
+        try:
+            return self._transport.request("HEAD", url, {}, None, 30.0)[0]
+        except TransportError:
+            return 0
 
     def ping(self) -> None:
         """Raise unless the server lists its channels."""

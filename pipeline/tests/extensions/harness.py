@@ -309,6 +309,10 @@ class FakeDizque:
     #: GET /api/show/ID returns one program fewer than was saved
     corrupt: bool = False
     down: bool = False
+    #: names of the pictures uploaded through ``POST /api/upload/image``
+    uploads: list[str] = field(default_factory=list)
+    #: URLs answered 404 to a HEAD request (a logo not on its web host)
+    missing_urls: set[str] = field(default_factory=set)
     _next: int = 0
 
     @property
@@ -325,10 +329,17 @@ class FakeDizque:
     ) -> tuple[int, bytes]:
         if self.down:
             raise TransportError("connection refused")
+        if method == "HEAD":
+            return (404 if url in self.missing_urls else 200), b""
         assert url.startswith(self.base), url
         path = urllib.parse.unquote(url[len(self.base) :])
-        doc = json.loads(body) if body else None
         self.calls.append((method, path))
+        if path == "/api/upload/image":
+            name = (body or b"").split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
+            self.uploads.append(name)
+            file_url = f"{self.base}/images/uploads/{name}"
+            return 200, json.dumps({"status": True, "data": {"fileUrl": file_url}}).encode()
+        doc = json.loads(body) if body else None
         out = self._route(method, path, doc)
         if out is _NOT_FOUND:
             return 404, b""
@@ -349,8 +360,14 @@ class FakeDizque:
             return [] if self.server is None else [{"name": self.server}]
         if path == "/api/channel-tools/time-slots":
             return {"programs": doc["programs"], "startTime": "2026-01-01T00:00:00.000Z"}
+        if len(parts) == 3 and parts[:2] == ["api", "channel"] and method == "GET":
+            ch = self.channels.get(int(parts[2]))  # the whole channel, programmes included
+            return _NOT_FOUND if ch is None else ch
         if path == "/api/channel" and method in ("POST", "PUT"):
             self.channels[int(doc["number"])] = doc
+            return {}
+        if path == "/api/channel" and method == "DELETE":
+            self.channels.pop(int(doc["number"]), None)
             return {}
         for kind, store in (("show", self.shows), ("filler", self.fillers)):
             if path == f"/api/{kind}s":

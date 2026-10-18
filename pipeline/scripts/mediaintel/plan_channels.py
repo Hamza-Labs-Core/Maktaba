@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from maktaba_pipeline.integrations.dizquetv_export import filler_collections
 from maktaba_pipeline.schedule.channel_planner import (
     DAY_MINUTES,
     WEEKDAYS,
@@ -322,18 +323,6 @@ def _stats(ch: ChannelSuggestion, plan: PlanResult, week: Sequence[Airing]) -> d
     }
 
 
-def _filler_collections(ch: ChannelSuggestion, cfg: PlannerConfig) -> list[dict[str, Any]]:
-    """dizqueTV fills per channel (not per slot): the channel's on-topic filler, its
-    shows' promos, the breaks (nasheeds, short clips), the library's general filler;
-    the Quran channel only its own. Weights: settings ``dz_weight_*``."""
-    if ch.kind == "quran":
-        return [{"pool": p, "weight": cfg.dz_weight_topic, "cooldown": 0}
-                for p in ch.filler_pools]  # fmt: skip
-    want = ((f"{ch.key}.topic", cfg.dz_weight_topic), (f"{ch.key}.promos", cfg.dz_weight_promos),
-            (f"{ch.key}.breaks", cfg.dz_weight_breaks), ("library.general", cfg.dz_weight_general))  # fmt: skip
-    return [{"pool": p, "weight": w, "cooldown": 0} for p, w in want if p in ch.filler_pools]
-
-
 def _airing_json(a: Airing) -> dict[str, Any]:
     def ts(s: float) -> str:
         s = int(round(s)) % (DAY_MINUTES * 60)
@@ -460,7 +449,7 @@ def build_plan_json(
                     "ramadan_schedule": (
                         dizquetv_time_slots(ch, plan, ramadan=True) if ch.ramadan_slots else None
                     ),
-                    "fillerCollections": _filler_collections(ch, plan.config),
+                    "fillerCollections": filler_collections(ch, plan.config),
                     "fillerRepeatCooldown": plan.config.dz_filler_cooldown_ms,
                 },
             }
