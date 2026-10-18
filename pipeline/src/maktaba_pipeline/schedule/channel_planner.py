@@ -428,6 +428,15 @@ class PlannerConfig:
     #: theme channels also fill with the library's general filler (clips on any topic);
     #: off: only their own topic's filler and their shows' promos
     theme_general_filler: bool = False
+    #: every channel's breaks (between shows, like a TV channel's ads) also play the
+    #: library's break filler: nasheeds, dua, and short clips from chosen libraries
+    break_filler: bool = True
+    #: break filler: clips tagged one of these topics …
+    break_filler_topics: tuple[str, ...] = ("nasheed", "dua_dhikr")
+    #: … and any short clip from these libraries (folder or presenter name contains it)
+    break_filler_libraries: tuple[str, ...] = ("سَعيد الكَمَلي", "سعيد الكملي")
+    #: … up to this long
+    break_filler_max_minutes: float = 5.0
     #: on a topic channel, shows of the channel's own topic take the slots first
     #: (variety there means another presenter, not another topic)
     theme_core_first: bool = True
@@ -592,6 +601,11 @@ class PlannerConfig:
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
+    #: how often dizqueTV picks each of a channel's filler lists (relative weights)
+    dz_weight_topic: int = 300
+    dz_weight_promos: int = 150
+    dz_weight_breaks: int = 200
+    dz_weight_general: int = 100
     #: the guide shows what runs: programmes from this long are listed (shorter ones are
     #: filler), and filler time from this long gets its own entry (dz_guide_filler_title)
     #: instead of being added to the programme before it
@@ -1992,6 +2006,19 @@ def suggest_channels(
         general.key, f"filler tagged {', '.join(cfg.dawn_filler_topics)}",
     )  # fmt: skip
     pools[dawn.key] = dawn
+    libs = tuple(x for x in cfg.break_filler_libraries if x)
+    breaks = _pool(
+        "library.breaks", "فواصل: أناشيد ومقاطع قصيرة",
+        (f for f in fillers
+         if f.duration_s <= cfg.break_filler_max_minutes * 60 and not f.promo_of
+         and (f.topic_score(cfg.break_filler_topics) >= fmin
+              or any(x in f.folder or x in f.presenter for x in libs))),
+        None,
+        f"nasheed / dua clips and short clips of {', '.join(libs) or '-'} "
+        f"(≤ {cfg.break_filler_max_minutes:g} min), in every channel's breaks",
+    )  # fmt: skip
+    if cfg.break_filler and breaks.items:
+        pools[breaks.key] = breaks
 
     def lib_lane(key: str, name: str, ids: set[str], special: str) -> Lane | None:
         us = _order_units(units[i] for i in ids)
@@ -2174,7 +2201,8 @@ def suggest_channels(
                     p for p in [pool_keys.get("topic"), promo_key, pool_keys.get("dawn"),
                                 *slot_pools.values(),
                                 general.key if kind != "theme" or cfg.theme_general_filler
-                                else None] if p is not None)),
+                                else None,
+                                breaks.key if breaks.key in pools else None] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip

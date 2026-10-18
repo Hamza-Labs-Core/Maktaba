@@ -80,3 +80,28 @@ def test_promos_pad_their_own_show_and_nowhere_else() -> None:
     mix = next(c for c in plan.channels if c.key == "mix")
     day = simulate(mix, plan, weekday="fri")
     assert any(a.kind == "filler" and a.path and "/c10" in a.path for a in day)
+
+
+def test_breaks_play_nasheeds_and_short_clips_on_every_channel() -> None:
+    seasons = [
+        _season("s1", "شاهد على العصر", "islamic_history", 1),
+        _season("s2", "كنوز السيرة", "seerah", 2),
+    ]
+    nasheeds = [_clip(200 + i, genre="nasheed") for i in range(4)]
+    kamali = [
+        LooseVideo(path=f"Y:/k/{i}.mp4", duration_s=120, title=f"فائدة {i}",
+                   folder="Y:/قناة الشَّيخ سَعيد الكَمَلي", presenter="سعيد الكملي",
+                   tags={"topic:aqeedah": 0.9}, genre="aqeedah", is_short=True)
+        for i in range(3)
+    ]  # fmt: skip
+    long_one = LooseVideo(path="Y:/k/long.mp4", duration_s=20 * 60, title="درس",
+                          folder="Y:/قناة الشَّيخ سَعيد الكَمَلي", presenter="سعيد الكملي",
+                          tags={"topic:nasheed": 0.9}, genre="nasheed")  # fmt: skip
+    plan = suggest_channels(seasons, nasheeds + kamali + [long_one], PlannerConfig(**SMALL))  # type: ignore[arg-type]
+    breaks = plan.filler_pools["library.breaks"]
+    paths = {i.path for i in breaks.items}
+    assert {v.path for v in nasheeds + kamali} <= paths
+    assert "Y:/k/long.mp4" not in paths  # longer than a break
+    assert all("library.breaks" in c.filler_pools for c in plan.channels if c.kind != "quran")
+    off = suggest_channels(seasons, nasheeds, PlannerConfig(**{**SMALL, "break_filler": False}))  # type: ignore[arg-type]
+    assert "library.breaks" not in off.filler_pools

@@ -816,6 +816,45 @@
      "default": false
     },
     {
+     "name": "break_filler",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Breaks: nasheeds and short clips",
+     "help": "Every channel's breaks between shows (like a TV channel's ads) also play the library's break filler, besides its shows' promos and its own topic's clips.",
+     "default": true
+    },
+    {
+     "name": "break_filler_topics",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: clips on these topics",
+     "help": "Topic keys, e.g. nasheed, dua_dhikr.",
+     "default": [
+      "nasheed",
+      "dua_dhikr"
+     ]
+    },
+    {
+     "name": "break_filler_libraries",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: any short clip of these libraries",
+     "help": "Part of the library's (or presenter's) name.",
+     "default": [
+      "سَعيد الكَمَلي",
+      "سعيد الكملي"
+     ]
+    },
+    {
+     "name": "break_filler_max_minutes",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Breaks: clips up to (min)",
+     "help": "",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
      "name": "theme_core_first",
      "kind": "bool",
      "group": "Channels",
@@ -1692,6 +1731,42 @@
      "label": "Filler cooldown (ms)",
      "help": "",
      "default": 1800000,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_topic",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: the channel's topic clips",
+     "help": "",
+     "default": 300,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_promos",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: its shows' promos",
+     "help": "",
+     "default": 150,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_breaks",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: breaks (nasheeds, short clips)",
+     "help": "",
+     "default": 200,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_general",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: general clips",
+     "help": "",
+     "default": 100,
      "minimum": 0
     },
     {

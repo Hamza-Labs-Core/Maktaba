@@ -136,6 +136,21 @@ PLANNER_HELP: dict[str, Help] = {
         "Off: a theme channel fills its gaps only with clips on its own topic and its "
         "shows' promos. On: also with the library's clips on any topic.",
     ),
+    "break_filler": Help(
+        CH,
+        "Breaks: nasheeds and short clips",
+        "Every channel's breaks between shows (like a TV channel's ads) also play the "
+        "library's break filler, besides its shows' promos and its own topic's clips.",
+    ),
+    "break_filler_topics": Help(
+        CH, "Breaks: clips on these topics", "Topic keys, e.g. nasheed, dua_dhikr."
+    ),
+    "break_filler_libraries": Help(
+        CH,
+        "Breaks: any short clip of these libraries",
+        "Part of the library's (or presenter's) name.",
+    ),
+    "break_filler_max_minutes": Help(CH, "Breaks: clips up to (min)"),
     "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
     "theme_episode_min_count": Help(
         CH,
@@ -352,6 +367,10 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_weight_topic": Help(DZ, "Filler weight: the channel's topic clips"),
+    "dz_weight_promos": Help(DZ, "Filler weight: its shows' promos"),
+    "dz_weight_breaks": Help(DZ, "Filler weight: breaks (nasheeds, short clips)"),
+    "dz_weight_general": Help(DZ, "Filler weight: general clips"),
     "dz_guide_min_program_s": Help(
         DZ,
         "Guide: shortest programme listed (s)",
@@ -429,6 +448,8 @@ _MINIMUM: dict[str, float] = {
     "dz_guide_min_program_s": 0, "dz_guide_max_padding_s": 0,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
     "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
+    "break_filler_max_minutes": 0, "dz_weight_topic": 0, "dz_weight_promos": 0,
+    "dz_weight_breaks": 0, "dz_weight_general": 0,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)
