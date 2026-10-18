@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ..schedule.channel_planner import ChannelSuggestion, PlannerConfig
+from ..schedule.tv_channel import channel_art, filler_items, filler_lists
 from ..schedule.tv_settings import LiveSlot
 
 __all__ = [
@@ -49,6 +50,7 @@ __all__ = [
     "channel_art",
     "filler_collections",
     "filler_items",
+    "filler_lists",
     "fingerprint",
     "guide_settings",
     "hosted_link",
@@ -82,26 +84,7 @@ def filler_collections(ch: ChannelSuggestion, cfg: PlannerConfig) -> list[dict[s
     """dizqueTV fills per channel (not per slot): the channel's on-topic filler, its
     shows' promos, the breaks (nasheeds, short clips), the library's general filler;
     the Quran channel only its own. Weights: settings ``dz_weight_*``."""
-    if ch.kind == "quran":
-        return [{"pool": p, "weight": cfg.dz_weight_topic, "cooldown": 0}
-                for p in ch.filler_pools]  # fmt: skip
-    want = (
-        (f"{ch.key}.topic", cfg.dz_weight_topic),
-        (f"{ch.key}.promos", cfg.dz_weight_promos),
-        (f"{ch.key}.breaks", cfg.dz_weight_breaks),
-        ("library.general", cfg.dz_weight_general),
-    )
-    return [{"pool": p, "weight": w, "cooldown": 0} for p, w in want if p in ch.filler_pools]
-
-
-def filler_items(
-    plan: Mapping[str, Any], items: Sequence[Mapping[str, Any]]
-) -> Sequence[Mapping[str, Any]]:
-    """A dizqueTV filler list needs variety, not the whole pool: the first
-    ``dz_filler_max_items`` of it (the pool is in priority order: own promos, then
-    on-topic clips). A whole pool can be 75,000 clips, past dizqueTV's 50 MB request limit."""
-    cap = int((plan.get("config") or {}).get("dz_filler_max_items") or 2000)
-    return items[: max(1, cap)]
+    return filler_lists(ch.key, ch.kind, ch.filler_pools, cfg)
 
 
 # --------------------------------------------------------------------------- schedule
@@ -262,31 +245,6 @@ def guide_settings(plan: Mapping[str, Any]) -> dict[str, Any]:
         "guideMaxPaddingSeconds": int(cfg.get("dz_guide_max_padding_s", 120)),
         "guideFlexPlaceholder": str(cfg.get("dz_guide_filler_title", "فواصل")),
     }
-
-
-def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
-    """The channel's logo and corner watermark from the plan's settings, as local files
-    (``apply`` uploads them): ``{"icon": path, "watermark": {...}}``, only what is set."""
-    cfg = plan.get("config") or {}
-    out: dict[str, Any] = {}
-    if folder := str(cfg.get("dz_logo_dir") or ""):
-        for name in (f"{key}.png", "default.png"):
-            if (Path(folder) / name).is_file():
-                out["icon"] = str(Path(folder) / name)
-                break
-    wm = str(cfg.get("dz_watermark_file") or "")
-    if folder_wm := str(cfg.get("dz_watermark_dir") or ""):
-        own = [Path(folder_wm) / f"{key}{ext}" for ext in (".gif", ".png")]
-        wm = next((str(p) for p in own if p.is_file()), wm)
-    if wm and Path(wm).is_file():
-        margin = float(cfg.get("dz_watermark_margin", 2.0))
-        out["watermark"] = {
-            "enabled": True, "url": wm, "width": float(cfg.get("dz_watermark_width", 12.0)),
-            "verticalMargin": margin, "horizontalMargin": margin, "duration": 0,
-            "position": str(cfg.get("dz_watermark_position") or "top-right"),
-            "fixedSize": False, "animated": wm.lower().endswith(".gif"),
-        }  # fmt: skip
-    return out
 
 
 def art_version(path: str) -> str:

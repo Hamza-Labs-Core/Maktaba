@@ -10,6 +10,7 @@ from maktaba_pipeline.schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvConfig,
     RepairConfig,
     channel_numbers,
 )
@@ -19,6 +20,7 @@ SECTIONS = {
     "exactdates": ExactDatesConfig,
     "audit": ChannelAuditConfig,
     "repair": RepairConfig,
+    "tv": MaktabaTvConfig,
 }
 
 
@@ -31,6 +33,12 @@ def test_the_defaults_are_the_tools_behaviour_without_flags() -> None:
     r = RepairConfig()
     assert (r.enabled, r.max_height, r.h264_first, r.keep_broken_copy) == (False, 1080, True, True)
     assert ChannelAuditConfig().window_days == 28  # audit_channels.WINDOW_DAYS
+
+
+def test_maktaba_tv_defaults_are_what_the_dizquetv_channels_do() -> None:
+    t = MaktabaTvConfig()
+    assert t.max_filler_per_gap == 0 and t.ramadan_grids and t.hijri_adjust_days == 0
+    assert t.live == () and t.loudnorm and t.loudnorm_target_lufs == -16.0
 
 
 def test_what_writes_to_the_share_or_asks_youtube_is_off_by_default() -> None:

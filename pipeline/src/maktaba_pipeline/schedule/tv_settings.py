@@ -18,14 +18,17 @@ __all__ = [
     "DizqueExportConfig",
     "ExactDatesConfig",
     "LiveSlot",
+    "MaktabaTvConfig",
     "RepairConfig",
     "channel_numbers",
+    "live_slots",
 ]
 
 DZ = "dizqueTV export"
 EX = "Exact dates"
 AU = "Channel audit"
 RP = "Repair"
+TV = "Maktaba TV"
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,40 @@ class DizqueExportConfig:
     only_channels: str = ""
     #: live broadcasts in channels' grids (none: the grids as planned)
     live: tuple[LiveSlot, ...] = ()
+
+
+@dataclass(frozen=True)
+class MaktabaTvConfig:
+    """How Maktaba's own scheduler airs the planned channels (what dizqueTV does for the
+    dizqueTV export: filler lists by weight and cooldown, the Ramadan grids, live
+    broadcasts, the channel's look)."""
+
+    #: at most this many clips fill one gap (0: as many as fit, as dizqueTV); the rest
+    #: of the gap is the slate
+    max_filler_per_gap: int = 0
+    #: a slot's own filler pool (its shows' promos, its topics) is tried before the
+    #: channel's weighted filler lists; off: the channel's lists only, as dizqueTV
+    slot_filler_first: bool = True
+    #: the Ramadan grid during the Hijri month of Ramadan (a channel without one keeps
+    #: its regular grid)
+    ramadan_grids: bool = True
+    #: days added to the computed Hijri date (the tabular calendar can be a day off the
+    #: sighted month)
+    hijri_adjust_days: int = 0
+    #: live broadcasts in the channels' grids; empty: the dizqueTV export's (rules
+    #: dizquetv.live), so one list serves both
+    live: tuple[LiveSlot, ...] = ()
+    #: even loudness across programmes and filler
+    loudnorm: bool = True
+    loudnorm_target_lufs: float = -16.0
+
+
+def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
+    """The live broadcasts both Maktaba TV and the dizqueTV export carry: Maktaba TV's own
+    list, else the dizqueTV export's (``rules.dizquetv.live`` keeps working)."""
+    if tv is not None and tv.live:
+        return tv.live
+    return dz.live if dz is not None else ()
 
 
 def channel_numbers(text: str) -> set[int]:
@@ -156,6 +193,48 @@ register(
             "sun; empty: every day). What airs before it finishes first or makes way: "
             "no programme is cut and the broadcast starts on time.",
         ),
+    },
+)
+register(
+    MaktabaTvConfig,
+    {
+        "max_filler_per_gap": Help(
+            TV,
+            "Most clips in a gap",
+            "A gap between programmes is filled with clips chosen by their lists' weights; "
+            "past this many the rest of the gap shows the slate. 0: as many as fit.",
+            minimum=0,
+        ),
+        "slot_filler_first": Help(
+            TV,
+            "A slot's own filler first",
+            "Pad a slot with its own shows' promos and topic clips before the channel's "
+            "filler lists. Off: the channel's lists only (what dizqueTV does).",
+        ),
+        "ramadan_grids": Help(
+            TV,
+            "Ramadan grids in Ramadan",
+            "During the Hijri month of Ramadan a channel airs its Ramadan grid. A channel "
+            "without one keeps its regular grid.",
+        ),
+        "hijri_adjust_days": Help(
+            TV,
+            "Hijri date adjustment (days)",
+            "Added to the computed Hijri date when the month starts a day earlier or later "
+            "where you are.",
+        ),
+        "live": Help(
+            TV,
+            "Live broadcasts",
+            "A live stream a channel carries at set times: channel number, the YouTube live "
+            "page or a stream address, the guide title, the first start (HH:MM), the end "
+            "(00:00: until midnight), how often (minutes), how long (minutes) and the days "
+            "(mon ... sun; empty: every day). No programme runs into it: what would not end "
+            "before it is not started, filler fills up to it and the show goes on after. "
+            "Empty: the dizqueTV export's live broadcasts.",
+        ),
+        "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
+        "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
     },
 )
 register(

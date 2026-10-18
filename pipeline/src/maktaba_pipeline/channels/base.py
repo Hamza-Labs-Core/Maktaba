@@ -53,6 +53,7 @@ class BlockKind(StrEnum):
     FILLER = "filler"
     BUMPER = "bumper"
     SLATE = "slate"
+    LIVE = "live"  # a live broadcast (slot 0113): ``source_url``, no video
 
 
 @dataclass(slots=True, frozen=True)
@@ -118,10 +119,14 @@ class PlanItem:
     offset_ms: int = 0
     kind: BlockKind = BlockKind.PROGRAM
     snapshot: dict[str, Any] = field(default_factory=dict)
+    #: a pad's filler pool (the slot's own, by its plan key); None: the channel's lists
+    pool: str | None = None
+    #: a LIVE item's stream address
+    source_url: str | None = None
 
     @property
     def is_pad(self) -> bool:
-        return self.video_id is None and self.kind != BlockKind.PROGRAM
+        return self.video_id is None and self.kind not in (BlockKind.PROGRAM, BlockKind.LIVE)
 
 
 @dataclass(slots=True)
@@ -140,6 +145,8 @@ class Block:
     video_id: UUID | None = None
     filler_item_id: UUID | None = None
     title_snapshot: dict[str, Any] = field(default_factory=dict)
+    #: a LIVE block's stream address (slot 0113); None for every other kind
+    source_url: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -153,6 +160,8 @@ class ChannelDef:
     library_id: UUID | None
     enabled: bool = True
     transition: str = "cut"
+    #: the channel number (live broadcasts name their channel by it)
+    number: int = 0
 
 
 class Planner(Protocol):

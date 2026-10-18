@@ -18,7 +18,9 @@ from maktaba_pipeline.channels.base import (
     ContentItem,
     FillerItem,
 )
+from maktaba_pipeline.channels.filler import FillerSet
 from maktaba_pipeline.channels.repo import ScheduleState
+from maktaba_pipeline.schedule.tv_settings import MaktabaTvConfig
 
 
 def dt(s: str) -> datetime:
@@ -32,6 +34,7 @@ def mk_channel(
     mode_config: dict[str, Any] | None = None,
     library_id: UUID | None = None,
     channel_id: UUID | None = None,
+    number: int = 0,
 ) -> ChannelDef:
     return ChannelDef(
         id=channel_id or uuid4(),
@@ -40,6 +43,7 @@ def mk_channel(
         source_filter=None,
         library_id=library_id or uuid4(),
         enabled=True,
+        number=number,
     )
 
 
@@ -72,9 +76,10 @@ class FakeRepo:
         channel: ChannelDef,
         content: list[ContentItem],
         *,
-        filler: list[FillerItem] | None = None,
+        filler: list[FillerItem] | FillerSet | None = None,
         state: ScheduleState | None = None,
         slot_content: list[list[ContentItem] | None] | None = None,
+        tv: MaktabaTvConfig | None = None,
     ) -> None:
         self.channel = channel
         self.content = content
@@ -83,6 +88,7 @@ class FakeRepo:
         self.blocks: list[Block] = []
         self.save_calls = 0
         self.slot_content = slot_content
+        self.tv = tv or MaktabaTvConfig()
 
     async def load_channel(self, channel_id: UUID) -> ChannelDef | None:
         return self.channel if channel_id == self.channel.id else None
@@ -98,8 +104,18 @@ class FakeRepo:
     ) -> list[list[ContentItem] | None] | None:
         return self.slot_content
 
-    async def load_filler(self, channel: ChannelDef) -> list[FillerItem]:
+    async def load_filler(self, channel: ChannelDef) -> list[FillerItem] | FillerSet:
         return self.filler
+
+    async def load_tv(self) -> MaktabaTvConfig:
+        return self.tv
+
+    async def future_programs(self, channel_id: UUID, from_at: datetime) -> list[UUID]:
+        return [
+            b.video_id
+            for b in sorted(self.blocks, key=lambda b: b.start_at)
+            if b.start_at >= from_at and b.kind == "program" and b.video_id is not None
+        ]
 
     async def airing_until(self, channel_id: UUID, at: datetime) -> datetime | None:
         ends = [b.end_at for b in self.blocks if b.start_at <= at < b.end_at]

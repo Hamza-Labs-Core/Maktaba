@@ -15,9 +15,9 @@ def _program(ms: int) -> PlanItem:
     return PlanItem(video_id=uuid4(), duration_ms=ms, snapshot={"title": "x"})
 
 
-def test_gap_coalesced_into_single_filler_block() -> None:
-    # A 55-minute gap filled by 1-minute bumpers must NOT shred into 55
-    # rows — it coalesces into ONE looping filler block (EC8).
+def test_gap_filled_with_whole_clips_one_block_each() -> None:
+    # A 55-minute gap with 1-minute bumpers airs 55 of them, as dizqueTV does: each is
+    # its own block (the engine plays a block's clip once, from its start).
     start = dt("2026-06-14T00:00:00")
     until = start + timedelta(hours=1)
     blocks = packer.pack(
@@ -28,8 +28,9 @@ def test_gap_coalesced_into_single_filler_block() -> None:
         filler=mk_filler(2, dur_ms=60_000),
     )
     filler_blocks = [b for b in blocks if b.kind == BlockKind.FILLER]
-    assert len(filler_blocks) == 1
-    assert filler_blocks[0].source_duration == 55 * 60_000
+    assert len(filler_blocks) == 55
+    assert all(b.source_duration == 60_000 and b.video_id for b in filler_blocks)
+    assert blocks[-1].end_at == until
 
 
 def test_slate_when_no_filler() -> None:
