@@ -221,14 +221,21 @@ def audit(
                 seen[k].minutes = 0.0
                 ca.programmes.append(seen[k])
             seen[k].minutes += mins
-        fseen: set[str] = set()
-        for fc in ch.get("fillerCollections", []):
-            for prog in (fillers.get(str(fc.get("id"))) or {}).get("content", []):
-                if str(prog.get("ratingKey")) not in fseen:
-                    fseen.add(str(prog.get("ratingKey")))
-                    ca.fillers.append(item(prog, ""))
+        # each clip weighs what dizqueTV picks it: its list's weight over its list's size
+        fcs = [(fc, fillers.get(str(fc.get("id"))) or {}) for fc in ch.get("fillerCollections", [])]
+        wsum = sum(float(fc.get("weight", 1)) for fc, f in fcs if f.get("content")) or 1.0
+        for fc, f in fcs:
+            content = f.get("content", [])
+            promos = str(f.get("name", "")).rstrip("]").endswith(".promos")
+            for prog in content:
+                it = item(prog, "promo" if promos else "")
+                it.minutes = 100 * float(fc.get("weight", 1)) / wsum / len(content)
+                ca.fillers.append(it)
         if theme is not None:
             for it in [*ca.programmes, *ca.fillers]:
+                if it.show == "promo":
+                    it.verdict, it.why = "strong", "a promo of one of the channel's shows"
+                    continue
                 if theme.key != "quran" and "library.quran" in it.show:
                     it.verdict, it.why = "design", "the dawn Quran hour every channel has"
                     continue
@@ -266,7 +273,7 @@ def text_report(audits: Sequence[ChannelAudit]) -> str:
              f"(hours on air in the next {WINDOW_DAYS} days; the dawn Quran hour is counted as"
              " strong: every channel has it)", "",
              f"{'channel':<34}{'hours':>8}{'strong':>8}{'aud/fmt':>8}{'weak':>7}{'none':>7}"
-             f"{'filler none':>13}"]  # fmt: skip
+             f"{'filler none':>13}"]  # filler: share of what dizqueTV picks  # fmt: skip
     for ca in sorted(audits, key=lambda a: a.number):
         s = _share(ca.programmes)
         fs = _share(ca.fillers) if ca.fillers else {"none": 0.0}
