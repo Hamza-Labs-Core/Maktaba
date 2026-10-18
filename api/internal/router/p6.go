@@ -29,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/models"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	seriesh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/series"
@@ -214,6 +215,15 @@ func MountP6(r chi.Router, d P6Deps) {
 		go queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval)
 	}
 	wsHandler.Mount(r)
+
+	// Control-centre reports: the review pages, channel plan (and its
+	// dry-run preview) and channel audit the pipeline writes to its
+	// reports folder, plus the small thumbnails the review pages link.
+	reportsHandler := &reports.Handler{DB: d.DB}
+	if d.PipelineClient != nil {
+		reportsHandler.Pipeline = d.PipelineClient
+	}
+	reportsHandler.Mount(r)
 
 	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
 	// clients (Epic 14). Resolvers reuse the recommendations + search

@@ -110,6 +110,12 @@ export function useAuth(): AuthState {
   return ctx;
 }
 
+/** The auth state, or undefined outside an <AuthProvider> (components that only hide controls
+ * for non-admins and are otherwise usable without a session, such as the queue pages). */
+export function useOptionalAuth(): AuthState | undefined {
+  return useContext(AuthContext);
+}
+
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();

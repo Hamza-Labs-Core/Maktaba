@@ -30,6 +30,7 @@ from uuid import UUID
 from ...classify.series_detector import VideoFacts
 from ...classify.series_detector import is_short as detector_is_short
 from ...db.jobs import Job
+from ...log import get_logger
 from ...rules import read as read_rules
 from ...schedule.channel_planner import (
     PLANNER_VERSION,
@@ -55,6 +56,7 @@ __all__ = [
     "reset_plan_exporters",
 ]
 
+_log = get_logger()
 SUCCESS = "('changed','unchanged','skipped_unchanged','imported')"
 _EXPORTERS: dict[str, PlanExporter] = {}
 
@@ -383,7 +385,23 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     )
 
 
+async def _write_page(plan: Mapping[str, Any]) -> None:
+    """The stored plan as a page in the reports folder (Reports → Channel plan). A folder
+    that cannot be written is logged, never a failed plan: the page is only a view."""
+    from ..plan_page import write_plan_page
+
+    try:
+        await asyncio.to_thread(write_plan_page, plan)
+    except OSError as exc:
+        _log.warning("plan_page_not_written", error=str(exc))
+
+
 async def _store(db: Any, plan: Mapping[str, Any], input_hash: str) -> None:
+    await _insert(db, plan, input_hash)
+    await _write_page(plan)
+
+
+async def _insert(db: Any, plan: Mapping[str, Any], input_hash: str) -> None:
     await db.execute(
         "INSERT INTO channel_plans (created_at, planner_version, input_hash, plan)"
         " VALUES ($1,$2,$3,$4)",

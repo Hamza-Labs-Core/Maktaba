@@ -14,6 +14,9 @@
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
+/** The URL of an API path for something the browser loads itself (an iframe, a link). */
+export const apiUrl = (path: string): string => `${BASE}${path}`;
+
 // Must equal the server's `auth.CSRFHeader` and the CORS allow-list.
 const CSRF_HEADER = "X-Maktaba-CSRF";
 

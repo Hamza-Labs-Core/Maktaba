@@ -120,7 +120,7 @@ Earlier (2026-10-16):
 - **Repeated real-Postgres runs.** The real-Postgres Go test fails when run twice on the same database; use a fresh one.
 - **Flaky prune test.** `tests/engine/test_ops.py` has a clock-based prune test that occasionally fails.
 - **Un-runnable commit.** In #47, commit 2a825eb doesn't run on its own because `plan_catalog` arrives in 086add4. The branch head is fine.
-- **Review pages.** In Maktaba they are files in the app cache; no API route serves them yet.
+- **Review pages.** In Maktaba they are files in the app cache (`~/.maktaba/cache/reviews`, or `$MAKTABA_REVIEWS_ROOT`). `GET /api/reports` lists every `*.html` there and `GET /api/reports/{name}` serves one under a no-script CSP; the web app shows them at `/queue/reports`, together with the channel plan page (`plan_channels` writes `channel-plan.html`), the plan preview (a dry run with the saved rules, `channel-plan-preview.html`) and the channel audit page. The API and the pipeline must see the same folder (single-host setup).
 - **No LLM.** Maktaba has none (only Whisper STT and e5 embeddings). An optional LLM helper for naming, classification and promo linking was proposed and is awaiting the user's answer.
 
 ## 7. What is left
@@ -140,7 +140,7 @@ Earlier (2026-10-16):
 5. ~~Rules as settings in Maktaba.~~ **Done** (2026-10-17): stages read `app_settings` `rules.<section>` (`StageContext.rules()`, `rules.read()`), a changed rule changes the stage fingerprints; Go `GET /api/rules`, `PATCH /api/rules/{section}` (admin) validating against `api/internal/handlers/rules/schema.json` (regenerate with `python -m maktaba_pipeline.rules --schema api/internal/handlers/rules/schema.json`; a test checks it is current); web Settings → Rules. Plex: refused items stay out, per-section collections, only out-of-place items are moved.
 6. Maktaba one-library trial on this PC (e.g. Nabil): `import_mediaintel`, queues with the Plex extension, compare against mediaintel's collections, then switch over library by library.
    The import (2026-10-17) also brings `settings.json` into `app_settings` `rules.<section>` (each value checked with `rules.config`; a value already set in Maktaba is kept) and copies `thumbs/` into the thumbnail cache with a done `thumb_small` job per video (`--settings` / `--thumbs`, default: beside the cache). `plex_groups` adopts a collection with the planned title **and** the `maktaba-auto` label that has no link yet (the topic / clip / stand-alone collections mediaintel wrote); one without the label is still left alone.
-7. Later: the review/approval system in Maktaba, serving review pages through the API, the optional LLM helper, and running the Mac worker for transcription.
+7. Later: the review/approval system in Maktaba, the optional LLM helper, and running the Mac worker for transcription.
 
 ## 8. The TV grid (planner v2, PR #50)
 

@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
+import { reportsApi } from "../../lib/reportsApi";
 import type { ItemHistoryData, SubjectKind } from "../../lib/queueApi";
 import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
 import {
@@ -16,6 +17,7 @@ import {
   filterTimeline,
   type TimelineFilter,
 } from "../../components/queue/ItemParts";
+import { LibraryCollections } from "../../components/queue/LibraryCollections";
 import { RetriggerDialog } from "../../components/queue/RetriggerDialog";
 import { STATE_GLYPH, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
@@ -51,6 +53,8 @@ export function ItemHistory() {
   const [status, setStatus] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // a library has a review page once the review_pages queue has written it
+  const [hasReview, setHasReview] = useState(false);
   // While unknown (or if the call fails) extension rows stay hidden.
   const [enabledExt, setEnabledExt] = useState<ReadonlySet<string>>(new Set());
 
@@ -67,6 +71,18 @@ export function ItemHistory() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (kind !== "library") return;
+    let alive = true;
+    reportsApi
+      .list()
+      .then((r) => alive && setHasReview(r.reports.some((x) => x.library_id === id)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [kind, id]);
 
   const load = useCallback(() => {
     queueApi
@@ -185,6 +201,13 @@ export function ItemHistory() {
               <Link to={open}>{t("queue.item.open")}</Link>
             </p>
           )}
+          {hasReview && (
+            <p>
+              <Link to={`/queue/reports?open=${encodeURIComponent(`${subject.id}.html`)}`}>
+                {t("queue.item.reviewPage")}
+              </Link>
+            </p>
+          )}
         </div>
       </header>
 
@@ -280,6 +303,8 @@ export function ItemHistory() {
           </ul>
         </section>
       )}
+
+      {subject.kind === "library" && <LibraryCollections libraryId={subject.id} />}
 
       <section className="mkt-q-panel" aria-labelledby="mkt-q-appears-h">
         <h2 className="mkt-q-section-title" id="mkt-q-appears-h">

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -33,6 +34,9 @@ const (
 	methodDeleteModel      = "/" + pipelineService + "/DeleteModel"
 	methodActivateModel    = "/" + pipelineService + "/ActivateModel"
 	methodTestModel        = "/" + pipelineService + "/TestModel"
+
+	methodPlanPreviewStart  = "/" + pipelineService + "/PlanPreviewStart"
+	methodPlanPreviewStatus = "/" + pipelineService + "/PlanPreviewStatus"
 )
 
 // requestIDKey is the metadata key the pipeline expects inbound
@@ -423,3 +427,33 @@ func asStringSlice(v any) []string {
 	}
 	return out
 }
+
+// PlanPreviewStart implements PlanPreviewer. An already-running preview is
+// not an error: busy is true and the caller shows the running one.
+func (c *realClient) PlanPreviewStart(ctx context.Context, kind string) (bool, error) {
+	var resp map[string]any
+	err := c.invoke(ctx, methodPlanPreviewStart, map[string]any{"kind": kind}, &resp)
+	if err != nil {
+		return false, err
+	}
+	return !asBool(resp["started"]) && asBool(resp["busy"]), nil
+}
+
+// PlanPreviewStatus implements PlanPreviewer.
+func (c *realClient) PlanPreviewStatus(ctx context.Context) (PlanPreviewStatus, error) {
+	var resp map[string]any
+	if err := c.invoke(ctx, methodPlanPreviewStatus, map[string]any{}, &resp); err != nil {
+		return PlanPreviewStatus{}, err
+	}
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		return PlanPreviewStatus{}, err
+	}
+	st := PlanPreviewStatus{Summary: map[string]any{}, Log: []string{}}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return PlanPreviewStatus{}, err
+	}
+	return st, nil
+}
+
+var _ PlanPreviewer = (*realClient)(nil)
