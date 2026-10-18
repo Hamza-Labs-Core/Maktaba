@@ -6,7 +6,13 @@ from scripts.mediaintel import db, jobs, repair_broken
 def test_download_args_keep_the_files_container_beside_it():
     args = repair_broken.download_args("abc", Path("Y:/x/درس.mp4"), None)
     assert args[-1] == "https://www.youtube.com/watch?v=abc"
-    assert args[args.index("--merge-output-format") + 1] == "mp4"
+    assert args[args.index("-f") + 1] == repair_broken.FORMAT_MP4
+    assert (
+        repair_broken.download_args("a", Path("y.mkv"), None)[
+            repair_broken.download_args("a", Path("y.mkv"), None).index("-f") + 1
+        ]
+        == repair_broken.FORMAT
+    )
     assert args[args.index("-o") + 1].endswith("درس.repair.%(ext)s")
     assert "--cookies-from-browser" in repair_broken.download_args("a", Path("y.mkv"), "firefox")
 

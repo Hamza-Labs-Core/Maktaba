@@ -22,8 +22,10 @@ from . import jobs
 from .bins import FFMPEG, FFPROBE
 from .scan_local import probe_failure
 
-#: the library's own format: at most 1080p, merged into the file's container
+#: the library's own format: at most 1080p; for an .mp4 the streams an mp4 holds first
+#: (vp9/opus into mp4 fails to merge on some videos), anything else after
 FORMAT = "bv*[height<=1080]+ba/b[height<=1080]/b"
+FORMAT_MP4 = "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/" + FORMAT
 #: yt-dlp's work files, never the result
 _PARTIAL = (".part", ".ytdl", ".temp")
 
@@ -63,9 +65,12 @@ def download_args(youtube_id: str, target: Path, cookies_from_browser: str | Non
     """yt-dlp argv writing the video beside ``target`` as ``<stem>.repair.<ext>``."""
     ext = target.suffix.lstrip(".").lower() or "mp4"
     stem = target.stem.replace("%", "%%")  # «100% …»: % starts a template field
+    # no merge into the target container here: a failed merge loses the download; a
+    # different container is remuxed afterwards (repair_one)
     args = [
-        sys.executable, "-m", "yt_dlp", "--no-playlist", "--no-progress", "-f", FORMAT,
-        "--merge-output-format", ext, "-o", str(target.with_name(f"{stem}.repair.%(ext)s")),
+        sys.executable, "-m", "yt_dlp", "--no-playlist", "--no-progress",
+        "-f", FORMAT_MP4 if ext == "mp4" else FORMAT,
+        "-o", str(target.with_name(f"{stem}.repair.%(ext)s")),
     ]  # fmt: skip
     if cookies_from_browser:
         args += ["--cookies-from-browser", cookies_from_browser]
@@ -108,13 +113,18 @@ def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
         _clean(target)
         return f"not downloaded: {why[:160]}"
     fresh = target.with_name(f"{target.stem}.repair{target.suffix}")
-    if got[0] != fresh:  # yt-dlp kept another container (a single-file format): remux
-        try:
-            r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(got[0]), "-map", "0",
-                                "-c", "copy", str(fresh)],
-                               capture_output=True, timeout=1800, check=False)  # fmt: skip
-        except (subprocess.TimeoutExpired, OSError):
-            r = None
+    if got[0] != fresh:  # another container: remux, then with the audio made AAC
+        r = None
+        for audio in (["-c", "copy"], ["-c:v", "copy", "-c:a", "aac", "-b:a", "160k"]):
+            fresh.unlink(missing_ok=True)
+            try:
+                r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(got[0]),
+                                    "-map", "0:v:0", "-map", "0:a:0?", *audio, str(fresh)],
+                                   capture_output=True, timeout=1800, check=False)  # fmt: skip
+            except (subprocess.TimeoutExpired, OSError):
+                r = None
+            if r is not None and r.returncode == 0 and fresh.is_file():
+                break
         if r is None or r.returncode != 0 or not fresh.is_file():
             _clean(target)
             return f"downloaded as {got[0].suffix}, could not put it in {target.suffix}"
