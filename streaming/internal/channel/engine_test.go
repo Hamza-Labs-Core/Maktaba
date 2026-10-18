@@ -239,10 +239,6 @@ func TestHTTPHandler_ReadyTimeout503(t *testing.T) {
 	}
 }
 
-type writerFunc func([]byte) (int, error)
-
-func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
-
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

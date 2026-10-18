@@ -277,12 +277,20 @@ func overlayXY(position string, margin int) (string, string) {
 // MuxerArgs builds the persistent per-channel muxer: MPEG-TS blocks in on
 // stdin, stream-copied into (1) a sliding live HLS window in outDir and
 // (2) a continuous MPEG-TS on stdout for the fan-out hub.
-func MuxerArgs(p OutputProfile, outDir string) []string {
+//
+// -copyts keeps the blocks' channel-timeline timestamps, so a restarted
+// muxer continues the same timeline; restart also marks an HLS
+// discontinuity.
+func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 	p = p.normalised()
 	dir := filepath.ToSlash(outDir)
+	hlsFlags := "delete_segments+independent_segments+omit_endlist+program_date_time+temp_file"
+	if restart {
+		hlsFlags += "+discont_start"
+	}
 	return []string{
 		"-hide_banner", "-nostats", "-loglevel", "warning",
-		"-fflags", "+genpts",
+		"-fflags", "+genpts", "-copyts",
 		"-probesize", "1000000", "-analyzeduration", "1500000",
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
@@ -290,7 +298,7 @@ func MuxerArgs(p OutputProfile, outDir string) []string {
 		"-hls_time", itoa(p.SegmentSeconds),
 		"-hls_list_size", itoa(p.HLSListSize),
 		"-hls_delete_threshold", "3",
-		"-hls_flags", "delete_segments+independent_segments+omit_endlist+program_date_time+temp_file",
+		"-hls_flags", hlsFlags,
 		"-hls_start_number_source", "epoch",
 		"-hls_segment_filename", dir + "/seg-%d.ts",
 		dir + "/index.m3u8",

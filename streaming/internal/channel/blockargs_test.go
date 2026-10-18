@@ -153,7 +153,7 @@ func TestBlockArgs_LiveNoSeek(t *testing.T) {
 }
 
 func TestMuxerArgs(t *testing.T) {
-	a := MuxerArgs(DefaultProfile(), `C:\cache\channel-x`)
+	a := MuxerArgs(DefaultProfile(), `C:\cache\channel-x`, false)
 	j := joined(a)
 	for _, want := range []string{"-f mpegts -i pipe:0", "-c copy", "-f hls", "C:/cache/channel-x/index.m3u8",
 		"C:/cache/channel-x/seg-%d.ts", "omit_endlist", "pipe:1"} {

@@ -100,7 +100,7 @@ func probeStartTime(t *testing.T, path string) (float64, int) {
 	return st, ns
 }
 
-var segRe = regexp.MustCompile(`seg-(\d+)\.ts`)
+var segRe = regexp.MustCompile(`^seg-(\d+)\.ts$`) // completed segments only (temp_file)
 
 // TestStation_RealFFmpeg_ContinuousWallClock runs the whole pipeline with
 // real ffmpeg over program (with audio) → filler (silent file) → slate →
@@ -176,7 +176,7 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 				}
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	blogs, _ := os.ReadFile(filepath.Join(dir, "blocks.log"))
@@ -207,9 +207,86 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 	dPTS := ptsLast - ptsFirst
 	dWall := firstSeen[last].Sub(firstSeen[first]).Seconds()
 	t.Logf("segments %d..%d: Δpts=%.2fs Δwall=%.2fs", first, last, dPTS, dWall)
-	if diff := dPTS - dWall; diff > 3 || diff < -3 {
-		t.Errorf("timeline drift: Δpts=%.2f vs Δwall=%.2f", dPTS, dWall)
+	// Wall clock: each segment's lag (when it appeared vs its timestamp)
+	// must be constant once the channel is up — blocks are queued ahead
+	// of their boundary, but forwarding is paced to the clock, so the
+	// output neither drifts nor jumps at block boundaries. (The first
+	// segments carry the start-up latency and are skipped.)
+	// A segment file completes when the muxer receives the keyframe that
+	// ends it, so lag = completion time − segment end (timeline).
+	minLag, maxLag := 1e9, -1e9
+	prevLag, maxStep := 0.0, 0.0
+	for i, n := range nums[3 : len(nums)-1] {
+		end, ok := probeVideoEnd(filepath.Join(dir, "seg-"+strconv.Itoa(n)+".ts"))
+		if !ok {
+			continue
+		}
+		lag := firstSeen[n].Sub(st.Epoch()).Seconds() - end
+		t.Logf("seg %d end_pts=%.3f completed=%.3f lag=%.3f", n, end, firstSeen[n].Sub(st.Epoch()).Seconds(), lag)
+		minLag, maxLag = min(minLag, lag), max(maxLag, lag)
+		if i > 0 {
+			maxStep = max(maxStep, abs(lag-prevLag))
+		}
+		prevLag = lag
 	}
+	t.Logf("max lag change between consecutive segments: %.3fs", maxStep)
+	if maxStep > 0.2 {
+		t.Errorf("segment timing jumps by %.3fs between consecutive segments", maxStep)
+	}
+	t.Logf("steady-state segment lag spread: %.3fs (%.3f..%.3f)", maxLag-minLag, minLag, maxLag)
+	if maxLag-minLag > 0.3 {
+		t.Errorf("segment timing drifts vs the wall clock by %.3fs", maxLag-minLag)
+	}
+
+	// Gapless: every segment starts exactly where the previous one ended
+	// (pts continuity across all block boundaries, within 100 ms).
+	pl, _ := readShared(filepath.Join(dir, "index.m3u8"))
+	names, durs := parsePlaylist(string(pl))
+	if len(names) < 8 {
+		t.Fatalf("playlist has %d segments", len(names))
+	}
+	prevStart, prevDur := -1.0, 0.0
+	maxJump := 0.0
+	for i, name := range names {
+		st, _ := probeStartTime(t, filepath.Join(dir, name))
+		if st < 0 {
+			continue
+		}
+		if prevStart >= 0 {
+			jump := st - (prevStart + prevDur)
+			if jump < 0 {
+				jump = -jump
+			}
+			if jump > maxJump {
+				maxJump = jump
+			}
+			if jump > 0.1 {
+				t.Errorf("segment %s starts %.3fs off the previous segment's end", name, st-(prevStart+prevDur))
+			}
+		}
+		prevStart, prevDur = st, durs[i]
+	}
+	t.Logf("max pts discontinuity between consecutive segments: %.3fs over %d segments", maxJump, len(names))
+
+	// Wall clock: every block after the join starts exactly at its
+	// scheduled position on the channel timeline.
+	offRe := regexp.MustCompile(`off=([0-9.]+)`)
+	var offs []float64
+	for _, m := range offRe.FindAllStringSubmatch(string(blogs), -1) {
+		v, _ := strconv.ParseFloat(m[1], 64)
+		offs = append(offs, v)
+	}
+	ep := st.Epoch()
+	for i, b := range repo.blocks[1:] {
+		want := b.StartAt.Sub(ep).Seconds()
+		if i+1 >= len(offs) {
+			break
+		}
+		if d := offs[i+1] - want; d > 0.002 || d < -0.002 {
+			t.Errorf("block %d timeline offset %.3f, scheduled %.3f", b.Seq, offs[i+1], want)
+		}
+	}
+	t.Logf("non-monotonic DTS warnings in mux.log: %d", strings.Count(string(mlogs), "Non-monotonic"))
 	// Timeline position matches the schedule: pts since epoch ≈ wall since epoch.
 	if streams != 2 {
 		t.Errorf("segment %d has %d streams, want video+audio", last, streams)
@@ -301,4 +378,157 @@ func TestEngine_RealFFmpeg_LazyHLSAndSharedTS(t *testing.T) {
 	if starts != 1 {
 		t.Errorf("HLS + TS viewers started %d encodes, want 1", starts)
 	}
+}
+
+// parsePlaylist returns segment names and EXTINF durations.
+func parsePlaylist(pl string) ([]string, []float64) {
+	var names []string
+	var durs []float64
+	var d float64
+	for _, l := range strings.Split(pl, "\n") {
+		l = strings.TrimSpace(l)
+		if v, ok := strings.CutPrefix(l, "#EXTINF:"); ok {
+			d, _ = strconv.ParseFloat(strings.TrimSuffix(v, ","), 64)
+			continue
+		}
+		if strings.HasSuffix(l, ".ts") {
+			names = append(names, l)
+			durs = append(durs, d)
+		}
+	}
+	return names, durs
+}
+
+// TestStation_RealFFmpeg_MuxerRestart kills the muxer mid-stream: the
+// supervisor must restart it on its own, the HLS window keeps growing on
+// the same timeline and TS clients stay connected.
+func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
+	needFFmpeg(t)
+	tmp := t.TempDir()
+	clip := filepath.Join(tmp, "clip.mp4")
+	makeClip(t, clip, true, 40)
+	now := time.Now()
+	repo := &syncRepo{blocks: []ProgramBlock{{Seq: 1, Kind: KindProgram, VideoID: uuid.New(), Path: clip,
+		StartAt: now, EndAt: now.Add(40 * time.Second), SourceDurationMS: 40_000}}}
+	prof := OutputProfile{Width: 640, Height: 360, FPS: 30, VideoKbps: 1000, Encoder: EncoderSoftware,
+		SegmentSeconds: 2, HLSListSize: 60}
+	dir := filepath.Join(tmp, "hls")
+	st, err := StartStation(StationConfig{FFmpeg: "ffmpeg", Profile: prof, Repo: repo, Prober: NewFFprobe("ffprobe"),
+		Resolver: NewYtDlp(""), Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))},
+		uuid.New(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { st.Stop(); <-st.Done() }()
+
+	var tsMu sync.Mutex
+	tsBytes := 0
+	sub, unsub := st.Subscribe()
+	defer unsub()
+	go func() {
+		for c := range sub {
+			tsMu.Lock()
+			tsBytes += len(c)
+			tsMu.Unlock()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := st.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(4 * time.Second)
+	segsBefore := countSegments(dir)
+	oldPID := st.PID()
+	killedAt := time.Now()
+	st.muxMu.Lock()
+	_ = st.mux.cmd.Process.Kill()
+	st.muxMu.Unlock()
+
+	waitForT(t, 5*time.Second, func() bool { return st.MuxerRestarts() == 1 && st.PID() != 0 })
+	t.Logf("muxer restarted after %v (pid %d → %d)", time.Since(killedAt), oldPID, st.PID())
+	if st.PID() == oldPID || !st.Alive() {
+		t.Fatalf("muxer not replaced / station died")
+	}
+	tsMu.Lock()
+	tsAtRestart := tsBytes
+	tsMu.Unlock()
+
+	time.Sleep(10 * time.Second)
+	segsAfter := countSegments(dir)
+	if segsAfter < segsBefore+3 {
+		t.Errorf("HLS stalled after restart: %d → %d segments", segsBefore, segsAfter)
+	}
+	tsMu.Lock()
+	grown := tsBytes - tsAtRestart
+	tsMu.Unlock()
+	if grown < 200_000 {
+		t.Errorf("TS client got only %d bytes after the restart", grown)
+	}
+	// Same timeline after the restart (-copyts): the newest segment's pts
+	// sits where the wall clock says, not back at zero.
+	pl, _ := readShared(filepath.Join(dir, "index.m3u8"))
+	if !strings.Contains(string(pl), "#EXT-X-DISCONTINUITY") {
+		t.Error("restarted playlist should carry a discontinuity marker")
+	}
+	names, _ := parsePlaylist(string(pl))
+	if len(names) < 2 {
+		t.Fatalf("restarted playlist: %s", pl)
+	}
+	stNew, _ := probeStartTime(t, filepath.Join(dir, names[len(names)-2]))
+	elapsed := time.Since(st.Epoch()).Seconds()
+	if stNew < elapsed-8 || stNew > elapsed+5 {
+		t.Errorf("after restart pts=%.2f but %.2fs of channel time elapsed", stNew, elapsed)
+	}
+	logs, _ := os.ReadFile(filepath.Join(dir, "mux.log"))
+	if !strings.Contains(string(logs), "muxer restart") {
+		t.Error("mux.log should record the restart")
+	}
+}
+
+func countSegments(dir string) int {
+	entries, _ := os.ReadDir(dir)
+	n := 0
+	for _, e := range entries {
+		if segRe.MatchString(e.Name()) {
+			n++
+		}
+	}
+	return n
+}
+
+func waitForT(t *testing.T, d time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("condition not met in time")
+}
+
+// probeVideoEnd returns the segment's video start+duration (pts seconds).
+func probeVideoEnd(path string) (float64, bool) {
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=start_time,duration", "-of", "csv=p=0", path).Output()
+	if err != nil {
+		return 0, false
+	}
+	f := strings.Split(strings.TrimSpace(strings.Split(string(out), "\n")[0]), ",")
+	if len(f) < 2 {
+		return 0, false
+	}
+	st, err1 := strconv.ParseFloat(strings.TrimSpace(f[0]), 64)
+	d, err2 := strconv.ParseFloat(strings.TrimSpace(f[1]), 64)
+	return st + d, err1 == nil && err2 == nil
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

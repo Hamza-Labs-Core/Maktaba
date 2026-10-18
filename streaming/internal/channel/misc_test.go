@@ -140,3 +140,29 @@ func TestProfileFromEnv(t *testing.T) {
 		t.Error("explicit encoder preference ignored")
 	}
 }
+
+func pesPacket(pts int64) []byte {
+	p := make([]byte, tsPacket)
+	p[0], p[1], p[2], p[3] = 0x47, 0x40|0x01, 0x00, 0x10 // PUSI, pid 0x100, payload only
+	h := p[4:]
+	h[0], h[1], h[2], h[3] = 0, 0, 1, 0xE0
+	h[6], h[7], h[8] = 0x80, 0x80, 5
+	h[9] = byte(0x21 | (pts>>29)&0x0E)
+	h[10] = byte(pts >> 22)
+	h[11] = byte((pts>>14)&0xFE | 1)
+	h[12] = byte(pts >> 7)
+	h[13] = byte((pts<<1)&0xFE | 1)
+	return p
+}
+
+func TestPTSTracker(t *testing.T) {
+	var tr ptsTracker
+	if got, ok := packetPTS(pesPacket(123456789)); !ok || got != 123456789 {
+		t.Fatalf("packetPTS = %d %v", got, ok)
+	}
+	b := append(pesPacket(90000*10), pesPacket(90000*13)...)
+	b = append(b, make([]byte, tsPacket)...) // non-PES packet ignored
+	if !tr.scan(b) || tr.span() != 3 {
+		t.Errorf("span = %v", tr.span())
+	}
+}

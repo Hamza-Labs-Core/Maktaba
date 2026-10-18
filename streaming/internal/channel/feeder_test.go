@@ -3,6 +3,8 @@ package channel
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,29 +39,66 @@ func (g *growingRepo) ProgramsFrom(_ context.Context, _ uuid.UUID, from time.Tim
 // fakePlayer advances the fake clock as if each segment aired; fail
 // marks segments (by predicate) that stop after `failAfter`.
 type fakePlayer struct {
+	mu        sync.Mutex
 	clk       *fakeClock
 	played    []Segment
 	stopAfter int
 	cancel    context.CancelFunc
 	fail      func(Segment) bool
 	failAfter time.Duration
+	// events records "start:<seg>" / "done:<seg>" in order.
+	events []string
+	// holdUntilNext makes Wait return only once the following segment has
+	// been started (models a block airing while the next one is queued).
+	holdUntilNext bool
+	ctx           context.Context
 }
 
-func (p *fakePlayer) Play(_ context.Context, seg Segment) (bool, error) {
+type fakePlayback struct {
+	p   *fakePlayer
+	seg Segment
+	idx int
+}
+
+func (p *fakePlayer) Start(_ context.Context, seg Segment) Playback {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.played = append(p.played, seg)
+	p.events = append(p.events, "start:"+segName(seg))
 	if len(p.played) >= p.stopAfter {
 		p.cancel()
+	}
+	return &fakePlayback{p: p, seg: seg, idx: len(p.played) - 1}
+}
+
+func (b *fakePlayback) Wait() (bool, error) {
+	p, seg := b.p, b.seg
+	for p.holdUntilNext && p.ctx.Err() == nil {
+		p.mu.Lock()
+		n := len(p.played)
+		p.mu.Unlock()
+		if n > b.idx+1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 	start := seg.Start
 	if n := p.clk.now(); n.After(start) {
 		start = n
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	defer func() { p.events = append(p.events, "done:"+segName(seg)) }()
 	if p.fail != nil && p.fail(seg) {
 		p.clk.set(start.Add(p.failAfter))
 		return false, errors.New("boom")
 	}
 	p.clk.set(seg.End)
 	return true, nil
+}
+
+func segName(s Segment) string {
+	return s.Kind + "@" + s.Start.UTC().Format("15:04:05")
 }
 
 func (c *fakeClock) set(t time.Time) {
@@ -72,19 +111,40 @@ func (c *fakeClock) set(t time.Time) {
 
 func runFeeder(t *testing.T, repo ScheduleSource, clk *fakeClock, n int, fail func(Segment) bool, failAfter time.Duration) []Segment {
 	t.Helper()
+	p, _ := runFeederMode(t, repo, clk, n, fail, failAfter, false)
+	return p.played
+}
+
+// runFeederMode runs the feeder against the fake player. prefetch=false
+// makes WaitUntil wait for the current segment to finish (sequential);
+// prefetch=true returns at once (the lead point is "now"), exercising the
+// queue-ahead path.
+func runFeederMode(t *testing.T, repo ScheduleSource, clk *fakeClock, n int, fail func(Segment) bool,
+	failAfter time.Duration, prefetch bool) (*fakePlayer, *Feeder) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	p := &fakePlayer{clk: clk, stopAfter: n, cancel: cancel, fail: fail, failAfter: failAfter}
+	p := &fakePlayer{clk: clk, stopAfter: n, cancel: cancel, fail: fail, failAfter: failAfter,
+		holdUntilNext: prefetch, ctx: ctx}
 	f := &Feeder{Source: repo, ChannelID: uuid.New(), Player: p, Now: clk.now,
-		Sleep: func(_ context.Context, d time.Duration) { clk.advance(d) }}
-	done := make(chan struct{})
-	go func() { f.Run(ctx); close(done) }()
+		Sleep: func(_ context.Context, d time.Duration) { clk.advance(d) },
+		WaitUntil: func(ctx context.Context, _ time.Time, done <-chan struct{}) {
+			if prefetch {
+				return
+			}
+			select {
+			case <-done:
+			case <-ctx.Done():
+			}
+		}}
+	finished := make(chan struct{})
+	go func() { f.Run(ctx); close(finished) }()
 	select {
-	case <-done:
+	case <-finished:
 	case <-time.After(5 * time.Second):
 		t.Fatal("feeder did not stop")
 	}
-	return p.played
+	return p, f
 }
 
 func blk(seq int64, kind string, start time.Time, d time.Duration) ProgramBlock {
@@ -277,5 +337,44 @@ func TestPlanNext_Kinds(t *testing.T) {
 	odd.Kind = "promo"
 	if s := PlanNext([]ProgramBlock{odd}, t0); s.Kind != KindProgram {
 		t.Errorf("unknown kind: %+v", s)
+	}
+}
+
+func TestFeeder_QueuesNextBlockBeforeBoundary(t *testing.T) {
+	t0 := tm("2026-06-14T20:00:00Z")
+	clk := newClock(t0)
+	repo := &growingRepo{blocks: []ProgramBlock{
+		blk(1, KindProgram, t0, time.Minute),
+		blk(2, KindFiller, t0.Add(time.Minute), 30*time.Second),
+		blk(3, KindProgram, t0.Add(90*time.Second), time.Minute),
+		blk(4, KindBumper, t0.Add(150*time.Second), 10*time.Second),
+	}}
+	p, _ := runFeederMode(t, repo, clk, 4, nil, 0, true)
+	segs := p.played
+	assertContiguous(t, segs)
+	// Each next segment is started (its ffmpeg spawned) before the
+	// current one has finished airing, i.e. queued ahead of the boundary,
+	// and segments still complete strictly in order.
+	p.mu.Lock()
+	ev := strings.Join(p.events, " ")
+	p.mu.Unlock()
+	for i := 1; i < len(segs); i++ {
+		startNext := strings.Index(ev, "start:"+segName(segs[i]))
+		donePrev := strings.Index(ev, "done:"+segName(segs[i-1]))
+		if donePrev >= 0 && startNext > donePrev {
+			t.Errorf("segment %d started only after %d finished: %s", i, i-1, ev)
+		}
+	}
+	var dones []string
+	for _, e := range p.events {
+		if strings.HasPrefix(e, "done:") {
+			dones = append(dones, e)
+		}
+	}
+	for i := 1; i < len(dones); i++ {
+		at := func(e string) string { return e[strings.Index(e, "@"):] }
+		if at(dones[i]) < at(dones[i-1]) {
+			t.Errorf("segments finished out of order: %v", dones)
+		}
 	}
 }

@@ -12,19 +12,31 @@ type ScheduleSource interface {
 	ProgramsFrom(ctx context.Context, channelID uuid.UUID, from time.Time, limit int) ([]ProgramBlock, error)
 }
 
-// Player renders one segment onto the channel output, blocking until it
-// has played (or failed). complete reports that the whole segment aired;
-// otherwise (source shorter than the slot, ffmpeg failure, unplayable
-// media) the feeder fills the rest of the segment with a slate.
+// Player renders segments onto the channel output. Start begins
+// preparing a segment right away (probe, spawn ffmpeg, buffer its
+// output) so it can be queued ahead of the boundary; the returned
+// Playback forwards it to the output when Wait is called and blocks until
+// it has aired.
 type Player interface {
-	Play(ctx context.Context, seg Segment) (complete bool, err error)
+	Start(ctx context.Context, seg Segment) Playback
+}
+
+// Playback is one started segment.
+type Playback interface {
+	// Wait forwards the segment's output and blocks until it is done.
+	// complete reports that the whole segment aired; otherwise (source
+	// shorter than the slot, ffmpeg failure, unplayable media) the feeder
+	// fills the rest with a slate when there is still time to.
+	Wait() (complete bool, err error)
 }
 
 // Feeder walks the schedule forever: it plans the segment at the current
-// timeline position, plays it, and advances to the segment's scheduled
-// end, re-reading channel_programs at every boundary so schedule
-// extensions and edits are picked up as time advances. It ends only when
-// ctx is cancelled (the station is stopped).
+// timeline position, starts it, and — Lead before the segment's scheduled
+// end — plans and starts the next one so its ffmpeg is already running
+// (output buffered) when the current one finishes. The output therefore
+// switches at the exact boundary with contiguous timestamps. The schedule
+// is re-read at every boundary, so extensions and edits are picked up as
+// time advances. Run ends only when ctx is cancelled.
 type Feeder struct {
 	Source    ScheduleSource
 	ChannelID uuid.UUID
@@ -32,9 +44,15 @@ type Feeder struct {
 	Now       func() time.Time
 	// Sleep waits (ctx-aware); tests substitute a fake-clock advance.
 	Sleep func(ctx context.Context, d time.Duration)
-	// OnSegment, if set, observes every segment before it plays.
+	// WaitUntil blocks until wall time t, done closing, or ctx ending;
+	// tests substitute it.
+	WaitUntil func(ctx context.Context, t time.Time, done <-chan struct{})
+	// OnSegment, if set, observes every segment as it is started.
 	OnSegment func(Segment)
 
+	// Lead is how long before a boundary the next segment is started
+	// (default 3 s).
+	Lead time.Duration
 	// LiveRetry is how long a failed live block shows the "unavailable"
 	// slate before the stream is retried (default 30 s).
 	LiveRetry time.Duration
@@ -54,72 +72,118 @@ const (
 	// read (DB hiccup) before retrying.
 	scheduleErrorSlate = 10 * time.Second
 	defaultLiveRetry   = 30 * time.Second
+	defaultLead        = 3 * time.Second
 )
+
+// running is a started segment whose Wait runs once its predecessor
+// has finished forwarding.
+type running struct {
+	seg      Segment
+	done     chan struct{}
+	complete bool
+}
 
 // Run feeds segments until ctx is done.
 func (f *Feeder) Run(ctx context.Context) {
-	now := f.Now
-	if now == nil {
-		now = time.Now
+	if f.Now == nil {
+		f.Now = time.Now
 	}
-	sleep := f.Sleep
-	if sleep == nil {
-		sleep = sleepCtx
+	if f.Sleep == nil {
+		f.Sleep = sleepCtx
+	}
+	if f.WaitUntil == nil {
+		f.WaitUntil = waitUntil
+	}
+	lead := f.Lead
+	if lead <= 0 {
+		lead = defaultLead
 	}
 	liveRetry := f.LiveRetry
 	if liveRetry <= 0 {
 		liveRetry = defaultLiveRetry
 	}
 
-	pos := now()
+	closed := make(chan struct{})
+	close(closed)
+	cur := f.start(ctx, f.plan(ctx, f.Now()), closed)
 	for ctx.Err() == nil {
-		// Never fall behind the wall clock: after a stall, rejoin at now
-		// (the seek keeps viewers on the scheduled frame).
-		if t := now(); pos.Before(t) {
-			pos = t
-		}
-		// Never run far ahead of it either.
-		if ahead := pos.Sub(now()); ahead > maxAhead {
-			sleep(ctx, ahead-time.Second)
-			if ctx.Err() != nil {
-				return
-			}
-		}
-
-		var seg Segment
-		blocks, err := f.Source.ProgramsFrom(ctx, f.ChannelID, pos, lookaheadBlocks)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			seg = Segment{Kind: KindSlate, Start: pos, End: pos.Add(scheduleErrorSlate), Synthetic: true}
-		} else {
-			seg = PlanNext(blocks, pos)
-		}
-
-		complete := f.play(ctx, seg)
+		// Wait until the current segment approaches its end (or ends).
+		f.WaitUntil(ctx, cur.seg.End.Add(-lead), cur.done)
 		if ctx.Err() != nil {
-			return
+			break
 		}
-		if at := now(); !complete && seg.Kind != KindSlate && at.Before(seg.End.Add(-minRemaining)) {
-			fill := failureFill(seg, at, liveRetry)
-			f.play(ctx, fill)
-			if ctx.Err() != nil {
-				return
+		if finished(cur.done) && !cur.complete && cur.seg.Kind != KindSlate {
+			if at := f.Now(); at.Before(cur.seg.End.Add(-minRemaining)) {
+				// Failed / ran short with time left: slate the rest (or,
+				// for live, until the retry).
+				cur = f.start(ctx, failureFill(cur.seg, at, liveRetry), cur.done)
+				continue
 			}
-			pos = fill.End
-			continue
 		}
-		pos = seg.End
+		// Queue the next segment behind the current one.
+		next := f.start(ctx, f.plan(ctx, cur.seg.End), cur.done)
+		select {
+		case <-cur.done:
+		case <-ctx.Done():
+		}
+		cur = next
 	}
+	// Let the last started playback unwind (its process dies with ctx).
+	<-cur.done
 }
 
-func (f *Feeder) play(ctx context.Context, seg Segment) bool {
+// plan decides the segment at pos (never behind the wall clock, never too
+// far ahead of it).
+func (f *Feeder) plan(ctx context.Context, pos time.Time) Segment {
+	if t := f.Now(); pos.Before(t) {
+		pos = t // after a stall, rejoin at now (the seek keeps the frame)
+	}
+	if ahead := pos.Sub(f.Now()); ahead > maxAhead {
+		f.Sleep(ctx, ahead-maxAhead/2)
+	}
+	blocks, err := f.Source.ProgramsFrom(ctx, f.ChannelID, pos, lookaheadBlocks)
+	if err != nil {
+		return Segment{Kind: KindSlate, Start: pos, End: pos.Add(scheduleErrorSlate), Synthetic: true}
+	}
+	return PlanNext(blocks, pos)
+}
+
+// start begins seg now and forwards it once prev is done.
+func (f *Feeder) start(ctx context.Context, seg Segment, prev <-chan struct{}) *running {
 	if f.OnSegment != nil {
 		f.OnSegment(seg)
 	}
-	complete, _ := f.Player.Play(ctx, seg)
-	return complete
+	r := &running{seg: seg, done: make(chan struct{})}
+	pb := f.Player.Start(ctx, seg)
+	go func() {
+		defer close(r.done)
+		<-prev
+		r.complete, _ = pb.Wait()
+	}()
+	return r
+}
+
+func finished(c <-chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitUntil(ctx context.Context, t time.Time, done <-chan struct{}) {
+	d := time.Until(t)
+	if d <= 0 {
+		return
+	}
+	tm := time.NewTimer(d)
+	defer tm.Stop()
+	select {
+	case <-ctx.Done():
+	case <-done:
+	case <-tm.C:
+	}
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) {
