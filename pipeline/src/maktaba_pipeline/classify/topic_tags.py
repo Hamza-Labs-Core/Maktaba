@@ -399,7 +399,7 @@ _LEXICON: dict[str, dict[float, str]] = {
             "| زاد المستقنع | عمدة الفقه | الروض المربع | فقه الصيام | فقه الحج | فقه الصلاة "
             "| مناسك | المناسك | سجود السهو | مخالفات | أخطاء المصلين | fiqh | الاعتكاف | النجاسة "
             "| نجاسات | المذهب | المذاهب | التمذهب | فقه الاختلاف | أخصر المختصرات | الورقات "
-            "| كتاب النكاح | كتاب الطهارة | الأضحية | زكاة"
+            "| كتاب النكاح | كتاب الطهارة | الأضحية | زكاة | السياسة الشرعية"
         ),
         0.5: (
             "حكم | ما حكم | يجوز | هل يجوز | حلال | حرام | الحلال والحرام | الصلاة | صلاة "
@@ -557,12 +557,14 @@ _LEXICON: dict[str, dict[float, str]] = {
     "topic:current_affairs": {
         1.0: (
             "غزة | فلسطين | الأقصى | المسجد الأقصى | القدس | الاحتلال | الصهاينة | الصهيوني "
-            "| السياسة | سياسي | الانتخابات | الثورة | الربيع العربي | الحرب على | الأخبار | نشرة "
-            "| الإعلام | كورونا | الواقع | قضايا معاصرة | النوازل | news | politics | gaza "
-            "| palestine | أخبار"
+            "| سياسي | الانتخابات | الثورة | الربيع العربي | الحرب على | نشرة الأخبار | نشرة "
+            "| آخر الأخبار | الإعلام | كورونا | الواقع | قضايا معاصرة | النوازل | news | politics "
+            "| gaza | palestine"
         ),
+        # «جوامع الأخبار», «أخبار الصحابة»: in a lesson's title these are reports
         0.5: (
-            "المسلمون اليوم | الغرب | السوشال ميديا | التفاهة | صناعة التفاهة | الحمية | الاقتصاد "
+            "الأخبار | أخبار | السياسة | المسلمون اليوم | الغرب | السوشال ميديا | التفاهة "
+            "| صناعة التفاهة | الحمية | الاقتصاد "
             "| العالم اليوم | الرئيس | ترامب | نتنياهو | إيران | الدولار | الأنظمة | الحكام "
             "| الانقلاب | الانقلابات | المقاومة | الكيان | غوانتنامو | المستوطنين | المستوطنون "
             "| الضفة"
@@ -922,7 +924,8 @@ def match_text(
 
 _YEAR = r"(?:1[34]\d\d|19\d\d|20\d\d|[١][٣٤][٠-٩]{2}|[٢][٠][٠-٩]{2})"
 _SEASON_RE = re.compile(
-    r"(?P<m>رمضان|ذو الحجة|ذي الحجة)\s*(?:عام|لعام|سنة|موسم)?\s*[(\[]?\s*" + _YEAR
+    r"(?P<m>رمضان|ذو الحجة|ذي الحجة)\s*(?:عام|لعام|سنة|موسم)?\s*[(\[]?\s*"
+    + _YEAR
     + r"(?:\s*[-–/]\s*\d{2,4})?\s*(?:هـ|ه|م)?\s*[)\]]?"
 )
 
@@ -1294,8 +1297,39 @@ def tag_series(
         ):
             acc.add("format:program", 1.0, f"broadcast run: {n} episodes in a season")
     _default_format(acc, median_duration_s, cfg)
+    _season_not_topic(acc)
     _resolve_conflicts(acc)
     return _finish(acc, cfg)
+
+
+#: a month's bare name: in a show's or playlist's name it says when it aired
+#: («عباد الشيطان | هيثم طلعت رمضان»), not what it is about
+_MONTH_WORDS = frozenset({"رمضان", "شهر رمضان", "ramadan", "ذي الحجة"})
+_SEASON_OF = {
+    "occasion:ramadan": "occasion:ramadan_season",
+    "topic:fasting": "occasion:ramadan_season",
+    "topic:qiyam": "occasion:ramadan_season",
+    "occasion:hajj": "occasion:hajj_season",
+}
+
+
+def _label_only(evidence: str) -> bool:
+    src, _, phrases = evidence.partition(":")
+    return src in ("name", "playlist") and set(phrases.split("/")) <= _MONTH_WORDS
+
+
+def _season_not_topic(acc: _Acc) -> None:
+    """Ramadan / Hajj evidence that is only the month's name in the show's or a
+    playlist's name (no episode, description or other phrase says so) is the season the
+    show aired in: ``occasion:ramadan_season``, never the occasion or fasting."""
+    for tag, season in _SEASON_OF.items():
+        evs = acc.ev.get(tag)
+        if not evs or not all(_label_only(e) for e in evs):
+            continue
+        amount = acc.raw.pop(tag)
+        acc.ev.pop(tag)
+        if tag.startswith("occasion:"):
+            acc.add(season, amount, "season label: " + "; ".join(evs))
 
 
 def chapter_tags(
@@ -1304,11 +1338,14 @@ def chapter_tags(
     """The topic a chapter playlist names («كتاب الصيام», «كتاب الصلاة من صحيح البخاري»,
     «باب صفة الصلاة»): its episodes are about it, whatever their own titles say. Only an
     unambiguous phrase counts (strength ≥ ``min_strength``), scored as a playlist."""
-    return {
-        tag: round(1.0 - math.exp(-weight * strength), 3)
-        for tag, (strength, _) in match_text(title, strip=strip).items()
-        if tag.startswith(("topic:", "occasion:")) and strength >= min_strength
-    }
+    out: dict[str, float] = {}
+    for tag, (strength, phrases) in match_text(title, strip=strip).items():
+        if not tag.startswith(("topic:", "occasion:")) or strength < min_strength:
+            continue
+        if tag in _SEASON_OF and set(phrases) <= _MONTH_WORDS:
+            tag = _SEASON_OF[tag]  # «… رمضان»: the season the playlist aired in
+        out[tag] = max(out.get(tag, 0.0), round(1.0 - math.exp(-weight * strength), 3))
+    return out
 
 
 def _densest_window(dated: Sequence[date], days: int) -> int:

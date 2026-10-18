@@ -1057,6 +1057,14 @@
      "minimum": 0
     },
     {
+     "name": "show_reuse_to_fill",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Short channel takes back shows",
+     "help": "A channel left short of its month by the one-channel-per-show rule takes back shows it also matches (its own topic's first) until it has enough.",
+     "default": true
+    },
+    {
      "name": "show_same_time",
      "kind": "bool",
      "group": "Channels",
@@ -1625,6 +1633,16 @@
       "interview",
       "podcast",
       "khutbah"
+     ]
+    },
+    {
+     "name": "quran_filler_recited_topics",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Quran channel: topics that must be recited",
+     "help": "Dua clips fill the Quran channel only when the dua is recited, not talked about.",
+     "default": [
+      "dua_dhikr"
      ]
     },
     {

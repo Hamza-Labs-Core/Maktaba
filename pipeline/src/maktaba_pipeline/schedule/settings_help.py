@@ -62,6 +62,17 @@ PLANNER_HELP: dict[str, Help] = {
         "follows in the same slot, else one on the same topic.",
         choices=("presenter", "show"),
     ),
+    "show_reuse_to_fill": Help(
+        CH,
+        "Short channel takes back shows",
+        "A channel left short of its month by the one-channel-per-show rule takes back "
+        "shows it also matches (its own topic's first) until it has enough.",
+    ),
+    "quran_filler_recited_topics": Help(
+        CH,
+        "Quran channel: topics that must be recited",
+        "Dua clips fill the Quran channel only when the dua is recited, not talked about.",
+    ),
     "show_max_channels": Help(
         CH,
         "Channels per show (most)",

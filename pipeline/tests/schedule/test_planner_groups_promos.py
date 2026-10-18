@@ -123,3 +123,48 @@ def test_break_clips_belong_to_their_channel() -> None:
             assert not any(p.endswith(".breaks") for p in c.filler_pools)
     off = suggest_channels(seasons, vids, PlannerConfig(**{**SMALL, "break_filler": False}))  # type: ignore[arg-type]
     assert not any(k.endswith(".breaks") for k in off.filler_pools)
+
+
+def test_current_affairs_clips_pad_only_the_news_channel() -> None:
+    from maktaba_pipeline.schedule.channel_planner import ThemeSpec
+
+    seasons = [
+        _season("s1", "بلا حدود", "current_affairs", 1),
+        _season("s2", "كنوز السيرة", "seerah", 2),
+    ]
+    news_clips = [_clip(300 + i, genre="current_affairs") for i in range(5)]
+    themes = (ThemeSpec("news", "News", "الأخبار", 124, ("current_affairs",)),
+              ThemeSpec("seerah", "Seerah", "السيرة", 103, ("seerah",)))  # fmt: skip
+    plan = suggest_channels(seasons, news_clips, PlannerConfig(**{**SMALL, "themes": themes}))  # type: ignore[arg-type]
+    news = {i.path for i in plan.filler_pools["news.topic"].items}
+    assert {v.path for v in news_clips} <= news
+    others = {i.path for k, p in plan.filler_pools.items() if not k.startswith("news.")
+              for i in p.items}  # fmt: skip
+    assert not others & news  # dated news never pads another channel
+
+
+def test_the_quran_channel_takes_recitations_not_talk_about_dua() -> None:
+    from maktaba_pipeline.schedule.channel_planner import ThemeSpec
+
+    reciter = [
+        SeasonCandidate(
+            series_id=f"q{i}", name=f"تلاوة {i}", kind="episodic", series_key=f"تلاوة {i}",
+            folder="Y:/q", presenter="القارئ", first_air="2015-01-01", genre="quran_recitation",
+            tier=1, tags={"topic:quran_recitation": 1.0, "format:recitation": 1.0},
+            episodes=tuple(EpisodeRef(path=f"Y:/q/{i}/{j}.mp4", duration_s=3600, title=str(j),
+                                      episode=j) for j in range(1, 30)),
+        ) for i in range(3)
+    ]  # fmt: skip
+    talk = _clip(400, genre="dua_dhikr")
+    recited = LooseVideo(path="Y:/q/r.mp4", duration_s=200, title="سورة الإخلاص", folder="Y:/q",
+                         presenter="القارئ", tags={"topic:quran_recitation": 0.9},
+                         genre="quran_recitation", is_short=True)  # fmt: skip
+    themes = (ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",)),)
+    plan = suggest_channels(reciter, [talk, recited],
+                            PlannerConfig(**{**SMALL, "themes": themes}))  # type: ignore[arg-type]  # fmt: skip
+    pool = (
+        {i.path for i in plan.filler_pools.get("quran.filler", ()).items}
+        if "quran.filler" in plan.filler_pools
+        else set()
+    )
+    assert "Y:/q/r.mp4" in pool and talk.path not in pool

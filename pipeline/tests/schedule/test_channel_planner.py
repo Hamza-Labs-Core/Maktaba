@@ -419,7 +419,9 @@ def test_filler_stays_on_topic_with_video_tags() -> None:
     prophets = {i.path for i in p.filler_pools["prophets.topic"].items}
     assert "Y:/nabil/s1.mp4" in seerah and "Y:/nabil/p1.mp4" not in seerah
     assert "Y:/nabil/p1.mp4" in prophets
-    assert all("ca.mp4" not in i.path for pool in p.filler_pools.values() for i in pool.items)
+    # current affairs (dated news) pads only the News channel
+    assert all("ca.mp4" not in i.path for k, pool in p.filler_pools.items()
+               if not k.startswith("news.") for i in pool.items)  # fmt: skip
     # horizontal clips come before vertical shorts
     items = list(p.filler_pools["seerah.topic"].items)
     assert items.index(next(i for i in items if i.vertical)) > items.index(

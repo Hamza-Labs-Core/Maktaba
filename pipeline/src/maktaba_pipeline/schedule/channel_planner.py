@@ -488,6 +488,10 @@ class PlannerConfig:
     #: topic's channel before an audience or format one, then the fewest hours. Wherever
     #: it airs, never at the same time on two channels.
     show_max_channels: int = 0
+    #: a channel left short by show_max_channels takes back shows it also matches (the
+    #: closest first, whole shows) until it has its month: a show on a second channel
+    #: rather than no channel
+    show_reuse_to_fill: bool = True
     #: False: a show never holds the same time of day on two channels
     show_same_time: bool = False
     #: presenter channels only for the largest libraries: at most this many
@@ -591,6 +595,9 @@ class PlannerConfig:
     quran_filler_exclude_formats: tuple[str, ...] = (
         "lecture", "qa_fatwa", "program", "interview", "podcast", "khutbah",
     )  # fmt: skip
+    #: of the Quran channel's filler topics, these count only when recited (a dua read
+    #: out, not a talk about dua: «سبعة أعمال تجلب لك دعاء الملائكة»)
+    quran_filler_recited_topics: tuple[str, ...] = ("dua_dhikr",)
     # unknown tier is ranked by format: these formats rank like "produced-ish"
     prime_unknown_formats: tuple[str, ...] = ("program", "documentary", "drama")
     # prime-time rank of a show (higher airs at prime time): a base of 1, plus …
@@ -1027,14 +1034,14 @@ def _filler_items(
                 promo_of=v.promo_of,
             )
         )  # fmt: skip
+    return items, notes
+
+
+def _held_back(f: FillerItem, cfg: PlannerConfig) -> bool:
+    """Filler of a topic kept out of the breaks (current affairs: dated news), except on
+    the channel of that very topic."""
     excluded = set(cfg.filler_exclude_topics)
-    keep = [
-        i
-        for i in items
-        if i.genre not in excluded
-        and _score(i.tags, "topic", excluded) < cfg.filler_topic_min_score
-    ]
-    return keep, notes
+    return f.genre in excluded or _score(f.tags, "topic", excluded) >= cfg.filler_topic_min_score
 
 
 def _pool(key: str, name: str, items: Iterable[FillerItem], fallback: str | None,
@@ -1963,6 +1970,9 @@ def suggest_channels(
     # promos air only next to the show they advertise, never as anyone's general filler
     promos = [f for f in fillers if f.promo_of]
     fillers = [f for f in fillers if not f.promo_of]
+    # a held-back topic's clips (current affairs) pad only its own channel (News)
+    held_fillers = [f for f in fillers if _held_back(f, cfg)]
+    fillers = [f for f in fillers if not _held_back(f, cfg)]
     filler_ids = {s.series_id for s in all_seasons if s.kind == "clips"} | {
         s.series_id
         for s in all_seasons
@@ -2246,9 +2256,19 @@ def suggest_channels(
         hours = sum(u.duration_s for u in rec) / 3600
         reciters = _reciter_lanes(rec, cfg)
         talk = cfg.quran_filler_exclude_formats
+        plain = tuple(
+            t for t in cfg.quran_filler_topics if t not in cfg.quran_filler_recited_topics
+        )
+
+        def recitation_or_dua(f: FillerItem) -> bool:
+            if f.topic_score(plain) >= fmin:
+                return True
+            return (f.topic_score(cfg.quran_filler_recited_topics) >= fmin
+                    and _format_score(f.tags, "recitation") >= cfg.format_min_score)  # fmt: skip
+
         items = [
             f for f in fillers
-            if f.topic_score(cfg.quran_filler_topics) >= fmin
+            if recitation_or_dua(f)
             and max((_format_score(f.tags, x) for x in talk), default=0.0) < cfg.format_min_score
         ]  # fmt: skip
         pk_: str | None = None
@@ -2411,9 +2431,11 @@ def suggest_channels(
     def build_theme(t: ThemeSpec, ids: set[str]) -> set[str]:
         hours = hours_of(ids)
         topics = t.topics or ("__none__",)
+        own_held = set(t.topics) & set(cfg.filler_exclude_topics)
+        pool_from = fillers + [f for f in held_fillers if f.topic_score(own_held) >= fmin]
         pk = channel_pools(
             t.key, t.name,
-            (f for f in fillers
+            (f for f in pool_from
              if not _excluded(f.tags, t.exclude, cfg)
              and (f.topic_score(topics) >= fmin
                   or _score(f.tags, "audience", t.audiences) >= fmin
@@ -2585,6 +2607,20 @@ def suggest_channels(
     while True:  # a channel left short once its shows went to more specific ones drops out
         chosen = live[: cfg.max_channels]
         owned = share(chosen)
+        if cfg.show_reuse_to_fill and cfg.show_max_channels > 0:
+            for c in chosen:
+                if not c.ids or hours_of(owned[c.label]) >= c.need:
+                    continue
+                spare: dict[tuple[str, str], list[str]] = defaultdict(list)
+                for i in c.ids - owned[c.label]:
+                    spare[show_of(i)].append(i)
+                # its own topic's shows first, then the most hours (fewest shows reused)
+                order = sorted(spare.items(), key=lambda kv: (
+                    min(claim(c, i) for i in kv[1]), -hours_of(kv[1]), kv[0]))  # fmt: skip
+                for _, show_ids in order:
+                    if hours_of(owned[c.label]) >= c.need:
+                        break
+                    owned[c.label] = owned[c.label] | set(show_ids)
         thin = [c for c in chosen if c.ids and hours_of(owned[c.label]) < c.need]
         if not thin:
             break

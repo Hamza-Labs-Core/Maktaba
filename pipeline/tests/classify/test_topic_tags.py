@@ -450,3 +450,35 @@ def test_a_season_label_is_when_it_aired_not_its_topic():
     assert "occasion:ramadan" not in chapter_tags(pl) and "topic:fasting" not in chapter_tags(pl)
     assert match_text("برنامج الكنز رمضان ٢٠٢٤")["occasion:ramadan_season"][0] == 1.0
     assert "occasion:ramadan" in match_text("فضائل شهر رمضان")
+
+
+def test_a_month_label_alone_is_the_season_in_every_form():
+    from maktaba_pipeline.classify.topic_tags import chapter_tags
+
+    eps = [f"عباد الشيطان | الدكتور هيثم طلعت | ح {i}" for i in range(1, 30)]
+
+    def ram(name: str, pls: list[str]) -> dict[str, float]:
+        tags = tag_series(name, playlist_titles=pls, episode_titles=eps)
+        return {t.tag: t.score for t in tags if "ramadan" in t.tag or "fasting" in t.tag}
+
+    for name, pls in (
+        ("عباد الشيطان", ["عباد الشيطان | الدكتور هيثم طلعت رمضان"]),
+        ("عباد الشيطان", ["عباد الشيطان | الدكتور هيثم طلعت رمضان 1445-2024"]),
+        ("عباد الشيطان", ["عباد الشيطان رمضان ١٤٤٥"]),
+        ("Devil worshippers", ["Devil worshippers Ramadan 2024"]),
+        ("عباد الشيطان رمضان", []),
+        ("عباد الشيطان", ["عباد الشيطان - شهر رمضان"]),
+    ):
+        got = ram(name, pls)
+        assert set(got) == {"occasion:ramadan_season"}, (name, pls, got)
+    assert set(chapter_tags("عباد الشيطان رمضان")) == {"occasion:ramadan_season"}
+
+
+def test_ramadan_content_is_still_ramadan():
+    from maktaba_pipeline.classify.topic_tags import chapter_tags
+
+    tags = {t.tag: t.score for t in tag_series(
+        "دروس رمضان", episode_titles=[f"أحكام الصيام {i}" for i in range(20)])}  # fmt: skip
+    assert tags["occasion:ramadan"] > 0.9 and tags["topic:fasting"] > 0.9
+    assert "occasion:ramadan" in {t.tag for t in tag_series("خواطر رمضانية")}
+    assert {"topic:fasting", "occasion:ramadan"} <= set(chapter_tags("كتاب الصيام"))

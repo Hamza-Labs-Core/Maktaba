@@ -178,6 +178,23 @@ def test_a_show_goes_to_its_topics_channel_before_an_audience_one() -> None:
     assert "100 سؤال في التاريخ" not in on["kids"]
 
 
+def test_a_short_channel_takes_back_a_show_rather_than_dropping_out() -> None:
+    hist = ThemeSpec("history", "History", "التاريخ", 108, ("islamic_history",))
+    kids = ThemeSpec("kids", "Kids", "الأطفال", 110, ("seerah",), audiences=("beginners",),
+                     min_hours=70)  # fmt: skip
+    lib = [season("h1", "100 سؤال في التاريخ", genre="islamic_history", n=40, minutes=60,
+                  tags={"audience:beginners": 1.0}),
+           season("k1", "سيرة", genre="seerah", n=40, minutes=60)]  # fmt: skip
+    kw = dict(themes=(hist, kids), mix_channel=False, presenter_channels=False,
+              show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # fmt: skip
+    p = plan(lib, **kw)  # type: ignore[arg-type]
+    on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
+    assert on["kids"] == {"سيرة", "100 سؤال في التاريخ"}  # 40 h of its own + the history show
+    assert "100 سؤال في التاريخ" in on["history"]
+    off = plan(lib, **{**kw, "show_reuse_to_fill": False})  # type: ignore[arg-type]
+    assert "kids" not in {c.key for c in off.channels}
+
+
 def test_talk_shows_give_up_a_special_runs_episodes_a_topic_channel_keeps_its_show() -> None:
     from dataclasses import replace
 
