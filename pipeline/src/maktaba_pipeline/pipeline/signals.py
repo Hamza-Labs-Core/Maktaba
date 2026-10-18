@@ -78,12 +78,13 @@ def install_shutdown_handlers(
     restore: list[Callable[[], None]] = []
 
     for sig in shutdown_signals():
+        before = signal.getsignal(sig)
         try:
             loop.add_signal_handler(sig, callback, sig)
         except (NotImplementedError, RuntimeError, ValueError):
             pass
         else:
-            restore.append(_loop_restorer(loop, sig))
+            restore.append(_loop_restorer(loop, sig, before))
             continue
 
         def _raw(_signum: int, _frame: FrameType | None, _sig: signal.Signals = sig) -> None:
@@ -108,10 +109,17 @@ def install_shutdown_handlers(
     return uninstall
 
 
-def _loop_restorer(loop: asyncio.AbstractEventLoop, sig: signal.Signals) -> Callable[[], None]:
+def _loop_restorer(
+    loop: asyncio.AbstractEventLoop, sig: signal.Signals, before: _RawHandler
+) -> Callable[[], None]:
     def _restore() -> None:
         with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
             loop.remove_signal_handler(sig)
+        # remove_signal_handler leaves SIG_DFL (default_int_handler for SIGINT),
+        # not what was there before: asyncio.Runner's own Ctrl-C handler, say
+        if before is not None:
+            with contextlib.suppress(ValueError, OSError, RuntimeError, TypeError):
+                signal.signal(sig, before)
 
     return _restore
 

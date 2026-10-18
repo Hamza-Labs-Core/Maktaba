@@ -282,25 +282,48 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
-	now := h.now()
-	h.mu.Lock()
-	if h.cache != nil && now.Sub(h.at) < CacheTTL {
-		s := h.cache
-		h.mu.Unlock()
-		common.WriteJSON(w, r, http.StatusOK, s)
-		return
-	}
-	h.mu.Unlock()
-
-	s, err := h.Build(r.Context(), now)
+	s, err := h.cached(r.Context(), h.now(), CacheTTL)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("transcription summary: "+err.Error()))
 		return
 	}
+	common.WriteJSON(w, r, http.StatusOK, s)
+}
+
+// ETATTL is how old a summary the Processing card's time left may come from:
+// the queue snapshot is rebuilt every 2 s, the summary's queries take ~0.1 s.
+const ETATTL = time.Minute
+
+// ETASeconds is the transcription's time left for the Processing page's
+// Transcribe card (queues.Handler.StageETA): the report's, at the live speed
+// the workers decode at, rather than the card's finished files per minute,
+// which lag (a worker decodes ~30 files side by side and restarts drop them).
+func (h *Handler) ETASeconds(ctx context.Context, now time.Time) (*float64, error) {
+	s, err := h.cached(ctx, now.UTC(), ETATTL)
+	if err != nil {
+		return nil, err
+	}
+	return s.ETA.Seconds, nil
+}
+
+// cached returns the summary built less than ttl ago, or builds one.
+func (h *Handler) cached(ctx context.Context, now time.Time, ttl time.Duration) (*Summary, error) {
+	h.mu.Lock()
+	if h.cache != nil && now.Sub(h.at) < ttl {
+		s := h.cache
+		h.mu.Unlock()
+		return s, nil
+	}
+	h.mu.Unlock()
+
+	s, err := h.Build(ctx, now)
+	if err != nil {
+		return nil, err
+	}
 	h.mu.Lock()
 	h.cache, h.at = s, now
 	h.mu.Unlock()
-	common.WriteJSON(w, r, http.StatusOK, s)
+	return s, nil
 }
 
 // Build runs the queries and assembles a Summary as of now.

@@ -1,8 +1,10 @@
 package queues
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -486,6 +488,31 @@ func TestSnapshot(t *testing.T) {
 	for _, k := range []string{"nas_open_ms", "nas_timeouts", "cpu_pct", "backlog_ready"} {
 		if h.Spark[k] == nil {
 			t.Errorf("spark[%s] must be a non-nil array", k)
+		}
+	}
+}
+
+func TestSnapshot_StageSuppliesItsOwnETA(t *testing.T) {
+	f := newFixture(snapshotRules()...)
+	twelveDays := 12 * 86400.0
+	f.h.StageETA = map[string]func(context.Context, time.Time) (*float64, error){
+		"probe":      func(context.Context, time.Time) (*float64, error) { return &twelveDays, nil },
+		"transcribe": func(context.Context, time.Time) (*float64, error) { return nil, errors.New("down") },
+	}
+	snap, err := f.h.BuildSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range snap.Queues {
+		switch q.Stage {
+		case "probe":
+			if q.EtaSec == nil || *q.EtaSec != twelveDays || q.RatePerMin != 3 {
+				t.Errorf("probe eta = %v, rate %v", q.EtaSec, q.RatePerMin)
+			}
+		case "transcribe": // the supplier failed: the rate-based estimate (none) stands
+			if q.EtaSec != nil {
+				t.Errorf("transcribe eta = %v", *q.EtaSec)
+			}
 		}
 	}
 }

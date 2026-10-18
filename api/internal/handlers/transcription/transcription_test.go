@@ -1,6 +1,7 @@
 package transcription
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -240,6 +241,23 @@ func TestSummary_LiveSpeed(t *testing.T) {
 func TestLive_LostAudioNeverMakesItNegative(t *testing.T) {
 	if l := live(600, 1, 100, 400); l.RealtimeFactor != 0 || l.AudioHours != 0 {
 		t.Errorf("live = %+v", l)
+	}
+}
+
+func TestETASeconds_ForTheProcessingCard(t *testing.T) {
+	rules := append([]*queuestest.Rule{liveRule(93600, 3600, 2)}, fullRules()...)
+	f := newFixture(rules...)
+	sec, err := f.h.ETASeconds(context.Background(), t0)
+	if err != nil || sec == nil || *sec != 2640 {
+		t.Fatalf("eta = %v, %v; want 2640 s (110 h at 150x)", sec, err)
+	}
+	// a minute's cache: the snapshot asks every 2 s
+	n := len(f.db.Find("stt.audio_sec:"))
+	if _, err := f.h.ETASeconds(context.Background(), t0.Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.db.Find("stt.audio_sec:")) != n {
+		t.Error("ETASeconds rebuilt the summary inside its minute")
 	}
 }
 

@@ -227,7 +227,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Plan 06-11 queue control centre. The bus (when wired) carries the
 	// durable queue.control / pool.updated events; snapshots go straight
 	// to the hub every 2 s while someone is subscribed to /ws/queues.
-	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub}
+	// Whole-library transcription report (/transcription page). It
+	// rides the same /ws/queues + jobs streams for liveness, and gives
+	// the Transcribe card its time left.
+	transcriptionHandler := &transcription.Handler{DB: d.DB}
+	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub, StageETA: map[string]func(context.Context, time.Time) (*float64, error){
+		"transcribe": transcriptionHandler.ETASeconds,
+	}}
 	if bus != nil {
 		queuesHandler.Events = bus
 	}
@@ -238,9 +244,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	wsHandler.Mount(r)
 
-	// Whole-library transcription report (/transcription page). It
-	// rides the same /ws/queues + jobs streams for liveness.
-	(&transcription.Handler{DB: d.DB}).Mount(r)
+	transcriptionHandler.Mount(r)
 
 	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
 	// clients (Epic 14). Resolvers reuse the recommendations + search
