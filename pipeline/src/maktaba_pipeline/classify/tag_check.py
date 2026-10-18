@@ -96,6 +96,18 @@ class TagCheckConfig:
     clip_max_minutes: float = 20.0
 
 
+def tags_hash(tags: Mapping[str, tuple[float, str]]) -> str:
+    """Fingerprint of a series' tags: a verdict applied to these exact tags is on record
+    under it (``applied_hash``), so the step does not apply it twice."""
+    src = json.dumps(sorted(tags.items()), ensure_ascii=False)
+    return hashlib.sha1(src.encode()).hexdigest()
+
+
+def clip_tags_hash(tags: Mapping[str, float]) -> str:
+    """The same for a clip's tags (score only)."""
+    return hashlib.sha1(json.dumps(sorted(tags.items())).encode()).hexdigest()
+
+
 def sample(titles: Sequence[str], n: int) -> list[str]:
     """``n`` titles spread over the series (its start, middle and end)."""
     if len(titles) <= n:
@@ -180,7 +192,9 @@ def apply(
         key = f"topic:{t}"
         if key not in out:
             out[key] = (cfg.added_score, "model")
-        elif out[key][0] < cfg.added_score:
+        elif out[key][0] < cfg.added_score and "book «" not in out[key][1]:
+            # (a topic the book damped stays damped: the verdict may be applied again
+            # to tags the books step has already corrected)
             out[key] = (cfg.added_score, out[key][1] + "; model")
     for o in v.occasions:
         key = f"occasion:{o}"

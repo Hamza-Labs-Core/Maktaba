@@ -486,3 +486,22 @@ def test_paths_compare_across_unicode_forms_and_case() -> None:
     composed = "/Volumes/Y/قناة/ألش خانة ｜ ١٤.MP4"
     assert _key(unicodedata.normalize("NFD", composed)) == _key(composed)
     assert _key("Y:\\a\\B.mp4") == _key("y:/a/b.mp4")
+
+
+@pytest.mark.asyncio
+async def test_a_live_wal_cache_is_read_from_a_snapshot(db: Database, tmp_path: Path) -> None:
+    """A cache another process is writing (pages still in its -wal) imports without error."""
+    await _library(db)
+    cache = _cache(tmp_path / "cache.db")
+    writer = sqlite3.connect(cache)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute(
+        "INSERT INTO folders VALUES ('Y:/other','UCo','https://youtube.com/channel/UCo','O')"
+    )
+    writer.commit()  # committed, but only in the -wal file; the writer stays open
+    try:
+        assert (tmp_path / "cache.db-wal").stat().st_size > 0
+        report = await run_import(db, cache, ["Cached"], apply=False)
+        assert report.matched == N and report.unmatched == []
+    finally:
+        writer.close()

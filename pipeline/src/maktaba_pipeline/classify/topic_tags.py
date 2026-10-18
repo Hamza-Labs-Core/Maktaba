@@ -95,7 +95,9 @@ __all__ = [
     "tag_video",
 ]
 
-TAGGER_VERSION: int = 5
+#: 6: the tag stage also tags each episode by its own title and chapter playlist
+#: (``episode_tags``), reads the detection settings and strips the channel's branding
+TAGGER_VERSION: int = 6
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
