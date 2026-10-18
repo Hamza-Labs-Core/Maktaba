@@ -67,7 +67,7 @@ def test_prophets_stories_program_in_ramadan() -> None:
     assert t["topic:prophets_stories"] > 0.9
     assert t["format:program"] > 0.5
     assert t["occasion:ramadan_season"] > 0.9  # aired in Ramadan: the Ramadan grid
-    assert t["occasion:ramadan"] < 0.9  # only its playlist names Ramadan; not about it
+    assert t.get("occasion:ramadan", 0.0) < 0.5  # «رمضان 2024» is the season, not the topic
     assert "topic:akhlaq" not in t  # "بداية الخلق" is creation, not character
     assert t["audience:general"] == 0.5
 
@@ -440,3 +440,13 @@ def test_a_prophets_name_after_a_first_name_is_a_surname() -> None:
     for title in ("قصة إبراهيم عليه السلام", "إبراهيم عليه السلام وبناء الكعبة",
                   "دعوة إبراهيم لقومه ｜ قصص الأنبياء", "سيدنا موسى وفرعون"):  # fmt: skip
         assert "topic:prophets_stories" in match_text(title), title
+
+
+def test_a_season_label_is_when_it_aired_not_its_topic():
+    from maktaba_pipeline.classify.topic_tags import chapter_tags, match_text
+
+    pl = "عباد الشيطان | الدكتور هيثم طلعت رمضان 1445-2024"
+    assert set(match_text(pl)) == {"occasion:ramadan_season"}
+    assert "occasion:ramadan" not in chapter_tags(pl) and "topic:fasting" not in chapter_tags(pl)
+    assert match_text("برنامج الكنز رمضان ٢٠٢٤")["occasion:ramadan_season"][0] == 1.0
+    assert "occasion:ramadan" in match_text("فضائل شهر رمضان")

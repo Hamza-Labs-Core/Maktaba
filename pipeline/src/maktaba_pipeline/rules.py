@@ -23,9 +23,9 @@ from typing import Any
 
 from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
+from .classify.books import BooksConfig
 from .classify.clip_groups import GroupConfig
 from .classify.series_detector import DetectorConfig
-from .classify.books import BooksConfig
 from .classify.tag_check import TagCheckConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig

@@ -105,7 +105,7 @@ __all__ = [
     "suggest_channels",
 ]
 
-PLANNER_VERSION: int = 4  # 2: TV grid (show slots with queues), Quran channel; 3: the
+PLANNER_VERSION: int = 5  # 2: TV grid (show slots with queues), Quran channel; 3: the
 #: lineup (at most max_channels, each with a month of content), presenter slots, blocks;
 #: 4: a show joins a theme whole only when its episodes agree, no general filler on themes
 DAY_MINUTES = 24 * 60

@@ -107,6 +107,7 @@ land at the next free integer (no gaps, no reservations).
 | `0098` | `0098_videos_title_trgm.sql` | [epic-05](../../specs/epics/05-search-indexing/) | 0001 | GIN trigram index on `videos.title`: search matches titles (`ILIKE`, ordered by `similarity()`), so a library without transcripts is still searchable. |
 | `0099` | `0099_tagger_planner_v3.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0095 | `job_stages` versions for PR #52: `tag` 3 (sub-topics, per-episode tags, khutbah / «بصوت» fixes) and `plan_channels` 3 (the 20-channel lineup); the version sweep re-tags and re-plans once. |
 | `0100` | `0100_tagger_planner_v4.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0099 | `job_stages` versions for channel relevance: `tag` 4 (airing in Ramadan / Dhu al-Hijjah is the season, not the topic; «الشيخ رمضان» is a person; shared playlists are no evidence) and `plan_channels` 4 (a show joins a theme whole only when its episodes agree; no general filler on theme channels); the version sweep re-tags and re-plans once. |
+| `0101` | `0101_tagger_planner_v5.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0100 | `job_stages` versions, channel relevance second pass: `tag` 5 (chapter playlists give their episodes' topic; «رمضان 1445» is the airing season, not the topic) and `plan_channels` 5 (topic and specialist shows first on topic channels; no Taraweeh recitations as a lesson channel's special run); the version sweep re-tags and re-plans once. |
 
 ---
 

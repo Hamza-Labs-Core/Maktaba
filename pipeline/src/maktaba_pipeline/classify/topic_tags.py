@@ -95,7 +95,7 @@ __all__ = [
     "tag_video",
 ]
 
-TAGGER_VERSION: int = 4
+TAGGER_VERSION: int = 5
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -888,9 +888,11 @@ def match_text(
     hints (weight < 0.5) together add at most 0.35 — five weak words are
     still weak evidence — capped at 1.
     """
+    # «رمضان 1445», «رمضان 2024»: when it aired (a TV season), not what it is about
+    text, season = _season_labels(text)
     toks = _tokens(text, strip)
     if not toks:
-        return {}
+        return season
     raw = _raw_matches(toks)
     noisy = {i for e, i in raw if e.phrase in noise}  # boilerplate spans, any tag
     by_tag: dict[str, list[tuple[_Entry, int]]] = {}
@@ -912,7 +914,30 @@ def match_text(
         strength = min(1.0, strong + min(_HINT_CAP, hints))
         out[tag] = (strength, tuple(sorted(best, key=lambda p: -best[p])))
     out.update(_surah_title(toks))
+    for tag, hit in season.items():
+        if tag not in out or out[tag][0] < hit[0]:
+            out[tag] = hit
     return out
+
+
+_YEAR = r"(?:1[34]\d\d|19\d\d|20\d\d|[١][٣٤][٠-٩]{2}|[٢][٠][٠-٩]{2})"
+_SEASON_RE = re.compile(
+    r"(?P<m>رمضان|ذو الحجة|ذي الحجة)\s*(?:عام|لعام|سنة|موسم)?\s*[(\[]?\s*" + _YEAR
+    + r"(?:\s*[-–/]\s*\d{2,4})?\s*(?:هـ|ه|م)?\s*[)\]]?"
+)
+
+
+def _season_labels(text: str) -> tuple[str, Hits]:
+    """``text`` without its season labels («رمضان 1445-2024», «ذو الحجة 1444»), and
+    the season they name as ``occasion:ramadan_season`` / ``hajj_season`` hits."""
+    found: Hits = {}
+
+    def cut(m: re.Match[str]) -> str:
+        tag = "occasion:ramadan_season" if m.group("m") == "رمضان" else "occasion:hajj_season"
+        found[tag] = (1.0, (m.group(0).strip(),))
+        return " "
+
+    return _SEASON_RE.sub(cut, text), found
 
 
 # English transliterated surah names, compared as consonant skeletons
