@@ -21,7 +21,8 @@ mediaintel = [
 ]
 # Speech to text on Apple Silicon (plan 03-10): Whisper on the GPU through MLX.
 stt = [
-    "mlx-whisper>=0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
+    "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 dev = [
     "grpcio-tools>=1.68",

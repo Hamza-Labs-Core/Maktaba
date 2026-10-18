@@ -107,8 +107,9 @@ type Rates struct {
 }
 
 // Live is the speed the transcription workers report while they work: the
-// audio their decoding has moved past in the last 10 minutes, from the
-// stt.audio_sec:<host>-<pid> counters in health_samples. Finished jobs lag
+// audio their decoding has moved past in the last 10 minutes, less what a
+// failure or a restart threw away, from each worker's stt.audio_sec:<slot>
+// and stt.audio_lost:<slot> counters in health_samples. Finished jobs lag
 // it, since a worker decodes ~30 files side by side and each finishes only
 // at its end, so it is the better basis for the ETA.
 type Live struct {
@@ -238,17 +239,26 @@ SELECT count(*) FILTER (WHERE finished_at >= $2),
        avg(rtf)
   FROM w`
 
-	// Audio decoded in the window: the sum of each worker counter's rises (a
-	// restarted worker starts again from 0; that drop is not counted).
+	// Audio decoded in the window ($1..now), less audio lost: the sum of each
+	// counter's rises. The samples read start at $2, before the window, so the
+	// window's first interval has its previous sample. A restarted worker
+	// continues its series from 0: a drop counts as a rise from 0.
 	liveSQL = `
 WITH s AS (
-    SELECT metric, value - lag(value) OVER (PARTITION BY metric, host ORDER BY at) AS d
+    SELECT host, metric, at, value,
+           lag(value) OVER (PARTITION BY metric, host ORDER BY at) AS prev
       FROM health_samples
-     WHERE metric LIKE 'stt.audio_sec:%' AND at >= $1
+     WHERE (metric LIKE 'stt.audio_sec:%' OR metric LIKE 'stt.audio_lost:%') AND at >= $2
+), d AS (
+    SELECT host, metric,
+           CASE WHEN value >= prev THEN value - prev ELSE value END AS d
+      FROM s
+     WHERE at >= $1 AND prev IS NOT NULL
 )
-SELECT COALESCE(sum(d) FILTER (WHERE d > 0), 0)::float8,
-       count(DISTINCT metric) FILTER (WHERE d > 0)
-  FROM s`
+SELECT COALESCE(sum(d) FILTER (WHERE metric LIKE 'stt.audio_sec:%'), 0)::float8,
+       COALESCE(sum(d) FILTER (WHERE metric LIKE 'stt.audio_lost:%'), 0)::float8,
+       count(DISTINCT host || ' ' || metric) FILTER (WHERE metric LIKE 'stt.audio_sec:%' AND d > 0)
+  FROM d`
 
 	failuresSQL = `
 SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::text), l.name,
@@ -384,13 +394,14 @@ func (h *Handler) loadRates(ctx context.Context, s *Summary, now time.Time) erro
 	}
 	s.Rate.Last10m = window(600, jobs10, sec10, rtf10)
 	s.Rate.Last1h = window(3600, jobs60, sec60, rtf60)
-	var liveSec float64
+	var decoded, lost float64
 	var workers int
-	if err := h.DB.QueryRowContext(ctx, liveSQL, now.Add(-10*time.Minute)).Scan(&liveSec, &workers); err != nil {
+	start := now.Add(-10 * time.Minute)
+	if err := h.DB.QueryRowContext(ctx, liveSQL, start, start.Add(-2*time.Minute)).
+		Scan(&decoded, &lost, &workers); err != nil {
 		return err
 	}
-	s.Rate.Live = Live{WindowSec: 600, Workers: workers, AudioHours: hours(liveSec),
-		RealtimeFactor: round2(liveSec / 600)}
+	s.Rate.Live = live(600, workers, decoded, lost)
 	return nil
 }
 
@@ -434,6 +445,12 @@ func window(sec int, jobs int, audioSec float64, rtf sql.NullFloat64) Window {
 		w.AvgJobRTF = &v
 	}
 	return w
+}
+
+func live(sec, workers int, decoded, lost float64) Live {
+	kept := math.Max(0, decoded-lost)
+	return Live{WindowSec: sec, Workers: workers, AudioHours: hours(kept),
+		RealtimeFactor: round2(kept / float64(sec))}
 }
 
 // eta divides the remaining audio by the most recent non-zero speed.

@@ -42,10 +42,17 @@ ProbeFn = Callable[[], Awaitable[float]]
 #: metrics a subsystem of this process publishes (the transcriber's GPU memory ...),
 #: sampled with the rest every round
 _METRICS: dict[str, Callable[[], float]] = {}
+_FINAL: dict[str, Callable[[], float]] = {}
 
 
-def register_metric(name: str, fn: Callable[[], float]) -> None:
+def register_metric(
+    name: str, fn: Callable[[], float], *, final: Callable[[], float] | None = None
+) -> None:
+    """Sample ``fn`` every round; ``final``, when given, instead in the last round, taken
+    as the worker shuts down."""
     _METRICS[name] = fn
+    if final is not None:
+        _FINAL[name] = final
 
 
 def system_memory() -> tuple[float, float] | None:
@@ -170,6 +177,7 @@ async def sample_once(
     *,
     host: str,
     probe_network: bool = False,
+    final: bool = False,
 ) -> dict[str, float]:
     """Write one round of ``health_samples``; returns what was written."""
     metrics: dict[str, float] = {}
@@ -191,6 +199,8 @@ async def sample_once(
         metrics["mem.free_pct"] = round(100.0 * avail / total, 1) if total else 0.0
         metrics["mem.available_gb"] = round(avail / 1e9, 2)
     for metric, read in list(_METRICS.items()):
+        if final:
+            read = _FINAL.get(metric, read)
         try:
             metrics[metric] = float(read())
         except Exception:  # noqa: BLE001 - one bad probe is skipped
@@ -234,3 +244,8 @@ async def run_sampler(
         n += 1
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
             await asyncio.wait_for(stop.wait(), timeout=interval_sec)
+    # one last round as the worker stops: what it is about to drop is recorded
+    try:
+        await asyncio.wait_for(sample_once(db, collector, host=host, final=True), 5.0)
+    except Exception:  # noqa: BLE001 - best effort, the worker is going away
+        _log.debug("health_final_sample_failed")

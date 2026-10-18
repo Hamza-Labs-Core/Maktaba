@@ -13,7 +13,7 @@ export type JobState =
   | "done"
   | "failed"
   | "cancelled";
-export type Lane = "sources" | "episodes" | "seasons" | "channels" | "media";
+export type Lane = "sources" | "episodes" | "speech" | "seasons" | "channels" | "media";
 
 export interface JobRef {
   id: number;

@@ -205,3 +205,50 @@ def test_subtitle_formats() -> None:
     v = vtt(segs)
     assert v.startswith("WEBVTT\n\nNOTE maktaba")
     assert "01:01:01.250 --> 01:01:02.000\nالحمد لله" in v
+
+
+@pytest.mark.asyncio
+async def test_alignment_reads_each_windows_own_encoding_and_a_fallback_is_not_reencoded() -> None:
+    model = FakeModel(bad_once={101})  # file 1, window 1 falls back once
+    encoded: list[Any] = []
+    aligned: list[tuple[int, int]] = []
+
+    def encode(windows: list[Any], cached: list[Any]) -> list[Any]:
+        encoded.extend(w[1] for w, c in zip(windows, cached, strict=True) if c is None)
+        return [c if c is not None else w for w, c in zip(windows, cached, strict=True)]
+
+    def align_batch(items: list[Any], feats: list[Any]) -> None:
+        for it in items:
+            seg = it.segments[0]
+            aligned.append((feats[it.row][1], seg["seek"]))
+            for s in it.segments:
+                s["words"] = [{"start": s["start"], "end": s["end"], "word": "x"}]
+
+    bt = _transcriber(model)
+    bt._encode, bt._align_batch = encode, align_batch
+    r1, r2 = await asyncio.gather(bt.transcribe(_audio(1, 3)), bt.transcribe(_audio(2, 2)))
+    assert len(r1.sentences) == 3 and len(r2.sentences) == 2
+    # every window encoded once, the fallback's second decode reused its encoding
+    assert sorted(encoded) == [100, 101, 102, 200, 201]
+    assert (1, 0.2) in model.calls
+    # each window aligned against its own row of the pass's encoder output
+    assert sorted(w for w, _ in aligned) == [100, 101, 102, 200, 201]
+    assert all(w % 100 == seek // N_FRAMES for w, seek in aligned)
+    assert bt.audio_done == pytest.approx(5 * 30) and bt.audio_lost == 0
+
+
+@pytest.mark.asyncio
+async def test_a_failed_batch_counts_its_progress_as_lost() -> None:
+    model = FakeModel()
+    bt = _transcriber(model)
+    orig = model.decode
+
+    def decode(mels: Sequence[Any], temps: Sequence[float]) -> list[R]:
+        if len(model.calls) == 1:
+            raise RuntimeError("gpu fault")
+        return orig(mels, temps)
+
+    bt._decode = decode
+    with pytest.raises(RuntimeError):
+        await bt.transcribe(_audio(1, 3))
+    assert bt.audio_lost == pytest.approx(30) == bt.audio_done  # one window in, then lost

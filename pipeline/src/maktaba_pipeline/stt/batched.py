@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import os
 import queue
-import socket
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -101,6 +100,8 @@ class _Decoded(Protocol):
 
 #: (mel windows, one temperature per window) -> one result per window
 DecodeFn = Callable[[Sequence[Any], Sequence[float]], Sequence[_Decoded]]
+#: (windows, each one's encoder output from an earlier pass or None) -> the pass's output
+EncodeFn = Callable[[list[Any], list[Any]], Any]
 #: (segments of one window, the window's mel, its frames, last speech end) -> adds "words"
 AlignFn = Callable[[list[dict[str, Any]], Any, int, float], None]
 
@@ -128,10 +129,18 @@ class _Job:
     temp_idx: int = 0
     last_speech: float = 0.0
     segments: list[dict[str, Any]] = field(default_factory=list)
+    #: the encoder output of the window at ``features_seek``, kept while that window
+    #: is decoded again at a warmer temperature
+    features: Any = None
+    features_seek: int = -1
 
     @property
     def done(self) -> bool:
         return self.seek >= self.content_frames
+
+    @property
+    def progress_sec(self) -> float:
+        return min(self.seek, self.content_frames) / FRAMES_PER_SECOND
 
 
 def _needs_fallback(r: _Decoded, s: WhisperSettings) -> bool:
@@ -287,17 +296,22 @@ def to_sentences(segments: list[dict[str, Any]]) -> list[Sentence]:
 class BatchedTranscriber:
     """One Whisper model, one GPU thread, many files in flight.
 
-    ``encode`` / ``decode`` / ``align`` / ``mel_of`` / ``tokenizer`` default to
-    MLX-Whisper's; tests pass fakes to exercise the seek logic without a GPU (with no
-    ``encode`` the windows go to ``decode`` as they are)."""
+    ``encode`` / ``decode`` / ``align`` / ``align_batch`` / ``mel_of`` / ``tokenizer``
+    default to MLX-Whisper's; tests pass fakes to exercise the seek logic without a GPU
+    (with no ``encode`` the windows go to ``decode`` as they are).
+
+    ``encode(windows, cached)`` returns the pass's encoder output, one row per window;
+    ``cached[k]``, when not None, is window k's output from an earlier pass (a window
+    decoded again after a fallback) and is used as it is."""
 
     def __init__(
         self,
         settings: WhisperSettings | None = None,
         *,
-        encode: Callable[[list[Any]], Any] | None = None,
+        encode: EncodeFn | None = None,
         decode: DecodeFn | None = None,
         align: AlignFn | None = None,
+        align_batch: Callable[[list[AlignItem], Any], None] | None = None,
         mel_of: Callable[[np.ndarray], Any] | None = None,
         window_of: Callable[[Any, int, int], Any] | None = None,
         tokenizer: _Tokenizer | None = None,
@@ -310,7 +324,7 @@ class BatchedTranscriber:
         self._window_of = window_of
         self._tokenizer = tokenizer
         #: every window of a pass aligned in one model call (stt/align.py)
-        self._align_batch: Callable[[list[AlignItem]], None] | None = None
+        self._align_batch = align_batch
         self._inbox: queue.Queue[_Submission] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -319,9 +333,16 @@ class BatchedTranscriber:
         self.in_flight = 0
         #: seconds of audio transcribed (the seeks' advance), for the live rate
         self.audio_done = 0.0
+        #: of it, the part whose file then failed or was given up: not progress
+        self.audio_lost = 0.0
+        self._jobs: list[_Job] = []  # the files in flight (the GPU thread's list)
         self._mx: Any = None
 
     # --- public ---------------------------------------------------------------
+
+    def in_flight_audio(self) -> float:
+        """Seconds of audio decoded in the files not finished yet."""
+        return sum(j.progress_sec for j in list(self._jobs))
 
     async def transcribe(self, audio: np.ndarray) -> Transcript:
         """``audio``: mono float32 at 16 kHz."""
@@ -369,15 +390,22 @@ class BatchedTranscriber:
         self._mx = mx
         from ..engine.health import register_metric
 
-        register_metric("stt.gpu_active_gb", lambda: round(mx.get_active_memory() / 1e9, 2))
-        register_metric("stt.gpu_cache_gb", lambda: round(mx.get_cache_memory() / 1e9, 2))
-        register_metric("stt.gpu_peak_gb", lambda: round(mx.get_peak_memory() / 1e9, 2))
-        # per process (two transcription workers on one host must not overwrite each
-        # other's counters): the report sums the stt.audio_sec:* series
-        tag = f"{socket.gethostname()}-{os.getpid()}"
+        # one series per worker (two transcription workers on one host must not
+        # overwrite each other's), named by its slot so a restart continues it
+        tag = metric_tag()
+        register_metric(f"stt.gpu_active_gb:{tag}", lambda: round(mx.get_active_memory() / 1e9, 2))
+        register_metric(f"stt.gpu_cache_gb:{tag}", lambda: round(mx.get_cache_memory() / 1e9, 2))
+        register_metric(f"stt.gpu_peak_gb:{tag}", lambda: round(mx.get_peak_memory() / 1e9, 2))
         register_metric(f"stt.files_in_flight:{tag}", lambda: float(self.in_flight))
         register_metric(f"stt.windows:{tag}", lambda: float(self.windows))
+        # the report's live speed: audio decoded, less what a failure or a shutdown
+        # threw away (the last sample, taken at shutdown, counts the files in flight)
         register_metric(f"stt.audio_sec:{tag}", lambda: round(self.audio_done, 1))
+        register_metric(
+            f"stt.audio_lost:{tag}",
+            lambda: round(self.audio_lost, 1),
+            final=lambda: round(self.audio_lost + self.in_flight_audio(), 1),
+        )
         model = load_model(s.model, dtype=mx.float16)
         tok = get_tokenizer(
             model.is_multilingual,
@@ -416,9 +444,15 @@ class BatchedTranscriber:
                 tokens = mx.concatenate([tokens, next_tokens[:, None]], axis=-1)
                 return tokens, mx.all(tokens[:, -1] == self.eot), sum_logprobs
 
-        def encode(windows: list[Any]) -> Any:
+        def encode(windows: list[Any], cached: list[Any]) -> Any:
             # once a pass: the decode, and the word alignment after it, both read it
-            return model.encoder(mx.stack(windows))
+            todo = [k for k, c in enumerate(cached) if c is None]
+            if len(todo) == len(windows):
+                return model.encoder(mx.stack(windows))
+            fresh: Any = model.encoder(mx.stack([windows[k] for k in todo])) if todo else []
+            at = {k: i for i, k in enumerate(todo)}
+            rows = [fresh[at[k]] if k in at else cached[k] for k in range(len(windows))]
+            return mx.stack(rows)
 
         def run_decode(features: Any, temps: Sequence[float]) -> Sequence[_Decoded]:
             opts = DecodingOptions(
@@ -444,7 +478,7 @@ class BatchedTranscriber:
         self._decode = run_decode
         self._align = None
         if s.word_timestamps:
-            self._align_batch = lambda items: align_batch(model, tok, items)
+            self._align_batch = lambda items, feats: align_batch(model, tok, items, feats)
         _log.info("whisper.loaded", model=s.model, seconds=round(time.monotonic() - t0, 1))
 
     def _admit(self, jobs: list[_Job], block: bool) -> None:
@@ -485,7 +519,7 @@ class BatchedTranscriber:
             self._decode = None
             self._thread = None
             return
-        jobs: list[_Job] = []
+        jobs = self._jobs
         while True:
             self._admit(jobs, block=True)
             if not jobs:
@@ -499,6 +533,7 @@ class BatchedTranscriber:
             except Exception as exc:  # noqa: BLE001 - a broken batch fails its files only
                 _log.exception("whisper.batch_failed", files=len(jobs))
                 for j in jobs:
+                    self.audio_lost += j.progress_sec
                     j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
                 jobs.clear()
                 continue
@@ -513,6 +548,7 @@ class BatchedTranscriber:
                         gpu_sec=time.monotonic() - j.admitted,
                     )
                 except Exception as exc:  # noqa: BLE001 - the thread outlives one file
+                    self.audio_lost += j.progress_sec
                     j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
                     continue
                 j.loop.call_soon_threadsafe(_set_result, j.future, result)
@@ -524,36 +560,43 @@ class BatchedTranscriber:
         assert self._decode is not None and self._window_of is not None
         assert self._tokenizer is not None
         for j in jobs:
-            if j.future.cancelled():
+            if j.future.cancelled() and not j.done:
+                self.audio_lost += j.progress_sec
                 j.seek = j.content_frames
         live = [j for j in jobs if not j.done]
         if not live:
             return
         sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in live]
         windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(live, sizes, strict=True)]
-        features = self._encode(windows) if self._encode is not None else windows
+        if self._encode is not None:
+            cached = [j.features if j.features_seek == j.seek else None for j in live]
+            features = self._encode(windows, cached)
+        else:
+            features = windows
         results = self._decode(features, [s.temperatures[j.temp_idx] for j in live])
         self.passes += 1
         self.windows += len(windows)
-        pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int]] = []
+        pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int, int]] = []
         before = {id(j): j.seek for j in live}
         for i, (j, n, win, r) in enumerate(zip(live, sizes, windows, results, strict=True)):
             if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
                 j.temp_idx += 1
+                if self._encode is not None:  # the same window next pass: keep its encoding
+                    j.features, j.features_seek = features[i], j.seek
                 continue
             j.temp_idx = 0
+            j.features, j.features_seek = None, -1
             got = window_segments(j, r, n, self._tokenizer, s)
             if got is not None:
-                feat = features[i] if self._align_batch is not None else win
-                pending.append((j, got[0], got[1], got[2], feat, n))
+                pending.append((j, got[0], got[1], got[2], win, n, i))
         if self._align_batch is not None:
-            items = [AlignItem(cur, f, n, j.last_speech) for j, cur, _, _, f, n in pending]
+            items = [AlignItem(cur, n, j.last_speech, i) for j, cur, _, _, _, n, i in pending]
             if items:
-                self._align_batch(items)
+                self._align_batch(items, features)
         elif self._align is not None:
-            for j, cur, _, _, win, n in pending:
+            for j, cur, _, _, win, n, _ in pending:
                 self._align(cur, win, n, j.last_speech)
-        for j, cur, single, offset, _, _ in pending:
+        for j, cur, single, offset, _, _, _ in pending:
             finish_window(j, cur, single, offset)
         for j in live:
             moved = min(j.seek, j.content_frames) - before[id(j)]
@@ -561,17 +604,36 @@ class BatchedTranscriber:
                 self.audio_done += moved / FRAMES_PER_SECOND
 
 
-def _fast_rules(mx: Any, f: Any) -> TimestampRules:
-    """MLX-Whisper's timestamp rules, replaced by the batched ones (stt/rules.py)."""
-    tok = f.tokenizer
-    return TimestampRules(
-        mx,
-        sample_begin=f.sample_begin,
-        timestamp_begin=tok.timestamp_begin,
-        eot=tok.eot,
-        no_timestamps=tok.no_timestamps,
-        max_initial_timestamp_index=f.max_initial_timestamp_index,
-    )
+def metric_tag() -> str:
+    """This worker's suffix on the stt.* metrics: its slot on the host
+    (``MAKTABA_STT_SLOT``, set by tools/dev/stack.sh), else its pid."""
+    return os.environ.get("MAKTABA_STT_SLOT") or f"pid{os.getpid()}"
+
+
+def _fast_rules(mx: Any, f: Any) -> Any:
+    """MLX-Whisper's timestamp rules, replaced by the batched ones (stt/rules.py).
+
+    They are built from the filter's own fields, which are MLX-Whisper's internals
+    (pinned in pyproject.toml); if a release renames them, its filter is kept: slower,
+    never wrong."""
+    try:
+        tok = f.tokenizer
+        return TimestampRules(
+            mx,
+            sample_begin=int(f.sample_begin),
+            timestamp_begin=int(tok.timestamp_begin),
+            eot=int(tok.eot),
+            no_timestamps=tok.no_timestamps,
+            max_initial_timestamp_index=f.max_initial_timestamp_index,
+        )
+    except AttributeError:
+        if not _WARNED:
+            _WARNED.append(True)
+            _log.warning("whisper.fast_rules_unavailable", filter=type(f).__name__)
+        return f
+
+
+_WARNED: list[bool] = []
 
 
 def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:

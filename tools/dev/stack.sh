@@ -57,7 +57,8 @@ start() {
      --database-url "$DB" --worker-id "mac-main-$stamp" --path-map "$PM" \
      --grpc-addr 127.0.0.1:50051 --exclude-stages transcribe >> "$LOGS/worker.log" 2>&1 &)
   for k in $(seq 1 "$n"); do
-    (cd "$ROOT/pipeline" && nohup uv run --all-extras python -m maktaba_pipeline run \
+    # the slot names the worker's stt.* metrics, so a restart continues its series
+    (cd "$ROOT/pipeline" && MAKTABA_STT_SLOT="stt-$k" nohup uv run --all-extras python -m maktaba_pipeline run \
        --database-url "$DB" --worker-id "mac-stt-$k-$stamp" --path-map "$PM" \
        --stages transcribe >> "$LOGS/worker-stt-$k.log" 2>&1 &)
   done

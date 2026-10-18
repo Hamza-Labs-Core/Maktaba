@@ -64,3 +64,13 @@ def test_the_same_masks_as_openai_whisper_step_after_step(max_init: int | None) 
     # the walk exercised every rule: pairs, text, and timestamps after the first
     tail = tokens[:, SAMPLE_BEGIN:]
     assert (tail >= TB).sum() > batch and (tail < EOT).sum() > batch
+
+
+def test_a_filter_without_the_expected_fields_is_kept() -> None:
+    from maktaba_pipeline.stt.batched import _fast_rules
+
+    class Renamed:
+        pass
+
+    f = Renamed()
+    assert _fast_rules(mx, f) is f

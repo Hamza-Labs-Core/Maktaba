@@ -8,7 +8,8 @@ forward pass (token sequences padded with end-of-text: the decoder is causal, so
 padding changes no real position), and the per-window work after it (DTW, punctuation,
 the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence). The audio
 is not encoded again: the decode's encoder output is reused (encoding is the costly half
-of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass).
+of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass), its rows
+taken by index.
 """
 
 from __future__ import annotations
@@ -31,12 +32,12 @@ APPEND = "\"'.。,，!！?？:：”)]}、"
 @dataclass
 class AlignItem:
     segments: list[dict[str, Any]]  # one window's sentences ("seek", "start", "end", "tokens")
-    features: Any  # the window's encoder output (n_audio_ctx, n_audio_state)
     num_frames: int
     last_speech: float
+    row: int  # the window's row in the pass's encoder output
 
 
-def align_batch(model: Any, tokenizer: Any, items: list[AlignItem]) -> None:
+def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: Any) -> None:
     """Add ``words`` to every segment of every item, as ``add_word_timestamps`` would."""
     import mlx.core as mx  # type: ignore[import-untyped,import-not-found,unused-ignore]
     from mlx_whisper.timing import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
@@ -62,8 +63,8 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem]) -> None:
     seqs = [[*sot, tokenizer.no_timestamps, *text, tokenizer.eot] for _, _, text in work]
     width = max(len(q) for q in seqs)
     tokens = mx.array([q + [tokenizer.eot] * (width - len(q)) for q in seqs])
-    features = mx.stack([it.features for it, _, _ in work])
-    logits, _, cross_qk = model.decoder(tokens, features)
+    rows = mx.array([it.row for it, _, _ in work])
+    logits, _, cross_qk = model.decoder(tokens, mx.take(features, rows, axis=0))
     heads = model.alignment_heads.tolist()
 
     for b, ((it, per_seg, text), q) in enumerate(zip(work, seqs, strict=True)):

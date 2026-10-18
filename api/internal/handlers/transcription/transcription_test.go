@@ -75,9 +75,9 @@ func segmentsRule(n int64) *queuestest.Rule {
 	return &queuestest.Rule{Match: "output_summary->'segments'", Cols: []string{"n"}, Rows: [][]driver.Value{{n}}}
 }
 
-func liveRule(sec float64, workers int64) *queuestest.Rule {
-	return &queuestest.Rule{Match: "stt.audio_sec:", Cols: []string{"sec", "workers"},
-		Rows: [][]driver.Value{{sec, workers}}}
+func liveRule(sec, lost float64, workers int64) *queuestest.Rule {
+	return &queuestest.Rule{Match: "stt.audio_sec:", Cols: []string{"sec", "lost", "workers"},
+		Rows: [][]driver.Value{{sec, lost, workers}}}
 }
 
 func rateRule(jobs10 int64, sec10 float64, rtf10 any, jobs60 int64, sec60 float64, rtf60 any) *queuestest.Rule {
@@ -104,7 +104,7 @@ func fullRules() []*queuestest.Rule {
 		segmentsRule(12345),
 		// 10 min: 5 h of audio -> 30x realtime; 1 h: 20 h of audio -> 20x.
 		rateRule(6, 18000.0, 31.5, 30, 72000.0, 25.0),
-		liveRule(0, 0),
+		liveRule(0, 0, 0),
 		failuresRule(
 			[]driver.Value{int64(901), vid1, "Lesson 1", "Lectures", "transcribe", "gpu_oom",
 				`{"kind":"gpu_oom","message":"CUDA out of memory"}`, t0.Add(-time.Minute), int64(3)},
@@ -201,7 +201,7 @@ func TestSummary_QueryArguments(t *testing.T) {
 }
 
 func TestSummary_Empty(t *testing.T) {
-	f := newFixture(segmentsRule(0), rateRule(0, 0.0, nil, 0, 0.0, nil), liveRule(0, 0))
+	f := newFixture(segmentsRule(0), rateRule(0, 0.0, nil, 0, 0.0, nil), liveRule(0, 0, 0))
 	s := decode(t, f.get(viewer()))
 	if s.Totals != (Totals{}) || len(s.Libraries) != 0 || len(s.Failures) != 0 || len(s.Stages) != 3 {
 		t.Errorf("empty summary = %+v", s)
@@ -224,8 +224,9 @@ func TestSummary_Empty(t *testing.T) {
 }
 
 func TestSummary_LiveSpeed(t *testing.T) {
-	// two workers decoded 25 h of audio in 10 min: 150x; finished jobs say 30x
-	rules := append([]*queuestest.Rule{liveRule(90000, 2)}, fullRules()...)
+	// two workers decoded 26 h of audio in 10 min and a restart threw 1 h of it
+	// away: 150x; finished jobs say 30x
+	rules := append([]*queuestest.Rule{liveRule(93600, 3600, 2)}, fullRules()...)
 	s := decode(t, newFixture(rules...).get(viewer()))
 	if s.Rate.Live != (Live{WindowSec: 600, Workers: 2, AudioHours: 25, RealtimeFactor: 150}) {
 		t.Errorf("live = %+v", s.Rate.Live)
@@ -233,6 +234,12 @@ func TestSummary_LiveSpeed(t *testing.T) {
 	// 110 h remaining at 150x -> 44 min
 	if s.ETA.Seconds == nil || *s.ETA.Seconds != 2640 || *s.ETA.Basis != "live" {
 		t.Errorf("eta = %+v", s.ETA)
+	}
+}
+
+func TestLive_LostAudioNeverMakesItNegative(t *testing.T) {
+	if l := live(600, 1, 100, 400); l.RealtimeFactor != 0 || l.AudioHours != 0 {
+		t.Errorf("live = %+v", l)
 	}
 }
 

@@ -179,7 +179,7 @@ class StageDef:
     label: str
     subject_kinds: tuple[SubjectKind, ...]
     pool: str
-    lane: Literal["sources", "episodes", "seasons", "channels", "media"]
+    lane: Literal["sources", "episodes", "speech", "seasons", "channels", "media"]
     lane_order: int
     version: int
     run: StageHandler | None = None
@@ -490,7 +490,7 @@ GRAPH: tuple[StageDef, ...] = (
         label="Transcribe",
         subject_kinds=("video",),
         pool="gpu",
-        lane="media",
+        lane="speech",
         lane_order=2,
         version=TRANSCRIBE_VERSION,
         # what is said is tagging evidence too: its season, or its library's loose videos
@@ -507,7 +507,7 @@ GRAPH: tuple[StageDef, ...] = (
         label="Subtitle files",
         subject_kinds=("video",),
         pool="nas_write",
-        lane="media",
+        lane="speech",
         lane_order=3,
         version=SUBTITLE_VERSION,
         external_write=True,
@@ -518,7 +518,7 @@ GRAPH: tuple[StageDef, ...] = (
         label="Search index",
         subject_kinds=("video",),
         pool="cpu",
-        lane="media",
+        lane="speech",
         lane_order=4,
         version=INDEX_VERSION,
         edges=(Edge("thumbnail", "same", legacy=True),),

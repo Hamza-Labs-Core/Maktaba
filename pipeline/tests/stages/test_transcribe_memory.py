@@ -59,3 +59,22 @@ async def test_registered_metrics_and_memory_are_sampled(db: Database) -> None:
     )
     assert n == 1
     health._METRICS.pop("stt.test_gauge", None)
+
+
+@pytest.mark.asyncio
+async def test_the_sampler_takes_a_last_round_with_the_final_readings(db: Database) -> None:
+    import asyncio
+
+    health.register_metric("stt.test_lost", lambda: 1.0, final=lambda: 9.0)
+    stop = asyncio.Event()
+    stop.set()  # stops at once: one round, then the final one
+    try:
+        await health.run_sampler(db, health.HealthCollector(), stop, host="h2")
+        values = await db.fetch(
+            "SELECT value FROM health_samples WHERE host = 'h2' AND metric = 'stt.test_lost'"
+            " ORDER BY at"
+        )
+        assert [float(r["value"]) for r in values][-1] == 9.0
+    finally:
+        health._METRICS.pop("stt.test_lost", None)
+        health._FINAL.pop("stt.test_lost", None)

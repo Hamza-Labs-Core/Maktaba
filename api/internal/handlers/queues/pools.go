@@ -14,7 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-var laneRank = map[string]int{"sources": 0, "episodes": 1, "seasons": 2, "channels": 3, "media": 4}
+var laneRank = map[string]int{"sources": 0, "episodes": 1, "speech": 2, "seasons": 3, "channels": 4, "media": 5}
 
 // sortStages orders stages by lane, lane_order, name (stable UI order).
 func sortStages(s []StageInfo) {
