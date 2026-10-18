@@ -1180,6 +1180,18 @@ def _run_args(
         args.append("--exact")
     if not body.get("youtube", True):
         args.append("--no-youtube")
+    from .pipeline import STEPS as RUN_STEPS
+
+    start = body.get("from_step") or ""
+    if start:
+        if start not in RUN_STEPS:
+            raise ValueError(f"Unknown step to start at: {start!r}.")
+        args += ["--from-step", start]
+    skip = body.get("skip") or []
+    if not isinstance(skip, list) or any(s not in RUN_STEPS for s in skip):
+        raise ValueError(f"The steps to leave out must be among: {', '.join(RUN_STEPS)}.")
+    for s in dict.fromkeys(skip):
+        args += ["--skip", s]
     if folders:
         args += ["--", *folders]
     return args
@@ -1362,6 +1374,9 @@ def serve(
                         cache["st"], cache["at"] = status(db_path, log), time.time()
                     st = dict(cache["st"])
                 st["running_pid"] = _running_pid(db_path)
+                from .pipeline import STEPS as RUN_STEPS
+
+                st["run_steps"] = list(RUN_STEPS)  # what "Start at" / "Leave out" offer
                 self._json(200, st)
             elif url.path == "/api/live":
                 # Server-Sent Events: one small update a second, until the page closes

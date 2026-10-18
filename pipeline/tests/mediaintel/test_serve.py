@@ -295,3 +295,14 @@ def test_folders_come_last_after_double_dash(monkeypatch: pytest.MonkeyPatch) ->
     assert seen["plex"] is True and seen["out"] == Path("r")
     plex = _run_args("m.db", {}, None, Path("r"))
     assert "--" not in plex and "--from-plex" in plex
+
+
+def test_run_can_start_at_a_step_and_leave_steps_out() -> None:
+    args = _run_args("m.db", {"from_step": "check-clips", "skip": ["report", "scan-visual"]},
+                     None, Path("r"))  # fmt: skip
+    assert args[args.index("--from-step") + 1] == "check-clips"
+    assert [args[i + 1] for i, a in enumerate(args) if a == "--skip"] == ["report", "scan-visual"]
+    with pytest.raises(ValueError):
+        _run_args("m.db", {"from_step": "--plex"}, None, Path("r"))
+    with pytest.raises(ValueError):
+        _run_args("m.db", {"skip": ["rm -rf"]}, None, Path("r"))

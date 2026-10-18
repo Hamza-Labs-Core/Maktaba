@@ -39,6 +39,20 @@ exact upload dates for series members (slow, polite); `--no-youtube` uses local
 and Plex evidence only. Nothing is written to Plex: `export-plex` stays a
 separate, reviewed step (`--diff` lists every episode a change adds or removes).
 
+## Control centre
+
+`serve` is the control centre: progress, the log, settings, and **Start a run** (all or some
+libraries, what to write, the step to start at and steps to leave out). To keep it running on its
+own (it starts again after a crash), on Windows:
+
+```
+set MEDIAINTEL_DB=E:	v\mediaintel\mediaintel.db
+set MEDIAINTEL_DIZQUETV=E:	v\dizquetv\.dizquetv
+scripts\mediaintel\control-centre.cmd
+```
+
+It logs runs to `run-plex.log` beside the database and reports to `reports/` there.
+
 `explain TEXT` answers "why is this video where it is": title, air date and its
 quality, length, shape, playlists and positions, YouTube link method, Plex item,
 and the verdict (episode N of a season, promo/recap extra, second upload, short,
