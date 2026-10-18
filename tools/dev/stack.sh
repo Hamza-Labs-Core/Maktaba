@@ -38,11 +38,14 @@ stop() {
   return 0
 }
 
+api_pids() { lsof -nP -iTCP:8080 -iTCP:9100 -sTCP:LISTEN -t 2>/dev/null; }
+
 api() {
-  # the old API drains open live-update streams before it lets go of the port
-  for p in $(lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null); do kill "$p"; done
-  for _ in {1..60}; do lsof -nP -iTCP:8080 -sTCP:LISTEN -t >/dev/null 2>&1 || break; sleep 1; done
-  for p in $(lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null); do kill -9 "$p"; done
+  # the old API drains open live-update streams before it lets go of its ports
+  # (public 8080 and admin 9100: the new one exits if either is still taken)
+  for p in $(api_pids); do kill "$p"; done
+  for _ in {1..60}; do [[ -z $(api_pids) ]] && break; sleep 1; done
+  for p in $(api_pids); do kill -9 "$p"; done
   (cd "$ROOT/api" && DATABASE_URL="${DB/postgresql:/postgres:}?sslmode=disable" \
      MAKTABA_HTTP_ADDR=:8080 MAKTABA_ADMIN_ADDR=:9100 MAKTABA_ENV=dev \
      MAKTABA_PIPELINE_ADDR=127.0.0.1:50051 MAKTABA_SEARCH_SEMANTIC_BUDGET_MS=500 \
