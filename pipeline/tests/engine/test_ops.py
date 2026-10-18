@@ -259,6 +259,20 @@ async def test_sample_once_writes_health_samples(db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_new_worker_replaces_the_dead_ones_of_its_host(db: Database) -> None:
+    for wid, host in (("mac-1-old", "MAC"), ("mac-2-old", "MAC"), ("pc-old", "PC")):
+        await register_worker(db, worker_id=wid, host=host, stages=["probe"], pools=["cpu"])
+    await register_worker(db, worker_id="mac-2-live", host="MAC", stages=["probe"], pools=["cpu"])
+    stale = to_ts(db, now() - timedelta(minutes=10))
+    await db.execute("UPDATE workers SET last_seen_at = $1 WHERE id LIKE '%-old'", stale)
+    # killed before they could deregister; a new worker starts on the Mac
+    await register_worker(db, worker_id="mac-1-new", host="MAC", stages=["probe"], pools=["cpu"])
+    ids = sorted(r["id"] for r in await db.fetch("SELECT id FROM workers"))
+    # the Mac's dead ones are gone, its live sibling stays, the PC's dead one still shows
+    assert ids == ["mac-1-new", "mac-2-live", "pc-old"]
+
+
+@pytest.mark.asyncio
 async def test_worker_registry_and_stages_without_a_worker(db: Database) -> None:
     await sync_graph(db, GRAPH)
     await register_worker(

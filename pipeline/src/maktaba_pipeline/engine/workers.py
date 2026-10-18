@@ -43,7 +43,18 @@ async def register_worker(
     path_map: dict[str, str] | None = None,
     version: str | None = None,
 ) -> None:
-    ts = to_ts(db, now())
+    at = now()
+    ts = to_ts(db, at)
+    # earlier runs on this host that stopped heartbeating are gone, not offline: a
+    # worker killed before it could deregister (a stop that outlasted its drain) is
+    # replaced by this one. Their rows only cluttered the page with "offline" workers;
+    # a dead worker on another host still shows, and the pruner drops it after a day.
+    await db.execute(
+        "DELETE FROM workers WHERE host = $1 AND id <> $2 AND last_seen_at < $3",
+        host,
+        worker_id,
+        to_ts(db, at - timedelta(seconds=LIVE_WINDOW_SEC)),
+    )
     await db.execute(
         "INSERT INTO workers (id, host, stages, pools, path_map, version, started_at, last_seen_at)"
         " VALUES ($1,$2,$3,$4,$5,$6,$7,$7)"
