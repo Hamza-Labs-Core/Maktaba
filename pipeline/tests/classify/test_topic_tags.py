@@ -66,7 +66,8 @@ def test_prophets_stories_program_in_ramadan() -> None:
     assert _genre(tags) == "genre:prophets_stories"
     assert t["topic:prophets_stories"] > 0.9
     assert t["format:program"] > 0.5
-    assert t["occasion:ramadan"] > 0.9
+    assert t["occasion:ramadan_season"] > 0.9  # aired in Ramadan: the Ramadan grid
+    assert t["occasion:ramadan"] < 0.9  # only its playlist names Ramadan; not about it
     assert "topic:akhlaq" not in t  # "بداية الخلق" is creation, not character
     assert t["audience:general"] == 0.5
 
@@ -230,14 +231,15 @@ def test_clip_series_are_clips_not_programs() -> None:
     assert _genre(tags) == "genre:aqeedah"
 
 
-def test_ramadan_from_air_dates_alone() -> None:
+def test_ramadan_season_from_air_dates_alone() -> None:
     eps = [f"برنامج مكارم الحلقة ({i}) كلامك ميزانك" for i in range(30)]
     in_ramadan = tag_series(
         "برنامج مكارم", episode_titles=eps, air_dates=_daily(date(2016, 6, 6), 30)
     )
     outside = tag_series("برنامج مكارم", episode_titles=eps, air_dates=_daily(date(2016, 9, 1), 30))
-    assert "occasion:ramadan" in _tags(in_ramadan)
-    assert "occasion:ramadan" not in _tags(outside)
+    assert "occasion:ramadan_season" in _tags(in_ramadan)  # aired then …
+    assert "occasion:ramadan" not in _tags(in_ramadan)  # … not about Ramadan
+    assert "occasion:ramadan_season" not in _tags(outside)
     assert _genre(in_ramadan) == "genre:akhlaq"
 
 
@@ -410,3 +412,22 @@ def test_a_plain_surah_recitation_stays_recitation() -> None:
     eps = [f"سورة الكهف كاملة بصوت القارئ {i}" for i in range(1, 6)]
     tags = tag_series("سورة الكهف", episode_titles=eps)
     assert _genre(tags) == "genre:quran_recitation"
+
+
+def test_a_sheikh_named_ramadan_is_not_the_month() -> None:
+    for title in ("بغض المسكرات ｜ كيف رباهم ｜ الشيخ رمضان الشنوري ｜ ح 28",
+                  "إن إبراهيم كان أمة ｜ الشيخ سعيد رمضان والشيخ بشير المحلاوي",
+                  "خالد الجندي ورمضان عبد المعز يخالفون نص القرءان والسنة"):  # fmt: skip
+        assert "occasion:ramadan" not in match_text(title), title
+    assert "occasion:ramadan" in match_text("مقاصد رمضان ｜ محاضرة منهجية للجيل الصاعد")
+
+
+def test_aired_in_ramadan_is_the_season_not_the_topic() -> None:
+    tags = _tags(tag_series(
+        "شرح الورقات في أصول الفقه",
+        episode_titles=[f"شرح الورقات {i}" for i in range(1, 8)],
+        median_duration_s=3600,
+        air_dates=_daily(date(2024, 3, 11), 7),
+    ))  # fmt: skip
+    assert tags.get("occasion:ramadan_season", 0) > 0.9
+    assert "occasion:ramadan" not in tags

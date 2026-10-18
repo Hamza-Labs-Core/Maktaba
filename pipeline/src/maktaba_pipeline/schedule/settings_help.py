@@ -110,6 +110,19 @@ PLANNER_HELP: dict[str, Help] = {
         "lesson in a lecture series): one collection per presenter, in air order.",
     ),
     "theme_episode_min_score": Help(CH, "Single episode: topic score"),
+    "theme_show_min_episode_share": Help(
+        CH,
+        "Whole show: share of its own episodes on the theme",
+        "A show a theme channel takes by a topic or occasion tag (not by its genre) joins "
+        "whole only when at least this share of its hours are episodes about the theme "
+        "themselves; otherwise only those episodes join, as a special run. 0: off.",
+    ),
+    "theme_general_filler": Help(
+        CH,
+        "Theme channels: also general filler",
+        "Off: a theme channel fills its gaps only with clips on its own topic and its "
+        "shows' promos. On: also with the library's clips on any topic.",
+    ),
     "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
     "theme_episode_min_count": Help(
         CH,
@@ -326,6 +339,19 @@ PLANNER_HELP: dict[str, Help] = {
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_guide_min_program_s": Help(
+        DZ,
+        "Guide: shortest programme listed (s)",
+        "Programmes at least this long have their own entry in the guide; shorter ones "
+        "count as filler.",
+    ),
+    "dz_guide_max_padding_s": Help(
+        DZ,
+        "Guide: filler shown from (s)",
+        "Filler time at least this long gets its own guide entry (the filler title below); "
+        "shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
+    ),
+    "dz_guide_filler_title": Help(DZ, "Guide: title of filler time"),
     "dz_logo_dir": Help(
         DZ,
         "Channel logos folder",
@@ -381,6 +407,7 @@ _MINIMUM: dict[str, float] = {
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "dz_watermark_width": 1, "dz_watermark_margin": 0,
+    "dz_guide_min_program_s": 0, "dz_guide_max_padding_s": 0,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
     "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
 }  # fmt: skip

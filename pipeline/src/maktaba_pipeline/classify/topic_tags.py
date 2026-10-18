@@ -94,7 +94,7 @@ __all__ = [
     "tag_video",
 ]
 
-TAGGER_VERSION: int = 3
+TAGGER_VERSION: int = 4
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -133,8 +133,11 @@ FORMATS: tuple[str, ...] = (
 #: ``kids_friendly``: not made for children but fine for them (a seerah series, a
 #: reciter's or a history channel); ``beginners``: a basics programme
 AUDIENCES: tuple[str, ...] = ("general", "kids", "kids_friendly", "beginners", "women", "youth")
+#: ``ramadan_season`` / ``hajj_season``: aired then (a Ramadan TV season), which says
+#: when to air it, not what it is about (``ramadan`` / ``hajj``: about the occasion)
 OCCASIONS: tuple[str, ...] = (
     "ramadan", "hajj", "eid", "ashura", "jumuah", "isra_miraj", "hijri_new_year",
+    "ramadan_season", "hajj_season",
 )  # fmt: skip
 
 #: ``format:`` → Story 26.2 ``video_classification.content_type``
@@ -727,6 +730,16 @@ _RECITERS = (
 _NAME_BEFORE = frozenset({"عبد", "عبدال", "ابو", "ابي", "ام"})
 # … or right before these (عثمان بن أرطغرل, يوسف بن تاشفين, صالح بن فوزان)
 _NAME_AFTER = frozenset({"بن", "ابن", "بنت"})
+# months that are also people's names: «الشيخ رمضان الشنوري», «سعيد رمضان», «رمضان عبد
+# المعز», «مسجد … رمضان» are a person (or a mosque named after one), not the month
+_MONTH_NAMES = frozenset(fold("رمضان شعبان رجب").split())
+_PERSON_BEFORE = frozenset(
+    fold(
+        "الشيخ للشيخ شيخ الدكتور د دكتور لفضيلة فضيلة الإمام الامام العلامة الأستاذ الاستاذ "
+        "أ ا القارئ للقارئ الحاج سعيد محمد أحمد احمد مولاي"
+    ).split()
+)
+_PERSON_AFTER = frozenset(fold("عبد عبدال البوطي الشنوري صبحي").split())
 # the word after "سورة" is a surah's name (النساء، الحج، مريم، الجمعة), not a topic
 _SURAH_WORDS = frozenset({"سوره", "سور", "لسوره", "بسوره", "وسوره"})
 
@@ -828,6 +841,9 @@ def _raw_matches(toks: list[str]) -> list[tuple[_Entry, int]]:
             if e.not_after and prev and _token_forms(prev) & e.not_after:
                 continue
             if len(e.words) == 1 and (prev in _NAME_BEFORE or nxt in _NAME_AFTER):
+                continue
+            if (len(e.words) == 1 and e.words[0] in _MONTH_NAMES
+                    and (prev in _PERSON_BEFORE or nxt in _PERSON_AFTER)):  # fmt: skip
                 continue
             if _match_at(forms, i, e):
                 out.append((e, i))
@@ -1224,11 +1240,12 @@ def tag_series(
     if len(dated) >= cfg.min_dated_episodes:
         n = len(dated)
         ram = sum(_in_ramadan(d) for d in dated)
+        # aired then: when to air it (the Ramadan grid), not what it is about
         if ram / n >= cfg.occasion_share:
-            acc.add("occasion:ramadan", 2.5, f"aired in Ramadan {ram}/{n}")
+            acc.add("occasion:ramadan_season", 2.5, f"aired in Ramadan {ram}/{n}")
         hajj = sum(_in_hajj_season(d) for d in dated)
         if hajj / n >= cfg.occasion_share:
-            acc.add("occasion:hajj", 2.0, f"aired in Dhu al-Hijjah {hajj}/{n}")
+            acc.add("occasion:hajj_season", 2.0, f"aired in Dhu al-Hijjah {hajj}/{n}")
         if (
             n >= cfg.program_min_episodes
             and kind != "clips"

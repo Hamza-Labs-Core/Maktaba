@@ -105,8 +105,9 @@ __all__ = [
     "suggest_channels",
 ]
 
-PLANNER_VERSION: int = 3  # 2: TV grid (show slots with queues), Quran channel; 3: the
-#: lineup (at most max_channels, each with a month of content), presenter slots, blocks
+PLANNER_VERSION: int = 4  # 2: TV grid (show slots with queues), Quran channel; 3: the
+#: lineup (at most max_channels, each with a month of content), presenter slots, blocks;
+#: 4: a show joins a theme whole only when its episodes agree, no general filler on themes
 DAY_MINUTES = 24 * 60
 WEEKDAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIER_NAMES: dict[int, str] = {0: "static", 1: "talk", 2: "produced", 3: "cinematic"}
@@ -419,6 +420,14 @@ class PlannerConfig:
     #: Palestine episodes), as one collection per presenter in air order
     theme_episodes: bool = True
     theme_episode_min_score: float = 0.6
+    #: a show a theme claims by a topic or occasion tag (not its genre) joins whole only
+    #: when at least this share of its hours are episodes tagged so themselves; else
+    #: only those episodes join, as a special run (4 of 114 episodes on Gaza do not make
+    #: a show a Palestine show). Shows without episode tags are kept. 0: off
+    theme_show_min_episode_share: float = 0.5
+    #: theme channels also fill with the library's general filler (clips on any topic);
+    #: off: only their own topic's filler and their shows' promos
+    theme_general_filler: bool = False
     theme_episode_min_minutes: float = 10.0
     #: a presenter's collection needs at least this many such episodes
     theme_episode_min_count: int = 2
@@ -577,6 +586,12 @@ class PlannerConfig:
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
+    #: the guide shows what runs: programmes from this long are listed (shorter ones are
+    #: filler), and filler time from this long gets its own entry (dz_guide_filler_title)
+    #: instead of being added to the programme before it
+    dz_guide_min_program_s: int = 60
+    dz_guide_max_padding_s: int = 120
+    dz_guide_filler_title: str = "فواصل"
     #: a dizqueTV filler list holds at most this many clips (the first of the pool, which
     #: is in priority order): a pool can hold 75,000 clips, more than dizqueTV accepts in
     #: one request (50 MB) and far more than a filler list needs
@@ -883,7 +898,9 @@ def _unit(s: SeasonCandidate, cfg: PlannerConfig) -> ProgramUnit:
         genre=s.genre,
         tier=s.tier,
         style=s.style,
-        ramadan=s.tags.get("occasion:ramadan", 0.0) >= cfg.ramadan_min_score,
+        # about Ramadan, or aired in a Ramadan season: both belong on the Ramadan grid
+        ramadan=max(s.tags.get("occasion:ramadan", 0.0), s.tags.get("occasion:ramadan_season", 0.0))
+        >= cfg.ramadan_min_score,
         first_air=s.first_air or "9999",
         series_key=s.series_key or s.name,
         episodes=tuple(e for e in s.episodes if e.duration_s > 0),
@@ -2122,7 +2139,9 @@ def suggest_channels(
                 slots=tuple(slots), ramadan_slots=tuple(r_slots),
                 filler_pools=tuple(dict.fromkeys(
                     p for p in [pool_keys.get("topic"), promo_key, pool_keys.get("dawn"),
-                                *slot_pools.values(), general.key] if p is not None)),
+                                *slot_pools.values(),
+                                general.key if kind != "theme" or cfg.theme_general_filler
+                                else None] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip
@@ -2168,6 +2187,26 @@ def suggest_channels(
     drop_in: set[str] = set()  # … taken out of these of its seasons (audience/format ones)
     held: dict[str, list[tuple[int, int]]] = {}  # show → times it holds on channels so far
     held_r: dict[str, list[tuple[int, int]]] = {}  # the same on the Ramadan grids
+
+    def episodes_agree(i: str, t: ThemeSpec) -> bool:
+        """A show claimed by a topic/occasion tag (not by its genre, an audience or a
+        format) needs enough of its own episodes tagged so too."""
+        s = by_id[i]
+        if cfg.theme_show_min_episode_share <= 0 or s.genre in t.topics:
+            return True
+        lo = cfg.topic_min_score
+        if (_score(s.tags, "audience", t.audiences) >= lo
+                or _score(s.tags, "format", t.formats) >= lo):  # fmt: skip
+            return True
+        eps = units[i].episodes
+        if not any(e.tags for e in eps):
+            return True  # nothing to check against
+        keys = [f"topic:{x}" for x in t.topics] + [f"occasion:{o}" for o in t.occasions]
+        on = sum(e.duration_s for e in eps
+                 if max((e.tags.get(k, 0.0) for k in keys), default=0.0)
+                 >= cfg.theme_episode_min_score)  # fmt: skip
+        total = sum(e.duration_s for e in eps) or 1.0
+        return on / total >= cfg.theme_show_min_episode_share
 
     def theme_episode_units(t: ThemeSpec, have: set[str]) -> set[str]:
         """One collection per presenter of the episodes whose own title is about the
@@ -2293,8 +2332,9 @@ def suggest_channels(
                 continue
             offer("quran", n_t, f"theme {t.key}", set(), need, partial(build_quran, t))
             continue
-        ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)}
-        ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
+        ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)
+               and episodes_agree(i, t)}  # fmt: skip
+        ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg) and episodes_agree(i, t)}
         # a show joins whole or not at all, so the hours counted are the hours it airs
         ids = {i for i in whole_shows(ids) if i in regular_ids or i in khutbah_ids}
         ids |= theme_episode_units(t, ids)

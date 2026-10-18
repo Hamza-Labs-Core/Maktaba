@@ -800,6 +800,22 @@
      "default": 0.6
     },
     {
+     "name": "theme_show_min_episode_share",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Whole show: share of its own episodes on the theme",
+     "help": "A show a theme channel takes by a topic or occasion tag (not by its genre) joins whole only when at least this share of its hours are episodes about the theme themselves; otherwise only those episodes join, as a special run. 0: off.",
+     "default": 0.5
+    },
+    {
+     "name": "theme_general_filler",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Theme channels: also general filler",
+     "help": "Off: a theme channel fills its gaps only with clips on its own topic and its shows' promos. On: also with the library's clips on any topic.",
+     "default": false
+    },
+    {
      "name": "theme_episode_min_minutes",
      "kind": "float",
      "group": "Channels",
@@ -1661,6 +1677,32 @@
      "help": "",
      "default": 1800000,
      "minimum": 0
+    },
+    {
+     "name": "dz_guide_min_program_s",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Guide: shortest programme listed (s)",
+     "help": "Programmes at least this long have their own entry in the guide; shorter ones count as filler.",
+     "default": 60,
+     "minimum": 0
+    },
+    {
+     "name": "dz_guide_max_padding_s",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Guide: filler shown from (s)",
+     "help": "Filler time at least this long gets its own guide entry (the filler title below); shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
+     "default": 120,
+     "minimum": 0
+    },
+    {
+     "name": "dz_guide_filler_title",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Guide: title of filler time",
+     "help": "",
+     "default": "فواصل"
     },
     {
      "name": "dz_filler_max_items",

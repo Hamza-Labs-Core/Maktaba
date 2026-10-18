@@ -115,6 +115,12 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
         for r in conn.execute("SELECT id, name, metadata FROM series")
     ]
     series = [s for s in series if s[2].get("folder") == folder]
+    # a playlist holding several shows («رمضان 1437», «غزة») names a collection, not
+    # each show in it: only a show's own playlists are evidence of its topic
+    shows_in: dict[str, set[str]] = {}
+    for _sid, nm, md in series:
+        for p in md.get("playlists", []):
+            shows_in.setdefault(p, set()).add(md.get("series_key") or nm)
     conn.executemany("DELETE FROM series_tags WHERE series_id=?", [(s[0],) for s in series])
 
     print(f"\n=== tags v{TAGGER_VERSION}: {Path(folder.replace(chr(92), '/')).name}: "
@@ -137,7 +143,11 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
         ]
         tags = tag_series(
             name,
-            playlist_titles=[pl_titles[p] for p in meta.get("playlists", []) if p in pl_titles],
+            playlist_titles=[
+                pl_titles[p]
+                for p in meta.get("playlists", [])
+                if p in pl_titles and len(shows_in.get(p, ())) <= 1
+            ],  # fmt: skip
             episode_titles=[e["title"] for e in eps],
             descriptions=[e["description"] or "" for e in eps],
             channel=channel,

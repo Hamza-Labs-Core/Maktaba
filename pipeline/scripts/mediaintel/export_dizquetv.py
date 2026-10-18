@@ -344,6 +344,7 @@ def plan_actions(
             "scheduleBackup": sch,
             "maktabaPlan": {"key": c["key"], "planner_version": plan["planner_version"]},
             **channel_art(plan, c["key"]),
+            **guide_settings(plan),
         }
         per = int(sch["period"])
         names = {lane_ids.get(k): lanes[k]["name"] for k in lanes}
@@ -377,7 +378,7 @@ def plan_actions(
             continue
         upd = {**ex, **{k: body[k] for k in ("programs", "fillerCollections", "scheduleBackup",
                                              "maktabaPlan", "fillerRepeatCooldown", "icon",
-                                             "watermark") if k in body}}  # fmt: skip
+                                             "watermark", *GUIDE_KEYS) if k in body}}  # fmt: skip
         actions.append(Action("update", "channel", f"#{c['number']} {dzc['name']}", "PUT",
                               "/api/channel", upd, detail + [
                                   f"keeps name '{ex.get('name')}', icon, watermark, transcoding; "
@@ -409,6 +410,21 @@ def _removals(plan: Mapping[str, Any], state: State, actions: Sequence[Action], 
                 out.append(Action("delete", kind, name, "DELETE", f"/api/{kind}/{info['id']}",
                                   None, ["made by this tool, not in the plan"]))  # fmt: skip
     return out
+
+
+GUIDE_KEYS = ("guideMinimumDurationSeconds", "guideMaxPaddingSeconds", "guideFlexPlaceholder")
+
+
+def guide_settings(plan: Mapping[str, Any]) -> dict[str, Any]:
+    """The guide shows what runs: every programme from a minute, filler time as its own
+    entry («فواصل») rather than added to the programme before it (dizqueTV melds up to
+    30 minutes; ``guideMaxPaddingSeconds`` is this install's channel option for it)."""
+    cfg = plan.get("config") or {}
+    return {
+        "guideMinimumDurationSeconds": int(cfg.get("dz_guide_min_program_s", 60)),
+        "guideMaxPaddingSeconds": int(cfg.get("dz_guide_max_padding_s", 120)),
+        "guideFlexPlaceholder": str(cfg.get("dz_guide_filler_title", "فواصل")),
+    }
 
 
 def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
