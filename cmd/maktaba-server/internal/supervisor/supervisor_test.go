@@ -51,11 +51,11 @@ func TestBuildMissingBinaryIsActionable(t *testing.T) {
 
 func TestLocalAddr(t *testing.T) {
 	t.Parallel()
-	if got := localAddr(":8081", "9999"); got != "127.0.0.1:8081" {
-		t.Errorf("localAddr(:8081) = %q", got)
+	if got := LocalAddr(":8081", "9999"); got != "127.0.0.1:8081" {
+		t.Errorf("LocalAddr(:8081) = %q", got)
 	}
-	if got := localAddr("garbage", "8081"); got != "127.0.0.1:8081" {
-		t.Errorf("localAddr fallback = %q", got)
+	if got := LocalAddr("garbage", "8081"); got != "127.0.0.1:8081" {
+		t.Errorf("LocalAddr fallback = %q", got)
 	}
 }
 
@@ -79,4 +79,27 @@ func contains(env []string, kv string) bool {
 		}
 	}
 	return false
+}
+
+func TestChildEnvLiveTVWiring(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Server.StreamAddr = "0.0.0.0:8782"
+	cfg.Server.PublicURL = "http://tv.lan:8782"
+
+	streaming := ChildEnv(RoleStreaming, cfg)
+	// The streaming binary binds MAKTABA_HTTP_ADDR, so stream_addr must
+	// land there (it used to be ignored and streaming sat on :8081).
+	if !hasKV(streaming, "MAKTABA_HTTP_ADDR", "0.0.0.0:8782") {
+		t.Error("streaming role must bind stream_addr via MAKTABA_HTTP_ADDR")
+	}
+	for _, role := range []Role{RoleAPI, RoleStreaming} {
+		if !hasKV(ChildEnv(role, cfg), "MAKTABA_PUBLIC_BASE_URL", "http://tv.lan:8782") {
+			t.Errorf("role %s: MAKTABA_PUBLIC_BASE_URL not set from public_url", role)
+		}
+	}
+	// The api's streaming client speaks gRPC, not the HTTP stream port.
+	if !hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_STREAMING_ADDR", StreamingGRPCAddr) {
+		t.Error("api MAKTABA_STREAMING_ADDR must be the streaming gRPC address")
+	}
 }
