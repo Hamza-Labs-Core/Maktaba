@@ -26,6 +26,8 @@ class StageImpl:
 #: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
 CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
+    "transcribe": "maktaba_pipeline.engine.stages.transcribe",
+    "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "thumb_small": "maktaba_pipeline.engine.stages.thumb_small",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
@@ -69,6 +71,9 @@ def get_impl(name: str) -> StageImpl | None:
         _IMPLS[name] = impl
         return impl  # type: ignore[no-any-return]
     if not _LEGACY_LOADED:
-        _IMPLS.update(importlib.import_module(_LEGACY_MODULE).IMPLS)
+        # a stage that has moved onto the engine (a core module) keeps that module's
+        # implementation, whichever stage happened to load the legacy table first
+        legacy = importlib.import_module(_LEGACY_MODULE).IMPLS
+        _IMPLS.update({k: v for k, v in legacy.items() if k not in CORE_MODULES})
         _LEGACY_LOADED = True
     return _IMPLS.get(name)

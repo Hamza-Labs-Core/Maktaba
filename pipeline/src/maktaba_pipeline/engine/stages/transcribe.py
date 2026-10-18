@@ -1,0 +1,217 @@
+"""``transcribe``: a video's speech as sentences, each at its exact time (plan 03-10).
+
+One job per video in the ``gpu`` pool. The audio is decoded straight off the share
+(ffmpeg: mono, 16 kHz, into memory: no extract stage, no audio cache) and handed to the
+process's :class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`, which decodes one
+window of every running job per GPU pass. The transcript replaces the video's active one
+in one transaction: a new ``transcripts`` row (on the stream it decoded, recorded in
+``audio_tracks`` as track 0) with one ``transcript_segments`` row per sentence.
+
+Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
+``mlx-community/whisper-large-v3-turbo``), ``MAKTABA_STT_LANGUAGE`` (``ar``),
+``MAKTABA_STT_WORDS`` (``1``: sentence bounds from word timings),
+``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import Any
+from uuid import uuid4
+
+import numpy as np
+
+from ...db.jobs import Job
+from ...stt.batched import SAMPLE_RATE, Transcript, WhisperSettings, get_transcriber
+from ..context import StageContext, StageFailure
+from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
+from ..hashing import canonical_hash
+from ..sql import dumps, now, to_ts, uid
+from ._common import load_video, require_video
+from .content_hash import READ_TIMEOUT_S, on_disk
+from .registry import StageImpl
+
+__all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env"]
+
+
+#: decoding the audio off the share: generous, a long lecture over a busy NAS
+DECODE_TIMEOUT_S = 900.0
+
+
+def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
+    env = os.environ
+    return WhisperSettings(
+        model=env.get("MAKTABA_STT_MODEL", "mlx-community/whisper-large-v3-turbo"),
+        language=env.get("MAKTABA_STT_LANGUAGE", "ar"),
+        word_timestamps=env.get("MAKTABA_STT_WORDS", "1") != "0",
+        max_batch=max_batch or int(env.get("MAKTABA_STT_BATCH", "32")),
+    )
+
+
+async def input_fingerprint(db: Any, subject: Subject) -> str | None:
+    """DB only: the file's identity and how it is transcribed."""
+    v = await load_video(db, subject.id)
+    if v is None:
+        return None
+    s = settings_from_env()
+    row = await db.fetchrow("SELECT content_hash FROM videos WHERE id = $1", uid(v.id))
+    return canonical_hash(
+        {
+            "hash": None if row is None else str(row["content_hash"]),
+            "size": v.size_bytes,
+            "model": s.model,
+            "language": s.language,
+            "words": s.word_timestamps,
+            "v": TRANSCRIBE_VERSION,
+        }
+    )
+
+
+async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarray:
+    """The file's first audio track as mono float32 at 16 kHz."""
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-i", path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
+        "-f", "s16le", "-",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )  # fmt: skip
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise
+    if proc.returncode != 0:
+        msg = err.decode("utf-8", "replace").strip().splitlines()
+        tail = msg[-1] if msg else f"ffmpeg exit {proc.returncode}"
+        if "matches no streams" in tail or "does not contain any stream" in tail:
+            raise StageFailure("no_audio", f"{path}: no audio track", retryable=False)
+        raise StageFailure("decode_failed", f"{path}: {tail}", retryable=False)
+    return np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
+
+
+async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
+    v = await require_video(db, job.subject.id)
+    local = ctx.local_path(v.path)
+    try:
+        found = await asyncio.wait_for(asyncio.to_thread(on_disk, local), READ_TIMEOUT_S)
+    except TimeoutError as exc:
+        raise StageFailure("nas_timeout", f"{local}: no answer", retryable=False) from exc
+    except OSError as exc:
+        raise StageFailure("nas_unavailable", f"{local}: {exc}") from exc
+    if found is None:
+        raise StageFailure("file_missing", f"{local}: not found", retryable=False)
+
+    try:
+        audio = await decode_audio(found)
+    except TimeoutError as exc:
+        raise StageFailure("nas_timeout", f"{found}: decoding took too long") from exc
+    if audio.size < SAMPLE_RATE // 2:
+        raise StageFailure("no_audio", f"{found}: no audible audio", retryable=False)
+
+    settings = settings_from_env()
+    await ctx.progress(
+        "transcribe", 0, round(audio.size / SAMPLE_RATE), "on the GPU",
+        steps=["decode", "transcribe", "store"], force=True,
+    )  # fmt: skip
+    try:
+        result = await get_transcriber(settings).transcribe(audio)
+    except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
+        raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
+    del audio
+
+    transcript_id = await _store(db, v.id, result, settings)
+    texts = [(s.start, s.end, s.text) for s in result.sentences]
+    rtf = result.audio_sec / result.gpu_sec if result.gpu_sec > 0 else None
+    return StageResult(
+        output_hash=canonical_hash(texts),
+        summary={
+            "transcript_id": transcript_id,
+            "segments": len(texts),
+            "audio_sec": round(result.audio_sec, 1),
+            "rtf": None if rtf is None else round(rtf, 1),
+            "model": result.model,
+            "language": result.language,
+        },
+    )
+
+
+async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSettings) -> str:
+    """The transcript replaces the video's active one, atomically."""
+    store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
+    async with db.transaction():
+        # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have
+        track = await db.fetchrow(
+            "INSERT INTO audio_tracks (video_id, track_index, is_default) VALUES ($1, 0, true)"
+            " ON CONFLICT (video_id, track_index) DO UPDATE SET is_default = true"
+            " RETURNING id",
+            uid(video_id),
+        )
+        row = await db.fetchrow(
+            """
+            INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
+                                     backend, model, backend_version, word_level, diarized,
+                                     is_active, metadata)
+            VALUES ($8, $1, $7, $2, $2, 'mlx-batched', $3, $4, $5, false, false, $6)
+            RETURNING id
+            """,
+            uid(video_id),
+            result.language,
+            result.model,
+            _backend_version(),
+            settings.word_timestamps,
+            dumps({"audio_sec": round(result.audio_sec, 1), "plan": "03-10"}),
+            track["id"],
+            uid(uuid4()),  # SQLite gives the column no default
+        )
+        tid = row["id"]
+        rows = []
+        for seq, s in enumerate(result.sentences):
+            meta: dict[str, Any] = {"no_speech": round(s.no_speech_prob, 3)}
+            if store_words and s.words:
+                meta["words"] = [[a, b, w] for a, b, w in s.words]
+            rows.append(
+                (
+                    tid,
+                    seq,
+                    s.start,
+                    s.end,
+                    s.text,
+                    round(float(np.exp(s.avg_logprob)), 4),
+                    dumps(meta),
+                )
+            )
+        if rows:
+            await db.executemany(
+                "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text,"
+                " confidence, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                rows,
+            )
+        await db.execute(
+            "UPDATE transcripts SET is_active = false, superseded_at = $3"
+            " WHERE video_id = $1 AND is_active AND id <> $2",
+            uid(video_id),
+            tid,
+            to_ts(db, now()),
+        )
+        await db.execute("UPDATE transcripts SET is_active = true WHERE id = $1", tid)
+        await db.execute(
+            "UPDATE videos SET detected_language = $2 WHERE id = $1 AND detected_language IS NULL",
+            uid(video_id),
+            result.language,
+        )
+    return str(tid)
+
+
+def _backend_version() -> str | None:
+    try:
+        from importlib.metadata import version
+
+        return f"mlx-whisper {version('mlx-whisper')}"
+    except Exception:  # noqa: BLE001 - informational only
+        return None
+
+
+IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)

@@ -106,6 +106,7 @@ land at the next free integer (no gaps, no reservations).
 | `0097` | `0097_content_hash_stage.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0093 | `job_stages` row for `content_hash`: one `nas_read` job per video reads the file's identity; the mediaintel import queues it for the videos it creates with a stand-in hash. |
 | `0098` | `0098_videos_title_trgm.sql` | [epic-05](../../specs/epics/05-search-indexing/) | 0001 | GIN trigram index on `videos.title`: search matches titles (`ILIKE`, ordered by `similarity()`), so a library without transcripts is still searchable. |
 | `0099` | `0099_tagger_planner_v3.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0095 | `job_stages` versions for PR #52: `tag` 3 (sub-topics, per-episode tags, khutbah / «بصوت» fixes) and `plan_channels` 3 (the 20-channel lineup); the version sweep re-tags and re-plans once. |
+| `0100` | `0100_transcription_stages.sql` | [plan-03-10](../../specs/epics/03-transcription/plan-03-10-queue-transcription.md) | 0099 | `transcribe` (gpu, batched Whisper) and `subtitle_gen` (files beside the video, new `nas_write` pool) become engine stages; `content_hash → transcribe`; the `gpu` pool is the batch size (32). |
 
 ---
 

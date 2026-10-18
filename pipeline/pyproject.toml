@@ -19,6 +19,10 @@ dependencies = [
 mediaintel = [
     "yt-dlp>=2025.11.12",
 ]
+# Speech to text on Apple Silicon (plan 03-10): Whisper on the GPU through MLX.
+stt = [
+    "mlx-whisper>=0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = [
     "grpcio-tools>=1.68",
     "mypy>=1.11",

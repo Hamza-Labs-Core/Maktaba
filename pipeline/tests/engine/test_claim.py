@@ -64,10 +64,9 @@ async def test_pool_size_is_read_live(db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_per_worker_pool_is_not_limited_in_sql(db: Database) -> None:
-    await _videos(db, 5, stage="subtitle_gen")  # cpu pool is per_worker
+    await _videos(db, 5, stage="categorize")  # cpu pool is per_worker
     got = [
-        await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"])
-        for _ in range(5)
+        await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) for _ in range(5)
     ]
     assert all(j is not None for j in got)
 
@@ -82,22 +81,22 @@ async def test_only_a_worker_that_serves_the_stage_is_offered_the_job(db: Databa
 
 @pytest.mark.asyncio
 async def test_paused_stage_and_global_pause_are_skipped(db: Database) -> None:
-    await _videos(db, 2, stage="subtitle_gen")
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'subtitle_gen'", True)
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is None
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'subtitle_gen'", False)
+    await _videos(db, 2, stage="categorize")
+    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'categorize'", True)
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
+    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'categorize'", False)
     await db.execute("UPDATE queue_control SET paused = $1 WHERE id = 1", True)
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is None
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
     await db.execute("UPDATE queue_control SET paused = $1 WHERE id = 1", False)
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is not None
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is not None
 
 
 @pytest.mark.asyncio
 async def test_disabled_stage_and_future_not_before_are_skipped(db: Database) -> None:
-    ids = await _videos(db, 1, stage="subtitle_gen")
-    await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'subtitle_gen'", False)
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is None
-    await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'subtitle_gen'", True)
+    ids = await _videos(db, 1, stage="categorize")
+    await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'categorize'", False)
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
+    await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'categorize'", True)
     # a pending debounce / backoff window in the future
     from datetime import timedelta
 
@@ -106,11 +105,11 @@ async def test_disabled_stage_and_future_not_before_are_skipped(db: Database) ->
     await db.execute(
         "UPDATE processing_jobs SET not_before = $1", to_ts(db, now() + timedelta(hours=1))
     )
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is None
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
     await db.execute(
         "UPDATE processing_jobs SET not_before = $1", to_ts(db, now() - timedelta(seconds=1))
     )
-    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"]) is not None
+    assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is not None
     assert ids
 
 
@@ -121,10 +120,10 @@ async def test_priority_then_id_order(db: Database) -> None:
     b = await make_video(db, lib)
     c = await make_video(db, lib)
     for v, p in ((a, 100), (b, 50), (c, 50)):
-        await enqueue_job(db, subject_kind="video", subject_id=v, stage="subtitle_gen", priority=p)
+        await enqueue_job(db, subject_kind="video", subject_id=v, stage="categorize", priority=p)
     order: list[str] = []
     for _ in range(3):
-        j = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["subtitle_gen"])
+        j = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"])
         assert j is not None
         order.append(str(j.video_id))
     assert order == [str(b), str(c), str(a)]
@@ -146,7 +145,7 @@ async def test_claimed_job_has_new_fields_and_string_stage(db: Database) -> None
 async def test_load_pools(db: Database) -> None:
     pools = await load_pools(db)
     assert pools["nas_read"].scope == "global" and pools["nas_read"].effective_size == 2
-    assert pools["gpu"].scope == "per_worker" and pools["gpu"].effective_size == 1
+    assert pools["gpu"].scope == "per_worker" and pools["gpu"].effective_size == 32
     assert pools["cpu"].effective_size >= 1
 
 
