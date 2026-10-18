@@ -2205,6 +2205,197 @@
      "minimum": 1
     }
    ]
+  },
+  {
+   "key": "books",
+   "title": "Books",
+   "what": "the book a lesson series explains decides its topics",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Books behind the series",
+     "label": "Look up the books series explain",
+     "help": "A series named «شرح بلوغ المرام» explains that book: the book is looked up and its subject (hadith, fiqh, aqeedah …) corrects the series' topics. A whole fiqh book is not about one of its chapters (salah, fasting).",
+     "default": true
+    },
+    {
+     "name": "wiki_api",
+     "kind": "str",
+     "group": "Books behind the series",
+     "label": "Encyclopedia searched",
+     "help": "A MediaWiki API (Arabic Wikipedia).",
+     "default": "https://ar.wikipedia.org/w/api.php"
+    },
+    {
+     "name": "request_gap_s",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Pause between requests (s)",
+     "help": "",
+     "default": 1.5,
+     "minimum": 0
+    },
+    {
+     "name": "min_title_match",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Title match needed (share of words)",
+     "help": "How many of the name's words an article's title must have to be the book.",
+     "default": 0.75,
+     "minimum": 0
+    },
+    {
+     "name": "category_fields",
+     "kind": "map",
+     "group": "Books behind the series",
+     "label": "Category word → topics",
+     "help": "A word in a book's category and the topics it means («فقه» → fiqh).",
+     "default": {
+      "حديث": [
+       "hadith"
+      ],
+      "مصطلح": [
+       "hadith"
+      ],
+      "سنن": [
+       "hadith"
+      ],
+      "مسانيد": [
+       "hadith"
+      ],
+      "صحاح": [
+       "hadith"
+      ],
+      "جوامع": [
+       "hadith"
+      ],
+      "كتب سته": [
+       "hadith"
+      ],
+      "اربعينات": [
+       "hadith"
+      ],
+      "تخريج": [
+       "hadith"
+      ],
+      "فقه": [
+       "fiqh"
+      ],
+      "فتاوى": [
+       "fiqh"
+      ],
+      "عقيده": [
+       "aqeedah"
+      ],
+      "توحيد": [
+       "aqeedah"
+      ],
+      "اعتقاد": [
+       "aqeedah"
+      ],
+      "تفسير": [
+       "tafsir"
+      ],
+      "علوم القران": [
+       "tafsir"
+      ],
+      "سيره": [
+       "seerah"
+      ],
+      "شمائل": [
+       "seerah"
+      ],
+      "تجويد": [
+       "tajweed"
+      ],
+      "قراءات": [
+       "tajweed"
+      ],
+      "نحو": [
+       "arabic_language"
+      ],
+      "لغه عربيه": [
+       "arabic_language"
+      ],
+      "بلاغه": [
+       "arabic_language"
+      ],
+      "تصوف": [
+       "raqaiq"
+      ],
+      "زهد": [
+       "raqaiq"
+      ],
+      "رقائق": [
+       "raqaiq"
+      ],
+      "اخلاق": [
+       "akhlaq"
+      ],
+      "اداب": [
+       "akhlaq"
+      ],
+      "تاريخ": [
+       "islamic_history"
+      ],
+      "تراجم": [
+       "islamic_history"
+      ],
+      "اذكار": [
+       "dua_dhikr"
+      ],
+      "ادعيه": [
+       "dua_dhikr"
+      ],
+      "صحابه": [
+       "sahaba"
+      ],
+      "فرق": [
+       "shubuhat"
+      ],
+      "ردود": [
+       "shubuhat"
+      ]
+     }
+    },
+    {
+     "name": "book_score",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Score of the book's subject",
+     "help": "",
+     "default": 0.9,
+     "minimum": 0
+    },
+    {
+     "name": "damp",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Topic the book is not about keeps (share of its score)",
+     "help": "",
+     "default": 0.3,
+     "minimum": 0
+    },
+    {
+     "name": "retry_missing_days",
+     "kind": "int",
+     "group": "Books behind the series",
+     "label": "Search a book not found again after (days)",
+     "help": "",
+     "default": 30,
+     "minimum": 0
+    },
+    {
+     "name": "timeout_s",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Request timeout (s)",
+     "help": "",
+     "default": 20.0,
+     "minimum": 1
+    }
+   ]
   }
  ]
 }

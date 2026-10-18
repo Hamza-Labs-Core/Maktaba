@@ -21,7 +21,7 @@ from . import db, detect, link, report, scan_local, scan_plex
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
     "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "check-tags",
-    "group", "export-plex",
+    "books", "group", "export-plex",
     "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv", "audit-channels",
 )  # fmt: skip
 
@@ -194,6 +194,11 @@ def _run(
 
         _step("check-tags (a language model checks what each series is about)")
         check_tags.run(conn)
+    if want("books"):
+        from . import identify_books
+
+        _step("books (the book each lesson series explains decides its topics)")
+        identify_books.run(conn)
     if want("group"):
         from . import group_clips
 
