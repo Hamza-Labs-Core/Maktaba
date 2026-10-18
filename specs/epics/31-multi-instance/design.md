@@ -115,6 +115,17 @@ privileges so tables added by later migrations follow — only when the migratin
 create roles (`rolcreaterole` or superuser); otherwise the home reports joins as
 unavailable ("the database user cannot create roles").
 
+Least privilege: the group gets no access to accounts and sessions (`users`,
+`web_sessions`, `refresh_tokens`, `personal_access_tokens`, `password_reset_tokens`,
+`pairing_tickets`), `licenses`, devices and viewing data, nor to the cluster tables;
+`audit_log` takes inserts only. A machine reads and updates **its own** cluster row only
+through `SECURITY DEFINER` functions that check `cluster_nodes.db_role = session_user`:
+`cluster_node_beat(node)` (last seen; returns state, drain, path map),
+`cluster_node_report(node, capabilities, storage, inferred_path_map)` (never replaces an
+admin's map) and `cluster_node_stage_switches(node)`. A migration that adds a table of
+secrets revokes it from `maktaba_worker` the same way (default privileges grant data
+tables). On SQLite (tests, single-machine) the same operations are plain SQL.
+
 Approval runs `CREATE ROLE "maktaba_node_<first 8 hex of node_id>" LOGIN PASSWORD
 '<32 random bytes, base64url>' IN ROLE maktaba_worker`. Revocation runs `ALTER ROLE …
 NOLOGIN`, rotates the password, and `pg_terminate_backend` on its sessions (when the
@@ -220,7 +231,7 @@ reason 5 in §5 follows it: `nas_read`-pool stages need read, `nas_write` ones n
   Linux `${XDG_CONFIG_HOME:-~/.config}/maktaba/node.json`, Windows
   `%APPDATA%\Maktaba\node.json`; `MAKTABA_NODE_CONFIG` overrides. Holds `node_id`, `name`,
   the X25519 private key, `home`, `database_url`, `joined_at`.
-- Heartbeat (10 s) also updates `cluster_nodes.last_seen_at`, reads `state` and `drain`:
+- Heartbeat (10 s) also calls `cluster_node_beat` (Postgres; plain SQL on SQLite), reading `state` and `drain`:
   `revoked` → graceful stop; `drain` → claim nothing new.
 - Capabilities reported at join and on each start: OS and version, architecture, CPU
   count, memory, Apple Silicon, MLX-Whisper importable, NVIDIA GPUs (pynvml), ffmpeg path
