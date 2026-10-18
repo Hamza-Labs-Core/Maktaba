@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
@@ -73,5 +73,97 @@ describe("AdminExtensions", () => {
     await userEvent.click(within(plex).getByRole("button", { name: "Test connection" }));
     expect(post).toHaveBeenCalledWith("/api/extensions/plex/test");
     expect(await within(plex).findByText(/Connection failed: 401 from Plex/)).toBeInTheDocument();
+  });
+});
+
+describe("Sign in with Plex", () => {
+  const plexSaved = { ...extensionsFixture[0], settings: { url: "https://lan.plex.direct:32400" } };
+  let popup: { location: { href: string }; close: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+    put.mockReset();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    popup = { location: { href: "" }, close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+    post.mockImplementation((url: string) => {
+      if (url === "/api/extensions/plex/signin")
+        return Promise.resolve({ id: "42", code: "ABCD", auth_url: "https://app.plex.tv/auth#?x" });
+      if (url === "/api/extensions/plex/signin/42/use") return Promise.resolve(plexSaved);
+      return Promise.reject(new Error(`unmocked POST ${url}`));
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const user = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const tick = (ms = 2000) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+  async function startSignin(status: (u: string) => unknown) {
+    routeGet(get, {
+      "/api/extensions": { extensions: extensionsFixture },
+      "/api/extensions/plex/signin/42": status,
+    });
+    const view = renderAt(<AdminExtensions />, "/admin/extensions");
+    const plex = (await screen.findByRole("heading", { name: "Plex" })).closest("section")!;
+    await user().click(within(plex).getByRole("button", { name: "Sign in with Plex" }));
+    return { plex, view };
+  }
+
+  it("opens plex.tv, polls, and auto-picks the only server", async () => {
+    let n = 0;
+    const { plex } = await startSignin(() =>
+      ++n < 2
+        ? { state: "waiting" }
+        : { state: "done", servers: [{ name: "Home", uri: "https://lan.plex.direct:32400" }] }
+    );
+    expect(post).toHaveBeenCalledWith("/api/extensions/plex/signin");
+    expect(popup.location.href).toBe("https://app.plex.tv/auth#?x");
+    expect(within(plex).getByText(/Waiting for you to sign in/)).toBeInTheDocument();
+    await tick();
+    expect(get).toHaveBeenCalledWith("/api/extensions/plex/signin/42");
+    await tick();
+    expect(post).toHaveBeenCalledWith("/api/extensions/plex/signin/42/use", { name: "Home" });
+    expect(await within(plex).findByText("Connected to Plex server Home.")).toBeInTheDocument();
+    expect(within(plex).getByLabelText(/Server address/)).toHaveValue(
+      "https://lan.plex.direct:32400"
+    );
+  });
+
+  it("lets the user choose when the account has several servers", async () => {
+    const { plex } = await startSignin(() => ({
+      state: "done",
+      servers: [
+        { name: "Home", uri: "https://lan.plex.direct:32400" },
+        { name: "Cabin", uri: "http://cabin:32400" },
+      ],
+    }));
+    await tick();
+    const cabin = await within(plex).findByRole("radio", { name: /Cabin/ });
+    await user().click(cabin);
+    await user().click(within(plex).getByRole("button", { name: "Use this server" }));
+    expect(post).toHaveBeenCalledWith("/api/extensions/plex/signin/42/use", { name: "Cabin" });
+    expect(await within(plex).findByText("Connected to Plex server Cabin.")).toBeInTheDocument();
+  });
+
+  it("gives up after 15 minutes", async () => {
+    const { plex } = await startSignin(() => ({ state: "waiting" }));
+    await tick(15 * 60 * 1000 + 2000);
+    expect(await within(plex).findByText(/Plex sign-in timed out/)).toBeInTheDocument();
+    const calls = get.mock.calls.length;
+    await tick(10000);
+    expect(get.mock.calls.length).toBe(calls);
+  });
+
+  it("stops polling on unmount", async () => {
+    const { view } = await startSignin(() => ({ state: "waiting" }));
+    await tick();
+    view.unmount();
+    const calls = get.mock.calls.length;
+    await tick(10000);
+    expect(get.mock.calls.length).toBe(calls);
   });
 });

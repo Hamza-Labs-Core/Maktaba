@@ -148,6 +148,25 @@ export interface ExtensionSettingField {
   options?: { value: string; label: string }[];
 }
 
+/** POST /api/extensions/plex/signin. */
+export interface PlexSignin {
+  id: string;
+  code: string;
+  auth_url: string;
+}
+
+/** A Plex server found after sign-in (its token stays on the server). */
+export interface PlexServerChoice {
+  name: string;
+  uri: string;
+}
+
+/** GET /api/extensions/plex/signin/{id}. */
+export interface PlexSigninStatus {
+  state: "waiting" | "done";
+  servers?: PlexServerChoice[];
+}
+
 /** GET /api/extensions. Secret values are never returned; secrets_set says which are stored. */
 export interface Extension {
   name: string;
@@ -546,6 +565,12 @@ export const queueApi = {
   ) => api.put<Extension>(`/api/extensions/${q(name)}`, body),
   testExtension: (name: string) =>
     api.post<{ ok: boolean; message: string }>(`/api/extensions/${q(name)}/test`),
+  /** "Sign in with Plex" (plex.tv PIN). Tokens never reach the browser. */
+  plexSignin: () => api.post<PlexSignin>("/api/extensions/plex/signin"),
+  plexSigninStatus: (id: string) =>
+    api.get<PlexSigninStatus>(`/api/extensions/plex/signin/${q(id)}`),
+  plexSigninUse: (id: string, name: string) =>
+    api.post<Extension>(`/api/extensions/plex/signin/${q(id)}/use`, { name }),
   workers: () => api.get<{ workers: WorkerHost[] }>("/api/workers"),
   libraries: () => api.get<{ items: LibraryQueueRow[] }>("/api/queues/libraries"),
   health: (hours = 4) => api.get<{ series: HealthSeries[] }>(`/api/queues/health${qs({ hours })}`),

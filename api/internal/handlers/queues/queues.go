@@ -65,6 +65,12 @@ type Handler struct {
 
 	ringMu sync.Mutex
 	ring   backlogRing
+
+	// PlexTVURL overrides https://plex.tv (tests); PlexHTTP is the
+	// client for it (default 15 s timeout).
+	PlexTVURL string
+	PlexHTTP  *http.Client
+	plexPins  plexSignins
 }
 
 // Mount wires the routes. Static segments (graph, libraries, health,
@@ -92,6 +98,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/extensions", h.Extensions)
 	r.Put("/api/extensions/{name}", h.PutExtension)
 	r.Post("/api/extensions/{name}/test", h.TestExtension)
+	r.Post("/api/extensions/plex/signin", h.PlexSignin)
+	r.Get("/api/extensions/plex/signin/{id}", h.PlexSigninStatus)
+	r.Post("/api/extensions/plex/signin/{id}/use", h.PlexSigninUse)
 	r.Get("/api/pools", h.ListPools)
 	r.Put("/api/pools/{pool}", h.PutPool)
 	r.Post("/api/queue/retrigger", h.Retrigger)
