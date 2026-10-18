@@ -285,7 +285,7 @@ async def test_resuming_from_a_checkpoint_gives_the_uninterrupted_transcript() -
     first = asyncio.ensure_future(bt.transcribe(_audio(3, 4), progress=progress))
     while progress.seek < 2 * N_FRAMES:  # stop it after two windows
         await asyncio.sleep(0)
-    cp = progress.snapshot()
+    cp, _ = progress.snapshot()
     first.cancel()
     resumed = await _transcriber(model).transcribe(_audio(3, 4), resume=cp)
     assert [(s.start, s.end, s.text) for s in resumed.sentences] == [

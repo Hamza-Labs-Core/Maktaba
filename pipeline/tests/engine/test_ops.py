@@ -278,6 +278,10 @@ async def test_a_new_worker_replaces_the_dead_ones_of_its_host(db: Database) -> 
     await db.execute("UPDATE workers SET last_seen_at = $1 WHERE id = 'mac-1-new'", stale)
     await heartbeat_worker(db, "mac-1-next", "MAC")
     assert await db.fetchval("SELECT count(*) FROM workers WHERE id = 'mac-1-new'") == 0
+    # a worker whose row was cleared (its loop stalled for minutes) learns it at its beat
+    await db.execute("DELETE FROM workers WHERE id = 'mac-1-next'")
+    assert await heartbeat_worker(db, "mac-1-next", "MAC") is False
+    assert await heartbeat_worker(db, "mac-2-live", "MAC") is True
 
 
 @pytest.mark.asyncio

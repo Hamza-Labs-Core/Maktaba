@@ -24,12 +24,13 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ...db.jobs import Job
+from ...log import get_logger
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..health import system_memory
-from ..sql import dumps, loads, now, to_ts, uid
+from ..sql import dumps, is_pg, loads, now, to_ts, uid
 from ._common import load_video, require_video
 from .content_hash import READ_TIMEOUT_S, on_disk
 from .registry import StageImpl
@@ -40,6 +41,8 @@ if TYPE_CHECKING:
     from ...stt.batched import BatchedTranscriber
 
 __all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env", "unavailable"]
+
+_log = get_logger()
 
 
 def unavailable() -> str | None:
@@ -67,9 +70,9 @@ def use_vad() -> bool:
 def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
     """A transcript of the speech-only audio, on the file's own timeline."""
     for s in result.sentences:
-        s.start, s.end = tmap(s.start), tmap(s.end)
+        s.start, s.end = tmap(s.start), tmap(s.end, end=True)
         if s.words:
-            s.words = [(tmap(a), tmap(b), w) for a, b, w in s.words]
+            s.words = [(tmap(a), tmap(b, end=True), w) for a, b, w in s.words]
     result.audio_sec = audio_sec
     return result
 
@@ -178,7 +181,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "model": s.model,
             "language": s.language,
             "words": s.word_timestamps,
-            "vad": use_vad(),
+            # the setting, not whether this process could run it: every worker
+            # computes the same fingerprint for the same input
+            "vad": os.environ.get("MAKTABA_STT_VAD", "0") == "1",
             "v": TRANSCRIBE_VERSION,
         }
     )
@@ -256,21 +261,37 @@ async def load_checkpoint(db: Any, video_id: Any, fingerprint: str | None) -> Ch
     )
 
 
-async def save_checkpoint(db: Any, video_id: Any, fingerprint: str, cp: Checkpoint) -> None:
+async def save_checkpoint(
+    db: Any, video_id: Any, fingerprint: str, cp: Checkpoint, *, append: bool = False
+) -> None:
+    """Save the file's progress. With ``append``, ``cp.segments`` are only those decoded
+    since the last save, added to the saved ones (a long file's sentences are not all
+    rewritten every minute); otherwise they replace them."""
+    segments = cp.segments
+    if append and not is_pg(db):  # SQLite has no JSON array concatenation to lean on
+        prev = await load_checkpoint(db, video_id, fingerprint)
+        segments = (prev.segments if prev else []) + segments
+        append = False
+    merged = (
+        "CASE WHEN transcribe_checkpoints.fingerprint = EXCLUDED.fingerprint"
+        " THEN transcribe_checkpoints.segments || EXCLUDED.segments ELSE EXCLUDED.segments END"
+        if append
+        else "EXCLUDED.segments"
+    )
     await db.execute(
         "INSERT INTO transcribe_checkpoints"
         " (video_id, fingerprint, seek_frames, last_speech, language, segments, updated_at)"
         " VALUES ($1, $2, $3, $4, $5, $6, $7)"
         " ON CONFLICT (video_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,"
         " seek_frames = EXCLUDED.seek_frames, last_speech = EXCLUDED.last_speech,"
-        " language = EXCLUDED.language, segments = EXCLUDED.segments,"
+        f" language = EXCLUDED.language, segments = {merged},"
         " updated_at = EXCLUDED.updated_at",
         uid(video_id),
         fingerprint,
         cp.seek,
         cp.last_speech,
         cp.language,
-        dumps(cp.segments),
+        dumps(segments),
         to_ts(db, now()),
     )
 
@@ -288,6 +309,7 @@ async def _run_saving(
     """Transcribe, saving the file's progress every ``MAKTABA_STT_CHECKPOINT_S``."""
     resume = await load_checkpoint(db, v.id, fingerprint)
     progress = FileProgress(saved_seek=resume.seek if resume else 0)
+    progress.saved_count = len(resume.segments) if resume else 0
     every = float(os.environ.get("MAKTABA_STT_CHECKPOINT_S", str(CHECKPOINT_S)))
     task = asyncio.ensure_future(
         get_transcriber(settings).transcribe(audio, resume=resume, progress=progress, scale=scale)
@@ -297,13 +319,18 @@ async def _run_saving(
             done, _ = await asyncio.wait({task}, timeout=every)
             if done:
                 return task.result()
-            cp = progress.snapshot()
-            if fingerprint is not None and cp.seek > progress.saved_seek:
-                await save_checkpoint(db, v.id, fingerprint, cp)
-                progress.saved_seek = cp.seek
-                await ctx.progress(
-                    "transcribe", round(cp.seek / 100 * scale), audio_sec, "on the GPU", force=True
-                )
+            cp, count = progress.snapshot(progress.saved_count)
+            if fingerprint is None or cp.seek <= progress.saved_seek:
+                continue
+            try:  # best effort: a failed save is retried next time, the decoding goes on
+                await save_checkpoint(db, v.id, fingerprint, cp, append=progress.saved_count > 0)
+            except Exception:  # noqa: BLE001 - the progress note must not stop the work
+                _log.warning("transcribe.checkpoint_failed", video_id=str(v.id), exc_info=True)
+                continue
+            progress.saved_seek, progress.saved_count = cp.seek, count
+            await ctx.progress(
+                "transcribe", round(cp.seek / 100 * scale), audio_sec, "on the GPU", force=True
+            )
     finally:
         if not task.done():
             task.cancel()

@@ -244,9 +244,9 @@ async def test_progress_is_saved_while_it_runs_and_a_new_attempt_resumes_from_it
     fake.slow = 0.1
     progress_rows: list[Any] = []
 
-    async def spy(db_: Any, video_id: Any, fingerprint: str, cp: Any) -> None:
+    async def spy(db_: Any, video_id: Any, fingerprint: str, cp: Any, **kw: Any) -> None:
         progress_rows.append(cp)
-        await saved(db_, video_id, fingerprint, cp)
+        await saved(db_, video_id, fingerprint, cp, **kw)
 
     saved = tr.save_checkpoint
     monkeypatch.setattr(tr, "save_checkpoint", spy)
@@ -312,3 +312,50 @@ async def test_speech_only_decoding_keeps_the_file_s_timeline(
 
     got = summary if isinstance(summary, dict) else json.loads(summary)
     assert got["audio_sec"] == 6.0  # the file's length, not the speech-only audio's
+
+
+@pytest.mark.asyncio
+async def test_saves_append_new_sentences_and_a_failed_save_does_not_stop_the_work(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.stt.settings import Checkpoint
+
+    vid, _ = await _one_video(db, tmp_path)
+    one, two = dict(SEG), {**SEG, "start": 2.0, "end": 3.0, "text": "الحمد لله"}
+    await tr.save_checkpoint(db, vid, "fp", Checkpoint(seek=150, segments=[one]))
+    await tr.save_checkpoint(db, vid, "fp", Checkpoint(seek=300, segments=[two]), append=True)
+    cp = await tr.load_checkpoint(db, vid, "fp")
+    assert cp is not None and cp.seek == 300
+    assert [s["text"] for s in cp.segments] == ["بسم الله", "الحمد لله"]
+
+    # every save fails: the file is still transcribed
+    monkeypatch.setenv("MAKTABA_STT_CHECKPOINT_S", "0.01")
+
+    async def broken(*a: Any, **k: Any) -> None:
+        raise RuntimeError("could not resize shared memory segment")
+
+    monkeypatch.setattr(tr, "save_checkpoint", broken)
+    fake.slow = 0.05
+    rt = await core_runtime(db)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    state = await db.fetchval("SELECT state FROM processing_jobs WHERE stage = 'transcribe'")
+    assert state == "done"
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_job_s_checkpoint_is_pruned_after_a_week(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from maktaba_pipeline.engine.prune import prune_once
+    from maktaba_pipeline.engine.sql import to_ts
+    from maktaba_pipeline.stt.settings import Checkpoint
+
+    vid, _ = await _one_video(db, tmp_path)
+    await tr.save_checkpoint(db, vid, "fp", Checkpoint(seek=150))
+    old = to_ts(db, datetime.now(UTC) - timedelta(days=8))
+    await db.execute("UPDATE transcribe_checkpoints SET updated_at = $1", old)
+    await prune_once(db)
+    assert await db.fetchval("SELECT count(*) FROM transcribe_checkpoints") == 0

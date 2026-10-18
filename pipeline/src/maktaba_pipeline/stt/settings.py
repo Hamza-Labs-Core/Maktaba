@@ -83,6 +83,8 @@ class FileProgress:
         self._committed = 0
         #: the seek the caller has made durable: not lost if the worker stops now
         self.saved_seek = saved_seek
+        #: how many of the segments the caller has saved (a save appends the rest)
+        self.saved_count = 0
 
     def publish(
         self, seek: int, last_speech: float, language: str | None, segments: list[dict[str, Any]]
@@ -96,15 +98,18 @@ class FileProgress:
         with self._lock:
             return self._seek
 
-    def snapshot(self) -> Checkpoint:
+    def snapshot(self, start: int = 0) -> tuple[Checkpoint, int]:
+        """The progress, with the segments from ``start`` on (those not saved yet), and
+        how many segments it covers in all."""
         with self._lock:
-            done = self._segments[: self._committed]  # later segments may be appended
-            return Checkpoint(
+            done = self._segments[start : self._committed]  # later ones may be appended
+            cp = Checkpoint(
                 seek=self._seek,
                 last_speech=self._last_speech,
                 language=self._language,
                 segments=[_plain(s) for s in done],
             )
+            return cp, self._committed
 
 
 def _plain(seg: dict[str, Any]) -> dict[str, Any]:

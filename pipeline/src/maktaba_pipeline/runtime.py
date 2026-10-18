@@ -494,18 +494,22 @@ async def _start_engine(
             collector.probes.update(probes(state.settings))
 
     pools = sorted({runtime.graph[s].pool for s in served})
-    await register_worker(
-        database,
-        worker_id=worker_id,
-        host=host,
-        stages=served,
-        pools=pools,
-        path_map=path_map.as_json(),
-        version=__version__,
-    )
+
+    async def register() -> None:
+        await register_worker(
+            database,
+            worker_id=worker_id,
+            host=host,
+            stages=served,
+            pools=pools,
+            path_map=path_map.as_json(),
+            version=__version__,
+        )
+
+    await register()
     tasks = [
         asyncio.create_task(
-            _worker_heartbeat(database, worker_id, shutdown, host), name="worker-hb"
+            _worker_heartbeat(database, worker_id, shutdown, host, register), name="worker-hb"
         ),
         asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
@@ -555,11 +559,17 @@ def _served_stages(
 
 
 async def _worker_heartbeat(
-    database: Database, worker_id: str, stop: asyncio.Event, host: str | None = None
+    database: Database,
+    worker_id: str,
+    stop: asyncio.Event,
+    host: str | None = None,
+    register: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     while not stop.is_set():
         try:
-            await heartbeat_worker(database, worker_id, host)
+            if not await heartbeat_worker(database, worker_id, host) and register is not None:
+                _log.warning("worker_registered_again", worker_id=worker_id)
+                await register()
         except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker
             _log.exception("worker_heartbeat_failed")
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041

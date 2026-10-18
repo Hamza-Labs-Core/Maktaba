@@ -51,6 +51,8 @@ def test_packed_times_map_back_to_the_file() -> None:
     assert tmap(0.0) == 2.0 and tmap(2.5) == 4.5  # inside the first stretch
     assert tmap(3.0) == 10.0 and tmap(4.25) == 11.25  # the second starts at 10 s
     assert TimeMap([])(7.0) == 7.0
+    # an end exactly at the cut belongs to the stretch before the removed pause
+    assert tmap(3.0, end=True) == 5.0 and tmap(3.0) == 10.0
 
 
 @pytest.mark.skipif(not vad_available(), reason="silero-vad (the stt extra) is not installed")

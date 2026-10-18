@@ -149,10 +149,13 @@ class TimeMap:
             at += b - a
         self.packed_sec = at / SAMPLE_RATE
 
-    def __call__(self, t: float) -> float:
+    def __call__(self, t: float, *, end: bool = False) -> float:
+        """``end``: the time ends something (a sentence, a word), so one exactly at a cut
+        belongs to the stretch before it, not after the removed pause."""
         if not self.packed_starts:
             return t
-        i = max(0, bisect.bisect_right(self.packed_starts, t) - 1)
+        find = bisect.bisect_left if end else bisect.bisect_right
+        i = max(0, find(self.packed_starts, t) - 1)
         return round(self.orig_starts[i] + (t - self.packed_starts[i]), 3)
 
 

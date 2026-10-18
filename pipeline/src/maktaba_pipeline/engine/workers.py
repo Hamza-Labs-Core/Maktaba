@@ -32,6 +32,11 @@ __all__ = [
 #: A worker whose last heartbeat is older than this is considered offline.
 LIVE_WINDOW_SEC = 45.0
 
+#: A worker of this host silent this long is a dead predecessor (cleared by the next
+#: worker on the host); much longer than LIVE_WINDOW_SEC, so a live worker whose loop
+#: is busy for a minute is not mistaken for one (and re-registers if it ever is).
+DEAD_AFTER_SEC = 300.0
+
 
 def stable_hostname() -> str:
     """This machine's name as its owner set it. On macOS ``gethostname()`` follows the
@@ -57,7 +62,7 @@ async def _clear_dead(db: Any, host: str, worker_id: str) -> None:
         "DELETE FROM workers WHERE host = $1 AND id <> $2 AND last_seen_at < $3",
         host,
         worker_id,
-        to_ts(db, now() - timedelta(seconds=LIVE_WINDOW_SEC)),
+        to_ts(db, now() - timedelta(seconds=DEAD_AFTER_SEC)),
     )
 
 
@@ -96,12 +101,17 @@ async def register_worker(
     )
 
 
-async def heartbeat_worker(db: Any, worker_id: str, host: str | None = None) -> None:
-    await db.execute(
-        "UPDATE workers SET last_seen_at = $2 WHERE id = $1", worker_id, to_ts(db, now())
+async def heartbeat_worker(db: Any, worker_id: str, host: str | None = None) -> bool:
+    """Beat; False when this worker's row is gone (cleared as dead, or pruned) and it
+    should register again."""
+    beat = await db.fetchval(
+        "UPDATE workers SET last_seen_at = $2 WHERE id = $1 RETURNING id",
+        worker_id,
+        to_ts(db, now()),
     )
     if host is not None:
         await _clear_dead(db, host, worker_id)
+    return beat is not None
 
 
 async def deregister_worker(db: Any, worker_id: str) -> None:
