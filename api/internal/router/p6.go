@@ -36,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/speakers"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/transcription"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
@@ -214,6 +215,10 @@ func MountP6(r chi.Router, d P6Deps) {
 		go queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval)
 	}
 	wsHandler.Mount(r)
+
+	// Whole-library transcription report (/transcription page). It
+	// rides the same /ws/queues + jobs streams for liveness.
+	(&transcription.Handler{DB: d.DB}).Mount(r)
 
 	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
 	// clients (Epic 14). Resolvers reuse the recommendations + search
