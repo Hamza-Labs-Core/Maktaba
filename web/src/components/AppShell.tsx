@@ -55,6 +55,7 @@ const ADMIN = [
   { to: "/admin/analytics", key: "nav.admin.analytics", icon: "▰" },
   { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
   { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
+  { to: "/admin/machines", key: "nav.admin.machines", icon: "⌘" },
   { to: "/admin/logs", key: "nav.admin.logs", icon: "≣" },
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },

@@ -18,16 +18,16 @@ import (
 func TestWorkersJSON_MatchesQueueAPI(t *testing.T) {
 	f := newFixture(
 		stagesRule(stageRow("probe", "episodes", 1, "nas_read"), stageRow("transcribe", "media", 2, "gpu")),
-		&queuestest.Rule{Match: "from workers order by host",
-			Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version"},
-			Rows: [][]driver.Value{{"mac-1", "Mac", "{transcribe,probe,x1,x2,x3}", nil, t0, t0, "1"}}})
+		&queuestest.Rule{Match: "from workers w left join cluster_nodes",
+			Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version", "node_id", "node_name", "role"},
+			Rows: [][]driver.Value{{"mac-1", "Mac", "{transcribe,probe,x1,x2,x3}", nil, t0, t0, "1", nil, nil, "home"}}})
 	rec := f.do("GET", "/api/workers", "", viewer())
 	var raw struct {
 		Workers []map[string]any `json:"workers"`
 	}
 	decode(t, rec, &raw)
 	w := raw.Workers[0]
-	for _, k := range []string{"worker_id", "host", "online", "last_seen_at", "serves", "serves_label"} {
+	for _, k := range []string{"worker_id", "host", "online", "last_seen_at", "serves", "serves_label", "node_id", "node_name", "role"} {
 		if _, ok := w[k]; !ok {
 			t.Errorf("worker missing %q: %v", k, w)
 		}

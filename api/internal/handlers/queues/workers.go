@@ -19,12 +19,15 @@ import (
 // reported offline (workers heartbeat every few seconds).
 const workerOnlineWindow = 60 * time.Second
 
-// Assumed registry shape (workstream A, plan-06-11 "Workstream B notes"):
-// workers(id TEXT PK, host TEXT, stages TEXT[], pools JSONB,
-// started_at, last_seen_at, version TEXT).
+// Registry shape (plan-06-11 "Workstream B notes"; Epic 31 adds the
+// machine a worker runs on): workers(id TEXT PK, host TEXT, stages TEXT[],
+// pools, started_at, last_seen_at, version TEXT, node_id uuid NULL,
+// role TEXT), node_name from cluster_nodes (null for a home worker).
 const workersSQL = `
-SELECT id, host, stages, pools, started_at, last_seen_at, version
-  FROM workers ORDER BY host, id`
+SELECT w.id, w.host, w.stages, w.pools, w.started_at, w.last_seen_at, w.version,
+       w.node_id::text, cn.name, w.role
+  FROM workers w LEFT JOIN cluster_nodes cn ON cn.id = w.node_id
+ ORDER BY w.host, w.id`
 
 func (h *Handler) loadWorkers(ctx context.Context, now time.Time) ([]Worker, error) {
 	return LoadWorkers(ctx, h.DB, now)
@@ -42,9 +45,15 @@ func LoadWorkers(ctx context.Context, db *sql.DB, now time.Time) ([]Worker, erro
 		var w Worker
 		var stages pq.StringArray
 		var pools []byte
-		var version sql.NullString
-		if err := rows.Scan(&w.ID, &w.Host, &stages, &pools, &w.StartedAt, &w.LastSeenAt, &version); err != nil {
+		var version, nodeID, nodeName, role sql.NullString
+		if err := rows.Scan(&w.ID, &w.Host, &stages, &pools, &w.StartedAt, &w.LastSeenAt, &version,
+			&nodeID, &nodeName, &role); err != nil {
 			return nil, err
+		}
+		w.NodeID, w.NodeName = nullStrPtr(nodeID), nullStrPtr(nodeName)
+		w.Role = "home"
+		if role.Valid && role.String != "" {
+			w.Role = role.String
 		}
 		w.Stages = nonNilStrings(stages)
 		w.Pools = rawOrNull(pools)

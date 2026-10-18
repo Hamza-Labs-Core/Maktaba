@@ -28,7 +28,10 @@ import sys
 from typing import Any
 
 from . import __version__
+from .cluster.config import NodeConfig
+from .cluster.config import load as load_node_config
 from .db.jobs import Stage
+from .engine.workers import stable_hostname
 from .handlers import build_real_dispatch
 from .log import init as init_log
 from .runtime import Database, RuntimeConfig, run
@@ -98,15 +101,38 @@ def _parse_stages(value: str | None) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _build_runtime_config(args: argparse.Namespace) -> RuntimeConfig:
+_FALLBACK_DATABASE_URL = "sqlite:///:memory:"
+
+
+def _node_for(args: argparse.Namespace) -> NodeConfig | None:
+    """Node mode (Epic 31 design section 7): no ``--database-url`` (nor
+    ``MAKTABA_DATABASE_URL``) and a joined node config on this machine."""
+    if args.database_url:
+        return None
+    node = load_node_config()
+    return node if node is not None and node.joined else None
+
+
+def _build_runtime_config(
+    args: argparse.Namespace, node: NodeConfig | None = None
+) -> RuntimeConfig:
+    worker_id = args.worker_id
+    host = args.host
+    database_url = args.database_url or _FALLBACK_DATABASE_URL
+    if node is not None:
+        database_url = node.database_url
+        worker_id = worker_id or f"node-{node.node8}-{os.getpid()}"
+        host = host or stable_hostname()
     return RuntimeConfig(
-        database_url=args.database_url,
+        database_url=database_url,
         stages=_parse_stages(args.stages),
         exclude_stages=_parse_stages(args.exclude_stages),
-        host=args.host,
+        host=host,
         path_map=args.path_map or "",
         engine=not args.no_engine,
-        worker_id=args.worker_id,
+        worker_id=worker_id,
+        role="node" if node is not None else "home",
+        node_id=node.node_id if node is not None else None,
         heartbeat_sec=args.heartbeat_sec,
         stale_claim_sec=args.heartbeat_sec * 18.0,
         reaper_interval_sec=args.reaper_interval_sec,
@@ -116,12 +142,19 @@ def _build_runtime_config(args: argparse.Namespace) -> RuntimeConfig:
 
 
 async def _serve(args: argparse.Namespace, log: Any) -> int:
-    cfg = _build_runtime_config(args)
+    node = _node_for(args)
+    cfg = _build_runtime_config(args, node)
+    if cfg.engine is False and node is not None:
+        log.error("node_mode_needs_the_engine")
+        return 2
     log.info(
         "pipeline_starting",
         stages=[str(s) for s in cfg.stages] or "all",
         worker_id=cfg.worker_id,
         database_url_scheme=cfg.database_url.split(":", 1)[0],
+        role=cfg.role,
+        node_id=cfg.node_id,
+        home=node.home.name or node.home.url if node is not None else None,
     )
     database = await Database.connect(cfg.database_url)
 
@@ -183,8 +216,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run_p = subparsers.add_parser("run", help="Run the worker loop (default).")
     run_p.add_argument(
         "--database-url",
-        default=os.getenv("MAKTABA_DATABASE_URL", "sqlite:///:memory:"),
-        help="Database URL (postgres://… or sqlite:///…). Default reads MAKTABA_DATABASE_URL.",
+        default=os.getenv("MAKTABA_DATABASE_URL") or None,
+        help="Database URL (postgres://… or sqlite:///…). Default reads MAKTABA_DATABASE_URL; "
+        "without either, a machine that joined a home (`join`) runs as its node.",
     )
     run_p.add_argument(
         "--stages",
@@ -256,7 +290,42 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("doctor", help="Probe-only startup check.")
+
+    join_p = subparsers.add_parser(
+        "join",
+        help="Ask the Maktaba home on this network to take this machine as a worker.",
+    )
+    join_p.add_argument(
+        "--home",
+        default=None,
+        help="The home's address (http://192.168.1.20:8080); skips discovery.",
+    )
+    join_p.add_argument("--name", default=None, help="This machine's name on the home.")
+    join_p.add_argument(
+        "--run", action="store_true", help="Start working as soon as the home approves."
+    )
     return parser
+
+
+def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -> int:
+    from .cluster.join import JoinError, join
+
+    interactive = sys.stdin.isatty()
+    try:
+        join(home_url=args.home, name=args.name, ask=input if interactive else None)
+    except JoinError as exc:
+        sys.stderr.write(f"join failed: {exc}\n")
+        return 1
+    except KeyboardInterrupt:
+        sys.stderr.write("\njoin cancelled\n")
+        return 130
+    if not args.run:
+        sys.stdout.write("Start it with: maktaba-pipeline run\n")
+        return 0
+    run_args = parser.parse_args(["run"])
+    # it just joined: run as that node, whatever MAKTABA_DATABASE_URL says
+    run_args.database_url = None
+    return asyncio.run(_serve(run_args, log))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -269,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     # --database-url never attach to the namespace and _serve crashes
     # with AttributeError. Both the prod ENTRYPOINT (`python -m
     # maktaba_pipeline`) and the dev supervisor invoke us this way.
-    _subcommands = {"run", "doctor"}
+    _subcommands = {"run", "doctor", "join"}
     _top_level_flags = {"--version", "-V", "--help", "-h"}
     if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
         argv = ["run", *argv]
@@ -287,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(log)
     if command == "run":
         return asyncio.run(_serve(args, log))
+    if command == "join":
+        return _join(args, parser, log)
 
     parser.print_help()
     return 2

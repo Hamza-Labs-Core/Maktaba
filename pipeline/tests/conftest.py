@@ -38,3 +38,14 @@ def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
     thumb_small.ROOT = str(tmp_path_factory.mktemp("cache") / "thumbnails")
     yield
     thumb_small.ROOT = old
+
+
+@pytest.fixture(autouse=True)
+def _unit_tests_skip_disk_syncs(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unit tests write throwaway files; ``os.fsync`` waits for the disk, which on a busy
+    CI runner pushed tests that write atomically (temp file, fsync, rename, directory
+    fsync) past their 0.1 s cap. Durability is not what a unit test checks."""
+    if request.node.get_closest_marker("unit") is not None:
+        monkeypatch.setattr("os.fsync", lambda fd: None)

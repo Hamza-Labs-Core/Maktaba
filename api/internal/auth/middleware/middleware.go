@@ -151,6 +151,11 @@ func RequireAuth(next http.Handler) http.Handler {
 //     none yet by definition.
 //   - /api/auth/refresh — rotates a refresh token; the caller's access
 //     token may already be expired, so it cannot be required here.
+//   - /api/cluster/join and /api/cluster/join/{node_id} (Epic 31) — a
+//     machine on the LAN asks to join and polls for the answer before it
+//     holds any credential. The handler answers joins only while the
+//     admin has switched them on, rate-limits per IP, and the poll needs
+//     the machine's own public key.
 //
 // Deliberately NOT public: /api/system/sbom (internal artifact;
 // only security.txt is mandated public), /api/auth/logout[-all]
@@ -172,6 +177,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/auth/register":        {},
 		"/api/auth/forgot-password": {},
 		"/api/auth/reset-password":  {},
+		// Epic 31 — a machine's join request and its poll.
+		"/api/cluster/join":   {},
+		"/api/cluster/join/*": {},
 	}
 }
 
@@ -181,11 +189,14 @@ func DefaultPublicAllowlist() map[string]struct{} {
 // Allowlisted paths pass straight through anonymously.
 //
 // Exact-match only (not prefix): `/api/auth/login` being public must
-// not make `/api/auth/login-as-admin` public too.
+// not make `/api/auth/login-as-admin` public too. The one wildcard form
+// is a key ending in "/*", which matches exactly one more non-empty path
+// segment (`/api/cluster/join/*` matches `/api/cluster/join/<id>`, not
+// `/api/cluster/join/<id>/x`).
 func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, ok := public[r.URL.Path]; ok {
+			if isPublic(public, r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -196,6 +207,18 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isPublic(public map[string]struct{}, path string) bool {
+	if _, ok := public[path]; ok {
+		return true
+	}
+	i := strings.LastIndexByte(path, '/')
+	if i < 0 || i == len(path)-1 {
+		return false
+	}
+	_, ok := public[path[:i+1]+"*"]
+	return ok
 }
 
 // RequireAdmin gates routes that must be admin-only. Returns 403 for

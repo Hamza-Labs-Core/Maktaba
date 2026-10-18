@@ -8,10 +8,12 @@ dependencies = [
     "aiosqlite>=0.20",
     "asyncpg>=0.29",
     "blake3>=1.0.8",
+    "cryptography>=43",
     "grpcio>=1.68",
     "huggingface-hub>=0.25",
     "structlog>=24.0",
     "watchdog>=4.0.0",
+    "zeroconf>=0.136",
 ]
 
 [project.optional-dependencies]
