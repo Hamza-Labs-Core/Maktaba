@@ -62,7 +62,6 @@ from __future__ import annotations
 import contextlib
 import math
 import re
-import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -287,7 +286,7 @@ class ThemeSpec:
     #: episode; no show grid, no month rule (``min_hours`` or nothing)
     kind: str = "theme"
     #: nonstop: an episode starts every this many minutes and filler pads the rest
-    #: (0: the episodes' own length, rounded as a show slot is)
+    #: (0: back to back, no clock: the next episode as soon as one ends)
     slot_minutes: int = 0
     #: second-choice filler (its breaks), after the clips on its own topics: clips on
     #: these topics («islamic_history») …
@@ -2552,10 +2551,8 @@ def suggest_channels(
         shows = tuple(dict.fromkeys(u.name for u in us))
         longest = max((u.max_episode_s for u in us), default=0.0) / 60
         step = cfg.slot_round_minutes or 30
-        every = t.slot_minutes or _slot_minutes(
-            statistics.median(e.duration_s for u in us for e in u.episodes), cfg
-        )
-        if every < longest:  # never cut an episode: the slot grows to the longest one
+        every = max(0, t.slot_minutes)  # 0: back to back
+        if 0 < every < longest:  # never cut an episode: the slot grows to the longest one
             every = int(step * math.ceil(longest / step))
         label = t.name_ar or t.name
         ln = Lane(
@@ -2574,20 +2571,28 @@ def suggest_channels(
         )  # fmt: skip
         brk = break_pool(t.key, label, t.topics, t.exclude, pk["topic"], False, t.audiences,
                          second_choice(t))  # fmt: skip
-        starts = list(range(0, DAY_MINUTES, every))
-        slots = [Slot(a, min(a + every, DAY_MINUTES) if k < len(starts) - 1 else DAY_MINUTES,
-                      ln.key, "nonstop", pk["topic"], kind="program",
-                      reasons=(f"an episode every {every} min, filler to the hour",))
-                 for k, a in enumerate(starts)]  # fmt: skip
+        if every:
+            starts = list(range(0, DAY_MINUTES, every))
+            slots = [Slot(a, min(a + every, DAY_MINUTES) if k < len(starts) - 1 else DAY_MINUTES,
+                          ln.key, "nonstop", pk["topic"], kind="program",
+                          reasons=(f"an episode every {every} min, filler to the hour",))
+                     for k, a in enumerate(starts)]  # fmt: skip
+        else:
+            why_b2b = ("back to back: the next episode as soon as one ends",)
+            slots = [Slot(0, DAY_MINUTES, ln.key, "nonstop", pk["topic"], kind="program",
+                          reasons=why_b2b)]  # fmt: skip
+        n_eps = sum(len(u.episodes) for u in us)
+        run_days = n_eps * every / DAY_MINUTES if every else hours / 24
         channels.append(
             ChannelSuggestion(
                 key=t.key, number=t.number, name=t.name, name_ar=t.name_ar, kind="nonstop",
                 category=t.category, lanes=(ln.key,), slots=tuple(slots), ramadan_slots=(),
                 filler_pools=tuple(p for p in (pk["topic"], brk) if p is not None),
                 hours=hours,
-                reasons=(f"{len(us)} season(s) of {', '.join(shows)}, {hours:.1f} h: an episode "
-                         f"every {every} min all day, no show grid; the whole run every "
-                         f"{sum(len(u.episodes) for u in us) * every / DAY_MINUTES:.1f} days",
+                reasons=(f"{len(us)} season(s) of {', '.join(shows)}, {hours:.1f} h: "
+                         + (f"an episode every {every} min all day" if every
+                            else "back to back all day")
+                         + f", no show grid; the whole run every {run_days:.1f} days",
                          f"filler: clips on {'/'.join(t.topics) or '-'}"
                          + (", then its second choice (" + ", ".join(
                              x for x in ("/".join(t.filler_topics), "/".join(t.filler_with),
@@ -2932,7 +2937,8 @@ def simulate(
                 tt = t
                 c = cursors[lane.key]
                 tol = cfg.overrun_tolerance_minutes * 60.0
-                gap = cfg.slot_max_filler_minutes * 60.0 if lane.pattern != "nonstop" else 0.0
+                clock = lane.pattern == "nonstop" and lane.slot_minutes > 0  # one a slot
+                gap = 0.0 if clock else cfg.slot_max_filler_minutes * 60.0
                 while eps:
                     u, e = eps[c % len(eps)]
                     # doesn't fit what is left (an episode may end up to the tolerance past
@@ -2945,7 +2951,7 @@ def simulate(
                     picks.append((u, e))
                     tt += e.duration_s
                     c += 1
-                    if tt >= we or lane.pattern == "nonstop":  # nonstop: one a slot
+                    if tt >= we or clock:
                         break
                 spare = max(0.0, we - tt)
                 between = cfg.filler_between_episodes and len(picks) > 1
@@ -3114,7 +3120,9 @@ def dizquetv_time_slots(
     # a nonstop channel: one episode a slot, each padded to the slot (dizqueTV's pad), and
     # its slots kept apart, so a slot started late costs that slot, never the whole day
     lane = plan.lanes.get(src[0].lane or "") if channel.kind == "nonstop" and src else None
-    pad = lane.slot_minutes * 60_000 if lane is not None and lane.slot_minutes else cfg.dz_pad_ms
+    if lane is not None and not lane.slot_minutes:
+        lane = None  # back to back: one slot all day, as any other
+    pad = lane.slot_minutes * 60_000 if lane is not None else cfg.dz_pad_ms
     merged: list[tuple[int, str, str]] = []
     for item in raw:
         if merged and merged[-1][1] == item[1] and lane is None:

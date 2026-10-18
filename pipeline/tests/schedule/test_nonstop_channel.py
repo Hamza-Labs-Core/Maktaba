@@ -129,3 +129,21 @@ def test_one_episode_an_hour_filler_to_the_hour() -> None:
     starts = [a.start_s for a in day if a.kind == "program"]
     assert len(starts) == 24 and all(s % 3600 == 0 for s in starts)
     assert any(a.kind == "filler" for a in day)
+
+
+def test_slot_minutes_0_is_back_to_back_all_day() -> None:
+    from dataclasses import replace
+
+    t = replace(NONSTOP, slot_minutes=0)
+    p = suggest_channels(
+        [_season("a1", "قصص الأنبياء", 1)], (),
+        PlannerConfig(themes=(t,), mix_channel=False, presenter_channels=False,
+                      dawn_quran=False),  # type: ignore[arg-type]
+    )  # fmt: skip
+    ch = next(c for c in p.channels if c.key == "prophets_awadi")
+    assert [(s.start, s.end) for s in ch.slots] == [(0, 1440)]
+    day = simulate(ch, p)
+    progs = [a for a in day if a.kind == "program"]
+    assert all(abs(a.end_s - b.start_s) < 1e-6 for a, b in zip(progs, progs[1:], strict=False))
+    dz = dizquetv_time_slots(ch, p)
+    assert len(dz["slots"]) == 1 and dz["pad"] == 1 and dz["maxFlex"] > 0
