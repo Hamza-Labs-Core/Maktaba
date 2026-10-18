@@ -67,7 +67,6 @@ IMPLS: dict[str, StageImpl] = {
         name: StageImpl(output_fingerprint=_always_changed)
         for name in (
             "extract",
-            "index",
             "thumbnail",
             "topic_recluster",
             "topic_assign",

@@ -21,6 +21,7 @@ from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..schedule.channel_planner import PLANNER_VERSION
+from ..search.semantic import INDEX_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -369,6 +370,9 @@ GRAPH: tuple[StageDef, ...] = (
         # a topic tag decides a leftover's clip group
         edges=(Edge("plan_channels", "catalog"), Edge("clip_groups", "library_of")),
         entry_for=("season",),
+        # transcripts arrive one video at a time: a season's are tagged together
+        debounce_sec=300,
+        debounce_max_sec=3600,
     ),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     StageDef(
@@ -448,8 +452,8 @@ GRAPH: tuple[StageDef, ...] = (
         version=PLANNER_VERSION,
         edges=(Edge("write_channels", "same"),),
         entry_for=("catalog",),
-        debounce_sec=60,
-        debounce_max_sec=900,
+        debounce_sec=300,
+        debounce_max_sec=3600,
     ),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
@@ -489,7 +493,13 @@ GRAPH: tuple[StageDef, ...] = (
         lane="media",
         lane_order=2,
         version=TRANSCRIBE_VERSION,
-        edges=(Edge("subtitle_gen", "same"), Edge("index", "same", legacy=True)),
+        # what is said is tagging evidence too: its season, or its library's loose videos
+        edges=(
+            Edge("subtitle_gen", "same"),
+            Edge("index", "same"),
+            Edge("tag", "season_of"),
+            Edge("tag", "library_of"),
+        ),
         max_attempts=3,
     ),
     StageDef(
@@ -502,12 +512,15 @@ GRAPH: tuple[StageDef, ...] = (
         version=SUBTITLE_VERSION,
         external_write=True,
     ),
-    _legacy(
-        "index",
-        "Index",
-        ("video",),
-        "cpu",
-        4,
+    # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
+    StageDef(
+        name="index",
+        label="Search index",
+        subject_kinds=("video",),
+        pool="cpu",
+        lane="media",
+        lane_order=4,
+        version=INDEX_VERSION,
         edges=(Edge("thumbnail", "same", legacy=True),),
     ),
     _legacy(

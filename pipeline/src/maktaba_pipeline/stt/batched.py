@@ -117,6 +117,7 @@ class _Job:
     admitted: float
     seek: int = 0
     temp_idx: int = 0
+    waiting_since: int = 0  # the pass a fallback window started waiting at
     last_speech: float = 0.0
     segments: list[dict[str, Any]] = field(default_factory=list)
 
@@ -433,29 +434,46 @@ class BatchedTranscriber:
                 j.loop.call_soon_threadsafe(_set_result, j.future, result)
 
     def _pass(self, jobs: list[_Job]) -> None:
-        """One window of every active file, grouped by the temperature it is at."""
+        """One GPU pass: the main batch (every file at temperature 0) always runs; a
+        fallback temperature runs only once enough windows wait for it, or when it is
+        all that is left. Small fallback groups would otherwise each cost a pass of
+        their own and leave the GPU waiting (6 windows per pass instead of 32)."""
         s = self.settings
         assert self._decode is not None and self._window_of is not None
         assert self._tokenizer is not None
-        live = [j for j in jobs if not j.done and not j.future.cancelled()]
         for j in jobs:
             if j.future.cancelled():
                 j.seek = j.content_frames
+        live = [j for j in jobs if not j.done]
         by_temp: dict[int, list[_Job]] = {}
         for j in live:
             by_temp.setdefault(j.temp_idx, []).append(j)
+        main = by_temp.pop(0, [])
+        groups: list[tuple[int, list[_Job]]] = [(0, main)] if main else []
+        enough = max(1, s.max_batch // 4)
         for idx, group in sorted(by_temp.items()):
-            sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in group]
-            windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(group, sizes, strict=True)]
-            results = self._decode(windows, s.temperatures[idx])
-            self.passes += 1
-            self.windows += len(windows)
-            for j, n, win, r in zip(group, sizes, windows, results, strict=True):
-                if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
-                    j.temp_idx += 1  # the same window again, warmer, next pass
-                    continue
-                j.temp_idx = 0
-                apply_window(j, r, n, self._tokenizer, s, mel_segment=win, align=self._align)
+            starved = any(self.passes - j.waiting_since >= 8 for j in group)
+            if not main or len(group) >= enough or starved:
+                groups.append((idx, group))
+        for idx, group in groups:
+            self._decode_group(group, s.temperatures[idx])
+
+    def _decode_group(self, group: list[_Job], temperature: float) -> None:
+        s = self.settings
+        assert self._decode is not None and self._window_of is not None
+        assert self._tokenizer is not None
+        sizes = [min(N_FRAMES, j.content_frames - j.seek) for j in group]
+        windows = [self._window_of(j.mel, j.seek, n) for j, n in zip(group, sizes, strict=True)]
+        results = self._decode(windows, temperature)
+        self.passes += 1
+        self.windows += len(windows)
+        for j, n, win, r in zip(group, sizes, windows, results, strict=True):
+            if _needs_fallback(r, s) and j.temp_idx + 1 < len(s.temperatures):
+                j.temp_idx += 1  # the same window again, warmer, in a later pass
+                j.waiting_since = self.passes
+                continue
+            j.temp_idx = 0
+            apply_window(j, r, n, self._tokenizer, s, mel_segment=win, align=self._align)
 
 
 def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:

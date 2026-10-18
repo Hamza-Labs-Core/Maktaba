@@ -86,7 +86,8 @@ async def test_a_transcript_and_its_subtitle_files(
         " AND deleted_at IS NULL ORDER BY format",
         str(vid),
     )
-    assert [(r["format"], r["source"]) for r in rows] == [("srt", "generated"), ("vtt", "generated")]
+    got = [(r["format"], r["source"]) for r in rows]
+    assert got == [("srt", "generated"), ("vtt", "generated")]
 
     # unchanged input: skipped, the model is not run again
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
@@ -120,9 +121,7 @@ async def test_a_new_transcript_replaces_the_active_one(
     rt = await core_runtime(db)
     vid, _ = await _one_video(db, tmp_path)
     for _ in range(2):
-        await enqueue_job(
-            db, subject_kind="video", subject_id=vid, stage="transcribe", force=True
-        )
+        await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
         await drain_core(db, rt, only={"transcribe"})
     assert fake.calls == 2
     n_active = await db.fetchval(

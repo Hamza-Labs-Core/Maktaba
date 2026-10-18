@@ -28,6 +28,7 @@ CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "transcribe": "maktaba_pipeline.engine.stages.transcribe",
     "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
+    "index": "maktaba_pipeline.engine.stages.index",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "thumb_small": "maktaba_pipeline.engine.stages.thumb_small",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
