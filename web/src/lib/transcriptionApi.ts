@@ -39,6 +39,8 @@ export interface TranscriptionLive {
   workers: number;
   audio_hours: number;
   realtime_factor: number;
+  /** decoding a failure or a stopped worker threw away in the window (absent from an older API) */
+  lost_hours?: number;
 }
 
 export interface TranscriptionLibrary {

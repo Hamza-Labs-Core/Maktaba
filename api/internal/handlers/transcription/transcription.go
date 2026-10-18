@@ -107,16 +107,19 @@ type Rates struct {
 }
 
 // Live is the speed the transcription workers report while they work: the
-// audio their decoding has moved past in the last 10 minutes, less what a
-// failure or a restart threw away, from each worker's stt.audio_sec:<slot>
-// and stt.audio_lost:<slot> counters in health_samples. Finished jobs lag
-// it, since a worker decodes ~30 files side by side and each finishes only
-// at its end, so it is the better basis for the ETA.
+// audio their decoding moved past in the last 10 minutes, from each worker's
+// stt.audio_sec:<slot> counter in health_samples. Finished jobs lag it,
+// since a worker decodes ~30 files side by side and each finishes only at
+// its end, so it is the basis for the ETA. LostHours is what a failure or a
+// stopped worker threw away in the window (stt.audio_lost:<slot>; files
+// resume from a checkpoint saved every minute, so a restart loses little):
+// shown on its own, as a one-off it is not part of the speed.
 type Live struct {
 	WindowSec      int     `json:"window_sec"`
 	Workers        int     `json:"workers"`
 	AudioHours     float64 `json:"audio_hours"`
 	RealtimeFactor float64 `json:"realtime_factor"`
+	LostHours      float64 `json:"lost_hours"`
 }
 
 // Window is the transcribe throughput over one window of wall time.
@@ -471,9 +474,8 @@ func window(sec int, jobs int, audioSec float64, rtf sql.NullFloat64) Window {
 }
 
 func live(sec, workers int, decoded, lost float64) Live {
-	kept := math.Max(0, decoded-lost)
-	return Live{WindowSec: sec, Workers: workers, AudioHours: hours(kept),
-		RealtimeFactor: round2(kept / float64(sec))}
+	return Live{WindowSec: sec, Workers: workers, AudioHours: hours(decoded),
+		RealtimeFactor: round2(decoded / float64(sec)), LostHours: hours(math.Max(0, lost))}
 }
 
 // eta divides the remaining audio by the most recent non-zero speed.

@@ -163,6 +163,8 @@ function LiveRow({ live }: { live: TranscriptionLive }) {
             h: hours(live.audio_hours),
             workers: n(live.workers),
           })}
+          {(live.lost_hours ?? 0) > 0 &&
+            ` · ${t("transcription.rate.lost", { h: hours(live.lost_hours ?? 0) })}`}
         </span>
       </dd>
     </div>

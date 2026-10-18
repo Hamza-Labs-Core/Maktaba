@@ -225,11 +225,11 @@ func TestSummary_Empty(t *testing.T) {
 }
 
 func TestSummary_LiveSpeed(t *testing.T) {
-	// two workers decoded 26 h of audio in 10 min and a restart threw 1 h of it
-	// away: 150x; finished jobs say 30x
-	rules := append([]*queuestest.Rule{liveRule(93600, 3600, 2)}, fullRules()...)
+	// two workers decoded 25 h of audio in 10 min (150x; finished jobs say 30x),
+	// and a restart threw 1 h away: shown apart, a one-off is not the speed
+	rules := append([]*queuestest.Rule{liveRule(90000, 3600, 2)}, fullRules()...)
 	s := decode(t, newFixture(rules...).get(viewer()))
-	if s.Rate.Live != (Live{WindowSec: 600, Workers: 2, AudioHours: 25, RealtimeFactor: 150}) {
+	if s.Rate.Live != (Live{WindowSec: 600, Workers: 2, AudioHours: 25, RealtimeFactor: 150, LostHours: 1}) {
 		t.Errorf("live = %+v", s.Rate.Live)
 	}
 	// 110 h remaining at 150x -> 44 min
@@ -238,14 +238,15 @@ func TestSummary_LiveSpeed(t *testing.T) {
 	}
 }
 
-func TestLive_LostAudioNeverMakesItNegative(t *testing.T) {
-	if l := live(600, 1, 100, 400); l.RealtimeFactor != 0 || l.AudioHours != 0 {
+func TestLive_LostAudioIsNotTheSpeed(t *testing.T) {
+	// a restart that threw away more than the window decoded: the speed is the decoding
+	if l := live(600, 1, 60000, 90000); l.RealtimeFactor != 100 || l.LostHours != 25 {
 		t.Errorf("live = %+v", l)
 	}
 }
 
 func TestETASeconds_ForTheProcessingCard(t *testing.T) {
-	rules := append([]*queuestest.Rule{liveRule(93600, 3600, 2)}, fullRules()...)
+	rules := append([]*queuestest.Rule{liveRule(90000, 3600, 2)}, fullRules()...)
 	f := newFixture(rules...)
 	sec, err := f.h.ETASeconds(context.Background(), t0)
 	if err != nil || sec == nil || *sec != 2640 {

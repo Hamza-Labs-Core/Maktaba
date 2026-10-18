@@ -7,9 +7,11 @@ fingerprint and enqueue it; only a worker that runs it needs the GPU code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
+from typing import Any
 
-__all__ = ["SAMPLE_RATE", "Sentence", "Transcript", "WhisperSettings"]
+__all__ = ["SAMPLE_RATE", "Checkpoint", "FileProgress", "Sentence", "Transcript", "WhisperSettings"]
 
 SAMPLE_RATE = 16_000
 
@@ -53,3 +55,68 @@ class Transcript:
     #: the language Whisper hears in the opening 30 s, when it is sure enough (None:
     #: not detected, or not confident); recorded as such, never the forced one
     detected_language: str | None = None
+
+
+@dataclass(slots=True)
+class Checkpoint:
+    """How far a file's transcription got: its seek (mel frames, 100 a second), the end
+    of its last speech, its detected language and its sentences so far (Whisper segment
+    dicts: start, end, text, avg_logprob, no_speech_prob, words). Resuming from it gives
+    the same transcript as an uninterrupted run (windows are decoded independently)."""
+
+    seek: int
+    last_speech: float = 0.0
+    language: str | None = None
+    segments: list[dict[str, Any]] = field(default_factory=list)
+
+
+class FileProgress:
+    """A file's progress as the GPU thread publishes it after each pass, read from the
+    event loop (the transcribe stage saves it as a :class:`Checkpoint`)."""
+
+    def __init__(self, saved_seek: int = 0) -> None:
+        self._lock = threading.Lock()
+        self._seek = 0
+        self._last_speech = 0.0
+        self._language: str | None = None
+        self._segments: list[dict[str, Any]] = []
+        self._committed = 0
+        #: the seek the caller has made durable: not lost if the worker stops now
+        self.saved_seek = saved_seek
+
+    def publish(
+        self, seek: int, last_speech: float, language: str | None, segments: list[dict[str, Any]]
+    ) -> None:
+        with self._lock:
+            self._seek, self._last_speech, self._language = seek, last_speech, language
+            self._segments, self._committed = segments, len(segments)
+
+    @property
+    def seek(self) -> int:
+        with self._lock:
+            return self._seek
+
+    def snapshot(self) -> Checkpoint:
+        with self._lock:
+            done = self._segments[: self._committed]  # later segments may be appended
+            return Checkpoint(
+                seek=self._seek,
+                last_speech=self._last_speech,
+                language=self._language,
+                segments=[_plain(s) for s in done],
+            )
+
+
+def _plain(seg: dict[str, Any]) -> dict[str, Any]:
+    """The fields a sentence is built from, as JSON (no NumPy numbers, no tokens)."""
+    return {
+        "start": float(seg["start"]),
+        "end": float(seg["end"]),
+        "text": str(seg["text"]),
+        "avg_logprob": float(seg["avg_logprob"]),
+        "no_speech_prob": float(seg["no_speech_prob"]),
+        "words": [
+            {"start": float(w["start"]), "end": float(w["end"]), "word": str(w["word"])}
+            for w in seg.get("words") or []
+        ],
+    }

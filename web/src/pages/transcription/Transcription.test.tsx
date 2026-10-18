@@ -163,13 +163,15 @@ describe("Transcription", () => {
       ...summaryFixture,
       rate: {
         ...summaryFixture.rate,
-        live: { window_sec: 600, workers: 2, audio_hours: 25, realtime_factor: 150 },
+        live: { window_sec: 600, workers: 2, audio_hours: 25, realtime_factor: 150, lost_hours: 2 },
       },
       eta: { seconds: 2640, at: NOW, basis: "live" },
     });
     expect(await screen.findByText("Decoding now")).toBeInTheDocument();
     expect(screen.getByText("150× realtime")).toBeInTheDocument();
-    expect(screen.getByText("25 h of audio in 10 minutes, 2 workers")).toBeInTheDocument();
+    expect(screen.getByText(/25 h of audio in 10 minutes, 2 workers/)).toHaveTextContent(
+      "2 h redone after a restart or failure"
+    );
     expect(screen.getByText("At the speed the workers decode now")).toBeInTheDocument();
   });
 

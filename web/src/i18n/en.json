@@ -1031,6 +1031,7 @@
   "transcription.rate.last1h": "Last hour",
   "transcription.rate.live": "Decoding now",
   "transcription.rate.liveDetail": "{h} of audio in 10 minutes, {workers} workers",
+  "transcription.rate.lost": "{h} redone after a restart or failure",
   "transcription.rate.value": "{n}× realtime",
   "transcription.rate.detail": "{h} of audio from {jobs} videos",
   "transcription.rate.jobRtf": "{n}× per video",

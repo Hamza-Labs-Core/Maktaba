@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -9,12 +10,14 @@ import numpy as np
 import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import is_pg
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.batched import Sentence, Transcript
 from tests.stages.world import core_runtime, drain_core, make_show
 
+SEG = {"start": 0.5, "end": 1.5, "text": "بسم الله", "avg_logprob": -0.1, "no_speech_prob": 0.0}
 LINES = [(0.5, 2.25, "السلام عليكم ورحمة الله"), (2.5, 5.0, "اليوم نتكلم عن السيرة النبوية")]
 
 
@@ -22,9 +25,17 @@ class FakeTranscriber:
     def __init__(self) -> None:
         self.calls = 0
         self.detected: str | None = None
+        self.resumed: Any = None
+        self.slow = 0.0
 
-    async def transcribe(self, audio: np.ndarray) -> Transcript:
+    async def transcribe(
+        self, audio: np.ndarray, *, resume: Any = None, progress: Any = None
+    ) -> Transcript:
         self.calls += 1
+        self.resumed = resume
+        if progress is not None and self.slow:
+            progress.publish(150, 1.5, "ar", [dict(SEG)])
+            await asyncio.sleep(self.slow)
         return Transcript(
             sentences=[Sentence(a, b, t, -0.1, 0.0) for a, b, t in LINES],
             audio_sec=len(audio) / 16000,
@@ -216,3 +227,47 @@ async def test_the_probe_s_default_audio_track_stands(
         str(vid),
     )
     assert [(r["track_index"], bool(r["is_default"])) for r in rows] == [(0, False), (1, True)]
+
+
+@pytest.mark.asyncio
+async def test_progress_is_saved_while_it_runs_and_a_new_attempt_resumes_from_it(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MAKTABA_STT_CHECKPOINT_S", "0.01")
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    fp = await tr.input_fingerprint(db, Subject(kind="video", id=vid))
+    assert fp is not None
+
+    # a slow run saves its progress as it goes
+    fake.slow = 0.1
+    progress_rows: list[Any] = []
+
+    async def spy(db_: Any, video_id: Any, fingerprint: str, cp: Any) -> None:
+        progress_rows.append(cp)
+        await saved(db_, video_id, fingerprint, cp)
+
+    saved = tr.save_checkpoint
+    monkeypatch.setattr(tr, "save_checkpoint", spy)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    assert progress_rows and progress_rows[0].seek == 150
+    assert progress_rows[0].segments[0]["text"] == "بسم الله"
+    # stored: the checkpoint is gone
+    q = "SELECT count(*) FROM transcribe_checkpoints WHERE video_id = $1"
+    n = await db.fetchval(q, str(vid))
+    assert n == 0
+
+    # a checkpoint left by a stopped worker is resumed from, for the same input only
+    from maktaba_pipeline.stt.settings import Checkpoint
+
+    await saved(db, vid, fp, Checkpoint(seek=900, last_speech=8.5, segments=[dict(SEG)]))
+    fake.slow = 0.0
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.resumed is not None and fake.resumed.seek == 900
+    assert fake.resumed.segments[0]["text"] == "بسم الله"
+    await saved(db, vid, "another-file", Checkpoint(seek=900))
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.resumed is None

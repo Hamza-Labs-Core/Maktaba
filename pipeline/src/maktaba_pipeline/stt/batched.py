@@ -33,7 +33,14 @@ import numpy as np
 from ..log import get_logger
 from .align import AlignItem, align_batch
 from .rules import TimestampRules
-from .settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings
+from .settings import (
+    SAMPLE_RATE,
+    Checkpoint,
+    FileProgress,
+    Sentence,
+    Transcript,
+    WhisperSettings,
+)
 
 __all__ = [
     "BatchedTranscriber",
@@ -71,7 +78,13 @@ AlignFn = Callable[[list[dict[str, Any]], Any, int, float], None]
 
 
 #: what a caller hands the GPU thread: the audio, its future, and the loop to answer on
-_Submission = tuple[np.ndarray, "asyncio.Future[Transcript]", asyncio.AbstractEventLoop]
+_Submission = tuple[
+    np.ndarray,
+    "asyncio.Future[Transcript]",
+    asyncio.AbstractEventLoop,
+    Checkpoint | None,
+    FileProgress | None,
+]
 
 
 class _Tokenizer(Protocol):
@@ -99,6 +112,8 @@ class _Job:
     #: is decoded again at a warmer temperature
     features: Any = None
     features_seek: int = -1
+    #: where the caller reads this file's progress (to save it), if it asked
+    progress: FileProgress | None = None
 
     @property
     def done(self) -> bool:
@@ -107,6 +122,12 @@ class _Job:
     @property
     def progress_sec(self) -> float:
         return min(self.seek, self.content_frames) / FRAMES_PER_SECOND
+
+    @property
+    def unsaved_sec(self) -> float:
+        """Audio decoded since the caller last saved this file's progress."""
+        saved = self.progress.saved_seek if self.progress is not None else 0
+        return max(0.0, self.progress_sec - saved / FRAMES_PER_SECOND)
 
 
 def _needs_fallback(r: _Decoded, s: WhisperSettings) -> bool:
@@ -310,15 +331,23 @@ class BatchedTranscriber:
     # --- public ---------------------------------------------------------------
 
     def in_flight_audio(self) -> float:
-        """Seconds of audio decoded in the files not finished yet."""
-        return sum(j.progress_sec for j in list(self._jobs))
+        """Seconds of audio decoded in the files not finished yet and not saved: what a
+        stop now would throw away."""
+        return sum(j.unsaved_sec for j in list(self._jobs))
 
-    async def transcribe(self, audio: np.ndarray) -> Transcript:
-        """``audio``: mono float32 at 16 kHz."""
+    async def transcribe(
+        self,
+        audio: np.ndarray,
+        *,
+        resume: Checkpoint | None = None,
+        progress: FileProgress | None = None,
+    ) -> Transcript:
+        """``audio``: mono float32 at 16 kHz. ``resume`` continues an earlier run from its
+        checkpoint; ``progress`` receives this file's progress after every pass."""
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Transcript] = loop.create_future()
         self._ensure_thread()
-        self._inbox.put((audio, fut, loop))
+        self._inbox.put((audio, fut, loop, resume, progress))
         return await fut
 
     # --- the GPU thread ---------------------------------------------------------
@@ -465,7 +494,9 @@ class BatchedTranscriber:
     def _admit(self, jobs: list[_Job], block: bool) -> None:
         while len(jobs) < self.settings.max_batch:
             try:
-                audio, fut, loop = self._inbox.get(block=block and not jobs, timeout=1.0)
+                audio, fut, loop, resume, progress = self._inbox.get(
+                    block=block and not jobs, timeout=1.0
+                )
             except queue.Empty:
                 return
             block = False
@@ -473,16 +504,21 @@ class BatchedTranscriber:
                 assert self._mel_of is not None
                 mel = self._mel_of(audio)
                 frames = int(mel.shape[0]) - N_FRAMES
-                jobs.append(
-                    _Job(
-                        mel=mel,
-                        content_frames=max(0, frames),
-                        audio_sec=len(audio) / SAMPLE_RATE,
-                        future=fut,
-                        loop=loop,
-                        admitted=time.monotonic(),
-                    )
+                job = _Job(
+                    mel=mel,
+                    content_frames=max(0, frames),
+                    audio_sec=len(audio) / SAMPLE_RATE,
+                    future=fut,
+                    loop=loop,
+                    admitted=time.monotonic(),
+                    progress=progress,
                 )
+                if resume is not None:
+                    job.seek = min(resume.seek, job.content_frames)
+                    job.last_speech = resume.last_speech
+                    job.language = resume.language
+                    job.segments = list(resume.segments)
+                jobs.append(job)
             except Exception as exc:  # noqa: BLE001 - one file's failure is its own
                 loop.call_soon_threadsafe(_set_exception, fut, exc)
 
@@ -493,7 +529,7 @@ class BatchedTranscriber:
             _log.exception("whisper.load_failed")
             while True:
                 try:
-                    _, fut, loop = self._inbox.get_nowait()
+                    _, fut, loop, _, _ = self._inbox.get_nowait()
                 except queue.Empty:
                     break
                 loop.call_soon_threadsafe(_set_exception, fut, exc)
@@ -514,7 +550,7 @@ class BatchedTranscriber:
             except Exception as exc:  # noqa: BLE001 - a broken batch fails its files only
                 _log.exception("whisper.batch_failed", files=len(jobs))
                 for j in jobs:
-                    self.audio_lost += j.progress_sec
+                    self.audio_lost += j.unsaved_sec
                     j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
                 jobs.clear()
                 continue
@@ -530,7 +566,7 @@ class BatchedTranscriber:
                         detected_language=j.language or None,
                     )
                 except Exception as exc:  # noqa: BLE001 - the thread outlives one file
-                    self.audio_lost += j.progress_sec
+                    self.audio_lost += j.unsaved_sec
                     j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
                     continue
                 j.loop.call_soon_threadsafe(_set_result, j.future, result)
@@ -543,7 +579,7 @@ class BatchedTranscriber:
         assert self._tokenizer is not None
         for j in jobs:
             if j.future.cancelled() and not j.done:
-                self.audio_lost += j.progress_sec
+                self.audio_lost += j.unsaved_sec
                 j.seek = j.content_frames
         live = [j for j in jobs if not j.done]
         if not live:
@@ -588,6 +624,8 @@ class BatchedTranscriber:
             moved = min(j.seek, j.content_frames) - before[id(j)]
             if moved > 0:
                 self.audio_done += moved / FRAMES_PER_SECOND
+            if j.progress is not None:
+                j.progress.publish(j.seek, j.last_speech, j.language, j.segments)
 
 
 def metric_tag() -> str:

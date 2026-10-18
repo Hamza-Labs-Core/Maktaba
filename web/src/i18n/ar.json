@@ -1031,6 +1031,7 @@
   "transcription.rate.last1h": "آخر ساعة",
   "transcription.rate.live": "قيد التفريغ الآن",
   "transcription.rate.liveDetail": "{h} من الصوت في ١٠ دقائق، {workers} عامل",
+  "transcription.rate.lost": "{h} يُعاد بعد إعادة تشغيل أو خطأ",
   "transcription.rate.value": "{n}× الزمن الحقيقي",
   "transcription.rate.detail": "{h} من الصوت من {jobs} فيديو",
   "transcription.rate.jobRtf": "{n}× لكل فيديو",

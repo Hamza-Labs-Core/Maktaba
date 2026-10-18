@@ -24,12 +24,12 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ...db.jobs import Job
-from ...stt.settings import SAMPLE_RATE, Transcript, WhisperSettings
+from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..health import system_memory
-from ..sql import dumps, now, to_ts, uid
+from ..sql import dumps, loads, now, to_ts, uid
 from ._common import load_video, require_video
 from .content_hash import READ_TIMEOUT_S, on_disk
 from .registry import StageImpl
@@ -62,6 +62,10 @@ def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
 
 #: decoding the audio off the share: generous, a long lecture over a busy NAS
 DECODE_TIMEOUT_S = 900.0
+
+#: how often a file's progress is saved (``MAKTABA_STT_CHECKPOINT_S``): a restart loses
+#: at most this much of each file's decoding
+CHECKPOINT_S = 60.0
 
 
 class AudioBudget:
@@ -205,12 +209,87 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         await budget.release(held)
         raise
     try:
-        return await _transcribe_file(db, v, found, ctx)
+        return await _transcribe_file(db, v, found, ctx, await input_fingerprint(db, job.subject))
     finally:
         await budget.release(held)
 
 
-async def _transcribe_file(db: Any, v: Any, found: str, ctx: StageContext) -> StageResult:
+# ------------------------------------------------------------------ checkpoints
+
+
+async def load_checkpoint(db: Any, video_id: Any, fingerprint: str | None) -> Checkpoint | None:
+    """The file's saved progress, when it was made for the same input."""
+    row = await db.fetchrow(
+        "SELECT fingerprint, seek_frames, last_speech, language, segments"
+        " FROM transcribe_checkpoints WHERE video_id = $1",
+        uid(video_id),
+    )
+    if row is None or fingerprint is None or str(row["fingerprint"]) != fingerprint:
+        return None
+    segs = row["segments"]
+    return Checkpoint(
+        seek=int(row["seek_frames"]),
+        last_speech=float(row["last_speech"]),
+        language=row["language"],
+        segments=list(loads(segs) if isinstance(segs, str) else segs),
+    )
+
+
+async def save_checkpoint(db: Any, video_id: Any, fingerprint: str, cp: Checkpoint) -> None:
+    await db.execute(
+        "INSERT INTO transcribe_checkpoints"
+        " (video_id, fingerprint, seek_frames, last_speech, language, segments, updated_at)"
+        " VALUES ($1, $2, $3, $4, $5, $6, $7)"
+        " ON CONFLICT (video_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,"
+        " seek_frames = EXCLUDED.seek_frames, last_speech = EXCLUDED.last_speech,"
+        " language = EXCLUDED.language, segments = EXCLUDED.segments,"
+        " updated_at = EXCLUDED.updated_at",
+        uid(video_id),
+        fingerprint,
+        cp.seek,
+        cp.last_speech,
+        cp.language,
+        dumps(cp.segments),
+        to_ts(db, now()),
+    )
+
+
+async def _run_saving(
+    db: Any,
+    v: Any,
+    ctx: StageContext,
+    fingerprint: str | None,
+    audio: Any,
+    settings: WhisperSettings,
+    audio_sec: int,
+) -> Transcript:
+    """Transcribe, saving the file's progress every ``MAKTABA_STT_CHECKPOINT_S``."""
+    resume = await load_checkpoint(db, v.id, fingerprint)
+    progress = FileProgress(saved_seek=resume.seek if resume else 0)
+    every = float(os.environ.get("MAKTABA_STT_CHECKPOINT_S", str(CHECKPOINT_S)))
+    task = asyncio.ensure_future(
+        get_transcriber(settings).transcribe(audio, resume=resume, progress=progress)
+    )
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=every)
+            if done:
+                return task.result()
+            cp = progress.snapshot()
+            if fingerprint is not None and cp.seek > progress.saved_seek:
+                await save_checkpoint(db, v.id, fingerprint, cp)
+                progress.saved_seek = cp.seek
+                await ctx.progress(
+                    "transcribe", round(cp.seek / 100), audio_sec, "on the GPU", force=True
+                )
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+async def _transcribe_file(
+    db: Any, v: Any, found: str, ctx: StageContext, fingerprint: str | None
+) -> StageResult:
     try:
         audio = await decode_audio(found)
     except TimeoutError as exc:
@@ -224,7 +303,9 @@ async def _transcribe_file(db: Any, v: Any, found: str, ctx: StageContext) -> St
         steps=["decode", "transcribe", "store"], force=True,
     )  # fmt: skip
     try:
-        result = await get_transcriber(settings).transcribe(audio)
+        result = await _run_saving(
+            db, v, ctx, fingerprint, audio, settings, round(audio.size / SAMPLE_RATE)
+        )
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
     del audio
@@ -309,6 +390,7 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
             to_ts(db, now()),
         )
         await db.execute("UPDATE transcripts SET is_active = true WHERE id = $1", tid)
+        await db.execute("DELETE FROM transcribe_checkpoints WHERE video_id = $1", uid(video_id))
         if result.detected_language:
             await db.execute(
                 "UPDATE videos SET detected_language = $2"

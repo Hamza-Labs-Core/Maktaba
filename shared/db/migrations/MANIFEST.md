@@ -108,6 +108,7 @@ land at the next free integer (no gaps, no reservations).
 | `0099` | `0099_tagger_planner_v3.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0095 | `job_stages` versions for PR #52: `tag` 3 (sub-topics, per-episode tags, khutbah / «بصوت» fixes) and `plan_channels` 3 (the 20-channel lineup); the version sweep re-tags and re-plans once. |
 | `0100` | `0100_transcription_stages.sql` | [plan-03-10](../../specs/epics/03-transcription/plan-03-10-queue-transcription.md) | 0099 | `transcribe` (gpu, batched Whisper), `subtitle_gen` (files beside the video, new `nas_write` pool) and `index` (e5 vectors) become engine stages; `content_hash → transcribe → subtitle_gen / index / tag`; tagger v4 (transcripts); `tag` and `plan_channels` debounce 300 s (max 1 h); the `gpu` pool is the batch size (32). |
 | `0101` | `0101_speech_lane.sql` | [plan-03-10](../../specs/epics/03-transcription/plan-03-10-queue-transcription.md) | 0100 | `job_stages` lane `speech` (Transcription): `transcribe`, `subtitle_gen` and `index` move into it from `media`; SQLite rebuilds `job_stages` for the CHECK. |
+| `0102` | `0102_transcribe_checkpoints.sql` | [plan-03-10](../../specs/epics/03-transcription/plan-03-10-queue-transcription.md) | 0101 | `transcribe_checkpoints`: a file's transcription progress (seek, sentences so far, keyed by video and input fingerprint), saved about once a minute so a restarted worker resumes it. |
 
 ---
 

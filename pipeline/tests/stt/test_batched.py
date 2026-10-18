@@ -272,3 +272,23 @@ async def test_each_file_s_language_is_detected_once_from_its_first_window() -> 
     assert asked == [[100, 200]]  # first windows only, in one call
     assert r1.detected_language is None  # unsure: not recorded
     assert r2.detected_language == "en" and r2.language == "ar"
+
+
+@pytest.mark.asyncio
+async def test_resuming_from_a_checkpoint_gives_the_uninterrupted_transcript() -> None:
+    from maktaba_pipeline.stt.settings import FileProgress
+
+    whole = await _transcriber(FakeModel()).transcribe(_audio(3, 4))
+    progress = FileProgress()
+    model = FakeModel()
+    bt = _transcriber(model)
+    first = asyncio.ensure_future(bt.transcribe(_audio(3, 4), progress=progress))
+    while progress.seek < 2 * N_FRAMES:  # stop it after two windows
+        await asyncio.sleep(0)
+    cp = progress.snapshot()
+    first.cancel()
+    resumed = await _transcriber(model).transcribe(_audio(3, 4), resume=cp)
+    assert [(s.start, s.end, s.text) for s in resumed.sentences] == [
+        (s.start, s.end, s.text) for s in whole.sentences
+    ]
+    assert cp.seek >= 2 * N_FRAMES and len(cp.segments) >= 2
