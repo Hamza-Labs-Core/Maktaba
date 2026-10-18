@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS cluster_nodes (
     sealed           TEXT,
     db_role          TEXT,
     remote_addr      TEXT,
+    api_url          TEXT,
     created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     approved_at      TEXT,
     approved_by      TEXT,

@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS cluster_nodes (
     sealed           jsonb,
     db_role          text,
     remote_addr      text,
+    api_url          text,             -- the API URL the machine used to ask (its database host)
     created_at       timestamptz NOT NULL DEFAULT now(),
     approved_at      timestamptz,
     approved_by      text,
