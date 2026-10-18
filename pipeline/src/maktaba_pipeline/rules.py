@@ -1,4 +1,4 @@
-"""The rules as settings: the sections (detect, groups, planner), their help, the schema
+"""The rules as settings: the sections (detect, groups, planner, tag), their help, the schema
 the API and the web settings page are built from, and a tolerant reader for stored changes.
 
 Each section is a frozen config dataclass whose defaults are the built-in rules; what a
@@ -25,6 +25,7 @@ from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
 from .classify.clip_groups import GroupConfig
 from .classify.series_detector import DetectorConfig
+from .classify.topic_tags import TaggerConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
 
@@ -52,6 +53,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "groups": (GroupConfig, "Grouping", "clip and stand-alone collections, promos, questions "
                "and fatwas"),
     "detect": (DetectorConfig, "Detection", "how shows, seasons and talk shows are found"),
+    "tag": (TaggerConfig, "Tagging", "topic, format, audience and occasion tags, and what "
+            "transcripts add to them"),
 }  # fmt: skip
 
 
