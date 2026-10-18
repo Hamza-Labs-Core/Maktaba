@@ -84,9 +84,12 @@ def run(conn: sqlite3.Connection, cfg: tc.TagCheckConfig | None = None) -> dict[
     todo: list[tuple[str, str, str, tuple[str, ...], str]] = []
     for path, title, lib in clips:
         lib = Path(lib).name if "/" in (lib or "") or "\\" in (lib or "") else (lib or "")
-        cands = tc.clip_candidates(_tags(conn, path))
+        tags = _tags(conn, path)
+        cands = tc.clip_candidates(tags)
         h = tc.clip_input_hash(lib, title or "", cands, cfg)
-        if path in done and done[path][0] == h:
+        if path in done and done[path][2] == _tags_hash(tags):
+            counts["cached"] += 1  # its tags carry the verdict: the topics it dropped are low now
+        elif path in done and done[path][0] == h:
             counts["cached"] += 1
             if _apply(conn, path, tuple(json.loads(done[path][1])), done[path][2], cfg):
                 counts["applied"] += 1

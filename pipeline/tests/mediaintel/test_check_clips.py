@@ -52,3 +52,22 @@ def test_the_model_keeps_the_story_and_drops_the_mention(monkeypatch: Any) -> No
     assert score["Y:/k/2.mp4"] == 0.95
     again = check_clips.run(conn, cfg)  # answered and applied: nothing to do
     assert len(asked) == 1 and again["asked"] == 0 and again["applied"] == 0
+
+
+def test_a_corrected_clip_is_not_asked_again(monkeypatch: Any) -> None:
+    # two topics, one dropped: the clip still has a topic, with fewer candidates than asked
+    asked: list[str] = []
+
+    def ask(text: str, cfg: tc.TagCheckConfig) -> str:
+        asked.append(text)
+        return json.dumps(
+            {"clips": [{"n": 1, "keep": ["fiqh"]}, {"n": 2, "keep": ["prophets_stories"]}]}
+        )
+
+    monkeypatch.setattr(tc, "ask", ask)
+    conn = _db()
+    conn.execute("INSERT INTO video_tags VALUES ('Y:/k/1.mp4', 'topic:fiqh', 0.9)")
+    cfg = tc.TagCheckConfig(clip_batch=4)
+    check_clips.run(conn, cfg)
+    again = check_clips.run(conn, cfg)
+    assert len(asked) == 1 and again["asked"] == 0 and again["cached"] == 2
