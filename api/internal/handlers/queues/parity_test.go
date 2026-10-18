@@ -370,3 +370,35 @@ func TestPulse_ReportsTheAgeOfTheLastActivity(t *testing.T) {
 		t.Fatalf("%s", rec.Body.String())
 	}
 }
+
+// ---------- library collections ----------
+
+func TestLibraryCollections(t *testing.T) {
+	f := newFixture(
+		&queuestest.Rule{Match: "from topic_collections t", Cols: []string{"id", "name", "n", "coll"},
+			Rows: [][]driver.Value{{"t1", "السيرة", int64(12), "قناة - ملف - السيرة"}, {"t2", "الفقه", int64(3), nil}}},
+		&queuestest.Rule{Match: "from clip_groups g", Cols: []string{"id", "kind", "basis", "title", "n", "coll"},
+			Rows: [][]driver.Value{{"g1", "clips", "topic", "مقاطع", int64(40), nil}}},
+		&queuestest.Rule{Match: "from promo_links p", Cols: []string{"vid", "title", "show", "sid", "season", "ev"},
+			Rows: [][]driver.Value{{videoV, "برومو الحبيب", "الحبيب", seasonA, int64(2), "title names the show"}}},
+	)
+	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer())
+	var out LibraryCollectionsResponse
+	decode(t, rec, &out)
+	if rec.Code != 200 || len(out.Topics) != 2 || out.Topics[0].Collection == nil || out.Topics[1].Collection != nil ||
+		len(out.ClipGroups) != 1 || out.ClipGroups[0].Items != 40 ||
+		len(out.Promos) != 1 || *out.Promos[0].Season != 2 || *out.Promos[0].SeasonID != seasonA {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	for _, c := range f.db.Calls() {
+		if len(c.Args) > 0 && c.Args[0] != libL {
+			t.Errorf("not scoped to the library: %v", c.Args)
+		}
+	}
+	if rec = f.do("GET", "/api/items/library/nope/collections", "", viewer()); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad id -> %d", rec.Code)
+	}
+	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", nil); rec.Code != http.StatusForbidden {
+		t.Errorf("anonymous -> %d", rec.Code)
+	}
+}

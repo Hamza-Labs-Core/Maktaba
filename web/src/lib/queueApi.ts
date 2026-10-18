@@ -467,6 +467,26 @@ export interface Pulse {
   stuck: StuckJob[];
 }
 
+export interface LibraryCollections {
+  topics: { id: string; name: string; items: number; collection: string | null }[];
+  clip_groups: {
+    id: string;
+    kind: "clips" | "standalone";
+    basis: "playlist" | "topic" | "rest" | "promo";
+    title: string;
+    items: number;
+    collection: string | null;
+  }[];
+  promos: {
+    video_id: string;
+    title: string;
+    show: string;
+    season_id: string | null;
+    season: number | null;
+    evidence: string;
+  }[];
+}
+
 // ---- calls ---------------------------------------------------------------
 
 const q = (s: string) => encodeURIComponent(s);
@@ -546,6 +566,8 @@ export const queueApi = {
   /** The same for every season of a series. */
   putSeriesStyle: (seriesId: string, style: ProductionStyle | null) =>
     api.put<StyleResult>(`/api/series/${q(seriesId)}/style`, { style }),
+  libraryCollections: (libraryId: string) =>
+    api.get<LibraryCollections>(`/api/items/library/${q(libraryId)}/collections`),
   insights: () => api.get<Insights>("/api/queues/insights"),
   pulse: () => api.get<Pulse>("/api/queues/pulse"),
 };

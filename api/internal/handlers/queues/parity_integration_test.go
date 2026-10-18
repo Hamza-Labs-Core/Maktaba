@@ -115,6 +115,25 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		t.Fatalf("cleared override %v %v", override, err)
 	}
 
+	// the library's topics, clip groups and promos
+	mustExec(t, db, `DELETE FROM promo_links; DELETE FROM clip_groups; DELETE FROM topic_collections`)
+	mustExec(t, db, `INSERT INTO topic_collections (id, library_id, playlist_id, name, membership_hash)
+		VALUES ('77777777-7777-4777-8777-777777777777', $1, 'PL1', 'السيرة', 'h')`, libL)
+	mustExec(t, db, `INSERT INTO topic_items (topic_id, video_id, position) VALUES ('77777777-7777-4777-8777-777777777777', $1, 1)`, videoV)
+	mustExec(t, db, `INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool)
+		VALUES ('plex_topic', 'topic', '77777777-7777-4777-8777-777777777777', '5', 'قناة - ملف - السيرة', 'x', true)`)
+	mustExec(t, db, `INSERT INTO clip_groups (id, library_id, kind, basis, name, title, membership_hash)
+		VALUES ('88888888-8888-4888-8888-888888888888', $1, 'clips', 'rest', 'x', 'مقاطع', 'h')`, libL)
+	mustExec(t, db, `INSERT INTO promo_links (video_id, library_id, series_id, season_id, season, score, evidence)
+		VALUES ('66666666-6666-4666-8666-666666666666', $1, $2, $3, 1, 0.9, 'title names the show')`, libL, seriesX, seasonA)
+	rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer())
+	var cols LibraryCollectionsResponse
+	decode(t, rec, &cols)
+	if rec.Code != 200 || len(cols.Topics) != 1 || cols.Topics[0].Items != 1 || *cols.Topics[0].Collection != "قناة - ملف - السيرة" ||
+		len(cols.ClipGroups) != 1 || cols.ClipGroups[0].Items != 0 || len(cols.Promos) != 1 || cols.Promos[0].Show != "الحبيب" {
+		t.Fatalf("collections %d %s", rec.Code, rec.Body.String())
+	}
+
 	// insights and pulse run on the real schema
 	if rec = f.do("GET", "/api/queues/insights", "", viewer()); rec.Code != http.StatusOK {
 		t.Fatalf("insights %d %s", rec.Code, rec.Body.String())

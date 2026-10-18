@@ -99,6 +99,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/activity", h.Activity)
 	r.Get("/api/jobs/{id}/events", h.JobEvents)
 	r.Get("/api/items/{kind}/{id}/history", h.ItemHistory)
+	r.Get("/api/items/library/{id}/collections", h.LibraryCollections)
 	// Parity with the stand-alone control centre (see explain.go, style.go, insights.go).
 	r.Get("/api/explain", h.Explain)
 	r.Get("/api/seasons/styles", h.SeasonStyles)
