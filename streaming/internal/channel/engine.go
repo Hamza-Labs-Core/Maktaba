@@ -3,76 +3,60 @@ package channel
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
+	"io"
+	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 )
 
 // Defaults for the engine lifecycle.
 const (
-	DefaultLookahead  = 4                // blocks queued into the concat input
-	DefaultWarmGrace  = 60 * time.Second // keep encoder warm after last viewer
-	DefaultPerHostCap = 8                // max concurrent channel encoders
-	defaultMasterName = "master.m3u8"
+	DefaultWarmGrace    = 60 * time.Second // keep a station warm after the last viewer
+	DefaultPerHostCap   = 8                // max concurrent channel stations
+	DefaultReadyTimeout = 20 * time.Second // first HLS request waits this long for a segment
 )
 
-// Runner spawns an FFmpeg job for a channel and returns a controller. The
-// production runner shells out to ffmpeg; tests inject a fake. Mirrors
-// ffmpeg.Runner but channel-scoped (concat input + live window).
-type Runner interface {
-	StartHLS(ctx context.Context, job Job) (Controller, error)
-}
-
-// Controller is the small surface the engine + reaper need to terminate
-// an encoder (the session.Transcoder shape).
-type Controller interface {
-	Stop(ctx context.Context) error
+// Pipeline is a running channel (production: *Station).
+type Pipeline interface {
+	Subscribe() (<-chan []byte, func())
+	WaitReady(ctx context.Context) error
+	Done() <-chan struct{}
+	Alive() bool
+	Stop() // non-blocking
 	PID() int
-	Active() bool
+	Dir() string
 }
 
-// Job is one channel encoder invocation.
-type Job struct {
-	ChannelID  uuid.UUID
-	ConcatPath string
-	OutputDir  string
-	MasterName string
-	Ladder     []ffmpeg.Rendition
-	HWAccel    string
-}
+// StartFunc starts a channel pipeline writing its HLS window into dir.
+type StartFunc func(ctx context.Context, channelID uuid.UUID, dir string) (Pipeline, error)
 
 // Layout resolves the on-disk HLS directory for a channel session.
 type Layout interface {
 	HLSDir(sessionID string) string
 }
 
-// Engine owns the live-channel lifecycle: lazy activation, the warm
-// re-tune window, the concat input, and the per-host cap (D1/D5/D6).
+// Engine owns the live-channel lifecycle: lazy activation on the first
+// HLS / MPEG-TS request, one pipeline per channel shared by every viewer,
+// a warm grace window after the last viewer, and the per-host cap.
 type Engine struct {
-	Repo      Repo
-	Runner    Runner
-	Layout    Layout
-	Ladder    []ffmpeg.Rendition
-	HWAccel   string
-	Host      string
-	Lookahead int
-	WarmGrace time.Duration
+	Repo         Repo
+	Layout       Layout
+	Start        StartFunc
+	Host         string
+	WarmGrace    time.Duration
+	ReadyTimeout time.Duration
 
-	// TS is the MPEG-TS runner used by StreamChannelTS (the HDHomeRun
-	// path, Story 27.5). Optional; nil means TS pulls are unsupported.
-	TS TSRunner
-
-	reg *registry
-	now func() time.Time
+	mu       sync.Mutex
+	stations map[uuid.UUID]Pipeline
+	reg      *registry
+	now      func() time.Time
 }
 
-// NewEngine builds an Engine with the per-host cap and clock. A nil clock
-// uses time.Now; cap ≤ 0 uses DefaultPerHostCap.
-func NewEngine(repo Repo, runner Runner, layout Layout, perHostCap int, now func() time.Time) *Engine {
+// NewEngine builds an Engine. A nil clock uses time.Now; cap <= 0 uses
+// DefaultPerHostCap.
+func NewEngine(repo Repo, layout Layout, start StartFunc, perHostCap int, now func() time.Time) *Engine {
 	if perHostCap <= 0 {
 		perHostCap = DefaultPerHostCap
 	}
@@ -80,141 +64,168 @@ func NewEngine(repo Repo, runner Runner, layout Layout, perHostCap int, now func
 		now = time.Now
 	}
 	return &Engine{
-		Repo:      repo,
-		Runner:    runner,
-		Layout:    layout,
-		Lookahead: DefaultLookahead,
-		WarmGrace: DefaultWarmGrace,
-		reg:       newRegistry(perHostCap, now),
-		now:       now,
+		Repo: repo, Layout: layout, Start: start,
+		WarmGrace: DefaultWarmGrace, ReadyTimeout: DefaultReadyTimeout,
+		stations: map[uuid.UUID]Pipeline{},
+		reg:      newRegistry(perHostCap, now),
+		now:      now,
 	}
 }
 
-// TuneResult is what a successful Tune returns to the caller (the API
-// proxy turns it into {session, manifest_url}).
+// TuneResult is what a successful Tune returns.
 type TuneResult struct {
 	ChannelID   uuid.UUID
 	SessionID   string
-	ManifestURL string // relative path served by the manifest handler
+	ManifestURL string // relative path served by the channel HTTP handler
 }
 
-// Tune activates a channel (or attaches to a warm one) at the current
-// wall clock and returns its live HLS manifest path. Lazy: a cold
-// channel spawns FFmpeg here; a warm one (recently zero viewers) is
-// re-attached instantly without a respawn (D5).
+// Tune makes sure the channel is on air and returns its live playlist
+// path. HLS requests tune implicitly; this is for API callers.
 func (e *Engine) Tune(ctx context.Context, channelID uuid.UUID) (TuneResult, error) {
-	sessionID := channelSessionID(channelID)
-	manifest := "/stream/channel/" + channelID.String() + "/" + defaultMasterName
+	if _, err := e.Ensure(ctx, channelID); err != nil {
+		return TuneResult{}, err
+	}
+	return TuneResult{
+		ChannelID:   channelID,
+		SessionID:   channelSessionID(channelID),
+		ManifestURL: "/stream/channel/" + channelID.String() + "/index.m3u8",
+	}, nil
+}
 
-	// Warm re-tune: attach to the running encoder, no respawn.
-	if _, ok := e.reg.get(channelID); ok {
-		if e.reg.attach(channelID) {
-			e.writeRuntime(ctx, channelID, StateLive)
-			return TuneResult{ChannelID: channelID, SessionID: sessionID, ManifestURL: manifest}, nil
+// Ensure returns the channel's running pipeline, starting it if cold.
+func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if p, ok := e.stations[channelID]; ok {
+		if p.Alive() {
+			e.reg.touch(channelID)
+			return p, nil
+		}
+		delete(e.stations, channelID)
+		e.reg.remove(channelID)
+	}
+	if _, err := e.Repo.Look(ctx, channelID); err != nil {
+		return nil, err
+	}
+	if err := e.reg.admit(channelID); err != nil {
+		return nil, err
+	}
+	p, err := e.Start(ctx, channelID, e.Layout.HLSDir(channelSessionID(channelID)))
+	if err != nil {
+		return nil, err
+	}
+	e.stations[channelID] = p
+	// Registry stop runs under the registry lock: it must not block or
+	// call back into the engine; Pipeline.Stop is non-blocking.
+	e.reg.putWith(channelID, p.Stop, 0)
+	started := e.now()
+	go func() {
+		<-p.Done()
+		e.mu.Lock()
+		if e.stations[channelID] == p {
+			delete(e.stations, channelID)
+			e.reg.remove(channelID)
+		}
+		e.mu.Unlock()
+		_ = e.Repo.ClearRuntime(context.Background(), channelID)
+	}()
+	_ = e.Repo.SetRuntime(ctx, Runtime{ChannelID: channelID, Host: e.Host, PID: p.PID(),
+		State: StateLive, StartedAt: started, LastSegmentAt: started})
+	return p, nil
+}
+
+// EnsureReady starts (or reuses) the channel and waits for its first
+// HLS segment (bounded by ReadyTimeout).
+func (e *Engine) EnsureReady(ctx context.Context, channelID uuid.UUID) (Pipeline, error) {
+	p, err := e.Ensure(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	timeout := e.ReadyTimeout
+	if timeout <= 0 {
+		timeout = DefaultReadyTimeout
+	}
+	wctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := p.WaitReady(wctx); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+// StreamChannelTS writes the channel's continuous MPEG-TS to w until ctx
+// ends (the tuner/client disconnecting). Every client shares the
+// channel's single encode. Satisfies hdhr.Streamer.
+func (e *Engine) StreamChannelTS(ctx context.Context, channelID uuid.UUID, w io.Writer) error {
+	flusher, _ := w.(http.Flusher)
+	for attempt := 0; attempt < 3; attempt++ {
+		p, err := e.Ensure(ctx, channelID)
+		if err != nil {
+			return err
+		}
+		e.reg.attach(channelID)
+		err = pumpTS(ctx, p, w, flusher)
+		e.reg.detach(channelID)
+		if err != nil || ctx.Err() != nil {
+			return err
+		}
+		// The station ended under us (muxer died): restart and resume.
+	}
+	return errors.New("channel: stream ended")
+}
+
+func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) error {
+	ch, cancel := p.Subscribe()
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case b, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if _, err := w.Write(b); err != nil {
+				return err
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
 		}
 	}
-
-	// Cold tune: reserve a slot (may evict an LRU warm channel), then
-	// locate the join point and spawn.
-	if err := e.reg.admit(channelID); err != nil {
-		return TuneResult{}, err
-	}
-
-	now := e.now()
-	blocks, err := e.Repo.ProgramsFrom(ctx, channelID, now, e.Lookahead+1)
-	if err != nil {
-		return TuneResult{}, err
-	}
-	join, err := Locate(blocks, now)
-	if err != nil {
-		return TuneResult{}, err
-	}
-	entries := BuildConcat(blocks, join, e.Lookahead)
-	if len(entries) == 0 {
-		return TuneResult{}, errors.New("channel: no resolvable program files at join point")
-	}
-
-	outDir := e.Layout.HLSDir(sessionID)
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return TuneResult{}, err
-	}
-	concatPath := filepath.Join(outDir, "concat.ffconcat")
-	if err := os.WriteFile(concatPath, []byte(FormatConcat(entries)), 0o644); err != nil {
-		return TuneResult{}, err
-	}
-
-	ctrl, err := e.Runner.StartHLS(ctx, Job{
-		ChannelID:  channelID,
-		ConcatPath: concatPath,
-		OutputDir:  outDir,
-		MasterName: defaultMasterName,
-		Ladder:     e.Ladder,
-		HWAccel:    e.HWAccel,
-	})
-	if err != nil {
-		return TuneResult{}, err
-	}
-
-	e.reg.put(channelID, func() {
-		_ = ctrl.Stop(context.Background())
-		_ = e.Repo.ClearRuntime(context.Background(), channelID)
-	})
-	e.writeRuntimeFull(ctx, channelID, StateLive, ctrl.PID(), now)
-
-	return TuneResult{ChannelID: channelID, SessionID: sessionID, ManifestURL: manifest}, nil
 }
 
 // Detach records that a viewer left; the channel stays warm until the
-// grace window expires (instant re-tune while surfing).
-func (e *Engine) Detach(channelID uuid.UUID) {
-	e.reg.detach(channelID)
-}
+// grace window expires.
+func (e *Engine) Detach(channelID uuid.UUID) { e.reg.detach(channelID) }
 
-// Touch refreshes the LRU/idle timestamp on a segment fetch.
-func (e *Engine) Touch(channelID uuid.UUID) {
-	e.reg.touch(channelID)
-}
+// Touch refreshes the idle timestamp (HLS playlist/segment fetch).
+func (e *Engine) Touch(channelID uuid.UUID) { e.reg.touch(channelID) }
 
-// ReapIdle stops channels idle past the warm grace window and clears
-// their runtime rows. Called from the streaming reaper Sweep.
+// ReapIdle stops channels idle past the warm grace window.
 func (e *Engine) ReapIdle(_ context.Context) []uuid.UUID {
 	return e.reg.reapIdle(e.WarmGrace)
 }
 
-// ActiveCount reports the number of live channel encoders on this host.
+// StopAll stops every station (shutdown).
+func (e *Engine) StopAll() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, p := range e.stations {
+		p.Stop()
+	}
+}
+
+// ActiveCount reports the number of live channels on this host.
 func (e *Engine) ActiveCount() int { return e.reg.size() }
 
-func (e *Engine) writeRuntime(ctx context.Context, channelID uuid.UUID, state string) {
-	_ = e.Repo.SetRuntime(ctx, Runtime{
-		ChannelID:     channelID,
-		Host:          e.Host,
-		State:         state,
-		ViewerCount:   e.viewerCount(channelID),
-		LastSegmentAt: e.now(),
-	})
+// HLSDir is the on-disk HLS directory of a channel.
+func (e *Engine) HLSDir(channelID uuid.UUID) string {
+	return e.Layout.HLSDir(channelSessionID(channelID))
 }
 
-func (e *Engine) writeRuntimeFull(ctx context.Context, channelID uuid.UUID, state string, pid int, started time.Time) {
-	_ = e.Repo.SetRuntime(ctx, Runtime{
-		ChannelID:     channelID,
-		Host:          e.Host,
-		PID:           pid,
-		State:         state,
-		ViewerCount:   e.viewerCount(channelID),
-		StartedAt:     started,
-		LastSegmentAt: started,
-	})
-}
-
-func (e *Engine) viewerCount(channelID uuid.UUID) int {
-	if ent, ok := e.reg.get(channelID); ok {
-		return ent.viewers
-	}
-	return 0
-}
-
-// channelSessionID derives the stable session id for a channel's encoder
-// so its HLS dir is deterministic across re-tunes.
+// channelSessionID derives the stable session id for a channel's
+// pipeline so its HLS dir is deterministic across re-tunes.
 func channelSessionID(channelID uuid.UUID) string {
 	return "channel-" + channelID.String()
 }
