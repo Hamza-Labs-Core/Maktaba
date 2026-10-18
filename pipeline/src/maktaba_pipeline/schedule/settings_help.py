@@ -402,6 +402,13 @@ PLANNER_HELP: dict[str, Help] = {
         "filler (an hour and more of clips, no programme). A day: every slot plays its "
         "next episode, the schedule is programmes around the clock.",
     ),
+    "slot_max_filler_minutes": Help(
+        DZ,
+        "Most filler at a slot's end (minutes)",
+        "When the next episode does not fit what is left of its slot, the rest is filler; "
+        "past this many minutes the episode plays anyway, running past the slot's end (the "
+        "next slot starts late). 0: never. A nonstop channel keeps its filler to the hour.",
+    ),
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
@@ -481,6 +488,7 @@ _MINIMUM: dict[str, float] = {
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
+    "slot_max_filler_minutes": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "dz_watermark_width": 1, "dz_watermark_margin": 0,
     "dz_guide_min_program_s": 0, "dz_guide_max_padding_s": 0,

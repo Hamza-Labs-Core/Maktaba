@@ -653,6 +653,9 @@ class PlannerConfig:
     # dizqueTV schedule knobs
     #: a slot started later than this is all filler: a day, never (programmes all day)
     dz_lateness_ms: int = 24 * 60 * 60_000
+    #: the most filler a slot ends on: past it the next episode plays though it runs past
+    #: the slot's end (0: never; a nonstop channel's filler to the hour is its design)
+    slot_max_filler_minutes: int = 20
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
@@ -2929,12 +2932,15 @@ def simulate(
                 tt = t
                 c = cursors[lane.key]
                 tol = cfg.overrun_tolerance_minutes * 60.0
+                gap = cfg.slot_max_filler_minutes * 60.0 if lane.pattern != "nonstop" else 0.0
                 while eps:
                     u, e = eps[c % len(eps)]
                     # doesn't fit what is left (an episode may end up to the tolerance past
                     # the slot): pad and wait for the next window, unless the episode is
-                    # longer than the whole slot (then it overruns)
-                    if tt + e.duration_s > we + tol and (picks or e.duration_s <= we - ws + tol):
+                    # longer than the whole slot (then it overruns), or the filler left
+                    # would be longer than slot_max_filler_minutes (it plays, past the end)
+                    if (tt + e.duration_s > we + tol and (picks or e.duration_s <= we - ws + tol)
+                            and not (picks and gap and we - tt > gap)):  # fmt: skip
                         break
                     picks.append((u, e))
                     tt += e.duration_s
@@ -3122,5 +3128,7 @@ def dizquetv_time_slots(
         "maxDays": cfg.dz_max_days,
         "flexPreference": "distribute",
         "pad": pad,
+        # dizqueTV (Maktaba's build): a longer gap takes the next episode, past the slot
+        "maxFlex": 0 if lane is not None else cfg.slot_max_filler_minutes * 60_000,
         "slots": [{"time": t, "showId": sh, "order": o} for t, sh, o in merged],
     }
