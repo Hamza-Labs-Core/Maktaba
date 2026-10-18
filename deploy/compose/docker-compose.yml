@@ -28,6 +28,9 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: *restart
+    # Parallel queries share memory through /dev/shm; Docker's default 64 MB ran
+    # out under the transcription load ("could not resize shared memory segment").
+    shm_size: 256m
     environment:
       POSTGRES_USER: ${MAKTABA_PG_USER:-maktaba}
       POSTGRES_PASSWORD: ${MAKTABA_PG_PASSWORD:-maktaba}

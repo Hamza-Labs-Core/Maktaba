@@ -24,6 +24,17 @@ class JobCancelled(Exception):
     """Raised by :meth:`StageContext.check_cancel` when the operator cancelled the job."""
 
 
+class JobDeferred(Exception):
+    """A handler's way to give its job back for later, not as a failure: the job is
+    paused (resuming it is not a new attempt) and not claimed for ``retry_after_sec``.
+    For a worker that cannot run it now (the host is short of memory, say)."""
+
+    def __init__(self, reason: str, retry_after_sec: float) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after_sec = retry_after_sec
+
+
 class StageFailure(Exception):
     """A handler's way to fail with a structured, classifiable error."""
 

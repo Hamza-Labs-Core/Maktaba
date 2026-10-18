@@ -92,6 +92,12 @@ async def prune_once(db: Any, *, at: datetime | None = None) -> PruneReport:
     workers = await _count_deleted(
         db, "DELETE FROM workers WHERE last_seen_at < $1", to_ts(db, t - timedelta(days=1))
     )
+    # a transcription's saved progress outlives its job only if the job was dropped
+    # (failed for good, cancelled, its file changed): a week on, it is not resumed
+    await db.execute(
+        "DELETE FROM transcribe_checkpoints WHERE updated_at < $1",
+        to_ts(db, t - timedelta(days=7)),
+    )
     return PruneReport(events, jobs, samples, rollups, plans, workers)
 
 

@@ -10,6 +10,9 @@ serves transcribe"). Claiming already offers a job only to a worker whose
 from __future__ import annotations
 
 import json
+import platform
+import socket
+import subprocess
 from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
@@ -22,11 +25,45 @@ __all__ = [
     "heartbeat_worker",
     "live_workers",
     "register_worker",
+    "stable_hostname",
     "stages_without_worker",
 ]
 
 #: A worker whose last heartbeat is older than this is considered offline.
 LIVE_WINDOW_SEC = 45.0
+
+#: A worker of this host silent this long is a dead predecessor (cleared by the next
+#: worker on the host); much longer than LIVE_WINDOW_SEC, so a live worker whose loop
+#: is busy for a minute is not mistaken for one (and re-registers if it ever is).
+DEAD_AFTER_SEC = 300.0
+
+
+def stable_hostname() -> str:
+    """This machine's name as its owner set it. On macOS ``gethostname()`` follows the
+    network (``Mahmouds-Mac-Studio.local`` one hour, a DHCP name the next), which split
+    one Mac into several "hosts"; its LocalHostName does not change by itself."""
+    if platform.system() == "Darwin":
+        try:
+            out = subprocess.run(
+                ["scutil", "--get", "LocalHostName"],
+                capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.strip()  # fmt: skip
+            if out:
+                return out
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return socket.gethostname()
+
+
+async def _clear_dead(db: Any, host: str, worker_id: str) -> None:
+    """Rows of this host that stopped heartbeating: earlier runs, killed before they
+    could deregister (a stop that outlasted its drain). This worker replaces them."""
+    await db.execute(
+        "DELETE FROM workers WHERE host = $1 AND id <> $2 AND last_seen_at < $3",
+        host,
+        worker_id,
+        to_ts(db, now() - timedelta(seconds=DEAD_AFTER_SEC)),
+    )
 
 
 def _arr(db: Any, items: Sequence[str]) -> Any:
@@ -44,6 +81,10 @@ async def register_worker(
     version: str | None = None,
 ) -> None:
     ts = to_ts(db, now())
+    # earlier runs on this host are replaced, not "offline" (again at each heartbeat:
+    # a restart starts this worker before its predecessor's last beat is stale); a
+    # dead worker on another host still shows, and the pruner drops it after a day
+    await _clear_dead(db, host, worker_id)
     await db.execute(
         "INSERT INTO workers (id, host, stages, pools, path_map, version, started_at, last_seen_at)"
         " VALUES ($1,$2,$3,$4,$5,$6,$7,$7)"
@@ -60,10 +101,17 @@ async def register_worker(
     )
 
 
-async def heartbeat_worker(db: Any, worker_id: str) -> None:
-    await db.execute(
-        "UPDATE workers SET last_seen_at = $2 WHERE id = $1", worker_id, to_ts(db, now())
+async def heartbeat_worker(db: Any, worker_id: str, host: str | None = None) -> bool:
+    """Beat; False when this worker's row is gone (cleared as dead, or pruned) and it
+    should register again."""
+    beat = await db.fetchval(
+        "UPDATE workers SET last_seen_at = $2 WHERE id = $1 RETURNING id",
+        worker_id,
+        to_ts(db, now()),
     )
+    if host is not None:
+        await _clear_dead(db, host, worker_id)
+    return beat is not None
 
 
 async def deregister_worker(db: Any, worker_id: str) -> None:

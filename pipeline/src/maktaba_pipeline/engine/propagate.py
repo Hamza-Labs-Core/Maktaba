@@ -80,6 +80,14 @@ async def resolve_edge(
         if lib is None and subj.kind == "video":
             lib = await library_of_video(db, subj.id)
         return [] if lib is None else [("library", lib)]
+    if m == "loose_library_of":
+        # loose as the library tag counts it: in no series at all
+        if subj.kind != "video" or await db.fetchval(
+            "SELECT count(*) FROM series_episodes WHERE video_id = $1", uid(subj.id)
+        ):
+            return []
+        lib = job.library_id or await library_of_video(db, subj.id)
+        return [] if lib is None else [("library", lib)]
     if m == "season_of":
         if subj.kind != "video":
             return []

@@ -8,6 +8,7 @@ implementations through :func:`register_impl` (see ``engine.loader``).
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..graph import InputFingerprint, OutputFingerprint, StageHandler
@@ -20,12 +21,18 @@ class StageImpl:
     run: StageHandler | None = None
     input_fingerprint: InputFingerprint | None = None
     output_fingerprint: OutputFingerprint | None = None
+    #: why this worker cannot run the stage (a platform or an optional extra it
+    #: lacks), or None; a worker never claims a stage it cannot run
+    unavailable: Callable[[], str | None] | None = None
 
 
 #: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it
 #: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
 CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
+    "transcribe": "maktaba_pipeline.engine.stages.transcribe",
+    "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
+    "index": "maktaba_pipeline.engine.stages.index",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "thumb_small": "maktaba_pipeline.engine.stages.thumb_small",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
@@ -69,6 +76,9 @@ def get_impl(name: str) -> StageImpl | None:
         _IMPLS[name] = impl
         return impl  # type: ignore[no-any-return]
     if not _LEGACY_LOADED:
-        _IMPLS.update(importlib.import_module(_LEGACY_MODULE).IMPLS)
+        # a stage that has moved onto the engine (a core module) keeps that module's
+        # implementation, whichever stage happened to load the legacy table first
+        legacy = importlib.import_module(_LEGACY_MODULE).IMPLS
+        _IMPLS.update({k: v for k, v in legacy.items() if k not in CORE_MODULES})
         _LEGACY_LOADED = True
     return _IMPLS.get(name)

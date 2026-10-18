@@ -31,7 +31,6 @@ import contextlib
 import contextvars
 import os
 import re
-import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -48,7 +47,12 @@ from .engine.paths import PathMap, set_active_path_map
 from .engine.prune import run_pruner
 from .engine.reconcile import run_reconciler
 from .engine.sync import stages_ahead, sync_graph
-from .engine.workers import deregister_worker, heartbeat_worker, register_worker
+from .engine.workers import (
+    deregister_worker,
+    heartbeat_worker,
+    register_worker,
+    stable_hostname,
+)
 from .extensions import discover
 from .extensions.store import ensure_rows, load_state
 from .log import get_logger
@@ -381,7 +385,7 @@ async def run(
     engine_rt: EngineRuntime | None = None
     stage_names: tuple[str, ...] = tuple(str(s) for s in cfg.stages)
     stage_pools: dict[str, str] = {}
-    host = cfg.host or socket.gethostname()
+    host = cfg.host or stable_hostname()
 
     if cfg.engine:
         engine_rt, stage_names, stage_pools, background = await _start_engine(
@@ -490,17 +494,23 @@ async def _start_engine(
             collector.probes.update(probes(state.settings))
 
     pools = sorted({runtime.graph[s].pool for s in served})
-    await register_worker(
-        database,
-        worker_id=worker_id,
-        host=host,
-        stages=served,
-        pools=pools,
-        path_map=path_map.as_json(),
-        version=__version__,
-    )
+
+    async def register() -> None:
+        await register_worker(
+            database,
+            worker_id=worker_id,
+            host=host,
+            stages=served,
+            pools=pools,
+            path_map=path_map.as_json(),
+            version=__version__,
+        )
+
+    await register()
     tasks = [
-        asyncio.create_task(_worker_heartbeat(database, worker_id, shutdown), name="worker-hb"),
+        asyncio.create_task(
+            _worker_heartbeat(database, worker_id, shutdown, host, register), name="worker-hb"
+        ),
         asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
         asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
@@ -539,14 +549,27 @@ def _served_stages(
             impl = get_impl(st.name)
             if impl is None or impl.run is None:
                 continue
+            why = impl.unavailable() if impl.unavailable is not None else None
+            if why is not None:
+                if requested is not None:
+                    _log.warning("stage_unavailable_here", stage=st.name, reason=why)
+                continue
         out.append(st.name)
     return out
 
 
-async def _worker_heartbeat(database: Database, worker_id: str, stop: asyncio.Event) -> None:
+async def _worker_heartbeat(
+    database: Database,
+    worker_id: str,
+    stop: asyncio.Event,
+    host: str | None = None,
+    register: Callable[[], Awaitable[None]] | None = None,
+) -> None:
     while not stop.is_set():
         try:
-            await heartbeat_worker(database, worker_id)
+            if not await heartbeat_worker(database, worker_id, host) and register is not None:
+                _log.warning("worker_registered_again", worker_id=worker_id)
+                await register()
         except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker
             _log.exception("worker_heartbeat_failed")
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041

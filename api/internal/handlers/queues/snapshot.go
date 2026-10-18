@@ -375,6 +375,14 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 		}))
 	}
 
+	for i := range queues {
+		if f := h.StageETA[queues[i].Stage]; f != nil {
+			if eta, err := f(ctx, now); err == nil && eta != nil {
+				queues[i].EtaSec = eta
+			}
+		}
+	}
+
 	hn, err := h.healthNow(ctx, now, pools, queues)
 	if err != nil {
 		return Snapshot{}, err

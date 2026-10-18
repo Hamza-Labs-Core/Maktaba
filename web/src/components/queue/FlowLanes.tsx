@@ -104,7 +104,7 @@ export function FlowLanes({ stages, queues, pools, flows, extensions }: FlowLane
     return c.pending + c.running + c.failed_open > 0;
   });
   const [mediaOpen, setMediaOpen] = useState<boolean | null>(null);
-  const lanes: ViewLane[] = ["episodes", "seasons", "channels", "extensions"];
+  const lanes: ViewLane[] = ["episodes", "speech", "seasons", "channels", "extensions"];
 
   return (
     <div className="mkt-q-flow">

@@ -21,6 +21,7 @@ from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..schedule.channel_planner import PLANNER_VERSION
+from ..search.semantic import INDEX_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -72,10 +73,16 @@ PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
 CH_WRITE_VERSION = 1
+#: transcribe / subtitle_gen (plan 03-10): stages/transcribe.py, stages/subtitle_gen.py
+TRANSCRIBE_VERSION = 1
+SUBTITLE_VERSION = 1
 
 EdgeMap = Literal[
     "same",
     "library_of",
+    # a video's library, only while the video is in no season (the library tag's
+    # loose videos): a series episode's transcript re-tags its season, not its library
+    "loose_library_of",
     "season_of",
     "seasons_changed",
     "videos_of",
@@ -156,7 +163,11 @@ class PoolDef:
 POOLS: tuple[PoolDef, ...] = (
     PoolDef("nas_read", "NAS reads", "global", 2, 2),
     PoolDef("cpu", "CPU", "per_worker", None, None),
-    PoolDef("gpu", "GPU", "per_worker", 1, 1),
+    # transcription: the jobs of a worker share one batched Whisper (stt/batched.py), so
+    # the pool size is the batch, not a count of competing GPU users
+    PoolDef("gpu", "GPU", "per_worker", 32, 32),
+    # writes next to the videos (subtitle files): small, kept apart from the reads
+    PoolDef("nas_write", "NAS writes", "global", 4, 4),
     PoolDef("network_plex", "Plex", "global", 2, 2),
     PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
@@ -171,7 +182,7 @@ class StageDef:
     label: str
     subject_kinds: tuple[SubjectKind, ...]
     pool: str
-    lane: Literal["sources", "episodes", "seasons", "channels", "media"]
+    lane: Literal["sources", "episodes", "speech", "seasons", "channels", "media"]
     lane_order: int
     version: int
     run: StageHandler | None = None
@@ -245,8 +256,8 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=0,
         version=CONTENT_HASH_VERSION,
         # a video imported from mediaintel exists before its file was read; its small
-        # thumbnail lives under the real hash
-        edges=(Edge("thumb_small", "same"),),
+        # thumbnail lives under the real hash. Its speech follows its identity.
+        edges=(Edge("thumb_small", "same"), Edge("transcribe", "same")),
     ),
     _legacy(
         "probe",
@@ -362,6 +373,9 @@ GRAPH: tuple[StageDef, ...] = (
         # a topic tag decides a leftover's clip group
         edges=(Edge("plan_channels", "catalog"), Edge("clip_groups", "library_of")),
         entry_for=("season",),
+        # transcripts arrive one video at a time: a season's are tagged together
+        debounce_sec=300,
+        debounce_max_sec=3600,
     ),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     StageDef(
@@ -441,8 +455,8 @@ GRAPH: tuple[StageDef, ...] = (
         version=PLANNER_VERSION,
         edges=(Edge("write_channels", "same"),),
         entry_for=("catalog",),
-        debounce_sec=60,
-        debounce_max_sec=900,
+        debounce_sec=300,
+        debounce_max_sec=3600,
     ),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
@@ -472,21 +486,44 @@ GRAPH: tuple[StageDef, ...] = (
         1,
         edges=(Edge("transcribe", "same", legacy=True),),
     ),
-    _legacy(
-        "transcribe",
-        "Transcribe",
-        ("video",),
-        "gpu",
-        2,
-        edges=(Edge("subtitle_gen", "same", legacy=True), Edge("index", "same", legacy=True)),
+    # plan 03-10: transcription on the engine. The file is decoded straight off the share
+    # and batched across the worker's jobs; the legacy extract edge still reaches it.
+    StageDef(
+        name="transcribe",
+        label="Transcribe",
+        subject_kinds=("video",),
+        pool="gpu",
+        lane="speech",
+        lane_order=2,
+        version=TRANSCRIBE_VERSION,
+        # what is said is tagging evidence too: its season, or its library's loose videos
+        edges=(
+            Edge("subtitle_gen", "same"),
+            Edge("index", "same"),
+            Edge("tag", "season_of"),
+            Edge("tag", "loose_library_of"),
+        ),
+        max_attempts=3,
     ),
-    _legacy("subtitle_gen", "Subtitles", ("video",), "cpu", 3),
-    _legacy(
-        "index",
-        "Index",
-        ("video",),
-        "cpu",
-        4,
+    StageDef(
+        name="subtitle_gen",
+        label="Subtitle files",
+        subject_kinds=("video",),
+        pool="nas_write",
+        lane="speech",
+        lane_order=3,
+        version=SUBTITLE_VERSION,
+        external_write=True,
+    ),
+    # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
+    StageDef(
+        name="index",
+        label="Search index",
+        subject_kinds=("video",),
+        pool="cpu",
+        lane="speech",
+        lane_order=4,
+        version=INDEX_VERSION,
         edges=(Edge("thumbnail", "same", legacy=True),),
     ),
     _legacy(

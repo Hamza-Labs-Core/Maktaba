@@ -19,13 +19,19 @@ const NAV = [
   { to: "/guide", key: "nav.guide", icon: "▥" },
   { to: "/search", key: "nav.search", icon: "⌕" },
   { to: "/queue", key: "nav.queue", icon: "⚙" },
+  { to: "/transcription", key: "nav.transcription", icon: "✎" },
   { to: "/settings", key: "nav.settings", icon: "☰" },
 ] as const;
 
-// The phone tab bar has room for five tabs and "More": Settings, the
-// account pages and the admin pages live behind More (/more).
+// Primary pages that live behind "More" on the phone (sidebar on wide
+// screens): the tab bar has room for five tabs and "More".
+const MORE_ONLY: ReadonlySet<string> = new Set(["/settings", "/transcription"]);
+
+// The phone tab bar has room for five tabs and "More": Settings,
+// Transcription, the account pages and the admin pages live behind More
+// (/more).
 const TABS = [
-  ...NAV.filter((item) => item.to !== "/settings"),
+  ...NAV.filter((item) => !MORE_ONLY.has(item.to)),
   { to: "/more", key: "nav.more", icon: "⋯" },
 ] as const;
 
@@ -230,7 +236,7 @@ export function MoreMenu() {
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
-  }> = [{ items: [...NAV.filter((item) => item.to === "/settings"), ...SECONDARY] }];
+  }> = [{ items: [...NAV.filter((item) => MORE_ONLY.has(item.to)), ...SECONDARY] }];
   if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">

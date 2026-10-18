@@ -3,7 +3,7 @@
 // toast renders the localized copy plus a Reload button whose click
 // activates the waiting SW (postMessage SKIP_WAITING).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -13,7 +13,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post: vi.fn() } };
 });
 
-import { AppShell } from "./AppShell";
+import { AppShell, MoreMenu } from "./AppShell";
 import { AuthProvider } from "../lib/auth";
 import { I18nProvider } from "../lib/i18n";
 import { ShortcutProvider } from "../lib/keyboard/shortcuts";
@@ -84,5 +84,42 @@ describe("AppShell admin navigation", () => {
     renderShell();
     const link = await screen.findByRole("link", { name: en["nav.admin.extensions"] });
     expect(link).toHaveAttribute("href", "/admin/extensions");
+  });
+});
+
+describe("AppShell transcription navigation", () => {
+  const viewer = { user: { id: "u2", username: "viewer", is_admin: false, roles: [] } };
+
+  it("lists Transcription in the sidebar, behind More on the six-item tab bar", async () => {
+    get.mockResolvedValue(viewer);
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", {
+      name: en["nav.primary"],
+    });
+    expect(within(sidebar).getByRole("link", { name: en["nav.transcription"] })).toHaveAttribute(
+      "href",
+      "/transcription"
+    );
+    const tabs = within(tabbar).getAllByRole("link");
+    expect(tabs).toHaveLength(6);
+    expect(tabs.map((a) => a.getAttribute("href"))).not.toContain("/transcription");
+    expect(tabs[tabs.length - 1]).toHaveAttribute("href", "/more");
+  });
+
+  it("puts Transcription on the More page", async () => {
+    get.mockResolvedValue(viewer);
+    render(
+      <MemoryRouter>
+        <I18nProvider>
+          <AuthProvider>
+            <MoreMenu />
+          </AuthProvider>
+        </I18nProvider>
+      </MemoryRouter>
+    );
+    expect(await screen.findByRole("link", { name: en["nav.transcription"] })).toHaveAttribute(
+      "href",
+      "/transcription"
+    );
   });
 });

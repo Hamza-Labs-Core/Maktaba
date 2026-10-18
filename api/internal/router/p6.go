@@ -36,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/speakers"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/transcription"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
@@ -47,9 +48,16 @@ type P6Deps struct {
 	DB              *sql.DB
 	PipelineClient  grpcpipeline.Client
 	StreamingClient grpcstreaming.Client
-	SearchSemantic  search.SemanticClient
-	URLSigner       streaming.URLSigner
-	EventHub        *ws.Hub
+	// SearchSemantic is the semantic leg of POST /api/search. Nil →
+	// derived from PipelineClient when it implements
+	// grpcpipeline.SemanticSearcher (the real client does); still nil →
+	// search is FTS-only.
+	SearchSemantic search.SemanticClient
+	// SearchSemanticBudget overrides the per-request deadline of the
+	// semantic leg (zero → search.DefaultSemanticBudget).
+	SearchSemanticBudget time.Duration
+	URLSigner            streaming.URLSigner
+	EventHub             *ws.Hub
 
 	// PerfRegistry, when set, receives the named hot-path caches MountP6
 	// instantiates (e.g. the search embedding cache, Story 18.2 AC2 /
@@ -79,6 +87,20 @@ func modelPipelineClient(c grpcpipeline.Client) models.Pipeline {
 		return nil
 	}
 	return c
+}
+
+// searchSemantic is the search handler's semantic leg: the explicit
+// SearchSemantic, else the pipeline's SemanticSearch RPC over the same
+// gRPC connection, else nil (FTS-only). A nil interface is returned as
+// nil, never as a typed nil the handler's nil check would miss.
+func searchSemantic(d P6Deps) search.SemanticClient {
+	if d.SearchSemantic != nil {
+		return d.SearchSemantic
+	}
+	if ss, ok := d.PipelineClient.(grpcpipeline.SemanticSearcher); ok && ss != nil {
+		return search.NewGRPCSemantic(ss, d.DB)
+	}
+	return nil
 }
 
 // MountP6 attaches every Phase 6 handler onto r. Safe to call with a
@@ -120,9 +142,10 @@ func MountP6(r chi.Router, d P6Deps) {
 		d.PerfRegistry.Register(embedCache)
 	}
 	searchHandler := &search.Handler{
-		DB:         d.DB,
-		Semantic:   d.SearchSemantic,
-		EmbedCache: embedCache,
+		DB:             d.DB,
+		Semantic:       searchSemantic(d),
+		EmbedCache:     embedCache,
+		SemanticBudget: d.SearchSemanticBudget,
 	}
 	searchHandler.Mount(r)
 
@@ -204,7 +227,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Plan 06-11 queue control centre. The bus (when wired) carries the
 	// durable queue.control / pool.updated events; snapshots go straight
 	// to the hub every 2 s while someone is subscribed to /ws/queues.
-	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub}
+	// Whole-library transcription report (/transcription page). It
+	// rides the same /ws/queues + jobs streams for liveness, and gives
+	// the Transcribe card its time left.
+	transcriptionHandler := &transcription.Handler{DB: d.DB}
+	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub, StageETA: map[string]func(context.Context, time.Time) (*float64, error){
+		"transcribe": transcriptionHandler.ETASeconds,
+	}}
 	if bus != nil {
 		queuesHandler.Events = bus
 	}
@@ -214,6 +243,8 @@ func MountP6(r chi.Router, d P6Deps) {
 		go queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval)
 	}
 	wsHandler.Mount(r)
+
+	transcriptionHandler.Mount(r)
 
 	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
 	// clients (Epic 14). Resolvers reuse the recommendations + search
