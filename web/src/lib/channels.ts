@@ -10,7 +10,7 @@
 // Centralising the contract here means there is exactly one place to
 // reconcile against the Go handlers once the backend merges — no surface
 // hard-codes a path or a field name of its own.
-import { api } from "./api";
+import { api, uploadWithProgress } from "./api";
 
 // ─── Channel ──────────────────────────────────────────────────────────
 // Mirrors the `channels` row (slot 0081). `mode` selects which programming
@@ -37,6 +37,54 @@ export interface Channel {
   transition?: ChannelTransition;
   library_id?: string;
   updated_at?: string;
+  /** The effective logo / watermark / loading screen and which were set by hand. */
+  art?: ChannelArt;
+}
+
+// ─── Channel art ──────────────────────────────────────────────────────
+// Uploaded art wins over the lineup plan's until removed ("back to plan").
+export type ArtKind = "logo" | "watermark" | "loading";
+export const ART_KINDS: ArtKind[] = ["logo", "watermark", "loading"];
+export type WatermarkPosition = "top-right" | "top-left" | "bottom-right" | "bottom-left";
+export const WATERMARK_POSITIONS: WatermarkPosition[] = [
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+/** Largest image the server takes (bytes). */
+export const ART_MAX_BYTES = 5 * 1024 * 1024;
+/** What each kind accepts (SVG only for the logo); the server checks the bytes. */
+export const ART_ACCEPT: Record<ArtKind, string> = {
+  logo: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml",
+  watermark: "image/png,image/jpeg,image/webp,image/gif",
+  loading: "image/png,image/jpeg,image/webp,image/gif",
+};
+
+export interface ArtImage {
+  url?: string;
+  path?: string;
+  overridden: boolean;
+}
+
+export interface WatermarkArt extends ArtImage {
+  position: WatermarkPosition;
+  width_pct: number;
+  margin_pct: number;
+}
+
+export interface ChannelArt {
+  logo: ArtImage;
+  watermark: WatermarkArt;
+  loading: ArtImage;
+}
+
+/** Whether a picked file is one the server will take for kind (by type and size). */
+export function artFileProblem(kind: ArtKind, file: File): "type" | "size" | null {
+  if (file.size > ART_MAX_BYTES) return "size";
+  const types = ART_ACCEPT[kind].split(",");
+  if (file.type && !types.includes(file.type)) return "type";
+  return null;
 }
 
 // ─── Program block ────────────────────────────────────────────────────
@@ -347,6 +395,23 @@ export const channelsApi = {
     api.post<{ channel_id: string; status: string }>(
       `/api/channels/${encodeURIComponent(id)}/regenerate`
     ),
+};
+
+const artPath = (id: string, kind: ArtKind) =>
+  `/api/channels/${encodeURIComponent(id)}/art/${kind}`;
+
+export const channelArtApi = {
+  upload: (id: string, kind: ArtKind, file: File, onProgress?: (fraction: number) => void) => {
+    const form = new FormData();
+    form.append("file", file);
+    return uploadWithProgress<Channel>(artPath(id, kind), form, onProgress);
+  },
+  /** Drops the hand-set art: the channel shows the plan's again. */
+  revert: (id: string, kind: ArtKind) => api.delete<Channel>(artPath(id, kind)),
+  watermark: (
+    id: string,
+    body: Partial<Pick<WatermarkArt, "position" | "width_pct" | "margin_pct">>
+  ) => api.patch<Channel>(artPath(id, "watermark"), body),
 };
 
 export const tvApi = {

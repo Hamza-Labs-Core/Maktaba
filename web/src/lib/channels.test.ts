@@ -94,3 +94,36 @@ describe("channels client", () => {
     expect(patch).toHaveBeenCalledWith("/api/tv/hdhr", { enabled: true });
   });
 });
+
+describe("channel art client", () => {
+  it("checks a picked file's type and size per kind", async () => {
+    const { artFileProblem, ART_MAX_BYTES } = await import("./channels");
+    const f = (type: string, size = 10) => new File([new Uint8Array(size)], "x", { type });
+    expect(artFileProblem("logo", f("image/svg+xml"))).toBeNull();
+    expect(artFileProblem("watermark", f("image/svg+xml"))).toBe("type");
+    expect(artFileProblem("loading", f("image/gif"))).toBeNull();
+    expect(artFileProblem("loading", f("text/plain"))).toBe("type");
+    expect(artFileProblem("logo", f("image/png", ART_MAX_BYTES + 1))).toBe("size");
+  });
+
+  it("never sends the derived art block in a channel body", () => {
+    const body = channelBody({
+      name: "A",
+      art: {
+        logo: { overridden: true },
+        watermark: { overridden: false, position: "top-right", width_pct: 12, margin_pct: 2 },
+        loading: { overridden: false },
+      },
+    });
+    expect("art" in body).toBe(false);
+  });
+
+  it("talks to /api/channels/{id}/art/{kind}", async () => {
+    const { channelArtApi } = await import("./channels");
+    patch.mockResolvedValue({});
+    await channelArtApi.watermark("c 1", { position: "bottom-left" });
+    expect(patch).toHaveBeenCalledWith("/api/channels/c%201/art/watermark", {
+      position: "bottom-left",
+    });
+  });
+});
