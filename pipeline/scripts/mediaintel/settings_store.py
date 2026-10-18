@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from maktaba_pipeline import settings
-from maktaba_pipeline.rules import SECTIONS as SECTIONS  # the sections and their help
+from maktaba_pipeline.rules import SECTIONS as _ALL_SECTIONS
+
+#: the sections this tool reads; the others (the queue engine's TV, exact-date, audit and
+#: repair stages) are Maktaba's, set in its settings
+SECTIONS = {
+    k: v
+    for k, v in _ALL_SECTIONS.items()
+    if k in ("planner", "groups", "detect", "tagcheck", "books")
+}
 
 
 def path_of(db_file: str | Path) -> Path:

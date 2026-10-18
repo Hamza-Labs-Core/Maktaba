@@ -2822,6 +2822,221 @@
      "minimum": 1
     }
    ]
+  },
+  {
+   "key": "dizquetv",
+   "title": "dizqueTV export",
+   "what": "how the planned channels are written into dizqueTV: removing what the plan dropped, rewriting a channel that is on air",
+   "fields": [
+    {
+     "name": "prune",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Remove what the plan no longer has",
+     "help": "Delete the channels, shows and filler lists this tool made earlier and the plan does not have now. Only what carries this tool's mark is touched.",
+     "default": false
+    },
+    {
+     "name": "clear_channels",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Also remove other channels not in the plan",
+     "help": "With the setting above: every channel that is not in the plan goes, including the ones made by hand. For a fresh lineup.",
+     "default": false
+    },
+    {
+     "name": "replace_existing",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Take over what exists",
+     "help": "A channel, show or filler list that is there under the same number or name but was not made by this tool is replaced. Off: it is left alone and reported.",
+     "default": false
+    },
+    {
+     "name": "ramadan",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Use the Ramadan grids",
+     "help": "A channel without one uses its regular grid.",
+     "default": false
+    },
+    {
+     "name": "keep_airing",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Rewrite without a break",
+     "help": "A rewrite lets the programme on air finish, goes on with each show where it stopped, drops no programme and leaves no gap; a channel whose schedule and programmes did not change is not saved at all (nobody watching is restarted). Off: the timeline is rebuilt from the start.",
+     "default": true
+    },
+    {
+     "name": "only_channels",
+     "kind": "str",
+     "group": "dizqueTV export",
+     "label": "Only these channels",
+     "help": "Channel numbers separated by commas (101, 105). Empty: all of them.",
+     "default": ""
+    }
+   ]
+  },
+  {
+   "key": "exactdates",
+   "title": "Exact dates",
+   "what": "exact upload dates fetched from YouTube for series members (off until switched on)",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Exact dates",
+     "label": "Fetch exact upload dates",
+     "help": "Ask YouTube for the exact upload date of each series member whose date is only approximate (month level). Slow and polite; a bot check stops the run and the next one goes on.",
+     "default": false
+    },
+    {
+     "name": "scope",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Which videos",
+     "help": "series: members of a series and videos in a playlist. all: every linked video.",
+     "default": "series",
+     "choices": [
+      "series",
+      "all"
+     ]
+    },
+    {
+     "name": "delay_s",
+     "kind": "float",
+     "group": "Exact dates",
+     "label": "Seconds between requests",
+     "help": "",
+     "default": 3.0,
+     "minimum": 0
+    },
+    {
+     "name": "lang",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Language",
+     "help": "The language YouTube is asked in (titles are translated).",
+     "default": "ar"
+    },
+    {
+     "name": "cookies_from_browser",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Use a signed-in browser",
+     "help": "firefox, chrome ...: yt-dlp uses that browser's YouTube session.",
+     "default": ""
+    },
+    {
+     "name": "max_per_run",
+     "kind": "int",
+     "group": "Exact dates",
+     "label": "Most videos a run",
+     "help": "0: all of them.",
+     "default": 0,
+     "minimum": 0
+    }
+   ]
+  },
+  {
+   "key": "audit",
+   "title": "Channel audit",
+   "what": "is what each channel airs about the channel",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Channel audit",
+     "label": "Audit the channels",
+     "help": "After the channels are written, check that what each airs is about the channel (reads dizqueTV, writes nothing).",
+     "default": true
+    },
+    {
+     "name": "window_days",
+     "kind": "int",
+     "group": "Channel audit",
+     "label": "Days weighed",
+     "help": "What airs from now for this many days.",
+     "default": 28,
+     "minimum": 1
+    },
+    {
+     "name": "keep",
+     "kind": "int",
+     "group": "Channel audit",
+     "label": "Audits kept",
+     "help": "",
+     "default": 5,
+     "minimum": 1
+    }
+   ]
+  },
+  {
+   "key": "repair",
+   "title": "Broken files",
+   "what": "downloads that cannot be read are fetched from YouTube again (off until switched on)",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "Repair broken downloads",
+     "help": "A file whose probe failed and that came from YouTube is downloaded again, checked, and swapped in on the share. Off: nothing is downloaded or changed.",
+     "default": false
+    },
+    {
+     "name": "cookies_from_browser",
+     "kind": "str",
+     "group": "Repair",
+     "label": "Use a signed-in browser",
+     "help": "firefox, chrome ...",
+     "default": ""
+    },
+    {
+     "name": "max_height",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Tallest picture",
+     "help": "At most this many pixels high.",
+     "default": 1080,
+     "minimum": 144
+    },
+    {
+     "name": "h264_first",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "H.264 first",
+     "help": "Take H.264 when YouTube has it (what the rest of the library is and what the GPU decodes); YouTube's 1080p is often AV1.",
+     "default": true
+    },
+    {
+     "name": "keep_broken_copy",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "Keep the broken file",
+     "help": "As <name>.broken beside the new one.",
+     "default": true
+    },
+    {
+     "name": "max_per_run",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Most files a run",
+     "help": "0: all of them.",
+     "default": 0,
+     "minimum": 0
+    },
+    {
+     "name": "download_timeout_minutes",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Download time limit (minutes)",
+     "help": "",
+     "default": 60,
+     "minimum": 1
+    }
+   ]
   }
  ]
 }

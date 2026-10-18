@@ -29,6 +29,12 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
+from .schedule.tv_settings import (
+    ChannelAuditConfig,
+    DizqueExportConfig,
+    ExactDatesConfig,
+    RepairConfig,
+)
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
 
@@ -57,6 +63,14 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tagcheck": (TagCheckConfig, "Tag check", "a language model checks what each series is "
                  "about"),
     "books": (BooksConfig, "Books", "the book a lesson series explains decides its topics"),
+    "dizquetv": (DizqueExportConfig, "dizqueTV export", "how the planned channels are written "
+                 "into dizqueTV: removing what the plan dropped, rewriting a channel that is "
+                 "on air"),
+    "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
+                   "for series members (off until switched on)"),
+    "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),
+    "repair": (RepairConfig, "Broken files", "downloads that cannot be read are fetched from "
+               "YouTube again (off until switched on)"),
 }  # fmt: skip
 
 
