@@ -217,3 +217,15 @@ async def test_runner_global_pool_is_limited_by_the_database(db: Database) -> No
     assert sum(claimed) == 2  # nas_read size is 2 across both "workers"
     release.set()
     await asyncio.gather(*ta, *tb)
+
+
+@pytest.mark.asyncio
+async def test_resuming_a_paused_job_is_not_a_new_attempt(db: Database) -> None:
+    ids = await _videos(db, 1, stage="categorize")
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'paused', attempts = max_attempts + 1"
+        " WHERE subject_id = $1",
+        str(ids[0]),
+    )
+    job = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"])
+    assert job is not None and job.attempts == job.max_attempts + 1  # unchanged, no error
