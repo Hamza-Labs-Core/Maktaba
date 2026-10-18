@@ -46,8 +46,8 @@ libraries, what to write, the step to start at and steps to leave out). To keep 
 own (it starts again after a crash), on Windows:
 
 ```
-set MEDIAINTEL_DB=E:	v\mediaintel\mediaintel.db
-set MEDIAINTEL_DIZQUETV=E:	v\dizquetv\.dizquetv
+set MEDIAINTEL_DB=E:\tv\mediaintel\mediaintel.db
+set MEDIAINTEL_DIZQUETV=E:\tv\dizquetv\.dizquetv
 scripts\mediaintel\control-centre.cmd
 ```
 
