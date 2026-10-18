@@ -21,6 +21,9 @@ import (
 type Handler struct {
 	DB      *sql.DB
 	NowFunc func() time.Time
+	// DataDir is the API's data volume (MAKTABA_DATA_DIR); uploaded
+	// channel art is kept under <DataDir>/channel-art/<channel id>/.
+	DataDir string
 }
 
 // Mount wires the channel routes. Admin-gating is enforced per-handler
@@ -34,6 +37,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Patch("/api/channels/{id}", h.Patch)
 	r.Delete("/api/channels/{id}", h.Delete)
 	r.Get("/api/channels/{id}/logo", h.Logo)
+	r.Get("/api/channels/{id}/art/{kind}", h.ArtGet)
+	r.Post("/api/channels/{id}/art/{kind}", h.ArtUpload)
+	r.Patch("/api/channels/{id}/art/{kind}", h.ArtSettings)
+	r.Delete("/api/channels/{id}/art/{kind}", h.ArtRevert)
 }
 
 func (h *Handler) repo() *repo { return &repo{db: h.DB} }
@@ -66,10 +73,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.now()
 	items := make([]Channel, 0, len(all))
+	ids := make([]string, 0, len(all))
+	for _, c := range all {
+		ids = append(ids, c.ID)
+	}
+	overrides := h.overriddenKinds(r.Context(), ids)
 	for _, c := range all {
 		if !h.canRead(p, c.LibraryID) {
 			continue
 		}
+		applyOverrideFlags(&c, overrides[c.ID])
 		if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil {
 			c.NowPlaying = np
 		}
@@ -156,7 +169,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Slug = slug
-	c = withLogoURL(c)
+	c = withArt(withLogoURL(c))
 
 	// Number: explicit if given, else next free in scope.
 	if req.Number != nil {
@@ -207,6 +220,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if np, err := h.repo().nowPlaying(r.Context(), c.ID, h.now()); err == nil && np != nil {
 		c.NowPlaying = np
 	}
+	h.attachOverrides(r.Context(), &c)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 
@@ -285,12 +299,13 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if req.Number != nil {
 		add("number", *req.Number)
 	}
+	// The logo is channel art: a changed logo_path is recorded as a hand
+	// override (so the plan writer keeps it), and "" goes back to the plan.
+	logoChange := false
+	newLogo := ""
 	if req.LogoPath != nil {
-		if v := strings.TrimSpace(*req.LogoPath); v == "" {
-			add("logo_path", nil)
-		} else {
-			add("logo_path", v)
-		}
+		newLogo = strings.TrimSpace(*req.LogoPath)
+		logoChange = newLogo != artPath(existing, ArtLogo)
 	}
 	if req.Category != nil {
 		add("category", *req.Category)
@@ -299,7 +314,15 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		add("mode", *req.Mode)
 	}
 	if len(req.ModeConfig) > 0 {
-		add("mode_config", string(req.ModeConfig))
+		// mode_config.look is managed through the art endpoints only: the
+		// stored look is kept whatever the body says, so a form that carried
+		// an old copy of it can never undo an upload.
+		mc, err := keepLook(req.ModeConfig, existing.ModeConfig)
+		if err != nil {
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "mode_config", Message: "must be a JSON object"}}))
+			return
+		}
+		add("mode_config", mc)
 	}
 	if len(req.SourceFilter) > 0 {
 		add("source_filter", string(req.SourceFilter))
@@ -313,22 +336,37 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if req.SortOrder != nil {
 		add("sort_order", *req.SortOrder)
 	}
-	if len(sets) == 0 {
+	if len(sets) == 0 && !logoChange {
+		h.attachOverrides(r.Context(), &existing)
 		common.WriteJSON(w, r, http.StatusOK, existing)
 		return
 	}
-	add("updated_at", h.now())
-	args = append(args, id)
-	q := "UPDATE channels SET " + strings.Join(sets, ", ") + " WHERE id = $" + itoa(idx)
-	if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-		if isUniqueViolation(err) {
-			httperror.Write(w, r, httperror.Conflict(
-				"https://maktaba.dev/problems/channel-number-exists",
-				"a channel with that number already exists in this library"))
+	if len(sets) > 0 {
+		add("updated_at", h.now())
+		args = append(args, id)
+		q := "UPDATE channels SET " + strings.Join(sets, ", ") + " WHERE id = $" + itoa(idx)
+		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
+			if isUniqueViolation(err) {
+				httperror.Write(w, r, httperror.Conflict(
+					"https://maktaba.dev/problems/channel-number-exists",
+					"a channel with that number already exists in this library"))
+				return
+			}
+			httperror.Write(w, r, httperror.Internal("update channel: "+err.Error()))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("update channel: "+err.Error()))
-		return
+	}
+	if logoChange {
+		var err error
+		if newLogo == "" {
+			err = h.revertArt(r.Context(), existing, ArtLogo)
+		} else if err = h.setOverride(r.Context(), existing, ArtLogo, &newLogo, nil); err == nil {
+			removeArtFiles(h.artDir(existing.ID), ArtLogo, newLogo)
+		}
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("update logo: "+err.Error()))
+			return
+		}
 	}
 
 	// D5: a rule change (mode / mode_config / source_filter) marks the
@@ -344,6 +382,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("reload channel"))
 		return
 	}
+	h.attachOverrides(r.Context(), &updated)
 	common.WriteJSON(w, r, http.StatusOK, updated)
 }
 

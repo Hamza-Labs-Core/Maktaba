@@ -185,7 +185,7 @@ func DefaultPublicAllowlist() map[string]struct{} {
 func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, ok := public[r.URL.Path]; ok {
+			if _, ok := public[r.URL.Path]; ok || IsPublicChannelArt(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -228,4 +228,31 @@ func readBearer(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(v[len(prefix):])
+}
+
+// IsPublicChannelArt reports whether r reads a channel's art image:
+// GET/HEAD /api/channels/{id}/logo or /api/channels/{id}/art/{logo|
+// watermark|loading}. Those stay anonymous: a channel picture is not
+// sensitive, and the players that load it (Plex reading the XMLTV icon,
+// an <img> on another origin) carry no session. Only that exact shape is
+// public (one id segment, a known kind), never any other channel route.
+func IsPublicChannelArt(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	rest, ok := strings.CutPrefix(r.URL.Path, "/api/channels/")
+	if !ok {
+		return false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 || parts[0] == "" {
+		return false
+	}
+	switch {
+	case len(parts) == 2:
+		return parts[1] == "logo"
+	case len(parts) == 3 && parts[1] == "art":
+		return parts[2] == "logo" || parts[2] == "watermark" || parts[2] == "loading"
+	}
+	return false
 }

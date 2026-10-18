@@ -51,6 +51,14 @@ func newLogoServer(t *testing.T) (*sql.DB, http.Handler) {
 		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`CREATE TABLE channel_art_overrides (
+		channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL CHECK (kind IN ('logo','watermark','loading')),
+		path TEXT, settings TEXT, base TEXT,
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+		PRIMARY KEY (channel_id, kind))`); err != nil {
+		t.Fatal(err)
+	}
 	r := chi.NewRouter()
 	(&Handler{DB: db}).Mount(r)
 	return db, r

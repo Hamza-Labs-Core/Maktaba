@@ -42,7 +42,10 @@ type Channel struct {
 	LogoPath  *string `json:"logo_path,omitempty"`
 	// LogoURL is where the browser (and the guide) loads the logo from:
 	// GET /api/channels/{id}/logo. Set whenever logo_path is.
-	LogoURL      string          `json:"logo_url,omitempty"`
+	LogoURL string `json:"logo_url,omitempty"`
+	// Art is the effective logo / watermark / loading screen (what the
+	// stream engine reads) and which of them were set by hand.
+	Art          *ChannelArt     `json:"art,omitempty"`
 	Category     string          `json:"category"`
 	Mode         string          `json:"mode"`
 	ModeConfig   json.RawMessage `json:"mode_config,omitempty"`

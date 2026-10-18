@@ -24,6 +24,9 @@ type P27Deps struct {
 	// PublicBaseURL is the streaming service's LAN-reachable base
 	// (MAKTABA_PUBLIC_BASE_URL), reported by /api/tv/info.
 	PublicBaseURL string
+	// DataDir is the data volume (MAKTABA_DATA_DIR); uploaded channel art
+	// is stored under <DataDir>/channel-art/.
+	DataDir string
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -32,7 +35,7 @@ func MountP27(r chi.Router, d P27Deps) {
 	if d.DB == nil {
 		return
 	}
-	chh := &channels.Handler{DB: d.DB}
+	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir}
 	chh.Mount(r)
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB}).Mount(r)

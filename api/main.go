@@ -412,6 +412,7 @@ func runServe() error {
 			router.MountP27(r, router.P27Deps{
 				DB:            appDB,
 				PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"),
+				DataDir:       statsDataDir,
 			})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")

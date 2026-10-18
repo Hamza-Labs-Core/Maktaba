@@ -115,6 +115,7 @@ land at the next free integer (no gaps, no reservations).
 | `0106` | `0106_exact_dates_repair_stages.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0093 | `job_stages` rows for `exact_dates` (exact upload dates per series member, off until the `exactdates` rules enable it; `youtube_sync` now triggers it) and `repair_broken` (broken downloads fetched from YouTube again, off until the `repair` rules enable it); `worker_pools` `audits` (channel audit) and `repairs`. |
 | `0107` | `0107_channel_audits.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0090 | `channel_audits` and `channel_audit_channels`: the dizqueTV channel audit (is what a channel airs about the channel?), one row per run and per channel in it; the same report is written as `channel-audit.html`. |
 | `0108` | `0108_video_repairs.sql` | [plan-06-11](../../specs/epics/06-job-queue/plan-06-11-queue-graph.md) | 0106 | `video_repairs`: what the `repair_broken` stage did to each file whose probe failed (repaired, read fine, failed, no YouTube id) and where the broken copy was kept. |
+| `0110` | `0110_channel_art_overrides.sql` | [plan-27-01](../../specs/epics/27-live-channels/plan-27-01-channel-definition.md) | 0081 | `channel_art_overrides`: channel art set by hand (uploaded logo, corner watermark, loading screen; watermark corner/size). `channels.logo_path` / `mode_config.look` keep the effective art; a row here makes the lineup plan writer keep that piece, and deleting it goes back to the plan's value. |
 
 ---
 

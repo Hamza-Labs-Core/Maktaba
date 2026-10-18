@@ -72,7 +72,10 @@ func ValidateLogoPath(p string) error {
 // session (Plex reading the XMLTV icon, <img> on another origin) need it.
 // A file logo is streamed with cache headers (ETag/Last-Modified, so a
 // revalidation is a 304); a URL logo is a redirect.
-func (h *Handler) Logo(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Logo(w http.ResponseWriter, r *http.Request) { h.serveArt(w, r, ArtLogo) }
+
+// serveArt streams (or redirects to) the effective image of kind.
+func (h *Handler) serveArt(w http.ResponseWriter, r *http.Request, kind string) {
 	id := chi.URLParam(r, "id")
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
@@ -83,29 +86,29 @@ func (h *Handler) Logo(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load channel"))
 		return
 	}
-	if c.LogoPath == nil || strings.TrimSpace(*c.LogoPath) == "" {
-		httperror.Write(w, r, httperror.NotFound("channel has no logo"))
+	p := artPath(c, kind)
+	if p == "" {
+		httperror.Write(w, r, httperror.NotFound("channel has no "+kind))
 		return
 	}
-	p := strings.TrimSpace(*c.LogoPath)
 	if isRemoteLogo(p) {
 		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(logoMaxAge))
 		http.Redirect(w, r, p, http.StatusFound)
 		return
 	}
 	if ValidateLogoPath(p) != nil {
-		httperror.Write(w, r, httperror.NotFound("logo is not a servable image"))
+		httperror.Write(w, r, httperror.NotFound(kind+" is not a servable image"))
 		return
 	}
 	f, err := os.Open(p) //nolint:gosec // admin-set path, image extensions only (ValidateLogoPath)
 	if err != nil {
-		httperror.Write(w, r, httperror.NotFound("logo file missing"))
+		httperror.Write(w, r, httperror.NotFound(kind+" file missing"))
 		return
 	}
 	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil || st.IsDir() {
-		httperror.Write(w, r, httperror.NotFound("logo file missing"))
+		httperror.Write(w, r, httperror.NotFound(kind+" file missing"))
 		return
 	}
 	w.Header().Set("Content-Type", logoTypes[strings.ToLower(filepath.Ext(p))])
