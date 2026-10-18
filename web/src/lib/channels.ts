@@ -26,6 +26,8 @@ export interface Channel {
   name: string;
   slug?: string;
   logo_path?: string | null;
+  /** Servable logo (GET /api/channels/{id}/logo); set whenever logo_path is. */
+  logo_url?: string | null;
   category?: string | null;
   mode: ChannelMode;
   mode_config?: Record<string, unknown>;
@@ -82,11 +84,44 @@ export interface NowResponse {
   items: NowEntry[];
 }
 
-export interface TuneResponse {
-  session_id: string;
-  manifest_url?: string;
-  direct_url?: string;
-  channel_id: string;
+// ─── Live TV access (/api/tv) ─────────────────────────────────────────
+// Where the TV streams live: the streaming service's LAN address (what
+// Plex is pointed at) plus the same-origin paths the web port proxies.
+export interface TvInfo {
+  stream_base_url: string;
+  hdhr_address: string;
+  xmltv_url: string;
+  m3u_url: string;
+  base_from_config: boolean;
+  xmltv_path: string;
+  m3u_path: string;
+  hls_path_template: string;
+}
+
+// The emulated HDHomeRun tuner Plex / Jellyfin / Emby add as a DVR.
+export interface HdhrDevice {
+  device_id: string;
+  friendly_name: string;
+  tuner_count: number;
+  enabled: boolean;
+  max_tuners: number;
+}
+
+/**
+ * The channel's live HLS playlist, through the web port (it proxies
+ * /stream/ to the streaming service). Tuning is lazy: requesting this
+ * URL starts the channel, so there is no separate "tune" call.
+ */
+export function liveStreamUrl(channelId: string): string {
+  return `/stream/channel/${encodeURIComponent(channelId)}/index.m3u8`;
+}
+
+/** The logo the browser should load for a channel, if it has one. */
+export function channelLogo(c: Pick<Channel, "logo_url" | "logo_path">): string | null {
+  if (c.logo_url) return c.logo_url;
+  // Older payloads only carried the raw value; a URL is still loadable.
+  if (c.logo_path && /^https?:\/\//i.test(c.logo_path)) return c.logo_path;
+  return null;
 }
 
 // ─── Filler & bumpers (27.10) ─────────────────────────────────────────
@@ -157,6 +192,7 @@ interface WireHeader {
   name: string;
   slug?: string;
   logo?: string;
+  logo_url?: string;
 }
 
 function fromHeader(h: WireHeader): Channel {
@@ -166,6 +202,7 @@ function fromHeader(h: WireHeader): Channel {
     name: h.name,
     slug: h.slug,
     logo_path: h.logo ?? null,
+    logo_url: h.logo_url ?? null,
     mode: "schedule",
     enabled: true,
     sort_order: h.number,
@@ -230,6 +267,37 @@ async function nowFrom(
   };
 }
 
+// The API decodes channel bodies strictly (unknown fields are a 400), so
+// only the writable fields are sent — never id/slug/timestamps/now_playing
+// or the derived logo_url an edit form carries along.
+const PATCH_FIELDS = [
+  "number",
+  "name",
+  "logo_path",
+  "category",
+  "mode",
+  "mode_config",
+  "source_filter",
+  "transition",
+  "enabled",
+  "sort_order",
+] as const;
+const CREATE_FIELDS = [...PATCH_FIELDS, "library_id"] as const;
+
+export function channelBody(
+  c: Partial<Channel>,
+  fields: readonly (keyof Channel)[] = PATCH_FIELDS
+): Partial<Channel> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    const v = c[f];
+    if (v !== undefined && v !== null) out[f] = v;
+  }
+  // An emptied logo field clears the logo (the API maps "" to NULL).
+  if (fields.includes("logo_path") && c.logo_path === null) out.logo_path = "";
+  return out as Partial<Channel>;
+}
+
 // ─── API helpers ──────────────────────────────────────────────────────
 export const channelsApi = {
   list: (params?: { category?: string; enabled?: boolean }) => {
@@ -240,9 +308,10 @@ export const channelsApi = {
     return api.get<{ items: Channel[] }>(`/api/channels${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => api.get<Channel>(`/api/channels/${encodeURIComponent(id)}`),
-  create: (body: Partial<Channel>) => api.post<Channel>("/api/channels", body),
+  create: (body: Partial<Channel>) =>
+    api.post<Channel>("/api/channels", channelBody(body, CREATE_FIELDS)),
   update: (id: string, body: Partial<Channel>) =>
-    api.patch<Channel>(`/api/channels/${encodeURIComponent(id)}`, body),
+    api.patch<Channel>(`/api/channels/${encodeURIComponent(id)}`, channelBody(body, PATCH_FIELDS)),
   remove: (id: string) => api.delete<void>(`/api/channels/${encodeURIComponent(id)}`),
   reorder: (order: Array<{ id: string; number: number }>) =>
     api.post<void>("/api/channels/reorder", order),
@@ -266,14 +335,25 @@ export const channelsApi = {
     );
   },
   now: () => nowFrom(api.get("/api/channels/now")),
-  schedulePreview: (id: string, hours = 48) =>
-    api.get<GuideResponse>(
-      `/api/channels/${encodeURIComponent(id)}/schedule/preview?hours=${hours}`
-    ),
+  // The next `hours` of a channel's generated schedule, read from its
+  // per-channel guide (there is no separate preview endpoint).
+  schedulePreview: (id: string, hours = 48, now: Date = new Date()): Promise<GuideResponse> =>
+    channelsApi.channelGuide(id, {
+      start: now.toISOString(),
+      end: new Date(now.getTime() + hours * 3_600_000).toISOString(),
+    }),
+  // Marks the schedule stale; the scheduler rebuilds the future tail (202).
   regenerate: (id: string) =>
-    api.post<void>(`/api/channels/${encodeURIComponent(id)}/schedule/regenerate`),
+    api.post<{ channel_id: string; status: string }>(
+      `/api/channels/${encodeURIComponent(id)}/regenerate`
+    ),
+};
 
-  tune: (id: string) => api.post<TuneResponse>(`/api/channels/${encodeURIComponent(id)}/tune`),
+export const tvApi = {
+  info: () => api.get<TvInfo>("/api/tv/info"),
+  hdhr: () => api.get<HdhrDevice>("/api/tv/hdhr"),
+  updateHdhr: (body: Partial<Pick<HdhrDevice, "enabled" | "friendly_name" | "tuner_count">>) =>
+    api.patch<HdhrDevice>("/api/tv/hdhr", body),
 };
 
 export const fillerApi = {

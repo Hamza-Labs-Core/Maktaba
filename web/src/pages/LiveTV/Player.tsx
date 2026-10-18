@@ -16,25 +16,33 @@
 //
 // Deep link: /live/{number} tunes directly; an unknown/disabled number
 // resolves to an empty state (EC6).
+//
+// Playback is the channel's HLS playlist through the web port
+// (/stream/channel/{id}/index.m3u8, proxied to the streaming service).
+// Tuning is lazy — requesting the playlist starts the channel — so a
+// first request can fail while the encoder warms up; the player retries a
+// few times before showing the "can't play here" slate.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
-import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import {
+  channelLogo,
   channelsApi,
   isAiring,
+  liveStreamUrl,
   progressFraction,
   type Channel,
   type NowEntry,
-  type TuneResponse,
 } from "../../lib/channels";
 
 const BANNER_MS = 5000;
 const SURF_COMMIT_MS = 400; // debounce rapid surfing (EC2)
 const NUMBER_COMMIT_MS = 1500; // number-entry commit window (AC2)
+export const LIVE_RETRIES = 3; // lazy tuning: the first playlist request may race the encoder
+export const LIVE_RETRY_MS = 2000;
 
 export function Player() {
   const { number } = useParams();
@@ -43,8 +51,9 @@ export function Player() {
 
   const [lineup, setLineup] = useState<Channel[] | null>(null);
   const [nowEntries, setNowEntries] = useState<NowEntry[]>([]);
-  const [session, setSession] = useState<TuneResponse | null>(null);
   const [tuning, setTuning] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [bannerVisible, setBannerVisible] = useState(true);
   const [miniGuide, setMiniGuide] = useState(false);
   const [numberBuffer, setNumberBuffer] = useState("");
@@ -56,6 +65,7 @@ export function Player() {
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const surfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const numberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const targetNumber = Number(number);
 
@@ -95,8 +105,8 @@ export function Player() {
     [nowEntries, channel]
   );
 
-  // Tune whenever the resolved channel changes. A teardown DELETEs the
-  // session so an abandoned tune doesn't keep a transcode warm.
+  // Tune whenever the resolved channel changes: point the <video> at the
+  // channel's playlist and wait for the first frame.
   useEffect(() => {
     if (lineup === null) return; // still loading lineup
     if (!channel) {
@@ -105,29 +115,24 @@ export function Player() {
     }
     setNotFound(false);
     setTuning(true);
+    setFailed(false);
+    setAttempt(0);
     setBannerVisible(true);
-    let cancelled = false;
-    let sid: string | null = null;
-    channelsApi
-      .tune(channel.id)
-      .then((s) => {
-        if (cancelled) return;
-        sid = s.session_id;
-        setSession(s);
-        setTuning(false);
-      })
-      .catch(() => {
-        if (!cancelled) setTuning(false);
-      });
     return () => {
-      cancelled = true;
-      // Tear the session down so an abandoned tune doesn't keep a
-      // transcode warm — the engine's idle reaper is the backstop (EC7).
-      if (sid) {
-        void api.delete(`/api/stream/sessions/${encodeURIComponent(sid)}`).catch(() => {});
-      }
+      if (retryTimer.current) clearTimeout(retryTimer.current);
     };
   }, [channel, lineup]);
+
+  const onPlaying = useCallback(() => setTuning(false), []);
+  const onVideoError = useCallback(() => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    if (attempt + 1 >= LIVE_RETRIES) {
+      setTuning(false);
+      setFailed(true);
+      return;
+    }
+    retryTimer.current = setTimeout(() => setAttempt((a) => a + 1), LIVE_RETRY_MS);
+  }, [attempt]);
 
   // Auto-hide the banner ~5s after it appears (suppressed while the
   // mini-guide is open to avoid stacked overlays, EC3).
@@ -139,7 +144,7 @@ export function Player() {
     return () => {
       if (bannerTimer.current) clearTimeout(bannerTimer.current);
     };
-  }, [bannerVisible, miniGuide, session]);
+  }, [bannerVisible, miniGuide, channel]);
 
   // surf debounces to the channel the user lands on for >SURF_COMMIT_MS.
   const surf = useCallback(
@@ -236,11 +241,15 @@ export function Player() {
   }
   if (lineup === null) return <p className="mkt-loading">{t("common.loading")}</p>;
 
-  const src = session?.manifest_url || session?.direct_url || "";
+  // A retry re-requests the playlist (the cache-buster defeats a cached
+  // error); attempt 0 is the plain URL.
+  const base = channel ? liveStreamUrl(channel.id) : "";
+  const src = base && attempt > 0 ? `${base}?retry=${attempt}` : base;
   const current = entry?.current ?? null;
   const next = entry?.next ?? null;
   const prog = current ? progressFraction(current, nowMs) : null;
-  const degraded = !tuning && !src;
+  const degraded = failed || !src;
+  const logo = channel ? channelLogo(channel) : null;
 
   return (
     <section
@@ -253,7 +262,15 @@ export function Player() {
       <div className="mkt-live__stage">
         {degraded ? (
           <div className="mkt-live__slate" data-testid="live-slate">
-            {t("live.unavailable")}
+            <p>{t("live.unavailable")}</p>
+            {src && (
+              <p className="mkt-live__slate-hint">
+                {t("live.openElsewhere")}{" "}
+                <a href={base} data-testid="live-direct-link">
+                  {t("live.directLink")}
+                </a>
+              </p>
+            )}
           </div>
         ) : (
           <video
@@ -264,6 +281,9 @@ export function Player() {
             autoPlay
             playsInline
             controls
+            onPlaying={onPlaying}
+            onLoadedData={onPlaying}
+            onError={onVideoError}
           />
         )}
 
@@ -280,9 +300,7 @@ export function Player() {
         {bannerVisible && !miniGuide && channel && (
           <div className="mkt-live__banner" data-testid="tune-banner">
             <div className="mkt-live__banner-id">
-              {channel.logo_path && (
-                <img className="mkt-live__logo" src={channel.logo_path} alt="" />
-              )}
+              {logo && <img className="mkt-live__logo" src={logo} alt="" />}
               <span className="mkt-guide__channum">{channel.number}</span>
               <strong>{channel.name}</strong>
             </div>
