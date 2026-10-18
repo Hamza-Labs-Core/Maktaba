@@ -147,3 +147,20 @@ def test_slot_minutes_0_is_back_to_back_all_day() -> None:
     assert all(abs(a.end_s - b.start_s) < 1e-6 for a, b in zip(progs, progs[1:], strict=False))
     dz = dizquetv_time_slots(ch, p)
     assert len(dz["slots"]) == 1 and dz["pad"] == 1 and dz["maxFlex"] > 0
+
+
+def test_filler_off_is_programmes_only_and_never_a_gap() -> None:
+    from dataclasses import replace
+
+    t = replace(NONSTOP, slot_minutes=0, filler=False)
+    clips = [_clip("Y:/c/prophet.mp4", {"topic:prophets_stories": 0.9})]
+    p = suggest_channels(
+        [_season("a1", "قصص الأنبياء", 1, minutes=23)], clips,
+        PlannerConfig(themes=(t,), mix_channel=False, presenter_channels=False,
+                      dawn_quran=False),  # type: ignore[arg-type]
+    )  # fmt: skip
+    ch = next(c for c in p.channels if c.key == "prophets_awadi")
+    assert ch.filler_pools == () and all(s.filler_pool is None for s in ch.slots)
+    day = simulate(ch, p)
+    assert {a.kind for a in day} == {"program"}  # no filler, no flex
+    assert dizquetv_time_slots(ch, p)["maxFlex"] == 1

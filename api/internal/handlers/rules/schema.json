@@ -10,7 +10,7 @@
      "kind": "rows",
      "group": "Channels",
      "label": "Themed channels",
-     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Series: the shows the channel is made of (part of the show's name; with libraries, only those shows of those libraries). Kind: theme (a show grid of the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its own libraries / series, back to back in order all day, the first again after the last; no grid, no breaks). Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule (a nonstop channel: none).",
+     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Series: the shows the channel is made of (part of the show's name; with libraries, only those shows of those libraries). Kind: theme (a show grid of the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its own libraries / series in order all day, the first again after the last; no show grid). Slot minutes (nonstop): an episode every this many minutes, filler between; 0: back to back. Filler topics / with / libraries: its second-choice breaks. Filler off: programmes only, no clips. Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule (a nonstop channel: none).",
      "default": [
       {
        "key": "quran",
@@ -35,7 +35,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "kids",
@@ -65,7 +66,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "ramadan",
@@ -91,7 +93,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "seerah",
@@ -114,7 +117,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "tafsir",
@@ -137,7 +141,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "hadith",
@@ -160,7 +165,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "fiqh",
@@ -183,7 +189,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "aqeedah",
@@ -207,7 +214,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "history",
@@ -231,7 +239,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "palestine",
@@ -254,7 +263,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "news",
@@ -277,7 +287,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "talk",
@@ -302,7 +313,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "prophets",
@@ -325,7 +337,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "raqaiq",
@@ -350,7 +363,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "akhlaq",
@@ -374,7 +388,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "family",
@@ -399,7 +414,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "salah",
@@ -422,7 +438,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "muamalat",
@@ -445,7 +462,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "family_fiqh",
@@ -468,7 +486,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "fasting",
@@ -491,7 +510,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "qiyam",
@@ -514,7 +534,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "quran_learning",
@@ -537,7 +558,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "quran_competition",
@@ -560,7 +582,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "zakat",
@@ -583,7 +606,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "hajj",
@@ -606,7 +630,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "stories",
@@ -629,7 +654,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "nasheed",
@@ -653,7 +679,8 @@
        "slot_minutes": 0,
        "filler_topics": [],
        "filler_with": [],
-       "filler_libraries": []
+       "filler_libraries": [],
+       "filler": true
       }
      ],
      "columns": [
@@ -675,7 +702,8 @@
       "slot_minutes",
       "filler_topics",
       "filler_with",
-      "filler_libraries"
+      "filler_libraries",
+      "filler"
      ],
      "column_kinds": [
       "str",
@@ -696,13 +724,15 @@
       "int",
       "list",
       "list",
-      "list"
+      "list",
+      "bool"
      ],
      "column_optional": [
       false,
       false,
       false,
       false,
+      true,
       true,
       true,
       true,

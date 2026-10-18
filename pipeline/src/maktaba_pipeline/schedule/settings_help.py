@@ -105,8 +105,10 @@ PLANNER_HELP: dict[str, Help] = {
         "never on it. Series: the shows the channel is made of (part of the show's name; "
         "with libraries, only those shows of those libraries). Kind: theme (a show grid of "
         "the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its "
-        "own libraries / series, back to back in order all day, the first again after the "
-        "last; no grid, no breaks). Min hours: this theme's own minimum "
+        "own libraries / series in order all day, the first again after the last; no show "
+        "grid). Slot minutes (nonstop): an episode every this many minutes, filler between; "
+        "0: back to back. Filler topics / with / libraries: its second-choice breaks. "
+        "Filler off: programmes only, no clips. Min hours: this theme's own minimum "
         "instead of the days-without-a-repeat rule (the Quran channel repeats by nature); "
         "empty: the rule (a nonstop channel: none).",
     ),

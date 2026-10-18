@@ -295,6 +295,8 @@ class ThemeSpec:
     filler_with: tuple[str, ...] = ()
     #: … or the short clips of these libraries («استوديو القمة»; on ``filler_with`` if set)
     filler_libraries: tuple[str, ...] = ()
+    #: False: no clips at all, programmes only (a back-to-back nonstop channel)
+    filler: bool = True
 
 
 def _lib_in(names: Sequence[str], *where: str) -> bool:
@@ -2602,6 +2604,24 @@ def suggest_channels(
         )  # fmt: skip
         return set(ids)
 
+    def without_filler(build: Callable[[set[str]], set[str]]) -> Callable[[set[str]], set[str]]:
+        """``filler: false``: the channel the build adds keeps its programmes only."""
+
+        def run(ids: set[str]) -> set[str]:
+            n = len(channels)
+            out = build(ids)
+            for k in range(n, len(channels)):
+                ch = channels[k]
+                channels[k] = replace(
+                    ch, filler_pools=(),
+                    slots=tuple(replace(sl, filler_pool=None) for sl in ch.slots),
+                    ramadan_slots=tuple(replace(sl, filler_pool=None) for sl in ch.ramadan_slots),
+                    reasons=(*ch.reasons, "no filler (its settings): programmes only"),
+                )  # fmt: skip
+            return out
+
+        return run
+
     kinds = ("theme", "quran", "nonstop")
     for n_t, t in enumerate(cfg.themes):
         if t.kind not in kinds:
@@ -2620,7 +2640,10 @@ def suggest_channels(
             if hours_of(ids) < need:
                 short(f"theme {t.key}", hours_of(ids), need)
                 continue
-            offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_nonstop, t), t)
+            b = partial(build_nonstop, t)
+            offer(
+                "theme", n_t, f"theme {t.key}", ids, need, b if t.filler else without_filler(b), t
+            )
             continue
         need = t.min_hours if t.min_hours is not None else max(cfg.theme_min_hours, month_h)
         if t.kind == "quran":
@@ -2644,7 +2667,8 @@ def suggest_channels(
         if hours < need:
             short(f"theme {t.key}", hours, need)
             continue
-        offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_theme, t), t)
+        b = partial(build_theme, t)
+        offer("theme", n_t, f"theme {t.key}", ids, need, b if t.filler else without_filler(b), t)
 
     # ---- mix channel
     excluded = set(cfg.mix_exclude_topics)
@@ -2938,7 +2962,8 @@ def simulate(
                 c = cursors[lane.key]
                 tol = cfg.overrun_tolerance_minutes * 60.0
                 clock = lane.pattern == "nonstop" and lane.slot_minutes > 0  # one a slot
-                gap = 0.0 if clock else cfg.slot_max_filler_minutes * 60.0
+                b2b = lane.pattern == "nonstop" and not clock  # back to back: never a gap
+                gap = 0.0 if clock else 1.0 if b2b else cfg.slot_max_filler_minutes * 60.0
                 while eps:
                     u, e = eps[c % len(eps)]
                     # doesn't fit what is left (an episode may end up to the tolerance past
@@ -3120,8 +3145,10 @@ def dizquetv_time_slots(
     # a nonstop channel: one episode a slot, each padded to the slot (dizqueTV's pad), and
     # its slots kept apart, so a slot started late costs that slot, never the whole day
     lane = plan.lanes.get(src[0].lane or "") if channel.kind == "nonstop" and src else None
+    max_flex = cfg.slot_max_filler_minutes * 60_000
     if lane is not None and not lane.slot_minutes:
-        lane = None  # back to back: one slot all day, as any other
+        lane = None  # back to back: one slot all day, as any other …
+        max_flex = 1  # … and never a gap: the next episode whatever room is left
     pad = lane.slot_minutes * 60_000 if lane is not None else cfg.dz_pad_ms
     merged: list[tuple[int, str, str]] = []
     for item in raw:
@@ -3137,6 +3164,6 @@ def dizquetv_time_slots(
         "flexPreference": "distribute",
         "pad": pad,
         # dizqueTV (Maktaba's build): a longer gap takes the next episode, past the slot
-        "maxFlex": 0 if lane is not None else cfg.slot_max_filler_minutes * 60_000,
+        "maxFlex": 0 if lane is not None else max_flex,
         "slots": [{"time": t, "showId": sh, "order": o} for t, sh, o in merged],
     }
