@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..log import get_logger
 from . import packer, slate
+from .base import ChannelMode
+from .filler import FillerPicker
 from .planner import make_planner
 from .repo import ScheduleRepo, ScheduleState, SqlRepo
 
@@ -103,24 +105,42 @@ async def run_schedule(
         # Already covered past the requested horizon; nothing to do.
         return 0
 
+    tv = await repo.load_tv()
     slot_content = await repo.resolve_slot_content(channel)
     planner = make_planner(
-        channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content
+        channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content, tv=tv
     )
     content = await repo.resolve_content(channel)
-    filler = await repo.load_filler(channel)
+    if state.horizon_until is not None and anchor < state.horizon_until:
+        # a rewrite of a future already planned (a stale channel): each queue goes on
+        # from the first programme the rewrite drops, not from where that plan ended
+        rewind = getattr(planner, "rewind", None)
+        if rewind is not None:
+            rewind(await repo.future_programs(channel_id, anchor), content)
+    picker = FillerPicker(
+        await repo.load_filler(channel),
+        max_per_gap=tv.max_filler_per_gap,
+        slot_first=tv.slot_filler_first,
+        seed=_seed_for(channel_id) ^ int(anchor.timestamp()),
+        state=(state.cursor or {}).get("filler"),
+    )
 
     # slot times are wall-clock times in the channel's timezone (server local when
     # the plan names none): the planner reads hours and weekdays off these datetimes
     tz = channel_tz(channel.mode_config)
     items = planner.plan(content, start_at=anchor.astimezone(tz), until=until.astimezone(tz))
+    if channel.mode == ChannelMode.SCHEDULE:
+        # the grid's last slot is planned to its end: the timeline runs to it, so the
+        # next top-up starts on a slot boundary and no episode is cut at the horizon
+        planned = anchor + timedelta(milliseconds=sum(i.duration_ms for i in items))
+        until = max(until, planned)
     base_seq = await repo.max_seq_before(channel_id, anchor) + 1
     blocks = packer.pack(
         items,
         channel_id=channel_id,
         start_at=anchor,
         until=until,
-        filler=filler,
+        filler=picker,
         base_seq=base_seq,
     )
     if not blocks:
@@ -129,6 +149,9 @@ async def run_schedule(
         s.seq = base_seq
         blocks = [s]
 
+    cursor = planner.export_state()
+    if fstate := picker.export_state(keep_after=until):
+        cursor["filler"] = fstate
     await repo.replace_future_blocks(channel_id, from_at=anchor, blocks=blocks)
     await repo.save_state(
         ScheduleState(
@@ -136,7 +159,7 @@ async def run_schedule(
             anchor_at=state.anchor_at or anchor,
             horizon_until=until,
             last_generated_at=now,
-            cursor=planner.export_state(),
+            cursor=cursor,
             stale=False,
         )
     )
