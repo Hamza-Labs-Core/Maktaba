@@ -14,9 +14,15 @@ import type {
 import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { FlowLanes } from "../../components/queue/FlowLanes";
+import { ExplainPanel } from "../../components/queue/ExplainPanel";
 import { HealthStrip } from "../../components/queue/HealthStrip";
+import { InsightsPanel } from "../../components/queue/InsightsPanel";
 import { IssueList, groupKey } from "../../components/queue/IssueList";
 import { LibrariesTable } from "../../components/queue/LibrariesTable";
+import { PulseBanner } from "../../components/queue/PulseBanner";
+import { RunPanel } from "../../components/queue/RunPanel";
+import { StylePanel } from "../../components/queue/StylePanel";
+import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { WorkersStrip } from "../../components/queue/WorkersStrip";
 import { QueueHeader, overallState } from "../../components/queue/QueueHeader";
 import { RetriggerDialog, type RetriggerSubject } from "../../components/queue/RetriggerDialog";
@@ -29,6 +35,7 @@ export function QueueOverview() {
   const { snapshot, error, polling, reload } = useQueuesSnapshot();
   const stream = useJobStream();
   const action = useAction();
+  const admin = useIsAdmin();
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
@@ -178,9 +185,27 @@ export function QueueOverview() {
         </p>
       )}
 
+      <PulseBanner />
+
+      <RunPanel
+        stages={snapshot.stages}
+        libraries={libraries}
+        extensions={extensions}
+        canRun={admin}
+        onDone={() => {
+          refreshAfter();
+          queueApi
+            .extensions()
+            .then((r) => setExtensions(r.extensions))
+            .catch(() => {});
+        }}
+      />
+
       <HealthStrip health={snapshot.health} history={history} />
 
       <WorkersStrip workers={workers} />
+
+      <InsightsPanel />
 
       <FlowLanes
         stages={snapshot.stages}
@@ -213,6 +238,15 @@ export function QueueOverview() {
       </div>
 
       <LibrariesTable rows={libraries} stages={snapshot.stages} onRequeue={openDialog} />
+
+      <div className="mkt-q-cols">
+        <div className="mkt-q-panel">
+          <ExplainPanel libraries={libraries} />
+        </div>
+        <div className="mkt-q-panel">
+          <StylePanel libraries={libraries} canEdit={admin} />
+        </div>
+      </div>
 
       <RetriggerDialog
         open={dialog.open}

@@ -356,6 +356,117 @@ export interface JobLogPayload {
   data?: Record<string, unknown>;
 }
 
+// ---- explain / style / insights / pulse (control-centre parity) ----------
+
+export interface ExplainVerdict {
+  kind: "episode" | "extra" | "duplicate" | "short" | "clip_group" | "promo" | "unassigned";
+  label: string;
+  season_id: string | null;
+  series_id: string | null;
+  season: number | null;
+  episode: number | null;
+  attached: boolean;
+}
+export interface ExplainPlaylist {
+  title: string;
+  position: number | null;
+}
+export interface ExplainVideo {
+  id: string;
+  title: string;
+  file: string;
+  library_id: string;
+  library: string;
+  aired: string | null;
+  date_quality: string | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  youtube_id: string | null;
+  link_method: string | null;
+  tab: string | null;
+  playlists: ExplainPlaylist[];
+  plex_rating_key: string | null;
+  verdict: ExplainVerdict;
+}
+export interface ExplainRemote {
+  youtube_id: string;
+  title: string;
+  aired: string | null;
+  date_quality: string | null;
+  duration_sec: number | null;
+  tab: string | null;
+  playlists: ExplainPlaylist[];
+}
+export interface ExplainResponse {
+  q: string;
+  videos: ExplainVideo[];
+  remote: ExplainRemote[];
+  limit: number;
+}
+
+export type ProductionStyle = "static" | "talk" | "produced" | "cinematic";
+export const PRODUCTION_STYLES: ProductionStyle[] = ["cinematic", "produced", "talk", "static"];
+
+export interface SeasonStyle {
+  season_id: string;
+  series_id: string;
+  series: string;
+  name: string;
+  season: number;
+  library_id: string | null;
+  library: string | null;
+  style: ProductionStyle | null;
+  tier: number | null;
+  confidence: number | null;
+  override_style: ProductionStyle | null;
+}
+export interface StyleResult {
+  style: ProductionStyle | null;
+  seasons: { season_id: string; outcome: string; job_id: number | null }[];
+}
+
+export interface InsightTotals {
+  libraries: number;
+  videos: number;
+  videos_with_length: number;
+  series: number;
+  seasons: number;
+  plex_collections: number;
+  dizquetv_shows: number;
+  channels: number;
+  style_pinned: number;
+  youtube_videos: number;
+  videos_without_exact_date: number;
+}
+export interface Insights {
+  totals: InsightTotals;
+  styles: Partial<Record<ProductionStyle, number>>;
+  genres: { genre: string; seasons: number }[];
+}
+
+export type PulseState = "idle" | "working" | "paused" | "stalled";
+export interface StuckJob {
+  job_id: number;
+  stage: string;
+  label: string;
+  subject_kind: SubjectKind;
+  subject_id: string;
+  heartbeat_age_sec: number;
+  claimed_by: string | null;
+  stalled_after_sec: number;
+  running_for_sec: number;
+}
+export interface Pulse {
+  state: PulseState;
+  running: number;
+  waiting: number;
+  paused_all: boolean;
+  last_activity_at: string | null;
+  age_sec: number | null;
+  stuck: StuckJob[];
+}
+
 // ---- calls ---------------------------------------------------------------
 
 const q = (s: string) => encodeURIComponent(s);
@@ -418,4 +529,23 @@ export const queueApi = {
   workers: () => api.get<{ workers: WorkerHost[] }>("/api/workers"),
   libraries: () => api.get<{ items: LibraryQueueRow[] }>("/api/queues/libraries"),
   health: (hours = 4) => api.get<{ series: HealthSeries[] }>(`/api/queues/health${qs({ hours })}`),
+  explain: (text: string, libraryId?: string, limit?: number) =>
+    api.get<ExplainResponse>(`/api/explain${qs({ q: text, library_id: libraryId, limit })}`),
+  seasonStyles: (p: { libraryId?: string; q?: string; pinned?: boolean; limit?: number }) =>
+    api.get<{ items: SeasonStyle[] }>(
+      `/api/seasons/styles${qs({
+        library_id: p.libraryId,
+        q: p.q,
+        pinned: p.pinned ? "true" : undefined,
+        limit: p.limit,
+      })}`
+    ),
+  /** Pin (or, with null, clear) one season's production style; queues its re-rating. */
+  putSeasonStyle: (seasonId: string, style: ProductionStyle | null) =>
+    api.put<StyleResult>(`/api/seasons/${q(seasonId)}/style`, { style }),
+  /** The same for every season of a series. */
+  putSeriesStyle: (seriesId: string, style: ProductionStyle | null) =>
+    api.put<StyleResult>(`/api/series/${q(seriesId)}/style`, { style }),
+  insights: () => api.get<Insights>("/api/queues/insights"),
+  pulse: () => api.get<Pulse>("/api/queues/pulse"),
 };

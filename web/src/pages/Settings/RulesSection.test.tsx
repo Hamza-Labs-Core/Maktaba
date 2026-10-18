@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { get, patch } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }));
+const { get, patch, post } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), post: vi.fn() }));
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
-  return { ...actual, api: { ...actual.api, get, patch } };
+  return { ...actual, api: { ...actual.api, get, patch, post } };
 });
 const authState = vi.hoisted(() => ({
   user: { id: "u1", username: "admin", is_admin: true } as {
@@ -30,8 +30,22 @@ function field(data: RulesResponse, section: string, name: string): RuleField {
   return data.sections.find((s) => s.key === section)!.fields.find((f) => f.name === name)!;
 }
 
+const idleStatus = {
+  running: false,
+  kind: null,
+  phase: "",
+  started_at: null,
+  finished_at: null,
+  summary: {},
+  log: [],
+  ready: { preview: false, plan: false },
+};
+
 function setup(data: RulesResponse = fixture()) {
-  routeGet(get, { "/api/rules": () => data });
+  routeGet(get, {
+    "/api/rules": () => data,
+    "/api/reports/channel-plan/preview": () => idleStatus,
+  });
   return renderAt(<RulesSection />, "/settings/rules");
 }
 
@@ -41,6 +55,7 @@ describe("RulesSection", () => {
   beforeEach(() => {
     get.mockReset();
     patch.mockReset();
+    post.mockReset();
     authState.user = { id: "u1", username: "admin", is_admin: true };
   });
 
@@ -254,5 +269,31 @@ describe("RulesSection", () => {
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add row" })).not.toBeInTheDocument();
     expect(screen.getByText(/Only admins can change the rules/)).toBeInTheDocument();
+  });
+  it("previews the channel plan next to the Channels rules, and only there", async () => {
+    post.mockResolvedValue({ started: true, kind: "preview" });
+    setup();
+    const preview = await screen.findByRole("region", { name: "Preview channels" });
+    // the preview uses what is saved: an edit that is not saved yet is flagged
+    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+    const input = within(await rule("Shortest slot (min)")).getByRole("spinbutton");
+    await userEvent.clear(input);
+    await userEvent.type(input, "45");
+    expect(within(preview).getByRole("status")).toHaveTextContent(
+      "1 edits are not saved yet; the preview uses the saved settings. Save first."
+    );
+    await userEvent.click(within(preview).getByRole("button", { name: "Preview channels" }));
+    expect(post).toHaveBeenCalledWith("/api/reports/channel-plan/preview", { kind: "preview" });
+    // the stored-plan button belongs to the Reports page, not to the rules
+    expect(within(preview).queryByRole("button", { name: "Show the stored plan" })).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: /Grouping/ }));
+    expect(screen.queryByRole("region", { name: "Preview channels" })).not.toBeInTheDocument();
+  });
+
+  it("does not offer the preview to a non-admin", async () => {
+    authState.user = { id: "u2", username: "viewer", is_admin: false };
+    setup();
+    const preview = await screen.findByRole("region", { name: "Preview channels" });
+    expect(within(preview).queryByRole("button", { name: "Preview channels" })).toBeNull();
   });
 });

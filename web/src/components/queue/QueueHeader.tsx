@@ -66,6 +66,9 @@ export function QueueHeader({
         <LiveClock />
       </div>
       <div className="mkt-q-header__actions">
+        <Link className="mkt-q-linkbtn" to="/queue/reports">
+          {t("queue.header.reports")}
+        </Link>
         <Link className="mkt-q-linkbtn" to="/admin/extensions">
           {t("queue.header.extensions")}
         </Link>
