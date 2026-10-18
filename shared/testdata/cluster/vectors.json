@@ -1,0 +1,16 @@
+{
+  "comment": "Epic 31 join crypto (design.md 3.2): Go and Python tests both check these values.",
+  "node_private": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+  "node_public": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=",
+  "home_private": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+  "home_public": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=",
+  "shared": "qE3Hw8jwWLGy3EzR6bXcCnmH+ItqlWTN4zkfxCEVnnc=",
+  "sas": "761353",
+  "seal_key": "ZVWzW103YztoDQWl+T5HPOanI/1gir3y+E7zAT8FKA4=",
+  "node_id": "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7",
+  "payload": "{\"database_url\":\"postgres://maktaba_node_6f1c2a3b:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer\",\"home\":{\"api_url\":\"http://192.168.1.20:8080\",\"instance_id\":\"0b9a8c7d-6e5f-4a3b-9c2d-1e0f2a3b4c5d\",\"name\":\"home-mac\"},\"node_id\":\"6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7\",\"v\":1}",
+  "sealed": {
+    "nonce": "ZGVmZ2hpamtsbW5v",
+    "ciphertext": "rRjd2CvqWVwpw58kqWDsqx8YZt6Oc+KM5vsgID/st7ODwB3XRORmCi0ayO1CldOo+rPm1SVOaDdbaAQ+9U8bELCQEjdynLgXX2Bs4aMwrxDOK3wgZDR1LEkWYJqs7TbpfEmQo7PIxTJa4GnolKqropMm4JS5sAXGxF/KckhJ891/mEPFXtn/N8K3T/J/WjATascxn7xjkS8oNAvlHBEYuCXKIwxKoTZjd6fRZymTKueKxxDA0v/IhJoW1LiGKeu6xJtrGK3DeQG0+Np7Cke4V6mYZBnrsz3fbB6vrAGspRitPrVy52cUuKaKYJj7YxpdQss6cOEJE+aH0FsP2FV4MFJtxUTe9fcWLy5mQly6Yo8GihrPA3bFVrfuz7WwzBw="
+  }
+}

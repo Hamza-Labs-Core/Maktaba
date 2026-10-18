@@ -67,8 +67,9 @@ _UPSERT = """
 INSERT INTO job_stages
     (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
      debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
-     external_write, extension, enabled, disabled_reason, graph_synced_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)
+     external_write, extension, enabled, disabled_reason, graph_synced_at, updated_at,
+     placement)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20,$21)
 ON CONFLICT (stage) DO UPDATE SET
     label = EXCLUDED.label, subject_kinds = EXCLUDED.subject_kinds, pool = EXCLUDED.pool,
     lane = EXCLUDED.lane, lane_order = EXCLUDED.lane_order, version = EXCLUDED.version,
@@ -77,6 +78,7 @@ ON CONFLICT (stage) DO UPDATE SET
     may_request = EXCLUDED.may_request, entry_for = EXCLUDED.entry_for,
     legacy = EXCLUDED.legacy, hidden = EXCLUDED.hidden,
     external_write = EXCLUDED.external_write, extension = EXCLUDED.extension,
+    placement = EXCLUDED.placement,
     enabled = CASE WHEN job_stages.disabled_reason IS NULL
                      OR job_stages.disabled_reason IN
                         ('not_configured', 'extension_disabled')
@@ -129,6 +131,7 @@ async def sync_graph(
             enabled,
             reason,
             ts,
+            s.placement,
         )
         if s.name not in old:
             added.append(s.name)

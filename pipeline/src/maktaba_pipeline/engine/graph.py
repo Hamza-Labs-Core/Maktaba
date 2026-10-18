@@ -199,6 +199,10 @@ class StageDef:
     legacy: bool = False
     hidden: bool = False
     max_attempts: int = 3
+    #: where it may run (Epic 31): "any" machine, or the "home" only (its output is a
+    #: local directory the home's API or search reads: the vector index, thumbnails,
+    #: review pages)
+    placement: Literal["any", "home"] = "any"
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]
@@ -325,6 +329,7 @@ GRAPH: tuple[StageDef, ...] = (
         version=THUMB_SMALL_VERSION,
         edges=(Edge("review_pages", "library_of"),),
         entry_for=("video",),
+        placement="home",
     ),
     # ---- seasons and libraries lane ------------------------------------
     StageDef(
@@ -443,6 +448,7 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("library",),
         debounce_sec=120,
         debounce_max_sec=900,
+        placement="home",
     ),
     # ---- channels lane -------------------------------------------------
     StageDef(
@@ -525,6 +531,7 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=4,
         version=INDEX_VERSION,
         edges=(Edge("thumbnail", "same", legacy=True),),
+        placement="home",
     ),
     _legacy(
         "thumbnail",
