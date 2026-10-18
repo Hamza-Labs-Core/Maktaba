@@ -33,6 +33,7 @@ from .schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvConfig,
     RepairConfig,
 )
 
@@ -66,6 +67,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "dizquetv": (DizqueExportConfig, "dizqueTV export", "how the planned channels are written "
                  "into dizqueTV: removing what the plan dropped, rewriting a channel that is "
                  "on air"),
+    "tv": (MaktabaTvConfig, "Maktaba TV", "how Maktaba's own channels air: filler between "
+           "programmes, the Ramadan grids, live broadcasts, loudness"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
     "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),

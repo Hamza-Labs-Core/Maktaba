@@ -2917,6 +2917,100 @@
    ]
   },
   {
+   "key": "tv",
+   "title": "Maktaba TV",
+   "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness",
+   "fields": [
+    {
+     "name": "max_filler_per_gap",
+     "kind": "int",
+     "group": "Maktaba TV",
+     "label": "Most clips in a gap",
+     "help": "A gap between programmes is filled with clips chosen by their lists' weights; past this many the rest of the gap shows the slate. 0: as many as fit.",
+     "default": 0,
+     "minimum": 0
+    },
+    {
+     "name": "slot_filler_first",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "A slot's own filler first",
+     "help": "Pad a slot with its own shows' promos and topic clips before the channel's filler lists. Off: the channel's lists only (what dizqueTV does).",
+     "default": true
+    },
+    {
+     "name": "ramadan_grids",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "Ramadan grids in Ramadan",
+     "help": "During the Hijri month of Ramadan a channel airs its Ramadan grid. A channel without one keeps its regular grid.",
+     "default": true
+    },
+    {
+     "name": "hijri_adjust_days",
+     "kind": "int",
+     "group": "Maktaba TV",
+     "label": "Hijri date adjustment (days)",
+     "help": "Added to the computed Hijri date when the month starts a day earlier or later where you are.",
+     "default": 0
+    },
+    {
+     "name": "live",
+     "kind": "rows",
+     "group": "Maktaba TV",
+     "label": "Live broadcasts",
+     "help": "A live stream a channel carries at set times: channel number, the YouTube live page or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). No programme runs into it: what would not end before it is not started, filler fills up to it and the show goes on after. Empty: the dizqueTV export's live broadcasts.",
+     "default": [],
+     "columns": [
+      "channel",
+      "url",
+      "title",
+      "start",
+      "end",
+      "every_minutes",
+      "minutes",
+      "days"
+     ],
+     "column_kinds": [
+      "int",
+      "str",
+      "str",
+      "time",
+      "time",
+      "int",
+      "int",
+      "list"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "loudnorm",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "Even loudness",
+     "help": "Normalise every programme's loudness.",
+     "default": true
+    },
+    {
+     "name": "loudnorm_target_lufs",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Loudness target (LUFS)",
+     "help": "",
+     "default": -16.0
+    }
+   ]
+  },
+  {
    "key": "exactdates",
    "title": "Exact dates",
    "what": "exact upload dates fetched from YouTube for series members (off until switched on)",

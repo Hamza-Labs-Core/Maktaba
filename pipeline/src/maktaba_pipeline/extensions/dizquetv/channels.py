@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +61,12 @@ from ...integrations.dizquetv_export import (
     write_channel,
 )
 from ...integrations.plex import PlexClient, PlexError, TransportError
-from ...schedule.tv_settings import DizqueExportConfig, channel_numbers
+from ...schedule.tv_settings import (
+    DizqueExportConfig,
+    MaktabaTvConfig,
+    channel_numbers,
+    live_slots,
+)
 from ...settings import overrides
 from ..links import Link, get_links, put_link
 from ..plex_items import details_for
@@ -589,7 +594,12 @@ async def fingerprint(db: Any, subject: Subject, write_mode: str) -> str | None:
     if got is None:
         return None
     _, changes, _ = await rules.read(db, "dizquetv")
-    return canonical_hash({"plan": got[0], "write_mode": write_mode, "rules": changes})
+    tv, _, _ = await rules.read(db, "tv")  # Maktaba TV's live broadcasts serve both
+    return canonical_hash(
+        {"plan": got[0], "write_mode": write_mode, "rules": changes, "live": overrides(tv)}
+        if tv.live
+        else {"plan": got[0], "write_mode": write_mode, "rules": changes}
+    )
 
 
 def _wrap(exc: Exception) -> StageFailure:
@@ -643,6 +653,8 @@ async def run_channels(
     except (DizqueError, TransportError) as exc:
         raise _wrap(exc) from exc
     options: DizqueExportConfig = await ctx.rules("dizquetv")
+    tv: MaktabaTvConfig = await ctx.rules("tv")
+    options = replace(options, live=live_slots(tv, options))  # one list for both
     actions = await asyncio.to_thread(plan_actions, plan, state, tz_offset=tz, options=options)
     changes = changes_from(actions)
     output_hash = canonical_hash({"plan": plan_hash, "tz": tz, "rules": overrides(options)})
