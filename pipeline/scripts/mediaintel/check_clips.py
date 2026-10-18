@@ -12,7 +12,6 @@ the step can run again (and resume after a stop) without asking twice.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 import time
@@ -33,8 +32,7 @@ CREATE TABLE IF NOT EXISTS clip_checks (
 """
 
 
-def _tags_hash(tags: dict[str, float]) -> str:
-    return hashlib.sha1(json.dumps(sorted(tags.items())).encode()).hexdigest()
+_tags_hash = tc.clip_tags_hash
 
 
 def _tags(conn: sqlite3.Connection, path: str) -> dict[str, float]:

@@ -9,8 +9,6 @@ rewrites the tags and the cached verdict is applied again without asking the mod
 
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 import time
 import urllib.error
@@ -29,9 +27,7 @@ CREATE TABLE IF NOT EXISTS tag_checks (
 """
 
 
-def _tags_hash(tags: dict[str, tuple[float, str]]) -> str:
-    src = json.dumps(sorted(tags.items()), ensure_ascii=False)
-    return hashlib.sha1(src.encode()).hexdigest()
+_tags_hash = tc.tags_hash
 
 
 def run(conn: sqlite3.Connection, cfg: tc.TagCheckConfig | None = None) -> dict[str, int]:
