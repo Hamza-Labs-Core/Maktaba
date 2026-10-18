@@ -62,28 +62,35 @@ def check(path: str) -> tuple[float | None, int | None, int | None, str]:
 
 
 def download_args(youtube_id: str, target: Path, cookies_from_browser: str | None) -> list[str]:
-    """yt-dlp argv writing the video beside ``target`` as ``<stem>.repair.<ext>``."""
+    """yt-dlp argv writing the video beside ``target`` as ``.repair-<id>.<ext>``: a plain
+    name (titles with «⧸ ｜ ۞ ＂ ﷺ» failed yt-dlp's ffmpeg step), renamed once checked."""
     ext = target.suffix.lstrip(".").lower() or "mp4"
-    stem = target.stem.replace("%", "%%")  # «100% …»: % starts a template field
     # no merge into the target container here: a failed merge loses the download; a
     # different container is remuxed afterwards (repair_one)
     args = [
         sys.executable, "-m", "yt_dlp", "--no-playlist", "--no-progress",
         "-f", FORMAT_MP4 if ext == "mp4" else FORMAT,
-        "-o", str(target.with_name(f"{stem}.repair.%(ext)s")),
+        "-o", str(target.with_name(f"{_work(youtube_id)}.%(ext)s")),
     ]  # fmt: skip
     if cookies_from_browser:
         args += ["--cookies-from-browser", cookies_from_browser]
     return [*args, f"https://www.youtube.com/watch?v={youtube_id}"]
 
 
-def _made(target: Path) -> list[Path]:
-    """Everything the download left beside ``target`` (titles hold «[…]»: escaped)."""
-    return sorted(target.parent.glob(glob.escape(target.stem) + ".repair*"))
+def _work(youtube_id: str) -> str:
+    """The download's plain working name (the id: letters, digits, - and _)."""
+    return ".repair-" + "".join(
+        ch for ch in youtube_id if ch.isascii() and (ch.isalnum() or ch in "-_")
+    )
 
 
-def _clean(target: Path) -> None:
-    for p in _made(target):
+def _made(target: Path, youtube_id: str) -> list[Path]:
+    """Everything the download left beside ``target``."""
+    return sorted(target.parent.glob(glob.escape(_work(youtube_id)) + "*"))
+
+
+def _clean(target: Path, youtube_id: str) -> None:
+    for p in _made(target, youtube_id):
         p.unlink(missing_ok=True)
 
 
@@ -104,15 +111,15 @@ def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
         out = subprocess.run(download_args(youtube_id, target, cookies_from_browser),
                              capture_output=True, timeout=3600, check=False)  # fmt: skip
     except (subprocess.TimeoutExpired, OSError) as e:
-        _clean(target)
+        _clean(target, youtube_id)
         return f"not downloaded: {type(e).__name__}"
-    got = [p for p in _made(target) if p.suffix.lower() not in _PARTIAL]
+    got = [p for p in _made(target, youtube_id) if p.suffix.lower() not in _PARTIAL]
     if out.returncode != 0 or not got:
         err = out.stderr.decode("utf-8", "replace").strip().splitlines()
         why = next((ln for ln in reversed(err) if "ERROR" in ln), err[-1] if err else "")
-        _clean(target)
+        _clean(target, youtube_id)
         return f"not downloaded: {why[:160]}"
-    fresh = target.with_name(f"{target.stem}.repair{target.suffix}")
+    fresh = target.with_name(f"{_work(youtube_id)}.final{target.suffix}")
     if got[0] != fresh:  # another container: remux, then with the audio made AAC
         r = None
         for audio in (["-c", "copy"], ["-c:v", "copy", "-c:a", "aac", "-b:a", "160k"]):
@@ -126,17 +133,17 @@ def repair_one(conn: sqlite3.Connection, path: str, youtube_id: str,
             if r is not None and r.returncode == 0 and fresh.is_file():
                 break
         if r is None or r.returncode != 0 or not fresh.is_file():
-            _clean(target)
+            _clean(target, youtube_id)
             return f"downloaded as {got[0].suffix}, could not put it in {target.suffix}"
     dur, w, h, why = check(str(fresh))
     if dur is None:
-        _clean(target)
+        _clean(target, youtube_id)
         return f"downloaded, but the new copy does not read either ({why}): left as it was"
     backup = _backup_name(target)
     if target.exists():
         os.replace(target, backup)
     os.replace(fresh, target)
-    _clean(target)
+    _clean(target, youtube_id)
     st = target.stat()
     conn.execute(
         "UPDATE files SET size=?, mtime=?, duration_s=?, width=?, height=?, probed_size=?, "

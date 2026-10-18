@@ -2371,6 +2371,8 @@ def suggest_channels(
         for i, u in units.items():
             if i in have or i in synthetic or _excluded(tags_of.get(i, {}), t.exclude, cfg):
                 continue
+            if _lib_in(t.exclude_libraries, u.library, u.presenter, u.folder):
+                continue  # a library never on this channel: not even single episodes
             if _is_recitation(by_id[i], cfg) and by_id[i].genre not in t.topics:
                 continue  # the Quran is never a theme's special run (as in _in_theme)
             lesson = "recitation" not in t.formats and "qiyam" not in t.topics

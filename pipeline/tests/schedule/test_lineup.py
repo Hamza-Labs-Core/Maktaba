@@ -329,11 +329,19 @@ def test_a_channel_is_mainly_its_libraries_and_never_an_excluded_one() -> None:
         season("o1", "أخبار وتعليقات", genre="current_affairs", presenter="آخر", n=40,
                minutes=60),
     ]  # fmt: skip
+    from dataclasses import replace
+
+    # its episodes are about current affairs too: still never a News special run
+    lib[1] = replace(lib[1], episodes=tuple(
+        replace(e, tags={"topic:current_affairs": 0.95}) for e in lib[1].episodes))  # fmt: skip
     p = plan(lib, themes=(news, talk), mix_channel=False, presenter_channels=False,
              show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # type: ignore[arg-type]  # fmt: skip
     on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
     assert "شاهد على العصر" in on["news"]  # its library, though tagged history
     assert "قراءات في التاريخ" not in on["news"]  # never on News
+    news_paths = {e.path for c in p.channels if c.key == "news" for k in c.lanes
+                  for u in p.lanes[k].units for e in u.episodes}  # fmt: skip
+    assert not any("/e1/" in path for path in news_paths)  # not even single episodes
     assert "قراءات في التاريخ" in on["talk"]
     news_ch = next(c for c in p.channels if c.key == "news")
     first = p.lanes[news_ch.slots[0].lane] if news_ch.slots[0].lane else None
