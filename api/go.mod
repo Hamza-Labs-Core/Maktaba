@@ -11,6 +11,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/google/uuid v1.6.0
+	github.com/grandcat/zeroconf v1.0.0
 	github.com/lib/pq v1.10.9
 	github.com/pressly/goose/v3 v3.22.1
 	golang.org/x/crypto v0.52.0
@@ -20,6 +21,13 @@ require (
 	golang.org/x/time v0.7.0
 	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
+	github.com/miekg/dns v1.1.72 // indirect
+	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 )
 
 require (

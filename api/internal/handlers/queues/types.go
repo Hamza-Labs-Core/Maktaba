@@ -187,6 +187,10 @@ type Worker struct {
 	Pools       json.RawMessage `json:"pools"`
 	StartedAt   time.Time       `json:"started_at"`
 	Version     *string         `json:"version"`
+	// Epic 31: the machine the worker runs on (null: the home itself).
+	NodeID   *string `json:"node_id"`
+	NodeName *string `json:"node_name"`
+	Role     string  `json:"role"` // "home" | "node"
 }
 
 // Flow is trigger traffic between two stages.
