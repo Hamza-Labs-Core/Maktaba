@@ -53,7 +53,11 @@ export default defineConfig({
     // the LAN and Tailscale (MagicDNS) names; Vite refuses unknown hosts otherwise
     allowedHosts: [".local", ".ts.net"],
     proxy: {
-      // In dev, point /api/* and /ws/* at the local Go API.
+      // In dev, point /api/* and /ws/* at the local Go API, and the live TV
+      // paths (/stream, /xmltv.xml, /lineup.m3u) at the streaming service.
+      "/stream": { target: "http://localhost:8081", changeOrigin: false },
+      "/xmltv.xml": { target: "http://localhost:8081", changeOrigin: false },
+      "/lineup.m3u": { target: "http://localhost:8081", changeOrigin: false },
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: false,

@@ -177,7 +177,15 @@ func startWebServer(cfg config.Config) *http.Server {
 		mux.Handle("/api/", proxy)
 	}
 
-	mux.Handle("/", webui.Handler("/api/"))
+	// Live TV through the web port: the channel HLS the player loads
+	// (/stream/...) and the XMLTV guide + M3U lineup, proxied to the
+	// streaming service so the browser stays on one origin.
+	streamProxy := newStreamProxy(cfg.Server.StreamAddr)
+	for _, p := range streamProxyPaths {
+		mux.Handle(p, streamProxy)
+	}
+
+	mux.Handle("/", webui.Handler("/api/", "/stream/"))
 
 	srv := &http.Server{
 		Addr:              cfg.Server.WebListen,
@@ -190,6 +198,23 @@ func startWebServer(cfg config.Config) *http.Server {
 		}
 	}()
 	return srv
+}
+
+// streamProxyPaths are the web-port paths served by the streaming
+// service.
+var streamProxyPaths = []string{"/stream/", "/xmltv.xml", "/lineup.m3u"}
+
+// newStreamProxy reverse-proxies to the streaming service on this host.
+// FlushInterval -1 flushes every write: live playlists and MPEG-TS must
+// not sit in a buffer.
+func newStreamProxy(streamAddr string) http.Handler {
+	target := &url.URL{Scheme: "http", Host: supervisor.LocalAddr(streamAddr, "8081")}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = -1
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		http.Error(w, "live TV is not reachable: "+err.Error(), http.StatusBadGateway)
+	}
+	return proxy
 }
 
 // apiOrigin turns the API bind spec into a dialable loopback URL for the

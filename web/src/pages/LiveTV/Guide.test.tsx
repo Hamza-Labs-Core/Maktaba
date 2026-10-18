@@ -3,7 +3,7 @@
 // airing cell tunes, and the "What's On Now" toggle swaps to the compact
 // list. api is mocked at the wrapper layer so channels.ts runs for real.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -87,6 +87,17 @@ describe("Guide (EPG grid)", () => {
     const w = (el: HTMLElement) => parseFloat(el.style.width);
     const widths = cells.map(w).sort((a, b) => a - b);
     expect(widths[1] / widths[0]).toBeCloseTo(4, 1);
+  });
+
+  it("shows channel logos and hides a logo that fails to load", async () => {
+    const payload = guidePayload();
+    (payload.channels[0].channel as Record<string, unknown>).logo_url = "/api/channels/c1/logo";
+    get.mockResolvedValue(payload);
+    renderGuide();
+    const logo = await screen.findByTestId("channel-logo");
+    expect(logo.getAttribute("src")).toBe("/api/channels/c1/logo");
+    fireEvent.error(logo);
+    await waitFor(() => expect(screen.queryByTestId("channel-logo")).toBeNull());
   });
 
   // TC2 — the now-line is present.

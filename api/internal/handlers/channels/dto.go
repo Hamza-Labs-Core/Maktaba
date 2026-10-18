@@ -34,12 +34,18 @@ const (
 
 // Channel is the over-the-wire shape.
 type Channel struct {
-	ID           string          `json:"id"`
-	LibraryID    *string         `json:"library_id,omitempty"`
-	Number       int             `json:"number"`
-	Name         string          `json:"name"`
-	Slug         string          `json:"slug"`
-	LogoPath     *string         `json:"logo_path,omitempty"`
+	ID        string  `json:"id"`
+	LibraryID *string `json:"library_id,omitempty"`
+	Number    int     `json:"number"`
+	Name      string  `json:"name"`
+	Slug      string  `json:"slug"`
+	LogoPath  *string `json:"logo_path,omitempty"`
+	// LogoURL is where the browser (and the guide) loads the logo from:
+	// GET /api/channels/{id}/logo. Set whenever logo_path is.
+	LogoURL string `json:"logo_url,omitempty"`
+	// Art is the effective logo / watermark / loading screen (what the
+	// stream engine reads) and which of them were set by hand.
+	Art          *ChannelArt     `json:"art,omitempty"`
 	Category     string          `json:"category"`
 	Mode         string          `json:"mode"`
 	ModeConfig   json.RawMessage `json:"mode_config,omitempty"`
@@ -70,6 +76,7 @@ type CreateRequest struct {
 	LibraryID    *string         `json:"library_id,omitempty"`
 	Number       *int            `json:"number,omitempty"`
 	Name         string          `json:"name"`
+	LogoPath     *string         `json:"logo_path,omitempty"`
 	Category     string          `json:"category,omitempty"`
 	Mode         string          `json:"mode"`
 	ModeConfig   json.RawMessage `json:"mode_config,omitempty"`
@@ -81,8 +88,11 @@ type CreateRequest struct {
 
 // PatchRequest is the PATCH body — all optional.
 type PatchRequest struct {
-	Number       *int            `json:"number,omitempty"`
-	Name         *string         `json:"name,omitempty"`
+	Number *int    `json:"number,omitempty"`
+	Name   *string `json:"name,omitempty"`
+	// LogoPath: an absolute image file path on the server or an http(s)
+	// URL; "" clears it.
+	LogoPath     *string         `json:"logo_path,omitempty"`
 	Category     *string         `json:"category,omitempty"`
 	Mode         *string         `json:"mode,omitempty"`
 	ModeConfig   json.RawMessage `json:"mode_config,omitempty"`
