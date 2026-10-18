@@ -27,6 +27,7 @@ __all__ = [
     "register_worker",
     "stable_hostname",
     "stages_without_worker",
+    "update_worker_stages",
 ]
 
 #: A worker whose last heartbeat is older than this is considered offline.
@@ -79,18 +80,29 @@ async def register_worker(
     pools: Sequence[str],
     path_map: dict[str, str] | None = None,
     version: str | None = None,
+    node_id: str | None = None,
+    role: str = "home",
+    os_name: str | None = None,
+    capabilities: dict[str, Any] | None = None,
+    stages_off: dict[str, str] | None = None,
 ) -> None:
+    """Insert or refresh this worker's row. ``node_id`` / ``role`` say whether it is one
+    of the home's workers or a joined machine's (Epic 31); ``stages_off`` says why each
+    graph stage it does not claim is off."""
     ts = to_ts(db, now())
     # earlier runs on this host are replaced, not "offline" (again at each heartbeat:
     # a restart starts this worker before its predecessor's last beat is stale); a
     # dead worker on another host still shows, and the pruner drops it after a day
     await _clear_dead(db, host, worker_id)
     await db.execute(
-        "INSERT INTO workers (id, host, stages, pools, path_map, version, started_at, last_seen_at)"
-        " VALUES ($1,$2,$3,$4,$5,$6,$7,$7)"
+        "INSERT INTO workers (id, host, stages, pools, path_map, version, started_at,"
+        " last_seen_at, node_id, role, os, capabilities, stages_off)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12)"
         " ON CONFLICT (id) DO UPDATE SET host = EXCLUDED.host, stages = EXCLUDED.stages,"
         " pools = EXCLUDED.pools, path_map = EXCLUDED.path_map, version = EXCLUDED.version,"
-        " started_at = EXCLUDED.started_at, last_seen_at = EXCLUDED.last_seen_at",
+        " started_at = EXCLUDED.started_at, last_seen_at = EXCLUDED.last_seen_at,"
+        " node_id = EXCLUDED.node_id, role = EXCLUDED.role, os = EXCLUDED.os,"
+        " capabilities = EXCLUDED.capabilities, stages_off = EXCLUDED.stages_off",
         worker_id,
         host,
         _arr(db, stages),
@@ -98,7 +110,32 @@ async def register_worker(
         dumps(path_map or {}),
         version,
         ts,
+        node_id,
+        role,
+        os_name if os_name is not None else platform.system().lower(),
+        dumps(capabilities or {}),
+        dumps(stages_off or {}),
     )
+
+
+async def update_worker_stages(
+    db: Any,
+    worker_id: str,
+    *,
+    stages: Sequence[str],
+    pools: Sequence[str],
+    stages_off: dict[str, str],
+) -> bool:
+    """The stages this worker now claims and why the others are off (re-evaluated while
+    it runs, Epic 31 design section 5); False when its row is gone."""
+    row = await db.fetchval(
+        "UPDATE workers SET stages = $2, pools = $3, stages_off = $4 WHERE id = $1 RETURNING id",
+        worker_id,
+        _arr(db, stages),
+        _arr(db, pools),
+        dumps(stages_off),
+    )
+    return row is not None
 
 
 async def heartbeat_worker(db: Any, worker_id: str, host: str | None = None) -> bool:
