@@ -1,8 +1,10 @@
 package queues
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -384,11 +386,11 @@ func snapshotRules() []*queuestest.Rule {
 		{Match: "limit 5000", Cols: []string{"id", "stage", "kind", "sid", "error", "at"}},
 		{Match: "s.external_write", Cols: []string{"stage", "n", "first", "last", "samples"}},
 		{Match: "stage = any($2::text[])", Cols: []string{"stage", "n"}, Rows: [][]driver.Value{{"transcribe", int64(3)}}},
-		{Match: "from workers order by host",
-			Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version"},
+		{Match: "from workers w left join cluster_nodes",
+			Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version", "node_id", "node_name", "role"},
 			Rows: [][]driver.Value{
-				{"w1", "nas", "{probe,detect}", `{"cpu":2}`, t0.Add(-time.Hour), t0.Add(-5 * time.Second), "1.0"},
-				{"w2", "mac", "{transcribe}", nil, t0.Add(-time.Hour), t0.Add(-10 * time.Minute), nil},
+				{"w1", "nas", "{probe,detect}", `{"cpu":2}`, t0.Add(-time.Hour), t0.Add(-5 * time.Second), "1.0", nil, nil, "home"},
+				{"w2", "mac", "{transcribe}", nil, t0.Add(-time.Hour), t0.Add(-10 * time.Minute), nil, nil, nil, "home"},
 			}},
 		{Match: "triggered_by_stage is not null", Cols: []string{"from", "to", "n"},
 			Rows: [][]driver.Value{{"probe", "detect", int64(20)}}},
@@ -486,6 +488,31 @@ func TestSnapshot(t *testing.T) {
 	for _, k := range []string{"nas_open_ms", "nas_timeouts", "cpu_pct", "backlog_ready"} {
 		if h.Spark[k] == nil {
 			t.Errorf("spark[%s] must be a non-nil array", k)
+		}
+	}
+}
+
+func TestSnapshot_StageSuppliesItsOwnETA(t *testing.T) {
+	f := newFixture(snapshotRules()...)
+	twelveDays := 12 * 86400.0
+	f.h.StageETA = map[string]func(context.Context, time.Time) (*float64, error){
+		"probe":      func(context.Context, time.Time) (*float64, error) { return &twelveDays, nil },
+		"transcribe": func(context.Context, time.Time) (*float64, error) { return nil, errors.New("down") },
+	}
+	snap, err := f.h.BuildSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range snap.Queues {
+		switch q.Stage {
+		case "probe":
+			if q.EtaSec == nil || *q.EtaSec != twelveDays || q.RatePerMin != 3 {
+				t.Errorf("probe eta = %v, rate %v", q.EtaSec, q.RatePerMin)
+			}
+		case "transcribe": // the supplier failed: the rate-based estimate (none) stands
+			if q.EtaSec != nil {
+				t.Errorf("transcribe eta = %v", *q.EtaSec)
+			}
 		}
 	}
 }

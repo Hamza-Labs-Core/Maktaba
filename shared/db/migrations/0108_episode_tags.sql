@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0104 (parity with mediaintel tag) - an episode of a series tagged by its own title
+-- Slot 0108 (parity with mediaintel tag) - an episode of a series tagged by its own title
 -- (a Palestine episode of a talk show, a tajweed lesson inside a lecture series) and by its
 -- chapter playlist; written by the tag stage, read by the channel planner so themed
 -- channels take such episodes one by one.

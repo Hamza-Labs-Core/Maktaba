@@ -3,7 +3,11 @@
 The API talks to the pipeline over a small gRPC surface:
 
 - ``Embed(EmbedRequest) -> EmbedResponse`` — embed a text snippet for
-  semantic search (Story 5.4).
+  semantic search (Story 5.4), as an e5 query (``"query: "`` prefix).
+- ``SemanticSearch({q, k, library_ids}) -> {hits: [...]}`` — embed the
+  query and return the top-k transcript segments from the Chroma index
+  the engine ``index`` stage writes (segment_id, video_id, start_sec,
+  end_sec, score), filtered by library when ``library_ids`` is given.
 - ``ListBackends(Empty) -> BackendList`` — enumerate registered STT
   backends with availability + cost metadata (Story 7.15 AC-4).
 - ``ExtractEmbeddedSubtitle(ExtractRequest) -> ExtractResponse`` —
@@ -44,6 +48,8 @@ from .stt.registry import BackendRegistry
 __all__ = [
     "PIPELINE_SERVICE_NAME",
     "PipelineService",
+    "SemanticSearchFn",
+    "default_search_backends",
     "serve_grpc",
 ]
 
@@ -51,6 +57,13 @@ __all__ = [
 _log = get_logger()
 
 PIPELINE_SERVICE_NAME = "maktaba.pipeline.v1.Pipeline"
+
+#: ``(query, k, library_ids) -> hits`` (each hit a flat JSON dict)
+#: ``(query, k, library_ids, languages) -> hits`` (each hit a flat JSON dict)
+SemanticSearchFn = Callable[[str, int, list[str], list[str]], Awaitable[list[dict[str, Any]]]]
+
+#: most hits one SemanticSearch call returns
+MAX_SEMANTIC_K = 200
 
 
 def _identity_serializer(value: bytes) -> bytes:
@@ -133,8 +146,10 @@ class PipelineService:
         transcriber: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         model_service: ModelService | None = None,
         plan_preview: Any | None = None,
+        semantic: SemanticSearchFn | None = None,
     ) -> None:
         self._embedder = embedder
+        self._semantic = semantic
         self._stt_registry = stt_registry if stt_registry is not None else BackendRegistry()
         self._subtitle_extractor = subtitle_extractor
         # transcriber overrides the default registry-driven STT walk so
@@ -155,6 +170,24 @@ class PipelineService:
             raise RuntimeError("embedder backend not configured")
         vector = await self._embedder(text)
         return {"vector": list(vector)}
+
+    async def semantic_search(self, payload: dict[str, Any]) -> dict[str, Any]:
+        q = payload.get("q")
+        if not isinstance(q, str) or not q.strip():
+            raise ValueError("semantic_search: q is required")
+        k = payload.get("k", 50)
+        if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+            raise ValueError("semantic_search: k must be a positive integer")
+        libs = payload.get("library_ids") or []
+        if not isinstance(libs, list) or not all(isinstance(x, str) for x in libs):
+            raise ValueError("semantic_search: library_ids must be a list of strings")
+        if self._semantic is None:
+            raise RuntimeError("semantic search backend not configured")
+        langs = payload.get("languages") or []
+        if not isinstance(langs, list) or not all(isinstance(x, str) for x in langs):
+            raise ValueError("semantic_search: languages must be a list of strings")
+        hits = await self._semantic(q.strip(), min(k, MAX_SEMANTIC_K), list(libs), list(langs))
+        return {"hits": hits}
 
     async def list_backends(self, _payload: dict[str, Any]) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
@@ -333,6 +366,9 @@ def _build_generic_handler(service: PipelineService) -> Any:
     async def _embed(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.embed)
 
+    async def _semantic_search(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.semantic_search)
+
     async def _list_backends(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.list_backends)
 
@@ -378,6 +414,7 @@ def _build_generic_handler(service: PipelineService) -> Any:
 
     handlers = {
         "Embed": _h(_embed),
+        "SemanticSearch": _h(_semantic_search),
         "ListBackends": _h(_list_backends),
         "ExtractEmbeddedSubtitle": _h(_extract),
         "Transcribe": _h(_transcribe),
@@ -411,6 +448,49 @@ async def _dispatch(
     return json.dumps(result).encode("utf-8")
 
 
+def default_search_backends() -> tuple[
+    Callable[[str], Awaitable[list[float]]] | None, SemanticSearchFn | None, Any
+]:
+    """The real ``Embed`` / ``SemanticSearch`` backends, or ``(None, None, None)`` when
+    the optional ``search`` extra is not installed.
+
+    Both use the process-wide embedder (``MAKTABA_EMBED_MODEL``, default
+    multilingual-e5-small, ``"query: "`` prefix) and the persistent Chroma collection at
+    ``MAKTABA_CHROMA_DIR`` that the engine ``index`` stage writes, so query and index
+    vectors always come from the same model. The model and collection open lazily on
+    the first call; the third value is the embedder, for warming it up.
+    """
+    from .search.semantic import (  # noqa: PLC0415
+        SemanticIndex,
+        get_query_embedder,
+        search_available,
+    )
+
+    if not search_available():
+        return None, None, None
+    embedder = get_query_embedder()  # the CPU by default: queries never wait for indexing
+    index: list[SemanticIndex] = []
+
+    def _index() -> SemanticIndex:
+        if not index:
+            index.append(SemanticIndex.for_queries())
+        return index[0]
+
+    async def embed(text: str) -> list[float]:
+        return await asyncio.to_thread(embedder.embed_query, text)
+
+    async def semantic(
+        q: str, k: int, library_ids: list[str], languages: list[str]
+    ) -> list[dict[str, Any]]:
+        def _run() -> list[dict[str, Any]]:
+            hits = _index().search(q, k=k, library_ids=library_ids, languages=languages)
+            return [h.to_json() for h in hits]
+
+        return await asyncio.to_thread(_run)
+
+    return embed, semantic, embedder
+
+
 async def serve_grpc(
     *,
     addr: str,
@@ -427,13 +507,17 @@ async def serve_grpc(
 
     import grpc  # noqa: PLC0415
 
+    warm: Any = None
     if service is None:
         plan_preview = None
         if database is not None:
             from .engine.plan_preview import PlanPreview
 
             plan_preview = PlanPreview(database)
-        service = PipelineService(plan_preview=plan_preview)
+        embed, semantic, warm = default_search_backends()
+        if embed is None:
+            _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
+        service = PipelineService(embedder=embed, semantic=semantic, plan_preview=plan_preview)
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers((_build_generic_handler(service),))
@@ -445,4 +529,16 @@ async def serve_grpc(
         await server.wait_for_termination()
 
     task = asyncio.create_task(_wait(), name="pipeline-grpc")
+    if warm is not None:
+        # load the embedding model now, off the loop, so the first search query does not
+        # pay for it (the API gives the semantic leg a short budget)
+        asyncio.get_running_loop().create_task(_warm(warm), name="pipeline-grpc-warm")
     return server, task
+
+
+async def _warm(embedder: Any) -> None:
+    try:
+        await asyncio.to_thread(embedder.warm)
+        _log.info("pipeline_grpc_embedder_ready", model=embedder.model_name)
+    except Exception as exc:  # noqa: BLE001 — a failed warm-up surfaces on the first query
+        _log.warning("pipeline_grpc_embedder_warm_failed", reason=str(exc))

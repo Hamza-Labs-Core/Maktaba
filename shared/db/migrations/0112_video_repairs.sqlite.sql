@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0108 (plan 06-11, mediaintel parity): UUID and TIMESTAMPTZ
+-- SQLite parity sibling for slot 0112 (plan 06-11, mediaintel parity): UUID and TIMESTAMPTZ
 -- become TEXT.
 --
 CREATE TABLE IF NOT EXISTS video_repairs (

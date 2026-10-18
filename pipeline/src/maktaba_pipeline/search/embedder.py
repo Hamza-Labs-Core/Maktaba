@@ -130,18 +130,19 @@ def make_collection(
     inspected (and unit-tested) without the dependency installed.
     """
     try:
-        import chromadb  # type: ignore[import-not-found]
+        import chromadb  # type: ignore[import-not-found,unused-ignore]
     except ImportError as exc:  # pragma: no cover — env-only
         raise RuntimeError(
             "chromadb is not installed; install the optional `search` extra"
         ) from exc
 
-    client = chromadb.PersistentClient(path=persist_dir) if persist_dir else chromadb.Client()
-    coll = client.get_or_create_collection(
+    # chromadb's own types (when installed) are stricter than this module's protocols
+    client: Any = chromadb.PersistentClient(path=persist_dir) if persist_dir else chromadb.Client()
+    coll: ChromaCollection = client.get_or_create_collection(
         name=name,
         embedding_function=embedding_function,
     )
-    return coll  # type: ignore[no-any-return]
+    return coll
 
 
 def _metadata_for(doc: SegmentDoc) -> dict[str, Any]:

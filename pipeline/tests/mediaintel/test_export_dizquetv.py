@@ -103,6 +103,18 @@ T0 = 1_800_000_000_000  # ms
 ISO0 = "2027-01-15T08:00:00Z"
 
 
+def test_a_logo_link_carries_the_file_s_version(tmp_path: Any) -> None:
+    from scripts.mediaintel.export_dizquetv import versioned
+
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"one")
+    first = versioned("http://tv/images/logo.png", str(logo))
+    assert first.startswith("http://tv/images/logo.png?v=") and len(first.split("=")[1]) == 10
+    assert versioned("http://tv/i?id=7", str(logo)).startswith("http://tv/i?id=7&v=")
+    logo.write_bytes(b"two")  # a new picture: a new link
+    assert versioned("http://tv/images/logo.png", str(logo)) != first
+
+
 def test_aired_finds_the_programme_on_air() -> None:
     from scripts.mediaintel.export_dizquetv import aired
 

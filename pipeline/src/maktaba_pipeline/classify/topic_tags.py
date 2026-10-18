@@ -69,6 +69,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import lru_cache
 from typing import NamedTuple
 
 from ..text.arabic import fold
@@ -89,15 +90,20 @@ __all__ = [
     "branding",
     "chapter_tags",
     "content_type",
+    "looks_recited",
     "match_text",
     "primary_topic",
+    "sample_evenly",
     "tag_series",
     "tag_video",
+    "transcript_hits",
 ]
 
+#: 4: transcripts are tagging evidence (``_add_transcripts``); the rules are settings
 #: 6: the tag stage also tags each episode by its own title and chapter playlist
 #: (``episode_tags``), reads the detection settings and strips the channel's branding
-TAGGER_VERSION: int = 6
+#: 7: both: transcript evidence (4) and episode tags / branding / season labels (5-6)
+TAGGER_VERSION: int = 7
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -160,6 +166,24 @@ class Tag(NamedTuple):
     evidence: str  # human-readable: which sources and phrases fired
 
 
+#: default commentary words (see TaggerConfig.recitation_commentary_words)
+_COMMENTARY_WORDS = (
+    "يعني طيب يعنى ايش إيش شو خلاص كمان برضه برضو عشان علشان ليش ليه هيك مش مو "
+    "الإخوة إخواني اخواني إخوانى أحبتي أحبابي الأحبة الأحباب حضرات "
+    "نقول قلنا ذكرنا سنذكر نتكلم نتحدث سنتحدث حديثنا كلامنا موضوعنا انتبه انتبهوا لاحظ "
+    "لاحظوا شوف شوفوا تعال تعالوا سؤال السؤال الشيخ شيخنا الدرس درسنا المحاضرة الحلقة "
+    "حلقتنا رواه البخاري صحيحه وسلم نحمده ونستعينه ونستغفره ونعوذ شرور سيئات أوصيكم "
+    "ونفسي محدثاتها بدعة الخطبة خطبتنا"
+)
+#: default Quranic words (see TaggerConfig.recitation_quranic_words)
+_QURANIC_WORDS = (
+    "الذين آمنوا كفروا ربك ربهم ربنا ربكم ربه السماوات الأرض عذاب أليم يوم قالوا قل إنا "
+    "إنه عليهم لهم الكتاب يؤمنون المتقين الصالحات تعملون يعملون يعلمون عليم حكيم غفور "
+    "رحيم قدير بصير خبير الكافرين المؤمنين الظالمين جنات الأنهار خالدين فيها أولئك "
+    "شيء كل اتقوا يا أيها الله إلا هو الذي"
+)
+
+
 @dataclass(frozen=True, slots=True)
 class TaggerConfig:
     #: per-source weights (see module docstring for the reasoning)
@@ -181,6 +205,49 @@ class TaggerConfig:
     #: a season that aired ≥ this many episodes within this many days is a broadcast program
     program_min_episodes: int = 10
     program_window_days: int = 45
+
+    # -- transcripts: what was said (see transcript_hits / looks_recited) ----------------
+    #: × share-weighted strength over the episodes' transcripts; below the episode titles
+    #: (speech is noisy and talks wander), above a description
+    w_transcript: float = 1.5
+    #: only the opening of each transcript is read (the stage loads the segments starting
+    #: before this many minutes) …
+    transcript_max_minutes: float = 15.0
+    #: … and at most this many characters of it
+    transcript_max_chars: int = 8000
+    #: a big season is judged on this many transcripts, spread evenly over its episodes
+    transcript_max_episodes: int = 12
+    #: tag namespaces transcripts may evidence (format/audience/occasion words are said in
+    #: passing far more often than they describe the video)
+    transcript_namespaces: tuple[str, ...] = ("topic",)
+    #: lexicon phrases lighter than this never count in speech (hints like النبي)
+    transcript_min_weight: float = 0.5
+    #: a one-word phrase counts in speech only from this weight (السيرة, تفسير); lighter
+    #: evidence must be a multi-word phrase (غزوة بدر, صلح الحديبية)
+    transcript_single_word_weight: float = 1.0
+    #: summed phrase weight in one transcript that makes it full evidence (one stray
+    #: mention is a quarter of that)
+    transcript_full_strength: float = 4.0
+    #: formulas every talk says, never evidence of a topic
+    transcript_stop_phrases: tuple[str, ...] = (
+        "بسم الله الرحمن الرحيم", "الحمد لله", "صلى الله عليه وسلم", "صلى الله عليه وآله وسلم",
+        "رسول الله", "رضي الله عنه", "رضي الله عنها", "رضي الله عنهم", "رضي الله عنهما",
+        "عليه السلام", "عليهم السلام", "سبحانه وتعالى", "السلام عليكم", "والصلاة والسلام",
+        "إن شاء الله", "جزاكم الله خيرا", "بارك الله فيكم", "أما بعد",
+    )  # fmt: skip
+    #: × the share of transcripts that sound recited (see looks_recited)
+    w_transcript_recitation: float = 2.5
+    #: a transcript shorter than this (words) is never judged recited
+    recitation_min_words: int = 60
+    #: recited: at most this many commentary words per 100 words …
+    recitation_max_commentary: float = 0.5
+    #: … and at least this share of words typical of the Quran's text
+    recitation_min_quranic_share: float = 0.12
+    #: words a speaker says and the Quran does not (colloquial fillers, addresses to the
+    #: audience, the khutbah's opening formula, hadith citations); matched as whole words
+    recitation_commentary_words: frozenset[str] = frozenset(_COMMENTARY_WORDS.split())
+    #: words frequent in the Quran's text (matched with their proclitics: والذين, وربك)
+    recitation_quranic_words: frozenset[str] = frozenset(_QURANIC_WORDS.split())
 
 
 # ---------------------------------------------------------------------------
@@ -1068,6 +1135,127 @@ def boilerplate_phrases(
 
 
 # ---------------------------------------------------------------------------
+# Transcripts: what was said. Speech is long and noisy (an ASR transcript, a talk that
+# wanders, formulas every speaker says), so it is read with the same lexicon but more
+# strictly than a title: hints never count, a one-word phrase only when unambiguous,
+# formulas are blanked out, and a tag needs repeated mentions to be full evidence.
+# ---------------------------------------------------------------------------
+
+#: recitation is decided by :func:`looks_recited`, never by words said about the Quran
+_RECITATION_TAGS = frozenset({"topic:quran_recitation", "format:recitation"})
+_BLANK = "·"  # replaces a blanked-out formula's tokens: matches no lexicon word
+
+
+@lru_cache(maxsize=32)
+def _folded_phrases(phrases: tuple[str, ...]) -> dict[str, list[tuple[str, ...]]]:
+    out: dict[str, list[tuple[str, ...]]] = {}
+    for p in phrases:
+        words = tuple(fold(p).split())
+        if words:
+            out.setdefault(words[0], []).append(words)
+    return out
+
+
+@lru_cache(maxsize=32)
+def _folded_words(words: frozenset[str]) -> frozenset[str]:
+    return frozenset(w for x in words for w in fold(x).split())
+
+
+def _blank_phrases(toks: list[str], phrases: tuple[str, ...]) -> list[str]:
+    """``toks`` with every occurrence of ``phrases`` (proclitics tolerated) blanked."""
+    index = _folded_phrases(phrases)
+    if not index:
+        return toks
+    forms = [_token_forms(t) for t in toks]
+    out = list(toks)
+    for i, fs in enumerate(forms):
+        for first in fs & index.keys():
+            for words in index[first]:
+                end = i + len(words)
+                if end <= len(toks) and all(words[j] in forms[i + j] for j in range(len(words))):
+                    out[i:end] = [_BLANK] * len(words)
+    return out
+
+
+def transcript_hits(
+    text: str, config: TaggerConfig | None = None, *, strip: Sequence[str] = ()
+) -> Hits:
+    """Lexicon hits in one transcript (its opening, ``transcript_max_chars``).
+
+    Only phrases of ``transcript_namespaces`` from ``transcript_min_weight`` count, a
+    one-word phrase only from ``transcript_single_word_weight``, and never the recitation
+    tags (see :func:`looks_recited`); ``transcript_stop_phrases`` are blanked first.
+    Unlike a title, every non-overlapping mention counts: strength is the summed weight
+    over ``transcript_full_strength``, capped at 1.
+    """
+    cfg = config or TaggerConfig()
+    toks = _tokens(text[: cfg.transcript_max_chars], strip)
+    toks = _blank_phrases(toks, cfg.transcript_stop_phrases)
+    if not toks:
+        return {}
+    namespaces = set(cfg.transcript_namespaces)
+    by_tag: dict[str, list[tuple[_Entry, int]]] = {}
+    for e, i in _raw_matches(toks):
+        if (
+            e.tag in _RECITATION_TAGS
+            or e.tag.split(":", 1)[0] not in namespaces
+            or e.weight < cfg.transcript_min_weight
+            or (len(e.words) < 2 and e.weight < cfg.transcript_single_word_weight)
+        ):
+            continue
+        by_tag.setdefault(e.tag, []).append((e, i))
+    full = max(cfg.transcript_full_strength, 1e-9)
+    out: Hits = {}
+    for tag, ms in by_tag.items():
+        taken: list[tuple[int, int]] = []
+        said: Counter[str] = Counter()
+        total = 0.0
+        for e, i in sorted(ms, key=lambda m: (-m[0].weight, -len(m[0].words), m[1])):
+            span = (i, i + len(e.words))
+            if any(span[0] < b and a < span[1] for a, b in taken):
+                continue
+            taken.append(span)
+            total += e.weight
+            said[e.phrase] += 1
+        out[tag] = (min(1.0, total / full), tuple(p for p, _ in said.most_common()))
+    return out
+
+
+def looks_recited(text: str, config: TaggerConfig | None = None) -> bool:
+    """Whether a transcript (its opening) is Quran recited rather than talked about.
+
+    A recitation is the Quran's text and nothing else: almost no commentary words
+    (``recitation_commentary_words``: fillers, addresses to the audience, the khutbah's
+    opening formula, hadith citations; at most ``recitation_max_commentary`` per 100
+    words) and a high share of words typical of the Quran (``recitation_quranic_words``,
+    at least ``recitation_min_quranic_share``). A lecture or a khutbah quoting verses
+    fails the first test, chatter fails the second.
+    """
+    cfg = config or TaggerConfig()
+    toks = fold(text[: cfg.transcript_max_chars]).split()
+    if not toks or len(toks) < cfg.recitation_min_words:
+        return False
+    commentary = _folded_words(cfg.recitation_commentary_words)
+    quranic = _folded_words(cfg.recitation_quranic_words)
+    said = sum(1 for t in toks if t in commentary)
+    if said * 100.0 / len(toks) > cfg.recitation_max_commentary:
+        return False
+    quran = sum(1 for t in toks if _token_forms(t) & quranic)
+    return quran / len(toks) >= cfg.recitation_min_quranic_share
+
+
+def sample_evenly[T](items: Sequence[T], n: int) -> list[T]:
+    """At most ``n`` of ``items``, spread evenly from the first to the last."""
+    if n <= 0:
+        return []
+    if len(items) <= n:
+        return list(items)
+    if n == 1:
+        return [items[0]]
+    return [items[round(i * (len(items) - 1) / (n - 1))] for i in range(n)]
+
+
+# ---------------------------------------------------------------------------
 # Hijri windows from Gregorian dates (1 Ramadan, Umm al-Qura / announced).
 # Approximate by a day or two, which the window margins absorb.
 # ---------------------------------------------------------------------------
@@ -1251,6 +1439,7 @@ def tag_series(
     kind: str | None = None,
     air_dates: Sequence[date] = (),
     noise: frozenset[str] = frozenset(),
+    transcripts: Sequence[str] = (),
     config: TaggerConfig | None = None,
 ) -> list[Tag]:
     """Tags for one series (season): ``[(tag, score, evidence), …]``.
@@ -1259,6 +1448,8 @@ def tag_series(
     phrases are stripped from the other texts as branding and used once as
     a prior. ``air_dates`` should hold *exact* upload dates only (Ramadan /
     Hajj detection). ``kind`` is the detector's (``episodic`` | ``clips``).
+    ``transcripts`` are the episodes' transcript texts (the ones that have one; a big
+    season's are sampled down to ``transcript_max_episodes``): see :func:`_add_transcripts`.
     The ``genre:`` tag repeats the primary topic; see :func:`primary_topic`.
     """
     cfg = config or TaggerConfig()
@@ -1278,6 +1469,7 @@ def tag_series(
         cfg.w_description,
     )
     acc.add_hits("channel", _channel_hits(channel), cfg.w_channel)
+    _add_transcripts(acc, transcripts, strip, cfg)
 
     if kind == "clips":
         acc.add("format:clips", 3.0, "detector:clips")
@@ -1351,6 +1543,29 @@ def chapter_tags(
     return out
 
 
+def _add_transcripts(
+    acc: _Acc, transcripts: Sequence[str], strip: Sequence[str], cfg: TaggerConfig
+) -> None:
+    """Transcripts as their own evidence source (``transcript k/n: …``): lexicon hits
+    share-weighted over the transcripts (:func:`transcript_hits`, ``w_transcript``), and
+    the share that sounds recited (:func:`looks_recited`, ``w_transcript_recitation``)."""
+    texts = sample_evenly([t for t in transcripts if t and t.strip()], cfg.transcript_max_episodes)
+    if not texts:
+        return
+    acc.add_share(
+        "transcript", [transcript_hits(t, cfg, strip=strip) for t in texts], cfg.w_transcript
+    )
+    recited = sum(looks_recited(t, cfg) for t in texts)
+    if recited:
+        share = recited / len(texts)
+        for tag in ("topic:quran_recitation", "format:recitation"):
+            acc.add(
+                tag,
+                cfg.w_transcript_recitation * share,
+                f"transcript recited {recited}/{len(texts)}",
+            )
+
+
 def _densest_window(dated: Sequence[date], days: int) -> int:
     best = j = 0
     for i, d in enumerate(dated):
@@ -1378,9 +1593,11 @@ def tag_video(
     channel: Sequence[str] = (),
     is_short: bool = False,
     noise: frozenset[str] = frozenset(),
+    transcript: str = "",
     config: TaggerConfig | None = None,
 ) -> list[Tag]:
-    """Tags for one stand-alone video (filler / short / unassigned)."""
+    """Tags for one stand-alone video (filler / short / unassigned); ``transcript`` is its
+    transcript text, if it has one (see :func:`_add_transcripts`)."""
     cfg = config or TaggerConfig()
     acc = _Acc()
     strip = branding(channel)
@@ -1390,6 +1607,7 @@ def tag_video(
             "desc", match_text(_desc_head(description), noise=noise, strip=strip), cfg.w_description
         )
     acc.add_hits("channel", _channel_hits(channel), cfg.w_channel)
+    _add_transcripts(acc, (transcript,), strip, cfg)
     if is_short:
         acc.add("format:clips", 3.0, "short")
     elif duration_s is not None and duration_s < cfg.clip_max_s:

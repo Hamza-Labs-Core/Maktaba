@@ -10,6 +10,12 @@ prototype's ``classify_tags._tag_folder``:
 * subject **library** -> ``video_topic_tags``: every video that is in no season (unassigned or a
   short) is tagged on its own so it can be used as themed filler.
 
+Both also read what was said: the opening (``transcript_max_minutes``) of each video's active
+transcript, sampled down to ``transcript_max_episodes`` for a big season, is a separate evidence
+source (see :func:`~maktaba_pipeline.classify.topic_tags.tag_series`). The input fingerprint holds
+the active transcript ids, so a new transcript re-tags its season (or the library's loose videos),
+and the tagging rules as set (settings ``rules.tag``).
+
 Both are change-set stages (notes N1a): ``compute_changes`` diffs the new tags against the stored
 ones, ``apply_changes`` writes them, and the change set lands in the job log.
 
@@ -41,9 +47,11 @@ from ...classify.series_detector import is_short as detector_is_short
 from ...classify.topic_tags import (
     TAGGER_VERSION,
     Tag,
+    TaggerConfig,
     boilerplate_phrases,
     branding,
     chapter_tags,
+    sample_evenly,
     tag_series,
     tag_video,
 )
@@ -115,6 +123,75 @@ async def _channel_names(db: Any, library_id: UUID, folder: str) -> list[str]:
     if base and base not in names:
         names.append(base)
     return names
+
+
+# ------------------------------------------------------------------------- transcripts
+
+_BATCH = 500
+
+
+def _first_per_video(rows: Iterable[Any]) -> dict[str, str]:
+    """video id -> its active transcript id; with several audio tracks, the first track's
+    (rows come ordered by video, track, id)."""
+    out: dict[str, str] = {}
+    for r in rows:
+        out.setdefault(str(r["video_id"]), str(r["id"]))
+    return out
+
+
+async def _season_transcript_ids(db: Any, video_ids: Sequence[UUID]) -> dict[str, str]:
+    if not video_ids:
+        return {}
+    marks = ",".join(f"${i + 1}" for i in range(len(video_ids)))
+    rows = await db.fetch(
+        "SELECT id, video_id FROM transcripts"
+        f" WHERE is_active AND video_id IN ({marks})"
+        " ORDER BY video_id, audio_track_id, id",
+        *[str(v) for v in video_ids],
+    )
+    return _first_per_video(rows)
+
+
+_LOOSE_TRANSCRIPTS_SQL = """
+SELECT t.id AS id, t.video_id AS video_id
+  FROM transcripts t
+  JOIN videos v ON v.id = t.video_id
+ WHERE v.library_id = $1 AND v.deleted_at IS NULL AND t.is_active
+   AND NOT EXISTS (SELECT 1 FROM series_episodes e WHERE e.video_id = v.id)
+ ORDER BY t.video_id, t.audio_track_id, t.id
+"""
+
+
+async def _loose_transcript_ids(db: Any, library_id: UUID) -> dict[str, str]:
+    return _first_per_video(await db.fetch(_LOOSE_TRANSCRIPTS_SQL, uid(library_id)))
+
+
+async def _transcript_texts(
+    db: Any, transcript_ids: Sequence[str], cfg: TaggerConfig
+) -> dict[str, str]:
+    """transcript id -> the text of its segments starting in the first
+    ``transcript_max_minutes``, at most ``transcript_max_chars`` long."""
+    parts: dict[str, list[str]] = defaultdict(list)
+    size: dict[str, int] = defaultdict(int)
+    limit_s = cfg.transcript_max_minutes * 60.0
+    for at in range(0, len(transcript_ids), _BATCH):
+        batch = list(transcript_ids[at : at + _BATCH])
+        marks = ",".join(f"${i + 2}" for i in range(len(batch)))
+        for r in await db.fetch(
+            "SELECT transcript_id AS tid, text FROM transcript_segments"
+            f" WHERE start_sec < $1 AND transcript_id IN ({marks})"
+            " ORDER BY transcript_id, seq",
+            limit_s,
+            *batch,
+        ):
+            tid = str(r["tid"])
+            if size[tid] >= cfg.transcript_max_chars:
+                continue
+            text = str(r["text"] or "").strip()
+            if text:
+                parts[tid].append(text)
+                size[tid] += len(text) + 1
+    return {tid: " ".join(ps)[: cfg.transcript_max_chars] for tid, ps in parts.items()}
 
 
 # ------------------------------------------------------------------------- season
@@ -191,6 +268,7 @@ def _episode_tags(
     playlists: Mapping[str, Sequence[str]],
     titles: Mapping[str, str],
     shows: Mapping[str, int],
+    config: TaggerConfig | None = None,
 ) -> dict[str, dict[str, float]]:
     """Each episode's tags from its own title, plus its show's chapter playlists: an episode
     in «كتاب الصيام» of a hadith course is about that chapter, whatever its own title says
@@ -206,6 +284,7 @@ def _episode_tags(
             None if e["dur"] is None else float(e["dur"]),
             channel=channel,
             noise=noise,
+            config=config,
         ):
             if t.tag.startswith(_EPISODE_NAMESPACES) and t.tag != "audience:general":
                 own[t.tag] = float(t.score)
@@ -221,13 +300,19 @@ def _episode_tags(
     return out
 
 
-async def _season_tags(db: Any, season_id: UUID) -> SeasonTagging | None:
+async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTagging | None:
     s = await load_season(db, season_id)
     if s is None or s.retired or s.library_id is None:
         return None
     ids = await season_episode_ids(db, season_id)
     if not ids:
         return SeasonTagging([], {}, {})
+    by_video = await _season_transcript_ids(db, ids)
+    # in episode order, spread evenly over the season
+    chosen = sample_evenly(
+        [by_video[str(i)] for i in ids if str(i) in by_video], cfg.transcript_max_episodes
+    )
+    texts = await _transcript_texts(db, chosen, cfg)
     marks = ",".join(f"${i + 1}" for i in range(len(ids)))
     rows = {
         str(r["id"]): r
@@ -269,11 +354,13 @@ async def _season_tags(db: Any, season_id: UUID) -> SeasonTagging | None:
         kind=s.kind,
         air_dates=dates,
         noise=noise,
+        transcripts=[texts[t] for t in chosen if t in texts],
+        config=cfg,
     )
     return SeasonTagging(
         tags,
         {t.tag: float(t.score) for t in tags},
-        _episode_tags(eps, channel, noise, by_episode, pl_titles, shows),
+        _episode_tags(eps, channel, noise, by_episode, pl_titles, shows, cfg),
     )
 
 
@@ -310,7 +397,7 @@ async def _write_episode_tags(
 
 async def _run_season(db: Any, job: Job, ctx: StageContext) -> StageResult:
     season_id = job.subject.id
-    res = await _season_tags(db, season_id)
+    res = await _season_tags(db, season_id, await ctx.rules("tag"))
     if res is None:
         return StageResult(output_hash=canonical_hash("retired"), summary={"tagged": False})
     new = res.scores
@@ -395,13 +482,26 @@ def _is_short(row: Any, detect: DetectorConfig) -> bool:
     return detector_is_short(facts, detect)
 
 
+def _ids_hash(by_video: Mapping[str, str]) -> str:
+    return canonical_hash(sorted(by_video.values()))
+
+
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
+    # the rules as set: a changed tagging setting tags again
+    rules = to_json((await read_rules(db, "tag"))[0])
     if subject.kind == "season":
         s = await load_season(db, subject.id)
         if s is None:
             return canonical_hash("gone")
+        by_video = await _season_transcript_ids(db, await season_episode_ids(db, subject.id))
         return canonical_hash(
-            {"membership": s.membership_hash, "retired": s.retired, "v": TAGGER_VERSION}
+            {
+                "membership": s.membership_hash,
+                "retired": s.retired,
+                "v": TAGGER_VERSION,
+                "transcripts": _ids_hash(by_video),
+                "rules": rules,
+            }
         )
     rows = await db.fetch(_LOOSE_SQL, uid(subject.id))
     return canonical_hash(
@@ -410,15 +510,21 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             # the detection settings decide what is a short
             "detect": to_json((await read_rules(db, "detect"))[0]),
             "v": TAGGER_VERSION,
+            "transcripts": _ids_hash(await _loose_transcript_ids(db, subject.id)),
+            "rules": rules,
         }
     )
 
 
 async def library_tags(
-    db: Any, library_id: UUID, detect: DetectorConfig
+    db: Any, library_id: UUID, detect: DetectorConfig, cfg: TaggerConfig | None = None
 ) -> dict[str, dict[str, float]]:
-    """The keyword tags of every video of the library that is in no season, by video id."""
+    """The keyword tags of every video of the library that is in no season, by video id
+    (``cfg``: the tagging rules as set, the built-in ones when not given)."""
+    cfg = cfg or TaggerConfig()
     rows = await db.fetch(_LOOSE_SQL, uid(library_id))
+    by_video = await _loose_transcript_ids(db, library_id)
+    texts = await _transcript_texts(db, sorted(by_video.values()), cfg)
     by_folder: dict[str, list[Any]] = defaultdict(list)
     for r in rows:
         by_folder[_library_noise_key(str(r["path"]))].append(r)
@@ -434,6 +540,8 @@ async def library_tags(
                 channel=channel,
                 is_short=_is_short(r, detect),
                 noise=noise,
+                transcript=texts.get(by_video.get(str(r["id"]), ""), ""),
+                config=cfg,
             )
             new[str(r["id"])] = {t.tag: float(t.score) for t in tags}
     return new
@@ -441,7 +549,7 @@ async def library_tags(
 
 async def _run_library(db: Any, job: Job, ctx: StageContext) -> StageResult:
     library_id = job.subject.id
-    new = await library_tags(db, library_id, await ctx.rules("detect"))
+    new = await library_tags(db, library_id, await ctx.rules("detect"), await ctx.rules("tag"))
     out = canonical_hash(
         [[v, sorted([t, round(s, 3)] for t, s in tags.items())] for v, tags in sorted(new.items())]
     )

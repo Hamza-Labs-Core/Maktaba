@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0102: UUID and TIMESTAMPTZ become TEXT.
+-- SQLite parity sibling for slot 0106: UUID and TIMESTAMPTZ become TEXT.
 --
 CREATE TABLE IF NOT EXISTS tag_checks (
     season_id     TEXT        PRIMARY KEY REFERENCES series_seasons(id) ON DELETE CASCADE,

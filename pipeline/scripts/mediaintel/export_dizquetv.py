@@ -54,7 +54,6 @@ from maktaba_pipeline.integrations.dizquetv_export import (
     airable,
     aired,
     art_link,
-    art_version,
     channel_art,
     filler_items,
     fingerprint,
@@ -66,6 +65,7 @@ from maktaba_pipeline.integrations.dizquetv_export import (
     slot_lengths,
     slot_text,
     splice,
+    versioned,
     write_channel,
 )
 from maktaba_pipeline.integrations.dizquetv_export import (
@@ -443,10 +443,7 @@ def apply_actions(
                 print(f"  ✓  {Path(path).name} at {urls[path]}")
             else:
                 got = _upload(url, path, f"maktaba-{Path(path).name}")
-                # the file's version in the link: a new picture is a new link, so Plex
-                # and the TVs fetch it instead of showing the one they cached
-                ver = art_version(path)
-                urls[path] = f"{art_link(cfg, url, got)}?v={ver}"
+                urls[path] = versioned(art_link(cfg, url, got), path)
                 print(f"  ✓  uploaded {Path(path).name} → {urls[path]}")
         return urls[path]
 

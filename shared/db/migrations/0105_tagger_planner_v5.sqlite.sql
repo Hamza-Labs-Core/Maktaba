@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0101 (plan 06-11 section 17.7).
+-- SQLite parity sibling for slot 0105 (plan 06-11 section 17.7).
 --
 UPDATE job_stages SET version = 5 WHERE stage = 'tag';
 UPDATE job_stages SET version = 5 WHERE stage = 'plan_channels';

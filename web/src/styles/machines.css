@@ -1,0 +1,210 @@
+/* /admin/machines — Epic 31. Colours come only from the app tokens
+   (tokens.css), so dark mode follows; logical properties keep it right in
+   Arabic; every track can shrink, so nothing overflows a 375 px phone. */
+.mkt-mc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+.mkt-mc h1 {
+  margin: 0;
+}
+.mkt-mc__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-mc-muted {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-mc-banner {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+}
+.mkt-mc-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-mc-section__title,
+.mkt-mc-card__eyebrow {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mkt-mc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-mc-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-subtle);
+  color: var(--color-fg);
+}
+.mkt-mc-card article {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-mc-home__name {
+  margin: 0;
+  font-size: var(--font-size-h2);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.mkt-mc-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: 3px solid var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 10%, var(--color-bg));
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-inline-size: 0;
+}
+.mkt-mc-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.mkt-mc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.mkt-mc-node__actions {
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+}
+.mkt-mc-pending__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.mkt-mc-code {
+  inline-size: 10ch;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+.mkt-mc-error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-mc-chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-mc-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.mkt-mc-sub__title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.mkt-mc-storage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-check--ok {
+  color: var(--color-success);
+}
+.mkt-mc-check--error {
+  color: var(--color-error);
+}
+.mkt-mc-map {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-map li {
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.mkt-mc-map-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-mc-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+.mkt-mc-table-wrap {
+  overflow-x: auto;
+}
+.mkt-mc-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-table th,
+.mkt-mc-table td {
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: middle;
+}
+.mkt-mc-table thead th {
+  color: var(--color-muted);
+  font-weight: 600;
+}
+.mkt-mc-served {
+  color: var(--color-success);
+}
+.mkt-mc-off {
+  color: var(--color-muted);
+}
+@media (max-width: 600px) {
+  .mkt-mc-map-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

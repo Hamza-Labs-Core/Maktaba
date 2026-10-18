@@ -56,6 +56,12 @@ type Handler struct {
 	// cross-replica bus. nil -> fall back to Hub (single process).
 	Events  EventPublisher
 	NowFunc func() time.Time
+	// StageETA lets a stage supply its own time left for its card, in
+	// place of the pending jobs over the finished-jobs rate: transcription's
+	// jobs run ~30 at a time per worker and finish long after their work
+	// starts, so its rate of finished files says little. A nil result or an
+	// error keeps the rate-based estimate.
+	StageETA map[string]func(ctx context.Context, now time.Time) (*float64, error)
 	// CPUCount feeds the "auto" size of the cpu pool; default
 	// runtime.NumCPU.
 	CPUCount func() int

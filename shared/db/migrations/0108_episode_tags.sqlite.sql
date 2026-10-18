@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0104: UUID becomes TEXT.
+-- SQLite parity sibling for slot 0108: UUID becomes TEXT.
 --
 CREATE TABLE IF NOT EXISTS episode_tags (
     video_id  TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,

@@ -24,11 +24,13 @@ import { QueueOverview } from "./pages/queue/QueueOverview";
 import { QueueDetail } from "./pages/queue/QueueDetail";
 import { ItemHistory } from "./pages/queue/ItemHistory";
 import { Reports } from "./pages/queue/Reports";
+import { Transcription } from "./pages/transcription/Transcription";
 import { AdminExtensions } from "./pages/Admin/Extensions";
 import { Settings } from "./pages/Settings";
 import { AdminUsers } from "./pages/Admin/Users";
 import { AdminAuditLog } from "./pages/Admin/AuditLog";
 import { SystemHealth } from "./pages/Admin/SystemHealth";
+import { Machines } from "./pages/Admin/Machines";
 import { AdminLogs } from "./pages/Admin/Logs";
 import { CloudDevices } from "./pages/Cloud/Devices";
 import { Billing } from "./pages/Cloud/Billing";
@@ -94,6 +96,7 @@ export function App() {
                     <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
                     <Route path="/queue/reports" element={<Reports />} />
                     <Route path="/queue/:stage" element={<QueueDetail />} />
+                    <Route path="/transcription" element={<Transcription />} />
                     <Route path="/settings/*" element={<Settings />} />
                     <Route path="/more" element={<MoreMenu />} />
                     <Route path="/account" element={<Account />} />
@@ -110,6 +113,7 @@ export function App() {
                     <Route path="/admin/analytics" element={<AdminAnalytics />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />
+                    <Route path="/admin/machines" element={<Machines />} />
                     <Route path="/admin/logs" element={<AdminLogs />} />
                     <Route path="/admin/devices" element={<CloudDevices />} />
                     <Route path="*" element={<NotFound />} />

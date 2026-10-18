@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0103 (parity with mediaintel books) - the book a lesson series explains.
+-- Slot 0107 (parity with mediaintel books) - the book a lesson series explains.
 -- books: one row per book name, looked up once in the encyclopedia (an empty title =
 -- not found, searched again after books.retry_missing_days). series_books: the book a
 -- season was matched to, and the topic fields it gave (comma separated).

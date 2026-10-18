@@ -325,7 +325,14 @@ func runServe() error {
 			// empty registry, so every flush 404'd.
 			perfRegistry := perf.NewRegistry()
 
+			// MAKTABA_PIPELINE_ADDR is the API's dial address for the
+			// pipeline; MAKTABA_PIPELINE_GRPC_ADDR (the address the
+			// pipeline itself listens on) is accepted as a fallback so a
+			// shared env file wires both sides.
 			pipelineAddr := os.Getenv("MAKTABA_PIPELINE_ADDR")
+			if pipelineAddr == "" {
+				pipelineAddr = os.Getenv("MAKTABA_PIPELINE_GRPC_ADDR")
+			}
 			streamingAddr := os.Getenv("MAKTABA_STREAMING_ADDR")
 			var pipelineClient grpcpipeline.Client
 			var streamingClient grpcstreaming.Client
@@ -351,13 +358,28 @@ func runServe() error {
 			busCtx, busCancel := context.WithCancel(context.Background())
 			defer busCancel()
 
+			// The semantic leg's per-request deadline (embed + Chroma
+			// top-k + snippet load); search.DefaultSemanticBudget when unset.
+			var semanticBudget time.Duration
+			if v := os.Getenv("MAKTABA_SEARCH_SEMANTIC_BUDGET_MS"); v != "" {
+				if ms, perr := strconv.Atoi(v); perr == nil && ms > 0 {
+					semanticBudget = time.Duration(ms) * time.Millisecond
+				} else {
+					logger.Warn("p6: MAKTABA_SEARCH_SEMANTIC_BUDGET_MS ignored", "value", v)
+				}
+			}
+
+			// PipelineClient also carries semantic search: MountP6 derives
+			// the search handler's SemanticClient from it (FTS-only when
+			// the pipeline address is unset or the pipeline has no index).
 			router.MountP6(r, router.P6Deps{
-				DB:              appDB,
-				PipelineClient:  pipelineClient,
-				StreamingClient: streamingClient,
-				BusCtx:          busCtx,
-				BusDSN:          dsn,
-				PerfRegistry:    perfRegistry,
+				DB:                   appDB,
+				PipelineClient:       pipelineClient,
+				StreamingClient:      streamingClient,
+				SearchSemanticBudget: semanticBudget,
+				BusCtx:               busCtx,
+				BusDSN:               dsn,
+				PerfRegistry:         perfRegistry,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
@@ -426,6 +448,12 @@ func runServe() error {
 			}).Run(context.Background())
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
+
+			// Epic 31 (multi-instance) — instance identity, the LAN
+			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
+			// machine join/approve/revoke surface and its housekeeping.
+			clusterClose := mountCluster(r, appDB, dsn, publicAddr, logger)
+			defer clusterClose()
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and

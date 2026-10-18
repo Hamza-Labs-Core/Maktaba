@@ -58,6 +58,7 @@ from ...integrations.dizquetv_export import (
     removals,
     resolve_slots,
     slot_text,
+    versioned,
     write_channel,
 )
 from ...integrations.plex import PlexClient, PlexError, TransportError
@@ -470,7 +471,7 @@ class _Art:
                 got = self.dz.upload_image(Path(path).read_bytes(), f"maktaba-{Path(path).name}")
                 # the file's version in the link: a new picture is a new link, so Plex and
                 # the TVs fetch it instead of showing the one they cached
-                self._urls[path] = f"{art_link(self.cfg, self.dz.base, got)}?v={art_version(path)}"
+                self._urls[path] = versioned(art_link(self.cfg, self.dz.base, got), path)
         return self._urls[path]
 
     def apply(self, body: dict[str, Any]) -> dict[str, Any]:

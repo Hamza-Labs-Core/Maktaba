@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..binaries import ffprobe_binary
 from ..db.jobs import DBConn as JobDBConn
 from ..db.jobs import Stage as JobStage
 from ..db.jobs import enqueue
@@ -170,10 +171,11 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> ProbeResult:
 async def run_ffprobe(
     path: str,
     *,
-    binary: str = "ffprobe",
+    binary: str | None = None,
     timeout_sec: float = 60.0,
 ) -> dict[str, Any]:
     """Spawn ffprobe and return parsed JSON. Raises :class:`ProbeError`."""
+    binary = ffprobe_binary(binary)
     if shutil.which(binary) is None:
         raise FFprobeNotFound(f"{binary!r} not on PATH")
 
@@ -216,7 +218,7 @@ async def run_ffprobe(
     return parsed
 
 
-async def probe(path: str, *, binary: str = "ffprobe") -> ProbeResult:
+async def probe(path: str, *, binary: str | None = None) -> ProbeResult:
     """Convenience wrapper: shell out + parse."""
     payload = await run_ffprobe(path, binary=binary)
     return parse_ffprobe_json(payload)

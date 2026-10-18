@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0106 (plan 06-11, mediaintel parity): arrays and JSONB are
+-- SQLite parity sibling for slot 0110 (plan 06-11, mediaintel parity): arrays and JSONB are
 -- JSON text, booleans are 0/1.
 --
 INSERT INTO worker_pools (pool, label, scope, size, default_size) VALUES

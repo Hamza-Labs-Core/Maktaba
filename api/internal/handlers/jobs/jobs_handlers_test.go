@@ -185,8 +185,8 @@ func TestStats(t *testing.T) {
 		{Match: "select min(created_at)", Cols: []string{"min"}, Rows: [][]driver.Value{{now0.Add(-90 * time.Second)}}},
 		{Match: "group by claimed_by", Cols: []string{"claimed_by", "hb", "job"}, Rows: [][]driver.Value{
 			{"nas-1/4242/abc", now0, "7"}, {"mac-1/99/def", now0.Add(-time.Second), "8"}}},
-		{Match: "from workers order by host", Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version"},
-			Rows: [][]driver.Value{{"w1", "nas-1", "{probe}", nil, now0.Add(-time.Hour), now0.Add(-time.Second), nil}}},
+		{Match: "from workers w left join cluster_nodes", Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version", "node_id", "node_name", "role"},
+			Rows: [][]driver.Value{{"w1", "nas-1", "{probe}", nil, now0.Add(-time.Hour), now0.Add(-time.Second), nil, nil, nil, nil}}},
 	}
 	_, r := newJobsFixture(rules...)
 	rec := call(r, "GET", "/api/queue/stats", false)

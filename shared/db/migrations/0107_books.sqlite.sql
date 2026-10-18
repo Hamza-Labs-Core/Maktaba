@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0103: UUID becomes TEXT, INT INTEGER, DOUBLE PRECISION REAL.
+-- SQLite parity sibling for slot 0107: UUID becomes TEXT, INT INTEGER, DOUBLE PRECISION REAL.
 --
 CREATE TABLE IF NOT EXISTS books (
     name        TEXT    PRIMARY KEY,

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0102 (parity with mediaintel check-tags / check-clips) - the language model's answers,
+-- Slot 0106 (parity with mediaintel check-tags / check-clips) - the language model's answers,
 -- kept per input so a question is never asked twice. tag_checks: one row per season (the
 -- model's topics for the series, cached under a hash of its name, library, sampled episode
 -- titles, model and prompt version). clip_checks: one row per short video (the topics it

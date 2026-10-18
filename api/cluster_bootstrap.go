@@ -1,0 +1,107 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+)
+
+// clusterTick is the Epic 31 housekeeping cadence: the accept-joins switch
+// turns itself off after its hour, used sealed credentials are dropped.
+const clusterTick = 30 * time.Second
+
+// mountCluster wires Epic 31 (multi-instance): the /api/cluster routes,
+// the instance identity row (name = this machine's stable host name on
+// first start), the mDNS announcement (unless MAKTABA_DISCOVERY_MDNS=0)
+// and the housekeeping loop. It returns a cleanup func for shutdown.
+func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog.Logger) func() {
+	driver := "postgres"
+	if isSQLiteDSN(dsn) {
+		driver = "sqlite"
+	}
+	var pub discovery.Publisher
+	if mdnsEnabled() {
+		pub = discovery.NewZeroconfPublisher()
+	}
+	var adv *cluster.Advertiser
+	if pub != nil {
+		adv = &cluster.Advertiser{
+			Publisher: pub,
+			Port:      portOf(publicAddr, 8080),
+			Version:   version.Version,
+			SchemaRev: schemaRev(db, driver),
+		}
+	}
+	h := router.MountP31(r, router.P31Deps{
+		DB:         db,
+		Driver:     driver,
+		Advertiser: adv,
+		PGPort:     envIntDefault("MAKTABA_CLUSTER_PG_PORT", 5432),
+		Logger:     logger,
+	})
+	if h == nil {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	bctx, bcancel := context.WithTimeout(ctx, 10*time.Second)
+	id, err := h.Bootstrap(bctx, cluster.StableHostName())
+	bcancel()
+	if err != nil {
+		logger.Warn("p31: instance identity bootstrap failed", "err", err, "event", "p31_identity_failed")
+	} else {
+		logger.Info("p31: cluster handlers mounted", "instance", id.Short(), "mdns", pub != nil,
+			"event", "p31_mounted")
+	}
+	go h.Run(ctx, clusterTick)
+	return func() {
+		cancel()
+		if pub != nil {
+			_ = pub.Close()
+		}
+	}
+}
+
+func mdnsEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("MAKTABA_DISCOVERY_MDNS")))
+	return v != "0" && v != "false" && v != "off"
+}
+
+// portOf extracts the port of a listen address (":8080", "0.0.0.0:8080").
+func portOf(addr string, def int) int {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return def
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n <= 0 || n > 65535 {
+		return def
+	}
+	return n
+}
+
+// schemaRev is MAKTABA_SCHEMA_REV, else the latest applied migration slot.
+func schemaRev(db *sql.DB, driver string) int {
+	if n := envIntDefault("MAKTABA_SCHEMA_REV", 0); n > 0 || db == nil || driver != "postgres" {
+		return n
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var n int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&n); err != nil {
+		return 0
+	}
+	return int(n)
+}

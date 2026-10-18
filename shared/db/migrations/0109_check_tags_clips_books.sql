@@ -1,12 +1,12 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0105 (parity with mediaintel check-tags / check-clips / books) - register the three
+-- Slot 0109 (parity with mediaintel check-tags / check-clips / books) - register the three
 -- stages and the pool they share. check_tags and books (a season) and check_clips (a
 -- library) follow tag: the language model's and the book's corrections are written over the
--- keyword tags, so a new tag run applies them again from their cached answers (slots 0102,
--- 0103) before a clip group or a channel reads the tags. tag 6 also tags each episode by its
--- own title and chapter playlist (slot 0104), reads the detection settings and strips the
+-- keyword tags, so a new tag run applies them again from their cached answers (slots 0106,
+-- 0107) before a clip group or a channel reads the tags. tag 6 also tags each episode by its
+-- own title and chapter playlist (slot 0108), reads the detection settings and strips the
 -- channel's branding; the version sweep re-tags once. Workers re-sync job_stages from the
 -- graph at start (engine/sync.py); this seed keeps a fresh database consistent first.
 --

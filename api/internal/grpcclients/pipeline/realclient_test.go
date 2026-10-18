@@ -37,6 +37,7 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 		HandlerType: (*any)(nil),
 		Methods: []grpc.MethodDesc{
 			{MethodName: "Embed", Handler: mk(handlers["Embed"])},
+			{MethodName: "SemanticSearch", Handler: mk(handlers["SemanticSearch"])},
 			{MethodName: "ListBackends", Handler: mk(handlers["ListBackends"])},
 			{MethodName: "ExtractEmbeddedSubtitle", Handler: mk(handlers["ExtractEmbeddedSubtitle"])},
 			{MethodName: "Transcribe", Handler: mk(handlers["Transcribe"])},

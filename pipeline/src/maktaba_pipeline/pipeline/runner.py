@@ -40,7 +40,7 @@ import asyncio
 import os
 import signal
 import socket
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -103,9 +103,13 @@ class WorkerConfig:
     #: tests) keep working; the daemon turns it on.
     pool_mode: bool = False
     stage_pools: Mapping[str, str] = field(default_factory=dict)
+    #: Pool mode only: the stages to claim, read on every drain (Epic 31 design section
+    #: 5: the served set changes while the worker runs, and may be empty for a while, for
+    #: example while draining). ``stage_pools`` must then cover every stage it can return.
+    dynamic_stages: Callable[[], Sequence[str]] | None = None
 
     def __post_init__(self) -> None:
-        if not self.supported_stages:
+        if not self.supported_stages and self.dynamic_stages is None:
             raise ValueError("WorkerConfig.supported_stages must not be empty")
         if self.claim_poll_sec <= 0:
             raise ValueError("claim_poll_sec must be > 0")
@@ -214,24 +218,30 @@ class ClaimLoop:
             self._pool_sems[name] = asyncio.Semaphore(free)
             self._pool_sem_size[name] = size
 
-    def _pool_order(self) -> list[str]:
-        used = {self.cfg.stage_pools.get(str(s)) for s in self.cfg.supported_stages}
+    def _current_stages(self) -> tuple[Stage | str, ...]:
+        if self.cfg.dynamic_stages is not None:
+            return tuple(self.cfg.dynamic_stages())
+        return self.cfg.supported_stages
+
+    def _pool_order(self, stages: Sequence[Stage | str] | None = None) -> list[str]:
+        if stages is None:
+            stages = self._current_stages()
+        used = {self.cfg.stage_pools.get(str(s)) for s in stages}
         known = [p for p in self.POOL_ORDER if p in used]
         extra = sorted(p for p in used if p is not None and p not in self.POOL_ORDER)
         return known + extra
 
     async def _drain_pools(self, in_flight: set[asyncio.Task[None]]) -> int:
+        current = self._current_stages()
+        if not current:
+            return 0
         await self.reload_pools()
         count = 0
-        for pool_name in self._pool_order():
+        for pool_name in self._pool_order(current):
             pool = self._pools.get(pool_name)
             if pool is None:
                 continue
-            stages = [
-                str(s)
-                for s in self.cfg.supported_stages
-                if self.cfg.stage_pools.get(str(s)) == pool_name
-            ]
+            stages = [str(s) for s in current if self.cfg.stage_pools.get(str(s)) == pool_name]
             while not self.shutdown_event.is_set():
                 sem = self._pool_sems.get(pool_name) if pool.scope == "per_worker" else None
                 if pool.scope == "per_worker" and (sem is None or self._sem_value(sem) <= 0):

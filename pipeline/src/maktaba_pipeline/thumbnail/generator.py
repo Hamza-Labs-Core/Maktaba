@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..binaries import ffmpeg_binary
+
 __all__ = [
     "DEFAULT_CONFIG",
     "FrameRunner",
@@ -138,7 +140,7 @@ def build_poster_args(
     output: str,
     *,
     width: int = 640,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
 ) -> list[str]:
     """Compose the single-frame ffmpeg command line.
 
@@ -149,7 +151,7 @@ def build_poster_args(
     re-run is idempotent.
     """
     return [
-        binary,
+        ffmpeg_binary(binary),
         "-hide_banner",
         "-nostdin",
         "-threads",
@@ -177,7 +179,7 @@ def build_sprite_args(
     columns: int = 5,
     rows: int = 5,
     tile_width: int = 160,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
 ) -> list[str]:
     """Compose the sprite-sheet ffmpeg command line.
 
@@ -192,7 +194,7 @@ def build_sprite_args(
     fps = (count / duration_sec) if duration_sec > 0 else 1.0
     vf = f"fps={fps:.6f},scale={tile_width}:-2,tile={columns}x{rows}"
     return [
-        binary,
+        ffmpeg_binary(binary),
         "-hide_banner",
         "-nostdin",
         "-threads",
@@ -244,7 +246,7 @@ async def generate_poster(
     content_hash: str,
     cfg: ThumbnailConfig = DEFAULT_CONFIG,
     root: str | os.PathLike[str] | None = None,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
     runner: FrameRunner | None = None,
 ) -> Path:
     """Extract the poster frame; return its path."""
@@ -264,7 +266,7 @@ async def generate_sprite(
     content_hash: str,
     cfg: ThumbnailConfig = DEFAULT_CONFIG,
     root: str | os.PathLike[str] | None = None,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
     runner: FrameRunner | None = None,
 ) -> Path:
     """Extract the scrubber sprite sheet; return its path."""
@@ -293,7 +295,7 @@ async def generate_chapter_thumbs(
     content_hash: str,
     cfg: ThumbnailConfig = DEFAULT_CONFIG,
     root: str | os.PathLike[str] | None = None,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
     runner: FrameRunner | None = None,
 ) -> dict[int, Path]:
     """Extract one frame per chapter start.
@@ -320,7 +322,7 @@ async def generate_thumbnails(
     chapters: Sequence[tuple[int, float]] = (),
     cfg: ThumbnailConfig = DEFAULT_CONFIG,
     root: str | os.PathLike[str] | None = None,
-    binary: str = "ffmpeg",
+    binary: str | None = None,
     runner: FrameRunner | None = None,
 ) -> ThumbnailSet:
     """Generate poster + sprite + chapter thumbnails for ``src``."""

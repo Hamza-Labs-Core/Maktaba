@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0107 (plan 06-11, mediaintel parity): TIMESTAMPTZ and JSONB
+-- SQLite parity sibling for slot 0111 (plan 06-11, mediaintel parity): TIMESTAMPTZ and JSONB
 -- become TEXT.
 --
 CREATE TABLE IF NOT EXISTS channel_audits (

@@ -21,6 +21,8 @@ import base64
 import struct
 from collections.abc import Sequence
 
+from ..binaries import ffmpeg_binary
+
 __all__ = [
     "AUDIO_FP_VERSION",
     "HEAD_S",
@@ -54,11 +56,12 @@ def windows(duration_s: float | None) -> list[tuple[str, float, float]]:
 
 
 def ffmpeg_chromaprint_args(
-    path: str, start: float, length: float, *, binary: str = "ffmpeg"
+    path: str, start: float, length: float, *, binary: str | None = None
 ) -> list[str]:
     """ffmpeg argv writing the raw (uint32 little-endian) fingerprint to stdout."""
     return [
-        binary, "-v", "error", "-nostdin", "-ss", f"{start:.2f}", "-t", f"{length:.2f}",
+        ffmpeg_binary(binary), "-v", "error", "-nostdin",
+        "-ss", f"{start:.2f}", "-t", f"{length:.2f}",
         "-i", path, "-vn", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "pipe:1",
     ]  # fmt: skip
 

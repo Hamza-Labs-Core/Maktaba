@@ -212,7 +212,7 @@ def _default_transcribe_fn(model: str) -> TranscribeFn:
 
     def _call(path: str, kwargs: dict[str, Any]) -> list[dict[str, Any]]:
         try:
-            import mlx_whisper  # type: ignore[import-not-found]
+            import mlx_whisper  # type: ignore[import-untyped,import-not-found,unused-ignore]
         except ImportError as exc:  # pragma: no cover — env-specific
             raise RuntimeError(f"mlx_whisper not installed: {exc}") from exc
         result = mlx_whisper.transcribe(path, path_or_hf_repo=model, **kwargs)

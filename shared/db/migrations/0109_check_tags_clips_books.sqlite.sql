@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0105: arrays and JSONB are JSON text, booleans are 0/1.
+-- SQLite parity sibling for slot 0109: arrays and JSONB are JSON text, booleans are 0/1.
 --
 INSERT INTO worker_pools (pool, label, scope, size, default_size) VALUES
     ('lookup', 'Model and encyclopedia', 'global', 1, 1)

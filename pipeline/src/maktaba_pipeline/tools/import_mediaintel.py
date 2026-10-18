@@ -692,6 +692,7 @@ async def _clip_checks(
     if not _has(cache, "clip_checks"):
         return
     detect = (await rules.read(db, "detect"))[0]
+    tag_cfg = (await rules.read(db, "tag"))[0]
     by_lib: dict[UUID, list[tuple[str, Any]]] = defaultdict(list)
     for r in cache.execute("SELECT * FROM clip_checks ORDER BY path"):
         if r["path"] in match:
@@ -701,7 +702,7 @@ async def _clip_checks(
         if not items:
             continue
         lib = await library_name(db, lib_id) or ""
-        raw = await tag_stage.library_tags(db, lib_id, detect)
+        raw = await tag_stage.library_tags(db, lib_id, detect, tag_cfg)
         titles = await check_clips_stage.video_titles(db, lib_id)
         for vid, r in items:
             if vid not in raw:

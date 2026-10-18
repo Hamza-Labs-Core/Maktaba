@@ -9,7 +9,7 @@ from typing import Any
 from ..db.jobs import Job
 from ..db.jobs_state import StageError, mark_cancelled, mark_failed_or_retry
 from ..log import get_logger
-from .context import JobCancelled, StageContext, StageFailure
+from .context import JobCancelled, JobDeferred, StageContext, StageFailure
 from .events import job_ref, log_event, publish
 from .graph import GraphViolation, StageDef, StageResult
 from .propagate import finalize_success, last_success
@@ -112,6 +112,8 @@ async def execute(
         )
     except JobCancelled:
         await mark_cancelled(db, job_id=job.id)
+    except JobDeferred as exc:
+        await _defer(db, job, stage, exc)
     except StageFailure as exc:
         await mark_failed_or_retry(
             db,
@@ -141,3 +143,30 @@ async def execute(
                 retryable=True,
             ),
         )
+
+
+async def _defer(db: Any, job: Job, stage: StageDef, exc: JobDeferred) -> None:
+    """Back to ``paused`` (claiming it again is no new attempt), not before the retry time."""
+    from datetime import timedelta
+
+    at = now()
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'paused', paused_at = $2, paused_reason = $3,"
+        " claimed_by = NULL, not_before = $4"
+        " WHERE id = $1 AND state IN ('claimed', 'running', 'resuming')",
+        job.id,
+        to_ts(db, at),
+        exc.reason,
+        to_ts(db, at + timedelta(seconds=exc.retry_after_sec)),
+    )
+    await log_event(
+        db,
+        job_id=job.id,
+        subject_kind=job.subject_kind,
+        subject_id=job.subject.id,
+        library_id=job.library_id,
+        stage=stage.name,
+        level="warn",
+        kind="paused",
+        message=f"given back for {round(exc.retry_after_sec)} s: {exc.reason}",
+    )

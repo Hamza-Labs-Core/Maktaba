@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0108 (plan 06-11, mediaintel parity) - what the repair_broken stage did to each file
+-- Slot 0112 (plan 06-11, mediaintel parity) - what the repair_broken stage did to each file
 -- whose probe failed: fetched from YouTube again and swapped in (repaired), read fine after
 -- all (readable), could not be repaired this time (failed) or has no YouTube id (no_id).
 -- The broken file itself is kept beside the new one (backup_path) unless the rules say not.

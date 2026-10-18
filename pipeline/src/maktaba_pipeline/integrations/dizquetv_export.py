@@ -60,6 +60,7 @@ __all__ = [
     "slot_text",
     "splice",
     "timeline_programs",
+    "versioned",
     "write_channel",
 ]
 
@@ -293,6 +294,13 @@ def art_version(path: str) -> str:
     return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:10]  # noqa: S324 - a cache key
 
 
+def versioned(link: str, path: str) -> str:
+    """``link`` with the file's version in it: a new picture is a new link, so Plex and
+    the TVs fetch it instead of showing the one they cached (``&v=`` when the link
+    already has a query)."""
+    return f"{link}{'&' if '?' in link else '?'}v={art_version(path)}"
+
+
 def art_link(cfg: Mapping[str, Any], api_url: str, uploaded_url: str) -> str:
     """An uploaded logo's link as the TVs reach it: dizqueTV's own answer names the host
     the export talked to (localhost); ``dz_public_url`` replaces it."""
@@ -315,7 +323,7 @@ def hosted_link(base: str, path: str, status_of: Callable[[str], int]) -> str:
     status = status_of(link)
     if not 200 <= status < 300:
         raise RuntimeError(f"logo {Path(path).name} is not at {link}")
-    return f"{link}?v={art_version(path)}"
+    return versioned(link, path)
 
 
 # --------------------------------------------------------------------------- removals

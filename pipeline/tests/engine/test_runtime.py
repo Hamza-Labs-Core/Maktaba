@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -31,16 +32,14 @@ async def _boot(db: Database, **kw: Any) -> tuple[EngineRuntime, tuple[str, ...]
     cfg = RuntimeConfig(database_url="x", stages=(), **kw)
     stop = asyncio.Event()
     overrides: dict[Stage | str, StageHandler] = dict.fromkeys(LEGACY_HANDLERS, _noop_handler)
-    rt, stages, pools, tasks = await _start_engine(
-        db, cfg, "pc/1", cfg.host or "PC", stop, overrides
-    )
+    started = await _start_engine(db, cfg, "pc/1", cfg.host or "PC", stop, overrides)
     stop.set()
-    for t in tasks:
+    for t in started.tasks:
         t.cancel()
-    for t in tasks:
+    for t in started.tasks:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await t
-    return rt, stages, pools
+    return started.runtime, started.served, started.stage_pools
 
 
 @pytest.mark.asyncio
@@ -79,3 +78,40 @@ def test_explicit_stage_list_and_version_ahead() -> None:
     served = _served_stages(cfg, GRAPH, {"probe", "scan"}, {"scan": 9})
     assert "probe" in served and "scan" not in served  # db version is ahead of this worker
     assert "extract" not in served  # not requested
+
+
+def test_a_stage_this_worker_cannot_run_is_never_claimed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maktaba_pipeline.engine.stages import index, transcribe
+
+    monkeypatch.setattr(transcribe, "unavailable", lambda: "MLX-Whisper needs Apple Silicon")
+    monkeypatch.setattr(
+        transcribe, "IMPL", replace(transcribe.IMPL, unavailable=transcribe.unavailable)
+    )
+    monkeypatch.setattr(index, "IMPL", replace(index.IMPL, unavailable=lambda: "no search extra"))
+    from maktaba_pipeline.engine.stages import registry
+
+    registry.reset_registry()
+    try:
+        served = _served_stages(RuntimeConfig(database_url="x", stages=()), GRAPH, set(), {})
+        asked = _served_stages(
+            RuntimeConfig(database_url="x", stages=("transcribe",)), GRAPH, set(), {}
+        )
+    finally:
+        registry.reset_registry()
+    assert "transcribe" not in served and "index" not in served
+    assert "subtitle_gen" in served  # needs neither
+    assert asked == []  # even when asked for by name
+
+
+def test_the_transcribe_stage_imports_without_numpy() -> None:
+    """A worker without the stt extra imports it to enqueue transcribe jobs."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['numpy'] = None; sys.modules['mlx'] = None\n"
+        "from maktaba_pipeline.engine.stages import transcribe as t\n"
+        "assert t.IMPL.input_fingerprint is not None\n"
+        "assert t.settings_from_env().language == 'ar'\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

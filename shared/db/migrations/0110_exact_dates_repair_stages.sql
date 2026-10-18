@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0106 (plan 06-11, mediaintel parity) - register the exact_dates and repair_broken
+-- Slot 0110 (plan 06-11, mediaintel parity) - register the exact_dates and repair_broken
 -- queues and the pools of the channel audit and the repair.
 --
 -- exact_dates: per-video exact upload dates for series members whose date is only

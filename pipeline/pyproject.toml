@@ -8,16 +8,24 @@ dependencies = [
     "aiosqlite>=0.20",
     "asyncpg>=0.29",
     "blake3>=1.0.8",
+    "cryptography>=43",
     "grpcio>=1.68",
     "huggingface-hub>=0.25",
     "structlog>=24.0",
     "watchdog>=4.0.0",
+    "zeroconf>=0.136",
 ]
 
 [project.optional-dependencies]
 # Media-intelligence tools (scripts/mediaintel): YouTube metadata via yt-dlp.
 mediaintel = [
     "yt-dlp>=2025.11.12",
+]
+# Speech to text on Apple Silicon (plan 03-10): Whisper on the GPU through MLX.
+stt = [
+    # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
+    "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "silero-vad>=6.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 dev = [
     "grpcio-tools>=1.68",
@@ -27,6 +35,13 @@ dev = [
     "pyyaml>=6.0",
     "ruff>=0.6",
     "types-pyyaml>=6.0",
+]
+# Semantic search (engine `index` stage + the gRPC SemanticSearch RPC):
+# embedded persistent Chroma and a sentence-transformers embedder
+# (default intfloat/multilingual-e5-small; torch picks up Apple MPS).
+search = [
+    "chromadb>=1.0,<2",
+    "sentence-transformers>=3.0,<7",
 ]
 
 [build-system]

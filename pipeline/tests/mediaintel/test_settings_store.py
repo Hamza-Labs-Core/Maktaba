@@ -54,7 +54,7 @@ def test_the_page_saves_only_valid_values_and_resets(tmp_path: Path) -> None:
     assert settings.load(tmp_path / "settings.json") == {"planner": {}}
     page = serve.settings_payload(dbf)
     assert [s["key"] for s in page["sections"]] == [
-        "planner", "groups", "detect", "tagcheck", "books",
+        "planner", "groups", "detect", "tag", "tagcheck", "books",
     ]  # fmt: skip
     assert all(f["label"] for s in page["sections"] for f in s["fields"])
 

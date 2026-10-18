@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0107 (plan 06-11, mediaintel parity) - the channel audit: is what each dizqueTV channel
+-- Slot 0111 (plan 06-11, mediaintel parity) - the channel audit: is what each dizqueTV channel
 -- airs about the channel? One row per audit run, one per channel in it. The dizquetv_audit
 -- stage also writes the same report as channel-audit.html beside the review pages.
 --

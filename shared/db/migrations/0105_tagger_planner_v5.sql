@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0101 (plan 06-11 section 17.7) - channel relevance, second pass: the tagger (v5:
+-- Slot 0105 (plan 06-11 section 17.7) - channel relevance, second pass: the tagger (v5:
 -- an episode in its show's own chapter playlist «كتاب الصيام» takes the chapter's topic;
 -- a season label «رمضان 1445» in a name or playlist is when it aired, not its topic) and
 -- the planner (v5: on a topic channel its topic's shows and specialists come first; a

@@ -19,7 +19,7 @@ from maktaba_pipeline.rules import SECTIONS as _ALL_SECTIONS
 SECTIONS = {
     k: v
     for k, v in _ALL_SECTIONS.items()
-    if k in ("planner", "groups", "detect", "tagcheck", "books")
+    if k in ("planner", "groups", "detect", "tag", "tagcheck", "books")
 }
 
 
