@@ -54,6 +54,26 @@ def unavailable() -> str | None:
     return None
 
 
+def use_vad() -> bool:
+    """Decode speech only (``MAKTABA_STT_VAD=1``, when Silero is installed). Off by
+    default: on 5.45 h of lectures it cut 7 % of the audio but decoding only 3 %, and the
+    text moved (word similarity to the full decode 0.89, one file 0.67), so it is not
+    worth it for this library (plan 03-10)."""
+    from ...stt.vad import vad_available
+
+    return os.environ.get("MAKTABA_STT_VAD", "0") == "1" and vad_available()
+
+
+def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
+    """A transcript of the speech-only audio, on the file's own timeline."""
+    for s in result.sentences:
+        s.start, s.end = tmap(s.start), tmap(s.end)
+        if s.words:
+            s.words = [(tmap(a), tmap(b), w) for a, b, w in s.words]
+    result.audio_sec = audio_sec
+    return result
+
+
 def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
     from ...stt.batched import get_transcriber as shared
 
@@ -158,6 +178,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "model": s.model,
             "language": s.language,
             "words": s.word_timestamps,
+            "vad": use_vad(),
             "v": TRANSCRIBE_VERSION,
         }
     )
@@ -262,13 +283,14 @@ async def _run_saving(
     audio: Any,
     settings: WhisperSettings,
     audio_sec: int,
+    scale: float = 1.0,
 ) -> Transcript:
     """Transcribe, saving the file's progress every ``MAKTABA_STT_CHECKPOINT_S``."""
     resume = await load_checkpoint(db, v.id, fingerprint)
     progress = FileProgress(saved_seek=resume.seek if resume else 0)
     every = float(os.environ.get("MAKTABA_STT_CHECKPOINT_S", str(CHECKPOINT_S)))
     task = asyncio.ensure_future(
-        get_transcriber(settings).transcribe(audio, resume=resume, progress=progress)
+        get_transcriber(settings).transcribe(audio, resume=resume, progress=progress, scale=scale)
     )
     try:
         while True:
@@ -280,7 +302,7 @@ async def _run_saving(
                 await save_checkpoint(db, v.id, fingerprint, cp)
                 progress.saved_seek = cp.seek
                 await ctx.progress(
-                    "transcribe", round(cp.seek / 100), audio_sec, "on the GPU", force=True
+                    "transcribe", round(cp.seek / 100 * scale), audio_sec, "on the GPU", force=True
                 )
     finally:
         if not task.done():
@@ -302,13 +324,27 @@ async def _transcribe_file(
         "transcribe", 0, round(audio.size / SAMPLE_RATE), "on the GPU",
         steps=["decode", "transcribe", "store"], force=True,
     )  # fmt: skip
+    total_sec = audio.size / SAMPLE_RATE
+    tmap: Any = None
+    if use_vad():
+        from ...stt.vad import pack, speech_chunks
+
+        # the pauses out (CPU, beside the GPU): Whisper decodes the speech only
+        chunks = await asyncio.to_thread(speech_chunks, audio)
+        audio, tmap = pack(audio, chunks)
     try:
-        result = await _run_saving(
-            db, v, ctx, fingerprint, audio, settings, round(audio.size / SAMPLE_RATE)
-        )
+        if audio.size < SAMPLE_RATE // 2:  # no speech at all: nothing to decode
+            result = Transcript([], total_sec, settings.language, settings.model, 0.0)
+        else:
+            scale = total_sec / (audio.size / SAMPLE_RATE)
+            result = await _run_saving(
+                db, v, ctx, fingerprint, audio, settings, round(total_sec), scale
+            )
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
     del audio
+    if tmap is not None:
+        result = _remap(result, tmap, total_sec)
 
     transcript_id = await _store(db, v.id, result, settings)
     texts = [(s.start, s.end, s.text) for s in result.sentences]

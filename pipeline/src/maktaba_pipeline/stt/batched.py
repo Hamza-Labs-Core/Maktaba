@@ -84,6 +84,7 @@ _Submission = tuple[
     asyncio.AbstractEventLoop,
     Checkpoint | None,
     FileProgress | None,
+    float,
 ]
 
 
@@ -114,6 +115,9 @@ class _Job:
     features_seek: int = -1
     #: where the caller reads this file's progress (to save it), if it asked
     progress: FileProgress | None = None
+    #: seconds of the caller's audio per second decoded here (the speech-only audio
+    #: stands for more): progress is counted in the caller's seconds
+    scale: float = 1.0
 
     @property
     def done(self) -> bool:
@@ -121,13 +125,13 @@ class _Job:
 
     @property
     def progress_sec(self) -> float:
-        return min(self.seek, self.content_frames) / FRAMES_PER_SECOND
+        return min(self.seek, self.content_frames) / FRAMES_PER_SECOND * self.scale
 
     @property
     def unsaved_sec(self) -> float:
         """Audio decoded since the caller last saved this file's progress."""
         saved = self.progress.saved_seek if self.progress is not None else 0
-        return max(0.0, self.progress_sec - saved / FRAMES_PER_SECOND)
+        return max(0.0, self.progress_sec - saved / FRAMES_PER_SECOND * self.scale)
 
 
 def _needs_fallback(r: _Decoded, s: WhisperSettings) -> bool:
@@ -341,13 +345,16 @@ class BatchedTranscriber:
         *,
         resume: Checkpoint | None = None,
         progress: FileProgress | None = None,
+        scale: float = 1.0,
     ) -> Transcript:
         """``audio``: mono float32 at 16 kHz. ``resume`` continues an earlier run from its
-        checkpoint; ``progress`` receives this file's progress after every pass."""
+        checkpoint; ``progress`` receives this file's progress after every pass; ``scale``
+        is how many seconds of the caller's audio one second of ``audio`` stands for
+        (speech-only audio), for the live counters."""
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Transcript] = loop.create_future()
         self._ensure_thread()
-        self._inbox.put((audio, fut, loop, resume, progress))
+        self._inbox.put((audio, fut, loop, resume, progress, scale))
         return await fut
 
     # --- the GPU thread ---------------------------------------------------------
@@ -494,7 +501,7 @@ class BatchedTranscriber:
     def _admit(self, jobs: list[_Job], block: bool) -> None:
         while len(jobs) < self.settings.max_batch:
             try:
-                audio, fut, loop, resume, progress = self._inbox.get(
+                audio, fut, loop, resume, progress, scale = self._inbox.get(
                     block=block and not jobs, timeout=1.0
                 )
             except queue.Empty:
@@ -512,6 +519,7 @@ class BatchedTranscriber:
                     loop=loop,
                     admitted=time.monotonic(),
                     progress=progress,
+                    scale=scale,
                 )
                 if resume is not None:
                     job.seek = min(resume.seek, job.content_frames)
@@ -529,7 +537,7 @@ class BatchedTranscriber:
             _log.exception("whisper.load_failed")
             while True:
                 try:
-                    _, fut, loop, _, _ = self._inbox.get_nowait()
+                    _, fut, loop, _, _, _ = self._inbox.get_nowait()
                 except queue.Empty:
                     break
                 loop.call_soon_threadsafe(_set_exception, fut, exc)
@@ -623,7 +631,7 @@ class BatchedTranscriber:
         for j in live:
             moved = min(j.seek, j.content_frames) - before[id(j)]
             if moved > 0:
-                self.audio_done += moved / FRAMES_PER_SECOND
+                self.audio_done += moved / FRAMES_PER_SECOND * j.scale
             if j.progress is not None:
                 j.progress.publish(j.seek, j.last_speech, j.language, j.segments)
 

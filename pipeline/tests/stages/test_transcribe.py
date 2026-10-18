@@ -29,7 +29,7 @@ class FakeTranscriber:
         self.slow = 0.0
 
     async def transcribe(
-        self, audio: np.ndarray, *, resume: Any = None, progress: Any = None
+        self, audio: np.ndarray, *, resume: Any = None, progress: Any = None, scale: float = 1.0
     ) -> Transcript:
         self.calls += 1
         self.resumed = resume
@@ -55,6 +55,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeTranscriber:
 
     monkeypatch.setattr(tr, "decode_audio", decode)
     monkeypatch.setattr(tr, "get_transcriber", lambda settings: f)
+    monkeypatch.setattr(tr, "use_vad", lambda: False)  # the fake audio is silence
     return f
 
 
@@ -271,3 +272,43 @@ async def test_progress_is_saved_while_it_runs_and_a_new_attempt_resumes_from_it
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
     await drain_core(db, rt, only={"transcribe"})
     assert fake.resumed is None
+
+
+@pytest.mark.asyncio
+async def test_speech_only_decoding_keeps_the_file_s_timeline(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pauses are cut before Whisper; its times are mapped back to the file."""
+    from maktaba_pipeline.stt import vad
+
+    monkeypatch.setattr(tr, "use_vad", lambda: True)
+    sr = 16000
+    # speech at 1-3 s and 4-6 s of the 6 s file: Whisper sees 4 s of audio
+    monkeypatch.setattr(vad, "speech_chunks", lambda audio: [(1 * sr, 3 * sr), (4 * sr, 6 * sr)])
+    seen: list[tuple[int, float]] = []
+    orig = fake.transcribe
+
+    async def spy(audio: np.ndarray, **kw: Any) -> Transcript:
+        seen.append((len(audio), kw.get("scale", 1.0)))
+        return await orig(audio, **kw)
+
+    monkeypatch.setattr(fake, "transcribe", spy)
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    assert seen == [(4 * sr, 1.5)]
+    rows = await db.fetch(
+        "SELECT s.start_sec, s.end_sec FROM transcript_segments s JOIN transcripts t"
+        " ON t.id = s.transcript_id WHERE t.video_id = $1 AND t.is_active ORDER BY s.seq",
+        str(vid),
+    )
+    # LINES are (0.5, 2.25) and (2.5, 5.0) in packed time
+    assert [(float(r["start_sec"]), float(r["end_sec"])) for r in rows] == [(1.5, 4.25), (4.5, 7.0)]
+    summary = await db.fetchval(
+        "SELECT output_summary FROM processing_jobs WHERE stage = 'transcribe'"
+    )
+    import json
+
+    got = summary if isinstance(summary, dict) else json.loads(summary)
+    assert got["audio_sec"] == 6.0  # the file's length, not the speech-only audio's
