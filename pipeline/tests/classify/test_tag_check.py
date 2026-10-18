@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
+from maktaba_pipeline.classify import tag_check as tc
 from maktaba_pipeline.classify.tag_check import TagCheckConfig, Verdict, apply, parse, prompt
 
 CFG = TagCheckConfig()
@@ -51,3 +54,37 @@ def test_the_model_never_damps_twice_nor_against_the_book():
     once = apply(tags, v, cfg)
     assert once["topic:hadith"][0] == 0.9  # the book it explains says so
     assert apply(once, v, cfg)["topic:fiqh"] == once["topic:fiqh"]
+
+
+# ---------------------------------------------------------------- clips
+
+
+def test_clip_candidates_are_its_keyword_topics() -> None:
+    tags = {"topic:prophets_stories": 0.95, "topic:fiqh": 0.78, "topic:seerah": 0.36,
+            "format:clips": 0.9}  # fmt: skip
+    assert tc.clip_candidates(tags) == ("fiqh", "prophets_stories")
+
+
+def test_parse_clips_keeps_only_each_clips_candidates() -> None:
+    answer = json.dumps({"clips": [{"n": 1, "keep": ["fiqh", "seerah"]}, {"n": 2, "keep": []},
+                                   {"n": 9, "keep": ["fiqh"]}]})  # fmt: skip
+    got = tc.parse_clips(answer, [("fiqh", "prophets_stories"), ("prophets_stories",)])
+    assert got == {1: ("fiqh",), 2: ()}  # seerah was no candidate; n 9 is no clip
+    assert tc.parse_clips("not json", [("fiqh",)]) == {}
+
+
+def test_apply_clip_damps_what_the_model_does_not_keep() -> None:
+    cfg = tc.TagCheckConfig()
+    tags = {"topic:prophets_stories": 0.95, "genre:prophets_stories": 0.95, "topic:fiqh": 0.78,
+            "format:clips": 0.9, "topic:seerah": 0.36}  # fmt: skip
+    out = tc.apply_clip(tags, ("fiqh",), cfg)
+    assert out["topic:prophets_stories"] == round(0.95 * cfg.damp, 3)
+    assert out["topic:fiqh"] == 0.78 and out["format:clips"] == 0.9
+    assert out["topic:seerah"] == 0.36  # not asked about: as it was
+    assert "genre:prophets_stories" not in out and out["genre:fiqh"] == 0.78
+
+
+def test_the_clip_prompt_lists_every_clip_with_its_candidates() -> None:
+    p = tc.clip_prompt([("lib", "عنوان أ", ("fiqh",)), ("lib", "عنوان ب", ("prophets_stories",))],
+                       tc.TagCheckConfig())  # fmt: skip
+    assert "1. [lib] عنوان أ" in p and "2. [lib] عنوان ب" in p and "prophets_stories (" in p

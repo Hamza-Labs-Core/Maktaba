@@ -2603,6 +2603,32 @@
      "help": "",
      "default": 180.0,
      "minimum": 1
+    },
+    {
+     "name": "clips",
+     "kind": "bool",
+     "group": "Checking tags with a language model",
+     "label": "Check clips too",
+     "help": "The model reads each short video's title (step check-clips): a clip that only mentions a topic is no filler on it.",
+     "default": true
+    },
+    {
+     "name": "clip_batch",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Clip titles per question",
+     "help": "",
+     "default": 4,
+     "minimum": 1
+    },
+    {
+     "name": "clip_max_minutes",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Clips up to (minutes)",
+     "help": "Only videos up to this long: the ones that air as filler.",
+     "default": 20.0,
+     "minimum": 0
     }
    ]
   },

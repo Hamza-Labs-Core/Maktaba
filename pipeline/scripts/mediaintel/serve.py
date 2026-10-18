@@ -81,6 +81,11 @@ STEPS: list[tuple[str, str, str]] = [
         "a local model reads each series' name and episode titles and corrects its topics",
     ),
     (
+        "check-clips",
+        "Check clips with a language model",
+        "a local model reads each clip's title and keeps only the topics it is about",
+    ),
+    (
         "books",
         "Look up the books",
         "the book a lesson series explains (Wikipedia) decides its topics",
@@ -264,7 +269,7 @@ _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
 
 
 #: what a step's "[n/N]" lines count
-_UNITS = {"check-tags": "series", "books": "books", "repair-broken": "files", "plan-channels": "channels", "export-dizquetv": "items",
+_UNITS = {"check-tags": "series", "check-clips": "questions", "books": "books", "repair-broken": "files", "plan-channels": "channels", "export-dizquetv": "items",
           "audit-channels": "channels"}  # fmt: skip
 _PHASE_RE = re.compile(r"^phase: (.+)$")
 _N_OF_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] ")
