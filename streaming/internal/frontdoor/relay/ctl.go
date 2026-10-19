@@ -276,4 +276,3 @@ type credErr string
 func (e credErr) Error() string { return string(e) }
 
 const errNoCreds = credErr("the push has no ingest secret (expired or not running)")
-
