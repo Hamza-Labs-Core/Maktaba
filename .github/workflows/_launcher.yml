@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-go@v6.4.0
         with:
-          go-version-file: cmd/maktaba-launcher/go.mod
+          go-version-file: cmd/maktaba-server/go.mod
           cache-dependency-path: |
             cmd/maktaba-launcher/go.sum
             cmd/maktaba-server/go.sum
