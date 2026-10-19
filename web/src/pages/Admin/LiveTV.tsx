@@ -9,6 +9,7 @@
 //   POST  /api/tv/plex/refresh   push the channel map + reload the guide now
 //   POST  /api/tv/plex/register  add the tuner and a DVR with the XMLTV guide, once
 //   GET   /api/rules, PATCH /api/rules/plexlive   the automatic Plex settings
+//   GET   /api/tv/cluster        streaming hosts + on air (Epic 32), every 5 s while visible
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -28,6 +29,10 @@ import {
   type TvInfo,
 } from "../../lib/channels";
 import { rulesApi, rulesError, type RuleSection } from "../../lib/rulesApi";
+import { OnAir } from "./LiveTV/OnAir";
+import { StreamingHosts } from "./LiveTV/StreamingHosts";
+import { useTvCluster } from "./LiveTV/useTvCluster";
+import "../../styles/tvcluster.css";
 
 export function AdminLiveTV() {
   return (
@@ -157,6 +162,8 @@ function LiveTVInner() {
         {msg && <Message ok={msg.ok} text={msg.text} />}
       </Card>
 
+      <ClusterSections />
+
       <PlexPanel info={info} device={device} />
 
       <Card className="mkt-livetv__card">
@@ -189,6 +196,25 @@ function Message({ ok, text }: { ok: boolean; text: string }) {
       <span aria-hidden="true">{ok ? "✓ " : "✕ "}</span>
       {text}
     </p>
+  );
+}
+
+/** Streaming hosts and On air (Epic 32): hidden when the server has no cluster view. */
+function ClusterSections() {
+  const { t } = useI18n();
+  const { view, error, unavailable, reload } = useTvCluster();
+  if (unavailable) return null;
+  if (!view) {
+    return error ? (
+      <p className="mkt-livetv__hint">{t("tv.cluster.loadError", { error })}</p>
+    ) : null;
+  }
+  return (
+    <>
+      {error && <p className="mkt-livetv__hint">{t("tv.cluster.staleView", { error })}</p>}
+      <StreamingHosts view={view} onChanged={reload} />
+      <OnAir view={view} onChanged={reload} />
+    </>
   );
 }
 

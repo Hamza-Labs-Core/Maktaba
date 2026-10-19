@@ -29,6 +29,7 @@ import {
 import { ArtSection, PendingArtSection, type PendingArt } from "./ArtSection";
 import { FillerSection } from "./FillerSection";
 import { LiveSection } from "./LiveSection";
+import { PreferHost } from "./PreferHost";
 import { PreviewSection } from "./PreviewSection";
 import { RuleSection, ruleProblem } from "./RuleSection";
 import { ScheduleSection } from "./ScheduleSection";
@@ -288,6 +289,7 @@ export function ChannelEditor({
         onChange={(e) => set("enabled", e.target.checked)}
         label={t("channels.field.enabled")}
       />
+      {isEdit && draft.slug && <PreferHost slug={draft.slug} />}
       {isEdit && <p className="mkt-muted">{t("channels.nextBoundaryNote")}</p>}
     </div>
   );
