@@ -11,15 +11,44 @@ export interface ClusterHome {
   /** false on a home that cannot take machines (e.g. SQLite) */
   roles_supported: boolean;
   roles_reason: string | null;
+  /** story 31.3: the home's own storage check, per share */
+  storage?: NodeStorage | null;
+  /** the home's "share -> local mount" override; absent: its own mounts */
+  path_map?: Record<string, string> | null;
 }
 
 export type NodeState = "pending" | "approved" | "rejected" | "revoked";
+
+/** One share a machine checked (story 31.3): reachable, writable, through which mount. */
+export interface ShareCheck {
+  /** canonical share, smb://nas/Originals */
+  share: string;
+  /** this machine's mount of it; null: not mounted here */
+  local: string | null;
+  source: string | null;
+  read: "ok" | "error" | string;
+  write: "ok" | "error" | "skipped" | string;
+  detail: string | null;
+}
 
 export interface NodeStorage {
   read: "ok" | "error" | string;
   write: "ok" | "error" | "skipped" | string;
   checked_at: string | null;
   detail: string | null;
+  shares?: ShareCheck[];
+  /** the whole map the machine resolves with: share (or legacy prefix) -> local */
+  path_map?: Record<string, string>;
+}
+
+/** A storage server (story 31.3): what smb://<name>/... names, and its addresses. */
+export interface StorageServer {
+  id: string;
+  name: string;
+  addresses: string[];
+  /** none | fullwidth | sfm | 0x22:0xff02,... */
+  char_map: string;
+  exports: Record<string, string>;
 }
 
 export interface NodeWorker {
@@ -83,6 +112,14 @@ export const clusterApi = {
   updateNode: (id: string, body: NodeUpdate) =>
     api.put<ClusterNode>(`/api/cluster/nodes/${q(id)}`, body),
   removeNode: (id: string) => api.delete<void>(`/api/cluster/nodes/${q(id)}`),
+  setHomePathMap: (path_map: Record<string, string> | null) =>
+    api.put<ClusterHome>("/api/cluster/home/path-map", { path_map }),
+  listServers: () => api.get<{ servers: StorageServer[] }>("/api/cluster/storage-servers"),
+  putServer: (
+    name: string,
+    body: { addresses: string[]; char_map?: string; exports?: Record<string, string> }
+  ) => api.put<StorageServer>(`/api/cluster/storage-servers/${q(name)}`, body),
+  deleteServer: (name: string) => api.delete<void>(`/api/cluster/storage-servers/${q(name)}`),
 };
 
 /** "123 456", "123-456" -> "123456"; anything else -> null. */
@@ -355,7 +392,54 @@ export const clusterChannelApi = {
     api.get<{ samples: LibrarySample[] }>(`/api/cluster/files/${q(ip)}/library${query(p)}`),
   cmd: (session: string, name: ProcessCommand, args: Record<string, unknown> = {}) =>
     api.post<CommandResult>(`/api/cluster/processes/${q(session)}/cmd`, { name, args }),
+  relay: () => api.get<RelayStatus>("/api/cluster/relay"),
 };
+
+/** The extension relay's settings (rules section "relay"). */
+export interface RelaySettings {
+  enabled: boolean;
+  requests_per_minute: number;
+  burst: number;
+  max_in_flight: number;
+  max_response_mb: number;
+  timeout_sec: number;
+}
+
+/** One relayed call as the home audited it (never the token, never the query). */
+export interface RelayCall {
+  ts: string;
+  kind: string;
+  node_id?: string;
+  node_name?: string;
+  worker_id?: string;
+  ip?: string;
+  ext: string;
+  method: string;
+  path: string;
+  status: number;
+  bytes: number;
+  ms: number;
+  error?: string;
+  scrubbed?: number;
+}
+
+/** GET /api/cluster/relay: the home's service door (story 31.R). */
+export interface RelayStatus {
+  available: boolean;
+  enabled: boolean;
+  settings: RelaySettings;
+  extensions: {
+    name: string;
+    configured: boolean;
+    enabled: boolean;
+    upstream?: string;
+    reason?: string;
+    allow: { method: string; path: string; use: string }[];
+  }[];
+  home_only: { name: string; reason: string }[];
+  calls: RelayCall[];
+  totals: { caller: string; calls: number; refused: number; failed: number; bytes: number }[];
+}
 
 /** A timestamp (ISO string, epoch seconds or epoch ms) as epoch ms; NaN when unreadable. */
 export function tsMs(ts: string | number | null | undefined): number {

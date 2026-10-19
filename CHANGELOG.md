@@ -11,6 +11,16 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- Extension relay (story 31.R): machines run the Plex stages (index,
+  season, topic and clip collections) again without the Plex token. Each
+  Plex call goes over the machine's sealed cluster channel to the home,
+  which checks the machine and the call against an allow-list, adds the
+  token from `home_secrets`, calls Plex and passes the answer back with the
+  token removed. Per-machine rate, concurrency, size and time limits;
+  every call recorded in the hub's events file. Admin > Machines > Relay
+  shows its state, the allow-list and the recent calls, and switches it
+  (rules section `relay`, on by default; off, the Plex stages run on the
+  home only). Cloudflare Stream stays home-only.
 - Cloudflare Stream integration (Epic 32 story 32.6): a new
   "Cloudflare Stream" extension (account ID, API token, customer
   subdomain code) whose Test connection checks the token, Stream on the

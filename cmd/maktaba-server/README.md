@@ -48,6 +48,15 @@ maktaba-server serve
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 
+**Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
+(Epic 31, `node.json` holds its database credential), `maktaba-server serve
+--role streaming` runs the streaming service as a cluster node: the home's
+database through the node's own role, its node id, the path map from the
+cluster; no extra flag. A node serves only the channel routes the home's front
+door forwards (signed with the cluster stream key) and never advertises
+HDHomeRun. It takes channels once the Live TV page's "Stream on this machine"
+and the setting `tv_cluster.nodes_stream` are both on.
+
 ## Building
 
 ```sh

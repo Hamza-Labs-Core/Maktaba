@@ -111,7 +111,7 @@ async def run_index(db: Any, job: Any, ctx: StageContext, service: PlexService) 
     by_path: dict[str, str] = {}
     folded: dict[str, str] = {}
     for vid, path, _ in videos:
-        p = _norm(pm.to_local(path))
+        p = _norm(pm.rewrite(path))
         by_path[p] = vid
         folded.setdefault(p.casefold(), vid)
 
@@ -119,7 +119,7 @@ async def run_index(db: Any, job: Any, ctx: StageContext, service: PlexService) 
     await ctx.progress("list", 0, 1, "reading Plex libraries", steps=["list", "save"], force=True)
     try:
         sections = await asyncio.to_thread(client.sections)
-        probe = [pm.to_local(r) for r in roots] + [p.rsplit("/", 1)[0] for p in list(by_path)[:200]]
+        probe = [pm.rewrite(r) for r in roots] + [p.rsplit("/", 1)[0] for p in list(by_path)[:200]]
         chosen = sections_for(sections, probe)
         machine, listings = await asyncio.to_thread(_list, client, chosen)
     except (PlexError, TransportError) as exc:

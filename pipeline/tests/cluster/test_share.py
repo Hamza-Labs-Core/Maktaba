@@ -56,6 +56,78 @@ def test_cluster_dir_through_the_path_map() -> None:
     assert share.cluster_dir_for("/srv/media", PathMap()) == Path("/srv/media/maktaba/cluster")
 
 
+def _fake_net(
+    monkeypatch: pytest.MonkeyPatch, routed: str, nics: dict[str, list[tuple[str, str]]]
+) -> None:
+    """The route to the home leaves from ``routed``; ``nics``: name -> [(address, mask)]."""
+    import socket
+    from types import SimpleNamespace
+
+    import psutil
+
+    class FakeSocket:
+        def __init__(self, *a: Any) -> None:
+            pass
+
+        def __enter__(self) -> FakeSocket:
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            pass
+
+        def connect(self, addr: Any) -> None:
+            pass
+
+        def getsockname(self) -> tuple[str, int]:
+            return (routed, 50000)
+
+    fake = SimpleNamespace(
+        AF_INET=socket.AF_INET,
+        SOCK_DGRAM=socket.SOCK_DGRAM,
+        socket=FakeSocket,
+        getaddrinfo=lambda host, port, **kw: [
+            (socket.AF_INET, socket.SOCK_DGRAM, 0, "", (host, port))
+        ],
+    )
+    monkeypatch.setattr(share, "socket", fake)  # the module's name only, not socket's
+    monkeypatch.setattr(
+        psutil,
+        "net_if_addrs",
+        lambda: {
+            name: [SimpleNamespace(family=socket.AF_INET, address=a, netmask=m) for a, m in addrs]
+            for name, addrs in nics.items()
+        },
+    )
+
+
+@pytest.mark.unit
+def test_machine_ip_prefers_the_lan_address_over_a_vpn_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tailscale's subnet routes send the home's LAN through the VPN: the socket answers
+    with the Tailscale address, but the machine's interface on the home's subnet wins."""
+    nics = {
+        "Tailscale": [("100.104.161.110", "255.255.255.255")],
+        "vEthernet (External Switch)": [("192.168.50.24", "255.255.255.0")],
+        "vEthernet (WSL)": [("172.27.176.1", "255.255.240.0")],
+    }
+    _fake_net(monkeypatch, "100.104.161.110", nics)
+    url = "ws://192.168.50.177:8080/api/cluster/agent"
+    assert share.machine_ip(url, env={}) == "192.168.50.24"
+    # the route already leaves through the home's subnet: kept as it is
+    nics["Ethernet 2"] = [("192.168.50.31", "255.255.255.0")]
+    _fake_net(monkeypatch, "192.168.50.31", nics)
+    assert share.machine_ip(url, env={}) == "192.168.50.31"
+    # a home only reachable through the VPN: the VPN address it is
+    _fake_net(monkeypatch, "100.104.161.110", nics)
+    assert share.machine_ip("ws://100.90.1.2:8080", env={}) == "100.104.161.110"
+    # the home's own process: its own address
+    _fake_net(monkeypatch, "192.168.50.177", {"en0": [("192.168.50.177", "255.255.255.0")]})
+    assert share.machine_ip(url, env={}) == "192.168.50.177"
+    # the override still wins
+    assert share.machine_ip(url, env={share.ENV_IP: "10.1.2.3"}) == "10.1.2.3"
+
+
 class FakeDB:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows = rows

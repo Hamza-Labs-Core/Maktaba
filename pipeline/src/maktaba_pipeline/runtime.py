@@ -31,7 +31,7 @@ import contextlib
 import contextvars
 import os
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -79,6 +79,8 @@ _log = get_logger()
 
 
 StageHandler = Callable[[DBConn, Job], Awaitable[None]]
+#: a background writer's loop: runs until the event it is given is set
+WriterLoop = Callable[[asyncio.Event], Coroutine[Any, Any, None]]
 
 
 @dataclass(slots=True)
@@ -400,11 +402,13 @@ async def run(
     stage_pools: dict[str, str] = {}
     host = cfg.host or stable_hostname()
     selector: StageSelector | None = None
+    agent: WorkerAgent | None = None
 
     if cfg.engine:
         started = await _start_engine(database, cfg, worker_id, host, shutdown, dispatch_overrides)
         engine_rt, background = started.runtime, started.tasks
         selector = started.selector
+        agent = started.agent
         stage_names = started.served
         # every graph stage: the served set changes while the worker runs
         stage_pools = {name: st.pool for name, st in engine_rt.graph.items()}
@@ -445,11 +449,16 @@ async def run(
         shutdown_event=shutdown,
     )
 
+    def node_paused() -> bool:
+        return agent is not None and agent.paused
+
     reaper = Reaper(
         database,
         interval_sec=cfg.reaper_interval_sec,
         stale_claim_sec=cfg.stale_claim_sec,
         heartbeat_sec=cfg.heartbeat_sec,
+        # a paused node (its code needs migrations the home lacks) writes nothing
+        paused=node_paused if agent is not None and agent.is_node else None,
     )
     reaper.start()
 
@@ -552,11 +561,18 @@ async def _start_engine(
         node_id=cfg.node_id if is_node else None,
         explicit_path_map=bool(cfg.path_map.strip()),
         path_map=path_map,
+        explicit=path_map,
         runtime=runtime,
     )
     caps = await asyncio.to_thread(capabilities)
     if is_node:
         await agent.start_node(caps)
+    else:
+        try:
+            # story 31.3: canonical share paths resolve through this machine's mounts
+            await agent.start_home()
+        except Exception:  # noqa: BLE001 - the legacy map keeps working
+            _log.exception("home_storage_start_failed")
     selector.compute()
 
     collector = runtime.nas.collector
@@ -582,21 +598,24 @@ async def _start_engine(
         )
 
     await register()
+
+    def writer(name: str, loop: WriterLoop) -> asyncio.Task[None]:
+        # on a node the writers run only while the home's schema fits this code
+        body = _while_unpaused(agent, shutdown, loop, name) if is_node else loop(shutdown)
+        return asyncio.create_task(body, name=name)
+
+    after_topup = tuple(s.name for s in graph if s.after_topup)
     tasks = [
         asyncio.create_task(
             _worker_heartbeat(database, worker_id, shutdown, host, register, agent.beat),
             name="worker-hb",
         ),
         asyncio.create_task(agent.run_refresher(cfg.stage_refresh_sec), name="stage-selection"),
-        asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
-        asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
-        asyncio.create_task(
-            run_topup_loop(
-                database,
-                shutdown,
-                listeners=tuple(s.name for s in graph if s.after_topup),
-            ),
-            name="channel-topup",
+        writer("reconciler", lambda stop: run_reconciler(database, runtime.graph, stop)),
+        writer("pruner", lambda stop: run_pruner(database, stop)),
+        writer(
+            "channel-topup",
+            lambda stop: run_topup_loop(database, stop, listeners=after_topup),
         ),
     ]
     if cluster_agent_enabled():
@@ -644,6 +663,42 @@ def _served_stages(
         role=cfg.role,
     )
     return served
+
+
+async def _while_unpaused(
+    agent: WorkerAgent,
+    shutdown: asyncio.Event,
+    loop: WriterLoop,
+    name: str,
+    *,
+    poll_sec: float = 5.0,
+) -> None:
+    """Run ``loop(stop)`` while ``agent`` is not paused (cluster/schema.py): a pause sets
+    the loop's own stop event, a resume starts it again; ``shutdown`` ends both."""
+    while not shutdown.is_set():
+        if agent.paused:
+            with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+                await asyncio.wait_for(shutdown.wait(), timeout=poll_sec)
+            continue
+        stop = asyncio.Event()
+        task = asyncio.ensure_future(loop(stop))
+        while not shutdown.is_set() and not agent.paused and not task.done():
+            with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+                await asyncio.wait_for(shutdown.wait(), timeout=poll_sec)
+        stop.set()
+        if agent.paused and not shutdown.is_set():
+            _log.info("node_writer_paused", writer=name)
+        try:
+            await asyncio.wait_for(task, timeout=30.0)
+        except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        except Exception:  # noqa: BLE001 - the loops log their own failures
+            _log.exception("node_writer_failed", writer=name)
+        if task.done() and not shutdown.is_set() and not agent.paused:
+            # the loop ended on its own: do not spin
+            return
 
 
 async def _worker_heartbeat(

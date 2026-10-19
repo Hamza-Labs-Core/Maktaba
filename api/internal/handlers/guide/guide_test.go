@@ -181,3 +181,19 @@ func TestBuildM3U_TvgIDMatchesSlug(t *testing.T) {
 		t.Errorf("news EXTINF wrong:\n%s", out)
 	}
 }
+
+// Story 27.11: the strip's line and its parts reach /api/channels/now.
+func TestToBlock_CarriesTheStripLine(t *testing.T) {
+	s := parseSnapshot([]byte(`{"title":"في الخنادق… لا يوجد ملحدون!","on_air":"من زاوية أخرى · الحلقة 45 — في الخنادق… لا يوجد ملحدون!",
+		"strip_title":"في الخنادق… لا يوجد ملحدون!","strip_series":"من زاوية أخرى","strip_episode":"الحلقة 45","strip_ref":"البقرة ١٨٣",
+		"source_title":"في الخنادق… لا يوجد ملحدون! ｜ برنامج من زاوية أخرى ｜ الحلقة 45"}`))
+	now := time.Now()
+	b := toBlock(ProgramRow{Kind: "program", StartAt: now, EndAt: now.Add(time.Hour), Snapshot: s}, now)
+	if b.OnAir != "من زاوية أخرى · الحلقة 45 — في الخنادق… لا يوجد ملحدون!" || b.StripSeries != "من زاوية أخرى" ||
+		b.StripEpisode != "الحلقة 45" || b.StripRef != "البقرة ١٨٣" || b.StripTitle != "في الخنادق… لا يوجد ملحدون!" {
+		t.Fatalf("block %+v", b)
+	}
+	if s.SourceTitle == "" {
+		t.Fatal("source_title not decoded")
+	}
+}

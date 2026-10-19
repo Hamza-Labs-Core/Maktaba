@@ -22,6 +22,7 @@ from typing import Any
 
 from ... import __version__
 from ... import llm as llm_door
+from ... import relay as relay_door
 from ...engine.paths import active_path_map
 from ...llm.runtimes import LLMRuntimes
 from ...llm.service import LocalLLM
@@ -253,6 +254,7 @@ async def run_agent(
         jt.add_sink(jobs_sink)
         jt.add_sink(agent.job_sink)
         llm_door.attach(local, agent)
+        relay_door.attach(agent)
         _log.info(
             "cluster_agent_starting",
             kind=ident.kind,
@@ -269,6 +271,7 @@ async def run_agent(
         _log.exception("cluster_agent_failed")
     finally:
         llm_door.detach()
+        relay_door.detach()
         if agent is not None:
             jt.remove_sink(agent.job_sink)
         if jobs_sink is not None:

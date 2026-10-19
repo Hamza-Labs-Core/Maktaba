@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 )
 
@@ -92,6 +93,10 @@ type Config struct {
 	Workers func(ctx context.Context) ([]queues.Worker, error)
 	Library func(ctx context.Context) (*LibrarySnapshot, error)
 
+	// Relay is the extension service door (svc.request frames, GET
+	// /api/cluster/relay); nil: every svc.request is refused (no_door).
+	Relay *relay.Door
+
 	LLMQueueTimeout time.Duration
 	LLMMaxParallel  int
 	LLMIdleTimeout  time.Duration
@@ -168,6 +173,10 @@ func New(cfg Config) *Hub {
 		workersDirty: make(chan struct{}, 1),
 	}
 	h.limiter = newIPLimiter(cfg.AgentRatePerMin)
+	if cfg.Relay != nil {
+		cfg.Relay.SetMember(h.relayMember)
+		cfg.Relay.SetAudit(h.relayAudit)
+	}
 	if cfg.Archive != nil {
 		h.archiver = NewArchiver(*cfg.Archive, func() string { return h.Location().Dir }, cfg.Now, cfg.Logger)
 	}

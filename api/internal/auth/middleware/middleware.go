@@ -160,6 +160,9 @@ func RequireAuth(next http.Handler) http.Handler {
 //     process: it proves possession of its pairing key (or the home agent
 //     key) inside the WebSocket handshake, and attempts are rate-limited
 //     per IP.
+//   - /api/tv/remote/webhook (Epic 32.7) — Cloudflare Notifications cannot
+//     sign in; the handler checks the cf-webhook-auth secret and only
+//     asks the remote controller for a reconcile.
 //
 // Deliberately NOT public: /api/system/sbom (internal artifact;
 // only security.txt is mandated public), /api/auth/logout[-all]
@@ -187,6 +190,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 31 phase 2 — every process's channel to the home; it
 		// authenticates in the protocol (pairing key or home agent key).
 		"/api/cluster/agent": {},
+		// Epic 32 story 32.7 — Cloudflare Notifications for the live inputs;
+		// the handler refuses any request without the webhook secret header.
+		"/api/tv/remote/webhook": {},
 	}
 }
 

@@ -20,6 +20,7 @@ import {
   type ChannelArt,
   type WatermarkPosition,
 } from "../../../lib/channels";
+import { StripSection } from "./StripSection";
 
 export type PendingArt = Partial<Record<ArtKind, File>>;
 
@@ -151,10 +152,12 @@ function PendingTile({
 // and going back to the lineup plan's picture on "remove".
 export function ArtSection({
   channelId,
+  channelName = "",
   art,
   onChange,
 }: {
   channelId: string;
+  channelName?: string;
   art?: ChannelArt;
   onChange: (c: Channel) => void;
 }) {
@@ -174,6 +177,7 @@ export function ArtSection({
         ))}
       </div>
       {art && <WatermarkSettings channelId={channelId} art={art} onChange={onChange} />}
+      <StripSection channelId={channelId} channelName={channelName} art={art} onChange={onChange} />
     </fieldset>
   );
 }

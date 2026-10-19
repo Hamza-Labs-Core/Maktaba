@@ -90,7 +90,10 @@ type BlockInput struct {
 	HWDecode    bool    // add -hwaccel cuda (NVENC hosts, file inputs)
 
 	Watermark *Watermark // overlaid on file/live
-	Loudnorm  *Loudnorm  // applied to file/live audio when enabled
+	// Strip is the channel strip drawn over the picture (nil: none).
+	Strip      *StripInput
+	stripFiles []string  // the files written for Strip (removed after the block)
+	Loudnorm   *Loudnorm // applied to file/live audio when enabled
 
 	// Slate visuals: SlateImage fills the frame (the loading picture);
 	// else SlateLogo is centred on black; else plain black. SlateText is
@@ -165,7 +168,7 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 				ww = 2
 			}
 			m := int(float64(p.Height) * wm.MarginPct / 100.0)
-			x, y := overlayXY(wm.Position, m)
+			x, y := avoidStrip(wm.Position, m, in.Strip)
 			filters = append(filters,
 				"["+itoa(wi)+":v]scale="+itoa(ww)+":-2,format=rgba[wm]",
 				"[vb][wm]overlay=x="+x+":y="+y+":shortest=1:format=auto,format=yuv420p[vo]")
@@ -210,6 +213,10 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 		aMap = itoa(addInput("-f", "lavfi", "-i", silenceSrc)) + ":a"
 	}
 
+	if in.Strip != nil {
+		filters = append(filters, "["+vLabel+"]"+in.Strip.Filters()+"[vs]")
+		vLabel = "vs"
+	}
 	args = append(args, "-filter_complex", strings.Join(filters, ";"),
 		"-map", "["+vLabel+"]", "-map", aMap)
 	args = append(args, videoEncoderArgs(p)...)

@@ -20,14 +20,18 @@
 package videos
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -36,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
 // Video is the over-the-wire shape for both list and detail responses.
@@ -60,6 +65,15 @@ type Video struct {
 	Tags          []string        `json:"tags,omitempty"`
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
+
+	// Display titles (Story 27.11, slot 0122): the short on-air title the
+	// guide and the channel strip show. DisplayTitle is the effective one
+	// (the hand-set one, else the automatic one); DisplayTitleSource is
+	// "manual", "rules" or "llm" ("" before the stage ran).
+	DisplayTitle       *string `json:"display_title,omitempty"`
+	DisplayTitleAuto   *string `json:"display_title_auto,omitempty"`
+	DisplayTitleManual *string `json:"display_title_manual,omitempty"`
+	DisplayTitleSource string  `json:"display_title_source,omitempty"`
 }
 
 // PlaybackState is the embedded shape on detail.
@@ -86,7 +100,14 @@ type Handler struct {
 	JobQ    JobControl
 	Audit   AuditWriter
 	NowFunc func() time.Time
+	// DisplayTitleRefresh, when set, is called after a display title was
+	// set or cleared by hand: it enqueues the library's display_title stage
+	// so the channels' future blocks get the new title. Best effort.
+	DisplayTitleRefresh func(ctx context.Context, libraryID string) error
 }
+
+// DisplayTitleMaxRunes caps a hand-set display title.
+const DisplayTitleMaxRunes = 200
 
 // JobControl is the Story 7.5 surface: enqueue a per-video job
 // (or bump an existing one).
@@ -243,11 +264,13 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	// returns ENOENT, mark not playable.
 	playable := true
 	if v.Path != "" {
-		if _, err := os.Stat(v.Path); err != nil {
+		// story 31.3: a canonical smb://... path is the home's mount of the share
+		if _, err := os.Stat(sharepath.ToLocal(v.Path)); err != nil {
 			playable = false
 		}
 	}
 	v.Playable = &playable
+	h.loadDisplay(r.Context(), &v)
 
 	// Tags
 	tagRows, err := h.DB.QueryContext(r.Context(), `
@@ -344,6 +367,17 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			edited["description"] = s
 		}
 	}
+	displayChanged := false
+	if dt, present := raw["display_title"]; present {
+		manual, ferr := parseDisplayTitle(dt)
+		if ferr != nil {
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{*ferr}))
+			return
+		}
+		sets = append(sets, "display_title_manual = "+pidx(len(args)+1))
+		args = append(args, manual)
+		displayChanged = true
+	}
 	if len(sets) > 0 {
 		now := h.now()
 		sets = append(sets, "updated_at = "+pidx(len(args)+1))
@@ -355,6 +389,12 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.recordUserProvenance(r.Context(), id, edited, now)
+	}
+	if displayChanged && h.DisplayTitleRefresh != nil {
+		if err := h.DisplayTitleRefresh(r.Context(), v.LibraryID); err != nil {
+			slog.Warn("videos: display title refresh not queued", "video", id, "err", err.Error(),
+				"event", "display_title_refresh_failed")
+		}
 	}
 
 	// Tags replace — AC-3 "a flat tags array on PATCH replaces the set".
@@ -369,6 +409,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v2, _ := h.loadVideo(r.Context(), id)
+	h.loadDisplay(r.Context(), &v2)
 	common.WriteJSON(w, r, http.StatusOK, v2)
 }
 
@@ -530,6 +571,59 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_ids": ids})
+}
+
+// parseDisplayTitle reads the PATCH display_title value: a string sets the
+// hand-set title (trimmed); "" or null clears it (nil).
+func parseDisplayTitle(raw json.RawMessage) (any, *httperror.FieldError) {
+	if string(bytes.TrimSpace(raw)) == "null" {
+		return nil, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, &httperror.FieldError{Field: "display_title", Message: "must be a string or null"}
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(s) > DisplayTitleMaxRunes {
+		return nil, &httperror.FieldError{Field: "display_title", Message: "at most 200 characters"}
+	}
+	for _, c := range s {
+		if unicode.IsControl(c) {
+			return nil, &httperror.FieldError{Field: "display_title", Message: "must not contain control characters"}
+		}
+	}
+	return s, nil
+}
+
+// loadDisplay fills the display-title fields (slot 0122). Best effort: a
+// database without the columns leaves them empty.
+func (h *Handler) loadDisplay(ctx context.Context, v *Video) {
+	var auto, manual, src sql.NullString
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT display_title, display_title_manual, display_title_source FROM videos WHERE id = $1
+	`, v.ID).Scan(&auto, &manual, &src)
+	if err != nil {
+		return
+	}
+	fillDisplay(v, auto, manual, src)
+}
+
+func fillDisplay(v *Video, auto, manual, src sql.NullString) {
+	if auto.Valid {
+		a := auto.String
+		v.DisplayTitleAuto = &a
+		v.DisplayTitle = &a
+		v.DisplayTitleSource = src.String
+	}
+	if manual.Valid && strings.TrimSpace(manual.String) != "" {
+		m := manual.String
+		v.DisplayTitleManual = &m
+		v.DisplayTitle = &m
+		v.DisplayTitleSource = "manual"
+	}
 }
 
 // loadVideo reads the row by id; sql.ErrNoRows surfaces unchanged.

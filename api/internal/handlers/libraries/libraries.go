@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
 // Library is the over-the-wire shape returned by every endpoint here.
@@ -96,7 +97,11 @@ type OSPathChecker struct{}
 // readable by this process. Otherwise it returns a sentinel error whose
 // string matches the AC vocabulary: “not-absolute“, “not-found“,
 // “not-readable“.
+//
+// Story 31.3: a canonical root (smb://nas/share/...) is checked through the
+// home's mount of the share.
 func (OSPathChecker) Check(root string) error {
+	root = sharepath.ToLocal(root)
 	if !filepath.IsAbs(root) {
 		return errPathNotAbsolute
 	}
@@ -638,6 +643,16 @@ func (h *Handler) normaliseAndValidateRoots(in []string) ([]string, []httperror.
 		if _, ok := seen[p]; ok {
 			continue // silent dedup per EC
 		}
+		// Story 31.3: a root on one of the home's shares is stored canonical
+		// (smb://nas/share/...), so every machine resolves it itself.
+		if !sharepath.IsCanonical(p) {
+			if c, ok := sharepath.ToCanonical(p); ok {
+				p = c
+			}
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
 		seen[p] = struct{}{}
 		cleaned = append(cleaned, p)
 	}
@@ -694,6 +709,12 @@ func (h *Handler) checkRootOverlap(ctx context.Context, exceptID string, roots [
 // pathsOverlap reports whether one of (a, b) contains the other or
 // they are identical. Trailing slashes are normalised away first.
 func pathsOverlap(a, b string) bool {
+	if sharepath.IsCanonical(a) || sharepath.IsCanonical(b) {
+		// story 31.3: canonical paths compare as SMB does, case-insensitively
+		a = strings.ToLower(strings.TrimRight(a, "/"))
+		b = strings.ToLower(strings.TrimRight(b, "/"))
+		return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+	}
 	a = filepath.Clean(a)
 	b = filepath.Clean(b)
 	if a == b {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
@@ -228,7 +229,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		}
 		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
 			SessionID:  sessID.String(),
-			InputPath:  row.Path,
+			InputPath:  pathmap.Resolve(row.Path), // story 31.3: canonical -> local
 			OutputDir:  s.ResolveDir(sessID.String()),
 			Ladder:     ladder,
 			HWAccel:    string(s.HWAccel),

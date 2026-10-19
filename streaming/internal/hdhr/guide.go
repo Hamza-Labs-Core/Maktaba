@@ -137,7 +137,7 @@ func (g *GuideHandler) Logo(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if strings.Contains(logo, "://") {
+	if strings.Contains(logo, "://") && !pathmap.IsCanonical(logo) {
 		if u, err := url.Parse(logo); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
 			http.Redirect(w, r, u.String(), http.StatusFound)
 			return

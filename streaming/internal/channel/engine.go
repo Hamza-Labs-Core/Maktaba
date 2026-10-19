@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -61,7 +62,17 @@ type Engine struct {
 	// settings change applies without a restart. Nil: the cap given to
 	// NewEngine and WarmGrace.
 	Limits func(ctx context.Context) (maxActive int, warmGrace time.Duration)
+	// Fence, when set, fences every station start by the channel's placement
+	// (Epic 32.2): the placement, not channel_runtime, decides which host runs a
+	// channel.
+	Fence Fence
+	// HostStatusOff: the cluster heartbeat (tv_host_beat) reports this host; the
+	// engine no longer writes its streaming_hosts row itself.
+	HostStatusOff bool
+	// Logger for fencing events (nil: slog.Default).
+	Logger *slog.Logger
 
+	gens     map[uuid.UUID]int64
 	mu       sync.Mutex
 	stations map[uuid.UUID]Pipeline
 	started  map[uuid.UUID]time.Time
@@ -82,6 +93,7 @@ func NewEngine(repo Repo, layout Layout, start StartFunc, perHostCap int, now fu
 		Repo: repo, Layout: layout, Start: start,
 		WarmGrace: DefaultWarmGrace, ReadyTimeout: DefaultReadyTimeout,
 		stations: map[uuid.UUID]Pipeline{},
+		gens:     map[uuid.UUID]int64{},
 		started:  map[uuid.UUID]time.Time{},
 		reg:      newRegistry(perHostCap, now),
 		now:      now,
@@ -137,18 +149,36 @@ func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, err
 	if _, err := e.Repo.Look(ctx, channelID); err != nil {
 		return nil, err
 	}
-	if err := e.ownedElsewhere(ctx, channelID); err != nil {
+	var grant Grant
+	if e.Fence != nil {
+		g, err := e.Fence.Allow(ctx, channelID)
+		if err != nil {
+			return nil, err
+		}
+		grant = g
+	} else if err := e.ownedElsewhere(ctx, channelID); err != nil {
 		return nil, err
 	}
 	e.applyLimits(ctx)
-	if err := e.reg.admit(channelID); err != nil {
+	evicted, err := e.reg.admitEvict(channelID)
+	if err != nil {
 		return nil, err
 	}
-	p, err := e.Start(ctx, channelID, e.Layout.HLSDir(channelSessionID(channelID)))
+	if evicted != uuid.Nil {
+		e.releaseLocked(evicted)
+	}
+	startCtx := WithStartOptions(ctx, StartOptions{Discontinuity: grant.Discontinuity})
+	p, err := e.Start(startCtx, channelID, e.Layout.HLSDir(channelSessionID(channelID)))
 	if err != nil {
 		return nil, err
 	}
 	e.stations[channelID] = p
+	if e.Fence != nil {
+		e.gens[channelID] = grant.Gen
+		actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		e.Fence.Ack(actx, channelID, grant.Gen)
+		cancel()
+	}
 	// Registry stop runs under the registry lock: it must not block or
 	// call back into the engine; Pipeline.Stop is non-blocking.
 	e.reg.putWith(channelID, p.Stop, 0)
@@ -202,7 +232,7 @@ func (e *Engine) SyncRuntime(ctx context.Context) {
 		cancel()
 	}
 	e.mu.Unlock()
-	if w, ok := e.Repo.(HostStatusWriter); ok {
+	if w, ok := e.Repo.(HostStatusWriter); ok && !e.HostStatusOff {
 		st := HostStatus{NVENCFree: -1, VTFree: -1}
 		if e.Status != nil {
 			st = e.Status(ctx)
@@ -347,9 +377,114 @@ func (e *Engine) Detach(channelID uuid.UUID) { e.reg.detach(channelID) }
 // Touch refreshes the idle timestamp (HLS playlist/segment fetch).
 func (e *Engine) Touch(channelID uuid.UUID) { e.reg.touch(channelID) }
 
-// ReapIdle stops channels idle past the warm grace window.
+// ReapIdle stops channels idle past the warm grace window and gives their
+// placements back.
 func (e *Engine) ReapIdle(ctx context.Context) []uuid.UUID {
-	return e.reg.reapIdle(e.applyLimits(ctx))
+	ids := e.reg.reapIdle(e.applyLimits(ctx))
+	if e.Fence != nil && len(ids) > 0 {
+		e.mu.Lock()
+		for _, id := range ids {
+			e.releaseLocked(id)
+		}
+		e.mu.Unlock()
+	}
+	return ids
+}
+
+// releaseLocked gives a stopped station's placement back (e.mu held).
+func (e *Engine) releaseLocked(id uuid.UUID) {
+	if e.Fence == nil {
+		return
+	}
+	gen, ok := e.gens[id]
+	if !ok {
+		return
+	}
+	delete(e.gens, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	e.Fence.Release(ctx, id, gen)
+	cancel()
+}
+
+// CheckFences re-checks every running station's placement (every few seconds and
+// on a placement notification): a station whose placement now names another host,
+// a newer generation elsewhere, or nothing at all stops (design §3.4). ids limits
+// the check to those channels (none: all).
+func (e *Engine) CheckFences(ctx context.Context, ids ...uuid.UUID) {
+	if e.Fence == nil {
+		return
+	}
+	type held struct {
+		id  uuid.UUID
+		p   Pipeline
+		gen int64
+	}
+	e.mu.Lock()
+	var list []held
+	want := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	for id, p := range e.stations {
+		if len(want) > 0 && !want[id] {
+			continue
+		}
+		if g, ok := e.gens[id]; ok && p.Alive() {
+			list = append(list, held{id, p, g})
+		}
+	}
+	e.mu.Unlock()
+	log := e.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	for _, h := range list {
+		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		keep, newGen := e.Fence.Check(cctx, h.id, h.gen)
+		cancel()
+		if keep {
+			if newGen > 0 && newGen != h.gen {
+				e.mu.Lock()
+				if e.stations[h.id] == h.p {
+					e.gens[h.id] = newGen
+				}
+				e.mu.Unlock()
+				actx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				e.Fence.Ack(actx, h.id, newGen)
+				cancel()
+			}
+			continue
+		}
+		log.Info("channels: placement superseded; stopping the station", "channel_id", h.id.String(),
+			"generation", h.gen, "event", "tv_station_fenced")
+		e.mu.Lock()
+		if e.stations[h.id] == h.p {
+			delete(e.gens, h.id)
+		}
+		e.mu.Unlock()
+		h.p.Stop()
+	}
+}
+
+// ActiveIDs lists the channels on air on this host.
+func (e *Engine) ActiveIDs() []uuid.UUID {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]uuid.UUID, 0, len(e.stations))
+	for id, p := range e.stations {
+		if p.Alive() {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// Running reports whether the channel has a live station on this host.
+func (e *Engine) Running(id uuid.UUID) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	p, ok := e.stations[id]
+	return ok && p.Alive()
 }
 
 // StopAll stops every station (shutdown). Stops run outside the engine

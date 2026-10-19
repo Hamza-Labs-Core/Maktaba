@@ -15,7 +15,7 @@ import (
 )
 
 func TestNodeHandshakeWelcomeAndRegistry(t *testing.T) {
-	f := newFixture(t)
+	f := newFixture(t, func(c *Config) { c.RetentionDays = 0 }) // the default
 	a, nodeID := f.node("studio")
 	settings, _ := a.Welcome["settings"].(map[string]any)
 	if settings["log_level"] != "info" || settings["metrics_every"] != float64(2) ||

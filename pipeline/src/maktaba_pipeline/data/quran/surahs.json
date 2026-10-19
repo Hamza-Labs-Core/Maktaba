@@ -1,0 +1,689 @@
+{
+"source": "Tanzil Quran Metadata 1.0 (C) 2008-2009 Tanzil.info, CC BY 3.0, https://tanzil.net",
+"surahs": [
+{
+"n": 1,
+"ayas": 7,
+"ar": "الفاتحة",
+"en": "Al-Faatiha"
+},
+{
+"n": 2,
+"ayas": 286,
+"ar": "البقرة",
+"en": "Al-Baqara"
+},
+{
+"n": 3,
+"ayas": 200,
+"ar": "آل عمران",
+"en": "Aal-i-Imraan"
+},
+{
+"n": 4,
+"ayas": 176,
+"ar": "النساء",
+"en": "An-Nisaa"
+},
+{
+"n": 5,
+"ayas": 120,
+"ar": "المائدة",
+"en": "Al-Maaida"
+},
+{
+"n": 6,
+"ayas": 165,
+"ar": "الأنعام",
+"en": "Al-An'aam"
+},
+{
+"n": 7,
+"ayas": 206,
+"ar": "الأعراف",
+"en": "Al-A'raaf"
+},
+{
+"n": 8,
+"ayas": 75,
+"ar": "الأنفال",
+"en": "Al-Anfaal"
+},
+{
+"n": 9,
+"ayas": 129,
+"ar": "التوبة",
+"en": "At-Tawba"
+},
+{
+"n": 10,
+"ayas": 109,
+"ar": "يونس",
+"en": "Yunus"
+},
+{
+"n": 11,
+"ayas": 123,
+"ar": "هود",
+"en": "Hud"
+},
+{
+"n": 12,
+"ayas": 111,
+"ar": "يوسف",
+"en": "Yusuf"
+},
+{
+"n": 13,
+"ayas": 43,
+"ar": "الرعد",
+"en": "Ar-Ra'd"
+},
+{
+"n": 14,
+"ayas": 52,
+"ar": "ابراهيم",
+"en": "Ibrahim"
+},
+{
+"n": 15,
+"ayas": 99,
+"ar": "الحجر",
+"en": "Al-Hijr"
+},
+{
+"n": 16,
+"ayas": 128,
+"ar": "النحل",
+"en": "An-Nahl"
+},
+{
+"n": 17,
+"ayas": 111,
+"ar": "الإسراء",
+"en": "Al-Israa"
+},
+{
+"n": 18,
+"ayas": 110,
+"ar": "الكهف",
+"en": "Al-Kahf"
+},
+{
+"n": 19,
+"ayas": 98,
+"ar": "مريم",
+"en": "Maryam"
+},
+{
+"n": 20,
+"ayas": 135,
+"ar": "طه",
+"en": "Taa-Haa"
+},
+{
+"n": 21,
+"ayas": 112,
+"ar": "الأنبياء",
+"en": "Al-Anbiyaa"
+},
+{
+"n": 22,
+"ayas": 78,
+"ar": "الحج",
+"en": "Al-Hajj"
+},
+{
+"n": 23,
+"ayas": 118,
+"ar": "المؤمنون",
+"en": "Al-Muminoon"
+},
+{
+"n": 24,
+"ayas": 64,
+"ar": "النور",
+"en": "An-Noor"
+},
+{
+"n": 25,
+"ayas": 77,
+"ar": "الفرقان",
+"en": "Al-Furqaan"
+},
+{
+"n": 26,
+"ayas": 227,
+"ar": "الشعراء",
+"en": "Ash-Shu'araa"
+},
+{
+"n": 27,
+"ayas": 93,
+"ar": "النمل",
+"en": "An-Naml"
+},
+{
+"n": 28,
+"ayas": 88,
+"ar": "القصص",
+"en": "Al-Qasas"
+},
+{
+"n": 29,
+"ayas": 69,
+"ar": "العنكبوت",
+"en": "Al-Ankaboot"
+},
+{
+"n": 30,
+"ayas": 60,
+"ar": "الروم",
+"en": "Ar-Room"
+},
+{
+"n": 31,
+"ayas": 34,
+"ar": "لقمان",
+"en": "Luqman"
+},
+{
+"n": 32,
+"ayas": 30,
+"ar": "السجدة",
+"en": "As-Sajda"
+},
+{
+"n": 33,
+"ayas": 73,
+"ar": "الأحزاب",
+"en": "Al-Ahzaab"
+},
+{
+"n": 34,
+"ayas": 54,
+"ar": "سبإ",
+"en": "Saba"
+},
+{
+"n": 35,
+"ayas": 45,
+"ar": "فاطر",
+"en": "Faatir"
+},
+{
+"n": 36,
+"ayas": 83,
+"ar": "يس",
+"en": "Yaseen"
+},
+{
+"n": 37,
+"ayas": 182,
+"ar": "الصافات",
+"en": "As-Saaffaat"
+},
+{
+"n": 38,
+"ayas": 88,
+"ar": "ص",
+"en": "Saad"
+},
+{
+"n": 39,
+"ayas": 75,
+"ar": "الزمر",
+"en": "Az-Zumar"
+},
+{
+"n": 40,
+"ayas": 85,
+"ar": "غافر",
+"en": "Al-Ghaafir"
+},
+{
+"n": 41,
+"ayas": 54,
+"ar": "فصلت",
+"en": "Fussilat"
+},
+{
+"n": 42,
+"ayas": 53,
+"ar": "الشورى",
+"en": "Ash-Shura"
+},
+{
+"n": 43,
+"ayas": 89,
+"ar": "الزخرف",
+"en": "Az-Zukhruf"
+},
+{
+"n": 44,
+"ayas": 59,
+"ar": "الدخان",
+"en": "Ad-Dukhaan"
+},
+{
+"n": 45,
+"ayas": 37,
+"ar": "الجاثية",
+"en": "Al-Jaathiya"
+},
+{
+"n": 46,
+"ayas": 35,
+"ar": "الأحقاف",
+"en": "Al-Ahqaf"
+},
+{
+"n": 47,
+"ayas": 38,
+"ar": "محمد",
+"en": "Muhammad"
+},
+{
+"n": 48,
+"ayas": 29,
+"ar": "الفتح",
+"en": "Al-Fath"
+},
+{
+"n": 49,
+"ayas": 18,
+"ar": "الحجرات",
+"en": "Al-Hujuraat"
+},
+{
+"n": 50,
+"ayas": 45,
+"ar": "ق",
+"en": "Qaaf"
+},
+{
+"n": 51,
+"ayas": 60,
+"ar": "الذاريات",
+"en": "Adh-Dhaariyat"
+},
+{
+"n": 52,
+"ayas": 49,
+"ar": "الطور",
+"en": "At-Tur"
+},
+{
+"n": 53,
+"ayas": 62,
+"ar": "النجم",
+"en": "An-Najm"
+},
+{
+"n": 54,
+"ayas": 55,
+"ar": "القمر",
+"en": "Al-Qamar"
+},
+{
+"n": 55,
+"ayas": 78,
+"ar": "الرحمن",
+"en": "Ar-Rahmaan"
+},
+{
+"n": 56,
+"ayas": 96,
+"ar": "الواقعة",
+"en": "Al-Waaqia"
+},
+{
+"n": 57,
+"ayas": 29,
+"ar": "الحديد",
+"en": "Al-Hadid"
+},
+{
+"n": 58,
+"ayas": 22,
+"ar": "المجادلة",
+"en": "Al-Mujaadila"
+},
+{
+"n": 59,
+"ayas": 24,
+"ar": "الحشر",
+"en": "Al-Hashr"
+},
+{
+"n": 60,
+"ayas": 13,
+"ar": "الممتحنة",
+"en": "Al-Mumtahana"
+},
+{
+"n": 61,
+"ayas": 14,
+"ar": "الصف",
+"en": "As-Saff"
+},
+{
+"n": 62,
+"ayas": 11,
+"ar": "الجمعة",
+"en": "Al-Jumu'a"
+},
+{
+"n": 63,
+"ayas": 11,
+"ar": "المنافقون",
+"en": "Al-Munaafiqoon"
+},
+{
+"n": 64,
+"ayas": 18,
+"ar": "التغابن",
+"en": "At-Taghaabun"
+},
+{
+"n": 65,
+"ayas": 12,
+"ar": "الطلاق",
+"en": "At-Talaaq"
+},
+{
+"n": 66,
+"ayas": 12,
+"ar": "التحريم",
+"en": "At-Tahrim"
+},
+{
+"n": 67,
+"ayas": 30,
+"ar": "الملك",
+"en": "Al-Mulk"
+},
+{
+"n": 68,
+"ayas": 52,
+"ar": "القلم",
+"en": "Al-Qalam"
+},
+{
+"n": 69,
+"ayas": 52,
+"ar": "الحاقة",
+"en": "Al-Haaqqa"
+},
+{
+"n": 70,
+"ayas": 44,
+"ar": "المعارج",
+"en": "Al-Ma'aarij"
+},
+{
+"n": 71,
+"ayas": 28,
+"ar": "نوح",
+"en": "Nooh"
+},
+{
+"n": 72,
+"ayas": 28,
+"ar": "الجن",
+"en": "Al-Jinn"
+},
+{
+"n": 73,
+"ayas": 20,
+"ar": "المزمل",
+"en": "Al-Muzzammil"
+},
+{
+"n": 74,
+"ayas": 56,
+"ar": "المدثر",
+"en": "Al-Muddaththir"
+},
+{
+"n": 75,
+"ayas": 40,
+"ar": "القيامة",
+"en": "Al-Qiyaama"
+},
+{
+"n": 76,
+"ayas": 31,
+"ar": "الانسان",
+"en": "Al-Insaan"
+},
+{
+"n": 77,
+"ayas": 50,
+"ar": "المرسلات",
+"en": "Al-Mursalaat"
+},
+{
+"n": 78,
+"ayas": 40,
+"ar": "النبإ",
+"en": "An-Naba"
+},
+{
+"n": 79,
+"ayas": 46,
+"ar": "النازعات",
+"en": "An-Naazi'aat"
+},
+{
+"n": 80,
+"ayas": 42,
+"ar": "عبس",
+"en": "Abasa"
+},
+{
+"n": 81,
+"ayas": 29,
+"ar": "التكوير",
+"en": "At-Takwir"
+},
+{
+"n": 82,
+"ayas": 19,
+"ar": "الإنفطار",
+"en": "Al-Infitaar"
+},
+{
+"n": 83,
+"ayas": 36,
+"ar": "المطففين",
+"en": "Al-Mutaffifin"
+},
+{
+"n": 84,
+"ayas": 25,
+"ar": "الإنشقاق",
+"en": "Al-Inshiqaaq"
+},
+{
+"n": 85,
+"ayas": 22,
+"ar": "البروج",
+"en": "Al-Burooj"
+},
+{
+"n": 86,
+"ayas": 17,
+"ar": "الطارق",
+"en": "At-Taariq"
+},
+{
+"n": 87,
+"ayas": 19,
+"ar": "الأعلى",
+"en": "Al-A'laa"
+},
+{
+"n": 88,
+"ayas": 26,
+"ar": "الغاشية",
+"en": "Al-Ghaashiya"
+},
+{
+"n": 89,
+"ayas": 30,
+"ar": "الفجر",
+"en": "Al-Fajr"
+},
+{
+"n": 90,
+"ayas": 20,
+"ar": "البلد",
+"en": "Al-Balad"
+},
+{
+"n": 91,
+"ayas": 15,
+"ar": "الشمس",
+"en": "Ash-Shams"
+},
+{
+"n": 92,
+"ayas": 21,
+"ar": "الليل",
+"en": "Al-Lail"
+},
+{
+"n": 93,
+"ayas": 11,
+"ar": "الضحى",
+"en": "Ad-Dhuhaa"
+},
+{
+"n": 94,
+"ayas": 8,
+"ar": "الشرح",
+"en": "Ash-Sharh"
+},
+{
+"n": 95,
+"ayas": 8,
+"ar": "التين",
+"en": "At-Tin"
+},
+{
+"n": 96,
+"ayas": 19,
+"ar": "العلق",
+"en": "Al-Alaq"
+},
+{
+"n": 97,
+"ayas": 5,
+"ar": "القدر",
+"en": "Al-Qadr"
+},
+{
+"n": 98,
+"ayas": 8,
+"ar": "البينة",
+"en": "Al-Bayyina"
+},
+{
+"n": 99,
+"ayas": 8,
+"ar": "الزلزلة",
+"en": "Az-Zalzala"
+},
+{
+"n": 100,
+"ayas": 11,
+"ar": "العاديات",
+"en": "Al-Aadiyaat"
+},
+{
+"n": 101,
+"ayas": 11,
+"ar": "القارعة",
+"en": "Al-Qaari'a"
+},
+{
+"n": 102,
+"ayas": 8,
+"ar": "التكاثر",
+"en": "At-Takaathur"
+},
+{
+"n": 103,
+"ayas": 3,
+"ar": "العصر",
+"en": "Al-Asr"
+},
+{
+"n": 104,
+"ayas": 9,
+"ar": "الهمزة",
+"en": "Al-Humaza"
+},
+{
+"n": 105,
+"ayas": 5,
+"ar": "الفيل",
+"en": "Al-Fil"
+},
+{
+"n": 106,
+"ayas": 4,
+"ar": "قريش",
+"en": "Quraish"
+},
+{
+"n": 107,
+"ayas": 7,
+"ar": "الماعون",
+"en": "Al-Maa'un"
+},
+{
+"n": 108,
+"ayas": 3,
+"ar": "الكوثر",
+"en": "Al-Kawthar"
+},
+{
+"n": 109,
+"ayas": 6,
+"ar": "الكافرون",
+"en": "Al-Kaafiroon"
+},
+{
+"n": 110,
+"ayas": 3,
+"ar": "النصر",
+"en": "An-Nasr"
+},
+{
+"n": 111,
+"ayas": 5,
+"ar": "المسد",
+"en": "Al-Masad"
+},
+{
+"n": 112,
+"ayas": 4,
+"ar": "الإخلاص",
+"en": "Al-Ikhlaas"
+},
+{
+"n": 113,
+"ayas": 5,
+"ar": "الفلق",
+"en": "Al-Falaq"
+},
+{
+"n": 114,
+"ayas": 6,
+"ar": "الناس",
+"en": "An-Naas"
+}
+]
+}

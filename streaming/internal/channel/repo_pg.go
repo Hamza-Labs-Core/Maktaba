@@ -21,6 +21,8 @@ import (
 type PGRepo struct {
 	pool *pgxpool.Pool
 	host string
+	// HostID, when set, scopes ClearRuntime to this host's row.
+	HostID string
 
 	mu            sync.Mutex
 	hasSourceURL  bool
@@ -66,7 +68,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
-		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`
+		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot
 		FROM channel_programs cp
 		LEFT JOIN videos v ON v.id = cp.video_id
 		WHERE cp.channel_id = $1 AND cp.end_at > $2
@@ -82,8 +84,9 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 		var b ProgramBlock
 		var vid *uuid.UUID
 		var path, src *string
+		var snap []byte
 		if err := rows.Scan(&b.Seq, &b.Kind, &vid, &b.StartAt, &b.EndAt,
-			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src); err != nil {
+			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap); err != nil {
 			return nil, err
 		}
 		if vid != nil {
@@ -95,6 +98,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 		if src != nil {
 			b.SourceURL = *src
 		}
+		b.Info = ParseBlockInfo(snap)
 		out = append(out, b)
 	}
 	return out, rows.Err()
@@ -261,6 +265,13 @@ func (r *PGRepo) ClearHostRuntime(ctx context.Context, hostID, host string) (int
 }
 
 func (r *PGRepo) ClearRuntime(ctx context.Context, channelID uuid.UUID) error {
+	if r.HostID != "" && r.runtimeStatsColumns(ctx) {
+		// only this host's row: a station stopped because its channel moved must not
+		// delete the row the new host already wrote (one encode per channel)
+		_, err := r.pool.Exec(ctx, `DELETE FROM channel_runtime WHERE channel_id = $1
+			AND (host_id IS NULL OR host_id = $2)`, channelID, r.HostID)
+		return err
+	}
 	_, err := r.pool.Exec(ctx, `DELETE FROM channel_runtime WHERE channel_id = $1`, channelID)
 	return err
 }

@@ -83,6 +83,9 @@ type Handler struct {
 	// OnNodeChanged is called after an admin changes a machine's stage
 	// switches or drain: its processes reload their stages at once.
 	OnNodeChanged func(nodeID string)
+	// Storage holds the storage servers and the home's share report (story
+	// 31.3). Nil: those routes answer 404.
+	Storage cluster.StorageStore
 }
 
 // Mount wires the routes.
@@ -99,6 +102,7 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Post("/api/cluster/nodes/{id}/revoke", h.Revoke)
 		r.Put("/api/cluster/nodes/{id}", h.UpdateNode)
 		r.Delete("/api/cluster/nodes/{id}", h.DeleteNode)
+		h.mountStorage(r)
 	})
 }
 
@@ -447,6 +451,10 @@ type Home struct {
 	AcceptJoinsUntil *time.Time `json:"accept_joins_until"`
 	RolesSupported   bool       `json:"roles_supported"`
 	RolesReason      *string    `json:"roles_reason"`
+	// Story 31.3: the home's per-share storage check (as the pipeline on
+	// the home reports it) and its "share -> local mount" override.
+	Storage json.RawMessage `json:"storage,omitempty"`
+	PathMap json.RawMessage `json:"path_map,omitempty"`
 }
 
 // Overview is GET /api/cluster.
@@ -487,7 +495,9 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "list machines", err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, Overview{Home: h.home(ctx, id), Nodes: nodes})
+	home := h.home(ctx, id)
+	h.homeStorage(r, &home)
+	common.WriteJSON(w, r, http.StatusOK, Overview{Home: home, Nodes: nodes})
 }
 
 // SettingsRequest is the body of PUT /api/cluster/settings.

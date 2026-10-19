@@ -93,13 +93,74 @@ def test_write_error_moves_to_local(tmp_path: Path) -> None:
     f = _files(tmp_path)
     assert f.on_share
     (tmp_path / "share/maktaba/cluster/192.168.50.31/logs").write_text("not a directory")
-    f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": "lost"})
+    f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": "first"})
     f.flush()
-    assert f.failed == 1 and not f.on_share
+    assert not f.on_share and "write failed" in str(f.status()["reason"])
+    assert f.failed == 0  # the failed write's records went to the local folder
     f.write("logs", {"ts": "2026-10-19T10:00:01Z", "event": "kept"})
     f.flush()
     p = tmp_path / "local/192.168.50.31/logs/2026-10-19/node-ab12cd34-4242.jsonl"
-    assert _lines(p)[0]["event"] == "kept"
+    assert [r["event"] for r in _lines(p)] == ["first", "kept"]
+
+
+def test_a_failed_share_write_tries_the_share_again_soon(tmp_path: Path) -> None:
+    now = [1000.0]
+    f = _files(tmp_path, clock=lambda: now[0])
+    logs = tmp_path / "share/maktaba/cluster/192.168.50.31/logs"
+    logs.write_text("not a directory")
+    f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": "a"})
+    f.flush()
+    assert not f.on_share
+    logs.unlink()  # the share is back
+    now[0] += 20  # well before the 5-minute retry
+    f.tick()
+    assert f.on_share
+
+
+def test_a_dead_handle_is_reopened_and_the_share_kept(tmp_path: Path) -> None:
+    """An SMB session that drops and reconnects (a NAS's I/O timeout) leaves the open
+    handles dead: on Windows the next write fails with "[Errno 22] Invalid argument".
+    The write is tried again on a fresh handle, the share kept, nothing lost."""
+    f = _files(tmp_path)
+    f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": "a"})
+    f.write("metrics", {"ts": "2026-10-19T10:00:00Z"})
+    assert f.flush() == 2
+    for fh in list(f._files.values()):
+        os.close(fh.fileno())  # the handles die under the writer
+    f.write("logs", {"ts": "2026-10-19T10:00:01Z", "event": "b"})
+    assert f.flush() == 1
+    assert f.on_share and f.failed == 0 and f.status()["reason"] is None
+    p = tmp_path / "share/maktaba/cluster/192.168.50.31/logs/2026-10-19/node-ab12cd34-4242.jsonl"
+    assert [r["event"] for r in _lines(p)] == ["a", "b"]
+    f.stop()
+
+
+def test_a_line_cut_short_is_ended_before_the_next(tmp_path: Path) -> None:
+    d = tmp_path / "share/maktaba/cluster/192.168.50.31/logs/2026-10-19"
+    d.mkdir(parents=True)
+    (d / "node-ab12cd34-4242.jsonl").write_bytes(b'{"event":"whole"}\n{"event":"cu')
+    f = _files(tmp_path)
+    f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": "next"})
+    f.flush()
+    f.stop()
+    lines = (d / "node-ab12cd34-4242.jsonl").read_bytes().split(b"\n")
+    assert lines[:2] == [b'{"event":"whole"}', b'{"event":"cu'] and lines[3:] == [b""]
+    assert json.loads(lines[2])["event"] == "next"
+
+
+def test_lines_end_in_lf_and_the_cap_counts_the_bytes_written(tmp_path: Path) -> None:
+    """Windows' text mode would write CRLF: files unlike every other OS's, each line a
+    byte longer than the cap counts."""
+    f = _files(tmp_path)
+    for i in range(50):
+        f.write("logs", {"ts": "2026-10-19T10:00:00Z", "event": f"e{i}", "s": "ü"})
+    f.flush()
+    counted = f._sizes[("logs", "2026-10-19")]
+    f.stop()
+    p = tmp_path / "share/maktaba/cluster/192.168.50.31/logs/2026-10-19/node-ab12cd34-4242.jsonl"
+    raw = p.read_bytes()
+    assert b"\r" not in raw and raw.count(b"\n") == 50
+    assert len(raw) == counted
 
 
 def test_retention_removes_every_process_file_of_expired_days(tmp_path: Path) -> None:

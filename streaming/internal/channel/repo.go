@@ -46,6 +46,8 @@ type ProgramBlock struct {
 	// SourceURL is the stream/page URL of a `live` block (nullable
 	// channel_programs.source_url; empty before that migration lands).
 	SourceURL string
+	// Info is the display part of title_snapshot (the strip's text).
+	Info BlockInfo
 }
 
 // Duration is the wall-clock length of the block.

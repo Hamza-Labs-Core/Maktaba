@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..engine.paths import to_local
 from ..integrity import atomic_write_bytes
 from .formats import SubtitleFormat
 
@@ -256,5 +257,5 @@ async def soft_delete_subtitle(
         return False
     if delete_file:
         with suppress(FileNotFoundError, OSError):
-            Path(row["path"]).unlink()
+            Path(to_local(str(row["path"]))).unlink()  # story 31.3: a share path
     return True

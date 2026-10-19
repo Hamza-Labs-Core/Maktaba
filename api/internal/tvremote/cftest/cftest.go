@@ -6,13 +6,16 @@ package cftest
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,6 +61,19 @@ type Server struct {
 	SegmentExp    bool
 	// Now is the fake's clock for exp (default time.Now).
 	Now func() time.Time
+
+	// VerifySignatures: playback checks the token's RS256 signature against the
+	// signing key named by its kid (a deleted key plays nothing, R8.4).
+	VerifySignatures bool
+	// IngestRTMPS / IngestSRT replace the ingest URLs of new inputs (a fake
+	// ingest server in the end-to-end tests).
+	IngestRTMPS string
+	IngestSRT   string
+	// MinutesByUID answers the per-video analytics query (minutes delivered
+	// today per video id).
+	MinutesByUID map[string]float64
+	// Status is a live input's status answer (default "connected" while live).
+	Status map[string]json.RawMessage
 }
 
 // claims decodes a token's payload (no signature check).
@@ -94,6 +110,10 @@ func (s *Server) servePlayback(w http.ResponseWriter, tok, file string) {
 		http.Error(w, "unsigned", http.StatusUnauthorized)
 		return
 	}
+	if s.VerifySignatures && !s.signed(tok, c.Kid) {
+		http.Error(w, "bad signature", http.StatusUnauthorized)
+		return
+	}
 	expired := c.Exp <= now.Unix()
 	segment := strings.HasSuffix(file, ".ts")
 	if !s.playable(c.Sub) || (expired && (!segment || s.SegmentExp)) {
@@ -111,6 +131,116 @@ func (s *Server) servePlayback(w http.ResponseWriter, tok, file string) {
 	default:
 		http.NotFound(w, nil)
 	}
+}
+
+// signed checks tok's RS256 signature with the key kid (caller holds Mu).
+func (s *Server) signed(tok, kid string) bool {
+	k, ok := s.Keys[kid]
+	if !ok {
+		return false
+	}
+	priv, err := cf.ParseSigningKey(k.PEM)
+	if err != nil {
+		return false
+	}
+	return VerifyToken(tok, &priv.PublicKey) == nil
+}
+
+// VerifyToken checks a compact RS256 JWS against pub.
+func VerifyToken(tok string, pub *rsa.PublicKey) error {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return errors.New("cftest: not a compact JWS")
+	}
+	hdr, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return err
+	}
+	var h struct {
+		Alg string `json:"alg"`
+	}
+	if json.Unmarshal(hdr, &h) != nil || h.Alg != "RS256" {
+		return errors.New("cftest: alg is not RS256")
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	return rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], sig)
+}
+
+// Claims decodes a token's claims (no signature check).
+func Claims(tok string) (cf.TokenClaims, bool) { return claims(tok) }
+
+// PublicKey is the public half of signing key kid.
+func (s *Server) PublicKey(kid string) (*rsa.PublicKey, bool) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	k, ok := s.Keys[kid]
+	if !ok {
+		return nil, false
+	}
+	priv, err := cf.ParseSigningKey(k.PEM)
+	if err != nil {
+		return nil, false
+	}
+	return &priv.PublicKey, true
+}
+
+// GoLive starts a broadcast on an input as Cloudflare does when a publisher
+// connects: a new live-inprogress video and lifecycle live. It returns the
+// video id; an input already live keeps its video (a reconnect within
+// timeoutSeconds continues the broadcast).
+func (s *Server) GoLive(input string) string {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if lc, ok := s.Lives[input]; ok && lc.Live {
+		return lc.VideoUID
+	}
+	v := &cf.Video{UID: uid(), LiveInput: input}
+	v.Status.State = "live-inprogress"
+	v.Playback.HLS = "https://customer-" + s.CustomerCode + ".cloudflarestream.com/" + v.UID + "/manifest/video.m3u8"
+	s.Videos[v.UID] = v
+	s.Lives[input] = cf.Lifecycle{IsInput: true, VideoUID: v.UID, Live: true}
+	return v.UID
+}
+
+// EndLive ends an input's broadcast: lifecycle not live, its video ready (the
+// recording).
+func (s *Server) EndLive(input string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	lc, ok := s.Lives[input]
+	if !ok || !lc.Live {
+		return
+	}
+	if v := s.Videos[lc.VideoUID]; v != nil {
+		v.Status.State = "ready"
+		v.Duration = 60
+	}
+	s.Lives[input] = cf.Lifecycle{IsInput: true}
+}
+
+// InputByStreamKey finds the input whose RTMPS stream key (or SRT
+// passphrase) is key.
+func (s *Server) InputByStreamKey(key string) (string, bool) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	for id, in := range s.Inputs {
+		if (in.RTMPS != nil && in.RTMPS.StreamKey == key) || (in.SRT != nil && in.SRT.Passphrase == key) {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// Enabled reports whether an input is enabled.
+func (s *Server) Enabled(input string) bool {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	in := s.Inputs[input]
+	return in != nil && in.Enabled != nil && *in.Enabled
 }
 
 // New starts a fake for account "acc1" and token "tok-secret".
@@ -236,9 +366,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			var req cf.CreateLiveInput
 			_ = json.NewDecoder(r.Body).Decode(&req)
+			rtmpsURL, srtURL := "rtmps://live.cloudflare.com:443/live/", "srt://live.cloudflare.com:778"
+			if s.IngestRTMPS != "" {
+				rtmpsURL = s.IngestRTMPS
+			}
+			if s.IngestSRT != "" {
+				srtURL = s.IngestSRT
+			}
 			in := &cf.LiveInput{UID: uid(), Meta: req.Meta, Enabled: req.Enabled, Recording: req.Recording,
-				RTMPS: &cf.Ingest{URL: "rtmps://live.cloudflare.com:443/live/", StreamKey: "key-" + uid()},
-				SRT:   &cf.Ingest{URL: "srt://live.cloudflare.com:778", StreamID: "sid", Passphrase: "pp"}}
+				PreferLowLatency: req.PreferLowLatency,
+				RTMPS:            &cf.Ingest{URL: rtmpsURL, StreamKey: "key-" + uid()},
+				SRT:              &cf.Ingest{URL: srtURL, StreamID: "sid-" + uid()[:8], Passphrase: "pp-" + uid()[:12]}}
 			s.Inputs[in.UID] = in
 			write(w, 200, in)
 			return
@@ -278,7 +416,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			write(w, 200, in)
 		default:
-			write(w, 200, in)
+			x := *in
+			if st, ok := s.Status[id]; ok {
+				x.Status = st
+			} else if lc, ok := s.Lives[id]; ok && lc.Live {
+				x.Status = json.RawMessage(`{"current":{"state":"connected"}}`)
+			}
+			write(w, 200, x)
 		}
 	case p == acct+"/stream/storage-usage":
 		write(w, 200, cf.StorageUsage{TotalStorageMinutes: s.StorageMinutes, TotalStorageMinutesLimit: s.StorageLimit, VideoCount: len(s.Videos)})
@@ -316,6 +460,28 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if s.AnalyticsDenied {
 			_, _ = w.Write([]byte(`{"data":null,"errors":[{"message":"not authorized for that account"}]}`))
+			return
+		}
+		var q struct {
+			Variables struct {
+				UIDs []string `json:"uids"`
+			} `json:"variables"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&q)
+		if q.Variables.UIDs != nil {
+			day := time.Now().UTC().Format("2006-01-02")
+			if s.Now != nil {
+				day = s.Now().UTC().Format("2006-01-02")
+			}
+			groups := []map[string]any{}
+			for _, u := range q.Variables.UIDs {
+				if m, ok := s.MinutesByUID[u]; ok {
+					groups = append(groups, map[string]any{"sum": map[string]any{"minutesViewed": m},
+						"dimensions": map[string]any{"date": day, "uid": u}})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"viewer": map[string]any{
+				"accounts": []any{map[string]any{"streamMinutesViewedAdaptiveGroups": groups}}}}, "errors": nil})
 			return
 		}
 		_, _ = w.Write([]byte(`{"data":{"viewer":{"accounts":[{"streamMinutesViewedAdaptiveGroups":[{"sum":{"minutesViewed":12},"dimensions":{"date":"2026-10-18"}}]}]}},"errors":null}`))

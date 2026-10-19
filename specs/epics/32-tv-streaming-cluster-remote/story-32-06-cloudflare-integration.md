@@ -37,7 +37,9 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
   home API's first start after this story, existing secret values are moved out of
   `extensions.settings` into `home_secrets` (idempotent) and returned masked by the API. Code that
   needs a secret reads it through the secrets store on the home; a job that needs one on a node
-  gets it per job from the home, never by reading a table its role can see.
+  gets it per job from the home, never by reading a table its role can see. *(Done by
+  [story 31.R](../31-multi-instance/story-31-relay-service-door.md): a node never gets the Plex
+  token at all; the home's service door adds it to each allowed call.)*
 - **AC7 (spike, documented in the runbook)** With a real account: (a) a token whose `sub` is the
   in-progress video id plays the live broadcast; (b) whether `exp` is enforced per segment;
   (c) glass-to-glass latency of standard HLS and of LL-HLS with the channel encoder settings;

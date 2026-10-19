@@ -227,14 +227,27 @@ type Settings interface {
 	Output(ctx context.Context) OutputSettings
 }
 
+// StripSource is implemented by settings that also carry the strip's
+// defaults (rules tv_strip).
+type StripSource interface {
+	Strip(ctx context.Context) StripSettings
+}
+
 // StaticSettings serves fixed settings (tests, no database).
 type StaticSettings struct {
-	TVs  TVSettings
-	Outs OutputSettings
+	TVs    TVSettings
+	Outs   OutputSettings
+	Strips *StripSettings // nil: the built-in strip defaults
 }
 
 func (s StaticSettings) TV(context.Context) TVSettings         { return s.TVs }
 func (s StaticSettings) Output(context.Context) OutputSettings { return s.Outs }
+func (s StaticSettings) Strip(context.Context) StripSettings {
+	if s.Strips != nil {
+		return *s.Strips
+	}
+	return DefaultStripSettings()
+}
 
 // settingsTTL: how long a read of the settings is reused.
 const settingsTTL = 10 * time.Second
@@ -253,6 +266,7 @@ type PGSettings struct {
 	at      time.Time
 	tv      TVSettings
 	out     OutputSettings
+	strip   StripSettings
 	loaded  bool
 	lastBad string
 }
@@ -276,6 +290,14 @@ func (s *PGSettings) Output(ctx context.Context) OutputSettings {
 	return s.out
 }
 
+// Strip is rules.tv_strip over the built-in strip defaults.
+func (s *PGSettings) Strip(ctx context.Context) StripSettings {
+	s.refresh(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.strip
+}
+
 func (s *PGSettings) refresh(ctx context.Context) {
 	ttl := s.TTL
 	if ttl <= 0 {
@@ -287,7 +309,7 @@ func (s *PGSettings) refresh(ctx context.Context) {
 		return
 	}
 	if !s.loaded {
-		s.tv, s.out = s.BaseTV, s.BaseOut
+		s.tv, s.out, s.strip = s.BaseTV, s.BaseOut, DefaultStripSettings()
 	}
 	s.mu.Unlock()
 
@@ -295,7 +317,7 @@ func (s *PGSettings) refresh(ctx context.Context) {
 	if s.Pool != nil {
 		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		rows, err := s.Pool.Query(qctx,
-			`SELECT key, value::text FROM app_settings WHERE key IN ('rules.tv', 'rules.tv_output')`)
+			`SELECT key, value::text FROM app_settings WHERE key IN ('rules.tv', 'rules.tv_output', 'rules.tv_strip')`)
 		if err == nil {
 			for rows.Next() {
 				var k, v string
@@ -316,9 +338,10 @@ func (s *PGSettings) refresh(ctx context.Context) {
 	}
 	tv, badTV := ApplyTVRules(s.BaseTV, raws["rules.tv"])
 	out, badOut := ApplyOutputRules(s.BaseOut, raws["rules.tv_output"])
+	strip, badStrip := ApplyStripRules(DefaultStripSettings(), raws["rules.tv_strip"], false)
 	s.mu.Lock()
-	s.tv, s.out, s.at, s.loaded = tv, out, time.Now(), true
-	bad := strings.Join(append(badTV, badOut...), ",")
+	s.tv, s.out, s.strip, s.at, s.loaded = tv, out, strip, time.Now(), true
+	bad := strings.Join(append(append(badTV, badOut...), badStrip...), ",")
 	logBad := bad != "" && bad != s.lastBad
 	s.lastBad = bad
 	s.mu.Unlock()

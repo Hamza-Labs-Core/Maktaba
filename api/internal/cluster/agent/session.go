@@ -126,6 +126,7 @@ type Session struct {
 	logLevel string
 	logs     []logMsg // recent log messages
 	cmds     map[string]chan CmdResult
+	relays   map[string]context.CancelFunc // svc.request ids running
 }
 
 type outFrame struct {

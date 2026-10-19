@@ -6,7 +6,24 @@
 //
 // Contract: GET /api/cluster and the /api/cluster/* mutations (design §8),
 // re-read every POLL_MS while the page is open.
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+//
+// The page holds still while it updates: machines keep a fixed order (state,
+// then name), a poll that brings the same data re-renders nothing (unchanged
+// nodes keep their object, the cards are memoised), the skeleton shows on the
+// first load only, status lines keep their space whether or not they say
+// anything, and the hub's frames reach React at most once a second
+// (clusterStream). Per-job progress is not drawn here: each machine says how
+// many jobs it runs and links to the Processing page filtered by it.
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
@@ -16,18 +33,27 @@ import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
-import { useClusterFmt } from "../../components/cluster/format";
+import { pausedOf, useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
+import { JobsSummary } from "../../components/cluster/JobsSummary";
 import { LibraryPanel } from "../../components/cluster/LibraryPanel";
 import { LiveMachines } from "../../components/cluster/LiveMachines";
 import { LlmPanel } from "../../components/cluster/LlmPanel";
 import type { LogTarget } from "../../components/cluster/LogViewer";
 import { LogsPanel } from "../../components/cluster/LogsPanel";
+import {
+  HOME_HOST,
+  countsKey,
+  jobCounts,
+  reconcileView,
+} from "../../components/cluster/machineSummary";
 import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
+import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
-import { useClusterStream } from "../../lib/clusterStream";
+import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
 import type { SocketStatus } from "../../lib/clusterSocket";
 import { ApiError } from "../../lib/api";
 import {
@@ -37,7 +63,9 @@ import {
   type ClusterHome,
   type ClusterNode,
   type ClusterView,
+  type NodeStorage,
   type NodeUpdate,
+  type StorageServer,
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import "../../styles/queue.css";
@@ -70,31 +98,42 @@ function MachinesPage() {
   const files = useClusterFiles();
   const [tab, setTab] = useState("machines");
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
-  const queueLabel = useMemo(() => queueLabeller(stream.latestQueues), [stream.latestQueues]);
+  // the labels only change when the stages do, not on every queue sample
+  const labelsKey = (stream.latestQueues?.stages ?? [])
+    .map((s) => `${s.stage}\u0001${s.label}`)
+    .join("\u0002");
+  const queueLabel = useMemo(() => queueLabeller(stream.latestQueues), [labelsKey]);
   const [tone, statusKey] = STATUS_BADGE[stream.status];
-  const openLogs = (target: LogTarget) => {
+  const openLogs = useCallback((target: LogTarget) => {
     setLogTarget(target);
     setTab("logs");
-  };
+  }, []);
 
   return (
     <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
       <header className="mkt-mc__head">
         <div className="mkt-mc-row">
           <h1 id="mkt-mc-h">{t("machines.title")}</h1>
-          <Badge tone={tone} role="status">
-            {t(statusKey)}
-          </Badge>
+          <span className="mkt-mc-live">
+            <Badge tone={tone} role="status">
+              {t(statusKey)}
+            </Badge>
+          </span>
         </div>
         <p className="mkt-mc-muted">{t("machines.intro")}</p>
-        {stream.dropped > 0 && (
-          <p className="mkt-mc-muted">{t("cluster.status.dropped", { n: n(stream.dropped) })}</p>
-        )}
-        {stream.lastRefused && (
-          <p className="mkt-mc-note" role="note">
-            {t("cluster.status.refused", { reason: stream.lastRefused.reason ?? "–" })}
-          </p>
-        )}
+        {/* one line that is always there, so a note never pushes the page down */}
+        <p className="mkt-mc-statusline">
+          {stream.dropped > 0 && (
+            <span className="mkt-mc-muted">
+              {t("cluster.status.dropped", { n: n(stream.dropped) })}
+            </span>
+          )}
+          {stream.lastRefused && (
+            <span className="mkt-mc-warn" role="note">
+              {t("cluster.status.refused", { reason: stream.lastRefused.reason ?? "–" })}
+            </span>
+          )}
+        </p>
       </header>
       <Tabs
         label={t("cluster.tabs.label")}
@@ -106,10 +145,12 @@ function MachinesPage() {
             id: "machines",
             label: t("cluster.tabs.machines"),
             content: (
-              <div className="mkt-mc-tab">
-                <Approvals queueLabel={queueLabel} />
-                <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={openLogs} />
-              </div>
+              <MachinesOverview
+                stream={stream}
+                queueLabel={queueLabel}
+                onOpenLogs={openLogs}
+                extra={<RelayDoorCard />}
+              />
             ),
           },
           {
@@ -139,9 +180,45 @@ function MachinesPage() {
             label: t("cluster.tabs.llm"),
             content: <LlmPanel stream={stream} />,
           },
+          {
+            id: "relay",
+            label: t("cluster.tabs.relay"),
+            content: <RelayPanel />,
+          },
         ]}
       />
     </section>
+  );
+}
+
+/**
+ * The Machines tab: this home, the requests to join and the joined machines
+ * (Approvals), then what each connected machine is doing now (LiveMachines).
+ * Each section is its own component; a new one (say, the relay door's status)
+ * goes in `extra` or as one more child here, without touching the others.
+ */
+function MachinesOverview({
+  stream,
+  queueLabel,
+  onOpenLogs,
+  extra,
+}: {
+  stream: ClusterStream;
+  queueLabel: (stage: string) => string;
+  onOpenLogs: (target: LogTarget) => void;
+  extra?: ReactNode;
+}) {
+  // jobs per machine from the hub; the same counts keep the same object
+  const counts = jobCounts(stream.processes);
+  const key = countsKey(counts);
+  const live = stream.ready && stream.status === "open";
+  const jobs = useMemo(() => (live ? counts : null), [key, live]);
+  return (
+    <div className="mkt-mc-tab">
+      <Approvals queueLabel={queueLabel} jobs={jobs} />
+      {extra}
+      <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={onOpenLogs} jobs={jobs} />
+    </div>
   );
 }
 
@@ -165,7 +242,16 @@ function useErrorToast() {
   );
 }
 
-function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
+type JobCounts = Record<string, number> | null;
+
+const Approvals = memo(function Approvals({
+  queueLabel,
+  jobs,
+}: {
+  queueLabel: (stage: string) => string;
+  /** jobs running per machine (node id / "home"); null while the hub is not connected */
+  jobs: JobCounts;
+}) {
   const { t } = useI18n();
   const [view, setView] = useState<ClusterView | null>(null);
   const [error, setError] = useState(false);
@@ -177,7 +263,7 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         .getCluster()
         .then((v) => {
           if (!alive.current) return;
-          setView(v);
+          setView((prev) => reconcileView(prev, v));
           setError(false);
         })
         .catch(() => {
@@ -196,6 +282,8 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
     };
   }, [load]);
 
+  const reload = useCallback(() => void load(), [load]);
+
   if (!view) {
     return error ? (
       <div role="alert" className="mkt-mc-banner">
@@ -205,24 +293,27 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         </Button>
       </div>
     ) : (
-      <p className="mkt-loading" role="status">
-        {t("common.loading")}
-      </p>
+      // the first load only: the shapes of what is coming, at their size
+      <div className="mkt-mc-skeleton" aria-busy="true">
+        <p className="mkt-visually-hidden" role="status">
+          {t("common.loading")}
+        </p>
+        <div className="mkt-mc-card mkt-mc-skel mkt-mc-skel--home" aria-hidden="true" />
+        <div className="mkt-mc-card mkt-mc-skel mkt-mc-skel--node" aria-hidden="true" />
+      </div>
     );
   }
 
   const pending = view.nodes.filter((n) => n.state === "pending");
   const machines = view.nodes.filter((n) => n.state !== "pending");
-  const reload = () => void load();
 
   return (
     <>
-      {error && (
-        <p className="mkt-mc-muted" role="status">
-          {t("machines.stale")}
-        </p>
-      )}
-      <HomeCard home={view.home} onChanged={reload} />
+      {/* always there: a failed refresh says so without moving anything */}
+      <p className="mkt-mc-statusline" role="status">
+        {error && <span className="mkt-mc-muted">{t("machines.stale")}</span>}
+      </p>
+      <HomeCard home={view.home} onChanged={reload} jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null} />
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
           {t("machines.pending.title")}
@@ -246,18 +337,32 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         ) : (
           <ul className="mkt-mc-list">
             {machines.map((n) => (
-              <MachineCard key={n.id} node={n} onChanged={reload} queueLabel={queueLabel} />
+              <MachineCard
+                key={n.id}
+                node={n}
+                onChanged={reload}
+                queueLabel={queueLabel}
+                jobs={jobs ? (jobs[n.id] ?? 0) : null}
+              />
             ))}
           </ul>
         )}
       </section>
     </>
   );
-}
+});
 
 // ---------------------------------------------------------------- home
 
-function HomeCard({ home, onChanged }: { home: ClusterHome; onChanged: () => void }) {
+const HomeCard = memo(function HomeCard({
+  home,
+  onChanged,
+  jobs,
+}: {
+  home: ClusterHome;
+  onChanged: () => void;
+  jobs: number | null;
+}) {
   const { t } = useI18n();
   const fmt = useFmt();
   const showError = useErrorToast();
@@ -278,23 +383,179 @@ function HomeCard({ home, onChanged }: { home: ClusterHome; onChanged: () => voi
       <h2 id="mkt-mc-home-h" className="mkt-mc-card__eyebrow">
         {t("machines.home.title")}
       </h2>
-      <p className="mkt-mc-home__name">{bidiIsolate(home.name)}</p>
+      <div className="mkt-mc-row mkt-mc-row--head">
+        <p className="mkt-mc-home__name">{bidiIsolate(home.name)}</p>
+        <JobsSummary host={HOME_HOST} count={jobs} name={home.name} />
+      </div>
       <Toggle
         label={t("machines.home.accept")}
         checked={home.accept_joins}
         disabled={busy || !home.roles_supported}
         onChange={(e) => toggle(e.currentTarget.checked)}
       />
-      {home.roles_supported && home.accept_joins && left !== null && (
-        <p className="mkt-mc-muted">{t("machines.home.acceptLeft", { time: fmt.dur(left) })}</p>
-      )}
-      {home.roles_supported && !home.accept_joins && (
-        <p className="mkt-mc-muted">{t("machines.home.closed")}</p>
-      )}
-      {!home.roles_supported && (
+      {!home.roles_supported ? (
         <p className="mkt-mc-note" role="note">
           {home.roles_reason || t("machines.home.unsupported")}
         </p>
+      ) : (
+        // one line whether open or closed
+        <p className="mkt-mc-muted mkt-mc-line">
+          {home.accept_joins
+            ? left !== null
+              ? t("machines.home.acceptLeft", { time: fmt.dur(left) })
+              : "\u00a0"
+            : t("machines.home.closed")}
+        </p>
+      )}
+      {home.storage !== undefined && (
+        <>
+          <StorageCheck storage={home.storage} />
+          <PathMapEditor
+            entries={home.path_map ?? home.storage?.path_map ?? null}
+            source={home.path_map ? "admin" : home.storage?.path_map ? "inferred" : null}
+            busy={busy}
+            onSave={(pm) => {
+              setBusy(true);
+              clusterApi
+                .setHomePathMap(pm)
+                .then(onChanged)
+                .catch(showError)
+                .finally(() => setBusy(false));
+            }}
+          />
+          <StorageServers />
+        </>
+      )}
+    </section>
+  );
+});
+
+// The storage servers (story 31.3): the name a stored smb://<name>/... path
+// uses and the addresses it is reached by (an IP change is one edit here).
+function StorageServers() {
+  const { t } = useI18n();
+  const showError = useErrorToast();
+  const [servers, setServers] = useState<StorageServer[] | null>(null);
+  const [draft, setDraft] = useState<{ name: string; addresses: string; char_map: string } | null>(
+    null
+  );
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(
+    () =>
+      clusterApi
+        .listServers()
+        .then((r) => setServers(Array.isArray(r?.servers) ? r.servers : []))
+        .catch(() => setServers([])),
+    []
+  );
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    if (!draft || !draft.name.trim()) return;
+    setBusy(true);
+    clusterApi
+      .putServer(draft.name.trim(), {
+        addresses: draft.addresses
+          .split(/[\s,]+/)
+          .map((a) => a.trim())
+          .filter(Boolean),
+        char_map: draft.char_map,
+      })
+      .then(() => {
+        setDraft(null);
+        return load();
+      })
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+  const remove = (name: string) => {
+    setBusy(true);
+    clusterApi
+      .deleteServer(name)
+      .then(load)
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="mkt-mc-sub" aria-label={t("machines.servers.title")}>
+      <h4 className="mkt-mc-sub__title">{t("machines.servers.title")}</h4>
+      {servers === null ? null : servers.length === 0 ? (
+        <p className="mkt-mc-muted">{t("machines.servers.none")}</p>
+      ) : (
+        <ul className="mkt-mc-map">
+          {servers.map((s) => (
+            <li key={s.name} dir="ltr">
+              <code>{`smb://${s.name}/`}</code> <span>{s.addresses.join(", ") || "-"}</span>
+              {s.char_map !== "none" && <span className="mkt-mc-muted"> ({s.char_map})</span>}{" "}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  setDraft({
+                    name: s.name,
+                    addresses: s.addresses.join(", "),
+                    char_map: s.char_map,
+                  })
+                }
+              >
+                {t("machines.servers.edit", { name: s.name })}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(s.name)}>
+                {t("machines.servers.remove", { name: s.name })}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {draft === null ? (
+        <div className="mkt-mc-actions">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => setDraft({ name: "", addresses: "", char_map: "none" })}
+          >
+            {t("machines.servers.add")}
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={save} className="mkt-mc-map-form">
+          <div className="mkt-mc-map-row" dir="ltr">
+            <Input
+              label={t("machines.servers.name")}
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+            />
+            <Input
+              label={t("machines.servers.addresses")}
+              value={draft.addresses}
+              onChange={(e) => setDraft({ ...draft, addresses: e.currentTarget.value })}
+            />
+            <Select
+              label={t("machines.servers.charMap")}
+              value={draft.char_map}
+              onChange={(e) => setDraft({ ...draft, char_map: e.currentTarget.value })}
+              options={[
+                { value: "none", label: t("machines.servers.charMap.none") },
+                { value: "fullwidth", label: t("machines.servers.charMap.fullwidth") },
+                { value: "sfm", label: t("machines.servers.charMap.sfm") },
+              ]}
+            />
+          </div>
+          <div className="mkt-mc-actions">
+            <Button size="sm" type="submit" disabled={busy}>
+              {t("common.save")}
+            </Button>
+            <Button size="sm" variant="secondary" type="button" onClick={() => setDraft(null)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </form>
       )}
     </section>
   );
@@ -408,12 +669,14 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
 // ---------------------------------------------------------------- machines
 
-type Status = "online" | "offline" | "draining" | "revoked" | "rejected";
+type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected";
 
 function nodeStatus(node: ClusterNode): Status {
   if (node.state === "revoked") return "revoked";
   if (node.state === "rejected") return "rejected";
   if (node.drain) return "draining";
+  // its code needs a database schema the home does not have (or the other way round)
+  if (node.online && pausedOf(node.workers)) return "paused";
   return node.online ? "online" : "offline";
 }
 
@@ -421,6 +684,7 @@ const STATUS_TONE: Record<Status, "success" | "neutral" | "warn" | "error"> = {
   online: "success",
   offline: "neutral",
   draining: "warn",
+  paused: "warn",
   revoked: "error",
   rejected: "error",
 };
@@ -458,14 +722,26 @@ function useCapabilityChips(node: ClusterNode): string[] {
   return chips;
 }
 
-function MachineCard({
+/** Why a machine claims nothing: its code and the home's database schema do not fit. */
+function PausedNotice({ reason }: { reason: string }) {
+  const cf = useClusterFmt();
+  return (
+    <p className="mkt-mc-muted" role="status">
+      {cf.reason(reason)}
+    </p>
+  );
+}
+
+const MachineCard = memo(function MachineCard({
   node,
   onChanged,
   queueLabel,
+  jobs,
 }: {
   node: ClusterNode;
   onChanged: () => void;
   queueLabel: (stage: string) => string;
+  jobs: number | null;
 }) {
   const { t } = useI18n();
   const fmt = useFmt();
@@ -473,6 +749,7 @@ function MachineCard({
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"revoke" | "remove" | null>(null);
   const status = nodeStatus(node);
+  const paused = status === "paused" ? pausedOf(node.workers) : null;
   const chips = useCapabilityChips(node);
   const active = node.state === "approved";
   const name = bidiIsolate(node.name);
@@ -488,15 +765,19 @@ function MachineCard({
   return (
     <li className={`mkt-mc-card mkt-mc-node mkt-mc-node--${status}`}>
       <article aria-label={node.name}>
-        <header className="mkt-mc-row">
+        <header className="mkt-mc-row mkt-mc-row--head">
           <h3 className="mkt-mc-name">{name}</h3>
           <Badge tone={STATUS_TONE[status]}>{t(`machines.status.${status}`)}</Badge>
-          {node.last_seen_at && (
+          <span className="mkt-mc-muted">{t("machines.role.node")}</span>
+          {/* "last seen" only while it is away: on a live machine it changed every poll */}
+          {status !== "online" && node.last_seen_at && (
             <span className="mkt-mc-muted">
               {t("machines.lastSeen", { time: fmt.ago(node.last_seen_at) })}
             </span>
           )}
+          {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
+        {paused && <PausedNotice reason={paused} />}
         {chips.length > 0 && (
           <ul className="mkt-mc-chips" aria-label={t("machines.cap.title")}>
             {chips.map((c, i) => (
@@ -508,8 +789,13 @@ function MachineCard({
         )}
         {active && (
           <>
-            <StorageCheck node={node} />
-            <PathMapEditor node={node} busy={busy} onSave={update} />
+            <StorageCheck storage={node.storage} />
+            <PathMapEditor
+              entries={node.path_map}
+              source={node.path_map_source}
+              busy={busy}
+              onSave={(path_map) => update({ path_map })}
+            />
             <StageTable node={node} busy={busy} onSet={update} queueLabel={queueLabel} />
           </>
         )}
@@ -565,12 +851,12 @@ function MachineCard({
       )}
     </li>
   );
-}
+});
 
-function StorageCheck({ node }: { node: ClusterNode }) {
+function StorageCheck({ storage }: { storage: NodeStorage | null | undefined }) {
   const { t } = useI18n();
-  const fmt = useFmt();
-  const s = node.storage;
+  const cf = useClusterFmt();
+  const s = storage && Object.keys(storage).length > 0 ? storage : null;
   const word = (v: string) =>
     v === "ok" || v === "error" || v === "skipped" ? t(`machines.storage.${v}`) : v;
   return (
@@ -579,20 +865,47 @@ function StorageCheck({ node }: { node: ClusterNode }) {
       {!s ? (
         <p className="mkt-mc-muted">{t("machines.storage.unknown")}</p>
       ) : (
-        <p className="mkt-mc-storage">
-          <span className={`mkt-mc-check mkt-mc-check--${s.read}`}>
-            {t("machines.storage.read", { v: word(s.read) })}
-          </span>
-          <span className={`mkt-mc-check mkt-mc-check--${s.write}`}>
-            {t("machines.storage.write", { v: word(s.write) })}
-          </span>
-          {s.checked_at && (
-            <span className="mkt-mc-muted">
-              {t("machines.storage.checked", { time: fmt.ago(s.checked_at) })}
+        <>
+          <p className="mkt-mc-storage">
+            <span className={`mkt-mc-check mkt-mc-check--${s.read}`}>
+              {t("machines.storage.read", { v: word(s.read) })}
             </span>
+            <span className={`mkt-mc-check mkt-mc-check--${s.write}`}>
+              {t("machines.storage.write", { v: word(s.write) })}
+            </span>
+            {s.checked_at && (
+              <span className="mkt-mc-muted">
+                {t("machines.storage.checkedAt", { time: cf.time(Date.parse(s.checked_at)) })}
+              </span>
+            )}
+            {s.detail && <span className="mkt-mc-muted">{s.detail}</span>}
+          </p>
+          {s.shares && s.shares.length > 0 && (
+            <ul className="mkt-mc-shares" aria-label={t("machines.storage.shares")}>
+              {s.shares.map((sh) => (
+                <li key={sh.share} className="mkt-mc-share">
+                  <code dir="ltr">{sh.share}</code>{" "}
+                  {sh.local ? (
+                    <>
+                      <span aria-hidden="true">→</span>
+                      <span className="mkt-visually-hidden">{t("machines.pathMap.to")}</span>{" "}
+                      <code dir="ltr">{sh.local}</code>
+                    </>
+                  ) : (
+                    <span className="mkt-mc-muted">{t("machines.storage.notMounted")}</span>
+                  )}{" "}
+                  <span className={`mkt-mc-check mkt-mc-check--${sh.read}`}>
+                    {t("machines.storage.read", { v: word(sh.read) })}
+                  </span>{" "}
+                  <span className={`mkt-mc-check mkt-mc-check--${sh.write}`}>
+                    {t("machines.storage.write", { v: word(sh.write) })}
+                  </span>
+                  {sh.detail && sh.local && <span className="mkt-mc-muted"> {sh.detail}</span>}
+                </li>
+              ))}
+            </ul>
           )}
-          {s.detail && <span className="mkt-mc-muted">{s.detail}</span>}
-        </p>
+        </>
       )}
     </section>
   );
@@ -603,22 +916,27 @@ interface MapRow {
   to: string;
 }
 
+// "share -> local mount" (story 31.3): the shares a machine resolves the
+// stored smb://server/share/... paths through; the admin's rows override
+// what it works out from its own mounts.
 function PathMapEditor({
-  node,
+  entries: map,
+  source: from,
   busy,
   onSave,
 }: {
-  node: ClusterNode;
+  entries: Record<string, string> | null | undefined;
+  source: "inferred" | "admin" | null | undefined;
   busy: boolean;
-  onSave: (body: NodeUpdate) => void;
+  onSave: (pathMap: Record<string, string> | null) => void;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<MapRow[] | null>(null);
-  const entries = Object.entries(node.path_map ?? {});
+  const entries = Object.entries(map ?? {});
   const source =
-    node.path_map_source === "admin"
+    from === "admin"
       ? t("machines.pathMap.admin")
-      : node.path_map_source === "inferred"
+      : from === "inferred"
         ? t("machines.pathMap.inferred")
         : null;
 
@@ -632,7 +950,7 @@ function PathMapEditor({
     for (const r of draft) {
       if (r.from.trim() && r.to.trim()) map[r.from.trim()] = r.to.trim();
     }
-    onSave({ path_map: map });
+    onSave(map);
     setDraft(null);
   };
 
@@ -672,13 +990,8 @@ function PathMapEditor({
             >
               {t("machines.pathMap.edit")}
             </Button>
-            {node.path_map_source === "admin" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => onSave({ path_map: null })}
-              >
+            {from === "admin" && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => onSave(null)}>
                 {t("machines.pathMap.reset")}
               </Button>
             )}

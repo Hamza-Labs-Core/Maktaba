@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
+
 	"context"
 	"errors"
 	"fmt"
@@ -87,6 +89,10 @@ func (l *Locator) Resolve(ctx context.Context) Location {
 		}
 	}
 	localRoot := l.PathMap.ToLocal(root)
+	if localRoot == root {
+		// story 31.3: a canonical smb://... root through the home's share map
+		localRoot = sharepath.ToLocal(root)
+	}
 	if !filepath.IsAbs(filepath.FromSlash(localRoot)) {
 		return l.fallback(root, fmt.Sprintf("the share root %s has no local path here (set MAKTABA_PATH_MAP)", root))
 	}
@@ -169,6 +175,14 @@ func splitDBPath(p string) (root string, parts []string) {
 	p = strings.ReplaceAll(strings.TrimSpace(p), `\`, "/")
 	var rest string
 	switch {
+	case sharepath.IsCanonical(p) && strings.Contains(p, "://") && !strings.HasPrefix(strings.ToLower(p), "file:"):
+		// story 31.3: smb://server/share/... keeps its server and share as the root
+		i := strings.Index(p, "://") + 3
+		segs := strings.SplitN(p[i:], "/", 3)
+		root = p[:i] + segs[0] + "/" + segs[1] + "/"
+		if len(segs) == 3 {
+			rest = segs[2]
+		}
 	case strings.HasPrefix(p, "//"):
 		segs := strings.SplitN(strings.TrimPrefix(p, "//"), "/", 3)
 		switch len(segs) {

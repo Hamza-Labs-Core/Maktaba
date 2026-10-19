@@ -25,19 +25,24 @@ from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
 from .classify.books import BooksConfig
 from .classify.clip_groups import GroupConfig
+from .classify.display_title import DisplayTitleConfig
 from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
+from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
 from .schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvClusterConfig,
     MaktabaTvConfig,
     MaktabaTvOutputConfig,
+    MaktabaTvRemoteConfig,
     PlexLiveConfig,
     RepairConfig,
+    TvStripConfig,
 )
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
@@ -78,6 +83,15 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_output": (MaktabaTvOutputConfig, "Maktaba TV output", "how a channel on air is "
                   "encoded: encoder, picture, bitrates, how many channels and NVENC "
                   "sessions at once"),
+    "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
+                   "channels and how the home spreads them; one encode per channel"),
+    "tv_remote": (MaktabaTvRemoteConfig, "Maktaba TV away from home", "who may watch "
+                  "channels away from home through Cloudflare Stream, how many at once, the "
+                  "monthly budget and the storage guard"),
+    "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
+                 "picture: what is on now and next, and a clock rotating between cities"),
+    "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "
+                       "for the guide, the channel strip and the dizqueTV export"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
     "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),
@@ -85,6 +99,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                  "and its guide, refreshing the guide and the channel list"),
     "repair": (RepairConfig, "Broken files", "downloads that cannot be read are fetched from "
                "YouTube again (off until switched on)"),
+    "relay": (RelayConfig, "Extension relay", "machines run the Plex stages through the home, "
+              "which adds the Plex token they never see; limits per machine"),
 }  # fmt: skip
 
 

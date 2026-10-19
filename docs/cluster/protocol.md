@@ -355,6 +355,25 @@ Each side sends `ping` every 15 s.
 - `llm.cancel` from the requester (or the hub, when the requester left) asks the runner to
   stop; the runner still sends `llm.done` (`error.code: "cancelled"`).
 
+**Service door frames** (the extension relay: a machine calls Plex without the token)
+
+| Frame | Direction | Members |
+|---|---|---|
+| `svc.request` | agent → hub | `id`, `ext` (`plex`), `method`, `path` (path and query, never a URL), `accept`?, `content_type`?, `body`? (base64), `timeout_ms`? |
+| `svc.chunk` | hub → agent | `id`, `data` (base64): the answer's body, in order |
+| `svc.done` | hub → agent | `id`, `status`, `content_type`, `bytes`, `error`? {`code`, `detail`} |
+| `svc.cancel` | agent → hub | `id` |
+
+- The hub checks the session (an approved machine now, or a home process), the setting
+  (rules section `relay`), the extension's allow-list (method, path pattern, query names and
+  values) and the machine's limits; then it adds the secret (the Plex token) and calls the
+  server configured on the home. Only `Content-Type` comes back, redirects are not followed,
+  and every copy of the token is removed from the body.
+- Every `svc.request` ends with exactly one `svc.done`. Refusal codes: `relay_off`,
+  `unknown_extension`, `home_only`, `not_allowed`, `bad_request`, `not_configured`,
+  `not_member`, `rate_limited`, `busy`, `too_large`; failures: `timeout`,
+  `upstream_unreachable`, `cancelled`; `no_door` when the home runs without it.
+
 ## 9. Liveness and reconnecting
 
 - 45 s without any frame from the other side: close **4008**.

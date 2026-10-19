@@ -153,6 +153,7 @@ timestamps. Consequences that fall out for free:
 |-------|------------------------------------------------------------|------------|---------|
 | 27.9  | ["What's On Now" home widget](story-27-09-home-widget.md)  | api + web + apps | Home-screen rail: each channel's current program + progress + next-up + Tune In. All platforms. |
 | 27.10 | [Filler & bumper system](story-27-10-filler-bumper-system.md) | pipeline + api + web | Designate short clips as filler/bumper; global + per-channel pools; auto-insert to fill gaps; auto "up next" bumpers. |
+| 27.11 | [Channel strip and display titles](story-27-11-channel-strip-display-titles.md) | pipeline + streaming + api + web | News-style bar burned into the picture: now / «التالي» / a clock rotating between cities; short, clean on-air display titles for the strip, guide and dizqueTV export. |
 
 ## Key technical decisions
 
@@ -289,6 +290,7 @@ Epic 27 claims **0081–0085**. Every slot ships the dual `*.sql` +
 | 0082 | 27.2 | `0082_channel_programs.sql` | `channel_programs` (channel_id, seq, kind, video_id?, filler_item_id?, start_at, end_at, source_offset, source_duration, title_snapshot); `channel_schedule_state` (channel_id PK, anchor_at, horizon_until, last_generated_at, generator_version, cursor JSONB) |
 | 0083 | 27.3 | `0083_channel_sessions.sql` | ALTER `streaming_sessions` ADD `channel_id`, extend `mode` (+`channel`); `channel_runtime` (channel_id PK, host, pid, started_at, last_segment_at, viewer_count, state) |
 | 0084 | 27.5 | `0084_hdhomerun.sql` | `hdhr_device` (singleton: device_id, device_uuid, friendly_name, tuner_count, enabled); `hdhr_tuner_leases` (id, channel_id, client_addr, started_at, last_seen) |
+| 0122 | 27.11 | `0122_display_titles.sql` | `videos.display_title` / `display_title_source` / `display_title_manual`, `series.display_name`, `display_title_llm`; the `display_title` stage |
 | 0085 | 27.10 | `0085_channel_filler.sql` | `filler_pools` (id, library_id, name, scope, kind_default); `filler_items` (pool_id, video_id, kind, duration_ms, weight); `channel_filler` (channel_id, pool_id, policy JSONB) |
 
 27.4, 27.6, 27.7, 27.8, and 27.9 add **no migrations** — they are read

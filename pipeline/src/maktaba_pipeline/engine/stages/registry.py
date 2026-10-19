@@ -53,6 +53,7 @@ CORE_MODULES: dict[str, str] = {
     "check_tags": "maktaba_pipeline.engine.stages.check_tags",
     "check_clips": "maktaba_pipeline.engine.stages.check_clips",
     "books": "maktaba_pipeline.engine.stages.books",
+    "display_title": "maktaba_pipeline.engine.stages.display_title",
     "rate_style": "maktaba_pipeline.engine.stages.rate_style",
     "plan_channels": "maktaba_pipeline.engine.stages.plan_channels",
     "write_channels": "maktaba_pipeline.engine.stages.write_channels",

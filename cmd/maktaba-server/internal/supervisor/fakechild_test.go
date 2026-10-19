@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
 // The test binary doubles as the fake child process: with
@@ -33,6 +35,8 @@ func TestMain(m *testing.M) {
 		fakeChild(mode)
 		return
 	}
+	// never this machine's real node config (it holds a database credential)
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	os.Exit(m.Run())
 }
 

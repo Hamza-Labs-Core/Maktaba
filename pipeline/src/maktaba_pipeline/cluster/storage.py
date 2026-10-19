@@ -33,6 +33,7 @@ from ..engine.sql import loads
 __all__ = [
     "LibrarySample",
     "candidate_roots",
+    "check_shares",
     "check_storage",
     "infer_path_map",
     "load_samples",
@@ -182,7 +183,8 @@ def _match(
     parts = p.split("/")
     # parts[0] is '' for a POSIX path, 'Y:' for a drive; UNC is '', '', server, share:
     # the server and share stay in the prefix
-    first = 4 if p.startswith("//") else 1
+    # (a canonical smb://server/share/... likewise)
+    first = 4 if p.startswith("//") or re.match(r"^[a-z]+://", p) else 1
     for start in range(first, len(parts)):
         rel = "/".join(parts[start:])
         if not rel:
@@ -297,3 +299,83 @@ def check_storage(
         "checked_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "detail": "; ".join(detail) or None,
     }
+
+
+def _probe_write(local_dir: str, node8: str) -> tuple[str, str | None]:
+    probe = _join(local_dir, f".maktaba-{node8}.tmp")
+    try:
+        with open(probe, "wb") as fh:
+            fh.write(b"maktaba")
+        os.remove(probe)
+    except OSError as exc:
+        return "error", f"cannot write in {local_dir}: {exc.strerror or exc}"
+    return "ok", None
+
+
+def _readable_dir(local_dir: str) -> tuple[str, str | None]:
+    try:
+        with os.scandir(local_dir) as it:
+            next(it, None)
+    except OSError as exc:
+        return "error", f"cannot read {local_dir}: {exc.strerror or exc}"
+    return "ok", None
+
+
+def check_shares(
+    samples: Sequence[LibrarySample],
+    resolver: PathMap,
+    node8: str,
+    *,
+    write: bool = True,
+) -> list[dict[str, Any]]:
+    """Per share (story 31.3): which of the shares the libraries live on are reachable
+    and writable here, and through which local mount.
+
+    The shares checked are the canonical prefixes of the library roots (and of the
+    sampled videos), each as a ``{share, local, source, read, write, detail}`` row;
+    a share no mount reaches has ``local: null`` and ``read: error``.
+    """
+    from ..sharepath.canonical import parse_canonical
+
+    shares_of = getattr(resolver, "shares", ())
+    wanted: dict[str, list[str]] = {}
+    for lib in samples:
+        for value in [*lib.roots, *(p for p, _ in lib.videos[:1])]:
+            sp = parse_canonical(value)
+            if sp is None or sp.scheme == "file":
+                continue
+            wanted.setdefault(f"{sp.scheme}://{sp.server}/{sp.share}", []).append(
+                value if value in lib.roots else value.rsplit("/", 1)[0]
+            )
+    rows: list[dict[str, Any]] = []
+    for share, dirs in sorted(wanted.items()):
+        local_root = resolver.to_local(share)
+        mapped = local_root != share
+        via = next(
+            (
+                s
+                for s in sorted(shares_of, key=lambda x: -len(x.prefix))
+                if (share + "/").lower().startswith(s.prefix.lower())
+                or s.prefix.lower().startswith((share + "/").lower())
+            ),
+            None,
+        )
+        row: dict[str, Any] = {
+            "share": share,
+            "local": local_root if mapped else None,
+            "source": via.source if via is not None else ("map" if mapped else None),
+            "read": "error",
+            "write": "skipped",
+            "detail": None,
+        }
+        if not mapped:
+            row["detail"] = "not mounted here"
+            rows.append(row)
+            continue
+        # a share mounted only below its root (Y: = Originals/Backup/Youtube): check there
+        target = resolver.to_local(dirs[0]) if dirs else local_root
+        row["read"], row["detail"] = _readable_dir(target)
+        if write and row["read"] == "ok":
+            row["write"], row["detail"] = _probe_write(target, node8)
+        rows.append(row)
+    return rows

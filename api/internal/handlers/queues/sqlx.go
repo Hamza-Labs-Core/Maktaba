@@ -47,7 +47,7 @@ func jobRefQuery(extraCols string) string {
 	joins, expr := labelSQL("j.subject_kind", "j.subject_id")
 	return `SELECT j.id, j.stage, j.state, j.subject_kind, j.subject_id::text, ` + expr + `,
 	       j.library_id::text, j.priority, j.attempts, j.max_attempts, j.outcome,
-	       j.error_cause, j.created_at, j.started_at, j.finished_at, j.progress` + extraCols + `
+	       j.error_cause, j.created_at, j.started_at, j.finished_at, j.progress, j.claimed_by` + extraCols + `
 	  FROM processing_jobs j` + joins
 }
 
@@ -62,9 +62,10 @@ func scanJobRef(rs rowScanner, dest ...any) (JobRef, error) {
 	var lib, outcome, cause sql.NullString
 	var started, finished sql.NullTime
 	var progress []byte
+	var claimedBy sql.NullString
 	args := []any{&j.ID, &j.Stage, &j.State, &j.SubjectKind, &j.SubjectID, &j.SubjectLabel,
 		&lib, &j.Priority, &j.Attempts, &j.MaxAttempts, &outcome, &cause,
-		&j.CreatedAt, &started, &finished, &progress}
+		&j.CreatedAt, &started, &finished, &progress, &claimedBy}
 	args = append(args, dest...)
 	if err := rs.Scan(args...); err != nil {
 		return JobRef{}, err
@@ -87,6 +88,7 @@ func scanJobRef(rs rowScanner, dest ...any) (JobRef, error) {
 		j.FinishedAt = &t
 	}
 	j.Progress = parseProgress(progress)
+	j.ClaimedBy = nullStrPtr(claimedBy)
 	return j, nil
 }
 

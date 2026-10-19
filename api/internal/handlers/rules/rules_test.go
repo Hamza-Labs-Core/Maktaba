@@ -255,9 +255,8 @@ func TestPatch_InvalidRejected(t *testing.T) {
 		{"nullable non-null wrong type", "planner", `{"set":{"timezone":5}}`, "timezone", "string"},
 		{"unknown name", "planner", `{"set":{"nope":1}}`, "nope", "unknown setting"},
 	}
-	// one database for every case (a fresh one each took the test past the unit
-	// tier's time cap): every case must write nothing, so a stray write by one
-	// fails it and every case after it
+	// one server for every case (nothing is written on a refusal, which each
+	// case checks), so the test stays under the unit tier's per-test cap
 	db, srv := newServer(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

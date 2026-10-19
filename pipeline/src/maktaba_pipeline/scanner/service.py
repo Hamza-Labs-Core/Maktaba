@@ -29,6 +29,7 @@ directly so the scanner orchestrator runs against an in-memory fake.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ from typing import Any, Protocol, cast
 from uuid import UUID
 
 from ..db.pubsub import VIDEOS_NEW, get_bus
+from ..engine.paths import to_db, to_local
 from ..identity import hash_file
 from .walker import (
     DEFAULT_IGNORE_BASENAMES,
@@ -454,8 +456,12 @@ class Scanner:
         concurrency at the file-event level.
         """
         for root in roots:
+            # story 31.3: a root is stored canonical (smb://nas/share/...); walk this
+            # machine's mount of it and store each file in the database's form
+            local_root = to_local(root)
             try:
-                yield from walk(root, walk_cfg, self._log)
+                for c in walk(local_root, walk_cfg, self._log):
+                    yield dataclasses.replace(c, path=to_db(c.path)) if local_root != root else c
             except FileNotFoundError:
                 self._log.warning("scanner.root_missing", path=root)
             except PermissionError:
@@ -492,7 +498,7 @@ class Scanner:
             return
 
         try:
-            hash_result = hash_file(candidate.path)
+            hash_result = hash_file(to_local(candidate.path))
         except (OSError, ValueError) as err:
             result.errors.append(
                 ScanError(path=candidate.path, error=f"{type(err).__name__}: {err}")
