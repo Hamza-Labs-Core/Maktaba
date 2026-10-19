@@ -92,6 +92,12 @@ If a machine runs a local LLM (Ollama, LM Studio, …), the whole cluster can us
 on any machine, and your own tools through one address on the home,
 `http://<home>:8080/api/cluster/llm/v1`, which speaks the OpenAI format. See [LLMs](llms.md).
 
+## One Hugging Face login, on the home
+
+The second listen of transcription uses a model you must accept on Hugging Face. Only the
+home needs that login: it puts a copy of the model on the NAS, and the other machines load
+that copy. See [The transcription model on the share](models.md).
+
 ## When the home is away
 
 If the home's web app stops, the machines keep working on what the database gives them and
