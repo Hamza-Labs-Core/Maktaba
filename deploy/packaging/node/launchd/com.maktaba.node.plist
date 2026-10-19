@@ -15,7 +15,7 @@
   user's Library. It starts at login and stays up while the user is logged in.
 
   The runner (maktaba-node-run) reads node.env / node@<N>.env, rotates the log files,
-  checks the machine has joined, then execs `python -m maktaba_pipeline run`.
+  runs `maktaba-pipeline run --node` and maps its exit status for KeepAlive below.
 -->
 <plist version="1.0">
 <dict>
@@ -55,9 +55,9 @@
   <key>RunAtLoad</key>
   <true/>
   <!--
-    Restart after a crash or a failed start (the home or the share not reachable yet,
-    no joined config yet), but not after a clean exit: the worker exits 0 when it is
-    stopped or when the home revoked this machine.
+    Restart after a crash or a failed start (the home not reachable yet; not joined yet,
+    78), but not after a clean exit: the runner exits 0 when the worker was stopped and
+    when the home removed this machine for good (the worker's 77).
   -->
   <key>KeepAlive</key>
   <dict>

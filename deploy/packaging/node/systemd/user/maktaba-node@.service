@@ -9,7 +9,7 @@
 # excludes `transcribe` from the main worker. Put per-instance settings in
 # ~/.config/maktaba/node@<N>.env (for example other MAKTABA_PIPELINE_STAGES).
 #
-# See maktaba-node.service for the ordering, restart and join-check notes.
+# See maktaba-node.service for the ordering, restart and exit-code (77, 78) notes.
 [Unit]
 Description=Maktaba node worker %i (transcription)
 Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
@@ -25,10 +25,10 @@ Environment=MAKTABA_PIPELINE_STAGES=transcribe
 EnvironmentFile=-%h/.config/maktaba/node.env
 EnvironmentFile=-%h/.config/maktaba/node@%i.env
 UnsetEnvironment=MAKTABA_DATABASE_URL
-ExecStartPre=%h/.local/share/maktaba/node/venv/bin/python %h/.local/share/maktaba/node/node_check.py
-ExecStart=%h/.local/share/maktaba/node/venv/bin/python -m maktaba_pipeline run
+ExecStart=%h/.local/share/maktaba/node/bin/maktaba-pipeline run --node
 Restart=on-failure
 RestartSec=30
+RestartPreventExitStatus=77
 KillMode=mixed
 TimeoutStopSec=60
 SyslogIdentifier=maktaba-node@%i

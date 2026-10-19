@@ -10,6 +10,7 @@ $script:NodeDir = Join-Path $env:LOCALAPPDATA 'Maktaba\node'           # venv + 
 $script:NodeLogDir = Join-Path $env:LOCALAPPDATA 'Maktaba\Logs'
 $script:NodeVenv = Join-Path $script:NodeDir 'venv'
 $script:NodePython = Join-Path $script:NodeVenv 'Scripts\python.exe'
+$script:NodeCli = Join-Path $script:NodeVenv 'Scripts\maktaba-pipeline.exe'
 $script:NodeInstallConf = Join-Path $script:NodeDir 'install.conf'
 $script:WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
@@ -30,6 +31,15 @@ function Get-NodeLogBase {
     param([Parameter(Mandatory = $true)][string]$Instance)
     if ($Instance -eq 'main') { return 'node' }
     return "node@$Instance"
+}
+
+# The pipeline command, as @{ File; Prefix }: the venv's maktaba-pipeline.exe, or, for a
+# pipeline without that entry point, its Python with -m maktaba_pipeline.
+function Get-NodeCommand {
+    if (Test-Path -LiteralPath $script:NodeCli -PathType Leaf) {
+        return @{ File = $script:NodeCli; Prefix = @() }
+    }
+    return @{ File = $script:NodePython; Prefix = @('-m', 'maktaba_pipeline') }
 }
 
 function Test-NodeInstanceName {
@@ -157,14 +167,14 @@ function Test-NodeJoined {
 }
 
 # Stop this user's node workers that a stopped task left behind, and any supervisor:
-# workers carry "-X maktaba_node=<instance>" on their command line for this.
+# a worker's command line names this node's venv and `run --node`.
 function Stop-NodeWorkerProcesses {
     $me = $env:USERNAME
-    $filter = "Name = 'python.exe' OR Name = 'cmd.exe' OR Name = 'powershell.exe'"
+    $filter = "Name = 'python.exe' OR Name = 'maktaba-pipeline.exe' OR Name = 'cmd.exe' OR Name = 'powershell.exe'"
     $processes = @(Get-CimInstance -ClassName Win32_Process -Filter $filter -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and (
-                $_.CommandLine -like '*-X maktaba_node=*' -or
+                ($_.CommandLine -like '*\Maktaba\node\venv\*' -and $_.CommandLine -like '* run --node*') -or
                 $_.CommandLine -like '*\Maktaba\node\run-node.ps1*')
         })
     foreach ($p in $processes) {

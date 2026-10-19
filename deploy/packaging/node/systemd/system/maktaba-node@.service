@@ -8,7 +8,7 @@
 # MAKTABA_STT_SLOT=stt-<N>. Per-instance settings: /etc/maktaba/node@<N>.env. The
 # account comes from the installer's drop-in maktaba-node@.service.d/10-run-as.conf.
 #
-# See maktaba-node.service for the ordering, restart, join-check and hardening notes.
+# See maktaba-node.service for the ordering, restart, exit-code and hardening notes.
 [Unit]
 Description=Maktaba node worker %i (transcription)
 Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
@@ -28,10 +28,10 @@ Environment=MAKTABA_PIPELINE_STAGES=transcribe
 EnvironmentFile=-/etc/maktaba/node.env
 EnvironmentFile=-/etc/maktaba/node@%i.env
 UnsetEnvironment=MAKTABA_DATABASE_URL
-ExecStartPre=/opt/maktaba/node/venv/bin/python /opt/maktaba/node/node_check.py
-ExecStart=/opt/maktaba/node/venv/bin/python -m maktaba_pipeline run
+ExecStart=/opt/maktaba/node/bin/maktaba-pipeline run --node
 Restart=on-failure
 RestartSec=30
+RestartPreventExitStatus=77
 KillMode=mixed
 TimeoutStopSec=60
 SyslogIdentifier=maktaba-node@%i

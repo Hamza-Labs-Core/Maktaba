@@ -10,17 +10,20 @@
 #      and the Windows runner read), so a settings change needs only a restart;
 #   2. rotates the instance's log files past MAKTABA_NODE_LOG_MAX_MB (default 50; three
 #      old files kept) and reopens stdout / stderr on them (launchd itself never rotates);
-#   3. checks that this machine has joined a home (node_check.py; exit 78 otherwise, and
-#      launchd tries again after its ThrottleInterval, so the worker starts by itself
-#      once `maktaba-pipeline join` completes);
-#   4. execs the worker, so launchd signals and watches Python directly.
+#   3. runs `maktaba-pipeline run --node`, passing launchd's SIGTERM on to it, and turns
+#      its exit status into what launchd's KeepAlive (SuccessfulExit = false) should do:
+#        0   stopped                                  -> 0, stays stopped
+#        77  the home removed this machine for good   -> 0, stays stopped (logged)
+#        78  not joined to a home yet                 -> 78, tried again in 30 s
+#        any other failure (home unreachable, crash)  -> as is, tried again in 30 s
 set -u
 
 instance="${1:-main}"
 node_dir="${MAKTABA_NODE_DIR:?MAKTABA_NODE_DIR is not set (start this from launchd)}"
 conf_dir="${MAKTABA_NODE_CONF_DIR:?MAKTABA_NODE_CONF_DIR is not set}"
 log_dir="${MAKTABA_NODE_LOG_DIR:?MAKTABA_NODE_LOG_DIR is not set}"
-python="$node_dir/venv/bin/python"
+# the venv's maktaba-pipeline (install-node.sh links it here)
+cli="$node_dir/bin/maktaba-pipeline"
 
 if [ "$instance" = main ]; then
     base=node
@@ -60,6 +63,10 @@ rotate() {
     mv -f "$file" "$file.1"
 }
 
+say() {
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [maktaba-node-run $instance] $*" >&2
+}
+
 load_env "$conf_dir/node.env"
 if [ "$instance" != main ]; then
     load_env "$conf_dir/node@$instance.env"
@@ -79,11 +86,38 @@ rotate "$out"
 rotate "$err"
 exec >>"$out" 2>>"$err"
 
-if [ ! -x "$python" ]; then
-    echo "maktaba-node: no Python at $python; run deploy/packaging/node/install-node.sh again" >&2
+if [ ! -x "$cli" ]; then
+    say "no $cli; run deploy/packaging/node/install-node.sh again"
     exit 78
 fi
 
-"$python" "$node_dir/node_check.py" || exit $?
+# Not exec: this shell stays to read the exit status, so it hands launchd's stop
+# signal on to the worker.
+"$cli" run --node &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null' TERM
+trap 'kill -INT "$child" 2>/dev/null' INT
+trap 'kill -HUP "$child" 2>/dev/null' HUP
 
-exec "$python" -m maktaba_pipeline run
+status=0
+wait "$child" || status=$?
+# A trapped signal interrupts wait while the worker winds down: wait again for its status.
+while kill -0 "$child" 2>/dev/null; do
+    status=0
+    wait "$child" || status=$?
+done
+
+case "$status" in
+    77)
+        say "the home removed this machine (revoked, not a member, or its database login refused): not starting it again. Join again (maktaba-pipeline join) or uninstall (uninstall-node.sh)."
+        exit 0
+        ;;
+    78)
+        say "this machine has not joined a home yet (exit 78): launchd tries again in 30 s; run: maktaba-pipeline join"
+        ;;
+    0) ;;
+    *)
+        say "the worker exited with status $status: launchd starts it again in 30 s"
+        ;;
+esac
+exit "$status"

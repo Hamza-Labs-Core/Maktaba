@@ -9,9 +9,8 @@ and the ``MAKTABA_NODE_CONFIG`` override are exactly the ones the worker uses.
 
 Exit 0 when the config holds a joined machine (it has the home's database URL), and 78
 (EX_CONFIG) when it does not or cannot be read. The installers call it to decide whether
-to run ``maktaba-pipeline join``; the services call it before every start, because
-``maktaba-pipeline run`` without a joined config would quietly fall back to an
-in-memory database instead of working for the home.
+to run ``maktaba-pipeline join`` before they start the services. (The services run
+``maktaba-pipeline run --node``, which makes the same check itself and exits 78.)
 """
 
 from __future__ import annotations
