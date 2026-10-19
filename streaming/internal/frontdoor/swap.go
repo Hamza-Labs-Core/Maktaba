@@ -277,14 +277,28 @@ func (s *Slots) targetFor(release string, kind string) (string, bool) {
 		return n != "" && h != nil && h.ok && (release == "" || h.status.Release == release)
 	}
 	if kind == OpRollback {
+		if release == "" {
+			// no release to go back to (no rollback point): never "any healthy
+			// slot", which could be the very release being rolled back
+			return "", false
+		}
 		if ok(s.previous) {
 			return s.previous, true
 		}
-		if release != "" && ok(s.live) {
+		if ok(s.live) {
 			return s.live, true // nothing to switch (a swap that never finished)
 		}
-	} else if ok(s.staging) && s.staging != s.live {
-		return s.staging, true
+	} else {
+		if release != "" && ok(s.live) {
+			// the live slot already runs the swap's release: the operation
+			// finished before this front door restarted, or its 'done' write was
+			// lost — nothing to switch, it just ends (never failed, which would
+			// roll a good swap back)
+			return s.live, true
+		}
+		if ok(s.staging) && s.staging != s.live {
+			return s.staging, true
+		}
 	}
 	for _, n := range slot.Names {
 		if n != s.live && n != s.standby && ok(n) {
@@ -555,6 +569,12 @@ func (s *Slots) finish(ctx context.Context, op *swapOp) {
 			if oldStandby != "" && oldStandby != op.To {
 				drain = append(drain, oldStandby) // the old release's standby (design §2.4)
 			}
+			if oldPrevious != "" && oldPrevious != op.To && oldPrevious != op.From && oldPrevious != oldStandby {
+				// a second swap inside the first one's grace: the first one's
+				// previous slot is no rollback target any more (tv_routing's
+				// previous is now op.From's release) and would run on, role-less
+				drain = append(drain, oldPrevious)
+			}
 			s.standby = ""
 		}
 	case OpRollback:
@@ -614,8 +634,19 @@ func (s *Slots) endOp(ctx context.Context, op *swapOp, state string, detail map[
 	if s.staging == op.To {
 		s.staging = ""
 	}
+	// a swap that did not finish leaves its target running the release that is
+	// not going on the air (cancelled by a rollback, or failed): it stops, unless
+	// it holds another role now
+	abandoned := ""
+	if op.Kind == OpSwap && op.To != "" && op.To != op.From && op.To != s.live && op.To != s.standby &&
+		op.To != s.previous {
+		abandoned = op.To
+	}
 	s.epoch++
 	s.mu.Unlock()
+	if abandoned != "" {
+		s.drainSlot(ctx, abandoned)
+	}
 	if detail == nil {
 		detail = map[string]any{}
 	}
@@ -725,24 +756,32 @@ func (s *Slots) restartAsStandby(ctx context.Context, name, release string) {
 }
 
 // superviseRelease asks the supervisor to start an instance on release (POST
-// /slots/{name}/start). A release of this binary's version starts the instance
-// unbound (the body clears an earlier binding): a slot binds itself to the live
-// release at its start, which is release — the swap's commit made it live, or
-// it is the live one a standby must run. A release of another streaming version
-// (story 33.14, side by side) is bound: {release_id, version, sha256}.
+// /slots/{name}/start) bound to it: {release_id, version, sha256} (this
+// binary's version: this binary, no checksum; another streaming version, story
+// 33.14: that version's binary side by side). No release: unbound (the body
+// clears an earlier binding).
 func (s *Slots) superviseRelease(ctx context.Context, name, release string) {
 	if s.Supervisor == "" {
 		return
 	}
 	body := []byte(`{"release_id":""}`)
-	if release != "" && s.Pool != nil {
-		qctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		var v, sum string
-		if s.Pool.QueryRow(qctx, `SELECT COALESCE(streaming_version, ''), COALESCE(streaming_sha256, '')
-			FROM tv_releases WHERE id = $1`, release).Scan(&v, &sum) == nil && v != "" && v != version.Version {
-			body, _ = json.Marshal(map[string]string{"release_id": release, "version": v, "sha256": sum})
+	if release != "" {
+		// always bound to the release asked for: an unbound instance would bind
+		// itself to tv_routing's live release at its start, which right after a
+		// rollback is still the rolled-back one until the reverse commit runs
+		// (a standby restarted then would be the bad release, put back on the
+		// air by the next failover). This binary's version runs this binary.
+		v, sum := version.Version, ""
+		if s.Pool != nil {
+			qctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			var rv, rs string
+			if s.Pool.QueryRow(qctx, `SELECT COALESCE(streaming_version, ''), COALESCE(streaming_sha256, '')
+				FROM tv_releases WHERE id = $1`, release).Scan(&rv, &rs) == nil && rv != "" && rv != version.Version {
+				v, sum = rv, rs
+			}
+			cancel()
 		}
-		cancel()
+		body, _ = json.Marshal(map[string]string{"release_id": release, "version": v, "sha256": sum})
 	}
 	sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

@@ -659,3 +659,101 @@ func TestStitcherPlannedSwitch(t *testing.T) {
 		t.Fatal("no ENDLIST for a removed channel")
 	}
 }
+
+// A second swap inside the first one's grace: the first one's previous slot is
+// no rollback target any more and is drained (it would run on, role-less).
+func TestSecondSwapInGraceDrainsTheOldPrevious(t *testing.T) {
+	g := newSwapRig(t)
+	ctx := context.Background()
+	now := time.Now()
+	g.slots.runOp(ctx, opRow{id: 1, kind: OpSwap, release: "rel-2", created: now}, "amber",
+		[]switchRow{{ch: g.ch, at: now, state: switchPlanned}}, now)
+	g.slots.advance(ctx, now.Add(swapSettle+time.Second))
+	if prev, _ := g.slots.Previous(); prev != "blue" || g.blue.isDrained() {
+		t.Fatalf("after the first swap: previous %q, blue drained %v", prev, g.blue.isDrained())
+	}
+	now = time.Now()
+	g.slots.runOp(ctx, opRow{id: 2, kind: OpSwap, release: "rel-3", created: now}, "green",
+		[]switchRow{{ch: g.ch, at: now, state: switchPlanned}}, now)
+	g.slots.advance(ctx, now.Add(swapSettle+time.Second))
+	if live, _ := g.slots.Live(); live != "green" {
+		t.Fatalf("live %s after the second swap", live)
+	}
+	if prev, _ := g.slots.Previous(); prev != "amber" {
+		t.Fatalf("previous %q after the second swap", prev)
+	}
+	if !g.blue.isDrained() {
+		t.Fatal("the first swap's previous slot was left running")
+	}
+	if g.amber.isDrained() {
+		t.Fatal("the new previous slot was drained")
+	}
+}
+
+// A swap cancelled by a rollback (or failed) leaves its target running the
+// release that is not going on the air: it is drained; the channels read the
+// old live slot.
+func TestUnfinishedSwapDrainsItsTarget(t *testing.T) {
+	g := newSwapRig(t)
+	ctx := context.Background()
+	now := time.Now()
+	g.slots.runOp(ctx, opRow{id: 4, kind: OpSwap, release: "rel-2", created: now}, "amber",
+		[]switchRow{{ch: g.ch, at: now.Add(time.Hour), state: switchPlanned}}, now)
+	g.slots.mu.Lock()
+	op := g.slots.op
+	op.at[g.ch] = now.Add(time.Hour) // a watched channel waiting for its boundary
+	g.slots.mu.Unlock()
+	g.slots.endOp(ctx, op, "cancelled", map[string]any{"by_rollback": 5})
+	if !g.amber.isDrained() {
+		t.Fatal("the cancelled swap's target was left running")
+	}
+	if r := g.slots.Route(g.ch); r != "blue" {
+		t.Fatalf("the channel reads %s after the cancelled swap", r)
+	}
+	if g.blue.isDrained() {
+		t.Fatal("the live slot was drained")
+	}
+}
+
+// A swap operation found again when the live slot already runs its release
+// (the front door restarted after it finished, or its 'done' write was lost)
+// ends done on the live slot — never failed, which would roll a good swap back.
+// A rollback without a release never targets "any healthy slot".
+func TestSwapTargetWhenLiveRunsTheRelease(t *testing.T) {
+	g := newSwapRig(t)
+	ctx := context.Background()
+	if to, ok := g.slots.targetFor("rel-2", OpSwap); !ok || to != "amber" {
+		t.Fatalf("before the swap the target is %q %v (want the staging slot)", to, ok)
+	}
+	now := time.Now()
+	g.slots.runOp(ctx, opRow{id: 1, kind: OpSwap, release: "rel-2", created: now}, "amber",
+		[]switchRow{{ch: g.ch, at: now, state: switchPlanned}}, now)
+	g.slots.advance(ctx, now.Add(swapSettle+time.Second))
+	if to, ok := g.slots.targetFor("rel-2", OpSwap); !ok || to != "amber" {
+		t.Fatalf("after the swap the target is %q %v (want the live slot: nothing to switch)", to, ok)
+	}
+	if to, ok := g.slots.targetFor("", OpRollback); ok {
+		t.Fatalf("a rollback with no release targets %q", to)
+	}
+}
+
+// A planned switch whose operation ended unfinished (or whose channel was
+// skipped) must not hold the playlist at its instant.
+func TestStitcherClearedPlanGrowsAgain(t *testing.T) {
+	t0 := time.Date(2026, 10, 19, 20, 0, 0, 0, time.UTC)
+	mk := func(first int64, n int, start time.Time) upPlaylist {
+		pl, _ := parseMediaPlaylist(slotPlaylist(first, n, start, 2, false))
+		return pl
+	}
+	st := &Stitcher{}
+	st.Update("blue", mk(100, 5, t0))
+	st.Plan("amber", t0.Add(11*time.Second))
+	st.Update("blue", mk(102, 5, t0.Add(4*time.Second))) // to 20:00:14: reached at 12
+	n := len(parseStitched(string(st.Render())))
+	st.ClearPlan()
+	st.Update("blue", mk(104, 5, t0.Add(8*time.Second))) // to 20:00:18
+	out := parseStitched(string(st.Render()))
+	if last := out[len(out)-1]; !last.pdt.Equal(t0.Add(16*time.Second)) || st.Reached() {
+		t.Fatalf("after the plan was cleared the playlist ends at %v (had %d entries)", last.pdt, n)
+	}
+}

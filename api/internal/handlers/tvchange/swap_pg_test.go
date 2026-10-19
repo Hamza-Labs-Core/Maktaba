@@ -209,3 +209,37 @@ func TestRollbackWarmAndCold(t *testing.T) {
 		t.Fatalf("expired rollback point: %d %v", code, out)
 	}
 }
+
+// A change in swapping whose commit has not run yet (its tv_swap job is queued)
+// is not on the air: tv_routing's previous release is the one before the live
+// one. A rollback then would put a release two changes old on the air and mark
+// the wrong change rolled back — it answers none (swap_not_committed) until the
+// commit has run.
+func TestNoRollbackBeforeTheSwapCommit(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	older, prev, next := w.release(0), w.release(1), w.release(2)
+	live := w.change(core.StateLive, "editor", nil, "")
+	w.exec(`UPDATE tv_changes SET release_id = $2, base_release_id = $3, swapped_at = now() WHERE id = $1`, live, prev, older)
+	w.exec(`INSERT INTO tv_routing (scope, live_release_id, live_gen, previous_release_id, previous_gen, epoch, switched_at, previous_until)
+		VALUES ('cluster', $1, 1, $2, 0, 5, now(), now() + interval '15 minutes')`, prev, older)
+	swapping := w.change(core.StateSwapping, "settings", nil, "")
+	w.exec(`UPDATE tv_changes SET release_id = $2, base_release_id = $3 WHERE id = $1`, swapping, next, prev)
+
+	if code, out := w.do("GET", "/api/tv/rollback", "", "u1"); code != 200 || out["mode"] != "none" ||
+		out["reason"] != "swap_not_committed" {
+		t.Fatalf("point before the commit: %d %v", code, out)
+	}
+	if code, out := w.do("POST", "/api/tv/rollback", "{}", "u1"); code != http.StatusConflict {
+		t.Fatalf("rollback before the commit: %d %v", code, out)
+	}
+	if w.jobs("tv_rollback:") != 0 {
+		t.Fatalf("a reverse commit was enqueued: %v", w.q.list())
+	}
+	// the commit ran (tv_routing airs the swapping change's release): warm, back to prev
+	w.exec(`UPDATE tv_routing SET live_release_id = $1, previous_release_id = $2`, next, prev)
+	if code, out := w.do("GET", "/api/tv/rollback", "", "u1"); code != 200 || out["mode"] != "warm" ||
+		out["release_id"] != prev || out["change_id"] != swapping {
+		t.Fatalf("point after the commit: %d %v", code, out)
+	}
+}

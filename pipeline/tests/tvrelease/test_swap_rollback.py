@@ -120,3 +120,25 @@ async def test_rollback_restores_the_previous_release(db: Database) -> None:
     # no second rollback: the rollback point is gone
     with pytest.raises(LookupError):
         await rollback_change(db, cid)
+
+
+@pytest.mark.asyncio
+async def test_no_rollback_before_the_swap_commit(db: Database) -> None:
+    """A change in ``swapping`` whose commit has not run is not on the air: tv_routing's
+    previous release is the one before the live one, so a reverse commit now would put a
+    release two changes old on the air. It is refused and nothing changes."""
+    cid, a, _, rel = await _staged(db)
+    # an earlier swap left a rollback point (previous) behind the live release
+    await db.execute("DELETE FROM tv_routing WHERE scope = 'cluster'")
+    await db.execute(
+        "INSERT INTO tv_routing (scope, live_release_id, live_gen, previous_release_id,"
+        " previous_gen, epoch) VALUES ('cluster', NULL, 0, $1, 0, 3)",
+        rel.id,
+    )
+    with pytest.raises(LookupError):
+        await rollback_change(db, cid, reason="manual", clock=NOW + timedelta(minutes=1))
+    ch = await get_change(db, cid)
+    assert ch is not None and ch.state == "swapping"
+    route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
+    assert int(route["epoch"]) == 3 and route["previous_release_id"] is not None
+    assert (await channel_def(db, a))["number"] == 101

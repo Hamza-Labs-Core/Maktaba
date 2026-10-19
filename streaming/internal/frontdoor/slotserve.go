@@ -124,6 +124,10 @@ func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id u
 			return
 		}
 	}
+	// no planned switch in reach (none, or its operation ended unfinished, or
+	// the channel was skipped): a plan left over must not hold the playlist at
+	// its instant
+	st.ClearPlan()
 	for attempt := 0; attempt < 3; attempt++ {
 		src := h.Slots.Route(id)
 		resp, err := h.slotGet(ctx, src, "/stream/channel/"+id.String()+"/index.m3u8", nil)

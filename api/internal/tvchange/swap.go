@@ -205,26 +205,37 @@ func (c *Controller) Point(ctx context.Context) (RollbackPoint, error) {
 		return RollbackPoint{Mode: "none", Reason: "no_live_change"}, nil
 	}
 	p := RollbackPoint{ChangeID: ch.ID, ChangeNumber: ch.Number}
-	if ch.State == StateSwapping {
-		// story 33.9 EC1: still switching — the switched channels go back at once
-		p.Mode = "warm"
-		if ch.BaseReleaseID != nil {
-			p.ReleaseID = *ch.BaseReleaseID
-		}
-		return p, nil
-	}
-	var prev sql.NullString
+	var liveRel, prev sql.NullString
 	var until, switched nullTime
-	err = c.DB.QueryRowContext(ctx, `SELECT previous_release_id, previous_until, switched_at FROM tv_routing
-		WHERE scope = 'cluster'`).Scan(&prev, &until, &switched)
+	err = c.DB.QueryRowContext(ctx, `SELECT live_release_id, previous_release_id, previous_until, switched_at
+		FROM tv_routing WHERE scope = 'cluster'`).Scan(&liveRel, &prev, &until, &switched)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return RollbackPoint{}, err
+	}
+	// a change in swapping whose commit has not run yet (the tv_swap job is
+	// queued): tv_routing still airs the release before it, and its previous is
+	// the one before that — a rollback now would put a release two changes old
+	// on the air and mark the wrong change rolled back. Wait for the commit.
+	swapping, err := c.Store.List(ctx, []string{StateSwapping}, 10)
+	if err != nil {
+		return RollbackPoint{}, err
+	}
+	for _, s := range swapping {
+		if s.ReleaseID == nil || !liveRel.Valid || *s.ReleaseID != liveRel.String {
+			p.Mode, p.Reason = "none", "swap_not_committed"
+			return p, nil
+		}
 	}
 	if !prev.Valid || prev.String == "" {
 		p.Mode, p.Reason = "none", "no_rollback_point"
 		return p, nil
 	}
 	p.ReleaseID = prev.String
+	if ch.State == StateSwapping {
+		// story 33.9 EC1: still switching — the switched channels go back at once
+		p.Mode = "warm"
+		return p, nil
+	}
 	now := c.now()
 	if until.Valid && until.T.After(now) {
 		slotsOn, slotName := c.previousSlot(ctx)

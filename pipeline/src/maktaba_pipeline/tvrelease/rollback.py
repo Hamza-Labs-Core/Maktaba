@@ -55,6 +55,10 @@ async def rollback_change(
         route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
         if route is None or route["previous_release_id"] is None:
             raise LookupError("no_rollback_point")
+        if str(route["live_release_id"] or "") != str(ch.row.get("release_id") or ""):
+            # the change is not what airs: a swap whose commit has not run yet
+            # (its previous is the release two changes back) or a stale request
+            raise LookupError(f"change {change_id} is not the release on the air")
         prev = await load_release(db, str(route["previous_release_id"]))
         if prev is None:
             raise LookupError("the previous release is gone")

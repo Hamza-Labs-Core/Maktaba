@@ -147,6 +147,15 @@ func (st *Stitcher) Plan(to string, at time.Time) {
 	st.planTo, st.cutAt, st.reached = to, at, false
 }
 
+// ClearPlan drops a planned switch that no longer runs (its operation was
+// cancelled by a rollback or failed, or the channel was skipped): the current
+// source's playlist grows again past the instant instead of freezing there.
+func (st *Stitcher) ClearPlan() {
+	st.mu.Lock()
+	st.planTo, st.cutAt, st.reached = "", time.Time{}, false
+	st.mu.Unlock()
+}
+
 // Reached reports whether the planned switch's instant is in the current
 // source's playlist (the next segment must come from the plan's source).
 func (st *Stitcher) Reached() bool {
