@@ -44,7 +44,15 @@ type goTestEvent struct {
 	Package string  `json:"Package"`
 	Test    string  `json:"Test"`
 	Elapsed float64 `json:"Elapsed"` // seconds, only set on pass/fail/skip
+	Output  string  `json:"Output"`
+	// ImportPath is set (instead of Package) on build-output and
+	// build-fail events.
+	ImportPath string `json:"ImportPath"`
 }
+
+// maxFailureLines caps how much of one failure's output is replayed so
+// a test that logs megabytes cannot drown the report.
+const maxFailureLines = 200
 
 type config struct {
 	mode             string
@@ -101,21 +109,57 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 	pkgs := map[string]*pkgStat{}
 	hardCap := time.Duration(3) * cfg.perTestSoftCap
 	hardBreaches := []string{}
+	// Output is buffered per test (and per package and build) until it
+	// ends: dropped on pass/skip, kept on fail so the failing test and
+	// what it printed are replayed at the end. Without this the JSON
+	// stream swallows every failure message.
+	outputs := map[string][]string{}
+	failures := []failure{}
+	failedTests := map[string]bool{} // package -> had a failing test
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "{") {
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
+		if line == "" {
 			continue
 		}
 		var ev goTestEvent
-		if err := json.Unmarshal([]byte(line), &ev); err != nil {
-			// Tolerant: a malformed line probably came from a
-			// downstream tool (race detector banner, etc.) and isn't
-			// fatal to the budget check.
+		if !strings.HasPrefix(line, "{") || json.Unmarshal([]byte(line), &ev) != nil {
+			// Not a go test event (a banner or build noise from a
+			// tool): pass it through rather than hide it.
+			_, _ = fmt.Fprintln(out, raw)
 			continue
 		}
 		if ev.Package == "" {
+			if ev.ImportPath != "" {
+				key := "build\x00" + ev.ImportPath
+				switch ev.Action {
+				case "build-output":
+					outputs[key] = append(outputs[key], ev.Output)
+				case "build-fail":
+					failures = append(failures, failure{name: ev.ImportPath + " [build failed]", output: outputs[key]})
+					delete(outputs, key)
+				}
+			}
 			continue
+		}
+		key := ev.Package + "\x00" + ev.Test
+		switch ev.Action {
+		case "output":
+			outputs[key] = append(outputs[key], ev.Output)
+		case "pass", "skip":
+			delete(outputs, key)
+		case "fail":
+			switch {
+			case ev.Test != "":
+				failedTests[ev.Package] = true
+				failures = append(failures, failure{name: ev.Package + "::" + ev.Test, output: outputs[key]})
+			case !failedTests[ev.Package]:
+				// The package failed without a failing test: a panic
+				// outside a test, TestMain, a timeout, a build error.
+				failures = append(failures, failure{name: ev.Package + " [package failed]", output: outputs[key]})
+			}
+			delete(outputs, key)
 		}
 		ps, ok := pkgs[ev.Package]
 		if !ok {
@@ -164,6 +208,27 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		cfg.tier, len(stats), total.Round(time.Millisecond),
 		describeSlowest(stats))
 
+	if len(failures) > 0 {
+		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] %d failing test(s)/package(s):\n", cfg.tier, len(failures))
+		for _, f := range failures {
+			_, _ = fmt.Fprintf(out, "--- FAIL %s\n", f.name)
+			lines := f.output
+			if len(lines) > maxFailureLines {
+				_, _ = fmt.Fprintf(out, "    ... %d earlier line(s) omitted\n", len(lines)-maxFailureLines)
+				lines = lines[len(lines)-maxFailureLines:]
+			}
+			for _, l := range lines {
+				_, _ = fmt.Fprint(out, l)
+				if !strings.HasSuffix(l, "\n") {
+					_, _ = fmt.Fprintln(out)
+				}
+			}
+		}
+	}
+
+	// Test failures are reported above but do not change the exit code:
+	// go test's own exit status carries them (tools/test-budget.sh checks
+	// both), so this tool's code stays a budget verdict.
 	rc := 0
 	if len(overBudget) > 0 {
 		rc = 1
@@ -182,6 +247,11 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		}
 	}
 	return rc
+}
+
+type failure struct {
+	name   string
+	output []string
 }
 
 func describeSlowest(stats []*pkgStat) string {

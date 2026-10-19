@@ -84,12 +84,19 @@ func (l *lockedBuffer) String() string {
 
 // With the database hung, the hub's calls still return at once: the
 // queue stops at its size, the rest is dropped and counted, and the batch
-// stuck in flight is dropped at its deadline.
+// stuck in flight is dropped when its statement gives up.
+//
+// The statement gives up when the test ends its context, not at a short
+// write timeout: a 150 ms timeout raced the 4000 calls below, and on a
+// loaded -race runner it fired mid-loop, freeing the queue early (CI on
+// main, Oct 2026).
 func TestNeverBlocksOnAHungDatabase(t *testing.T) {
 	db, f := fakeDBOf("hang")
 	clk := newClock("2026-10-19T12:00:00Z")
 	c := New(db, Options{Window: 24 * time.Hour, QueueSize: 100, Now: clk.Now, Logger: quietLogger()})
-	c.timeout = 150 * time.Millisecond
+	c.timeout = time.Minute // the cancel below ends the statement
+	ctx, giveUp := context.WithCancel(bg)
+	defer giveUp()
 	p := agent.Proc{WorkerID: "w", IP: "10.0.0.1", Host: "h"}
 	recs := make([]agent.LogRecord, 10)
 	for i := range recs {
@@ -99,7 +106,7 @@ func TestNeverBlocksOnAHungDatabase(t *testing.T) {
 		c.Logs(p, recs)
 	}
 	done := make(chan struct{})
-	go func() { defer close(done); c.flushLogs(bg) }()
+	go func() { defer close(done); c.flushLogs(ctx) }()
 	for f.calls.Load() == 0 {
 		time.Sleep(time.Millisecond)
 	}
@@ -116,6 +123,7 @@ func TestNeverBlocksOnAHungDatabase(t *testing.T) {
 	if st.Logs.Queued != 100 || st.Logs.Dropped != 2000*10 || st.Metrics.Queued != 100 || st.Health.Queued != 1 {
 		t.Fatalf("while hung: logs %+v metrics %+v health %+v", st.Logs, st.Metrics, st.Health)
 	}
+	giveUp()
 	<-done
 	if st := c.Snapshot(); st.Logs.Dropped != 2000*10+100 || st.Logs.Queued != 0 || st.LastError == "" {
 		t.Fatalf("after the deadline: %+v %q", st.Logs, st.LastError)
