@@ -132,7 +132,7 @@ func (h *Handler) ChannelSimulcast(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.Remote.SimulcastStatus(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv simulcast status"))
+		writeTuneError(w, r, err, "tv simulcast status")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

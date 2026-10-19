@@ -9,14 +9,14 @@ import (
 
 func (e artEnv) strip(t *testing.T, method, body string) (*httptest.ResponseRecorder, Channel) {
 	t.Helper()
-	req := httptest.NewRequest(method, "/api/channels/c1/strip", strings.NewReader(body))
+	req := httptest.NewRequest(method, "/api/channels/00000000-0000-4000-8000-0000000000c1/strip", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return e.do(t, artAdmin, req)
 }
 
 func TestStripPatchValidates(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	for _, bad := range []string{
 		`{"position":"middle"}`, `{"height_pct":2}`, `{"height_pct":30}`, `{"bg_color":"red"}`,
 		`{"bg_opacity":1.5}`, `{"font_size_pct":90}`, `{"direction":"up"}`, `{"enabled":"yes"}`,
@@ -32,14 +32,14 @@ func TestStripPatchValidates(t *testing.T) {
 			t.Errorf("%s: %d %s", bad, rec.Code, rec.Body.String())
 		}
 	}
-	if look := e.look(t, "c1"); look["strip"] != nil {
+	if look := e.look(t, "00000000-0000-4000-8000-0000000000c1"); look["strip"] != nil {
 		t.Fatalf("a refused PATCH wrote %v", look["strip"])
 	}
 }
 
 func TestStripPatchMergesAndResets(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	rec, c := e.strip(t, "PATCH", `{"enabled":true,"position":"top","bg_color":"#0B1F3A",
 		"clocks":[{"zone":"Asia/Riyadh","label_ar":"مكة المكرمة","label_en":"Makkah"},
 		{"zone":"America/New_York","label_ar":"نيويورك","label_en":"New York"}],"clock_seconds":8,
@@ -50,7 +50,7 @@ func TestStripPatchMergesAndResets(t *testing.T) {
 	}
 	// a later PATCH of one field keeps the others
 	_, c = e.strip(t, "PATCH", `{"show_next":false}`)
-	s := e.look(t, "c1")["strip"].(map[string]any)
+	s := e.look(t, "00000000-0000-4000-8000-0000000000c1")["strip"].(map[string]any)
 	if s["enabled"] != true || s["position"] != "top" || s["show_next"] != false || s["clock_seconds"] != 8.0 ||
 		s["overflow"] != "cycle" || s["page_seconds"] != 6.0 || s["page_indicator"] != false ||
 		s["next_color"] != "#e8d9a8" || s["clock_text_color"] != "#0b3d27" || s["indicator_color"] != "#eac85e" ||
@@ -72,15 +72,15 @@ func TestStripPatchMergesAndResets(t *testing.T) {
 	if rec.Code != 200 || c.Art.Strip != nil {
 		t.Fatalf("reset: %d %v", rec.Code, c.Art.Strip)
 	}
-	if look := e.look(t, "c1"); look != nil && look["strip"] != nil {
+	if look := e.look(t, "00000000-0000-4000-8000-0000000000c1"); look != nil && look["strip"] != nil {
 		t.Fatalf("look after reset %v", look)
 	}
 }
 
 func TestStripAdminOnly(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	req := httptest.NewRequest("PATCH", "/api/channels/c1/strip", strings.NewReader(`{"enabled":true}`))
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	req := httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1/strip", strings.NewReader(`{"enabled":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	if rec, _ := e.do(t, nil, req); rec.Code != http.StatusForbidden {
 		t.Fatalf("anonymous: %d", rec.Code)

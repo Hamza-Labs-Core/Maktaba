@@ -116,23 +116,23 @@ func artFiles(t *testing.T, dir, id string) []string {
 
 func TestArtUploadLogo(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	rec, c := e.upload(t, "c1", "logo", "logo.png", pngBytes)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	rec, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "logo.png", pngBytes)
 	if rec.Code != 200 {
 		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
 	}
-	if c.LogoPath == nil || !strings.HasPrefix(*c.LogoPath, filepath.Join(e.dataDir, ArtDirName, "c1", "logo-")) ||
+	if c.LogoPath == nil || !strings.HasPrefix(*c.LogoPath, filepath.Join(e.dataDir, ArtDirName, "00000000-0000-4000-8000-0000000000c1", "logo-")) ||
 		!strings.HasSuffix(*c.LogoPath, ".png") {
 		t.Fatalf("logo_path %v", c.LogoPath)
 	}
-	if c.Art == nil || !c.Art.Logo.Overridden || !strings.HasPrefix(c.Art.Logo.URL, "/api/channels/c1/art/logo?v=") {
+	if c.Art == nil || !c.Art.Logo.Overridden || !strings.HasPrefix(c.Art.Logo.URL, "/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo?v=") {
 		t.Fatalf("art %+v", c.Art)
 	}
 	got, _ := os.ReadFile(*c.LogoPath)
 	if !bytes.Equal(got, pngBytes) {
 		t.Fatal("stored bytes differ")
 	}
-	for _, p := range []string{"/api/channels/c1/art/logo", "/api/channels/c1/logo"} {
+	for _, p := range []string{"/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo", "/api/channels/00000000-0000-4000-8000-0000000000c1/logo"} {
 		rec, _ := e.do(t, nil, httptest.NewRequest("GET", p, nil))
 		if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), pngBytes) {
 			t.Fatalf("GET %s: %d %q", p, rec.Code, rec.Header().Get("Content-Type"))
@@ -142,12 +142,12 @@ func TestArtUploadLogo(t *testing.T) {
 
 func TestArtUploadAnimatedGifWatermarkKeptAsIs(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	rec, c := e.upload(t, "c1", "watermark", "corner.gif", gifBytes)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	rec, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "watermark", "corner.gif", gifBytes)
 	if rec.Code != 200 {
 		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
 	}
-	wm, _ := e.look(t, "c1")["watermark"].(map[string]any)
+	wm, _ := e.look(t, "00000000-0000-4000-8000-0000000000c1")["watermark"].(map[string]any)
 	p, _ := wm["path"].(string)
 	if !strings.HasSuffix(p, ".gif") || wm["position"] != "top-right" || wm["width_pct"] != 12.0 || wm["margin_pct"] != 2.0 {
 		t.Fatalf("look.watermark %v", wm)
@@ -158,81 +158,81 @@ func TestArtUploadAnimatedGifWatermarkKeptAsIs(t *testing.T) {
 	if !c.Art.Watermark.Overridden || c.Art.Watermark.Path != p || c.Art.Watermark.Position != "top-right" {
 		t.Fatalf("art %+v", c.Art.Watermark)
 	}
-	rec, _ = e.do(t, nil, httptest.NewRequest("GET", "/api/channels/c1/art/watermark", nil))
+	rec, _ = e.do(t, nil, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/watermark", nil))
 	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/gif" {
 		t.Fatalf("GET watermark %d %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
 	// loading screen: webp and jpeg are fine too
-	if rec, _ := e.upload(t, "c1", "loading", "x.webp", webpBytes); rec.Code != 200 {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "loading", "x.webp", webpBytes); rec.Code != 200 {
 		t.Fatalf("webp %d", rec.Code)
 	}
-	if rec, c := e.upload(t, "c1", "loading", "x.jpeg", jpgBytes); rec.Code != 200 || !strings.HasSuffix(c.Art.Loading.Path, ".jpg") {
+	if rec, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "loading", "x.jpeg", jpgBytes); rec.Code != 200 || !strings.HasSuffix(c.Art.Loading.Path, ".jpg") {
 		t.Fatalf("jpg %d %+v", rec.Code, c.Art)
 	}
-	if l := e.look(t, "c1"); !strings.HasSuffix(l["loading_path"].(string), ".jpg") || l["watermark"] == nil {
+	if l := e.look(t, "00000000-0000-4000-8000-0000000000c1"); !strings.HasSuffix(l["loading_path"].(string), ".jpg") || l["watermark"] == nil {
 		t.Fatalf("look %v", l)
 	}
 }
 
 func TestArtRefusesByMagicBytes(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	if rec, _ := e.upload(t, "c1", "logo", "evil.png", []byte("#!/bin/sh\necho not an image")); rec.Code != http.StatusUnsupportedMediaType {
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "evil.png", []byte("#!/bin/sh\necho not an image")); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("text as png: %d", rec.Code)
 	}
-	if rec, _ := e.upload(t, "c1", "watermark", "w.svg", svgBytes); rec.Code != http.StatusUnsupportedMediaType {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "watermark", "w.svg", svgBytes); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("svg watermark: %d", rec.Code)
 	}
-	if rec, _ := e.upload(t, "c1", "loading", "l.svg", svgBytes); rec.Code != http.StatusUnsupportedMediaType {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "loading", "l.svg", svgBytes); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("svg loading: %d", rec.Code)
 	}
 	// a PNG named .jpg is stored as what it is
-	rec, c := e.upload(t, "c1", "logo", "named.jpg", pngBytes)
+	rec, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "named.jpg", pngBytes)
 	if rec.Code != 200 || !strings.HasSuffix(*c.LogoPath, ".png") {
 		t.Fatalf("png named jpg: %d %v", rec.Code, c.LogoPath)
 	}
-	rec, c = e.upload(t, "c1", "logo", "logo.svg", svgBytes)
+	rec, c = e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "logo.svg", svgBytes)
 	if rec.Code != 200 || !strings.HasSuffix(*c.LogoPath, ".svg") {
 		t.Fatalf("svg logo: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec, _ := e.upload(t, "c1", "banner", "b.png", pngBytes); rec.Code != http.StatusNotFound {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "banner", "b.png", pngBytes); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown kind: %d", rec.Code)
 	}
-	if n := len(artFiles(t, e.dataDir, "c1")); n != 1 {
+	if n := len(artFiles(t, e.dataDir, "00000000-0000-4000-8000-0000000000c1")); n != 1 {
 		t.Fatalf("files left: %d", n)
 	}
 }
 
 func TestArtSizeLimit(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	big := append(append([]byte{}, pngBytes...), bytes.Repeat([]byte{0}, ArtMaxBytes)...)
-	if rec, _ := e.upload(t, "c1", "logo", "big.png", big); rec.Code != http.StatusRequestEntityTooLarge {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "big.png", big); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("big: %d %s", rec.Code, rec.Body.String())
 	}
 	exact := append(append([]byte{}, pngBytes...), bytes.Repeat([]byte{0}, ArtMaxBytes-len(pngBytes))...)
-	if rec, _ := e.upload(t, "c1", "logo", "max.png", exact); rec.Code != 200 {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "max.png", exact); rec.Code != 200 {
 		t.Fatalf("5 MB exactly: %d", rec.Code)
 	}
 }
 
 func TestArtAdminOnly(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	viewer := &principal.Principal{UserID: "v", AccessAllLibraries: true}
-	if rec, _ := e.do(t, viewer, uploadReq(t, "c1", "logo", "a.png", pngBytes)); rec.Code != http.StatusForbidden {
+	if rec, _ := e.do(t, viewer, uploadReq(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes)); rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer upload: %d", rec.Code)
 	}
-	if rec, _ := e.do(t, viewer, httptest.NewRequest("DELETE", "/api/channels/c1/art/logo", nil)); rec.Code != http.StatusForbidden {
+	if rec, _ := e.do(t, viewer, httptest.NewRequest("DELETE", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo", nil)); rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer delete: %d", rec.Code)
 	}
 }
 
 func TestArtReplaceRemovesPreviousFile(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	_, first := e.upload(t, "c1", "logo", "a.png", pngBytes)
-	_, second := e.upload(t, "c1", "logo", "b.gif", gifBytes)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	_, first := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes)
+	_, second := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "b.gif", gifBytes)
 	if *first.LogoPath == *second.LogoPath {
 		t.Fatal("same path for different images")
 	}
@@ -243,19 +243,19 @@ func TestArtReplaceRemovesPreviousFile(t *testing.T) {
 		t.Fatal("art URL not versioned")
 	}
 	// the watermark's file is not touched by a logo upload
-	e.upload(t, "c1", "watermark", "w.png", pngBytes)
-	e.upload(t, "c1", "logo", "c.png", append([]byte{}, append(pngBytes, 'x')...))
-	if n := len(artFiles(t, e.dataDir, "c1")); n != 2 {
-		t.Fatalf("files: %v", artFiles(t, e.dataDir, "c1"))
+	e.upload(t, "00000000-0000-4000-8000-0000000000c1", "watermark", "w.png", pngBytes)
+	e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "c.png", append([]byte{}, append(pngBytes, 'x')...))
+	if n := len(artFiles(t, e.dataDir, "00000000-0000-4000-8000-0000000000c1")); n != 2 {
+		t.Fatalf("files: %v", artFiles(t, e.dataDir, "00000000-0000-4000-8000-0000000000c1"))
 	}
 }
 
-// planChannel makes c1 a channel the lineup plan writer owns, with the
+// planChannel makes 00000000-0000-4000-8000-0000000000c1 a channel the lineup plan writer owns, with the
 // given plan look.
 func planChannel(t *testing.T, e artEnv, logo string, look string) {
 	t.Helper()
 	if _, err := e.db.Exec(`INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool)
-		VALUES ('maktaba_channel','catalog','kids','c1','Kids','h',1)`); err != nil {
+		VALUES ('maktaba_channel','catalog','kids','00000000-0000-4000-8000-0000000000c1','Kids','h',1)`); err != nil {
 		t.Fatal(err)
 	}
 	addPlan(t, e, logo, look)
@@ -274,20 +274,20 @@ func TestArtRevertGoesBackToPlan(t *testing.T) {
 	e := newArtEnv(t)
 	planLogo := filepath.Join(t.TempDir(), "plan-logo.png")
 	planWM := filepath.Join(t.TempDir(), "plan-wm.png")
-	insertChannel(t, e.db, "c1", planLogo)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", planLogo)
 	planLook := `{"watermark":{"path":"` + filepath.ToSlash(planWM) + `","position":"bottom-left","width_pct":10,"margin_pct":1},"loading_path":"/plan/loading.png"}`
 	if _, err := e.db.Exec(`UPDATE channels SET mode_config = $1`, `{"slots":[],"look":`+planLook+`}`); err != nil {
 		t.Fatal(err)
 	}
 	planChannel(t, e, filepath.ToSlash(planLogo), planLook)
 
-	_, c := e.upload(t, "c1", "logo", "a.png", pngBytes)
+	_, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes)
 	uploaded := *c.LogoPath
-	_, c = e.upload(t, "c1", "watermark", "w.gif", gifBytes)
+	_, c = e.upload(t, "00000000-0000-4000-8000-0000000000c1", "watermark", "w.gif", gifBytes)
 	if c.Art.Watermark.Position != "bottom-left" || c.Art.Watermark.WidthPct != 10 {
 		t.Fatalf("upload must keep the plan's corner: %+v", c.Art.Watermark)
 	}
-	if e.overrideCount(t, "c1") != 2 {
+	if e.overrideCount(t, "00000000-0000-4000-8000-0000000000c1") != 2 {
 		t.Fatal("override rows")
 	}
 
@@ -295,33 +295,33 @@ func TestArtRevertGoesBackToPlan(t *testing.T) {
 	newPlanLogo := filepath.ToSlash(filepath.Join(t.TempDir(), "plan-logo-2.png"))
 	addPlan(t, e, newPlanLogo, planLook)
 
-	rec, c := e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/c1/art/logo", nil))
+	rec, c := e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo", nil))
 	if rec.Code != 200 || c.LogoPath == nil || *c.LogoPath != newPlanLogo || c.Art.Logo.Overridden {
 		t.Fatalf("revert logo: %d %+v", rec.Code, c)
 	}
 	if _, err := os.Stat(uploaded); !os.IsNotExist(err) {
 		t.Fatal("uploaded logo not removed on revert")
 	}
-	rec, c = e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/c1/art/watermark", nil))
+	rec, c = e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/watermark", nil))
 	if rec.Code != 200 || c.Art.Watermark.Overridden || c.Art.Watermark.Path != filepath.ToSlash(planWM) {
 		t.Fatalf("revert watermark: %d %+v", rec.Code, c.Art.Watermark)
 	}
-	if e.overrideCount(t, "c1") != 0 || len(artFiles(t, e.dataDir, "c1")) != 0 {
+	if e.overrideCount(t, "00000000-0000-4000-8000-0000000000c1") != 0 || len(artFiles(t, e.dataDir, "00000000-0000-4000-8000-0000000000c1")) != 0 {
 		t.Fatal("overrides/files left after revert")
 	}
 }
 
 func TestArtRevertWithoutPlanRestoresPrevious(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", "https://cdn.example/old.png")
-	e.upload(t, "c1", "logo", "a.png", pngBytes)
-	e.upload(t, "c1", "logo", "b.png", append(append([]byte{}, pngBytes...), 'b'))
-	_, c := e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/c1/art/logo", nil))
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", "https://cdn.example/old.png")
+	e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes)
+	e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "b.png", append(append([]byte{}, pngBytes...), 'b'))
+	_, c := e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo", nil))
 	if c.LogoPath == nil || *c.LogoPath != "https://cdn.example/old.png" {
 		t.Fatalf("revert: %+v", c.LogoPath)
 	}
 	// nothing set by hand any more: a revert of an untouched kind is a no-op clear
-	_, c = e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/c1/art/loading", nil))
+	_, c = e.do(t, artAdmin, httptest.NewRequest("DELETE", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/loading", nil))
 	if c.Art.Loading.Path != "" {
 		t.Fatalf("loading: %+v", c.Art.Loading)
 	}
@@ -329,9 +329,9 @@ func TestArtRevertWithoutPlanRestoresPrevious(t *testing.T) {
 
 func TestWatermarkSettings(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	patch := func(body string) (*httptest.ResponseRecorder, Channel) {
-		req := httptest.NewRequest("PATCH", "/api/channels/c1/art/watermark", strings.NewReader(body))
+		req := httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/watermark", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		return e.do(t, artAdmin, req)
 	}
@@ -345,14 +345,14 @@ func TestWatermarkSettings(t *testing.T) {
 		t.Fatalf("settings: %d %+v", rec.Code, c.Art.Watermark)
 	}
 	// a later upload keeps the chosen corner; a later PATCH of one field keeps the others
-	_, c = e.upload(t, "c1", "watermark", "w.png", pngBytes)
+	_, c = e.upload(t, "00000000-0000-4000-8000-0000000000c1", "watermark", "w.png", pngBytes)
 	_, c = patch(`{"margin_pct":5}`)
-	wm := e.look(t, "c1")["watermark"].(map[string]any)
+	wm := e.look(t, "00000000-0000-4000-8000-0000000000c1")["watermark"].(map[string]any)
 	if wm["position"] != "bottom-right" || wm["width_pct"] != 20.0 || wm["margin_pct"] != 5.0 || wm["path"] != c.Art.Watermark.Path {
 		t.Fatalf("watermark %v", wm)
 	}
 	if rec, _ := e.do(t, artAdmin, func() *http.Request {
-		r := httptest.NewRequest("PATCH", "/api/channels/c1/art/logo", strings.NewReader(`{"position":"top-left"}`))
+		r := httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1/art/logo", strings.NewReader(`{"position":"top-left"}`))
 		r.Header.Set("Content-Type", "application/json")
 		return r
 	}()); rec.Code != http.StatusNotFound {
@@ -365,11 +365,11 @@ func TestWatermarkSettings(t *testing.T) {
 // value must not turn into a hand override.
 func TestPatchKeepsArtOverrides(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	planChannel(t, e, "", `{}`)
-	_, up := e.upload(t, "c1", "loading", "l.png", pngBytes)
+	_, up := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "loading", "l.png", pngBytes)
 	body := `{"name":"Kids TV","mode_config":{"filter":{"genre":"kids"}},"logo_path":""}`
-	req := httptest.NewRequest("PATCH", "/api/channels/c1", strings.NewReader(body))
+	req := httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec, c := e.do(t, artAdmin, req)
 	if rec.Code != 200 {
@@ -378,14 +378,14 @@ func TestPatchKeepsArtOverrides(t *testing.T) {
 	if c.Art.Loading.Path != up.Art.Loading.Path || !c.Art.Loading.Overridden {
 		t.Fatalf("loading lost: %+v", c.Art.Loading)
 	}
-	if l := e.look(t, "c1"); l["loading_path"] != up.Art.Loading.Path {
+	if l := e.look(t, "00000000-0000-4000-8000-0000000000c1"); l["loading_path"] != up.Art.Loading.Path {
 		t.Fatalf("look %v", l)
 	}
-	if c.Art.Logo.Overridden || e.overrideCount(t, "c1") != 1 {
+	if c.Art.Logo.Overridden || e.overrideCount(t, "00000000-0000-4000-8000-0000000000c1") != 1 {
 		t.Fatal("unchanged logo became an override")
 	}
 	// a typed logo path is a hand override too
-	req = httptest.NewRequest("PATCH", "/api/channels/c1", strings.NewReader(`{"logo_path":"https://cdn.example/k.png"}`))
+	req = httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1", strings.NewReader(`{"logo_path":"https://cdn.example/k.png"}`))
 	req.Header.Set("Content-Type", "application/json")
 	if _, c = e.do(t, artAdmin, req); !c.Art.Logo.Overridden {
 		t.Fatalf("typed logo: %+v", c.Art.Logo)
@@ -394,14 +394,14 @@ func TestPatchKeepsArtOverrides(t *testing.T) {
 
 func TestArtSameImageReuploadKeepsTheFileWhenTheSaveFails(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	_, c := e.upload(t, "c1", "logo", "a.png", pngBytes)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	_, c := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes)
 	live := *c.LogoPath
 	// the save of the second (identical) upload fails
 	if _, err := e.db.Exec(`DROP TABLE channel_art_overrides`); err != nil {
 		t.Fatal(err)
 	}
-	if rec, _ := e.upload(t, "c1", "logo", "a.png", pngBytes); rec.Code != http.StatusInternalServerError {
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "a.png", pngBytes); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("code %d", rec.Code)
 	}
 	if got, err := os.ReadFile(live); err != nil || !bytes.Equal(got, pngBytes) {
@@ -411,22 +411,22 @@ func TestArtSameImageReuploadKeepsTheFileWhenTheSaveFails(t *testing.T) {
 
 func TestArtConcurrentUploadsLeaveOneFile(t *testing.T) {
 	e := newArtEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	var wg sync.WaitGroup
 	for i := 0; i < 6; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			img := append(append([]byte{}, pngBytes...), byte('a'+i))
-			if rec, _ := e.upload(t, "c1", "logo", "x.png", img); rec.Code != 200 {
+			if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", "logo", "x.png", img); rec.Code != 200 {
 				t.Errorf("upload %d: %d %s", i, rec.Code, rec.Body.String())
 			}
 		}(i)
 	}
 	wg.Wait()
-	files := artFiles(t, e.dataDir, "c1")
+	files := artFiles(t, e.dataDir, "00000000-0000-4000-8000-0000000000c1")
 	var logo string
-	if err := e.db.QueryRow(`SELECT logo_path FROM channels WHERE id = 'c1'`).Scan(&logo); err != nil {
+	if err := e.db.QueryRow(`SELECT logo_path FROM channels WHERE id = '00000000-0000-4000-8000-0000000000c1'`).Scan(&logo); err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != 1 || filepath.Clean(files[0]) != filepath.Clean(logo) {
