@@ -152,7 +152,9 @@ def open_append(path: Path) -> IO[str]:
             raise UnsafePath(f"{path} is a link") from exc
         raise
     _check_opened(fd, path)
-    return os.fdopen(fd, "a", encoding="utf-8")
+    # newline="": a line ends in LF alone (Windows' text mode writes CRLF: lines one
+    # byte longer than the file cap counts, and unlike what every other OS writes)
+    return os.fdopen(fd, "a", encoding="utf-8", newline="")
 
 
 def open_read_binary(path: Path) -> IO[bytes]:

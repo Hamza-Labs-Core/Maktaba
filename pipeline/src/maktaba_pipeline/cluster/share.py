@@ -8,8 +8,10 @@
 - **Local fallback** (share unreachable): ``~/.maktaba/cluster``. Secrets (the home agent
   key) stay local, never on the share.
 - **The machine's folder**: its IP, the local address of a socket aimed at the home's API
-  host (no packet is sent); a loopback answer (a home process) becomes the machine's first
-  private IPv4. IPv6 is written with ``:`` as ``-``.
+  host (no packet is sent), unless one of the machine's interfaces is on the home's own
+  subnet: that address wins (a VPN routing the home's LAN, such as Tailscale's subnet
+  routes, would otherwise answer with the VPN address); a loopback answer (a home process)
+  becomes the machine's first private IPv4. IPv6 is written with ``:`` as ``-``.
 """
 
 from __future__ import annotations
@@ -222,6 +224,41 @@ def _private_ipv4() -> str | None:
     return sorted(candidates)[0] if candidates else None
 
 
+def _on_subnet_of(home: str, routed: str) -> str | None:
+    """This machine's IPv4 on the same subnet as ``home`` (an interface's address and
+    netmask) when ``routed`` (the address the route to the home picked) is not one; the
+    narrowest subnet wins. None: keep ``routed``."""
+    try:
+        target = ipaddress.ip_address(home.split("%")[0])
+    except ValueError:
+        return None
+    if target.version != 4 or target.is_loopback:
+        return None
+    try:
+        import psutil
+
+        addrs = psutil.net_if_addrs()
+    except Exception:  # noqa: BLE001
+        return None
+    best: tuple[int, str] | None = None
+    for nics in addrs.values():
+        for a in nics:
+            if a.family != socket.AF_INET or not a.netmask:
+                continue
+            try:
+                net = ipaddress.ip_interface(f"{a.address}/{a.netmask}").network
+                ip = ipaddress.ip_address(a.address)
+            except ValueError:
+                continue
+            if ip.is_loopback or ip.is_link_local or net.prefixlen == 0 or target not in net:
+                continue
+            if a.address == routed:
+                return None  # the route already leaves through the home's subnet
+            if best is None or net.prefixlen > best[0]:
+                best = (net.prefixlen, a.address)
+    return best[1] if best else None
+
+
 def machine_ip(home_url: str | None, env: Mapping[str, str] | None = None) -> str:
     """This machine's address as the home sees it (see the module doc);
     ``MAKTABA_CLUSTER_IP`` overrides it (a container's own address is not the machine's)."""
@@ -230,6 +267,7 @@ def machine_ip(home_url: str | None, env: Mapping[str, str] | None = None) -> st
     if override:
         return folder_name(override)
     found: str | None = None
+    home_addr: str | None = None
     if home_url:
         parsed = urllib.parse.urlsplit(home_url if "//" in home_url else "//" + home_url)
         host = parsed.hostname
@@ -240,6 +278,7 @@ def machine_ip(home_url: str | None, env: Mapping[str, str] | None = None) -> st
                 with socket.socket(info[0], socket.SOCK_DGRAM) as s:
                     s.connect(info[4])  # UDP: picks the route, sends nothing
                     found = str(s.getsockname()[0])
+                    home_addr = str(info[4][0])
             except OSError:
                 found = None
     if found is not None:
@@ -248,6 +287,10 @@ def machine_ip(home_url: str | None, env: Mapping[str, str] | None = None) -> st
                 found = None
         except ValueError:
             found = None
+    if found is not None and home_addr is not None and found != home_addr:
+        # a VPN that routes the home's LAN (Tailscale's subnet routes) makes the socket
+        # answer with the VPN's address: an interface on the home's own subnet wins
+        found = _on_subnet_of(home_addr, found) or found
     if found is None:
         found = _private_ipv4() or "127.0.0.1"
     return folder_name(found)
