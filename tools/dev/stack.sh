@@ -10,13 +10,15 @@
 #
 # Settings come from the environment (defaults in brackets):
 #   MAKTABA_DATABASE_URL  [postgresql://maktaba:maktaba@localhost:5432/maktaba]
-#   MAKTABA_PATH_MAP      [/Volumes/Originals/=$HOME/nas-nfs/]
+#   MAKTABA_PATH_MAP      [/Volumes/Originals/=$HOME/nas-nfs/] (the workers', and the API's: the
+#                         cluster hub writes <share>/maktaba/cluster through it)
 #   MAKTABA_LOG_DIR       [$HOME/.maktaba/logs]
 #   transcription, per worker (sized for a 96 GB Mac: two workers stay near a third of
 #   it, and back off on their own below 25% free):
 #   MAKTABA_STT_AUDIO_HOURS [16], MAKTABA_STT_GPU_GB [20], MAKTABA_STT_GPU_CACHE_GB [2],
 #   MAKTABA_STT_MIN_FREE_PCT [25], MAKTABA_STT_WORDS [1]
-# Memory, GPU and progress are in health_samples / the control centre, not here.
+# Memory, GPU and progress are on the Processing page and Admin > Machines, not here;
+# every process's logs and metrics are also in <share>/maktaba/cluster/<ip>/.
 set -u
 ROOT=${0:A:h:h:h}
 DB=${MAKTABA_DATABASE_URL:-postgresql://maktaba:maktaba@localhost:5432/maktaba}
@@ -49,6 +51,7 @@ api() {
   (cd "$ROOT/api" && DATABASE_URL="${DB/postgresql:/postgres:}?sslmode=disable" \
      MAKTABA_HTTP_ADDR=:8080 MAKTABA_ADMIN_ADDR=:9100 MAKTABA_ENV=dev \
      MAKTABA_PIPELINE_ADDR=127.0.0.1:50051 MAKTABA_SEARCH_SEMANTIC_BUDGET_MS=500 \
+     MAKTABA_PATH_MAP="$PM" \
      nohup go run . serve >> "$LOGS/api.log" 2>&1 &)
 }
 
