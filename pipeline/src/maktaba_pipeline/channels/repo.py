@@ -470,6 +470,7 @@ class SqlRepo:
     async def replace_future_blocks(
         self, channel_id: UUID, *, from_at: datetime, blocks: list[Block]
     ) -> None:
+        snaps = await self._display_snapshots(blocks)
         async with self._c.transaction():
             # D3: only the future tail is rewritten — past/current blocks
             # (start_at < from_at) are immutable.
@@ -478,7 +479,7 @@ class SqlRepo:
                 channel_id,
                 from_at,
             )
-            for b in blocks:
+            for i, b in enumerate(blocks):
                 await self._c.execute(
                     """
                     INSERT INTO channel_programs
@@ -496,9 +497,23 @@ class SqlRepo:
                     b.end_at,
                     b.source_offset,
                     b.source_duration,
-                    json.dumps(b.title_snapshot),
+                    json.dumps(snaps[i]),
                     b.source_url,
                 )
+
+    async def _display_snapshots(self, blocks: list[Block]) -> list[dict[str, Any]]:
+        """Each block's snapshot with its video's display title laid over it (Story
+        27.11: the guide and the channel strip show the clean on-air titles)."""
+        from ..classify.display_title import DisplayTitleConfig
+        from ..rules import read as read_rules
+        from .display import display_info, merge_snapshot
+
+        cfg: DisplayTitleConfig = (await read_rules(self._c, "display_titles"))[0]
+        info = await display_info(self._c, [str(b.video_id) for b in blocks if b.video_id])
+        return [
+            merge_snapshot(b.title_snapshot, info.get(str(b.video_id)) if b.video_id else None, cfg)
+            for b in blocks
+        ]
 
     async def save_state(self, state: ScheduleState) -> None:
         await self._c.execute(

@@ -125,7 +125,68 @@ export interface ChannelArt {
   logo: ArtImage;
   watermark: WatermarkArt;
   loading: ArtImage;
+  /** The channel's own strip settings (mode_config.look.strip); null: the global ones. */
+  strip?: Partial<StripSettings> | null;
 }
+
+// ─── Channel strip (Story 27.11) ──────────────────────────────────────
+// The news-style bar the streaming engine burns into the picture. The
+// global defaults are the rules section tv_strip; a channel overrides any
+// of them (PATCH /api/channels/{id}/strip), DELETE goes back to them.
+export interface StripClock {
+  zone: string;
+  label_ar: string;
+  label_en: string;
+}
+
+export interface StripSettings {
+  enabled: boolean;
+  position: "bottom" | "top";
+  height_pct: number;
+  bg_color: string;
+  bg_opacity: number;
+  /** the rule along the bar and the clock's box */
+  accent_color: string;
+  /** the accent line along the edge facing the picture (% of the bar height; 0: none) */
+  rule_height: number;
+  /** the title */
+  text_color: string;
+  /** the «التالي» line */
+  next_color: string;
+  /** the clock's label and time and the channel name, on the accent */
+  clock_text_color: string;
+  /** the page number */
+  indicator_color: string;
+  font_size_pct: number;
+  direction: "auto" | "rtl" | "ltr";
+  show_next: boolean;
+  next_label_ar: string;
+  next_label_en: string;
+  filler_label: string;
+  overflow: "cycle" | "truncate" | "scroll";
+  /** overflow "cycle": each page's base time and the «١/٢» beside a paged line */
+  page_seconds: number;
+  page_indicator: boolean;
+  scroll_speed: number;
+  show_mode: "always" | "interval";
+  show_seconds: number;
+  every_minutes: number;
+  show_clock: boolean;
+  clocks: StripClock[];
+  clock_seconds: number;
+  clock_format: "24h" | "12h";
+  digits: "auto" | "arabic" | "western";
+  show_channel_name: boolean;
+}
+
+/** What a channel can set on its own (the font is the host's: global only). */
+export type ChannelStrip = Partial<StripSettings>;
+
+export const channelStripApi = {
+  save: (id: string, body: ChannelStrip) =>
+    api.patch<Channel>(`/api/channels/${encodeURIComponent(id)}/strip`, body),
+  reset: (id: string) => api.delete<Channel>(`/api/channels/${encodeURIComponent(id)}/strip`),
+};
 
 /** Whether a picked file is one the server will take for kind (by type and size). */
 export function artFileProblem(kind: ArtKind, file: File): "type" | "size" | null {
@@ -155,6 +216,10 @@ export interface Program {
   description?: string | null;
   series?: string | null;
   episode?: string | null;
+  /** The channel strip's line (Story 27.11): «series · الحلقة 45 — title». */
+  on_air?: string | null;
+  /** The reference of a Quran verse the title quotes («البقرة ١٨٣»): the strip's last page. */
+  strip_ref?: string | null;
 }
 
 export interface GuideChannel {
@@ -282,6 +347,8 @@ interface WireBlock {
   series?: string;
   season?: number;
   episode?: number;
+  on_air?: string;
+  strip_ref?: string;
 }
 
 interface WireHeader {
@@ -325,6 +392,8 @@ function fromBlock(b: WireBlock, seq: number): Program {
     description: b.desc || null,
     series: b.series || null,
     episode: episodeLabel(b),
+    on_air: b.on_air || null,
+    strip_ref: b.strip_ref || null,
   };
 }
 

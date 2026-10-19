@@ -66,7 +66,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
-		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`
+		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot
 		FROM channel_programs cp
 		LEFT JOIN videos v ON v.id = cp.video_id
 		WHERE cp.channel_id = $1 AND cp.end_at > $2
@@ -82,8 +82,9 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 		var b ProgramBlock
 		var vid *uuid.UUID
 		var path, src *string
+		var snap []byte
 		if err := rows.Scan(&b.Seq, &b.Kind, &vid, &b.StartAt, &b.EndAt,
-			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src); err != nil {
+			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap); err != nil {
 			return nil, err
 		}
 		if vid != nil {
@@ -95,6 +96,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 		if src != nil {
 			b.SourceURL = *src
 		}
+		b.Info = ParseBlockInfo(snap)
 		out = append(out, b)
 	}
 	return out, rows.Err()

@@ -137,6 +137,15 @@ func MountP6(r chi.Router, d P6Deps) {
 	libHandler.MountAudit(r)
 
 	videoHandler := &videos.Handler{DB: d.DB}
+	// Story 27.11: a display title set by hand reaches the channels' future
+	// blocks through the library's display_title stage.
+	videoHandler.DisplayTitleRefresh = func(ctx context.Context, libraryID string) error {
+		_, err := queues.Enqueue(ctx, d.DB, queues.EnqueueParams{
+			SubjectKind: "library", SubjectID: libraryID, Stage: "display_title", Force: true,
+			Reason: map[string]any{"why": "display_title_edited", "by": "user"},
+		})
+		return err
+	}
 	videoHandler.Mount(r)
 
 	// Story 18.2 AC2/AC4 (HLB-333): the search handler gets an
