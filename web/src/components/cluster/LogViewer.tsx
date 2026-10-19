@@ -19,6 +19,7 @@ import {
 import { atLeast, type ClusterStream } from "../../lib/clusterStream";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { useClusterFmt } from "./format";
+import { nodeDays } from "./useClusterFiles";
 
 export const MAX_ROWS = 2_000;
 export const PAGE_SIZE = 500;
@@ -64,7 +65,8 @@ export function LogViewer({
 }) {
   const { t, n } = useI18n();
   const f = useClusterFmt();
-  const days = useMemo(() => [...(node?.dates.logs ?? [])].sort().reverse(), [node]);
+  // the share's days and the archive's: the history reaches back as far as the archive
+  const days = useMemo(() => nodeDays(node, "logs"), [node]);
   const [mode, setMode] = useState<"live" | "history">(target.date ? "history" : "live");
   const [date, setDate] = useState(target.date ?? days[0] ?? "");
   const [level, setLevel] = useState<LogLevel>("info");

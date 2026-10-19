@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"container/heap"
 	"encoding/json"
 	"errors"
@@ -49,11 +50,14 @@ const (
 	minSamplesPerLog = 100
 )
 
-// MachineFiles is one machine folder in GET /api/cluster/files.
+// MachineFiles is one machine folder in GET /api/cluster/files: the days
+// the share holds per kind, and the days the home's archive holds
+// (archived_dates, §7.10; a day may be in both).
 type MachineFiles struct {
-	IP        string              `json:"ip"`
-	Processes []json.RawMessage   `json:"processes"`
-	Dates     map[string][]string `json:"dates"`
+	IP            string              `json:"ip"`
+	Processes     []json.RawMessage   `json:"processes"`
+	Dates         map[string][]string `json:"dates"`
+	ArchivedDates map[string][]string `json:"archived_dates"`
 }
 
 // FilesIndex is GET /api/cluster/files.
@@ -90,26 +94,65 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
 		return
 	}
-	if root == nil {
-		common.WriteJSON(w, r, http.StatusOK, out)
-		return
+	if root != nil {
+		defer func() { _ = root.Close() }()
 	}
-	defer func() { _ = root.Close() }()
-	entries, err := readDirIn(root, ".")
-	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
-		return
+	arch := h.archiveRoot()
+	if arch != nil {
+		defer func() { _ = arch.Close() }()
 	}
-	for _, e := range entries {
-		if !ValidIPDir(e.Name()) || plainDirs(root, e.Name()) != nil {
+	byIP := map[string]*MachineFiles{}
+	var order []string
+	machine := func(ip string) *MachineFiles {
+		m := byIP[ip]
+		if m == nil {
+			m = &MachineFiles{IP: ip, Processes: []json.RawMessage{}, Dates: map[string][]string{},
+				ArchivedDates: map[string][]string{}}
+			for _, kind := range DayKinds {
+				m.Dates[kind] = []string{}
+				m.ArchivedDates[kind] = []string{}
+			}
+			byIP[ip] = m
+			order = append(order, ip)
+		}
+		return m
+	}
+	for _, src := range []struct {
+		root     *os.Root
+		archived bool
+	}{{root, false}, {arch, true}} {
+		if src.root == nil {
 			continue
 		}
-		m := MachineFiles{IP: e.Name(), Processes: readProcesses(root, filepath.Join(e.Name(), "processes")),
-			Dates: map[string][]string{}}
-		for _, kind := range DayKinds {
-			m.Dates[kind] = listDates(root, filepath.Join(e.Name(), kind))
+		entries, err := readDirIn(src.root, ".")
+		if err != nil {
+			if !src.archived {
+				httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+				return
+			}
+			continue
 		}
-		out.Nodes = append(out.Nodes, m)
+		for _, e := range entries {
+			if !ValidIPDir(e.Name()) || plainDirs(src.root, e.Name()) != nil {
+				continue
+			}
+			m := machine(e.Name())
+			for _, kind := range DayKinds {
+				days := listDates(src.root, filepath.Join(e.Name(), kind))
+				if src.archived {
+					m.ArchivedDates[kind] = days
+				} else {
+					m.Dates[kind] = days
+				}
+			}
+			if !src.archived {
+				m.Processes = readProcesses(src.root, filepath.Join(e.Name(), "processes"))
+			}
+		}
+	}
+	sort.Strings(order)
+	for _, ip := range order {
+		out.Nodes = append(out.Nodes, *byIP[ip])
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
@@ -168,10 +211,55 @@ func listDates(root *os.Root, dir string) []string {
 	return out
 }
 
-// dayFile is one process's file for a day (relative to the cluster root).
+// dayFile is one process's file for a day: relative to root (the share,
+// or the archive when gz).
 type dayFile struct {
+	root     *os.Root
 	path     string
 	workerID string
+	gz       bool
+}
+
+// each calls fn for every line of the file (decompressed when gz).
+func (f dayFile) each(fn func(line []byte)) {
+	if !f.gz {
+		eachLine(f.root, f.path, fn)
+		return
+	}
+	if !plainFile(f.root, f.path) {
+		return
+	}
+	in, err := f.root.Open(f.path)
+	if err != nil {
+		return
+	}
+	defer func() { _ = in.Close() }()
+	zr, err := gzip.NewReader(in)
+	if err != nil {
+		return
+	}
+	defer func() { _ = zr.Close() }()
+	eachLineIn(zr, fn)
+}
+
+// dayData lists a day's files: the share's while it holds them, else the
+// archive's; it says which ("files" or "archive").
+func dayData(share, arch *os.Root, ip, kind, date string) ([]dayFile, string) {
+	if fs := dayFiles(share, ip, kind, date); len(fs) > 0 {
+		return fs, "files"
+	}
+	if fs := archivedDayFiles(arch, ip, kind, date); len(fs) > 0 {
+		return fs, "archive"
+	}
+	return nil, "files"
+}
+
+// archiveRoot opens the archive for reading (nil without one).
+func (h *Hub) archiveRoot() *os.Root {
+	if h.cfg.Archive == nil {
+		return nil
+	}
+	return openArchiveRead(h.cfg.Archive.Dir)
 }
 
 // dayFiles lists <ip>/<kind>/<date>/*.jsonl.
@@ -191,7 +279,7 @@ func dayFiles(root *os.Root, ip, kind, date string) []dayFile {
 		if !strings.HasSuffix(name, ".jsonl") || !plainFile(root, p) {
 			continue
 		}
-		out = append(out, dayFile{path: p, workerID: strings.TrimSuffix(name, ".jsonl")})
+		out = append(out, dayFile{root: root, path: p, workerID: strings.TrimSuffix(name, ".jsonl")})
 	}
 	return out
 }
@@ -207,7 +295,12 @@ func eachLine(root *os.Root, p string, fn func(line []byte)) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	br := bufio.NewReaderSize(f, 64<<10)
+	eachLineIn(f, fn)
+}
+
+// eachLineIn is eachLine over a reader.
+func eachLineIn(r io.Reader, fn func(line []byte)) {
+	br := bufio.NewReaderSize(r, 64<<10)
 	var long []byte
 	skipping := false
 	for {
@@ -404,6 +497,10 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 	if root != nil {
 		defer func() { _ = root.Close() }()
 	}
+	arch := h.archiveRoot()
+	if arch != nil {
+		defer func() { _ = arch.Close() }()
+	}
 
 	keep := &recHeap{}
 	more := false
@@ -449,7 +546,8 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 			heap.Push(keep, record{ts: ts, data: data})
 		}
 	}
-	for _, f := range dayFiles(root, q.ip, q.kind, q.date) {
+	files, source := dayData(root, arch, q.ip, q.kind, q.date)
+	for _, f := range files {
 		if worker != "" && f.workerID != worker {
 			continue
 		}
@@ -457,13 +555,17 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 		if q.kind == KindEvents && wid == "hub" {
 			wid = ""
 		}
-		eachLine(root, f.path, func(line []byte) { consider(line, wid, "") })
+		f.each(func(line []byte) { consider(line, wid, "") })
 	}
 	// the hub files a node's connection events under the home's folder
 	if home := IPDir(h.homeIP); q.kind == KindEvents && q.ip != home {
-		for _, f := range dayFiles(root, home, KindEvents, q.date) {
+		hubFiles, hubSource := dayData(root, arch, home, KindEvents, q.date)
+		if len(files) == 0 {
+			source = hubSource
+		}
+		for _, f := range hubFiles {
 			if f.workerID == "hub" {
-				eachLine(root, f.path, func(line []byte) { consider(line, "", q.ip) })
+				f.each(func(line []byte) { consider(line, "", q.ip) })
 			}
 		}
 	}
@@ -479,11 +581,12 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 		c := recs[0].ts.Format(time.RFC3339Nano)
 		cursor = &c
 	}
-	w.Header().Set(sourceHeader, "files")
+	w.Header().Set(sourceHeader, source)
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "records": out, "next_before": cursor})
 }
 
-// sourceHeader says where a history answer came from: cache or files.
+// sourceHeader says where a history answer came from: cache, files (the
+// share) or archive (the home's archive, §7.10).
 const sourceHeader = "X-Maktaba-Source"
 
 // dayRange is [the day's start, the next day's start) for a YYYY-MM-DD.
@@ -616,7 +719,11 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	if root != nil {
 		defer func() { _ = root.Close() }()
 	}
-	files := dayFiles(root, q.ip, q.kind, q.date)
+	arch := h.archiveRoot()
+	if arch != nil {
+		defer func() { _ = arch.Close() }()
+	}
+	files, source := dayData(root, arch, q.ip, q.kind, q.date)
 	perFile := q.limit
 	if len(files) > 1 {
 		perFile = max(q.limit/len(files), minSamplesPerLog)
@@ -626,7 +733,7 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	for _, f := range files {
 		var kept []record
 		stride, n := 1, 0
-		eachLine(root, f.path, func(line []byte) {
+		f.each(func(line []byte) {
 			var head struct {
 				TS json.RawMessage `json:"ts"`
 			}
@@ -669,6 +776,6 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range all {
 		out = append(out, rec.data)
 	}
-	w.Header().Set(sourceHeader, "files")
+	w.Header().Set(sourceHeader, source)
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "samples": out, "thinned": thinned})
 }

@@ -70,6 +70,8 @@ type Config struct {
 	ClusterKey []byte
 	// Cache is the database cache of the channel (track C1); nil: none.
 	Cache Cache
+	// Archive is the home's long-term archive (§7.10); nil: none.
+	Archive *ArchiveConfig
 	// CacheWindow is MAKTABA_CLUSTER_CACHE_HOURS, for the cache's
 	// Options.Window.
 	CacheWindow time.Duration
@@ -107,12 +109,13 @@ type Config struct {
 
 // Hub is the live centre of the cluster.
 type Hub struct {
-	cfg     Config
-	files   *FileWriter
-	router  *Router
-	sweeper *Sweeper
-	limiter *ipLimiter
-	homeIP  string
+	cfg      Config
+	files    *FileWriter
+	router   *Router
+	sweeper  *Sweeper
+	limiter  *ipLimiter
+	archiver *Archiver
+	homeIP   string
 
 	mu        sync.RWMutex
 	sessions  map[string]*Session
@@ -165,6 +168,9 @@ func New(cfg Config) *Hub {
 		workersDirty: make(chan struct{}, 1),
 	}
 	h.limiter = newIPLimiter(cfg.AgentRatePerMin)
+	if cfg.Archive != nil {
+		h.archiver = NewArchiver(*cfg.Archive, func() string { return h.Location().Dir }, cfg.Now, cfg.Logger)
+	}
 	h.files = NewFileWriter(8192, cfg.FileMaxBytes, cfg.Now, cfg.Logger)
 	h.sweeper = &Sweeper{Days: cfg.RetentionDays, Now: cfg.Now}
 	h.router = NewRouter(RouterConfig{
@@ -208,6 +214,9 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 	loc := h.Locate(ctx)
 	start(h.files.Run)
+	if h.archiver != nil {
+		start(h.archiver.Run)
+	}
 	if h.cfg.Cache != nil {
 		start(h.cfg.Cache.Run)
 		start(func(ctx context.Context) {

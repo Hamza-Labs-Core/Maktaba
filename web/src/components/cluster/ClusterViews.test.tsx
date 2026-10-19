@@ -144,6 +144,8 @@ const files = {
         queues: ["2026-10-18"],
         library: ["2026-10-18"],
       },
+      // the home's archive keeps days the share has let go (and some it still has)
+      archived_dates: { logs: ["2026-09-01", "2026-10-17"] },
     },
   ],
 };
@@ -445,6 +447,24 @@ describe("Cluster views", () => {
       expect(get).toHaveBeenCalledWith(
         "/api/cluster/files/10.0.0.5/logs?date=2026-10-17&level=error&limit=500"
       )
+    );
+  });
+
+  it("offers the archive's days with the share's and reads one", async () => {
+    await live();
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    expect(await screen.findByText("/share/maktaba/cluster")).toBeInTheDocument();
+    // 2026-10-17 is in both: offered once
+    expect(
+      screen.getAllByRole("button", { name: "Open the logs of Studio Mac for 2026-10-17" })
+    ).toHaveLength(1);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open the logs of Studio Mac for 2026-09-01" })
+    );
+    const box = screen.getByRole("log", { name: "Log lines" });
+    expect(await within(box).findByText("claimed job")).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith(
+      "/api/cluster/files/10.0.0.5/logs?date=2026-09-01&level=info&limit=500"
     );
   });
 

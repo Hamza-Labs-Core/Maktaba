@@ -120,6 +120,16 @@ a volume and the server's group), set `MAKTABA_HOME_AGENT_KEY_MODE=0640` on the 
 key is then also readable by the server's group. Only `0600` and `0640` are accepted; the
 cluster key always stays `0600`.
 
+## The long-term archive
+
+The share keeps two weeks of files; the home keeps a compressed archive of every machine's
+logs, jobs and LLM usage and of its own events for a year (up to 20 GB), on its own disk.
+The Machines page reads it once the share has let a day go. Settings, on the home:
+`MAKTABA_ARCHIVE_DIR` (default `~/.maktaba/archive`; with Docker, a volume),
+`MAKTABA_ARCHIVE_KINDS` (default `logs,jobs,llm,events`), `MAKTABA_ARCHIVE_DAYS` (default
+365; `0`: no age limit) and `MAKTABA_ARCHIVE_MAX_GB` (default 20). See
+[Files on the share](files-on-the-share.md#the-archive-on-the-home).
+
 ## Ports at a glance
 
 | From | To | Port | For |
