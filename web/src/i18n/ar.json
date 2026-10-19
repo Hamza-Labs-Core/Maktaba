@@ -2756,7 +2756,6 @@
   "tvchanges.done.schedule": "حُفظ موعد التبديل.",
   "tvchanges.done.promote": "جارٍ التبديل: تتبدّل القنوات الآن.",
   "tvchanges.done.cancel": "أُلغي.",
-  "tvchanges.done.rollback": "جارٍ التراجع.",
   "tvchanges.err.secondAdmin": "يعتمد هذا التغيير مشرف ثانٍ: أنت من أنشأه.",
   "tvchanges.err.ackParam": "هذا التغيير يغيّر صورة قناة تُبث عن بُعد: أقرّ بذلك أولًا.",
   "tvchanges.err.inFlight": "تغيير آخر قيد التنفيذ؛ هذا التغيير ينتظر دوره.",
@@ -2873,5 +2872,18 @@
   "rules.tv_staging.auto_promote_binary.label": "تغييرات الإصدار",
   "rules.tv_staging.auto_promote_binary.help": "approval: يعتمده مشرف؛ quiet_window: يُبث في الفترة الهادئة إن لم تكن هناك تحذيرات؛ immediate: فور اجتيازه الفحوص بلا تحذيرات.",
   "rules.tv_staging.auto_promote_rollback.label": "تغييرات التراجع",
-  "rules.tv_staging.auto_promote_rollback.help": "approval: يعتمده مشرف؛ quiet_window: يُبث في الفترة الهادئة إن لم تكن هناك تحذيرات؛ immediate: فور اجتيازه الفحوص بلا تحذيرات."
+  "rules.tv_staging.auto_promote_rollback.help": "approval: يعتمده مشرف؛ quiet_window: يُبث في الفترة الهادئة إن لم تكن هناك تحذيرات؛ immediate: فور اجتيازه الفحوص بلا تحذيرات.",
+  "tvchanges.rollback.warm": "فوري — بقي {min} دقيقة",
+  "tvchanges.rollback.warmNow": "فوري: تعود القنوات التي لم يكتمل تبديلها",
+  "tvchanges.rollback.cold": "بارد (نحو ٣ دقائق): يُجهَّز الإصدار السابق من جديد ثم يُبدَّل",
+  "tvchanges.rollback.none.no_rollback_point": "لا نقطة تراجع: لم يُبثّ شيء قبل هذا.",
+  "tvchanges.rollback.none.retention_expired": "انتهت مدة الاحتفاظ بنقطة التراجع.",
+  "tvchanges.rollback.none.no_live_change": "لا شيء للتراجع عنه.",
+  "tvchanges.rollback.none.no_controller": "التراجع غير متاح على هذا الخادم.",
+  "tvchanges.dialog.rollback.title": "التراجع عن التغيير رقم {n}؟",
+  "tvchanges.dialog.rollback.confirm": "تراجع",
+  "tvchanges.dialog.rollback.warm": "تعود كل القنوات إلى الإصدار السابق الآن عند إطار مفتاحي: يستمر المشاهدون وموالفات Plex وبث Cloudflare ومخرجاته المتزامنة دون انقطاع، ويتبعها الدليل وخريطة قنوات Plex.",
+  "tvchanges.dialog.rollback.cold": "توقّفت الخانة السابقة: يُجهَّز الإصدار السابق تغييرًا جديدًا، ويُفحص، ثم يُبدَّل عند حدّ البرنامج في كل قناة. طلبك هذا يعتمده.",
+  "tvchanges.done.rollback.warm": "جارٍ التراجع: تعود القنوات الآن.",
+  "tvchanges.done.rollback.cold": "أُنشئ تغيير التراجع: يُجهَّز ويُبدَّل حين يجهز."
 }

@@ -20,6 +20,7 @@ const (
 	StageTVStage = "tv_stage"
 	StageTVSwap  = "tv_swap"
 	StageTVGC    = "tv_gc"
+	// StageTVRollback (swap.go) is the reverse commit of a rollback.
 )
 
 // controllerLock is the advisory lock that keeps the controller to one API process
@@ -181,6 +182,10 @@ func (c *Controller) Tick(ctx context.Context) error {
 			}
 		}
 	}
+	// story 33.7/33.9: swaps the front door finished, rollbacks to commit
+	if err := c.tickOps(ctx); err != nil {
+		c.Logger.Warn("tv swap operations tick failed", "event", "tv_swap_ops_failed", "error", err.Error())
+	}
 	// story 33.13: notices and the audit rows of automatic transitions (best-effort:
 	// a failure here never holds a change back)
 	if err := c.notifyEvents(ctx, cfg); err != nil {
@@ -282,8 +287,10 @@ func (c *Controller) viewers(ctx context.Context) int {
 	return int(n.Int64)
 }
 
-// startSwap moves a change to swapping and enqueues the tv_swap job (the interim swap
-// commit until the two-slot runtime; then the front door's swap).
+// startSwap moves a change to swapping and enqueues the tv_swap job: the swap commit
+// (lineup, settings, generation flip and — with TV slots — the front door's swap
+// operation, one transaction). The front door then switches each channel at its
+// programme boundary; tickOps makes the change live when it is done (swap.go).
 func (c *Controller) startSwap(ctx context.Context, ch *Change, action string, detail map[string]any) error {
 	if c.Enqueue == nil {
 		return errors.New("no queue")

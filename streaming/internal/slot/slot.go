@@ -160,6 +160,29 @@ func (s *State) SetRelease(bound string) {
 	s.mu.Unlock()
 }
 
+// ReleaseID is the release the slot airs: the one it was started for, or the
+// one it was bound to later (BindRelease); "" while unbound (it then airs the
+// live generation).
+func (s *State) ReleaseID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Release
+}
+
+// BindRelease records the release an unbound slot was bound to (story 33.7:
+// before a swap the live slot and the standby are pinned to the live release,
+// so the swap's generation flip does not move what they air). A slot already
+// bound keeps its release (false).
+func (s *State) BindRelease(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Release != "" || id == "" {
+		return s.Release == id
+	}
+	s.Release = id
+	return true
+}
+
 // Mismatch reports a release mismatch (the slot runs no station).
 func (s *State) Mismatch() bool {
 	s.mu.Lock()

@@ -125,6 +125,42 @@ type Stitcher struct {
 	switches int
 	// pendingSwitch: the new source has no segment past the old one's end yet.
 	pendingSwitch bool
+	// a planned switch (story 33.7): segments of the current source are listed
+	// only up to the one ending at cutAt; the first segment of planTo starting
+	// where that one ends follows after one discontinuity
+	planTo  string
+	cutAt   time.Time
+	reached bool
+	ended   bool
+}
+
+// Plan arranges a switch to source to at the instant at (a swap or rollback):
+// the current source's segments are listed while they end by at; the segment
+// that contains at (or starts after it) comes from to. A plan that is already
+// in place is kept.
+func (st *Stitcher) Plan(to string, at time.Time) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if to == st.src || (st.planTo == to && st.cutAt.Equal(at)) {
+		return
+	}
+	st.planTo, st.cutAt, st.reached = to, at, false
+}
+
+// Reached reports whether the planned switch's instant is in the current
+// source's playlist (the next segment must come from the plan's source).
+func (st *Stitcher) Reached() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.planTo != "" && st.reached
+}
+
+// End marks the channel ended (removed from the lineup): the playlist gets
+// EXT-X-ENDLIST.
+func (st *Stitcher) End() {
+	st.mu.Lock()
+	st.ended = true
+	st.mu.Unlock()
 }
 
 // Source is the slot the stitcher reads now.
@@ -164,6 +200,9 @@ func (st *Stitcher) Update(src string, pl upPlaylist) {
 	last := st.entries[len(st.entries)-1]
 	if src != st.src || st.pendingSwitch {
 		st.switchTo(src, pl, last)
+		if st.src == src && !st.pendingSwitch && src == st.planTo {
+			st.planTo, st.reached = "", false
+		}
 		st.trim()
 		return
 	}
@@ -190,6 +229,13 @@ func (st *Stitcher) Update(src string, pl upPlaylist) {
 		}
 	}
 	for _, s := range add {
+		if st.planTo != "" && s.hasPDT {
+			end := s.pdt.Add(time.Duration(s.dur * float64(time.Second)))
+			if end.After(st.cutAt.Add(stitchTolerance)) {
+				st.reached = true // this one (and what follows) comes from the plan's source
+				break
+			}
+		}
 		st.entries = append(st.entries, stEntry{slot: src, upSeg: s})
 	}
 	st.trim()
@@ -204,6 +250,15 @@ func (st *Stitcher) switchTo(src string, pl upPlaylist, last stEntry) {
 		}
 		if !s.pdt.Before(last.end().Add(-stitchTolerance)) {
 			start = i
+			// no segment of the new source starts where the last one ended (it
+			// cuts its segments elsewhere: a station started off the grid): the
+			// one that holds that instant overlaps by less than a segment, which
+			// a player plays through, instead of skipping one
+			if i > 0 && pl.segs[i].pdt.After(last.end().Add(stitchTolerance)) {
+				if p := pl.segs[i-1]; p.hasPDT && p.pdt.Add(time.Duration(p.dur*float64(time.Second))).After(last.end()) {
+					start = i - 1
+				}
+			}
 			break
 		}
 	}
@@ -278,6 +333,9 @@ func (st *Stitcher) Render() []byte {
 		}
 		fmt.Fprintf(&b, "#EXTINF:%.6f,\n", e.dur)
 		b.WriteString("s/" + e.slot + "/" + e.name + "\n")
+	}
+	if st.ended {
+		b.WriteString("#EXT-X-ENDLIST\n")
 	}
 	return []byte(b.String())
 }

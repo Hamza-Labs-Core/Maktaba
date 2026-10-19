@@ -101,7 +101,16 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 		if err == nil {
 			switch {
 			case p.Host == h.Self && h.Slots != nil:
-				err = h.slotTS(ctx, ch, out, nil)
+				// story 33.7: a planned switch is spliced inside (one source
+				// for the loop here); a failover ends it (errRouted)
+				err = h.slotTS(ctx, ch, out, nil, func(string) {
+					if rw != nil {
+						rw.next()
+					}
+				})
+				if errors.Is(err, errChannelRemoved) {
+					return nil // the channel left the lineup: the connection ends (33.7 AC8)
+				}
 			case p.Host == h.Self:
 				err = h.Engine.StreamChannelTS(ctx, ch, cw)
 			default:

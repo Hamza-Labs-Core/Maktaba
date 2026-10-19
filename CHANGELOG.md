@@ -11,6 +11,20 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- TV hot swap, push continuity and rollback (Epic 33 stories 33.7, 33.8,
+  33.9): an approved TV change goes on the air in the front door, channel by
+  channel at each one's programme boundary (`swap_wait`; a channel nobody
+  watches at once; a rolling swap when the encoder budget is short): the HLS
+  playlist continues on the new slot after one discontinuity, Plex/TS
+  connections and the Cloudflare push are spliced at the keyframe both slots
+  share without closing them (one push session, the same video, simulcast
+  outputs untouched). The old live slot stays warm for `keep_warm_minutes`
+  (15) as the rollback target. Roll back on the Changes page (and
+  `GET/POST /api/tv/rollback`): warm (instant) while that slot is up, cold
+  (the previous release staged again) within `rollback_retention_hours`; a
+  crash of the new live slot in that window rolls back by itself. A live
+  crash never puts an unapproved staged change on the air. Slot 0131
+  `tv_swap_ops`, `tv_channel_switch`; pipeline stage `tv_rollback`.
 - TV slots and the hot standby (Epic 33 stories 33.1, 33.4): the channel
   engine runs in TV slot processes (`maktaba-streaming slot --slot
   blue|green|amber`, supervisor role `tv-slot`, loopback 8791-8793, probes

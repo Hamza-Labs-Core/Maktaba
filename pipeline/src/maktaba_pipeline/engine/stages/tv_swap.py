@@ -1,7 +1,9 @@
 """``tv_swap`` (Epic 33): put an approved TV change (``payload.change_id``, in
-``swapping``) on the air - the swap commit of :mod:`...tvrelease.commit`. Until the
-two-slot runtime (stories 33.1 / 33.7) lands this commit is the whole swap (the interim:
-see that module); the controller enqueues it when an approved change's ``swap_at`` is
+``swapping``) on the air - the swap commit of :mod:`...tvrelease.commit`. With TV slots it
+is the database half of the swap (lineup, settings, generation flip and the front door's
+swap operation, one transaction); the front door then switches each channel at its
+programme boundary and the controller makes the change live. Without slots the commit is
+the whole swap. The controller enqueues it when an approved change's ``swap_at`` is
 reached or an admin presses Swap now."""
 
 from __future__ import annotations

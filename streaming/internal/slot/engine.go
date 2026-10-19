@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,22 +90,108 @@ type Repo struct {
 	*channel.PGRepo
 	State *State
 	Reads channel.Repo
+	// Bound, when set and bound, is the release the slot was pinned to after its
+	// start (it wins over Reads).
+	Bound *Binding
+}
+
+func (r Repo) reads() channel.Repo {
+	if r.Bound != nil {
+		if b := r.Bound.Repo(); b != nil {
+			return b
+		}
+	}
+	return r.Reads
 }
 
 // ProgramsFrom implements channel.Repo (the release's generation when bound).
 func (r Repo) ProgramsFrom(ctx context.Context, id uuid.UUID, from time.Time, limit int) ([]channel.ProgramBlock, error) {
-	if r.Reads != nil {
-		return r.Reads.ProgramsFrom(ctx, id, from, limit)
+	if rr := r.reads(); rr != nil {
+		return rr.ProgramsFrom(ctx, id, from, limit)
 	}
 	return r.PGRepo.ProgramsFrom(ctx, id, from, limit)
 }
 
 // Look implements channel.Repo (the release's definition when bound).
 func (r Repo) Look(ctx context.Context, id uuid.UUID) (channel.Look, error) {
-	if r.Reads != nil {
-		return r.Reads.Look(ctx, id)
+	if rr := r.reads(); rr != nil {
+		return rr.Look(ctx, id)
 	}
 	return r.PGRepo.Look(ctx, id)
+}
+
+// Binding is the TV release a slot airs when it is pinned to one after its
+// start (story 33.7): an unbound slot airs the live generation, which the swap
+// commit flips — so before a swap the front door pins the live slot and the
+// hot standby to the live release, and they keep airing it while the new
+// release takes over channel by channel (and as the rollback target after).
+type Binding struct {
+	mu   sync.RWMutex
+	repo channel.Repo
+	raw  func(section string) json.RawMessage
+}
+
+// Set binds the slot to a release's repo and settings.
+func (b *Binding) Set(repo channel.Repo, raw func(section string) json.RawMessage) {
+	b.mu.Lock()
+	b.repo, b.raw = repo, raw
+	b.mu.Unlock()
+}
+
+// Repo is the bound release's repo (nil: unbound).
+func (b *Binding) Repo() channel.Repo {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.repo
+}
+
+// Raw is the bound release's settings (nil: unbound).
+func (b *Binding) Raw() func(section string) json.RawMessage {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.raw
+}
+
+// BoundSettings are the bound release's settings once bound, else Base's.
+type BoundSettings struct {
+	Base  channel.Settings
+	Bound *Binding
+}
+
+func (s BoundSettings) release() (ReleaseSettings, bool) {
+	if s.Bound != nil {
+		if raw := s.Bound.Raw(); raw != nil {
+			return ReleaseSettings{Raw: raw}, true
+		}
+	}
+	return ReleaseSettings{}, false
+}
+
+// TV implements channel.Settings.
+func (s BoundSettings) TV(ctx context.Context) channel.TVSettings {
+	if r, ok := s.release(); ok {
+		return r.TV(ctx)
+	}
+	return s.Base.TV(ctx)
+}
+
+// Output implements channel.Settings.
+func (s BoundSettings) Output(ctx context.Context) channel.OutputSettings {
+	if r, ok := s.release(); ok {
+		return r.Output(ctx)
+	}
+	return s.Base.Output(ctx)
+}
+
+// Strip implements channel.StripSource.
+func (s BoundSettings) Strip(ctx context.Context) channel.StripSettings {
+	if r, ok := s.release(); ok {
+		return r.Strip(ctx)
+	}
+	if ss, ok := s.Base.(channel.StripSource); ok {
+		return ss.Strip(ctx)
+	}
+	return channel.DefaultStripSettings()
 }
 
 // ReleaseSettings are a release's rules (tv, tv_output, tv_strip) over the

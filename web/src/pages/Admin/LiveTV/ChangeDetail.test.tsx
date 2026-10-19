@@ -1,6 +1,6 @@
 // Story 33.11 TC2 / TC3: the change detail - each tab renders its fixture (renumber,
 // add, remove, schedule diff, settings diff, art, checks failures first, history with
-// the audit rows), the actions follow allowed_actions (rollback disabled until 33.9),
+// the audit rows), the actions follow allowed_actions (rollback: warm / cold / none, 33.9),
 // and the approve dialog (expected switch times, the param-change acknowledgement, the
 // second-admin rule).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -184,18 +184,37 @@ describe("Change detail", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Staging");
   });
 
-  it("a live change: Roll back is shown disabled until story 33.9", async () => {
+  it("a live change: Roll back says warm (instant) and the minutes left, and rolls back", async () => {
     renderDetail(liveChange.id);
     await screen.findByTestId("change-detail");
+    expect(await screen.findByTestId("rollback-mode")).toHaveTextContent(
+      "Warm (instant) — 12 min left"
+    );
     const btn = screen.getByTestId("action-rollback");
-    expect(btn).toBeDisabled();
-    const wrap = screen.getByTestId("action-rollback-wrap");
-    await userEvent.setup().hover(wrap);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Arrives with story 33.9");
+    expect(btn).toBeEnabled();
     expect(screen.getByRole("link", { name: "the pipeline job" })).toHaveAttribute(
       "href",
       "/queue/write_channels"
     );
+    post.mockResolvedValueOnce({ mode: "warm", change_id: liveChange.id, op_id: 7 });
+    const user = userEvent.setup();
+    await user.click(btn);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Every channel switches back to the previous version now");
+    await user.click(within(dialog).getByRole("button", { name: "Roll back" }));
+    expect(post).toHaveBeenCalledWith("/api/tv/rollback", {});
+    expect(await screen.findByRole("status")).toHaveTextContent("Rolling back");
+  });
+
+  it("Roll back is disabled with the reason when there is no rollback point", async () => {
+    get.mockImplementation(async (path: string) =>
+      path === "/api/tv/rollback" ? { mode: "none", reason: "retention_expired" } : answer(path)
+    );
+    renderDetail(liveChange.id);
+    await screen.findByTestId("change-detail");
+    await waitFor(() => expect(screen.getByTestId("action-rollback")).toBeDisabled());
+    await userEvent.setup().hover(screen.getByTestId("action-rollback-wrap"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("The rollback point expired");
   });
 
   it("a failed change has no actions", async () => {

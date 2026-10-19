@@ -57,6 +57,119 @@ type Server struct {
 	pubs []*Publish
 	wg   sync.WaitGroup
 	done chan struct{}
+	taps map[string][]*tap
+	// last sequence headers / metadata per key (a tap that attaches late
+	// starts with them)
+	heads map[string]map[byte][]byte
+}
+
+// tap is a live FLV copy of a stream key's publish (Tap).
+type tap struct {
+	ch   chan []byte
+	once sync.Once
+}
+
+func (t *tap) close() { t.once.Do(func() { close(t.ch) }) }
+
+// Tap is a live FLV byte stream of what the publisher of key sends (the FLV
+// header, the last sequence headers, then every audio/video tag as it arrives):
+// what a Cloudflare live input relays to its outputs. It ends (EOF) when that
+// publisher disconnects. A slow reader loses tags rather than holding up the
+// publisher.
+func (s *Server) Tap(key string) io.ReadCloser {
+	t := &tap{ch: make(chan []byte, 4096)}
+	s.mu.Lock()
+	if s.taps == nil {
+		s.taps = map[string][]*tap{}
+	}
+	s.taps[key] = append(s.taps[key], t)
+	pre := [][]byte{{'F', 'L', 'V', 1, 5, 0, 0, 0, 9, 0, 0, 0, 0}}
+	for _, typ := range []byte{18, 9, 8} {
+		if b, ok := s.heads[key][typ]; ok {
+			pre = append(pre, flvTag(typ, 0, b))
+		}
+	}
+	s.mu.Unlock()
+	for _, b := range pre {
+		t.ch <- b
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		for b := range t.ch {
+			if _, err := pw.Write(b); err != nil {
+				break
+			}
+		}
+		_ = pw.Close()
+	}()
+	return &tapReader{PipeReader: pr, stop: func() {
+		s.mu.Lock()
+		ts := s.taps[key]
+		for i, x := range ts {
+			if x == t {
+				s.taps[key] = append(ts[:i], ts[i+1:]...)
+				break
+			}
+		}
+		s.mu.Unlock()
+		t.close()
+	}}
+}
+
+type tapReader struct {
+	*io.PipeReader
+	stop func()
+}
+
+func (r *tapReader) Close() error {
+	r.stop()
+	return r.PipeReader.Close()
+}
+
+// flvTag is one FLV tag (and the previous-tag-size after it).
+func flvTag(typ byte, ts uint32, body []byte) []byte {
+	n := len(body)
+	out := make([]byte, 0, 11+n+4)
+	out = append(out, typ, byte(n>>16), byte(n>>8), byte(n), byte(ts>>16), byte(ts>>8), byte(ts), byte(ts>>24), 0, 0, 0)
+	out = append(out, body...)
+	size := uint32(11 + n)
+	return append(out, byte(size>>24), byte(size>>16), byte(size>>8), byte(size))
+}
+
+// feed copies a message to the key's taps (and remembers sequence headers).
+func (s *Server) feed(key string, typ byte, ts uint32, b []byte, head bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if head {
+		if s.heads == nil {
+			s.heads = map[string]map[byte][]byte{}
+		}
+		if s.heads[key] == nil {
+			s.heads[key] = map[byte][]byte{}
+		}
+		s.heads[key][typ] = append([]byte(nil), b...)
+	}
+	if len(s.taps[key]) == 0 {
+		return
+	}
+	tag := flvTag(typ, ts, b)
+	for _, t := range s.taps[key] {
+		select {
+		case t.ch <- tag:
+		default: // a slow reader drops a tag
+		}
+	}
+}
+
+// endTaps ends the key's taps (its publisher went away).
+func (s *Server) endTaps(key string) {
+	s.mu.Lock()
+	ts := s.taps[key]
+	delete(s.taps, key)
+	s.mu.Unlock()
+	for _, t := range ts {
+		t.close()
+	}
 }
 
 // Listen starts a server on 127.0.0.1 (TLS: RTMPS with a self-signed cert).
@@ -186,6 +299,7 @@ func (s *Server) serve(nc net.Conn) {
 		c.pub.End = time.Now()
 		key := c.pub.Key
 		s.mu.Unlock()
+		s.endTaps(key)
 		if s.OnClose != nil {
 			s.OnClose(key)
 		}
@@ -326,13 +440,20 @@ func (c *conn) message(typ byte, ts, _ uint32, b []byte) error {
 			return nil
 		}
 		t := Tag{Type: typ, TS: ts, At: time.Now()}
+		head := false
 		if typ == 9 && len(b) >= 2 {
 			t.Key = b[0]>>4 == 1
 			t.SeqHeader = b[0]&0x0f == 7 && b[1] == 0
+			head = t.SeqHeader
+		}
+		if typ == 8 && len(b) >= 2 && b[0]>>4 == 10 && b[1] == 0 {
+			head = true // the AAC sequence header
 		}
 		c.s.mu.Lock()
 		c.pub.Tags = append(c.pub.Tags, t)
+		key := c.pub.Key
 		c.s.mu.Unlock()
+		c.s.feed(key, typ, ts, b, head)
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ import {
   reconcile,
   tvChangesApi,
   type ChangeAction,
+  type RollbackPoint,
   type StagingConfig,
   type TvChangeDetail,
 } from "../../../lib/tvChanges";
@@ -52,9 +53,13 @@ export function AdminTvChangeDetail() {
 }
 
 /** Actions not built yet: shown, disabled, with the story that brings them. */
-const NOT_YET: Partial<Record<ChangeAction, string>> = { rollback: "33.9" };
+const NOT_YET: Partial<Record<ChangeAction, string>> = {};
 
-type Dialog = { kind: "swap"; mode: SwapDialogMode } | { kind: "cancel" } | null;
+type Dialog =
+  | { kind: "swap"; mode: SwapDialogMode }
+  | { kind: "cancel" }
+  | { kind: "rollback" }
+  | null;
 
 /** channel id → "101 Quran", from everything the change names. */
 function channelNames(
@@ -87,6 +92,7 @@ function DetailInner() {
   const [busy, setBusy] = useState<ChangeAction | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [tab, setTab] = useState("lineup");
+  const [point, setPoint] = useState<RollbackPoint | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +115,21 @@ function DetailInner() {
     }
   }, 60_000);
 
+  // story 33.9 AC7: warm (instant) while the previous slot is up, cold after, none
+  const canRollback = !!change?.allowed_actions.includes("rollback");
+  useVisiblePoll(
+    async () => {
+      try {
+        const p = await tvChangesApi.rollbackPoint();
+        setPoint((prev) => reconcile(prev, p));
+      } catch {
+        /* the button stays as it was */
+      }
+    },
+    CHANGES_POLL_MS,
+    canRollback
+  );
+
   const names = useMemo(() => (change ? channelNames(change, t) : {}), [change, t]);
 
   async function run(a: ChangeAction) {
@@ -121,18 +142,33 @@ function DetailInner() {
       setDialog({ kind: "cancel" });
       return;
     }
+    if (a === "rollback") {
+      setDialog({ kind: "rollback" });
+      return;
+    }
     setBusy(a);
     setMsg(null);
     try {
       const out =
-        a === "stage"
-          ? await tvChangesApi.stage(change.id)
-          : a === "verify"
-            ? await tvChangesApi.verify(change.id)
-            : await tvChangesApi.rollback();
+        a === "stage" ? await tvChangesApi.stage(change.id) : await tvChangesApi.verify(change.id);
       if (out && typeof out === "object" && "id" in (out as object))
         setChange(out as TvChangeDetail);
       setMsg({ ok: true, text: t(`tvchanges.done.${a}`) });
+    } catch (e) {
+      setMsg({ ok: false, text: actionError(t, e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rollback() {
+    if (!change) return;
+    setBusy("rollback");
+    try {
+      const r = await tvChangesApi.rollback();
+      setMsg({ ok: true, text: t(`tvchanges.done.rollback.${r.mode}`) });
+      setDialog(null);
+      void load();
     } catch (e) {
       setMsg({ ok: false, text: actionError(t, e) });
     } finally {
@@ -249,6 +285,7 @@ function DetailInner() {
         )}
         {shownActions.map((a) => {
           const story = NOT_YET[a];
+          const noPoint = a === "rollback" && point?.mode === "none";
           const btn = (
             <Button
               key={a}
@@ -260,14 +297,34 @@ function DetailInner() {
                     ? "primary"
                     : "secondary"
               }
-              disabled={!!story || busy !== null}
-              aria-disabled={story ? true : undefined}
+              disabled={!!story || noPoint || busy !== null}
+              aria-disabled={story || noPoint ? true : undefined}
               onClick={() => void run(a)}
               data-testid={`action-${a}`}
             >
               {t(`tvchanges.action.${a}`)}
             </Button>
           );
+          const hint =
+            a === "rollback" && point ? (
+              <span key={`${a}-hint`} className="mkt-tvx-muted" data-testid="rollback-mode">
+                {rollbackHint(point, t, n)}
+              </span>
+            ) : null;
+          if (noPoint)
+            return (
+              <Tooltip key={a} label={rollbackHint(point, t, n)}>
+                <span tabIndex={0} className="mkt-tvx-tipwrap" data-testid={`action-${a}-wrap`}>
+                  {btn}
+                </span>
+              </Tooltip>
+            );
+          if (hint)
+            return (
+              <span key={a} className="mkt-tvx-tipwrap">
+                {btn} {hint}
+              </span>
+            );
           return story ? (
             <Tooltip key={a} label={t("tvchanges.notYet", { story })}>
               <span tabIndex={0} className="mkt-tvx-tipwrap" data-testid={`action-${a}-wrap`}>
@@ -371,8 +428,42 @@ function DetailInner() {
           <p>{t("tvchanges.dialog.cancel.intro")}</p>
         </ConfirmDialog>
       )}
+      {dialog?.kind === "rollback" && (
+        <ConfirmDialog
+          title={t("tvchanges.dialog.rollback.title", { n: n(change.number) })}
+          confirmLabel={t("tvchanges.dialog.rollback.confirm")}
+          busy={busy === "rollback"}
+          onConfirm={() => void rollback()}
+          onClose={() => setDialog(null)}
+        >
+          <p>
+            {t(
+              point?.mode === "cold"
+                ? "tvchanges.dialog.rollback.cold"
+                : "tvchanges.dialog.rollback.warm"
+            )}
+          </p>
+          {point && <p className="mkt-tvx-muted">{rollbackHint(point, t, n)}</p>}
+        </ConfirmDialog>
+      )}
     </section>
   );
+}
+
+/** "warm (instant) — 12 min left", "cold (~3 min)", or why there is no rollback point. */
+function rollbackHint(
+  p: RollbackPoint,
+  t: (k: string, v?: Record<string, string | number>) => string,
+  n: (v: number) => string
+): string {
+  if (p.mode === "warm") {
+    const left = p.until ? Math.max(0, Math.ceil((Date.parse(p.until) - Date.now()) / 60_000)) : 0;
+    return p.until
+      ? t("tvchanges.rollback.warm", { min: n(left) })
+      : t("tvchanges.rollback.warmNow");
+  }
+  if (p.mode === "cold") return t("tvchanges.rollback.cold");
+  return t(`tvchanges.rollback.none.${p.reason ?? "no_rollback_point"}`);
 }
 
 function progressText(

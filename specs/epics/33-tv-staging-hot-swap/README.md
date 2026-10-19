@@ -410,6 +410,7 @@ files exist (its rule). Each has a `.sqlite.sql` sibling like every channel migr
 | 0128 | 33.3 | `0128_tv_sched_generations.sql` (NO TRANSACTION, built) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`; **breaking for older nodes**: `maktaba_min_node_schema()` returns 128. |
 | 0129 | 33.1, 33.7 | `0129_tv_slots.sql` (provisional) | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (Epic 32 placements, now proposed 0121) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
 | 0130 | 33.13 | `0130_notifications.sql` (built) | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`; `notification_cursors`; `audit_log_category_check` gains `tv_change`, `tv_remote`) — the first user of a general in-app table (decision 8). |
+| 0131 | 33.7, 33.9 | `0131_tv_swap_ops.sql` (built) | `tv_swap_ops` (id, change_id, kind swap/rollback, scope, release_id, from_release_id, epoch, reason, state planned/switching/done/failed/cancelled, committed, created_by, host_id, from_slot, to_slot, detail, created/started/done_at) and `tv_channel_switch` (op_id, change_id, channel_id, switch_at, state planned/switched/skipped, removed, switched_at, detail; PK op + channel) — in place of the design's `tv_channel_switch (change_id, channel_id)`: a change can be swapped and rolled back; `job_stages` `tv_rollback`. See "As built: 33.7, 33.8, 33.9". |
 
 `channel_runtime` (0083/0117) gains nothing: a slot writes its rows with `host_id = <host>/<slot>`
 so the On air page (Epic 32.5) shows both slots during a swap.
@@ -683,7 +684,7 @@ capacity (future).
   boundary, or a set time; the swap mode; the expected switch time per channel from
   `GET /api/tv/changes/{id}/boundaries?at=&swap_wait=`, capped at `boundary_max_wait_minutes`; the
   param-change acknowledgement when `push.continuity` fails; the second-admin rule), Cancel confirms,
-  Roll back is shown disabled with "arrives with story 33.9". Every change reply carries `users`
+  Roll back is shown disabled with "arrives with story 33.9" (enabled by 33.9, below). Every change reply carries `users`
   (id → name), `audit` and `release`.
 - **Live updates**: the page and the detail re-read every 2 s while visible; a poll that brings the
   same data keeps the same objects (`reconcile` / `reconcileList`), sections are always present in
@@ -709,3 +710,107 @@ capacity (future).
   handler's row, now with from / to. Slot 0130 also widens `audit_log_category_check` with
   `tv_change` and `tv_remote`: on Postgres both categories were refused before (the 0054 check), so
   the 33.10 audit rows were never written there.
+
+## As built: 33.7, 33.8, 33.9 (the swap in the front door, push continuity, rollback)
+
+- **The commit stays in the pipeline; the controller drives the front door through the
+  database.** `tvrelease/commit.py` (the `tv_swap` job the controller's `startSwap` /
+  `startSwapBy` enqueue) is still the one swap transaction (lineup, art, settings,
+  bookkeeping, re-anchor, `tv_routing` flip with `epoch + 1` and `previous_until`, the
+  previous live change superseded, `plex_livetv` forced). With TV slots (a live slot beat
+  in the last 30 s) the same transaction writes the front door's swap operation: slot
+  **0131** `tv_swap_ops` (kind `swap`, the release it airs and the one it replaces, the
+  commit's epoch, `committed`) and one `tv_channel_switch` row per channel of both
+  lineups with its planned instant (`swap_wait = boundary`: the end of the programme on
+  the air in generation N, capped at `boundary_max_wait_minutes`; `immediate`, an added
+  channel: the commit; a removed channel: its boundary, `removed`). The change stays
+  `swapping` (event `swap_commit`); the controller (`api/internal/tvchange/swap.go`,
+  `tickOps`) moves it to `live` (`swap_done`, with the counts and the slots) when the
+  front door marks the operation `done`. Without slots (SQLite, `[tv] slots = off`) the
+  commit is the whole swap, as before. Deviation from plan 33.7 (a POST to
+  `/internal/tv/routing/swap` and a Go `swap.go` commit): the front door polls
+  `tv_swap_ops` every second (it resumes a swap after its own restart; no signing, no
+  URL), and the commit stays in Python, where the lineup apply and the re-anchor are.
+  Slot roles are the front door's (it writes `tv_slots.role` under its role epoch);
+  placements have no `track` (the home's slots share the channel's placement).
+- **The front door** (`streaming/internal/frontdoor/swap.go`, `RunOps`): takes the
+  operation, finds the target — the slot whose status reports the operation's release
+  (the staging slot; when none runs it, it asks the supervisor to start one, unbound so
+  it binds to the release the commit made live); a target that never answers fails the
+  operation after 90 s (the controller rolls the commit back). A channel nobody watches
+  switches at once; a watched one at its instant; with a short encoder budget the
+  instants are spread `budget` at a time, 20 s apart, the target warms each channel only
+  shortly before and the old live slot lets it go right after (rolling swap,
+  `rolling_swap`). Per channel: `Route` (new connections), `Plan` (the splicers). Every
+  instant passed with the target healthy → `switched`; down → tried once more 5 s later,
+  then `skipped` (more than a quarter skipped: the controller rolls back). 8 s after the
+  last instant the target is live, the old live slot `previous` until `previous_until`
+  (warm on the watched channels), the old standby drained; at the end of the grace the
+  previous slot drains and a standby starts on the live release. A routing switch during
+  an operation answers 409 `swap_in_progress`. `POST /internal/tv/routing/staging {slot}`
+  (signed, loopback) gives an instance that runs a staged release the staging role (the
+  hook story 33.5's staging start uses; the staging slot is never a failover target).
+- **HLS** (`Stitcher.Plan`): the live slot's segments are listed while they end by the
+  instant; the target's segment that starts where the last one ended follows after one
+  `EXT-X-DISCONTINUITY` (media sequence continuing, PDT continuous: 0 ms in the test).
+  When a new source cuts its segments elsewhere (a station started off the grid) the
+  segment holding that instant is taken (an overlap of less than a segment) instead of
+  skipping one. A removed channel's playlist gets `EXT-X-ENDLIST` at its instant.
+- **TS** (`tssplice.go`): each connection — Plex's tuners, `live.ts`, and the push relay —
+  opens the target's TS 10 s before the instant, reads it alongside, and at the live
+  slot's first IDR at or after the instant continues from the target's IDR with the same
+  PTS (story 33.4 makes them equal): the target's PAT/PMT, then its packets; the retimer
+  behind continues the continuity counters and finds no offset. When the live slot's IDR
+  arrives first its packets wait up to 1 s for the target's; no match 6 s after the
+  instant: the target joins at its newest IDR, retimed. The connection is never closed.
+- **Push and simulcast (33.8)** are the TS path: the relay's source (`RelaySource`) is a
+  front-door TS client, so a swap, rollback or failover is a source switch inside one
+  Stream — one ffmpeg, one RTMPS session, the same Cloudflare video, the simulcast
+  outputs untouched. Staging never pushes (the relay reads only the routed slot).
+  Not built: the in-session parameter-change spike (TC7, manual) and the reconnect /
+  `param_change_push = defer` handling of a resolution change on a pushed channel (the
+  retimer still reconnects on a stream-layout change, as before); multi-host staging
+  placements (`track = staging`): nodes run one engine and follow the live generation,
+  which the commit flips (N+1 equals N before each boundary).
+- **Release binding.** A slot started without `MAKTABA_TV_RELEASE` binds itself to the
+  live release at its start, and the front door pins an unbound live slot or standby
+  (`POST /internal/tv/slot/bind`), so the commit's generation flip never changes what the
+  old slots air: the previous slot keeps release N for a warm rollback.
+- **Rollback (33.9).** `GET /api/tv/rollback` is the rollback point (`warm` with the
+  previous slot and `until`, `cold` until the retention, `none` and why);
+  `POST /api/tv/rollback` (admin): warm — while the previous slot beats and
+  `previous_until` is ahead (or the change is still swapping, EC1) — writes a `rollback`
+  operation (every channel at once) and enqueues the reverse commit, the new
+  `tv_rollback` job (`tvrelease/rollback.py`: the previous release's lineup back, the
+  channels it added `staged` again, its art and settings, `tv_routing` back to the
+  previous generation with `epoch + 1` and no rollback point left, the change
+  `rolled_back` with `end_reason`, `plex_livetv`, and a draft "Re-stage #n" with its
+  edits, AC6); a change in flight is cancelled first (EC2). Cold — after the grace, within
+  `rollback_retention_hours` — creates a `rollback` change whose pending edits turn the
+  live snapshot into the previous release's (every channel the live release regenerated
+  planned anew from its boundary) and stages it; the request is its approval
+  (`require_second_admin` still applies). Retention over: 409 `no_rollback_point`.
+  Not reverted by the reverse commit: `write_channels`' links and filler pools.
+- **Automatic rollback**: the front door, when the live slot is lost inside the grace
+  (`auto_rollback`, on), routes every channel to the previous slot at once (20 ms after
+  the kill in the test) and writes a `rollback` operation (`reason = auto:crash`); the
+  controller enqueues its reverse commit. A slot lost during a swap: the old live slot →
+  the remaining channels switch now; the target → the operation fails and the channels
+  read the old live slot (the controller rolls the commit back). Outside the grace a crash
+  fails over to the hot standby as before — never to staging. Not built: the post-swap
+  health-check trigger (needs 33.5's checks) and a separate crash-loop counter (the first
+  crash in the grace already rolls back).
+- **Changes page**: Roll back is enabled; it says "Warm (instant) — 12 min left",
+  "Cold (~3 min)" or why there is no rollback point (disabled), confirms, and reports the
+  mode. en + ar.
+- **Measured** (`api/internal/tvremote/swap_e2e_test.go`, `TestSwapRollbackEndToEnd`, real
+  ffmpeg, three slots, one machine): swap — the TS splice at the boundary IDR with
+  `late_ms=0`, the HLS discontinuity at the boundary with 0 ms PDT gap, the unwatched
+  channel switched at once; warm rollback — the viewers back on the previous slot about
+  1.5-2 s after the request (the next keyframe); automatic rollback — routed back 20 ms
+  after the kill, HLS on the previous slot within 1 s; across two swaps, two rollbacks
+  and a failover: one ingest session, largest video gap 34-375 ms, the simulcast output's
+  one session never disconnected, TS one connection with frame-continuous timestamps.
+  Metrics: `maktaba_tv_swaps_total`, `maktaba_tv_channel_switches_total`,
+  `maktaba_tv_ts_splices_total{mode}`, `maktaba_tv_hls_stitches_total`,
+  `maktaba_tv_rollbacks_total{reason}`, `maktaba_tv_channel_switch_latency_seconds`.

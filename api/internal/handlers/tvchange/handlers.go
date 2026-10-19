@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,6 +70,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/tv/changes/{id}/cancel", h.Cancel)
 	r.Post("/api/tv/changes/{id}/preview", h.Preview)
 	r.Post("/api/tv/rollback", h.Rollback)
+	r.Get("/api/tv/rollback", h.RollbackPoint)
 	r.Get("/api/tv/slots", h.Slots)
 	r.Get("/api/tv/releases", h.Releases)
 	mountPage(r, h)
@@ -564,12 +566,59 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 	notYet(w, r, "the staging preview", "33.6")
 }
 
-// Rollback serves POST /api/tv/rollback (story 33.9).
+// Rollback serves POST /api/tv/rollback {to_release_id?} (story 33.9): warm while
+// the previous slot is up (every channel back at once, the reverse commit follows),
+// cold within the retention (a rollback change that re-stages the previous release;
+// this request is its approval), 409 no_rollback_point otherwise.
 func (h *Handler) Rollback(w http.ResponseWriter, r *http.Request) {
+	p, ok := admin(w, r)
+	if !ok {
+		return
+	}
+	if h.Controller == nil {
+		httperror.Write(w, r, httperror.Internal("no change controller"))
+		return
+	}
+	var body struct {
+		ToReleaseID string `json:"to_release_id"`
+	}
+	if b, _ := io.ReadAll(io.LimitReader(r.Body, 4096)); len(b) > 0 {
+		if err := json.Unmarshal(b, &body); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("bad body"))
+			return
+		}
+	}
+	res, err := h.Controller.Rollback(r.Context(), actorOf(p), body.ToReleaseID)
+	if err != nil {
+		var ce *core.ConflictError
+		if errors.As(err, &ce) {
+			httperror.Write(w, r, httperror.Conflict("", ce.Error()).With("error", ce.Error()))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("rollback: "+err.Error()))
+		return
+	}
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "rollback", res.ChangeID, map[string]any{"mode": res.Mode,
+		"op_id": res.OpID, "rollback_change_id": res.RollbackChangeID})
+	common.WriteJSON(w, r, http.StatusAccepted, res)
+}
+
+// RollbackPoint serves GET /api/tv/rollback: what a rollback would do now (warm
+// until, cold until, or none and why; story 33.9 AC7).
+func (h *Handler) RollbackPoint(w http.ResponseWriter, r *http.Request) {
 	if _, ok := admin(w, r); !ok {
 		return
 	}
-	notYet(w, r, "rollback", "33.9")
+	if h.Controller == nil {
+		common.WriteJSON(w, r, http.StatusOK, core.RollbackPoint{Mode: "none", Reason: "no_controller"})
+		return
+	}
+	pt, err := h.Controller.Point(r.Context())
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("rollback point: "+err.Error()))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, pt)
 }
 
 // Slot is one TV slot of a streaming host (tv_slots, story 33.1).

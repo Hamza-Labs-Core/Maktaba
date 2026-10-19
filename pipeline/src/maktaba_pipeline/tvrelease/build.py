@@ -196,6 +196,9 @@ def compute_diff(
         kinds.add("schedule")
     if changed and not kinds & {"lineup", "schedule"}:
         kinds.add("lineup")  # transition and the like: still a definition change
+    if pending.get("rollback"):
+        # story 33.9 AC4: a cold rollback re-stages a previous release as a change
+        kinds.add("rollback")
     binary = None
     if streaming is not None and streaming[0] != streaming[1]:
         kinds.add("binary")

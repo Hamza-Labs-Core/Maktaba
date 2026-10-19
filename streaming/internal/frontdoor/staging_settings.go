@@ -22,6 +22,18 @@ type StagingSettings struct {
 	// remote viewers, within the encoder budget) or "demand" (every channel with
 	// demand, as live, within the budget).
 	StandbyWarm string
+	// AutoRollback: a live-slot crash inside a swap's grace rolls back to the
+	// previous slot (story 33.9 AC5; default on).
+	AutoRollback bool
+	// KeepWarm: how long the old live slot stays up as the warm rollback target
+	// after a swap when tv_routing has no previous_until (keep_warm_minutes, 15).
+	KeepWarm time.Duration
+	// RollingSwap: "auto" (when the encoder budget cannot hold every watched
+	// channel twice), "always" or "never" (story 33.7 AC9).
+	RollingSwap string
+	// MaxExtra caps the extra encodes of a swap's target slot (0: the budget
+	// left after live and standby; staging_max_extra_encodes).
+	MaxExtra int
 }
 
 // Standby warm modes.
@@ -35,7 +47,8 @@ const (
 // (story 33.11) lands, then on; hot_standby on; standby_warm viewers, so the
 // standby never spends an encoder on a channel nobody watches by default.
 func DefaultStagingSettings() StagingSettings {
-	return StagingSettings{Enabled: false, HotStandby: true, StandbyWarm: StandbyWarmViewers}
+	return StagingSettings{Enabled: false, HotStandby: true, StandbyWarm: StandbyWarmViewers,
+		AutoRollback: true, KeepWarm: 15 * time.Minute, RollingSwap: "auto"}
 }
 
 // StagingActive reports whether staging may run (the setting and the build).
@@ -60,6 +73,19 @@ func ApplyStagingRules(base StagingSettings, raw []byte) StagingSettings {
 	if v, ok := m["standby_warm"]; ok && json.Unmarshal(v, &s) == nil &&
 		(s == StandbyWarmViewers || s == StandbyWarmDemand) {
 		out.StandbyWarm = s
+	}
+	if v, ok := m["auto_rollback"]; ok && json.Unmarshal(v, &b) == nil {
+		out.AutoRollback = b
+	}
+	var n float64
+	if v, ok := m["keep_warm_minutes"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 && n <= 1440 {
+		out.KeepWarm = time.Duration(n * float64(time.Minute))
+	}
+	if v, ok := m["staging_max_extra_encodes"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 && n <= 64 {
+		out.MaxExtra = int(n)
+	}
+	if v, ok := m["rolling_swap"]; ok && json.Unmarshal(v, &s) == nil && (s == "auto" || s == "always" || s == "never") {
+		out.RollingSwap = s
 	}
 	return out
 }
