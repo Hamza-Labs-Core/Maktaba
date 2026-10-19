@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
@@ -55,6 +56,12 @@ var (
 	oidSourceRepositoryURI = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 12}
 	oidSourceRepositoryRef = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 14}
 	oidBuildTrigger        = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 20}
+	oidRunnerEnvironment   = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 11}
+	oidSourceRepoDigest    = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 13}
+	oidSourceRepositoryID  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 15}
+	oidSourceRepoOwnerURI  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 16}
+	oidSourceRepoOwnerID   = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 17}
+	oidBuildConfigURI      = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 18}
 )
 
 // Sigstore is the fake instance.
@@ -160,6 +167,14 @@ type SignOptions struct {
 	RepositoryURI string
 	Ref           string
 	Trigger       string
+	// The rest of what Fulcio records for a GitHub Actions run; empty fields
+	// are left out of the certificate.
+	RepositoryID      string // numeric repository id
+	OwnerURI          string
+	OwnerID           string // numeric owner id
+	BuildConfigURI    string // the workflow the triggering event started
+	RunnerEnvironment string // "github-hosted" or "self-hosted"
+	Commit            string // source repository digest (the tagged commit)
 	// SignedAt is the Rekor integrated time (default now).
 	SignedAt time.Time
 	// NoTlog drops the transparency log entry; NoInclusionProof keeps the
@@ -170,14 +185,35 @@ type SignOptions struct {
 
 // GitHubRelease is the identity release.yml in repo gets for tag.
 func GitHubRelease(repo, tag string) SignOptions {
+	san := "https://github.com/" + repo + "/.github/workflows/release.yml@refs/tags/" + tag
+	owner, _, _ := strings.Cut(repo, "/")
+	repoID, ownerID := "1000", "2000" // any other repository's ids
+	if repo == defaultRepo {
+		repoID, ownerID = defaultRepoID, defaultOwnerID
+	}
 	return SignOptions{
-		SAN:           "https://github.com/" + repo + "/.github/workflows/release.yml@refs/tags/" + tag,
-		Issuer:        githubIssuer,
-		RepositoryURI: "https://github.com/" + repo,
-		Ref:           "refs/tags/" + tag,
-		Trigger:       "push",
+		SAN:               san,
+		Issuer:            githubIssuer,
+		RepositoryURI:     "https://github.com/" + repo,
+		Ref:               "refs/tags/" + tag,
+		Trigger:           "push",
+		RepositoryID:      repoID,
+		OwnerURI:          "https://github.com/" + owner,
+		OwnerID:           ownerID,
+		BuildConfigURI:    san,
+		RunnerEnvironment: "github-hosted",
+		Commit:            fakeCommit,
 	}
 }
+
+// DefaultRepo and its ids, duplicated from releaseverify (no import cycle).
+const (
+	defaultRepo    = "Hamza-Labs-Core/Maktaba"
+	defaultRepoID  = "1229315126"
+	defaultOwnerID = "247904019"
+	// fakeCommit is the commit FakeRelease's release.json names.
+	fakeCommit = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+)
 
 func derString(v string) []byte {
 	b, err := asn1.MarshalWithParams(v, "utf8")
@@ -213,8 +249,21 @@ func (s *Sigstore) SignBlob(artifact []byte, o SignOptions) ([]byte, error) {
 	if o.Ref != "" {
 		ext = append(ext, pkix.Extension{Id: oidSourceRepositoryRef, Value: derString(o.Ref)})
 	}
-	if o.Trigger != "" {
-		ext = append(ext, pkix.Extension{Id: oidBuildTrigger, Value: derString(o.Trigger)})
+	for _, e := range []struct {
+		id asn1.ObjectIdentifier
+		v  string
+	}{
+		{oidBuildTrigger, o.Trigger},
+		{oidRunnerEnvironment, o.RunnerEnvironment},
+		{oidSourceRepoDigest, o.Commit},
+		{oidSourceRepositoryID, o.RepositoryID},
+		{oidSourceRepoOwnerURI, o.OwnerURI},
+		{oidSourceRepoOwnerID, o.OwnerID},
+		{oidBuildConfigURI, o.BuildConfigURI},
+	} {
+		if e.v != "" {
+			ext = append(ext, pkix.Extension{Id: e.id, Value: derString(e.v)})
+		}
 	}
 	leafTmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),

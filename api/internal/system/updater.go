@@ -194,7 +194,10 @@ func (u *Updater) refreshRoots(ctx context.Context, force bool) {
 // due, failing closed when expired.
 func (u *Updater) trustedMaterial(ctx context.Context) (root.TrustedMaterial, error) {
 	if u.roots == nil {
-		return releaseverify.EmbeddedTrustedRoot()
+		// No cache configured: the embedded root, still held to the age
+		// limit (an expired root fails closed here too).
+		tm, _, err := (&releaseverify.RootStore{Now: u.now}).TrustedMaterial()
+		return tm, err
 	}
 	u.refreshRoots(ctx, false)
 	tm, _, err := u.roots.TrustedMaterial()

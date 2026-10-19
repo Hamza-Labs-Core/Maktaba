@@ -14,7 +14,13 @@
 #   MAKTABA_VERSION   release tag to install            (default: latest)
 #   MAKTABA_PREFIX    install dir for binaries          (default: /usr/local/bin)
 #   MAKTABA_SYSTEMD   1=install+enable unit, 0=skip     (default: prompt; 0 when non-interactive)
-#   MAKTABA_NO_VERIFY 1=skip checksum verification      (default: 0)
+#   MAKTABA_NO_VERIFY 1=skip checksum + signature verification (default: 0)
+#   MAKTABA_REQUIRE_COSIGN 1=refuse to install without cosign  (default: 0;
+#                     without cosign only the SHA-256 is checked)
+#
+# Verification fails closed: a release missing checksums.txt, its Sigstore
+# bundle or the archive's checksum entry is refused - release assets can be
+# replaced or deleted after publishing, the signature cannot be forged.
 set -euo pipefail
 
 REPO="Hamza-Labs-Core/Maktaba"
@@ -85,11 +91,18 @@ resolve_version() {
     echo "${tag}"
 }
 
+# A release tag is vMAJOR.MINOR.PATCH[-prerelease]; anything else would end
+# up in URLs and in the signing identity.
+valid_tag() {
+    printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+}
+
 main() {
     local os arch tag base archive url tmp
     os="$(detect_os)"
     arch="$(detect_arch)"
     tag="$(resolve_version)"
+    valid_tag "${tag}" || die "invalid release tag '${tag}' (want vX.Y.Z)"
     local ver="${tag#v}"
 
     info "Installing maktaba-server ${tag} for ${os}/${arch}"
@@ -109,14 +122,9 @@ main() {
     # Sigstore signature over checksums.txt (pinned to this repository's
     # release workflow for exactly this tag), then the archive's SHA-256.
     if [ "${MAKTABA_NO_VERIFY:-0}" != "1" ]; then
-        if fetch "${base}/checksums.txt" "${tmp}/checksums.txt" 2>/dev/null; then
-            verify_signature "${tmp}" "${base}" "${tag}"
-            info "Verifying SHA-256 checksum"
-            verify_checksum "${tmp}" "${archive}" \
-                || die "checksum verification failed for ${archive}"
-        else
-            warn "checksums.txt not found in release - skipping verification"
-        fi
+        verify_release "${tmp}" "${base}" "${tag}" "${archive}"
+    else
+        warn "MAKTABA_NO_VERIFY=1 - installing ${archive} without any verification"
     fi
 
     info "Extracting"
@@ -138,12 +146,25 @@ identity_for() {
     printf 'https://github.com/%s/.github/workflows/release.yml@refs/tags/%s' "${REPO}" "$1"
 }
 
+# verify_release <dir> <base-url> <tag> <archive>: the Sigstore signature over
+# checksums.txt, then the archive's SHA-256 against it. Every missing piece is
+# fatal: whoever can replace a release's assets can also delete some, and a
+# check skipped when its input is missing protects nothing.
+verify_release() {
+    local dir="$1" base="$2" tag="$3" archive="$4"
+    fetch "${base}/checksums.txt" "${dir}/checksums.txt" 2>/dev/null \
+        || die "release ${tag} has no checksums.txt - refusing to install it unverified (MAKTABA_NO_VERIFY=1 overrides)"
+    verify_signature "${dir}" "${base}" "${tag}"
+    info "Verifying SHA-256 checksum"
+    verify_checksum "${dir}" "${archive}" \
+        || die "checksum verification failed for ${archive}"
+}
+
 verify_signature() {
     local dir="$1" base="$2" tag="$3" id
     id="$(identity_for "${tag}")"
     if ! fetch "${base}/checksums.txt.sigstore.json" "${dir}/checksums.txt.sigstore.json" 2>/dev/null; then
-        warn "release ${tag} has no Sigstore bundle (published before signed manifests) - signature not checked"
-        return 0
+        die "release ${tag} has no Sigstore bundle (checksums.txt.sigstore.json) - refusing to install it (MAKTABA_NO_VERIFY=1 overrides)"
     fi
     if command -v cosign >/dev/null 2>&1; then
         info "Verifying the Sigstore signature of checksums.txt"
@@ -153,6 +174,8 @@ verify_signature() {
             "${dir}/checksums.txt" >/dev/null 2>&1 \
             || die "signature verification failed: checksums.txt is not signed by ${id}"
     else
+        [ "${MAKTABA_REQUIRE_COSIGN:-0}" != "1" ] \
+            || die "cosign not found and MAKTABA_REQUIRE_COSIGN=1 - install cosign first"
         warn "cosign not found - checksums.txt signature not checked. To check it yourself:"
         warn "  cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity '${id}' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt"
     fi
@@ -160,17 +183,23 @@ verify_signature() {
 
 verify_checksum() {
     local dir="$1" file="$2" want have
-    # checksums.txt lines look like "<sha256>  ./<file>" or "<sha256>  <file>".
-    want="$(grep -E "[[:space:]]\.?/?${file}\$" "${dir}/checksums.txt" \
-        | head -n1 | awk '{print $1}')"
-    [ -n "${want}" ] || { warn "no checksum entry for ${file}"; return 0; }
+    # checksums.txt lines look like "<sha256>  ./<file>" or "<sha256>  <file>"
+    # (sha256sum's binary marker "*" allowed). The name is compared exactly,
+    # not as a regexp, and a name listed twice is refused (never "first wins").
+    want="$(tr -d '\r' < "${dir}/checksums.txt" | awk -v f="${file}" \
+        '{ n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n); if (n == f) print $1 }')"
+    case "${want}" in
+        "") warn "no checksum entry for ${file}"; return 1 ;;
+        *[!0-9a-f]*) warn "bad or duplicate checksum entry for ${file}"; return 1 ;;
+    esac
+    [ "${#want}" -eq 64 ] || { warn "bad checksum entry for ${file}"; return 1; }
     if command -v sha256sum >/dev/null 2>&1; then
         have="$(sha256sum "${dir}/${file}" | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
         have="$(shasum -a 256 "${dir}/${file}" | awk '{print $1}')"
     else
-        warn "no sha256 tool found — skipping verification"
-        return 0
+        warn "no sha256 tool found (sha256sum or shasum)"
+        return 1
     fi
     [ "${want}" = "${have}" ]
 }
@@ -237,4 +266,7 @@ maybe_install_systemd() {
     fi
 }
 
-main "$@"
+# MAKTABA_INSTALL_LIB=1 only defines the functions (deploy/packaging/tests).
+if [ "${MAKTABA_INSTALL_LIB:-0}" != "1" ]; then
+    main "$@"
+fi
