@@ -6,7 +6,24 @@
 //
 // Contract: GET /api/cluster and the /api/cluster/* mutations (design §8),
 // re-read every POLL_MS while the page is open.
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+//
+// The page holds still while it updates: machines keep a fixed order (state,
+// then name), a poll that brings the same data re-renders nothing (unchanged
+// nodes keep their object, the cards are memoised), the skeleton shows on the
+// first load only, status lines keep their space whether or not they say
+// anything, and the hub's frames reach React at most once a second
+// (clusterStream). Per-job progress is not drawn here: each machine says how
+// many jobs it runs and links to the Processing page filtered by it.
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
@@ -18,17 +35,25 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
+import { JobsSummary } from "../../components/cluster/JobsSummary";
 import { LibraryPanel } from "../../components/cluster/LibraryPanel";
 import { LiveMachines } from "../../components/cluster/LiveMachines";
 import { LlmPanel } from "../../components/cluster/LlmPanel";
 import type { LogTarget } from "../../components/cluster/LogViewer";
 import { LogsPanel } from "../../components/cluster/LogsPanel";
+import {
+  HOME_HOST,
+  countsKey,
+  jobCounts,
+  reconcileView,
+} from "../../components/cluster/machineSummary";
 import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
-import { useClusterStream } from "../../lib/clusterStream";
+import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
 import type { SocketStatus } from "../../lib/clusterSocket";
 import { ApiError } from "../../lib/api";
 import {
@@ -71,31 +96,42 @@ function MachinesPage() {
   const files = useClusterFiles();
   const [tab, setTab] = useState("machines");
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
-  const queueLabel = useMemo(() => queueLabeller(stream.latestQueues), [stream.latestQueues]);
+  // the labels only change when the stages do, not on every queue sample
+  const labelsKey = (stream.latestQueues?.stages ?? [])
+    .map((s) => `${s.stage}\u0001${s.label}`)
+    .join("\u0002");
+  const queueLabel = useMemo(() => queueLabeller(stream.latestQueues), [labelsKey]);
   const [tone, statusKey] = STATUS_BADGE[stream.status];
-  const openLogs = (target: LogTarget) => {
+  const openLogs = useCallback((target: LogTarget) => {
     setLogTarget(target);
     setTab("logs");
-  };
+  }, []);
 
   return (
     <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
       <header className="mkt-mc__head">
         <div className="mkt-mc-row">
           <h1 id="mkt-mc-h">{t("machines.title")}</h1>
-          <Badge tone={tone} role="status">
-            {t(statusKey)}
-          </Badge>
+          <span className="mkt-mc-live">
+            <Badge tone={tone} role="status">
+              {t(statusKey)}
+            </Badge>
+          </span>
         </div>
         <p className="mkt-mc-muted">{t("machines.intro")}</p>
-        {stream.dropped > 0 && (
-          <p className="mkt-mc-muted">{t("cluster.status.dropped", { n: n(stream.dropped) })}</p>
-        )}
-        {stream.lastRefused && (
-          <p className="mkt-mc-note" role="note">
-            {t("cluster.status.refused", { reason: stream.lastRefused.reason ?? "–" })}
-          </p>
-        )}
+        {/* one line that is always there, so a note never pushes the page down */}
+        <p className="mkt-mc-statusline">
+          {stream.dropped > 0 && (
+            <span className="mkt-mc-muted">
+              {t("cluster.status.dropped", { n: n(stream.dropped) })}
+            </span>
+          )}
+          {stream.lastRefused && (
+            <span className="mkt-mc-warn" role="note">
+              {t("cluster.status.refused", { reason: stream.lastRefused.reason ?? "–" })}
+            </span>
+          )}
+        </p>
       </header>
       <Tabs
         label={t("cluster.tabs.label")}
@@ -107,10 +143,12 @@ function MachinesPage() {
             id: "machines",
             label: t("cluster.tabs.machines"),
             content: (
-              <div className="mkt-mc-tab">
-                <Approvals queueLabel={queueLabel} />
-                <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={openLogs} />
-              </div>
+              <MachinesOverview
+                stream={stream}
+                queueLabel={queueLabel}
+                onOpenLogs={openLogs}
+                extra={<RelayDoorCard />}
+              />
             ),
           },
           {
@@ -151,6 +189,37 @@ function MachinesPage() {
   );
 }
 
+/**
+ * The Machines tab: this home, the requests to join and the joined machines
+ * (Approvals), then what each connected machine is doing now (LiveMachines).
+ * Each section is its own component; a new one (say, the relay door's status)
+ * goes in `extra` or as one more child here, without touching the others.
+ */
+function MachinesOverview({
+  stream,
+  queueLabel,
+  onOpenLogs,
+  extra,
+}: {
+  stream: ClusterStream;
+  queueLabel: (stage: string) => string;
+  onOpenLogs: (target: LogTarget) => void;
+  extra?: ReactNode;
+}) {
+  // jobs per machine from the hub; the same counts keep the same object
+  const counts = jobCounts(stream.processes);
+  const key = countsKey(counts);
+  const live = stream.ready && stream.status === "open";
+  const jobs = useMemo(() => (live ? counts : null), [key, live]);
+  return (
+    <div className="mkt-mc-tab">
+      <Approvals queueLabel={queueLabel} jobs={jobs} />
+      {extra}
+      <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={onOpenLogs} jobs={jobs} />
+    </div>
+  );
+}
+
 function secondsUntil(iso: string | null | undefined): number | null {
   if (!iso) return null;
   const at = Date.parse(iso);
@@ -171,7 +240,16 @@ function useErrorToast() {
   );
 }
 
-function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
+type JobCounts = Record<string, number> | null;
+
+const Approvals = memo(function Approvals({
+  queueLabel,
+  jobs,
+}: {
+  queueLabel: (stage: string) => string;
+  /** jobs running per machine (node id / "home"); null while the hub is not connected */
+  jobs: JobCounts;
+}) {
   const { t } = useI18n();
   const [view, setView] = useState<ClusterView | null>(null);
   const [error, setError] = useState(false);
@@ -183,7 +261,7 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         .getCluster()
         .then((v) => {
           if (!alive.current) return;
-          setView(v);
+          setView((prev) => reconcileView(prev, v));
           setError(false);
         })
         .catch(() => {
@@ -202,6 +280,8 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
     };
   }, [load]);
 
+  const reload = useCallback(() => void load(), [load]);
+
   if (!view) {
     return error ? (
       <div role="alert" className="mkt-mc-banner">
@@ -211,24 +291,27 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         </Button>
       </div>
     ) : (
-      <p className="mkt-loading" role="status">
-        {t("common.loading")}
-      </p>
+      // the first load only: the shapes of what is coming, at their size
+      <div className="mkt-mc-skeleton" aria-busy="true">
+        <p className="mkt-visually-hidden" role="status">
+          {t("common.loading")}
+        </p>
+        <div className="mkt-mc-card mkt-mc-skel mkt-mc-skel--home" aria-hidden="true" />
+        <div className="mkt-mc-card mkt-mc-skel mkt-mc-skel--node" aria-hidden="true" />
+      </div>
     );
   }
 
   const pending = view.nodes.filter((n) => n.state === "pending");
   const machines = view.nodes.filter((n) => n.state !== "pending");
-  const reload = () => void load();
 
   return (
     <>
-      {error && (
-        <p className="mkt-mc-muted" role="status">
-          {t("machines.stale")}
-        </p>
-      )}
-      <HomeCard home={view.home} onChanged={reload} />
+      {/* always there: a failed refresh says so without moving anything */}
+      <p className="mkt-mc-statusline" role="status">
+        {error && <span className="mkt-mc-muted">{t("machines.stale")}</span>}
+      </p>
+      <HomeCard home={view.home} onChanged={reload} jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null} />
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
           {t("machines.pending.title")}
@@ -252,18 +335,32 @@ function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
         ) : (
           <ul className="mkt-mc-list">
             {machines.map((n) => (
-              <MachineCard key={n.id} node={n} onChanged={reload} queueLabel={queueLabel} />
+              <MachineCard
+                key={n.id}
+                node={n}
+                onChanged={reload}
+                queueLabel={queueLabel}
+                jobs={jobs ? (jobs[n.id] ?? 0) : null}
+              />
             ))}
           </ul>
         )}
       </section>
     </>
   );
-}
+});
 
 // ---------------------------------------------------------------- home
 
-function HomeCard({ home, onChanged }: { home: ClusterHome; onChanged: () => void }) {
+const HomeCard = memo(function HomeCard({
+  home,
+  onChanged,
+  jobs,
+}: {
+  home: ClusterHome;
+  onChanged: () => void;
+  jobs: number | null;
+}) {
   const { t } = useI18n();
   const fmt = useFmt();
   const showError = useErrorToast();
@@ -284,27 +381,33 @@ function HomeCard({ home, onChanged }: { home: ClusterHome; onChanged: () => voi
       <h2 id="mkt-mc-home-h" className="mkt-mc-card__eyebrow">
         {t("machines.home.title")}
       </h2>
-      <p className="mkt-mc-home__name">{bidiIsolate(home.name)}</p>
+      <div className="mkt-mc-row mkt-mc-row--head">
+        <p className="mkt-mc-home__name">{bidiIsolate(home.name)}</p>
+        <JobsSummary host={HOME_HOST} count={jobs} name={home.name} />
+      </div>
       <Toggle
         label={t("machines.home.accept")}
         checked={home.accept_joins}
         disabled={busy || !home.roles_supported}
         onChange={(e) => toggle(e.currentTarget.checked)}
       />
-      {home.roles_supported && home.accept_joins && left !== null && (
-        <p className="mkt-mc-muted">{t("machines.home.acceptLeft", { time: fmt.dur(left) })}</p>
-      )}
-      {home.roles_supported && !home.accept_joins && (
-        <p className="mkt-mc-muted">{t("machines.home.closed")}</p>
-      )}
-      {!home.roles_supported && (
+      {!home.roles_supported ? (
         <p className="mkt-mc-note" role="note">
           {home.roles_reason || t("machines.home.unsupported")}
+        </p>
+      ) : (
+        // one line whether open or closed
+        <p className="mkt-mc-muted mkt-mc-line">
+          {home.accept_joins
+            ? left !== null
+              ? t("machines.home.acceptLeft", { time: fmt.dur(left) })
+              : "\u00a0"
+            : t("machines.home.closed")}
         </p>
       )}
     </section>
   );
-}
+});
 
 // ---------------------------------------------------------------- pending
 
@@ -464,14 +567,16 @@ function useCapabilityChips(node: ClusterNode): string[] {
   return chips;
 }
 
-function MachineCard({
+const MachineCard = memo(function MachineCard({
   node,
   onChanged,
   queueLabel,
+  jobs,
 }: {
   node: ClusterNode;
   onChanged: () => void;
   queueLabel: (stage: string) => string;
+  jobs: number | null;
 }) {
   const { t } = useI18n();
   const fmt = useFmt();
@@ -494,14 +599,17 @@ function MachineCard({
   return (
     <li className={`mkt-mc-card mkt-mc-node mkt-mc-node--${status}`}>
       <article aria-label={node.name}>
-        <header className="mkt-mc-row">
+        <header className="mkt-mc-row mkt-mc-row--head">
           <h3 className="mkt-mc-name">{name}</h3>
           <Badge tone={STATUS_TONE[status]}>{t(`machines.status.${status}`)}</Badge>
-          {node.last_seen_at && (
+          <span className="mkt-mc-muted">{t("machines.role.node")}</span>
+          {/* "last seen" only while it is away: on a live machine it changed every poll */}
+          {status !== "online" && node.last_seen_at && (
             <span className="mkt-mc-muted">
               {t("machines.lastSeen", { time: fmt.ago(node.last_seen_at) })}
             </span>
           )}
+          {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
         {chips.length > 0 && (
           <ul className="mkt-mc-chips" aria-label={t("machines.cap.title")}>
@@ -571,11 +679,11 @@ function MachineCard({
       )}
     </li>
   );
-}
+});
 
 function StorageCheck({ node }: { node: ClusterNode }) {
   const { t } = useI18n();
-  const fmt = useFmt();
+  const cf = useClusterFmt();
   const s = node.storage;
   const word = (v: string) =>
     v === "ok" || v === "error" || v === "skipped" ? t(`machines.storage.${v}`) : v;
@@ -594,7 +702,7 @@ function StorageCheck({ node }: { node: ClusterNode }) {
           </span>
           {s.checked_at && (
             <span className="mkt-mc-muted">
-              {t("machines.storage.checked", { time: fmt.ago(s.checked_at) })}
+              {t("machines.storage.checkedAt", { time: cf.time(Date.parse(s.checked_at)) })}
             </span>
           )}
           {s.detail && <span className="mkt-mc-muted">{s.detail}</span>}

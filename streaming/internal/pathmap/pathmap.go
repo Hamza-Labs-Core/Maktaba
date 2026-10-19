@@ -7,6 +7,7 @@
 package pathmap
 
 import (
+	"encoding/json"
 	"os"
 	"sort"
 	"strings"
@@ -49,6 +50,35 @@ func Parse(spec string) Map {
 	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].From) > len(rules[j].From) })
 	return Map{rules: rules}
 }
+
+// FromJSON builds a Map from a JSON object {db_prefix: local_prefix}, the form the
+// cluster keeps a node's path map in (cluster_nodes.path_map, Epic 31). Empty or null
+// is the empty map.
+func FromJSON(raw []byte) (Map, error) {
+	var m map[string]string
+	if len(raw) == 0 || string(raw) == "null" {
+		return Map{}, nil
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return Map{}, err
+	}
+	var rules []Rule
+	for from, to := range m {
+		if from = strings.TrimSpace(from); from != "" {
+			rules = append(rules, Rule{From: from, To: strings.TrimSpace(to)})
+		}
+	}
+	sort.SliceStable(rules, func(i, j int) bool {
+		if len(rules[i].From) != len(rules[j].From) {
+			return len(rules[i].From) > len(rules[j].From)
+		}
+		return rules[i].From < rules[j].From
+	})
+	return Map{rules: rules}, nil
+}
+
+// Empty reports whether the map has no rules.
+func (m Map) Empty() bool { return len(m.rules) == 0 }
 
 // FromEnv parses MAKTABA_STREAM_PATH_MAP.
 func FromEnv() Map { return Parse(os.Getenv(EnvVar)) }

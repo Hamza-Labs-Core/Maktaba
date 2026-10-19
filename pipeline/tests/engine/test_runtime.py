@@ -52,7 +52,10 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
     served = set(stages)
     assert served >= LEGACY_HANDLERS
     # legacy stages with no handler anywhere are not claimed (they would fail non-retryably)
-    assert not {"topic_recluster", "topic_assign", "categorize", "chapter_infer"} & served
+    assert "categorize" not in served
+    # the transcript analysis stages are engine stages now (this worker has numpy and
+    # the search extra, which chapter_infer and topic_recluster need)
+    assert {"chapter_infer", "topic_assign", "topic_recluster"} <= served
     # engine stages are served once their implementation exists
     assert (served & core_engine) <= core_engine
     assert pools["probe"] == "nas_read" and pools["transcribe"] == "gpu"

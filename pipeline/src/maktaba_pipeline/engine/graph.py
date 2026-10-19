@@ -18,6 +18,7 @@ from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.books import BOOKS_VERSION
+from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
@@ -81,6 +82,11 @@ REPAIR_VERSION = 1
 #: transcribe / subtitle_gen (plan 03-10): stages/transcribe.py, stages/subtitle_gen.py
 TRANSCRIBE_VERSION = 1
 SUBTITLE_VERSION = 1
+#: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
+CHAPTER_VERSION = 1
+CHAPTER_THUMBS_VERSION = 1
+TOPIC_ASSIGN_VERSION = 1
+TOPIC_RECLUSTER_VERSION = 1
 
 EdgeMap = Literal[
     "same",
@@ -298,8 +304,13 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=0,
         version=CONTENT_HASH_VERSION,
         # a video imported from mediaintel exists before its file was read; its small
-        # thumbnail lives under the real hash. Its speech follows its identity.
-        edges=(Edge("thumb_small", "same"), Edge("transcribe", "same")),
+        # thumbnail lives under the real hash. Its speech follows its identity, and so do
+        # its poster and sprite: a video with no audio (or not transcribed yet) has them too
+        edges=(
+            Edge("thumb_small", "same"),
+            Edge("transcribe", "same"),
+            Edge("thumbnail", "same"),
+        ),
     ),
     _legacy(
         "probe",
@@ -386,6 +397,7 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("review_pages", "same"),
             Edge("topic_collections", "same"),
             Edge("promo_links", "same"),
+            Edge("display_title", "same"),
         ),
         may_request=("fingerprint", "fp_gate"),
         entry_for=("library",),
@@ -456,6 +468,23 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=300,
         # the model server defaults to localhost: the home's own (a node would ask
         # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
+    ),
+    # ---- the on-air titles the guide and the channel strip show (Story 27.11) ----
+    StageDef(
+        name="display_title",
+        label="Display titles",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=4,
+        version=DISPLAY_TITLE_VERSION,
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+        # with rules display_titles.use_llm it asks the model server, which defaults to
+        # localhost: the home's own unless the settings name a shared one
         placement="home",
         model_rules="tagcheck",
     ),
@@ -624,8 +653,58 @@ GRAPH: tuple[StageDef, ...] = (
         lane="speech",
         lane_order=4,
         version=INDEX_VERSION,
-        edges=(Edge("thumbnail", "same", legacy=True),),
+        edges=(Edge("chapter_infer", "same"),),
         placement="home",
+    ),
+    # Stories 9.18 / 9.9: chapters at the transcript's topic shifts, and the video's mean
+    # vector for its topics. Reads the index's vectors (Chroma: the home holds it)
+    StageDef(
+        name="chapter_infer",
+        label="Chapters",
+        subject_kinds=("video",),
+        pool="cpu",
+        lane="speech",
+        lane_order=5,
+        version=CHAPTER_VERSION,
+        # only the chapter frames depend on chapters; the poster and sprite came from
+        # content_hash already
+        edges=(Edge("chapter_thumbs", "same"), Edge("topic_assign", "same")),
+        placement="home",
+    ),
+    StageDef(
+        name="chapter_thumbs",
+        label="Chapter frames",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="speech",
+        lane_order=6,
+        version=CHAPTER_THUMBS_VERSION,
+        # the frames go to the thumbnail cache of the machine that serves them
+        placement="home",
+    ),
+    StageDef(
+        name="topic_assign",
+        label="Topics",
+        subject_kinds=("video",),
+        pool="cpu",
+        lane="speech",
+        lane_order=7,
+        version=TOPIC_ASSIGN_VERSION,
+        # every newly vectored video counts towards the library's next clustering
+        edges=(Edge("topic_recluster", "library_of", when="always"),),
+    ),
+    StageDef(
+        name="topic_recluster",
+        label="Library topics",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="speech",
+        lane_order=8,
+        version=TOPIC_RECLUSTER_VERSION,
+        # once per batch of transcriptions, not per video: a 47 000-video library
+        # clusters in seconds, but there is no point doing it every few seconds
+        debounce_sec=1800,
+        debounce_max_sec=6 * 3600,
     ),
     _legacy(
         "thumbnail",
@@ -650,10 +729,7 @@ GRAPH: tuple[StageDef, ...] = (
         external_write=True,
         max_attempts=1,
     ),
-    _legacy("topic_recluster", "Recluster topics", ("library",), "cpu", 6),
-    _legacy("topic_assign", "Assign topics", ("video",), "cpu", 7),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
-    _legacy("chapter_infer", "Infer chapters", ("video",), "cpu", 9),
 )
 
 #: Stages on which a request cycle (detect -> fingerprint -> detect ...) is allowed,

@@ -10,6 +10,7 @@ import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useI18n } from "../../lib/i18n";
 import type { RuleField } from "../../lib/rulesApi";
+import { ColorField } from "../../components/ColorField";
 import {
   WEEKDAYS,
   asArray,
@@ -690,6 +691,17 @@ export function Editor(
           value={String(value ?? "")}
           readOnly={readOnly}
           onChange={(v) => onChange(v === "" && opt ? null : v)}
+        />
+      );
+    case "color":
+      return (
+        <ColorField
+          aria-labelledby={labelId}
+          aria-describedby={describedBy}
+          value={String(value ?? "")}
+          readOnly={readOnly}
+          invalidText=""
+          onChange={(v) => onChange(v)}
         />
       );
     case "text":

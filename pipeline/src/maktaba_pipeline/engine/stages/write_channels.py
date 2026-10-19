@@ -104,6 +104,12 @@ def _art(row: dict[str, Any]) -> tuple[Any, Any]:
     return row.get("logo_path"), (mc.get("look") if isinstance(mc, dict) else None)
 
 
+def _stored_strip(row: dict[str, Any]) -> Any:
+    """The channel's own strip settings (``mode_config.look.strip``), set in its editor."""
+    look_ = _art(row)[1]
+    return look_.get("strip") if isinstance(look_, dict) else None
+
+
 def effective_art(
     logo: str | None, look_: dict[str, Any] | None, overrides: dict[str, dict[str, Any]]
 ) -> tuple[str | None, dict[str, Any] | None]:
@@ -415,6 +421,15 @@ async def compute_changes(
                 want.slug,
                 {**want.values, "logo_path": logo,
                  "mode_config": {**want.values["mode_config"], "look": art_look}},
+            )  # fmt: skip
+        if (strip := _stored_strip(row)) is not None:
+            # the strip's settings are the channel's own (Story 27.11): the plan has none
+            mc = want.values["mode_config"]
+            want = ChannelWrite(
+                want.key,
+                want.slug,
+                {**want.values,
+                 "mode_config": {**mc, "look": {**(mc.get("look") or {}), "strip": strip}}},
             )  # fmt: skip
         if handed_back or content_hash(row) != want.digest or _art(row) != _art(want.values):
             n = want.values["number"]

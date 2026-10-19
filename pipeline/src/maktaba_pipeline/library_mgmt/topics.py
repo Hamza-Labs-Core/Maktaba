@@ -21,10 +21,12 @@ collapses to a dot product, matching the search index's convention.
 
 from __future__ import annotations
 
+import importlib
 import math
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 __all__ = [
     "MAX_TOPIC_CLUSTERS",
@@ -32,7 +34,9 @@ __all__ = [
     "TOP_K_PER_VIDEO",
     "TopicAssignment",
     "TopicModel",
+    "assign_all",
     "assign_topics",
+    "kmeans_fit",
     "label_centroid",
     "mini_batch_kmeans",
     "normalise",
@@ -192,6 +196,95 @@ def label_centroid(
     if len(label) > max_chars:
         label = label[:max_chars]
     return label
+
+
+def kmeans_fit(
+    embeddings: Sequence[Sequence[float]],
+    k: int,
+    *,
+    iterations: int = 30,
+    seed: int = 0,
+) -> TopicModel:
+    """Spherical k-means over a whole library (numpy; the ``search`` extra brings it).
+
+    :func:`mini_batch_kmeans` draws 25 batches of 64, about 1 600 updates whatever the
+    library's size: fine for its fixture, far too few for a library of 47 000 videos.
+    This runs full Lloyd iterations (assign every video, recompute every centroid) from a
+    deterministic k-means++ start, on L2-normalised vectors so cosine is a dot product.
+    Same input and seed give the same centroids, in the same order. An emptied cluster
+    takes the point farthest from its centroid.
+    """
+    np: Any = importlib.import_module("numpy")
+    if k <= 0:
+        raise ValueError("k must be positive")
+    if not embeddings:
+        return TopicModel(centroids=[], video_count=[])
+    x = np.asarray(embeddings, dtype=np.float64)
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    x = x / np.where(norms == 0.0, 1.0, norms)
+    n = x.shape[0]
+    k = min(k, n)
+    rng = np.random.default_rng(seed)
+    centers = [int(rng.integers(n))]
+    best = 1.0 - x @ x[centers[0]]
+    for _ in range(1, k):
+        weights = np.clip(best, 0.0, None) ** 2
+        total = float(weights.sum())
+        nxt = int(rng.choice(n, p=weights / total)) if total > 0.0 else int(rng.integers(n))
+        centers.append(nxt)
+        best = np.minimum(best, 1.0 - x @ x[nxt])
+    c = x[centers].copy()
+    labels = np.zeros(n, dtype=np.int64)
+    for it in range(iterations):
+        sims = x @ c.T
+        new = sims.argmax(axis=1)
+        if it > 0 and bool((new == labels).all()):
+            break
+        labels = new
+        # how well each point fits its centroid; a point handed to an emptied cluster is
+        # marked taken (+inf), so two clusters emptied in one iteration never share it
+        fit = sims[np.arange(n), labels].copy()
+        for j in range(k):
+            members = x[labels == j]
+            if len(members) == 0:
+                far = int(fit.argmin())
+                fit[far] = np.inf
+                c[j] = x[far]
+                labels[far] = j
+                continue
+            m = members.sum(axis=0)
+            norm = float(np.linalg.norm(m))
+            c[j] = m / norm if norm > 0.0 else m
+    counts = np.bincount(labels, minlength=k)
+    return TopicModel(
+        centroids=[[float(v) for v in row] for row in c],
+        video_count=[int(v) for v in counts],
+    )
+
+
+def assign_all(
+    embeddings: Sequence[Sequence[float]],
+    model: TopicModel,
+    *,
+    top_k: int = TOP_K_PER_VIDEO,
+) -> tuple[list[list[TopicAssignment]], list[int]]:
+    """:func:`assign_topics` for a whole library at once (numpy), plus, per centroid,
+    the index of the embedding closest to it (what names the topic)."""
+    np: Any = importlib.import_module("numpy")
+    if model.k == 0 or not embeddings:
+        return [[] for _ in embeddings], []
+    x = np.asarray(embeddings, dtype=np.float64)
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    x = x / np.where(norms == 0.0, 1.0, norms)
+    sims = x @ np.asarray(model.centroids, dtype=np.float64).T
+    k = min(top_k, model.k)
+    order = np.argsort(-sims, axis=1, kind="stable")[:, :k]
+    rows = [
+        [TopicAssignment(topic_id=int(j), score=float(sims[i, j])) for j in order[i]]
+        for i in range(len(order))
+    ]
+    nearest = [int(v) for v in sims.argmax(axis=0)]
+    return rows, nearest
 
 
 def _dot(a: Sequence[float], b: Sequence[float]) -> float:

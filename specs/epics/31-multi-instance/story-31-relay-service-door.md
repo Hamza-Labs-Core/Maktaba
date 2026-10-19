@@ -75,6 +75,11 @@ PlexClient ──RelayTransport──► svc.request {id, ext:"plex", method, pa
   `rules.relay.enabled` is on and the worker runs the agent. Off, they are home-only again
   within the node's 30 s refresh and the home refuses relayed calls. With a token (the home)
   the stages call Plex directly, as before.
+- **AC8a** Admin → Machines, Machines tab: a **relay door card** in the overview's `extra` slot
+  (between the approvals and the live machines): the door's state, calls / refused / failed
+  counters and the last five calls, built like the cards around it (the card, counters and five
+  fixed-height rows always present, "–" when empty; values change in place; a poll with nothing
+  new does not re-render; tabular numbers).
 - **AC8** Admin → Machines → **Relay**: the door's state and switch (`PATCH /api/rules/relay`),
   the limits, each relayable extension (ready or why not, the server's host, the allow-list),
   the never-relayed extensions with why, and the recent calls (time, machine, call, result,
@@ -129,7 +134,7 @@ editing an item's fields, a smart collection, a member URI to another server —
   POST) against a fake Plex over HTTP; Plex saw the token on every call, the node and the job
   history never; then a call off the allow-list (403), the relay switched off (`relay_off`, the
   stages home-only again) and the node revoked in the registry (`not_member`).
-- **TC8** Web: `RelayPanel.test.tsx` (status, allow-list, calls, the switch, no door, Arabic,
+- **TC8** Web: `RelayDoorCard.test.tsx` (same rows before / with / after data, updated in place, error, Arabic, axe), `ClusterViews.test.tsx` (the card in the overview), `RelayPanel.test.tsx` (status, allow-list, calls, the switch, no door, Arabic,
   axe).
 
 ## Edge cases

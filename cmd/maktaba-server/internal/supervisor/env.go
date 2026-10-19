@@ -79,12 +79,23 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.
 		add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
+		// Maktaba TV across the cluster (Epic 32): the api forwards move/stop/drain to
+		// the home streaming service's loopback internal routes.
+		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, "8081"))
 	case RoleStreaming:
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdminAddr)
+		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
+		// the home's database through its own credential, its node id; no extra flag.
+		if n := nodeConfig(); n.Joined() {
+			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			add("MAKTABA_TV_HOST_ROLE", "node")
+			add("MAKTABA_NODE_ID", n.NodeID)
+		}
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", "127.0.0.1:9090")
@@ -96,6 +107,20 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	}
 
 	return env
+}
+
+// nodeConfig reads this machine's Epic 31 node config (tests replace it).
+var nodeConfig = config.LocalNodeConfig
+
+// setEnv replaces (or adds) k in env.
+func setEnv(env []string, k, v string) []string {
+	out := env[:0]
+	for _, e := range env {
+		if !strings.HasPrefix(e, k+"=") {
+			out = append(out, e)
+		}
+	}
+	return append(out, k+"="+v)
 }
 
 // StreamingGRPCAddr is the streaming service's intra-host gRPC address.

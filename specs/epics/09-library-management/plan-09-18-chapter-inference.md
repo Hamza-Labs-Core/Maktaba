@@ -18,6 +18,38 @@
 | Manual reinfer | `POST /api/videos/{id}/chapters/reinfer` enqueues `chapter_infer` with `payload.force=True` (refreshes against current settings). |
 | Out of scope | The HLS DATERANGE / JSON delivery format (Epic 8 Story 8.12); the FSM transitions for `chapter_infer` (Pipeline Story 1.5 owns; this story uses the existing `processing_jobs.stage` slot). |
 
+### As built (October 2026, queue engine)
+
+`chapter_infer` is an engine stage (`pipeline/.../engine/stages/chapter_infer.py`) on the
+home, edged from `index` (plan 03-10) and edging to `chapter_thumbs` and `topic_assign`.
+Posters and sprites do not wait for it: `thumbnail` follows `content_hash` (a video with no
+audio has them too), and `chapter_thumbs` redraws only the frame per chapter start when the
+chapters change. Where it differs from the table above:
+
+- **Threshold is relative, not absolute.** The index embeds with
+  `intfloat/multilingual-e5-small`, not e5-large. On 25 of the library's own lectures
+  (15 min to 2 h) the drop between two 10-segment windows has a median of 0.019 and a
+  99.9th percentile of 0.046, so a fixed 0.35 never fires. A boundary is a local peak at
+  least 2.5 standard deviations above the video's own mean drop
+  (`library_mgmt.chapter.infer_topic_chapters`: window 10, chapters at least 240 s, each
+  boundary moved to the longest pause within 3 segments). That is about one chapter per
+  10 minutes, and it does not depend on which model the index uses.
+- **Titles are extractive.** The chapter's own sentence: among its first six segments, the
+  one closest to the chapter's mean vector with at least three words, cut to 60
+  characters (`extractive_title`). There is no nearest-token labeller. When none fits, the
+  title is empty (`metadata.title_source = 'none'`), not an English "Chapter N".
+- **Suppression is per video.** A video with any `embedded` or `manual` chapter gets no
+  inferred ones. A video whose transcript has no strong shift gets none either: one chapter
+  spanning the whole video says nothing.
+- **Re-inference** goes through the queue's retrigger (`POST /api/queue/retrigger`, stage
+  `chapter_infer`); there is no `/chapters/reinfer` route.
+- While reading the vectors, the stage also stores the video's mean vector in
+  `video_embeddings` (slot 0121) for topics (Story 9.9); an unchanged vector leaves the row
+  alone, so a re-run never forces a recluster.
+- The math is numpy (the stage needs the `search` extra anyway); pure Python held the GIL
+  for seconds on a 4-hour transcript.
+- Slot 0121 queues the stage once for every video indexed before it existed.
+
 ## 1. Architecture diagram
 
 ```

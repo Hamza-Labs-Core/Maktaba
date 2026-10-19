@@ -31,8 +31,11 @@ type StationConfig struct {
 	Resolver LiveResolver
 	PathMap  pathmap.Map
 	FontFile string // for slate captions; "" → no caption
-	Logger   *slog.Logger
-	Now      func() time.Time
+	// StripDefaults returns the strip settings every channel starts from
+	// (rules tv_strip); nil: no strip.
+	StripDefaults func(ctx context.Context) StripSettings
+	Logger        *slog.Logger
+	Now           func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
 	// Gate is the NVENC session semaphore shared by every station (nil:
@@ -44,6 +47,30 @@ type StationConfig struct {
 	// when the gate is full and this station holds one (its current block,
 	// ending at the boundary); 0: defaultNVENCWait.
 	NVENCWait time.Duration
+	// Assets, when set, resolves the channel's art (logo, watermark, loading
+	// picture) to a local file: a cluster node encodes with a cached copy of the
+	// home's files (Epic 32.1). Nil: the look's paths through PathMap.
+	Assets AssetResolver
+	// Discontinuity starts the muxer with an HLS discontinuity: a station that
+	// takes over a channel from another host (failover, move) continues the
+	// viewers' playlists with EXT-X-DISCONTINUITY (Epic 32.4).
+	Discontinuity bool
+	// PathMapSource, when set, is read at each station start instead of PathMap
+	// (a node's map follows the cluster's, Epic 31).
+	PathMapSource func() pathmap.Map
+}
+
+// Asset kinds an AssetResolver is asked for.
+const (
+	AssetKindLogo      = "logo"
+	AssetKindWatermark = "watermark"
+	AssetKindLoading   = "loading"
+)
+
+// AssetResolver returns the local file for a channel's art kind whose look path
+// on the home is src ("" when there is none).
+type AssetResolver interface {
+	Asset(ctx context.Context, channelID uuid.UUID, kind, src string) string
 }
 
 // defaultNVENCWait covers the feeder's pre-start lead plus margin: the
@@ -90,6 +117,8 @@ type Station struct {
 	lookAt      time.Time
 	logMu       sync.Mutex
 	blockLog    *os.File
+	stripOnce   sync.Once // "strip skipped" logged once
+	stripWarned string
 }
 
 // muxProc is one muxer process.
@@ -136,7 +165,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	}
 	s.blockLog, _ = os.Create(filepath.Join(dir, "blocks.log"))
 
-	m, err := s.startMuxer(false)
+	m, err := s.startMuxer(cfg.Discontinuity)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("channel: start muxer: %w", err)
@@ -629,6 +658,7 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	s, seg := p.s, p.seg
 	look := s.currentLook(ctx)
 	in, start, err := s.blockInput(ctx, seg, look)
+	defer s.removeStripFiles(in)
 	if err != nil {
 		s.log.Warn("channel: block unplayable", "kind", seg.Kind, "seq", seg.Block.Seq,
 			"err", err.Error(), "event", "channel_block_unplayable")
@@ -670,6 +700,7 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 		prof.Encoder = EncoderSoftware
 		s.encoderNow.Store(prof.Encoder)
 		in2, start2, err2 := s.blockInput(ctx, seg, look)
+		defer s.removeStripFiles(in2)
 		if err2 != nil || in2 == nil {
 			return in2 == nil && err2 == nil, err2
 		}
@@ -789,7 +820,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
 		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
-		s.applyLook(in, look)
+		s.applyLook(ctx, in, look)
 	case KindLive:
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
 		if err != nil {
@@ -813,12 +844,12 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Kind = "live"
 		in.Source = u
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		s.applyLook(in, look)
+		s.applyLook(ctx, in, look)
 	default:
 		in.Kind = "slate"
-		if p := s.localAsset(look.LoadingPath); p != "" {
+		if p := s.localAsset(ctx, AssetKindLoading, look.LoadingPath); p != "" {
 			in.SlateImage = p
-		} else if p := s.localAsset(look.LogoPath); p != "" {
+		} else if p := s.localAsset(ctx, AssetKindLogo, look.LogoPath); p != "" {
 			in.SlateLogo = p
 		}
 		if seg.Message != "" {
@@ -826,12 +857,58 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 			in.FontFile = s.cfg.FontFile
 		}
 	}
+	s.attachStrip(ctx, in, seg, look, start)
 	return in, start, nil
 }
 
-func (s *Station) applyLook(in *BlockInput, look Look) {
+// attachStrip adds the channel strip to a block when the channel shows one
+// and this ffmpeg can shape its text.
+func (s *Station) attachStrip(ctx context.Context, in *BlockInput, seg Segment, look Look, start time.Time) {
+	if s.cfg.StripDefaults == nil || in == nil {
+		return
+	}
+	st, _ := ApplyStripRules(s.cfg.StripDefaults(ctx), look.Strip, true)
+	if !st.Enabled {
+		return
+	}
+	font := FindStripFont(st.FontFile)
+	if ok, why := TextShaping(ctx, s.cfg.FFmpeg, font); !ok {
+		s.stripOnce.Do(func() {
+			s.stripWarned = why
+			s.log.Warn("channel: strip skipped", "why", why, "event", "channel_strip_unavailable")
+		})
+		return
+	}
+	offset := float64(seg.SeekMS)/1000 + start.Sub(seg.Start).Seconds()
+	key := fmt.Sprintf("strip-%d-%d", seg.Block.Seq, start.UnixMilli())
+	si, files, err := BuildStrip(s.cfg.Profile, st, font, look.Name, seg, start,
+		time.Duration(in.DurationSec*float64(time.Second)), offset, filepath.Join(s.dir, "strip"), key)
+	if err != nil {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+		s.log.Warn("channel: strip files", "err", err.Error(), "event", "channel_strip_failed")
+		return
+	}
+	if si != nil {
+		in.Strip = si
+		in.stripFiles = files
+	}
+}
+
+// removeStripFiles deletes a finished block's strip files.
+func (s *Station) removeStripFiles(in *BlockInput) {
+	if in == nil {
+		return
+	}
+	for _, f := range in.stripFiles {
+		_ = os.Remove(f)
+	}
+}
+
+func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look) {
 	if wm := look.Watermark; wm != nil {
-		if p := s.localAsset(wm.Path); p != "" {
+		if p := s.localAsset(ctx, AssetKindWatermark, wm.Path); p != "" {
 			w := *wm
 			w.Path = p
 			in.Watermark = &w
@@ -842,8 +919,9 @@ func (s *Station) applyLook(in *BlockInput, look Look) {
 }
 
 // localAsset maps a look/logo path and returns it if it exists (URLs are
-// passed through for ffmpeg to fetch).
-func (s *Station) localAsset(p string) string {
+// passed through for ffmpeg to fetch). With an AssetResolver (a cluster
+// node) the file comes from its cache of the home's art.
+func (s *Station) localAsset(ctx context.Context, kind, p string) string {
 	if p == "" {
 		return ""
 	}
@@ -854,6 +932,12 @@ func (s *Station) localAsset(p string) string {
 		return "" // no file:, concat:, udp: … from look/logo values
 	}
 	m := s.cfg.PathMap.Apply(p)
+	if s.cfg.Assets != nil {
+		m = s.cfg.Assets.Asset(ctx, s.id, kind, p)
+		if m == "" {
+			return ""
+		}
+	}
 	if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
 		if in, err := LocalInput(m); err == nil {
 			return in

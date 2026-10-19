@@ -25,6 +25,7 @@ from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
 from .classify.books import BooksConfig
 from .classify.clip_groups import GroupConfig
+from .classify.display_title import DisplayTitleConfig
 from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
@@ -35,10 +36,12 @@ from .schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvClusterConfig,
     MaktabaTvConfig,
     MaktabaTvOutputConfig,
     PlexLiveConfig,
     RepairConfig,
+    TvStripConfig,
 )
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
@@ -79,6 +82,12 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_output": (MaktabaTvOutputConfig, "Maktaba TV output", "how a channel on air is "
                   "encoded: encoder, picture, bitrates, how many channels and NVENC "
                   "sessions at once"),
+    "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
+                   "channels and how the home spreads them; one encode per channel"),
+    "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
+                 "picture: what is on now and next, and a clock rotating between cities"),
+    "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "
+                       "for the guide, the channel strip and the dizqueTV export"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
     "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),

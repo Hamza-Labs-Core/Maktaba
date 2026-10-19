@@ -68,10 +68,7 @@ IMPLS: dict[str, StageImpl] = {
         for name in (
             "extract",
             "thumbnail",
-            "topic_recluster",
-            "topic_assign",
             "categorize",
-            "chapter_infer",
         )
     },
 }

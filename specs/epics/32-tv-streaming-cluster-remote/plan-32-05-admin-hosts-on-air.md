@@ -1,7 +1,7 @@
 # Plan 32.5 — Admin: streaming hosts and on air — implementation
 
 > Implementation plan for [story-32-05](story-32-05-admin-hosts-on-air.md).
-> No migration. Reads slot 0120 tables, `channel_runtime` (0083 + 0117), `tv_remote_pushes` (0121, when present).
+> No migration. Reads slot 0123 tables, `channel_runtime` (0083 + 0117), `tv_remote_pushes` (0124, when present).
 
 ## 0. Decisions
 

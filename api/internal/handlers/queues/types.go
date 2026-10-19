@@ -53,6 +53,8 @@ type JobRef struct {
 	StartedAt    *time.Time `json:"started_at"`
 	FinishedAt   *time.Time `json:"finished_at"`
 	Progress     *Progress  `json:"progress"`
+	// ClaimedBy is the worker (workers.id) running the job; null while it waits.
+	ClaimedBy *string `json:"claimed_by"`
 }
 
 // Pool is a worker pool row plus live usage.

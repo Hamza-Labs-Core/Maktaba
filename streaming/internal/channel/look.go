@@ -21,6 +21,9 @@ type Look struct {
 	Watermark   *Watermark
 	LoadingPath string
 	Loudnorm    Loudnorm
+	// Strip is the channel's own strip settings (mode_config.look.strip),
+	// laid over rules tv_strip (ApplyStripRules).
+	Strip json.RawMessage
 }
 
 // Watermark is the corner bug overlaid on program/filler/live blocks.
@@ -65,6 +68,7 @@ type lookJSON struct {
 		TargetLUFS *float64 `json:"target_lufs"`
 		Filter     string   `json:"filter"`
 	} `json:"loudnorm"`
+	Strip json.RawMessage `json:"strip"`
 }
 
 // ParseLook decodes the mode_config->'look' blob (nil/garbage → defaults)
@@ -93,6 +97,9 @@ func ParseLook(raw []byte, logoPath string) Look {
 			wm.MarginPct = *w.MarginPct
 		}
 		l.Watermark = wm
+	}
+	if len(j.Strip) > 0 && string(j.Strip) != "null" {
+		l.Strip = j.Strip
 	}
 	if j.LoadingPath != nil {
 		l.LoadingPath = strings.TrimSpace(*j.LoadingPath)

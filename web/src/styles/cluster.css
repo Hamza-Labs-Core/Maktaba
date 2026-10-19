@@ -332,9 +332,83 @@
   overflow-wrap: anywhere;
 }
 
+/* Fixed-size tiles: every machine shows the same tiles, each one line of
+   value and one of detail (cut with an ellipsis, the whole in the title)
+   above a sparkline box that is there before it has points. Numbers update
+   in place; nothing below moves. */
+.mkt-cl-tiles .mkt-cl-tile {
+  block-size: 7.5rem;
+  overflow: hidden;
+}
+.mkt-cl-tiles--small .mkt-cl-tile {
+  block-size: 6.75rem;
+}
+.mkt-cl-tile dt,
+.mkt-cl-tile__value,
+.mkt-cl-tile__detail,
+.mkt-cl-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mkt-cl-tile dd {
+  min-inline-size: 0;
+}
+.mkt-cl-tile__detail {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-tiles .mkt-cl-spark {
+  block-size: 24px;
+  flex: none;
+}
+.mkt-cl-line {
+  min-block-size: 1.4em;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-proc__jobs {
+  min-inline-size: 9ch;
+}
+.mkt-cl-proc__since {
+  min-inline-size: 16ch;
+}
+
 /* the extension relay's allow-list */
 .mkt-cl-relay-allow {
   margin: var(--space-2) 0 0;
   padding-inline-start: var(--space-4);
   overflow-wrap: anywhere;
+}
+
+/* the relay door on the Machines tab: fixed counters and five fixed rows */
+.mkt-cl-door__counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.mkt-cl-door__counts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-cl-door__calls {
+  table-layout: fixed;
+  inline-size: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-cl-door__calls tr {
+  block-size: 2rem;
+}
+.mkt-cl-door__calls td {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mkt-cl-door__calls tr[data-empty] td {
+  color: var(--color-muted);
+}
+.mkt-cl-door__bad {
+  color: var(--color-warn, inherit);
 }

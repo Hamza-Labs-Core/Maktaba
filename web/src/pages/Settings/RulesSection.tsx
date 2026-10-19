@@ -20,6 +20,7 @@ import { lookupMessage, useI18n, type Locale } from "../../lib/i18n";
 import { rulesApi, rulesError, type RuleField, type RuleSection } from "../../lib/rulesApi";
 import { Editor, tableProblems, type T } from "./RuleEditors";
 import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from "./ruleKinds";
+import { StripRulesTools } from "./StripRulesTools";
 import "./rules.css";
 
 /**
@@ -553,6 +554,16 @@ export function RulesSection() {
                 {t("settings.rules.removeUnknown")}
               </Button>
             )}
+          </div>
+        )}
+        {s.key === "tv_strip" && (
+          <div className="mkt-rules__preview">
+            <StripRulesTools
+              fields={s.fields}
+              pending={pending}
+              readOnly={!canEdit || busy}
+              onSet={(f, v) => setEdit(s.key, f, v)}
+            />
           </div>
         )}
         {s.key === "planner" && (

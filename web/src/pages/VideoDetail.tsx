@@ -22,6 +22,7 @@ import { useI18n } from "../lib/i18n";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
 import { useAuth } from "../lib/auth";
+import { DisplayTitle, type DisplayTitleVideo } from "./DisplayTitle";
 import {
   analyticsApi,
   formatPercent,
@@ -30,7 +31,7 @@ import {
   type VideoStats,
 } from "../lib/analytics";
 
-interface Video {
+interface Video extends DisplayTitleVideo {
   id: string;
   title?: string | null;
   filename: string;
@@ -95,6 +96,7 @@ const TS = (s: number) => {
 export function VideoDetail() {
   const { videoId } = useParams();
   const { t } = useI18n();
+  const { user } = useAuth();
   const [video, setVideo] = useState<Video | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -170,6 +172,11 @@ export function VideoDetail() {
           {video.detected_language && <Badge>{video.detected_language}</Badge>}
           <Badge tone={video.state === "ready" ? "success" : "neutral"}>{video.state}</Badge>
         </div>
+        <DisplayTitle
+          video={video}
+          canEdit={Boolean(user?.is_admin)}
+          onSaved={(v) => setVideo((cur) => (cur ? { ...cur, ...v } : cur))}
+        />
       </header>
       <Tabs label={video.title || video.filename} items={items} defaultValue="watch" />
     </section>

@@ -189,6 +189,12 @@ def build_sprite_args(
     emits exactly that single packed sheet. A zero/unknown duration
     falls back to 1 fps so the command is still valid (the sheet just
     covers the first ``count`` seconds).
+
+    ``-skip_frame nokey`` (before ``-i``) decodes keyframes only, and the
+    ``fps`` filter takes the keyframe nearest each tile's time: a scrub
+    preview needs no exact frame. Measured on the NAS, a 10-minute 720p
+    video went from 4.4 s to 1.5 s and a 58-minute 480p one from 15.3 s
+    to 0.8 s, with complete sheets spanning the whole video.
     """
     count = max(1, columns * rows)
     fps = (count / duration_sec) if duration_sec > 0 else 1.0
@@ -199,6 +205,8 @@ def build_sprite_args(
         "-nostdin",
         "-threads",
         "1",
+        "-skip_frame",
+        "nokey",
         "-i",
         src,
         "-frames:v",
