@@ -171,7 +171,13 @@ describe("RemotePanel", () => {
     get.mockResolvedValue({
       integration: integration(),
       remote: remote({
-        budget_notice: { month: "2026-10", level: 80, total_usd: 8.1, budget_usd: 10, action: "block_new" },
+        budget_notice: {
+          month: "2026-10",
+          level: 80,
+          total_usd: 8.1,
+          budget_usd: 10,
+          action: "block_new",
+        },
       }),
     });
     renderPanel();
@@ -184,7 +190,13 @@ describe("RemotePanel", () => {
     get.mockResolvedValue({
       integration: integration(),
       remote: remote({
-        budget_notice: { month: "2026-10", level: 100, total_usd: 10.2, budget_usd: 10, action: "block_new" },
+        budget_notice: {
+          month: "2026-10",
+          level: 100,
+          total_usd: 10.2,
+          budget_usd: 10,
+          action: "block_new",
+        },
       }),
     });
     renderPanel();

@@ -131,7 +131,10 @@ describe("Filler pools", () => {
     expect(badge).toHaveAttribute("href", "/admin/live-tv/changes/c9");
     await user.click(screen.getByRole("button", { name: /station ids/i }));
     expect(screen.getByText("Not on the air yet")).toBeInTheDocument();
-    del.mockResolvedValue({ item_id: "i9", draft_change: { id: "c9", number: 12, state: "draft" } });
+    del.mockResolvedValue({
+      item_id: "i9",
+      draft_change: { id: "c9", number: 12, state: "draft" },
+    });
     await user.click(screen.getByRole("button", { name: /remove ident/i }));
     expect(await screen.findByText(/Saved to draft change #12/)).toBeInTheDocument();
   });

@@ -175,9 +175,7 @@ function FillerPoolsInner() {
                       to={`/admin/live-tv/changes/${encodeURIComponent(p.draft.change_id)}`}
                       data-testid={`pool-draft-${p.id}`}
                     >
-                      <Badge tone="warn">
-                        {t("fillerPools.inDraft", { n: p.draft.number })}
-                      </Badge>
+                      <Badge tone="warn">{t("fillerPools.inDraft", { n: p.draft.number })}</Badge>
                     </Link>
                   )}
                   <Button size="sm" variant="ghost" onClick={() => removePool(p)}>

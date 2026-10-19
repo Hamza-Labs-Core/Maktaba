@@ -685,9 +685,12 @@ export const fillerApi = {
   deletePool: (id: string) =>
     api.delete<FillerDraftRef | void>(`/api/filler/pools/${encodeURIComponent(id)}`),
   addItems: (poolId: string, items: Array<{ video_id: string; type: FillerKind }>) =>
-    api.post<{ items: FillerItem[] } & FillerDraftRef>(`/api/filler/pools/${encodeURIComponent(poolId)}/items`, {
-      items,
-    }),
+    api.post<{ items: FillerItem[] } & FillerDraftRef>(
+      `/api/filler/pools/${encodeURIComponent(poolId)}/items`,
+      {
+        items,
+      }
+    ),
   deleteItem: (id: string) =>
     api.delete<FillerDraftRef | void>(`/api/filler/items/${encodeURIComponent(id)}`),
 };

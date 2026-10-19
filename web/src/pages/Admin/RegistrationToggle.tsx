@@ -37,7 +37,9 @@ export function RegistrationToggle() {
   async function change(next: boolean) {
     setBusy(true);
     try {
-      const s = await api.patch<Record<string, unknown>>("/api/settings", { [OPEN_REGISTRATION]: next });
+      const s = await api.patch<Record<string, unknown>>("/api/settings", {
+        [OPEN_REGISTRATION]: next,
+      });
       setOpen(isOpen(s?.[OPEN_REGISTRATION] ?? next));
       toast.show({
         tone: "success",

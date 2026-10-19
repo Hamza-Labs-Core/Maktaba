@@ -168,16 +168,21 @@ export function RemotePanel() {
 
       {st?.budget_notice && st.budget_notice.level >= 80 && (
         <p role="alert" className="mkt-q-banner" data-testid="remote-budget-notice">
-          {t(st.budget_notice.level >= 100 ? "tv.remote.budgetNotice100" : "tv.remote.budgetNotice80", {
-            month: st.budget_notice.month,
-            usd: (st.budget_notice.total_usd ?? e?.total_usd ?? 0).toFixed(2),
-            budget: (st.budget_notice.budget_usd ?? e?.budget_usd ?? 0).toFixed(2),
-          })}{" "}
+          {t(
+            st.budget_notice.level >= 100
+              ? "tv.remote.budgetNotice100"
+              : "tv.remote.budgetNotice80",
+            {
+              month: st.budget_notice.month,
+              usd: (st.budget_notice.total_usd ?? e?.total_usd ?? 0).toFixed(2),
+              budget: (st.budget_notice.budget_usd ?? e?.budget_usd ?? 0).toFixed(2),
+            }
+          )}{" "}
           {st.budget_notice.level >= 100 &&
             t(
               st.budget_notice.action === "block_new"
                 ? "tv.remote.budgetBlocks"
-                : "tv.remote.budgetWarnOnly",
+                : "tv.remote.budgetWarnOnly"
             )}
         </p>
       )}
