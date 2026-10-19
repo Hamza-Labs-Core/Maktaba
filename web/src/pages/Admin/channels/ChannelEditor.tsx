@@ -6,6 +6,7 @@
 // Only what really changed is sent (PATCH), so opening and saving a plan
 // channel, or changing only its art or its live broadcasts, is not an edit.
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -382,8 +383,11 @@ export function ChannelEditor({
       title={isEdit ? t("channels.editNamed", { name: draft.name ?? "" }) : t("channels.new")}
     >
       {draft.draft && (
-        <div className="mkt-cb-banner" role="status">
-          {t("channels.tvDraft", { n: draft.draft.number })}
+        <div className="mkt-cb-banner" role="status" data-testid="tv-draft-banner">
+          <span>{t("channels.tvDraft", { n: draft.draft.number })}</span>
+          <Link to={`/admin/live-tv/changes/${draft.draft.change_id}`}>
+            {t("channels.tvDraftOpen", { n: draft.draft.number })}
+          </Link>
         </div>
       )}
       {origin === "plan" && (

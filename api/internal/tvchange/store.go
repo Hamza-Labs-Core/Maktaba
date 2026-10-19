@@ -443,20 +443,59 @@ func (s *Store) Event(ctx context.Context, q queryer, changeID string, e Event) 
 	return err
 }
 
-// Audit writes an admin action to audit_log (category tv_change). Best-effort on a
-// database whose audit_log lacks the 0054 columns.
+// Audit writes an admin action to audit_log (category tv_change, actor_source admin).
+// Best-effort on a database whose audit_log lacks the 0054 columns.
 func (s *Store) Audit(ctx context.Context, q queryer, userID, action, changeID string, payload map[string]any) {
+	s.audit(ctx, q, "admin", userID, action, changeID, payload)
+}
+
+func (s *Store) audit(ctx context.Context, q queryer, source, userID, action, changeID string, payload map[string]any) {
 	b, _ := json.Marshal(nonNilMap(payload))
 	var actor any
 	if _, err := uuid.Parse(userID); err == nil {
 		actor = userID
 	}
 	if _, err := q.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id,
-		target_kind, actor_source, payload) VALUES ('tv_change', $1, $2, $3, 'tv_change', 'admin', $4)`,
-		action, actor, changeID, string(b)); err != nil {
+		target_kind, actor_source, payload) VALUES ('tv_change', $1, $2, $3, 'tv_change', $4, $5)`,
+		action, actor, changeID, source, string(b)); err != nil {
 		_, _ = q.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
 			VALUES ('tv_change', $1, $2, $3, $4)`, action, actor, changeID, string(b))
 	}
+}
+
+// AuditRow is one audit_log row of a change.
+type AuditRow struct {
+	ID          int64          `json:"id"`
+	At          time.Time      `json:"at"`
+	Action      string         `json:"action"`
+	ActorUserID *string        `json:"actor_user_id,omitempty"`
+	ActorSource string         `json:"actor_source"`
+	Payload     map[string]any `json:"payload"`
+}
+
+// AuditRows are a change's audit_log rows, oldest first (story 33.13 AC3).
+func (s *Store) AuditRows(ctx context.Context, changeID string) ([]AuditRow, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, ts, action, actor_user_id, COALESCE(actor_source, ''), payload
+		FROM audit_log WHERE category = 'tv_change' AND target_id = $1 ORDER BY id`, changeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AuditRow{}
+	for rows.Next() {
+		var a AuditRow
+		var at nullTime
+		var actor sql.NullString
+		var payload []byte
+		if err := rows.Scan(&a.ID, &at, &a.Action, &actor, &a.ActorSource, &payload); err != nil {
+			return nil, err
+		}
+		a.At, a.ActorUserID = at.T, strPtr(actor)
+		a.Payload = map[string]any{}
+		decodeJSON(payload, &a.Payload)
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // Move transitions a change from its current state (which must be from) to `to` with

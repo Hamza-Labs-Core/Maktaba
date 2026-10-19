@@ -271,7 +271,6 @@ func TestReleasesSlotsAndNotYet(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.exec(`INSERT INTO tv_routing (scope, live_release_id, live_gen) VALUES ('cluster', $1, 0)`, rel)
-	w.exec(`INSERT INTO app_settings (key, value) VALUES ('rules.tv_staging', '{"enabled": true}')`)
 	code, out := w.do("GET", "/api/tv/releases", "", "u1")
 	items, _ := out["items"].([]any)
 	if code != 200 || len(items) != 1 || items[0].(map[string]any)["live"] != true {

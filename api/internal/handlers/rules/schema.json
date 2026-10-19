@@ -3882,8 +3882,8 @@
      "kind": "bool",
      "group": "TV staging",
      "label": "Stage every TV change",
-     "help": "A lineup, schedule, settings or art change is prepared next to what is on the air, checked, and put on the air only when an admin approves it (Live TV -> Changes). Off: changes go on the air at once, as before. Off by default until the Changes page is built; it then becomes the default.",
-     "default": false
+     "help": "A lineup, schedule, settings or art change is prepared next to what is on the air, checked, and put on the air only when an admin approves it on the Changes page (Live TV -> Changes). On by default. Off: changes go on the air at once, as before Epic 33.",
+     "default": true
     },
     {
      "name": "auto_promote_lineup",

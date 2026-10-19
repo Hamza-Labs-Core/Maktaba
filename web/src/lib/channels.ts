@@ -273,6 +273,17 @@ export interface TvInfo {
   remote?: TvRemoteInfo;
   /** Epic 32: the streaming hosts on air. */
   cluster?: { hosts_on_air: number };
+  /** Epic 33: TV staging on or off, the live release, the change in flight. */
+  staging?: TvStagingInfo;
+}
+
+export interface TvStagingInfo {
+  enabled: boolean;
+  live_release: string | null;
+  live_gen: number;
+  change_in_flight: string | null;
+  change_in_flight_number?: number;
+  change_in_flight_state?: string;
 }
 
 export interface TvRemoteInfo {

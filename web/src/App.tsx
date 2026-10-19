@@ -42,6 +42,8 @@ import { LibraryACL } from "./pages/Admin/LibraryACL";
 import { Channels } from "./pages/Admin/Channels";
 import { FillerPools } from "./pages/Admin/FillerPools";
 import { AdminLiveTV } from "./pages/Admin/LiveTV";
+import { AdminTvChanges } from "./pages/Admin/LiveTV/Changes";
+import { AdminTvChangeDetail } from "./pages/Admin/LiveTV/ChangeDetail";
 import { AdminAnalytics } from "./pages/Admin/Analytics";
 import { Guide } from "./pages/LiveTV/Guide";
 import { Player } from "./pages/LiveTV/Player";
@@ -114,6 +116,8 @@ export function App() {
                     <Route path="/admin/channels" element={<Channels />} />
                     <Route path="/admin/filler" element={<FillerPools />} />
                     <Route path="/admin/live-tv" element={<AdminLiveTV />} />
+                    <Route path="/admin/live-tv/changes" element={<AdminTvChanges />} />
+                    <Route path="/admin/live-tv/changes/:id" element={<AdminTvChangeDetail />} />
                     <Route path="/admin/analytics" element={<AdminAnalytics />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />
                     <Route path="/admin/health" element={<SystemHealth />} />

@@ -134,8 +134,7 @@ func TestDefaultsAllApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// interim: staging ships off until the Changes page (story 33.11)
-	if c.Enabled || c.SwapWait != "boundary" || !c.HotStandby || c.KeepWarmMinutes != 15 || c.RetentionHours != 24 {
+	if !c.Enabled || c.SwapWait != "boundary" || !c.HotStandby || c.KeepWarmMinutes != 15 || c.RetentionHours != 24 {
 		t.Fatalf("defaults %+v", c)
 	}
 	for _, k := range Kinds {

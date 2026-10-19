@@ -1,10 +1,7 @@
 """The ``tv_staging`` rules (Epic 33, README "Settings"): every TV change goes through
-staging and waits for an admin's approval (owner decisions): every kind of change needs an
+staging and waits for an admin's approval (owner decisions). The defaults are the owner's
+decisions, not "the current behaviour": staging is on, every kind of change needs an
 approval, a watched channel switches at its programme boundary, the hot standby is on.
-
-Interim: ``enabled`` ships **off** until the Changes page (story 33.11) exists, so an
-approval is never API-only; the owner's decision is "on once built", and the default flips
-to on when 33.11 lands.
 
 The README lists ``auto_promote`` as one map; here it is one setting per kind
 (``auto_promote_<kind>``) so the settings page shows each with its choices."""
@@ -31,9 +28,8 @@ TSS = "TV staging swap"
 class MaktabaTvStagingConfig:
     """How TV changes are staged, approved and put on the air (rules ``tv_staging``)."""
 
-    #: changes go through staging. Interim default off until the Changes page (story 33.11)
-    #: lands; then on (owner: "on once built"). Off: direct writes as before Epic 33
-    enabled: bool = False
+    #: changes go through staging (owner). Off: direct writes as before Epic 33
+    enabled: bool = True
     auto_promote_lineup: str = "approval"
     auto_promote_settings: str = "approval"
     auto_promote_live_slots: str = "approval"
@@ -83,9 +79,9 @@ register(
             TST,
             "Stage every TV change",
             "A lineup, schedule, settings or art change is prepared next to what is on the "
-            "air, checked, and put on the air only when an admin approves it (Live TV -> "
-            "Changes). Off: changes go on the air at once, as before. Off by default until "
-            "the Changes page is built; it then becomes the default.",
+            "air, checked, and put on the air only when an admin approves it on the Changes "
+            "page (Live TV -> Changes). On by default. Off: changes go on the air at once, as "
+            "before Epic 33.",
         ),
         **{
             f"auto_promote_{k}": Help(

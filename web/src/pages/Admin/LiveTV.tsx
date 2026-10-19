@@ -117,6 +117,7 @@ function LiveTVInner() {
         <h1>{t("livetv.title")}</h1>
       </header>
       <p>{t("livetv.intro")}</p>
+      <StagingBanner info={info} />
       <p className="mkt-livetv__hint">
         <a href={docLink("streamingHosts")} target="_blank" rel="noreferrer">
           {t("livetv.docLink")}
@@ -206,6 +207,40 @@ function LiveTVInner() {
         </p>
       </Card>
     </section>
+  );
+}
+
+/** TV staging (Epic 33, story 33.11 AC1): the change in flight, and the way to the Changes page. */
+function StagingBanner({ info }: { info: TvInfo }) {
+  const { t, n } = useI18n();
+  const st = info.staging;
+  if (!st) return null;
+  return (
+    <Card className="mkt-livetv__card mkt-livetv__staging" data-testid="staging-banner">
+      <h2>{t("tvchanges.title")}</h2>
+      <p className="mkt-livetv__hint">
+        {st.enabled ? t("livetv.staging.on") : t("livetv.staging.off")}
+      </p>
+      {st.change_in_flight ? (
+        <p role="status">
+          <Link to={`/admin/live-tv/changes/${st.change_in_flight}`}>
+            {t("livetv.staging.inFlight", {
+              n: n(st.change_in_flight_number ?? 0),
+              state: st.change_in_flight_state
+                ? t(`tvchanges.state.${st.change_in_flight_state}`)
+                : "",
+            })}
+          </Link>
+        </p>
+      ) : (
+        <p className="mkt-livetv__hint">{t("tvchanges.noneInFlight")}</p>
+      )}
+      <div>
+        <Link to="/admin/live-tv/changes" className="mkt-btn mkt-btn--secondary">
+          {t("livetv.staging.open")}
+        </Link>
+      </div>
+    </Card>
   );
 }
 
