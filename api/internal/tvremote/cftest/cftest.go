@@ -1,6 +1,7 @@
 // Package cftest is a fake Cloudflare API for the Epic 32 tests (32.6 to
 // 32.10): token verify, live inputs, videos, storage use, signing keys,
-// the GraphQL analytics probe and the customer-domain lifecycle endpoint,
+// the GraphQL analytics probe, the customer-domain lifecycle endpoint and
+// live outputs (simulcast, 32.13),
 // with switches to make each one fail.
 package cftest
 
@@ -74,6 +75,204 @@ type Server struct {
 	MinutesByUID map[string]float64
 	// Status is a live input's status answer (default "connected" while live).
 	Status map[string]json.RawMessage
+
+	// Outputs are the live inputs' outputs (simulcast, 32.13): input uid ->
+	// output uid -> output (with its stream key). Deleting an input deletes
+	// its outputs, as Cloudflare does.
+	Outputs map[string]map[string]*cf.Output
+	// OutputStatus: outputs answer a "status" field (README Q13 positive);
+	// OutputStatusOf is its value per output uid (default "connected").
+	OutputStatus   bool
+	OutputStatusOf map[string]string
+	// OutputFail: the next N output creates answer 400 with this message.
+	OutputFail    int
+	OutputFailMsg string
+
+	// Forward, when set, plays Cloudflare's retransmission: while an
+	// enabled output sits on a live input, the fake keeps one Forward(url,
+	// key) running (a publisher to the destination) and stops it when the
+	// output is deleted or disabled, or the broadcast ends. Called without Mu.
+	Forward  func(url, key string) (stop func())
+	forwards map[string]func()
+}
+
+// syncForwards starts and stops the retransmissions (see Forward).
+func (s *Server) syncForwards() {
+	s.Mu.Lock()
+	if s.Forward == nil {
+		s.Mu.Unlock()
+		return
+	}
+	if s.forwards == nil {
+		s.forwards = map[string]func(){}
+	}
+	type job struct{ url, key, id string }
+	var start []job
+	var stop []func()
+	want := map[string]bool{}
+	for in, outs := range s.Outputs {
+		lc := s.Lives[in]
+		for id, o := range outs {
+			if lc.Live && o.Enabled != nil && *o.Enabled && s.Inputs[in] != nil {
+				want[id] = true
+				if _, ok := s.forwards[id]; !ok {
+					s.forwards[id] = nil // reserved
+					start = append(start, job{o.URL, o.StreamKey, id})
+				}
+			}
+		}
+	}
+	for id, f := range s.forwards {
+		if !want[id] {
+			if f != nil {
+				stop = append(stop, f)
+			}
+			delete(s.forwards, id)
+		}
+	}
+	fwd := s.Forward
+	s.Mu.Unlock()
+	for _, f := range stop {
+		f()
+	}
+	for _, j := range start {
+		f := fwd(j.url, j.key)
+		s.Mu.Lock()
+		if _, ok := s.forwards[j.id]; ok {
+			s.forwards[j.id] = f
+			f = nil
+		}
+		s.Mu.Unlock()
+		if f != nil {
+			f() // deleted meanwhile
+		}
+	}
+}
+
+// StopForwards stops every retransmission (test cleanup).
+func (s *Server) StopForwards() {
+	s.Mu.Lock()
+	var fs []func()
+	for id, f := range s.forwards {
+		if f != nil {
+			fs = append(fs, f)
+		}
+		delete(s.forwards, id)
+	}
+	s.Forward = nil
+	s.Mu.Unlock()
+	for _, f := range fs {
+		f()
+	}
+}
+
+// InputOutputs is a copy of an input's outputs.
+func (s *Server) InputOutputs(input string) []cf.Output {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	out := []cf.Output{}
+	for _, o := range s.Outputs[input] {
+		out = append(out, *o)
+	}
+	return out
+}
+
+// OutputCount is how many outputs all inputs hold.
+func (s *Server) OutputCount() int {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	n := 0
+	for _, m := range s.Outputs {
+		n += len(m)
+	}
+	return n
+}
+
+// outputJSON is an output as the fake answers it.
+func (s *Server) outputJSON(o *cf.Output) map[string]any {
+	m := map[string]any{"uid": o.UID, "url": o.URL, "streamKey": o.StreamKey, "enabled": o.Enabled != nil && *o.Enabled}
+	if s.OutputStatus {
+		st := "connected"
+		if v, ok := s.OutputStatusOf[o.UID]; ok {
+			st = v
+		}
+		m["status"] = st
+	}
+	return m
+}
+
+func (s *Server) serveOutputs(w http.ResponseWriter, r *http.Request, input, rest string) {
+	if s.Outputs == nil {
+		s.Outputs = map[string]map[string]*cf.Output{}
+	}
+	outs := s.Outputs[input]
+	if outs == nil {
+		outs = map[string]*cf.Output{}
+		s.Outputs[input] = outs
+	}
+	if rest == "" {
+		switch r.Method {
+		case "POST":
+			if s.OutputFail > 0 {
+				s.OutputFail--
+				msg := s.OutputFailMsg
+				if msg == "" {
+					msg = "output rejected"
+				}
+				write(w, http.StatusBadRequest, nil, cf.Error{Code: 10010, Message: msg})
+				return
+			}
+			var req struct {
+				URL       string `json:"url"`
+				StreamKey string `json:"streamKey"`
+				Enabled   *bool  `json:"enabled"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.URL == "" || req.StreamKey == "" {
+				write(w, http.StatusBadRequest, nil, cf.Error{Code: 10005, Message: "url and streamKey are required"})
+				return
+			}
+			on := true
+			if req.Enabled != nil {
+				on = *req.Enabled
+			}
+			if len(outs) >= 50 {
+				write(w, http.StatusBadRequest, nil, cf.Error{Code: 10011, Message: "at most 50 outputs per live input"})
+				return
+			}
+			o := &cf.Output{UID: uid(), URL: req.URL, StreamKey: req.StreamKey, Enabled: &on}
+			outs[o.UID] = o
+			write(w, 200, s.outputJSON(o))
+		case "GET":
+			list := []map[string]any{}
+			for _, o := range outs {
+				list = append(list, s.outputJSON(o))
+			}
+			write(w, 200, list)
+		default:
+			write(w, 405, nil, cf.Error{Code: 10000, Message: "method"})
+		}
+		return
+	}
+	o := outs[rest]
+	if o == nil {
+		write(w, 404, nil, cf.Error{Code: 10003, Message: "Not Found"})
+		return
+	}
+	switch r.Method {
+	case "DELETE":
+		delete(outs, rest)
+		write(w, 200, nil)
+	case "PUT":
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if e, ok := body["enabled"].(bool); ok {
+			o.Enabled = &e
+		}
+		write(w, 200, s.outputJSON(o))
+	default:
+		write(w, 200, s.outputJSON(o))
+	}
 }
 
 // claims decodes a token's payload (no signature check).
@@ -203,6 +402,9 @@ func (s *Server) GoLive(input string) string {
 	v.Playback.HLS = "https://customer-" + s.CustomerCode + ".cloudflarestream.com/" + v.UID + "/manifest/video.m3u8"
 	s.Videos[v.UID] = v
 	s.Lives[input] = cf.Lifecycle{IsInput: true, VideoUID: v.UID, Live: true}
+	s.Mu.Unlock()
+	s.syncForwards()
+	s.Mu.Lock()
 	return v.UID
 }
 
@@ -220,6 +422,9 @@ func (s *Server) EndLive(input string) {
 		v.Duration = 60
 	}
 	s.Lives[input] = cf.Lifecycle{IsInput: true}
+	s.Mu.Unlock()
+	s.syncForwards()
+	s.Mu.Lock()
 }
 
 // InputByStreamKey finds the input whose RTMPS stream key (or SRT
@@ -250,8 +455,12 @@ func New(t *testing.T) *Server {
 		Account: "acc1", Token: "tok-secret", TokenStatus: "active", CustomerCode: "abc123xyz",
 		StorageLimit: 1000, Inputs: map[string]*cf.LiveInput{}, Videos: map[string]*cf.Video{},
 		Keys: map[string]cf.SigningKey{}, Lives: map[string]cf.Lifecycle{},
+		Outputs: map[string]map[string]*cf.Output{},
 	}
-	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
+	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.serve(w, r)
+		s.syncForwards()
+	}))
 	t.Cleanup(s.Close)
 	return s
 }
@@ -387,6 +596,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch {
+		case sub == "outputs" || strings.HasPrefix(sub, "outputs/"):
+			s.serveOutputs(w, r, id, strings.TrimPrefix(strings.TrimPrefix(sub, "outputs"), "/"))
 		case sub == "videos":
 			var vs []cf.Video
 			for _, v := range s.Videos {
@@ -397,6 +608,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			write(w, 200, vs)
 		case r.Method == "DELETE":
 			delete(s.Inputs, id)
+			delete(s.Outputs, id)
 			write(w, 200, nil)
 		case r.Method == "PUT":
 			var body map[string]any

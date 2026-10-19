@@ -10,6 +10,7 @@
 //   POST  /api/tv/plex/register  add the tuner and a DVR with the XMLTV guide, once
 //   GET   /api/rules, PATCH /api/rules/plexlive   the automatic Plex settings
 //   GET   /api/tv/cluster        streaming hosts + on air (Epic 32), every 5 s while visible
+//   GET   /api/tv/simulcast      simulcast destinations, attachments and outputs (story 32.13)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -30,6 +31,7 @@ import {
 } from "../../lib/channels";
 import { rulesApi, rulesError, type RuleSection } from "../../lib/rulesApi";
 import { OnAir } from "./LiveTV/OnAir";
+import { SimulcastPanel } from "./LiveTV/Simulcast";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
 import { useTvCluster } from "./LiveTV/useTvCluster";
 import "../../styles/tvcluster.css";
@@ -163,6 +165,8 @@ function LiveTVInner() {
       </Card>
 
       <ClusterSections />
+
+      <SimulcastPanel />
 
       <PlexPanel info={info} device={device} />
 

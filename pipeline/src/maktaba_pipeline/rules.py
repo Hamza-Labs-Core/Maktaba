@@ -40,6 +40,7 @@ from .schedule.tv_settings import (
     MaktabaTvConfig,
     MaktabaTvOutputConfig,
     MaktabaTvRemoteConfig,
+    MaktabaTvSimulcastConfig,
     PlexLiveConfig,
     RepairConfig,
     TvStripConfig,
@@ -88,6 +89,10 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_remote": (MaktabaTvRemoteConfig, "Maktaba TV away from home", "who may watch "
                   "channels away from home through Cloudflare Stream, how many at once, the "
                   "monthly budget and the storage guard"),
+    "tv_simulcast": (MaktabaTvSimulcastConfig, "Simulcast", "sending channels on to YouTube, "
+                     "Facebook or any RTMP destination through Cloudflare: on or off, "
+                     "destinations per channel, the monthly output-hours, the margins around "
+                     "a scheduled window"),
     "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
                  "picture: what is on now and next, and a clock rotating between cities"),
     "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "

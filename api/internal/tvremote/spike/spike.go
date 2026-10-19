@@ -353,7 +353,7 @@ func (r *run) main(ctx context.Context) error {
 	}
 
 	if r.o.OutputURL != "" {
-		if out, err := cl.CreateOutput(ctx, in.UID, r.o.OutputURL, r.o.OutputKey); err != nil {
+		if out, err := cl.CreateOutput(ctx, in.UID, r.o.OutputURL, r.o.OutputKey, true); err != nil {
 			r.fail("create live output: %v", err)
 		} else {
 			rep.OutputAnswer = redactKeys(string(out.Raw))
