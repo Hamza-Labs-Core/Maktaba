@@ -5,7 +5,7 @@ conversion may touch (:data:`~.migrate.COLUMNS`) into ``storage_path_backups`` u
 one backup id: one ``INSERT ... SELECT`` per column, no shell, no ``pg_dump``, the
 same on Postgres and SQLite. ``storage restore-backup`` writes a backup's values back
 (the last resort behind ``storage revert``, which undoes one batch value by value).
-The home keeps the last few backups (rules ``storage.backups_kept``).
+The home keeps the last few backups (rules ``storage.backups_kept``) and the first one.
 
 A backup also holds two ``_meta`` rows: the machine it was taken on and the batch
 its conversion wrote, so a restore can mark that batch reverted.
@@ -119,9 +119,14 @@ async def list_backups(db: Any) -> list[dict[str, Any]]:
 
 
 async def prune_backups(db: Any, keep: int) -> list[str]:
-    """Drop all but the ``keep`` newest backups; the ids dropped."""
+    """Drop all but the ``keep`` newest backups and the oldest one; the ids dropped.
+
+    The oldest is the copy taken before the first conversion, the only one that still
+    holds the paths as the scanner stored them: every later run backs up values the
+    first one already converted, so after ``keep`` more runs a restore could no longer
+    reach the original form."""
     listed = await list_backups(db)
-    drop = [b["backup"] for b in listed[max(keep, 1) :]]
+    drop = [b["backup"] for b in listed[max(keep, 1) : -1]]
     cast = "::uuid" if is_pg(db) else ""
     for bid in drop:
         await db.execute(f"DELETE FROM storage_path_backups WHERE backup_id = $1{cast}", bid)

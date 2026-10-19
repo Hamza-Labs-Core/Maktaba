@@ -18,6 +18,7 @@ register once whose record the admin then removed is not registered again.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import platform
 import re
@@ -219,8 +220,9 @@ async def register_from_mounts(
     """Insert a record for every server the mounts reach that none names; the records
     added and the hosts skipped. ``registered`` (host -> name) is kept up to date."""
     mounts = list(mounts)
-    planned, skipped = plan_servers(
-        mounts, servers, lookups or Lookups(), registered=registered or {}
+    # DNS, reverse DNS and NetBIOS (a subprocess each) block: off the event loop
+    planned, skipped = await asyncio.to_thread(
+        plan_servers, mounts, servers, lookups or Lookups(), registered=dict(registered or {})
     )
     added: list[StorageServer] = []
     for s in planned:

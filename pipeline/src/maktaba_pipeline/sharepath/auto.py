@@ -28,9 +28,21 @@ may be work (:func:`due`) and enqueues the home-only stage ``storage_canonicaliz
 
 A run cut short (the worker stopped mid-way) keeps its phase, batch and backup in
 ``storage_canonicalize.state``: the agent enqueues the stage again and it carries on
-with the same batch, so ``storage revert`` still undoes all of it. Nothing runs while
+with the same batch, so ``storage revert`` still undoes all of it; a revert cut short
+is finished the same way (never taken for a conversion to carry on). Nothing runs while
 a share is unmounted or a check fails. ``storage.auto_canonicalize`` (on by default)
 switches all of it off.
+
+Before a new conversion writes, the home's reported share map
+(``instance_identity.storage.path_map``) must have named every share it converts to
+for ``storage.map_settle_minutes``: the API and the streaming service read that map
+every 5 minutes, and a canonical path written before they have it does not open there
+(playback and live channels would fail until their next read). Until then the run
+``waits`` and the agent looks again with its next storage check.
+
+One run at a time: a Postgres advisory lock (a process-local lock on SQLite) is held
+for the whole run, so the stage, ``storage auto`` by hand and a reclaimed job never
+write two batches at once.
 
 The admin's buttons on the Machines page set ``storage_canonicalize.request``:
 ``run`` (check now), ``revert`` (undo the last conversion; automatic conversion then
@@ -46,7 +58,8 @@ import platform
 import random
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -74,6 +87,7 @@ __all__ = [
     "load_state",
     "release_stages",
     "request",
+    "restore",
     "run_once",
 ]
 
@@ -84,6 +98,8 @@ STAGE = "storage_canonicalize"
 MARK = "storage_canonicalize"
 #: phases a run is in the middle of: a worker that stopped there is resumed at once
 ACTIVE = frozenset({"backing_up", "pausing", "applying", "verifying", "reverting"})
+#: the advisory lock one run holds (``hashtext`` of it)
+LOCK_KEY = "maktaba.storage_canonicalize"
 
 
 @dataclass(frozen=True)
@@ -113,6 +129,10 @@ class StorageConfig:
     backups_kept: int = 3
     #: add the canonical prefix to the Plex extension's path map
     plex_path_map: bool = True
+    #: how long the home's reported share map must name a share before paths are
+    #: converted to it (the API and the streaming service re-read it every 5 minutes);
+    #: 0 converts at once
+    map_settle_minutes: int = 6
 
 
 _S = "Canonical share paths"
@@ -142,6 +162,12 @@ settings.register(StorageConfig, {
     "plex_path_map": settings.Help(_S, "Add to the Plex path map",
                                    "The Plex extension's path map gets the canonical prefix "
                                    "of every local prefix it maps."),
+    "map_settle_minutes": settings.Help(_S, "Wait for the share map (min)",
+                                        "The API and the streaming service read the home's "
+                                        "share map every 5 minutes: paths are converted to a "
+                                        "share only once the map has named it this long, so "
+                                        "playback never meets a path it cannot open yet.",
+                                        minimum=0, maximum=240),
 })  # fmt: skip
 
 
@@ -170,6 +196,37 @@ class AutoEnv:
 
     def live_mounts(self) -> list[Mount]:
         return list(discover(self.system) if self.mounts is None else self.mounts)
+
+
+# -- one run at a time --------------------------------------------------------------------
+
+#: SQLite (one process): the runs of this process
+_LOCAL_LOCK = asyncio.Lock()
+
+
+@asynccontextmanager
+async def _exclusive(db: Any) -> AsyncIterator[bool]:
+    """Hold the run's lock; yields ``False`` when another run holds it. On Postgres a
+    session advisory lock on a connection of its own, held for the whole run (a worker
+    that dies releases it with its connection)."""
+    pool = getattr(db, "_pool", None) if is_pg(db) else None
+    if pool is not None:
+        async with pool.acquire() as conn:
+            got = bool(await conn.fetchval("SELECT pg_try_advisory_lock(hashtext($1))", LOCK_KEY))
+            try:
+                yield got
+            finally:
+                if got:
+                    await conn.execute("SELECT pg_advisory_unlock(hashtext($1))", LOCK_KEY)
+        return
+    if _LOCAL_LOCK.locked():
+        yield False
+        return
+    await _LOCAL_LOCK.acquire()
+    try:
+        yield True
+    finally:
+        _LOCAL_LOCK.release()
 
 
 # -- state --------------------------------------------------------------------------------
@@ -247,6 +304,16 @@ async def _save(db: Any, state: Mapping[str, Any]) -> None:
         " ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = EXCLUDED.updated_at",
         dumps(data),
         to_ts(db, now()),
+    )
+
+
+async def _take_request(db: Any, action: str) -> None:
+    """Clear the request this run takes, only while it is still that one: an admin's
+    newer request stays for the next run."""
+    await db.execute(
+        "UPDATE storage_canonicalize SET request = NULL, requested_at = NULL,"
+        " requested_by = NULL WHERE id = 1 AND request = $1",
+        action,
     )
 
 
@@ -577,12 +644,28 @@ def _message(phase: str, reason: Sequence[Mapping[str, str]] | None = None) -> s
 
 
 async def run_once(db: Any, env: AutoEnv | None = None) -> dict[str, Any]:
-    """One automatic look (and conversion, when it can). The state it leaves."""
+    """One automatic look (and conversion, when it can). The state it leaves; when
+    another run holds the lock, the state as it is (``busy``)."""
     env = env or AutoEnv()
+    async with _exclusive(db) as got:
+        if not got:
+            state, _ = await load_state(db)
+            _log.info("storage_canonicalize_busy", phase=state.get("phase"))
+            return {**state, "busy": True}
+        return await _run_once(db, env)
+
+
+async def _run_once(db: Any, env: AutoEnv) -> dict[str, Any]:
     cfg = await _config(db)
     state, req = await load_state(db)
+    if state.get("phase") == "reverting" and req != "revert":
+        # a revert cut short is finished, never taken for a conversion to carry on (a
+        # pending request waits for the next run)
+        state["checked_at"] = now().isoformat()
+        state.pop("problems", None)
+        return await _revert(db, state, cfg, env)
     if req:
-        await request(db, None)
+        await _take_request(db, req)
     state["checked_at"] = now().isoformat()
     state.pop("problems", None)
     if req == "revert":
@@ -601,7 +684,9 @@ async def run_once(db: Any, env: AutoEnv | None = None) -> dict[str, Any]:
         await _save(db, state)
         return state
 
-    mounts = env.live_mounts()
+    # the mount table and the DNS / NetBIOS lookups block: off the event loop, so the
+    # worker's heartbeats and its other jobs keep running
+    mounts = await asyncio.to_thread(env.live_mounts)
     servers = await load_servers(db)
     if cfg.auto_register_servers and mounts:
         registered = dict(state.get("registered") or {})
@@ -618,13 +703,16 @@ async def run_once(db: Any, env: AutoEnv | None = None) -> dict[str, Any]:
             if env.on_change:
                 env.on_change()
         state["servers_skipped"] = skipped
-    resolver = build_resolver(
-        servers=servers,
-        mounts=mounts,
-        system=env.system,
-        admin=await _home_admin_map(db),
-        resolve=env.lookups.resolve if servers else None,
-        exists=None if env.exists is os.path.exists else env.exists,
+    admin = await _home_admin_map(db)
+    resolver = await asyncio.to_thread(
+        lambda: build_resolver(
+            servers=servers,
+            mounts=mounts,
+            system=env.system,
+            admin=admin,
+            resolve=env.lookups.resolve if servers else None,
+            exists=None if env.exists is os.path.exists else env.exists,
+        )
     )
     state["fingerprint"] = await fingerprint(db, mounts)
     problems = await precheck(db, resolver, mounts, env)
@@ -654,6 +742,15 @@ async def run_once(db: Any, env: AutoEnv | None = None) -> dict[str, Any]:
         state["phase"] = "done" if state.get("last") else "idle"
         await _save(db, state)
         return state
+    if not state.get("run"):
+        waits = await _map_ready(db, state, cfg, p)
+        if waits:
+            await release_stages(db)
+            state["phase"] = "waiting"
+            state["problems"] = waits
+            _log.info("storage_canonicalize_waits_for_map", problems=waits)
+            await _save(db, state)
+            return state
     try:
         return await _convert(db, state, cfg, env, resolver, p)
     except Exception as exc:  # noqa: BLE001 - reported; the run stays open for the retry
@@ -663,6 +760,53 @@ async def run_once(db: Any, env: AutoEnv | None = None) -> dict[str, Any]:
         state["problems"] = [_problem("error", f"{type(exc).__name__}: {exc}")]
         await _save(db, state)
         return state
+
+
+async def _reported_shares(db: Any) -> set[str] | None:
+    """The prefixes of the map the home reports (``instance_identity.storage.
+    path_map``: what the API and the streaming service resolve with); ``None`` on an
+    older schema (nothing reads one there)."""
+    try:
+        row = await db.fetchrow("SELECT storage FROM instance_identity WHERE id = 1")
+    except Exception as exc:  # noqa: BLE001 - an older schema
+        _log.debug("home_storage_unavailable", error=str(exc))
+        return None
+    if row is None or row["storage"] is None:
+        return set()
+    st = loads(row["storage"]) if isinstance(row["storage"], str) else row["storage"]
+    pm = st.get("path_map") if isinstance(st, dict) else None
+    return {_norm(str(k)).lower() for k in pm} if isinstance(pm, dict) else set()
+
+
+async def _map_ready(
+    db: Any, state: dict[str, Any], cfg: StorageConfig, p: mig.MigrationPlan
+) -> list[dict[str, str]]:
+    """Why a new conversion waits for the reported share map (empty: it need not)."""
+    if cfg.map_settle_minutes <= 0:
+        return []
+    needed = sorted(
+        {_norm(k).lower() for c in p.columns for k in c.by_share if is_canonical(k.rstrip("/"))}
+    )
+    if not needed:
+        return []
+    reported = await _reported_shares(db)
+    if reported is None:
+        return []
+    at = now()
+    # share -> when the reported map was first seen naming it (forgotten once it does not)
+    seen = {k: v for k, v in dict(state.get("map_seen") or {}).items() if k in reported}
+    for n in needed:
+        if n in reported and n not in seen:
+            seen[n] = at.isoformat()
+    state["map_seen"] = seen
+    missing = [n for n in needed if n not in reported]
+    if missing:
+        return [_problem("map_not_reported", ", ".join(missing))]
+    settle = timedelta(minutes=cfg.map_settle_minutes)
+    left = max(settle - (at - (_ts(seen[n]) or at)) for n in needed)
+    if left > timedelta(0):
+        return [_problem("map_settling", str(int(left.total_seconds() // 60) + 1))]
+    return []
 
 
 async def _blocked(
@@ -776,10 +920,13 @@ async def _verify_sample(
     db: Any, resolver: Resolver, batch: str, k: int, env: AutoEnv
 ) -> list[dict[str, str]]:
     cast = "::uuid" if is_pg(db) else ""
+    key = "v.id::text" if is_pg(db) else "CAST(v.id AS TEXT)"
+    # only the videos whose file is there (a soft-deleted one is gone on purpose)
     rows = await db.fetch(
-        "SELECT new_value FROM storage_path_migrations"
-        f" WHERE batch_id = $1{cast} AND table_name = 'videos' AND column_name = 'path'"
-        " AND reverted_at IS NULL",
+        "SELECT m.new_value FROM storage_path_migrations m"
+        f" JOIN videos v ON {key} = m.row_key AND v.path = m.new_value"
+        f" WHERE m.batch_id = $1{cast} AND m.table_name = 'videos' AND m.column_name = 'path'"
+        " AND m.reverted_at IS NULL AND v.deleted_at IS NULL",
         batch,
     )
     values = [str(r["new_value"]) for r in rows if is_canonical(str(r["new_value"]))]
@@ -795,7 +942,9 @@ async def _revert(
     db: Any, state: dict[str, Any], cfg: StorageConfig, env: AutoEnv
 ) -> dict[str, Any]:
     run = state.get("run") or {}
-    batch = (state.get("last") or {}).get("batch") or run.get("batch")
+    # the revert cut short, else the run in progress (cut short or failed: its rows are
+    # the newest), else the last finished conversion
+    batch = state.get("reverting") or run.get("batch") or (state.get("last") or {}).get("batch")
     if batch is None:
         listed = [b for b in await mig.batches(db) if b["reverted"] < b["changes"]]
         batch = listed[0]["batch"] if listed else None
@@ -816,8 +965,9 @@ async def _revert(
         await release_stages(db)
     state.pop("reverting", None)
     state["reverted"] = {"batch": got or batch, "rows": n, "at": now().isoformat()}
+    if (state.get("last") or {}).get("batch") in (batch, got):
+        state["last"] = None  # a finished conversion reverted (not only a run's rows)
     state["run"] = None
-    state["last"] = None
     state["held"] = True
     state["phase"] = "held"
     await _save(db, state)
@@ -825,3 +975,41 @@ async def _revert(
         env.on_change()
     _log.info("storage_canonicalize_reverted", batch=batch, rows=n)
     return state
+
+
+async def restore(
+    db: Any, backup_id: str | None = None, env: AutoEnv | None = None
+) -> tuple[str | None, int]:
+    """``storage restore-backup``: write a backup's values back with the share stages
+    paused, and hold the automatic conversion (as after a revert), so its next look does
+    not convert the restored paths again; ``resume`` lets it go on."""
+    env = env or AutoEnv()
+    async with _exclusive(db) as got:
+        if not got:
+            raise RuntimeError("a path conversion is running: restore when it is done")
+        cfg = await _config(db)
+        state, _ = await load_state(db)
+        held = await pause_path_stages(db, cfg.pause_pools)
+        await wait_drained(db, held, cfg.drain_wait_minutes * 60.0, env)
+        try:
+            bid, n = await bk.restore_backup(db, backup_id)
+        finally:
+            await release_stages(db)
+        if bid is None:
+            return None, 0
+        state["reverted"] = {
+            "batch": f"backup:{bid}",
+            "backup": bid,
+            "rows": n,
+            "at": now().isoformat(),
+        }
+        state["run"] = None
+        state["last"] = None
+        state["held"] = True
+        state["phase"] = "held"
+        state.pop("problems", None)
+        await _save(db, state)
+        if env.on_change:
+            env.on_change()
+        _log.info("storage_canonicalize_backup_restored", backup=bid, rows=n)
+        return bid, n
