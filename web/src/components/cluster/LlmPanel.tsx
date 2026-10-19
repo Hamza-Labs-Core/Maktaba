@@ -102,9 +102,9 @@ export function LlmPanel({ stream }: { stream: ClusterStream }) {
   return (
     <div className="mkt-mc-section">
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-models-h">
-        <h3 id="mkt-cl-models-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-models-h" className="mkt-mc-sub__title">
           {t("cluster.llm.models")}
-        </h3>
+        </h2>
         {models.length === 0 ? (
           <p className="mkt-mc-muted">{t("cluster.llm.noModels")}</p>
         ) : (
@@ -156,9 +156,9 @@ export function LlmPanel({ stream }: { stream: ClusterStream }) {
       </section>
 
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-llmfeed-h">
-        <h3 id="mkt-cl-llmfeed-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-llmfeed-h" className="mkt-mc-sub__title">
           {t("cluster.llm.feed")}
-        </h3>
+        </h2>
         {feed.length === 0 ? (
           <p className="mkt-mc-muted">{t("cluster.llm.noRequests")}</p>
         ) : (
@@ -267,9 +267,9 @@ function TryModel({ models }: { models: string[] }) {
 
   return (
     <section className="mkt-mc-sub" aria-labelledby="mkt-cl-try-h">
-      <h3 id="mkt-cl-try-h" className="mkt-mc-sub__title">
+      <h2 id="mkt-cl-try-h" className="mkt-mc-sub__title">
         {t("cluster.llm.try")}
-      </h3>
+      </h2>
       {models.length === 0 ? (
         <p className="mkt-mc-muted">{t("cluster.llm.noModels")}</p>
       ) : (

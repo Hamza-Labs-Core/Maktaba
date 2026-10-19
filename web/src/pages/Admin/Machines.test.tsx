@@ -217,7 +217,10 @@ describe("Machines admin page", () => {
 
   it("sets a stage back to automatic with null", async () => {
     renderPage();
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: /^Pull from tag on/ }), "auto");
+    await userEvent.selectOptions(
+      await screen.findByRole("combobox", { name: /^Pull from tag on/ }),
+      "auto"
+    );
     expect(put).toHaveBeenCalledWith("/api/cluster/nodes/n1", { stages: { tag: null } });
   });
 

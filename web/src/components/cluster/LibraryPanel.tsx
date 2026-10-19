@@ -118,9 +118,9 @@ export function LibraryPanel({ stream, files }: { stream: ClusterStream; files: 
         </dl>
       )}
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-lib-h">
-        <h3 id="mkt-cl-lib-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-lib-h" className="mkt-mc-sub__title">
           {t("cluster.library.chart")}
-        </h3>
+        </h2>
         <TimeChart
           label={t("cluster.library.chart")}
           times={points.map((p) => p.t)}

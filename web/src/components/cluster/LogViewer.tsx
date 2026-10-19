@@ -167,9 +167,9 @@ export function LogViewer({
 
   return (
     <section className="mkt-mc-card mkt-cl-logs" aria-labelledby="mkt-cl-logview-h">
-      <h3 id="mkt-cl-logview-h" className="mkt-mc-name">
+      <h2 id="mkt-cl-logview-h" className="mkt-mc-name">
         {t("cluster.logs.of", { name: bidiIsolate(target.label) })}
-      </h3>
+      </h2>
       <div className="mkt-cl-seg" role="group" aria-label={t("cluster.logs.mode")}>
         <Button
           size="sm"

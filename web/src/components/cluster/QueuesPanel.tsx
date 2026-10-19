@@ -112,9 +112,9 @@ export function QueuesPanel({
         </p>
       )}
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-q1-h">
-        <h3 id="mkt-cl-q1-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-q1-h" className="mkt-mc-sub__title">
           {t("cluster.queues.load", { queue: which })}
-        </h3>
+        </h2>
         <TimeChart
           label={t("cluster.queues.loadAria", { queue: which })}
           times={times}
@@ -136,9 +136,9 @@ export function QueuesPanel({
         />
       </section>
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-q2-h">
-        <h3 id="mkt-cl-q2-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-q2-h" className="mkt-mc-sub__title">
           {t("cluster.queues.rate", { queue: which })}
-        </h3>
+        </h2>
         <TimeChart
           label={t("cluster.queues.rateAria", { queue: which })}
           times={times}
@@ -156,9 +156,9 @@ export function QueuesPanel({
       </section>
       {latest && (
         <section className="mkt-mc-sub" aria-labelledby="mkt-cl-q3-h">
-          <h3 id="mkt-cl-q3-h" className="mkt-mc-sub__title">
+          <h2 id="mkt-cl-q3-h" className="mkt-mc-sub__title">
             {t("cluster.queues.now", { time: f.time(latest.t) })}
-          </h3>
+          </h2>
           <div className="mkt-mc-table-wrap">
             <table className="mkt-mc-table">
               <thead>

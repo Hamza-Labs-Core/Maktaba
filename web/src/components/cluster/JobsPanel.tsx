@@ -129,9 +129,9 @@ export function JobsPanel({
       </div>
 
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-jobstats-h">
-        <h3 id="mkt-cl-jobstats-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-jobstats-h" className="mkt-mc-sub__title">
           {t("cluster.jobs.statsTitle")}
-        </h3>
+        </h2>
         {stats.length === 0 ? (
           <p className="mkt-mc-muted">{t("cluster.jobs.noStats")}</p>
         ) : (
@@ -163,9 +163,9 @@ export function JobsPanel({
       </section>
 
       <section className="mkt-mc-sub" aria-labelledby="mkt-cl-jobfeed-h">
-        <h3 id="mkt-cl-jobfeed-h" className="mkt-mc-sub__title">
+        <h2 id="mkt-cl-jobfeed-h" className="mkt-mc-sub__title">
           {t("cluster.jobs.feedTitle")}
-        </h3>
+        </h2>
         {feed.length === 0 ? (
           <p className="mkt-mc-muted">
             {stream.status === "unavailable"

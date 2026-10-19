@@ -378,27 +378,28 @@ export function useJobStream(filter: JobStreamFilter = {}): JobStreamState {
 /** The machines' workers: the hub's `workers` topic, else GET /api/workers every 30 s. */
 export function useWorkers(): WorkerHost[] | null {
   const [workers, setWorkers] = useState<WorkerHost[] | null>(null);
+  // once the hub has spoken, a slower REST answer must not overwrite it
+  const fromHub = useRef(false);
   const status = useSocketTopic("workers", (msg) => {
     if (msg.type !== "workers" && msg.type !== "snapshot") return;
     const d = msg.data as { workers?: unknown } | unknown[] | undefined;
     const list = Array.isArray(d) ? d : Array.isArray(d?.workers) ? d.workers : null;
-    if (list) setWorkers(list as WorkerHost[]);
+    if (!list) return;
+    fromHub.current = true;
+    setWorkers(list as WorkerHost[]);
   });
   const viaSocket = status === "open";
 
   useEffect(() => {
+    if (viaSocket) return;
+    fromHub.current = false;
     let alive = true;
     const load = () =>
       queueApi
         .workers()
-        .then((r) => alive && setWorkers(r.workers))
+        .then((r) => alive && !fromHub.current && setWorkers(r.workers))
         .catch(() => {});
     load();
-    if (viaSocket) {
-      return () => {
-        alive = false;
-      };
-    }
     const id = setInterval(load, WORKERS_POLL_MS);
     return () => {
       alive = false;
