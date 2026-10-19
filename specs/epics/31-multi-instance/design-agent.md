@@ -545,6 +545,15 @@ its own `MAKTABA_PATH_MAP` (new in this phase, same format as `--path-map`:
 
 `MAKTABA_CLUSTER_DIR` (a local path) overrides the result on any machine.
 
+The share root goes through the resolver active at that moment (story 31.3: a canonical
+`smb://` root or the home's own spelling both map to the local mount), and again at every
+share retry: a node that starts paused by the schema guard still builds its resolver
+first, and one whose map arrives later moves to the share at the next retry. A share
+root that does not resolve to a directory that exists here (an unmapped canonical path,
+another OS's spelling such as `/Volumes/...` on Windows, a share not mounted now) is not
+used, and never created: the files stay local with the reason. Folders are created only
+under the existing share root, never directly on a bare drive or `/`.
+
 When the share is not reachable (the share root's local path is missing, or the IP folder
 cannot be created), the process writes to `~/.maktaba/cluster/<ip>/…` on its own disk and
 reports `files: {on_share: false, reason}` in its metrics. It checks again every
