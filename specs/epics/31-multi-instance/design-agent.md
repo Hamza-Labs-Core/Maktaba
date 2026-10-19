@@ -126,53 +126,39 @@ LLM files record usage, never prompt or output text.
 [--ip IP] [--date D] [--level L] [--follow]` on any machine read these files directly,
 merging a day's per-process files by timestamp. Nothing goes to the database.
 
-## 4a. The home decides what runs where
+## 5. The hub and the browsers: one WebSocket
 
-Owner (2026-10-19): the main node handles what runs what. Phase 1 had each process work
-out its own stage set; now the **home's hub is the scheduler**:
+Owner (2026-10-19): the Processing page talks to a central hub on the home over a
+WebSocket, and every job on every machine talks to that hub. The hub is the real-time
+centre of the cluster: processes push to it (§3: `metrics`, `logs`, `job`, `llm`), it holds
+the live state, and browsers subscribe to it.
 
-1. A process reports what it **can** run: in `hello` and on change, a `capable` frame
-   `{stages: {stage: true | reason}}` — `true`, or why it cannot (`unavailable: <detail>`,
-   `not_selected` for its own CLI filter, `version_ahead`, `storage`) — plus its pools and
-   their sizes (cpu cores, gpu batch). Capabilities (OS, GPU, extras, LLM runtimes) come
-   with it.
-2. The scheduler decides each process's **assignment** from: what it can run, placement
-   (home-only stages only on home processes), the admin's per-machine switches
-   (`cluster_node_stages`, configuration), drain, the storage check, and load (per-machine
-   CPU / memory / GPU pressure from the live metrics: a machine over
-   `MAKTABA_SCHED_MAX_MEM_PCT` (default 90) or `…_MAX_CPU_PCT` (default 95) for a minute
-   gets no new CPU-pool stages until it recovers). Every stage with work waiting is kept on
-   at least one capable process when one exists; a stage nobody can run is reported
-   ("no machine can run transcribe: needs Apple Silicon").
-3. It pushes `assign {revision, stages [...], off {stage: reason}, pools {pool: size}}`;
-   the process applies it at once (its claim loop reads the assigned set every poll) and
-   answers `assigned {revision}`. Reasons now include `home_only`, `switched_off`,
-   `draining`, `overloaded` and `not_assigned`, decided by the home.
-4. Re-decided on any change: a process connects or leaves, capabilities or switches change,
-   load crosses a threshold, a stage's backlog appears or empties; at most once a second.
-5. Without the home (channel down) a process keeps its last assignment; a process that
-   never had one (first start, home unreachable) runs nothing but what its CLI asked for
-   explicitly, and logs why.
+**Endpoint**: `GET /api/cluster/ws` (WebSocket; signed-in users; the admin-only topics and
+commands need an admin). JSON messages both ways.
 
-Jobs stay in the database queue and are still *claimed* (pull): a machine that dies loses
-nothing, and two processes never run the same job. The home decides which stages each
-process may claim; the queue decides which job is next.
+- Browser → hub: `{"op":"subscribe","topics":[…]}` / `unsubscribe`, where a topic is
+  `queues`, `jobs`, `workers`, `metrics`, `library`, `llm`, `processes`, or
+  `logs:<ip|node_id|session>:<level>`; `{"op":"cmd", …}` (admin) for the per-process
+  commands of §3; `{"op":"ping"}`.
+- Hub → browser: `snapshot` per topic on subscribe, then `queues` (the queue snapshot the
+  Processing page already renders, pushed as it changes, at most every second), `job`
+  (every job event from every machine: claimed, progress, done, failed, skipped, paused,
+  deferred — so the Processing page shows each job live wherever it runs), `workers`,
+  `metrics`, `library`, `llm`, `process` (connect / disconnect / auth refused), `log`,
+  `cmd.result`, `dropped` (frames dropped for a slow browser), `pong`.
 
-## 5. Real-time view (browser)
+**Processing page** moves to this socket: the queue lanes, the running jobs with their live
+progress, the activity feed and the workers strip all come from the hub; it reconnects with
+backoff and re-subscribes; the existing SSE stream stays as a fallback for networks that
+block WebSockets. The Machines page uses the same socket for its live views.
 
-`GET /api/cluster/stream` (admin, Server-Sent Events, the transport the web already uses
-for live pages): `snapshot` on connect (every connected process: identity, latest
-metrics, models), then `metrics`, `log` (when the viewer subscribed `?logs=<node>&level=`),
-`llm` (request start/finish), `job` (every job event from every process), `queues`
-(every 2 s, the queue snapshot), `library` (every 5 min), `process` (connect / disconnect /
-auth refused). REST:
-`GET /api/cluster/nodes/{ip}/logs?date=&level=&q=&limit=` and
-`/metrics?date=&from=&to=` read the files; `POST /api/cluster/processes/{session}/cmd`.
+REST (history, from the files on the share): `GET /api/cluster/files`,
+`/api/cluster/files/{ip}/logs|metrics|jobs|llm|events|queues|library?date=…`;
+`POST /api/cluster/processes/{session}/cmd`.
 
-The Machines page gets, per machine and per process: live CPU / memory / GPU / disk /
-network with sparklines, running jobs with progress, transcription speed, LLM models and
-load; a log viewer (live tail with level filter and search, earlier days from the files);
-the LLM panel (every model in the cluster, where it runs, requests in flight, tokens/s).
+**Stage selection** stays as in phase 1 (each process applies its capabilities, placement,
+the admin's switches, drain and storage), and the hub pushes `reload_stages` the moment an
+admin changes a switch or drain, so changes apply at once instead of within 30 s.
 
 ## 6. LLMs across the cluster
 
