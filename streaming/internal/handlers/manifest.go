@@ -85,6 +85,13 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
 		return
 	}
+	if sig := r.URL.Query().Get("sig"); sig != "" {
+		if wantDASH {
+			data = SignMPD(data, sig)
+		} else {
+			data = SignPlaylist(data, sig)
+		}
+	}
 	w.Header().Set("Content-Type", manifestContentType(wantDASH))
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -120,6 +127,9 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
+	}
+	if sig := r.URL.Query().Get("sig"); sig != "" {
+		data = SignPlaylist(data, sig)
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")

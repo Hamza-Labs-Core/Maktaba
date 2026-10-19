@@ -454,6 +454,7 @@ func runServe() error {
 				BusCtx:               busCtx,
 				BusDSN:               dsn,
 				PerfRegistry:         perfRegistry,
+				URLSigner:            streamURLSigner(auth.keys, logger),
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 

@@ -29,7 +29,18 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv(fakeFFmpegEnv); mode != "" {
 		os.Exit(fakeFFmpeg(mode, os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	// never this machine's real node config (a joined machine's holds a
+	// database credential and makes DetectRole/LocalIdentity say "node"):
+	// a path that never exists; tests that need one set their own
+	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
+	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func hasArg(args []string, a string) bool {
