@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PGStore is the Postgres Store (slot 0121).
+// PGStore is the Postgres Store (slot 0122).
 type PGStore struct {
 	Pool *pgxpool.Pool
 }

@@ -4,7 +4,7 @@
 --
 -- Runs outside a transaction because the index is built CONCURRENTLY.
 --
--- Slot 0121 (Epic 32, stories 32.1 and 32.2) - Maktaba TV across the cluster
+-- Slot 0122 (Epic 32, stories 32.1 and 32.2) - Maktaba TV across the cluster
 -- (specs/epics/32-tv-streaming-cluster-remote/design.md sections 2 and 3).
 --
 -- streaming_hosts (slot 0117, tv-core) is extended rather than replaced: one row per

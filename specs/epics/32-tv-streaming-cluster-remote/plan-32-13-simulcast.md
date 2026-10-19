@@ -1,8 +1,8 @@
 # Plan 32.13 — Simulcast to YouTube, Facebook and other RTMP destinations — implementation
 
 > Implementation plan for [story-32-13](story-32-13-simulcast.md).
-> Writes its tables into slot **0122** (`tv_remote`) when it ships in the same PR series as 32.7;
-> if 0122 is already merged, it takes the next free slot (0123 at the time of writing).
+> Writes its tables into slot **0123** (`tv_remote`) when it ships in the same PR series as 32.7;
+> if 0123 is already merged, it takes the next free slot (0124 at the time of writing).
 > Design: [design.md](design.md) §7.9.
 
 ## 0. Decisions
@@ -21,7 +21,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0122_tv_remote.sql` (+ `.sqlite.sql`) — the tables in §2 (or `0123_tv_simulcast.sql` if 0122 is merged); MANIFEST row; `pipeline/tests/db/test_tv_simulcast_migration.py`
+- `shared/db/migrations/0123_tv_remote.sql` (+ `.sqlite.sql`) — the tables in §2 (or `0124_tv_simulcast.sql` if 0123 is merged); MANIFEST row; `pipeline/tests/db/test_tv_simulcast_migration.py`
 - `api/internal/tvremote/simulcast.go` — destinations, attachments, window resolution, holds, output create/delete, cap accounting
 - `api/internal/tvremote/schedule.go` — rules → windows (weekly windows in the channel's time zone, programme/series/live-slot matches from `channel_programs`, merge, lead/tail)
 - `api/internal/tvremote/cf/outputs.go` — `CreateOutput(input, url, key, enabled)`, `UpdateOutput(input, output, enabled)`, `DeleteOutput(input, output)`, `ListOutputs(input)`
@@ -71,7 +71,7 @@ ALTER TABLE tv_remote_usage_daily ADD COLUMN IF NOT EXISTS simulcast_minutes NUM
 -- maktaba_worker: nothing on the three simulcast tables (the home API is the only reader).
 ```
 
-(When the tables go into 0122 itself, the two `ALTER`s become columns of the `CREATE`s.)
+(When the tables go into 0123 itself, the two `ALTER`s become columns of the `CREATE`s.)
 
 ## 3. API (admin, on the home)
 

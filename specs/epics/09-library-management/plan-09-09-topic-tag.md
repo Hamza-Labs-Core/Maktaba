@@ -17,6 +17,29 @@
 | Labeling | Top-3 segments closest to the centroid get concatenated; embedder is asked for the nearest token bigram (a small Hugging Face MLM head) to produce a 1–4 word slug; bounded at 64 chars. The label generator lives behind a feature flag — when the embedder is unavailable, fallback to `cluster-{topic_id}`. |
 | Out of scope | The PATCH endpoint owner-only check (Epic 7 Story 7.14 enforces); the schema for `library_topics`/`video_topics` themselves (already in the Epic 9 README); the indexing pipeline that populates segment embeddings (Epic 5). |
 
+### As built (October 2026, queue engine)
+
+Two engine stages (`pipeline/.../engine/stages/topic_assign.py`, `topic_recluster.py`).
+Where they differ from the table above:
+
+- **Trigger.** `chapter_infer` → `topic_assign` per video, then `topic_assign` →
+  `topic_recluster` per library, debounced (30 min, at most 6 h). There is no nightly cron:
+  a library is re-clustered once a batch of its videos has been transcribed.
+- **Mean embedding** is stored in its own table, `video_embeddings` (slot 0121, with the
+  model and dimension), not on `videos`. It is written by `chapter_infer`, which already
+  reads the segment vectors. The index model is e5-small (384 dims).
+- **K-means** is numpy spherical k-means (Lloyd iterations from a seeded k-means++ start,
+  `library_mgmt.topics.kmeans_fit`), not scikit-learn, so no new dependency. The original
+  pure-Python mini-batch version makes about 1 600 updates whatever the library's size,
+  far too few for a 47 000-video library.
+- **Labels** are the title of the video closest to each centroid (64 characters). There is
+  no MLM labeller, and no rename: every recluster rebuilds the topics (new ids, new labels).
+- `library_topics.model` (slot 0121) records the embedding model; `topic_assign` only
+  scores a video against topics of its own model, even when another model has the same
+  dimension.
+- `topic_recluster` rewrites the library's topics and every video's `video_topics` in one
+  transaction; `topic_assign` tags new videos against the current centroids in between.
+
 ## 1. Architecture diagram
 
 ```

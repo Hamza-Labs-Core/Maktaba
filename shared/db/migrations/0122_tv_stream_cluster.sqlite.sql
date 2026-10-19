@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0121 (Epic 32, 32.1/32.2). A SQLite home is a single
+-- SQLite parity sibling for slot 0122 (Epic 32, 32.1/32.2). A SQLite home is a single
 -- machine (no nodes, Epic 31): no roles, no functions; the streaming service writes its
 -- row directly. JSONB becomes TEXT, BOOLEAN INTEGER, BYTEA BLOB, TIMESTAMPTZ TEXT.
 --

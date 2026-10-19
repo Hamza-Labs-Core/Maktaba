@@ -32,7 +32,7 @@ request ─► front door (home streaming)
 ### 2.1 Identity
 
 `streaming_hosts` (created by `feat/tv-core`, slot 0117; Epic 32 adds the columns it needs in
-0121 rather than a second hosts table) is keyed by `host_id` (TEXT): the home's
+0122 rather than a second hosts table) is keyed by `host_id` (TEXT): the home's
 `instance_identity.instance_id` or the node's `cluster_nodes.id` (Epic 31). Its `host` is the
 host name, `max_active` the capacity (§2.3), `active_channels` the count on air and
 `heartbeat_at` the last beat. The home's streaming process creates its row at boot

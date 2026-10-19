@@ -74,7 +74,7 @@ type BeatStore interface {
 	Beat(ctx context.Context, hostID string, info BeatInfo) (BeatAnswer, error)
 }
 
-// PGBeatStore calls tv_host_beat (slot 0121).
+// PGBeatStore calls tv_host_beat (slot 0122).
 type PGBeatStore struct{ Pool *pgxpool.Pool }
 
 func (s PGBeatStore) Beat(ctx context.Context, hostID string, info BeatInfo) (BeatAnswer, error) {
