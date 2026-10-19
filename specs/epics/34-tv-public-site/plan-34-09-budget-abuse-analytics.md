@@ -1,7 +1,7 @@
 # Plan 34.9 — Budget, abuse controls and analytics — implementation
 
 > Implementation plan for [story-34-09](story-34-09-budget-abuse-analytics.md).
-> Uses slot 0122 (`tv_public_usage_daily`). Design: [design.md](design.md) §9; Epic 32 plan-32-10.
+> Uses the Epic 34 migration (`tv_public_usage_daily`; slot assigned at implementation). Design: [design.md](design.md) §9; Epic 32 plan-32-10.
 
 ## 0. Decisions
 

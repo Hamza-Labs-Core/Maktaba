@@ -1,57 +1,66 @@
 # Story 34.6 — Channel switching (controls and speed)
 
+> **Status:** the switching module is **implemented on main** as `@maktaba/tvplayer`
+> (`web/packages/tvplayer`, PR #87, delivered with Epic 32.9) and already drives the Maktaba web
+> live player on the LAN and remote paths. This story is what remains for the public site: wiring
+> the module into `web/tv-site` with a public resolver. The controls, timings and behaviour below
+> are the module's; they are not re-specified or re-implemented here.
+
 ## Description
 
-*As a viewer, I want to flip channels like on a TV — up/down, a number, last channel, a tap in the
-guide or a swipe on my phone — and see the new channel almost at once, never a black screen. The same
-player and switching should work in the Maktaba app (Epic 27.7) and for remote viewing (Epic 32.9).*
+*As a viewer of the public site, I want to flip channels like on a TV — up/down, a number, last
+channel, a tap in the guide or a swipe on my phone — and see the new channel almost at once, never a
+black screen, exactly as the Maktaba app already does.*
 
 Design: [design.md](design.md) §8; README R6.
 
-## Acceptance criteria
+## What the module already provides (main)
 
-- **AC1 Controls.** On-screen up/down buttons; vertical swipe on the video (mobile); keys ↑/↓ and
-  PageUp/PageDown; digits with a number overlay committed by Enter or 1.5 s idle; `L`/Backspace last
-  channel; `G` guide; `I` or tap → mini-guide overlay with now/next for every channel (tap to tune);
-  tap a tile or a guide cell; TV remote CH+/CH−, D-pad and number keys through the same key map. In RTL,
-  "up = next channel" is kept.
-- **AC2 Deep links.** Every switch updates the URL to `/<lang>/watch/<slug>` (history `replace` for
-  rapid surfing, `push` when settled ≥ 5 s) so back/forward and sharing work; a cold load of that URL
-  plays the channel.
-- **AC3 Tuning card.** Within one frame (< 100 ms) of the input the target's card (logo, number, now,
-  next) appears over the old picture; it stays until the new channel's first frame.
-- **AC4 Make before break.** The old channel keeps playing until the new one has buffered its first
-  segment and fired `canplay`; then the player swaps and stops the old one (its session is ended).
-- **AC5 Neighbour manifests.** After a channel settles, the player has tokens for previous, next and
-  last channel (from the `play`/`beat` response) and prefetches their **playlists only**, refreshed
-  every 10 s; it never requests their segments (segments are billed; playlists are not).
-- **AC6 Debounce.** Holding or repeating up/down moves the card immediately and commits the tune
-  300 ms after the last press; at most one tune request is in flight.
-- **AC7 Targets.** Warm channel (default: every public channel is always-on): first frame < 2 s after
-  the input (p75 broadband, measured by the player). Cold channel (`tiering = top_n`): card immediately,
-  "Starting channel…" and video < 20 s (spike value recorded in 34.3).
-- **AC8 Shared module.** `@maktaba/tvplayer` is used by the public site, the Maktaba web live player
-  (27.7 surfing ACs are met by it) and Epic 32.9; each host app supplies `resolve(channel)`.
-- **AC9 Telemetry.** Each switch emits `switch{ms_to_card, ms_to_first_frame, path, prefetched}`; the
-  admin usage panel shows p50/p75/p95.
+Key map incl. TV remotes and RTL (`keymap.ts`), vertical swipe (`gestures.ts`), channel ring with
+last channel (`ring.ts`), number entry, the `Switcher` (tuning card at once, 300 ms surf commit,
+one tune in flight, make before break, return after an error), the two-element `VideoPipeline`,
+the neighbour playlist `Prefetcher` (playlists only, never segments; paused in background),
+`TuningCard` / `NumberOverlay` / `MiniGuide`, `SwitchEvent` telemetry and `useTvSwitcher`. Its tests
+(`keymap.test.ts`, `swipe.test.ts`, `switcher.test.ts`, `pipeline.test.ts`, `prefetch.test.ts`) are
+on main.
+
+## Acceptance criteria (public site)
+
+- **AC1 Public resolver.** `web/tv-site` supplies the module's `Resolver` over `POST /api/v1/play`
+  (34.4): `Stream {url, release, path:"public"}`; `release` ends the session (`DELETE
+  /api/v1/play/{session}`, `sendBeacon` on page hide); `202 tuning` → `ctx.status("starting")` and a
+  retry after `retry_after`; `403/429/503` → a `SwitchError` whose code the card shows (off air,
+  limit, budget).
+- **AC2 Neighbour tokens.** The `neighbours[]` of the last `play`/heartbeat response (previous, next,
+  last channel) are cached with their expiry; tuning a neighbour with a valid token makes no API
+  call; the `Prefetcher` gets their playlist URLs (playlists only: Stream bills segments).
+- **AC3 Token refresh.** Heartbeat URLs (half-life refresh, A/B rotation, R4.3) reach the playing
+  stream through `Stream.onUrl` / `rewrite`, without a reload.
+- **AC4 Warm state.** `isWarm` comes from the LiveHub live state (`on_air`); with the default
+  `all_always_on` every public channel is warm: first frame < 2 s after the input (p75 broadband).
+  Cold channels (`tiering = top_n` only): card at once, "Starting channel…", video < 20 s (34.3 spike).
+- **AC5 Deep links.** Every switch updates the URL to `/<lang>/watch/<slug>` (history `replace` for
+  rapid surfing, `push` when settled ≥ 5 s); a cold load of that URL plays the channel.
+- **AC6 Telemetry.** The site's telemetry sink posts each `SwitchEvent` to the Worker, which writes it
+  to Analytics Engine; the admin usage panel (34.9) shows p50/p75/p95.
+- **AC7 Picture as encoded.** The player adds no logo or watermark overlay: watermark and channel strip
+  are burned into the video; the tuning card and mini-guide use the published channel logos.
 
 ## Test cases
 
-- **TC1** `keymap.test.ts` (all keys, RTL, TV key codes), `swipe.test.ts`.
-- **TC2** `switcher.test.ts` with a fake hls.js: make-before-break order, debounce, one request in flight.
-- **TC3** `prefetch.test.ts`: playlists fetched, no segment URL ever requested for neighbours.
-- **TC4** Playwright `switching.spec.ts` against a local HLS fixture: warm switch < 2 s, no black frame
-  (canvas sample between frames).
-- **TC5** Maktaba web: the 27.7 `test_channel_up_down` / digits tests pass with the shared module.
+- **TC1** `publicResolver.test.ts`: play → Stream; neighbour hit without a request; 202 → status +
+  retry; 403/429/503 → `SwitchError` codes; release sends DELETE.
+- **TC2** `heartbeat.test.ts`: a new URL from a beat reaches `onUrl` / `rewrite`.
+- **TC3** Playwright `switching.spec.ts` against `wrangler dev` and a local HLS fixture: warm switch
+  < 2 s, no black frame, URL updated, no neighbour segment requested.
 
 ## Edge cases
 
-- **EC1** Switch target is off air: card shows the reason; after 3 s the player returns to the previous
-  channel unless the user moves on.
-- **EC2** Number not in the lineup: "No channel 47" for 1.5 s, nothing tuned.
-- **EC3** Token expired on a prefetched neighbour: `resolve` fetches a fresh one before loading.
-- **EC4** Background tab: neighbour playlist refresh pauses; it resumes on focus.
+- **EC1** Neighbour token expired: the resolver calls `play` before loading.
+- **EC2** The target goes off air while tuning: the card shows the reason; the module returns to the
+  previous channel after its error delay.
+- **EC3** Embed (`/embed/<slug>`): one channel only, switching controls hidden.
 
 ## Dependencies
 
-34.4 (play/beat with neighbours), 34.5; Epic 27.7; Epic 32.9.
+`@maktaba/tvplayer` (main, PR #87); 34.4 (play/beat with neighbours, LiveHub state), 34.5 (Watch page).

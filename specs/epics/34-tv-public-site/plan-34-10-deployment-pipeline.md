@@ -1,7 +1,7 @@
 # Plan 34.10 — Deployment pipeline — implementation
 
 > Implementation plan for [story-34-10](story-34-10-deployment-pipeline.md).
-> Uses slot 0122 (`tv_public_deploys`). Design: [design.md](design.md) §10.
+> Uses the Epic 34 migration (`tv_public_deploys`; slot assigned at implementation). Design: [design.md](design.md) §10.
 
 ## 0. Decisions
 

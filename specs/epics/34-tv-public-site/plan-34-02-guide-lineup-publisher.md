@@ -1,7 +1,7 @@
 # Plan 34.2 — Guide and lineup publisher (real time) — implementation
 
 > Implementation plan for [story-34-02](story-34-02-guide-lineup-publisher.md).
-> Uses slot 0122 (`tv_public_publishes`). Design: [design.md](design.md) §3.
+> Uses the Epic 34 migration (`tv_public_publishes`; slot assigned at implementation). Design: [design.md](design.md) §3.
 
 ## 0. Decisions
 

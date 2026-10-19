@@ -47,4 +47,4 @@ Design: [design.md](design.md) §2; README R1.
 
 ## Dependencies
 
-Epic 27 channels and blocks; Epic 26 collections; migration slot 0122 (provisional).
+Epic 27 channels and blocks; Epic 26 collections; the Epic 34 migration (next free slot at implementation time).

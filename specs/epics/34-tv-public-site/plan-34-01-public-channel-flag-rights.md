@@ -1,7 +1,7 @@
 # Plan 34.1 — Public channel flag and rights — implementation
 
 > Implementation plan for [story-34-01](story-34-01-public-channel-flag-rights.md).
-> Migration slot 0122 (provisional, `0122_tv_public.sql`). Design: [design.md](design.md) §2.
+> Migration: the next free slot at implementation time (`NNNN_tv_public.sql`; main ends at 0126, Epic 33 takes 0127+). Design: [design.md](design.md) §2.
 
 ## 0. Decisions
 
@@ -15,7 +15,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0122_tv_public.sql` — the five tables of the README data model, grants (SELECT on
+- `shared/db/migrations/NNNN_tv_public.sql` (+ `.sqlite.sql`) — the five tables of the README data model, grants (SELECT on
   `tv_public_channels`, `tv_public_exclusions` for `maktaba_worker`; everything else revoked)
 - `api/internal/tvpublic/model.go` — types, repo (pg)
 - `api/internal/tvpublic/availability.go` — `Availability(block, policy, exclusions, membership)`
@@ -37,7 +37,7 @@
 2. `Availability` with membership lookups (series id on the block, collection membership query, tags).
 3. Handlers with validation (422 `rights_confirmation_required`, slug rules), audit columns.
 4. "New on a public channel": query blocks of public channels in the horizon whose series id is not in
-   `tv_public_reviews` (small table in 0122: channel_id, series_id, reviewed_at, by).
+   `tv_public_reviews` (small table in the same migration: channel_id, series_id, reviewed_at, by).
 5. Capacity warning: call the Epic 32 cluster status (`GET /api/tv/cluster`) and compute design §5.4.
 6. Admin page (en/ar), wired to the endpoints; panic switch with confirmation.
 

@@ -15,13 +15,15 @@ Epic 32 design sections are cited as "E32 §n" ([design](../32-tv-streaming-clus
  tvpublic.Deployer  ── HTTPS (CF API token) ──────►  Cloudflare API: Workers scripts+assets, R2, DO, secrets,
                                                      Custom Domains, Turnstile widgets, Access apps, Stream keys
  tvremote (Epic 32) ── HTTPS (CF API token) ──────►  Stream API: public live inputs (A/B pairs), videos, views, GraphQL
- public pusher      ── RTMPS/SRT ─────────────────►  Stream ingest
+ front-door relay   ── RTMPS/SRT ─────────────────►  Stream ingest (public A/B inputs)
                                                      visitors: Worker (HTML/JSON/WS) + Stream HLS (signed)
 ```
 
 Three Maktaba components are new on the home side (`api/internal/tvpublic`): **Publisher**,
 **Control** (the outbound WebSocket client) and **Deployer**. On the encoding hosts the station gets
-a **public mux** and a **public pusher** (`streaming/internal/channel`). On Cloudflare there is one
+a **public mux** (`streaming/internal/channel`). The push itself is Epic 32's: the home's front-door
+**push relay** (`streaming/internal/frontdoor/relay`, Epic 33.8), which gains a public source
+(`feed = public`). No encoding host pushes. On Cloudflare there is one
 Worker (`web/tv-site/worker`) with two Durable Object classes (`SiteControl`, singleton per
 environment; `LiveHub`, sharded) and one R2 bucket.
 
@@ -157,13 +159,15 @@ Two inputs per public channel, created by the home's Cloudflare client (E32 §7.
 ```
 
 `allowedOrigins` lists the production and staging hostnames (and the Maktaba app origin when R3.7
-reuse is enabled); updated by the deployer on a domain change (R8.3). Stream keys go to
-`home_secrets` (`cf_pub_<uid>_key`), the push reads them through `tv_push_credentials` exactly like
-E32 §7.4. Input ids are sent to `SiteControl` over the control channel; they are not in R2.
+reuse is enabled); updated by the deployer on a domain change (R8.3). The inputs are
+`tv_remote_inputs` rows with `purpose = public`; their stream keys go to `home_secrets` under the
+same name the Epic 32 code uses (`cf_input.<uid>`, `tvremote.SecretInputPrefix`), and each public
+push gets its `tv_push_secrets` row so the relay reads it through `tv_push_credentials(push_id)`
+exactly like E32 §7.4. Input ids are sent to `SiteControl` over the control channel; they are not in R2.
 
-Public inputs are **not** part of Epic 32's pool (`tv_remote.max_channels` does not count them) and
-are never disabled while the channel is public; when it turns private both inputs are disabled, their
-videos deleted, and they are kept for reuse.
+Public inputs are **not** part of Epic 32's pool (`tv_remote.max_channels` and the pool's
+assign/release ignore `purpose = public`) and are never disabled while the channel is public; when
+it turns private both inputs are disabled, their videos deleted, and they are kept for reuse.
 
 ## 5. The public feed on the encoding host (story 34.3)
 
@@ -176,12 +180,17 @@ muxer** ("public mux") with its own Hub (`publicHub`):
 ```
 block k available    → bytes of block k are written to both muxers (no extra encode)
 block k not available→ channel mux gets block k; public mux gets a slate block of the same
-                       duration, encoded by a slate encoder with the channel's output settings
-                       (same codec/profile/size/fps/GOP/audio as tv_output) from the slate image
-                       + texts ("Not available online", next programme, start time) + silence or
-                       the slate audio; very cheap (still image, software x264 ultrafast or the
-                       host's hardware encoder)
+                       duration, encoded through the normal block path (blockargs, like a filler
+                       or loading block) with the channel's output settings (same codec/profile/
+                       size/fps/GOP/audio as tv_output) and the channel's look — watermark and
+                       channel strip burned in like every block (Epic 27.11) — from the slate
+                       image + texts ("Not available online", next programme, start time) +
+                       silence or the slate audio; very cheap (still image, software x264
+                       ultrafast or the host's hardware encoder)
 ```
+
+Watermark and strip are part of the picture of every block, so the public feed, being a stream copy
+of the same blocks, carries them unchanged; nothing is added at the push or on the site.
 
 Because both muxers re-stamp at block boundaries the same way the channel mux already does, the
 public stream stays continuous. If a block starts already in progress (join, failover) the slate
@@ -191,12 +200,20 @@ public mux early and starts the slate (or back), same mechanism as a hot swap (E
 
 Non-public channels do not run the public mux (zero cost).
 
-### 5.2 Public pusher
+### 5.2 The public push (front-door relay)
 
-Identical to E32 §7.4 but subscribed to `publicHub` and targeting the channel's active public input:
-`ffmpeg -f mpegts -i pipe:0 -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy|aac -f flv rtmps://…/<key>`.
-With `rendition ≠ copy` it adds `-c:v <hw encoder> -s 1280x720 -b:v <kbps> -g <2 s> -bf 0` (one extra
-encode, counted in capacity).
+The push is the existing relay (E32 §7.4, `relay.Ctl` watching `tv_remote_pushes`, one `Session`
+and one long-lived `ffmpeg -c copy` per push row). A public push is a `tv_remote_pushes` row with
+`feed = public` and `input_id` = the active public input. The only relay change is the source:
+`Ctl` picks `frontdoor.PublicRelaySource()` for `feed = public`, which streams the channel's
+`publicHub` — locally (`Engine.StreamChannelPublicTS`) or from a node's signed
+`/stream/channel/{id}/public.ts` (new route next to `live.ts`, same signing as E32 §4.4) — with the
+same `Attach` lease and the same re-resolve on a placement change. Args, audio transcode to AAC,
+credential masking, crash restart within 1 s and `tv_push_report` are unchanged.
+
+With `rendition ≠ copy` the public source is a lower rendition produced on the encoding host
+(`-c:v <hw encoder> -s 1280x720 -b:v <kbps> -g <2 s> -bf 0` over `publicHub`, one extra encode,
+counted in capacity); the relay still copies.
 
 ### 5.3 Always-on and tiering
 
@@ -214,38 +231,45 @@ Ultra VideoToolbox) and the PC (NVENC, session cap from `feat/tv-core`), balance
 (`home_first` spills to the PC). The API computes
 `free = Σ capacity − Σ placed − reserve_slots`; when making a channel public would leave `free < 0`
 it warns and asks for confirmation; a channel that cannot be placed reports `off_air(no_capacity)`.
-The Streaming hosts page (E32 §R5) shows public placements with a "public" badge. **Capacity, not
+The Streaming hosts page (E32 README R5) shows public placements with a "public" badge. **Capacity, not
 uplink, is the limit** at the owner's 1 Gbps: 22 × 6.5 Mb/s ≈ 143 Mb/s.
 
 ### 5.5 A/B rotation (R3.3)
 
 ```
 every rotate_hours per channel (staggered: channel i starts at i × rotate_hours / n):
-  1. host starts a second pusher (same publicHub) to the idle input B
+  1. the API adds a second push row (feed public, input B); the relay starts a second session
+     on the same publicHub to B
   2. lifecycle(B).live = true (poll 1 s, ≤ 60 s) → home sends SiteControl {channel, active:B}
   3. SiteControl: new tokens name B; each live session's next heartbeat returns hls_url(B)
-     (heartbeat interval shortened to 15 s for sessions of a rotating channel)
-  4. after max(2 × heartbeat, 90 s) and when sessions on A == 0 (or 5 min): stop pusher A,
-     wait for A's recording (≤ 120 s), DELETE video, A becomes idle
+     (heartbeat interval shortened to 15 s for sessions of a rotating channel); Epic 32 remote
+     sessions on the public input get B on their next heartbeat the same way
+  4. simulcast outputs move: create each open output on B (enabled), then delete it on A —
+     the destination sees one reconnect of seconds (two inputs must never feed one destination key)
+  5. after max(2 × heartbeat, 90 s) and when sessions on A == 0 (or 5 min): push A → stopping,
+     the relay stops session A, wait for A's recording (≤ 120 s), DELETE video, A becomes idle
 ```
 
 Upload doubles for that channel for 2–5 min. If B fails to go live, rotation is abandoned (A keeps
-running) and retried in 10 min; after 3 failures the admin is warned (storage grows).
+running) and retried in 10 min; after 3 failures the admin is warned (storage grows). This replaces
+Epic 32's `max_push_hours` rotation for public pushes (that one re-buffers every viewer; A/B does not).
 
 ### 5.6 Continuity
 
 - **Epic 33 hot swap:** the swap changes which block the station feeds; both muxers continue →
   no break, the guide delta follows (§3.2).
-- **Epic 32 failover:** the new host starts the station, the public mux and the pusher to the same
-  active input; under 30 s gap Cloudflare continues the same video, tokens (sub = input id) stay
-  valid, players stall then continue. Over 30 s: a new video on the same input; playback by input id
-  continues after the player reloads the manifest (the player retries on a fatal error with the
-  same URL).
-- **Simulcast (32.13):** outputs are attached to the public input (both A and B, so rotation keeps
-  them); they carry the slate too, which is correct for rights.
-- **Epic 32 remote on a public channel:** the remote tune of a public channel returns a token (signed
-  with the home key) for the public active input instead of starting a pool push (one push per
-  channel, R3.7), subject to the native-app `allowedOrigins` check (README Q7).
+- **Epic 32 failover:** the new host starts the station and its public mux; the relay's public
+  source ends, re-resolves the placement and streams the new host's `public.ts` — a source switch
+  with continuous timestamps (E32 §7.4); the RTMPS/SRT session stays up, so Cloudflare continues
+  the same video and tokens stay valid; players see at most a short stall. Only a front-door outage
+  over `timeoutSeconds` makes a new video on the same input; playback by input id continues after
+  the player reloads the manifest (the player retries on a fatal error with the same URL).
+- **Simulcast (32.13):** outputs follow the push's input (E32 §7.9), i.e. the **active** public
+  input; at a rotation they move to B (§5.5 step 4). They carry the slate too, which is correct for rights.
+- **Epic 32 remote on a public channel** (`remote_on_public_input`, default on): the remote tune of a
+  public channel returns a token (signed with the home key) for the public active input instead of
+  starting a pool push (one push per channel, R3.7), subject to the native-app `allowedOrigins`
+  check (README Q7). Off: a normal `feed = channel` pool push (real programme, second upload).
 
 ## 6. Worker and Durable Objects (story 34.4)
 
@@ -360,14 +384,27 @@ play. `indexable` is forced off for `access`/`accounts`.
 
 ## 8. Channel switching (story 34.6)
 
-### 8.1 Module
+### 8.1 Module (implemented on main)
 
-`web/packages/tvplayer` (`@maktaba/tvplayer`, framework-light TypeScript + a React binding), used by:
-the public site, the Maktaba web live player (Epic 27.7, which already specifies up/down/digits) and
-Epic 32.9 remote playback. It owns: the input map, the channel ring (only channels the viewer may
-watch; wrap at the ends), the two-element video pipeline, the tuning card, the mini-guide overlay,
-token refresh hooks (`resolve(channel) → {url, expires_at}` supplied by the host app: the public
-site calls `/api/v1/play`, the Maktaba app calls the LAN stream or `/api/tv/remote/tune`).
+`web/packages/tvplayer` (`@maktaba/tvplayer`) landed with PR #87 and is used by the Maktaba web live
+player (`web/src/pages/LiveTV/Player.tsx`, LAN path) and remote viewing (`web/src/lib/remoteTv.ts`,
+Epic 32.9). It owns the key map (`keymap.ts`), gestures, the channel ring (`ring.ts`), number entry,
+the `Switcher` state machine (300 ms surf commit, one tune in flight, make before break, error
+return), the two-element `VideoPipeline` (hls.js or native HLS, `live.ts` stall recovery), the
+`Prefetcher` (playlists only, every 10 s, paused in background), the overlays (`TuningCard`,
+`NumberOverlay`, `MiniGuide`), telemetry (`SwitchEvent`, `percentile`) and the React binding
+`useTvSwitcher`. §8.2–§8.4 describe its behaviour; Epic 34 does **not** re-implement any of it.
+
+What the public site adds (story 34.6), as a host app of the module:
+
+- a `Resolver` over `POST /api/v1/play`: returns a `Stream {url, release, path:"public"}` (release
+  sends `DELETE /api/v1/play/{session}`); a neighbour whose token came with the last `play`/`beat`
+  response resolves without an API call; on `202 tuning` it calls `ctx.status("starting")` and
+  retries after `retry_after`; `403/429/503` become `SwitchError` codes shown on the card;
+- token refresh from the heartbeat through `Stream.onUrl` (native HLS) or `rewrite` (hls.js), the
+  same hooks the remote path uses;
+- `isWarm` from the LiveHub live state (`on_air`), `isPrefetched` from the `Prefetcher`;
+- a telemetry sink that posts `SwitchEvent`s to the Worker (Analytics Engine, §8.4).
 
 ### 8.2 Controls
 
@@ -439,7 +476,7 @@ Analytics Engine; the admin usage panel shows p50/p75/p95.
 ### 10.1 Repository layout
 
 ```
-web/packages/tvplayer/          shared player + switching
+web/packages/tvplayer/          shared player + switching (exists on main, PR #87; consumed, not changed)
 web/tv-site/                    Vite + React SPA (routes ar/en), design tokens from web/design-system
 web/tv-site/worker/src/         index.ts (router), sitecontrol.ts, livehub.ts, tokens.ts, access.ts,
                                 html.ts (HTMLRewriter meta), home.ts (HMAC endpoints), budget.ts
@@ -476,7 +513,7 @@ SHA-256 sums); the Maktaba server release embeds or downloads the matching tarba
 Required token permissions (runbook): Workers Scripts Edit, Workers R2 Storage Edit, Workers Routes /
 Custom Domains (zone) Edit, DNS Edit on the zone (custom domain), Turnstile Edit, Access: Apps and
 Policies Edit (only for `access` mode), Stream Edit, Account Analytics Read. The admin page lists
-which are missing after "Test connection" (extends E32 §R6.2).
+which are missing after "Test connection" (extends E32 README R6.2, `tvremote.Integration`).
 
 **Promote:** deploys the version currently on staging to production (same tarball). **Rollback:**
 re-deploys the previous production version from `tv_public_deploys` (tarballs cached on the home).
@@ -513,8 +550,9 @@ input). Staging is always `noindex` and, if `access_mode = public`, gets a Turns
 - Unit: availability function (policies × kinds), publisher diffing and hashing, HMAC, token claims
   (decoded and verified with the public JWK), DO state machine (Miniflare), budget thresholds.
 - Integration: publisher → Worker (wrangler dev) → R2 → LiveHub event → page receives within budget.
-- Streaming: fake ffmpeg (existing `fakeffmpeg_test.go`) for the public mux slate switch, pusher to
-  A then B, failover restart on the same input.
+- Streaming: fake ffmpeg (existing `fakeffmpeg_test.go`) for the public mux slate switch; the relay's
+  fake source/runner (`relay_test.go`) for public pushes to A then B and a failover source switch on
+  the same session.
 - E2E (Playwright, mobile and desktop, ar and en): grid, guide, watch, switching by swipe/keys/digits,
   tuning card, guide update within 10 s, off-air states, Turnstile test keys.
 - Spike (34.3/34.4, real Cloudflare account): cold start time, A→B switch, `ip.src` rule on mobile,

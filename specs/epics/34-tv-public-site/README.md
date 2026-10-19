@@ -2,9 +2,12 @@
 
 > **Status:** spec. **Source:** `specs/epics/34-tv-public-site/`.
 > **Anchors:** [Epic 32 — TV across the cluster and remote viewing through Cloudflare Stream](../32-tv-streaming-cluster-remote/README.md)
-> (branch `docs/epic-32-tv-streaming`, PR #60: live inputs, the push by stream copy, signed playback,
-> `home_secrets`, cost and budget 32.10, simulcast 32.13), Epic 33 — TV staging, hot swap and change
-> management (branch `docs/epic-33-tv-staging`, in progress), [Epic 27 — Live channels](../27-live-channels/README.md)
+> (implemented on main: placement `streaming/internal/placement`, the front door and its push relay
+> `streaming/internal/frontdoor/relay`, the remote controller, Cloudflare client, signing and budget
+> `api/internal/tvremote`, simulcast 32.13; slots 0120 `home_secrets`, 0123, 0125, 0126),
+> [Epic 33 — TV staging, hot swap and change management](../33-tv-staging-hot-swap/README.md)
+> (spec merged; the push relay of 33.8 is already the Epic 32 push; the rest is being implemented),
+> [Epic 27 — Live channels](../27-live-channels/README.md)
 > (scheduler, EPG/XMLTV, live player 27.7, filler 27.10), [Epic 25 — Cloud relay](../25-cloud-relay/README.md)
 > (Hetzner + Cloudflare DNS/TLS, Maktaba cloud accounts), [Epic 31 — Multi-instance](../31-multi-instance/README.md).
 
@@ -36,7 +39,7 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
 |---|---|
 | Hosting | **One Cloudflare Worker with static assets** (Cloudflare's recommendation for new projects; Pages still works but new features go to Workers), on the **owner's own Cloudflare account** — the same account as Epic 32's Stream. |
 | What the home sends | Outbound only: the public lineup, logos, the guide for the next `guide_days` days, and live channel state. Published to R2 through the Worker's home endpoint on every schedule change. |
-| Video | The Epic 32 push (same encode, stream copy) to **dedicated public live inputs**, one A/B pair per public channel. |
+| Video | The Epic 32 push — the home front door's **push relay** (Epic 33.8, `streaming/internal/frontdoor/relay`), same encode, stream copy — of the channel's **public feed** to **dedicated public live inputs**, one A/B pair per public channel. Watermark and channel strip (Epic 27.11) are already burned into the video by the block encodes, so the public feed carries them unchanged; the site never overlays its own. |
 | Always-on or on demand | **Always-on, full quality, for every public channel** (owner's uplink is 1 Gbps: 22 × ≈ 6.5 Mb/s ≈ 143 Mb/s ≈ 15 %). Ingest is free and delivery is billed only when watched. The constraint is **encoder capacity** (22 encodes 24/7 across the M3 Ultra's VideoToolbox and the PC's NVENC via Epic 32 balancing), not bandwidth. "Lower public rendition" and "always-on only for the top N, on demand for the rest" exist as settings for smaller uplinks, **off by default**. |
 | Control channel | The home keeps an **outbound WebSocket** to a Durable Object (`SiteControl`); the Worker never calls the home. Used for on-demand wake (only when that option is on), state reports, panic off-air. Fallback: long-poll over HTTPS. |
 | Which channels | Per-channel **"public" flag** with a **rights confirmation** by an admin, default off; per-programme **exclusions** (series, collection, item) shown as a slate "Not available online". |
@@ -48,13 +51,16 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
 
 - Per-channel public flag, rights confirmation, per-programme exclusions, the "public" admin page.
 - The publisher: lineup, logos, guide (now/next/EPG) for `guide_days`, versioned snapshots in R2.
-- The public feed on the encoding host: always-on push to an A/B pair of public inputs, exclusion
-  slates, rotation without a break, optional lower rendition and tiering.
+- The public feed: a public mux on the encoding host (exclusion slates), pushed always-on by the
+  home's front-door push relay to an A/B pair of public inputs, rotation without a break, optional
+  lower rendition and tiering.
 - The Worker: static site, public API, token minting, sessions, the `SiteControl` Durable Object,
   the home endpoints.
 - The site UI: channel grid, now/next, EPG, player, mobile-first, Arabic (RTL) and English, share
   links, embeddable player, SEO basics.
-- Channel switching (controls and speed) as a shared player module also used by Epic 27.7 and Epic 32.9.
+- Channel switching on the site through the shared `@maktaba/tvplayer` module (already on main,
+  `web/packages/tvplayer`, PR #87, used by the Maktaba web live player for LAN and remote): the
+  public resolver, neighbour tokens and the Analytics Engine sink.
 - Access modes, branding and domain settings.
 - Budget, abuse controls, viewer counts, analytics.
 - Deployment (prod and staging), versioning, rollback.
@@ -86,8 +92,10 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
   Rule `tv_public.default_programme_policy` = `allow` (default: everything not excluded plays) or
   `deny` (only items in a "cleared" list play; everything else gets the slate).
 - R1.4 During an excluded programme the public feed shows the slate "Not available online" (branded,
-  with the next programme's title and start time); LAN, Plex and Epic 32 remote viewers keep the
-  real programme. The guide shows the slot as "Not available online" without the title.
+  with the next programme's title and start time); LAN and Plex viewers keep the real programme.
+  Epic 32 remote viewers keep it too, except on a public channel while
+  `tv_public.remote_on_public_input` is on (default: one upload per channel, R3.7), where they see
+  the public feed with its slate. The guide shows the slot as "Not available online" without the title.
 - R1.5 A global **Panic off-air** stops every public token at once (R4.6) and turns the site to
   "Off air" in under 30 s.
 
@@ -133,19 +141,22 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
 
 ### R3 — Video for public channels
 - R3.1 Every public channel is pushed **always-on** while `tv_public.enabled` and the channel is
-  public, at the channel's own encode (stream copy, no second encode). Default
-  `tv_public.tiering = all_always_on`.
+  public, at the channel's own encode (stream copy, no second encode), by the home's front-door push
+  relay (the same `relay.Ctl`/`Session` that runs Epic 32 pushes; a push row with `feed = public`
+  makes the relay read the public mux instead of the channel mux). Default
+  `tv_public.tiering = all_always_on`. The burned-in watermark and channel strip come with it.
 - R3.2 Each public channel gets a dedicated pair of live inputs (A/B), `recording.mode = automatic`
   (needed for HLS), `requireSignedURLs = true`, `allowedOrigins` = the site hostnames (+ the Maktaba
   app origin when Epic 32 remote reuses the input, R3.7), `timeoutSeconds = 30`.
-- R3.3 Rotation without a break: every `rotate_hours` (default 2) the host starts pushing to the
-  idle input of the pair, the Worker moves new tokens and live sessions to it (players switch at a
+- R3.3 Rotation without a break: every `rotate_hours` (default 2) the relay starts a second session
+  (a second push row) to the idle input of the pair, the Worker moves new tokens and live sessions to it (players switch at a
   segment boundary, design §6.4), then the old push stops and its recording is deleted. This bounds
   storage and avoids the 7-day recording truncation.
 - R3.4 Exclusion slates are produced on the encoding host as a parallel "public mux" fed with the
-  channel's blocks, except excluded blocks, which are replaced by a slate block encoded with the
-  channel's output settings (design §5). The slate costs one small extra encode only while an
-  excluded programme runs.
+  channel's blocks, except excluded blocks, which are replaced by a slate block encoded through the
+  normal block path with the channel's output settings and look (watermark and strip burned in like
+  every other block, design §5). The slate costs one small extra encode only while an excluded
+  programme runs.
 - R3.5 Capacity: always-on public channels hold one encode each, 24/7, on the encoding hosts
   (Epic 32 placement). The admin page shows "public channels on air / capacity" per host and warns
   when public channels would leave fewer than `tv_public.reserve_slots` (default 2) free encode
@@ -156,12 +167,16 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
   most-watched (or pinned) channels always-on and wakes the rest on demand through `SiteControl`
   (idle stop after `on_demand_idle_minutes`, default 5). The settings page shows the uplink use of
   the current choice against `tv_public.uplink_mbps` (default 1000).
-- R3.7 One push per channel: when a public channel is also tuned by an Epic 32 remote viewer, the
-  remote session plays the public input (no second push); simulcast outputs (Epic 32.13) attach to
-  the same live input and therefore also get the exclusion slate.
+- R3.7 One push per channel (`tv_public.remote_on_public_input`, default on): when a public channel
+  is also tuned by an Epic 32 remote viewer, the remote session plays the public input (no second
+  push, the viewer sees the public feed with its slates); off → the remote tune starts its own
+  channel-feed push from the Epic 32 pool (two uploads, real programme). Simulcast outputs (Epic
+  32.13, which on main follow "the push's input") follow the **active** public input and therefore
+  also carry the slate; at an A/B rotation they move from A to B (design §5.5).
 - R3.8 Continuity: an Epic 33 hot swap changes what the station plays, not the push; an Epic 32
-  failover restarts the push on the new host on the same input inside `timeoutSeconds`, so public
-  viewers keep the same playback URL and token.
+  failover is a **source switch** inside the relay (the RTMPS/SRT session stays up, E32 §7.4), so
+  Cloudflare keeps the same broadcast and public viewers keep the same playback URL and token. Only
+  a front-door outage longer than `timeoutSeconds` starts a new broadcast on the same input.
 
 ### R4 — The Worker, API and tokens
 - R4.1 One Worker serves the static site (`assets`), the public API (`/api/v1/*`), the embed page,
@@ -215,8 +230,15 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
   press to the first frame (p75 on broadband); cold channel (only with `tiering = top_n`) tuning
   card immediately (< 100 ms) and video < 20 s (to be measured in the 34.3 spike; Cloudflare
   documents "a brief delay" before a newly connected input becomes playable).
-- R6.5 The switching module (`@maktaba/tvplayer`) is shared with the Maktaba web live player
-  (Epic 27.7: up/down/digits already specified) and Epic 32.9 remote viewing.
+- R6.5 R6.1–R6.4 are implemented by `@maktaba/tvplayer` (`web/packages/tvplayer`, on main since
+  PR #87: key map, gestures, ring, number entry, `Switcher`, `VideoPipeline`, `Prefetcher`, tuning
+  card / mini-guide overlays, telemetry, `useTvSwitcher`), already used by the Maktaba web live
+  player (Epic 27.7) for the LAN and Epic 32.9 remote paths. The site adds only a host app: a
+  `Resolver` over `/api/v1/play` (using the neighbour tokens), `isWarm` from live state, and a
+  telemetry sink to Analytics Engine (story 34.6).
+- R6.6 The player shows the video as it is: watermark and channel strip are in the picture (burned
+  in by the encoder); the site adds no logo overlay over the video. Channel logos for tiles, the
+  guide and the tuning card are published with the lineup (R2.1).
 
 ### R7 — Access modes
 - R7.1 `public`: anyone. `turnstile` (default): one Turnstile check per browser session (server-side
@@ -323,10 +345,10 @@ The domain is not decided: it is a setting (`tv_public.domain`). Until it is set
  │            control client ────────────────────────────────────┼─WSS──┼─► /_home/ws ──► Durable Object SiteControl            │
  │            budget reconcile, viewer counts                    │      │      sessions, limits, budget, on-air state, wake      │
  │  home_secrets: CF token, HOME_KEY, site signing key           │      │  /api/v1/* lineup, guide, play, heartbeat (tokens)     │
- │ Station (per public channel, Epic 27/32 placement)            │      │  DO LiveHub (shards): WebSocket fan-out to open pages  │
- │  block encodes → channel mux → Hub → LAN / Plex / Epic 32     │      │  static assets: SPA (ar/en), embed, sitemap; AE; RL    │
+ │ Station (home or node, Epic 32 placement)                     │      │  DO LiveHub (shards): WebSocket fan-out to open pages  │
+ │  block encodes (watermark + strip burned in) → channel mux    │      │  static assets: SPA (ar/en), embed, sitemap; AE; RL    │
  │                └→ public mux (excluded blocks → slate) ──┐    │      └───────────────▲────────────────────────────────────────┘
- │  public pusher (ffmpeg -c copy) ◄────────────────────────┘    │                      │ HTML/JSON + token
+ │ Front door (home): push relay, one ffmpeg -c copy per push ◄┘ │                      │ HTML/JSON + token
  │       └──── RTMPS/SRT (outbound) ─────────────────────────────┼──────► Cloudflare Stream: public live inputs A/B per channel
  └──────────────────────────────────────────────────────────────┘        (recording automatic, signed URLs, allowedOrigins=site)
             ▲ nothing inbound                                                      │ HLS (signed, customer-<code>.cloudflarestream.com)
@@ -373,6 +395,7 @@ over the control connection into the DO.
 | `on_demand_idle_minutes` | `5` | With `top_n`: stop a woken channel after its last viewer. |
 | `rendition` / `rendition_kbps` | `copy` / `3000` | `copy` \| `720p` \| `540p`; extra encode only when not `copy`. |
 | `uplink_mbps` | `1000` | For the uplink check on the settings page. |
+| `remote_on_public_input` | `true` | Epic 32 remote viewers of a public channel play the public input (one upload; they see slates). Off: their own pool push. |
 | `reserve_slots` | `2` | Encode slots kept free for LAN/Plex channels. |
 | `rotate_hours` | `2` | A/B input rotation period (1–24). |
 | `token_ttl_minutes` | `10` | Public token lifetime (2–60). |
@@ -417,6 +440,7 @@ POST   /api/v1/play/{session}/beat            → {expires_at, hls_url?, state}
 DELETE /api/v1/play/{session}
 GET    /api/v1/live                           WebSocket (LiveHub DO): guide deltas and live state for open pages
 GET    /api/v1/version                        {snapshot, server_time}  (short-poll fallback)
+POST   /api/v1/events                         player telemetry (SwitchEvent) → Analytics Engine
 GET    /embed/{slug}, /{lang}/, /{lang}/guide, /{lang}/watch/{slug}[?at=], /{lang}/about, /{lang}/legal/{page}
 GET    /sitemap.xml, /robots.txt
 
@@ -463,7 +487,7 @@ doubles one channel's upload for ≈ 1–3 min every `rotate_hours`.
 
 - Inbound: nothing. The home makes only outbound calls; the Worker cannot reach the home.
 - Secrets: Cloudflare API token (scopes in the runbook), `HOME_KEY`, the site signing key PEM — on the
-  home in `home_secrets` (Epic 32 slot 0119); in Cloudflare as Worker secrets. The signing key never
+  home in `home_secrets` (slot 0120); in Cloudflare as Worker secrets. The signing key never
   enters R2; input ids live only in the DO.
 - Viewers: signed, short-lived tokens; signed inputs; `allowedOrigins`; optional IP binding and
   country rules; Turnstile or Access; rate limits; concurrency caps; panic off-air with key rotation.
@@ -491,7 +515,7 @@ doubles one channel's upload for ≈ 1–3 min every `rotate_hours`.
 | 34.3 | [Public feed: always-on push, slates, rotation](story-34-03-public-feed-push-slates.md) | Public mux with exclusion slates, A/B inputs and rotation, capacity reserve, optional rendition and tiering. |
 | 34.4 | [Worker API, tokens and SiteControl](story-34-04-worker-api-tokens.md) | Public API, token minting, sessions, the Durable Object, the home WebSocket and HMAC endpoints. |
 | 34.5 | [Site UI: guide and player](story-34-05-site-ui-guide-player.md) | Grid, now/next, EPG, channel page, embed, share, SEO, RTL/ar + en, accessibility. |
-| 34.6 | [Channel switching](story-34-06-channel-switching.md) | Shared `@maktaba/tvplayer` controls and fast switching (make before break, neighbour manifests, tuning card). |
+| 34.6 | [Channel switching](story-34-06-channel-switching.md) | Module done on main (`web/packages/tvplayer`, PR #87); remaining: the site's public resolver with neighbour tokens, warm state, Analytics Engine telemetry. |
 | 34.7 | [Access modes](story-34-07-access-modes.md) | public, Turnstile, Cloudflare Access invite-only, Maktaba accounts. |
 | 34.8 | [Branding and domain settings](story-34-08-branding-domain.md) | Branding fields, custom domain attach/switch, origins and widget updates. |
 | 34.9 | [Budget, abuse controls and analytics](story-34-09-budget-abuse-analytics.md) | Public budget, limits, rate limits, viewer counts, Analytics Engine, reconcile with Stream analytics. |
@@ -500,24 +524,28 @@ doubles one channel's upload for ≈ 1–3 min every `rotate_hours`.
 
 ## Dependencies
 
-- **Epic 32** (spec; code after `feat/tv-core`): `home_secrets` (0119), the Cloudflare integration
-  32.6, the pusher 32.7, signing 32.8, the budget 32.10, simulcast 32.13, placement and failover
-  32.2/32.4. Epic 34 reuses the Cloudflare client and the pusher; it adds the public mux and the
-  public input pairs.
-- **Epic 33** (in progress): the "committed change" event the publisher listens to; hot swap must
-  keep feeding the station's muxers (it does: the swap happens before the mux).
-- **Epic 27**: scheduler (guide data), filler 27.10 (slate block uses the filler block path), player 27.7.
+- **Epic 32** (implemented on main): `home_secrets` (0120), placement and failover 32.2/32.4
+  (`streaming/internal/placement`, 0123), the Cloudflare client and integration 32.6
+  (`api/internal/tvremote/cf`), the push 32.7 as the front-door push relay
+  (`streaming/internal/frontdoor/relay`, Epic 33.8 amendment), signing 32.8, the budget 32.10,
+  simulcast 32.13 (0125, 0126). Epic 34 reuses the client, the relay and the signing code; it adds the
+  public mux, a `feed = public` relay source and the public input pairs.
+- **Epic 33** (spec merged, code in progress): the "committed change" event the publisher listens
+  to; hot swap must keep feeding the station's muxers (it does: the swap happens before the mux).
+- **Epic 27**: scheduler (guide data), filler 27.10 (slate block uses the filler block path), channel
+  strip and look 27.11 (burned into every block, the slate too), player 27.7 (now on `@maktaba/tvplayer`).
 - **Epic 25**: Maktaba cloud accounts for `accounts` mode (phase D only).
 - **Queue engine** (`feat/queue-engine`): jobs `tv_public_publish`, `tv_public_deploy`.
 
-## Data model (proposed migration — provisional slot)
+## Data model (proposed migration — slot assigned at implementation)
 
-After Epic 32's 0119–0121 and any Epic 33 slots; renumbered to the next free integer when the file
-lands (MANIFEST rule).
+Main ends at 0126 (Epic 32 simulcast); Epic 33 phase 1 takes 0127 and up. Epic 34 takes **the next
+free integer at implementation time** (MANIFEST rule); this spec calls it `NNNN`.
 
 | Slot | Story | File | Tables |
 |---|---|---|---|
-| 0122 (prov.) | 34.1, 34.2, 34.3, 34.10 | `0122_tv_public.sql` | `tv_public_channels` (channel_id pk, public, slug unique, public_id, rights_confirmed_by, rights_confirmed_at, rights_note, pin_always_on, input_a, input_b, active_input, rotated_at, state, updated_at); `tv_public_exclusions` (id, kind, ref_id, mode exclude/clear, reason, created_by, created_at); `tv_public_publishes` (id, env, snapshot, started_at, finished_at, blobs_sent, bytes, status, error); `tv_public_deploys` (id, env, version, cf_version_id, status, started_at, finished_at, by, error); `tv_public_usage_daily` (day, env, minutes_delivered, sessions, peak_viewers, cost_usd). REVOKE from `maktaba_worker` except SELECT on `tv_public_channels`/`tv_public_exclusions` (stations on nodes need them for slates). |
+| next free | 34.3 | `NNNN_tv_public.sql` (same file) | Extends Epic 32's tables instead of a parallel set: `tv_remote_inputs.purpose` (`pool` default \| `public`; `max_channels` and the pool's assign/release count only `pool`); `tv_remote_pushes.feed` (`channel` default \| `public`; the relay's source). The 0125 index `tv_remote_pushes_one_per_channel` becomes one active push per `(channel_id, feed)` for `feed = channel` and one per `(channel_id, input_id)` for `feed = public`, so the A and B pushes of a rotation can overlap. Stream keys stay in `home_secrets` (`cf_input.<uid>`), push credentials in `tv_push_secrets` / `tv_push_credentials`. |
+| next free | 34.1, 34.2, 34.3, 34.10 | `NNNN_tv_public.sql` | `tv_public_channels` (channel_id pk, public, slug unique, public_id, rights_confirmed_by, rights_confirmed_at, rights_note, pin_always_on, input_a, input_b (FK `tv_remote_inputs`), active_input, rotated_at, state, updated_at); `tv_public_exclusions` (id, kind, ref_id, mode exclude/clear, reason, created_by, created_at); `tv_public_publishes` (id, env, snapshot, started_at, finished_at, blobs_sent, bytes, status, error); `tv_public_deploys` (id, env, version, cf_version_id, status, started_at, finished_at, by, error); `tv_public_usage_daily` (day, env, minutes_delivered, sessions, peak_viewers, cost_usd). REVOKE from `maktaba_worker` except SELECT on `tv_public_channels`/`tv_public_exclusions` (stations on nodes need them for slates). |
 
 ## Open questions (with the recommendation used in this spec)
 
@@ -547,8 +575,12 @@ lands (MANIFEST rule).
     reachable without the home. OK, or drop `accounts` mode?
 11. **Artwork.** Posters off by default (their rights differ from the programme's). OK?
 12. **Workers Paid plan** ($5/month) is assumed (Durable Objects, KV/R2 volumes, CPU). OK?
-13. **Access seats.** Invite-only via Cloudflare Access uses Zero Trust seats; check the seat limits of
-    the owner's Zero Trust plan before choosing `access` for a large invite list.
+13. **Access seats.** Invite-only via Cloudflare Access uses Zero Trust seats (every Access login
+    takes a seat, [Seat management](https://developers.cloudflare.com/cloudflare-one/team-and-resources/users/seat-management/));
+    check the seat limits of the owner's Zero Trust plan before choosing `access` for a large invite list.
+14. **Remote viewers on public channels.** `remote_on_public_input` (default on) saves one upload per
+    channel but shows signed-in remote viewers the public slates. OK, or default off (two uploads for
+    channels that are both public and remotely watched)?
 
 ## Cloudflare facts this design relies on (with sources)
 
@@ -570,6 +602,8 @@ GraphQL analytics, simulcast) applies unchanged. In addition:
 | Cloudflare Access can protect a Worker or a specific Custom Domain; needs Zero Trust enabled on the account; every request is checked before the Worker runs. | [Workers: Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/), [Choose application type](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/) |
 | Workers Rate Limiting binding (GA): `limit({key})`, period 10 or 60 s, counters per Cloudflare location, permissive and eventually consistent (not an accounting system). | [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), [GA changelog](https://developers.cloudflare.com/changelog/post/2025-09-19-ratelimit-workers-ga/) |
 | Durable Objects: WebSocket server with the Hibernation API (`ctx.acceptWebSocket`, auto ping/pong without waking), up to 32,768 WebSockets per object; hibernation only when the DO is the server. | [Durable Objects WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/), [DurableObjectState](https://developers.cloudflare.com/durable-objects/api/state/) |
+| Stream signing keys: up to 1,000 per account; once a key is revoked (deleted) every token created with it is invalidated; token `exp` at most 24 h ahead — the basis of panic off-air (R4.6) and the separate site key (R4.5). | [Secure your Stream](https://developers.cloudflare.com/stream/viewing-videos/securing-your-stream/) |
+| Simulcast: up to 50 outputs per live input; outputs can be added, removed, enabled or disabled during a broadcast — used to move outputs from input A to B at a rotation. | [Simulcasting](https://developers.cloudflare.com/stream/stream-live/simulcasting/) |
 | Queues pull consumers (HTTP pull from outside Workers, API token with queues read+write) — considered for the control channel, not chosen. | [Queues pull consumers](https://developers.cloudflare.com/queues/configuration/pull-consumers/) |
 | KV is eventually consistent (writes visible elsewhere within up to 60 s or `cacheTtl`; min `cacheTtl` 30 s); Free plan 1,000 writes/day — why the snapshot goes to R2, not KV. | [KV write guidance](https://developers.cloudflare.com/kv/api/write-key-value-pairs/), [KV cacheTtl changelog](https://developers.cloudflare.com/changelog/post/2026-01-30-kv-reduced-minimum-cachettl/), [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) |
 | Workers Paid: $5/month minimum, no egress charges; R2: no egress charges, 1 M Class A and 10 M Class B ops free per month; Workers Free: 100,000 requests/day, 10 ms CPU. | [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) |
