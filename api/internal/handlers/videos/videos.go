@@ -201,6 +201,21 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cur, cerr := decodeListCursor(q.Get("cursor"), sort)
+	if cerr != nil {
+		httperror.Write(w, r, cerr)
+		return
+	}
+	if cur != nil {
+		frag, cargs, werr := cur.where(sort, len(args)+1)
+		if werr != nil {
+			httperror.Write(w, r, werr)
+			return
+		}
+		conds = append(conds, frag)
+		args = append(args, cargs...)
+	}
+
 	where := ""
 	if len(conds) > 0 {
 		where = " WHERE " + strings.Join(conds, " AND ")
@@ -209,7 +224,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	query := "SELECT id, library_id, path, filename, title, description, state, " +
 		"detected_language, duration_sec, size_bytes, content_hash, metadata, " +
 		"created_at, updated_at FROM videos" + where +
-		" ORDER BY " + sort + " DESC, id DESC LIMIT " + pidx(len(args))
+		" ORDER BY " + sortExpr(sort) + " DESC, id DESC LIMIT " + pidx(len(args))
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
@@ -230,10 +245,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var next *string
 	if len(items) > limit {
 		items = items[:limit]
-		// (Real cursor encoding lives in paginate; for the list endpoint
-		// we expose a stable timestamp marker — clients should pass it
-		// back as ``after=<ts>``.)
-		s := items[len(items)-1].UpdatedAt.UTC().Format(time.RFC3339Nano)
+		// Pass it back as ?cursor= (with the same sort) for the next page.
+		s := encodeListCursor(sort, items[len(items)-1])
 		next = &s
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "next": next})

@@ -10,7 +10,7 @@
 // chips are URL-encoded; cursor "Load more" appends pages; empty states
 // distinguish first-run (admin "Scan now") vs filtered-out ("Clear
 // filters"). State badges + poster 404 fallback + bidi-isolated titles.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
@@ -93,6 +93,7 @@ export function LibraryBrowser() {
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -139,16 +140,27 @@ export function LibraryBrowser() {
   }, [buildQuery, t]);
 
   function loadMore() {
-    if (!cursor || loadingMore) return;
+    // A ref, not the loadingMore state: two quick clicks run before React
+    // re-renders, and both would see loadingMore === false.
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     api
       .get<VideoListResponse>(`/api/videos?${buildQuery(cursor)}`)
       .then((res) => {
-        setVideos((prev) => [...(prev ?? []), ...(res.items ?? [])]);
+        // Skip ids already shown: a page that overlaps the last one (rows
+        // re-sorted between requests) must not add duplicate cards.
+        setVideos((prev) => {
+          const seen = new Set((prev ?? []).map((v) => v.id));
+          return [...(prev ?? []), ...(res.items ?? []).filter((v) => !seen.has(v.id))];
+        });
         setCursor(res.next ?? null);
       })
       .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")))
-      .finally(() => setLoadingMore(false));
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
   }
 
   function patchParam(key: string, value: string | null) {

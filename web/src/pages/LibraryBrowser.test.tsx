@@ -96,4 +96,65 @@ describe("LibraryBrowser", () => {
     renderLib();
     await waitFor(() => expect(screen.getByText(/no videos yet/i)).toBeInTheDocument());
   });
+
+  describe("LibraryBrowser load more (test-cases/library.md)", () => {
+    const v1 = { id: "v1", filename: "a.mp4", state: "ready" };
+    const v2 = { id: "v2", filename: "b.mp4", state: "ready" };
+    const videoCalls = () =>
+      get.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith("/api/videos?"));
+
+    function serve(page1: unknown, page2: () => Promise<unknown>) {
+      get.mockImplementation((url: string) => {
+        if (url.includes("/api/channels/now"))
+          return Promise.resolve({ server_time: "", items: [] });
+        return url.includes("cursor=") ? page2() : Promise.resolve(page1);
+      });
+    }
+
+    it("LIB-16: Load more shows the count, sends one request, keeps params, hides at the end", async () => {
+      let release: (v: unknown) => void = () => {};
+      serve({ items: [v1], next: "CURSOR_2" }, () => new Promise((r) => (release = r)));
+      renderLib();
+      const more = await screen.findByRole("button", { name: /load more 1/i });
+      await act(async () => {
+        more.click();
+        more.click();
+      });
+      expect(videoCalls().filter((u) => u.includes("cursor=CURSOR_2"))).toHaveLength(1);
+      const page2 = new URLSearchParams(videoCalls()[1].split("?")[1]);
+      expect(page2.get("sort")).toBe("updated_at");
+      expect(page2.get("limit")).toBe("60");
+      await act(async () => release({ items: [v2], next: null }));
+      expect(await screen.findByText("b.mp4")).toBeInTheDocument();
+      expect(screen.getByText("a.mp4")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
+    });
+
+    it("LIB-17: a page that repeats loaded videos does not duplicate cards", async () => {
+      serve({ items: [v1, v2], next: "C2" }, () =>
+        Promise.resolve({ items: [v2, v1], next: null })
+      );
+      renderLib();
+      const more = await screen.findByRole("button", { name: /load more/i });
+      await act(async () => more.click());
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument()
+      );
+      expect(screen.getAllByText("a.mp4")).toHaveLength(1);
+      expect(screen.getAllByText("b.mp4")).toHaveLength(1);
+    });
+
+    it("LIB-18: a failed Load more keeps loaded videos, shows the error and keeps the button", async () => {
+      const { ApiError } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+      serve({ items: [v1], next: "C2" }, () =>
+        Promise.reject(new ApiError({ type: "about:blank", title: "boom", status: 500 }))
+      );
+      renderLib();
+      const more = await screen.findByRole("button", { name: /load more/i });
+      await act(async () => more.click());
+      expect(await screen.findByText("boom")).toBeInTheDocument();
+      expect(screen.getByText("a.mp4")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /load more/i })).toBeInTheDocument();
+    });
+  });
 });
