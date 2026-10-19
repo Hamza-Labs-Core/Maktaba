@@ -1,0 +1,39 @@
+{
+  "comment": "Epic 31 phase 2 agent channel (design-agent.md section 2); Go and Python both check these.",
+  "node_private": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+  "node_public": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=",
+  "server_private": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2A=",
+  "server_public": "ZLEBsdC+WocEvQePmJUAH8A+jp+VIvGI3RKNmEbUhGY=",
+  "client_nonce": "yMnKy8zNzs/Q0dLT1NXW1w==",
+  "server_nonce": "2Nna29zd3t/g4eLj5OXm5w==",
+  "shared": "JsLBf9uCFhyyGtFuchMVNVtk0XYxGbEL/JYlMNx8wWM=",
+  "k_c2s": "OultipsMCIhLmp4DMPBUUeiwYGkeEAnxeJ1GXZ86QHQ=",
+  "k_s2c": "fB/YADiCXK31MoP39QplDuris6YXE1jGH2I0HjVXWvA=",
+  "proof": "u0F4AnQXUQIosYh/+2jlzAPGZQA54q/sw/Di9s8swPs=",
+  "frames": [
+    {
+      "dir": "s2c",
+      "counter": 0,
+      "plaintext": "{\"session\":\"s1\",\"settings\":{\"log_level\":\"info\",\"metrics_every\":2},\"t\":\"welcome\"}",
+      "sealed": "LgFO1B77QzEq5QXAPoXoJloFEEBQ+82XgFzstYWzkd7ZFNMA936jWXK36wC7c8kIGs0kdb2vABsl3uQ7pePlJKMMlaaaJiutqPKFhTN0g00H6oFflc6SWRpir6fAjXSe"
+    },
+    {
+      "dir": "c2s",
+      "counter": 0,
+      "plaintext": "{\"system\":{\"cpu_pct\":12.5},\"t\":\"metrics\",\"ts\":\"2026-10-19T00:00:00Z\"}",
+      "sealed": "5o5kmzwUXEeurv8wAd02fYP6Tw6zmqjCCO04Lu53hs6UDtP5Dl1CUBk72Aedx3oVF6p6l7HuJ6hT91dEu3pA0/NZM7DedNou4OQn/wleG1SLdqSdIg=="
+    },
+    {
+      "dir": "c2s",
+      "counter": 1,
+      "plaintext": "{\"records\":[{\"event\":\"x\",\"level\":\"warning\",\"ts\":\"2026-10-19T00:00:01Z\"}],\"t\":\"logs\"}",
+      "sealed": "v/1L60DfEF10eySFw4nYvbL8UqqDaB9K6TftIZu+pvt940M89Vl/8iWCE1IM4Zlilob+QrB6dPoOcXMEUG9cRkLzbUED3CA7PaxmVQZvnwCEUgXbcv2QZA9DcW1DOY0/xvTwKg=="
+    }
+  ],
+  "home": {
+    "home_key": "eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpc=",
+    "k_c2s": "zPM0T5WUcXI09Kf3Isjt0p5bWVjMGVwYhPhBRL1+bkM=",
+    "k_s2c": "a9WMaQ1hM6JRkPYm/ZpThSNr0tBLWC72Iot7gootF+w=",
+    "proof": "mL25KeOGQPljq3cMeLUSsX5OGtSZAiy1i5uQQkrrjWQ="
+  }
+}
