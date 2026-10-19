@@ -183,6 +183,8 @@ class FakeRuntimeState:
     pieces: list[str] = field(default_factory=lambda: ["Hel", "lo", "!"])
     delay: float = 0.0
     chunked: bool = True
+    #: the runtime dies after this many stream events (a chunk cut short)
+    die_after: int | None = None
     usage: bool = True
     requests: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
@@ -210,7 +212,12 @@ def _handler(state: FakeRuntimeState) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Transfer-Encoding", "chunked")
             self.send_header("Connection", "close")
             self.end_headers()
-            for e in [*events, b"[DONE]"]:
+            for i, e in enumerate([*events, b"[DONE]"]):
+                if state.die_after is not None and i >= state.die_after:
+                    self.wfile.write(b"ff\r\ndata: {")  # a chunk announced, never finished
+                    self.wfile.flush()
+                    self.close_connection = True
+                    return
                 data = b"data: " + e + b"\n\n"
                 if state.chunked:
                     data = f"{len(data):x}\r\n".encode() + data + b"\r\n"

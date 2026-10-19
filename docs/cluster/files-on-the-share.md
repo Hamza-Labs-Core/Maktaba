@@ -51,7 +51,7 @@ maktaba/cluster/
   192.168.50.20/                     the home
     processes/                       one small file per worker process: who it is
     logs/2026-10-19/                 what the workers logged that day
-    metrics/2026-10-19/              CPU, memory, GPU, disks, network every 2 seconds
+    metrics/2026-10-19/              CPU, memory, GPU, disks, network every 10 seconds
     jobs/2026-10-19/                 every job: when it was taken, its progress, how it ended
     llm/2026-10-19/                  LLM requests this machine ran (counts only)
     events/2026-10-19/hub.jsonl      the home only: machines connecting, leaving, refused, commands
@@ -162,10 +162,12 @@ the API read them quickly instead of opening many files on the NAS.
 |---|---|---|
 | `MAKTABA_CLUSTER_RETENTION_DAYS` | 14 | day folders older than this are deleted |
 | `MAKTABA_CLUSTER_FILE_MB` | 256 | the most one file may grow in a day; past it, records are counted, not written |
+| `MAKTABA_CLUSTER_METRICS_FILE_SEC` (any machine) | 10 | how often a metrics snapshot is saved to the file; the live view still gets one every 2 seconds |
 
-The home sends these to every machine; setting them on a machine overrides them for that
-machine. Each process deletes its own old files; the home also cleans up after processes
-that are gone.
+The home sends the first two to every machine; setting them on a machine overrides them for
+that machine. Each machine deletes its expired day folders (whichever of its processes wrote
+them) and, in its local fallback folder, the records of processes gone longer than that; the
+home also cleans up after processes that are gone on the share.
 
 You can delete any of these files or folders at any time; they are a record, Maktaba does
 not need them to work. Do not edit files that are being written.

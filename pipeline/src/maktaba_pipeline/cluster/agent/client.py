@@ -90,6 +90,7 @@ JOB_BUFFER = 1_000
 LOG_BATCH = 1_000  #: records per ``logs`` frame (section 4.7)
 LOG_BATCH_BYTES = 3 * 1024 * 1024
 MAX_FRAME = 4 * 1024 * 1024  #: a sealed frame's limit (section 4.7)
+METRICS_FILE_SEC = 10.0  #: a metrics line in the file at most this often (§7.4)
 
 #: close codes after which the agent waits the longest delay (section 4.6)
 LONG_WAIT_CODES = frozenset({4001, 4003, 4004, 4009, 4010, 4013})
@@ -134,6 +135,15 @@ def agent_url(home_url: str) -> str:
     if base.endswith("/api"):
         base = base[: -len("/api")]
     return urllib.parse.urlunsplit((scheme, u.netloc, base + AGENT_PATH, "", ""))
+
+
+def _metrics_file_sec() -> float:
+    """``MAKTABA_CLUSTER_METRICS_FILE_SEC``: a metrics line in the file at most this often
+    (default 10 s; the channel still gets every frame)."""
+    try:
+        return max(0.0, float(os.environ.get("MAKTABA_CLUSTER_METRICS_FILE_SEC") or 10))
+    except ValueError:
+        return METRICS_FILE_SEC
 
 
 def _now() -> str:
@@ -262,6 +272,7 @@ class ChannelAgent:
         ping_sec: float = PING_SEC,
         silence_sec: float = SILENCE_SEC,
         llm_recheck_sec: float = LLM_RECHECK_SEC,
+        metrics_file_sec: float | None = None,
         rng: random.Random | None = None,
     ) -> None:
         self.identity = identity
@@ -279,6 +290,10 @@ class ChannelAgent:
         self.ping_sec = ping_sec
         self.silence_sec = silence_sec
         self.llm_recheck_sec = llm_recheck_sec
+        self.metrics_file_sec = (
+            metrics_file_sec if metrics_file_sec is not None else _metrics_file_sec()
+        )
+        self._last_metrics_file = float("-inf")
         self.rng = rng or random.Random()
         self.state = "idle"
         self.session_id: str | None = None
@@ -774,14 +789,16 @@ class ChannelAgent:
             error = {"code": "too_large", "detail": str(exc)}
         except LLMError as exc:
             error = {"code": exc.code, "detail": str(exc)}
-        except (ValueError, OSError, TimeoutError) as exc:
+        except Exception as exc:  # noqa: BLE001 - every failure is answered
+            # the runtime died mid-stream (IncompleteReadError), answered oddly, ...: the
+            # hub must hear of it, or it holds the runtime's slot until its idle sweep
             error = {"code": "runtime_error", "detail": f"{type(exc).__name__}: {exc}"[:500]}
         finally:
             s.llm_tasks.pop(req_id, None)
         done: dict[str, Any] = {"t": "llm.done", "id": req_id, "usage": dict(run.usage)}
         if error is not None:
             done["error"] = error
-        if not s.closed:
+        if not s.closed:  # llm.done always follows an llm.request while the session lives
             await s.send(done)
 
     # -- LLM: this process asks the cluster (the door's transport) ----------------------------
@@ -846,9 +863,17 @@ class ChannelAgent:
     # -- side loops --------------------------------------------------------------------------
 
     def _record_metrics(self, frame: dict[str, Any]) -> None:
+        """Keep the latest frame (sent on reconnect); write one to the metrics file at
+        most every ``metrics_file_sec`` (the channel gets every frame), and always the
+        final one."""
         self._latest_metrics = frame
-        if self.files is not None:
-            self.files.write("metrics", {k: v for k, v in frame.items() if k != "t"})
+        if self.files is None:
+            return
+        now = time.monotonic()
+        if not frame.get("final") and now - self._last_metrics_file < self.metrics_file_sec:
+            return
+        self._last_metrics_file = now
+        self.files.write("metrics", {k: v for k, v in frame.items() if k != "t"})
 
     async def _metrics_loop(self) -> None:
         if self.collector is None:

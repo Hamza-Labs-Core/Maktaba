@@ -4,7 +4,7 @@
 
     processes/<worker_id>.json             identity, rewritten at start
     logs/<YYYY-MM-DD>/<worker_id>.jsonl    {ts, level, event, logger, fields}
-    metrics/<YYYY-MM-DD>/<worker_id>.jsonl one line per metrics frame
+    metrics/<YYYY-MM-DD>/<worker_id>.jsonl a metrics frame every 10 s, and the final one
     llm/<YYYY-MM-DD>/<worker_id>.jsonl     requests this process ran (usage, never text)
     jobs/<YYYY-MM-DD>/<worker_id>.jsonl    every job event this process had
 
@@ -12,8 +12,10 @@ One writer per file (an append from two processes to one file is not safe on NFS
 Records are queued in memory (bounded; past it they are counted) and written by a
 daemon thread at least every 2 s, so a slow or hung share never blocks the worker. The
 day directory is the record's UTC date. Each file is capped at ``MAKTABA_CLUSTER_FILE_MB``
-(past it records are counted, not written); each process removes its own files older
-than ``MAKTABA_CLUSTER_RETENTION_DAYS``. When the share cannot be written the files go to
+(past it records are counted, not written); the machine's day folders older than
+``MAKTABA_CLUSTER_RETENTION_DAYS`` are removed (:meth:`ClusterFiles.prune`). Directories
+are created ``0775`` (the hub and the home's workers share a group), files ``0644``.
+When the share cannot be written the files go to
 ``~/.maktaba/cluster`` and :meth:`ClusterFiles.status` says so (the metrics ``files`` key);
 the share is tried again every 5 minutes.
 """
@@ -67,6 +69,23 @@ def _env_int(name: str, default: int) -> int:
 
 
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _last_seen(path: Path) -> datetime | None:
+    """A ``processes/*.json``'s ``last_seen`` (else its modification time)."""
+    try:
+        with safefs.open_read(path) as fh:
+            data = json.load(fh)
+        text = str(data.get("last_seen") or data.get("started_at") or "")
+        if text:
+            seen = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return seen if seen.tzinfo else seen.replace(tzinfo=UTC)
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        return datetime.fromtimestamp(os.lstat(path).st_mtime, tz=UTC)
+    except OSError:
+        return None
 
 
 def _iso_now() -> str:
@@ -382,12 +401,18 @@ class ClusterFiles:
     # -- retention ---------------------------------------------------------------
 
     def prune(self, today: str | None = None) -> int:
-        """Remove this process's own files older than the retention (and the day
-        directories that become empty). Returns the number of files removed."""
+        """Retention for this machine's folder: every process file in an expired day
+        folder goes (an expired UTC day is never written again; worker ids are new at
+        every start, so the files of earlier processes would otherwise stay for ever),
+        then the emptied folder. In the local fallback, which the hub never sweeps,
+        the ``processes/*.json`` of processes not seen within the retention go too.
+        Real directories and regular files only: a link is never followed or removed.
+        Returns the number of files removed."""
         if self.retention_days <= 0:
             return 0
         day = datetime.strptime(today or _utc_day(), "%Y-%m-%d").replace(tzinfo=UTC)
-        cutoff = (day - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
+        cutoff_day = day - timedelta(days=self.retention_days)
+        cutoff = cutoff_day.strftime("%Y-%m-%d")
         removed = 0
         for base in {self.dir, self.fallback_dir} | (
             {self.share_dir} if self.share_dir is not None else set()
@@ -399,14 +424,34 @@ class ClusterFiles:
                 for ddir in safefs.list_real_dirs(base / self.ip / stream):
                     if not _DAY.fullmatch(ddir.name) or ddir.name >= cutoff:
                         continue
-                    try:
-                        if safefs.remove_real_file(ddir / f"{self.name}.jsonl"):
-                            removed += 1
-                    except OSError as exc:
-                        self._error("cluster_files_prune_failed", exc)
-                        continue
+                    for f in safefs.list_real_files(ddir, ".jsonl"):
+                        try:
+                            if safefs.remove_real_file(f):
+                                removed += 1
+                        except OSError as exc:
+                            self._error("cluster_files_prune_failed", exc)
                     with contextlib.suppress(OSError):
-                        ddir.rmdir()  # only when empty: other processes' files stay
+                        ddir.rmdir()  # only when empty (a link or a stray file stays)
+        removed += self._prune_processes(self.fallback_dir, cutoff_day)
+        return removed
+
+    def _prune_processes(self, base: Path, cutoff: datetime) -> int:
+        """``processes/*.json`` last seen before ``cutoff`` (this process's own stays)."""
+        pdir = base / self.ip / "processes"
+        if not (safefs.real_dir(base / self.ip) and safefs.real_dir(pdir)):
+            return 0
+        removed = 0
+        for p in safefs.list_real_files(pdir, ".json"):
+            if p.stem == self.name:
+                continue
+            seen = _last_seen(p)
+            if seen is None or seen >= cutoff:
+                continue
+            try:
+                if safefs.remove_real_file(p):
+                    removed += 1
+            except OSError as exc:
+                self._error("cluster_files_prune_failed", exc)
         return removed
 
     def _error(self, event: str, exc: BaseException) -> None:

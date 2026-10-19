@@ -569,7 +569,7 @@ node, so readers can still group folders by machine.
   192.168.50.31/                              # one folder per machine
     processes/<worker_id>.json                # who this process is (§7.6)
     logs/2026-10-19/<worker_id>.jsonl         # its log records
-    metrics/2026-10-19/<worker_id>.jsonl      # one line per metrics frame
+    metrics/2026-10-19/<worker_id>.jsonl      # one line every 10 s (and the final frame)
     jobs/2026-10-19/<worker_id>.jsonl         # every job event it had, claimed … done / failed
     llm/2026-10-19/<worker_id>.jsonl          # LLM requests it ran: usage only
   192.168.50.20/                              # the home
@@ -599,6 +599,13 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
   at a clean stop (`stopped_at`), each time to a temporary file renamed over the old one.
 - Progress events go to the jobs file at most once every 10 s per job (every other job
   event is written).
+- A metrics line goes to the metrics file at most every 10 s
+  (`MAKTABA_CLUSTER_METRICS_FILE_SEC`), plus the `final` frame at a graceful stop; the
+  channel still gets every frame (every 2 s). Ten processes writing every frame would be
+  about 43 000 lines each a day, near the file cap.
+- Directories a process creates under the cluster directory are mode `0775` whatever the
+  umask (the hub and the home's workers run as different users of one group); files are
+  `0644`.
 - Readers skip a last line that does not parse (a write in progress).
 
 ### 7.6 Record shapes
@@ -607,7 +614,7 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 |---|---|
 | `processes/<worker_id>.json` | `worker_id`, `kind` (`home` \| `node`), `node_id`, `node_name`, `host`, `os`, `arch`, `pid`, `version`, `ip`, `started_at`, `last_seen`, `stopped_at` |
 | `logs` | `ts`, `level`, `event`, `logger`, `fields` |
-| `metrics` | the `metrics` frame without `t` |
+| `metrics` | the `metrics` frame without `t`, one every 10 s and the `final` one |
 | `jobs` | the `job` frame without `t` |
 | `llm` | `ts`, `id`, `model`, `op`, `from` (the requesting process or `api:<user>`), `prompt_tokens`, `completion_tokens`, `ms`, `error` — never prompt or output text |
 | `events` | `ts`, `event` (`connect` \| `disconnect` \| `auth_refused` \| `cmd` \| `cmd_result` \| `revoked`), `session`, `kind`, `node_id`, `worker_id`, `ip`, `code`, `detail` |
@@ -616,8 +623,12 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 
 ### 7.7 Retention and caps
 
-- Kept for `MAKTABA_CLUSTER_RETENTION_DAYS` days (default 14). Each process removes its own
-  expired day files at start and once a day; the hub, once an hour, removes expired day
+- Kept for `MAKTABA_CLUSTER_RETENTION_DAYS` days (default 14). Each process removes, at start
+  and once a day, every file in its machine's expired day folders (an expired UTC day is
+  never written again, and worker ids are new at every start, so earlier processes' files
+  would otherwise stay), and in its local fallback also the `processes/*.json` not seen
+  within the retention (the hub never sweeps the fallback); the hub, once an hour, removes
+  expired day
   folders in every IP folder and `processes/*.json` whose `last_seen` is older than the
   retention (processes that will not come back: worker ids are new at every start).
 - Each file is capped at `MAKTABA_CLUSTER_FILE_MB` MB (default 256); past it, records are
@@ -774,6 +785,7 @@ level live.
 | `MAKTABA_CLUSTER_IP` | API, any process | the rule of §7.3 | the IP folder's name |
 | `MAKTABA_CLUSTER_RETENTION_DAYS` | home API (sent), any process (override) | `14` | days of files kept |
 | `MAKTABA_CLUSTER_FILE_MB` | home API (sent), any process (override) | `256` | cap per file |
+| `MAKTABA_CLUSTER_METRICS_FILE_SEC` | any process | `10` | a metrics line in the file at most this often (the channel gets every frame) |
 | `MAKTABA_CLUSTER_LOG_LEVEL` | home API (sent) | `info` | each session's starting log level |
 | `MAKTABA_HOME_CLUSTER_KEY` | home API | `~/.maktaba/cluster/home-cluster.key` | the home's long-term cluster key pair (its public half is in every machine's node config) |
 | `MAKTABA_HOME_AGENT_KEY` | home API, home workers | `~/.maktaba/cluster/home-agent.key` | the home agent key file |

@@ -164,13 +164,15 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
     try:
         database = await Database.connect(cfg.database_url)
     except Exception as exc:
-        if node is not None and type(exc).__name__ in (
-            "InvalidPasswordError",
-            "InvalidAuthorizationSpecificationError",
-        ):
-            # the home revoked this machine: its login no longer works
+        if node is not None and exitcodes.login_revoked(exc):
+            # the home revoked this machine (password rotated, NOLOGIN): for good
             log.error("cluster_node_login_refused", error=str(exc))
             return exitcodes.EX_NOPERM
+        if exitcodes.is_auth_error(exc):
+            # refused for another reason (no pg_hba.conf entry, ...): fixable on the
+            # home, so exit 1 and let the service try again
+            log.error("database_login_refused", error=str(exc))
+            return 1
         raise
 
     # Recent-logs HTTP endpoint (/logs/recent) on a daemon thread so the
