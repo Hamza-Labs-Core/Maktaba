@@ -63,6 +63,19 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	dispatcher := pushpkg.NewDispatcher(pool.DB, apns, fcm)
 
+	// Epic 30 push counters: pushes are sent from this role, so its own
+	// collector counts them (Dispatcher.Metrics → RecordPush) and flushes
+	// push_sent / push_failed into relay_metrics_raw each minute for the
+	// dashboard and export; GET /metrics on this role serves the
+	// cumulative counters to Prometheus. Rollups and purges stay with the
+	// relay role's runner.
+	metricsStore := metricspkg.NewStore(pool.DB)
+	pushMetrics := metricspkg.NewCollector()
+	dispatcher.Metrics = pushMetrics
+	metricsCtx, stopMetrics := context.WithCancel(context.Background())
+	defer stopMetrics()
+	go metricspkg.NewRunner(pushMetrics, metricsStore, nil, nil, logger).RunFlushOnly(metricsCtx)
+
 	// OAuth flows — both optional in dev, validator catches missing
 	// config when at least one is required.
 	var googleFlow *oauth.GoogleFlow
@@ -135,10 +148,17 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			DB:            pool.DB,
 			Users:         users,
 			AllowedDomain: cfg.Admin.AllowedEmailDomain,
-			Store:         metricspkg.NewStore(pool.DB),
-			Deletion:      privacy.NewDataSubjectService(pool.DB),
+			Store:         metricsStore,
+			// the relay's registry lives in the relay role's process; read
+			// the gauges it flushes each minute
+			Live:     metricsh.LiveFromStore(metricsStore, time.Now),
+			Deletion: privacy.NewDataSubjectService(pool.DB),
 		})
 	})
+
+	// Prometheus scrape of this role's push counters (aggregate only, like
+	// the relay's /metrics).
+	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
 
 	// The Stripe webhook must NOT require auth — Stripe doesn't carry
 	// our bearer tokens. It also needs raw-body access for signature
