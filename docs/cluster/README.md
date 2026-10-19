@@ -23,7 +23,7 @@ This folder explains how it works and how to run it:
 - the web app and the API (port 8080),
 - the database, which holds the library catalog and the **queues** of work (port 5432),
 - the **hub**: the live centre of the cluster, which every Maktaba process on every machine
-  stays connected to,
+  stays connected to (an encrypted connection on which both sides prove who they are),
 - its own workers.
 
 **A machine** is any other computer — macOS, Linux or Windows — that you add to the cluster.
@@ -76,7 +76,12 @@ machine (named by its IP address). The home also saves the queue and library num
 Every machine can read every other machine's files, with a command or with any text tool.
 See [Files on the share](files-on-the-share.md).
 
-None of this goes into the database: the database keeps only the library and the queues.
+The files are the record. The home's database keeps the library and the queues, plus a
+**cache**: the home copies the recent metrics and logs it receives into it so its pages read
+fast (the last 24 hours by default). Only the home writes the cache, and emptying it loses
+nothing — the home refills it from the files. The health numbers on the Processing page (NAS
+speed, CPU, memory) and the transcription speed come the same way: the machines send them over
+their live connection, and the home stores them.
 
 ## LLMs anywhere, usable everywhere
 
@@ -90,6 +95,14 @@ If the home's web app stops, the machines keep working on what the database give
 keep writing their files; they reconnect by themselves when it is back. If the whole home
 is off (database included), the machines wait. See
 [Troubleshooting](troubleshooting.md#the-home-is-unreachable--what-keeps-working).
+
+## Keep the home's cluster key safe
+
+The home has a **cluster key**, a small file that proves to every machine that it is the
+home they joined: `~/.maktaba/cluster/home-cluster.key` of the user that runs the home's
+server (with Docker, keep it on a volume). It never leaves the home's disk. Back it up with
+your database: if it is lost (for example when you reinstall the home without it), every
+machine has to [re-join](troubleshooting.md#re-join-this-machine).
 
 ## Ports at a glance
 
