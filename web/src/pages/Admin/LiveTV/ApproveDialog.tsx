@@ -54,6 +54,7 @@ export function ApproveDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [bounds, setBounds] = useState<Boundaries | null>(null);
+  const boundsChannels = bounds?.channels ?? [];
 
   const ackNeeded = mode !== "schedule" && needsParamAck(change);
   const ownChange = !!cfg?.require_second_admin && !!meId && change.created_by === meId;
@@ -190,7 +191,7 @@ export function ApproveDialog({
         <h3>{t("tvchanges.dialog.switches")}</h3>
         {!bounds ? (
           <div className="mkt-tvx-skeleton mkt-tvx-skeleton--short" aria-hidden="true" />
-        ) : bounds.channels.length === 0 ? (
+        ) : boundsChannels.length === 0 ? (
           <p className="mkt-tvx-muted">{t("tvchanges.dialog.noSwitches")}</p>
         ) : (
           <>
@@ -203,7 +204,7 @@ export function ApproveDialog({
                 </tr>
               </thead>
               <tbody>
-                {bounds.channels.map((b) => (
+                {boundsChannels.map((b) => (
                   <tr key={b.channel_id}>
                     <td>{t("tvchanges.lineup.channel", { n: n(b.number), name: b.name })}</td>
                     <td dir="auto">{b.on_air || "—"}</td>

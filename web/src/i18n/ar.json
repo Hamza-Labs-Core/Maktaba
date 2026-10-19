@@ -26,6 +26,7 @@
   "common.save": "حفظ",
   "common.loadMore": "تحميل المزيد",
   "common.clearFilters": "مسح عوامل التصفية",
+  "library.notFound": "لم يُعثر على المكتبة.",
   "library.sort": "ترتيب",
   "library.sort.recent": "المضافة حديثًا",
   "library.sort.title": "العنوان",

@@ -36,15 +36,15 @@ func homeShareMap(ctx context.Context, pool *pgxpool.Pool) (map[string]string, e
 	return out, nil
 }
 
-// startShareMap installs the share map now and keeps it fresh until ctx ends.
-func startShareMap(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) {
+// startShareMap installs the share map now and keeps it fresh until bg stops.
+func startShareMap(bg *background, pool *pgxpool.Pool, logger *slog.Logger) {
 	env := pathmap.FromEnv()
 	pathmap.SetDefault(env)
 	if pool == nil {
 		return
 	}
 	load := func() {
-		c, cancel := context.WithTimeout(ctx, 5*time.Second)
+		c, cancel := context.WithTimeout(bg.ctx, 5*time.Second)
 		defer cancel()
 		entries, err := homeShareMap(c, pool)
 		if err != nil {
@@ -54,16 +54,5 @@ func startShareMap(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger)
 		pathmap.SetDefault(env.Merge(pathmap.FromEntries(entries)))
 	}
 	load()
-	go func() {
-		t := time.NewTicker(shareMapEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				load()
-			}
-		}
-	}()
+	bg.Go(func(ctx context.Context) { tick(ctx, shareMapEvery, load) })
 }

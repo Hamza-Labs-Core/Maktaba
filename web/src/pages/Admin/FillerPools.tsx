@@ -7,6 +7,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
+import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -36,12 +37,17 @@ function FillerPoolsInner() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [kind, setKind] = useState<FillerKind>("filler");
+  // A failed first load is an error, not "No filler pools".
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fillerApi
       .pools()
-      .then((r) => setPools(r.items ?? []))
-      .catch(() => setPools([]));
+      .then((r) => {
+        setLoadError(null);
+        setPools(r.items ?? []);
+      })
+      .catch((e: unknown) => setLoadError(e instanceof ApiError ? e.problem.title : ""));
   }, []);
   useEffect(load, [load]);
 
@@ -97,11 +103,31 @@ function FillerPoolsInner() {
     return (pools ?? []).filter(
       (p) =>
         !needle ||
-        p.name.toLowerCase().includes(needle) ||
+        (p.name ?? "").toLowerCase().includes(needle) ||
         (p.external_key ?? "").toLowerCase().includes(needle)
     );
   }, [pools, q]);
 
+  if (!pools && loadError !== null) {
+    return (
+      <section className="mkt-page mkt-fillerpools">
+        <ErrorState
+          kind="server"
+          title={loadError || t("common.error")}
+          action={
+            <Button
+              onClick={() => {
+                setLoadError(null);
+                load();
+              }}
+            >
+              {t("common.retry")}
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
   if (!pools) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   return (
@@ -166,7 +192,11 @@ function FillerPoolsInner() {
                       <ul className="mkt-filler__items">
                         {items.map((it) => (
                           <li key={it.id}>
-                            <Badge tone="neutral">{t(`filler.kind.${it.type}`)}</Badge>
+                            <Badge tone="neutral">
+                              {FILLER_KINDS.includes(it.type)
+                                ? t(`filler.kind.${it.type}`)
+                                : String(it.type ?? "")}
+                            </Badge>
                             <a href={`/videos/${encodeURIComponent(it.video_id)}/watch?t=0`}>
                               {it.title || it.video_id}
                             </a>

@@ -20,8 +20,8 @@ import { useI18n } from "../../lib/i18n";
 interface Profile {
   id: string;
   username: string;
-  email: string;
-  display_name: string;
+  email: string | null;
+  display_name: string | null;
   is_admin: boolean;
 }
 
@@ -39,7 +39,13 @@ export function Account() {
     setError(null);
     api
       .get<Profile>("/api/me")
-      .then(setProfile)
+      .then((p) => {
+        // A misrouted proxy can answer 200 with an HTML page (the api
+        // client hands back the raw string): treat anything that is not
+        // a profile object as a failed load instead of rendering it.
+        if (!p || typeof p !== "object") throw new Error("not a profile");
+        setProfile(p);
+      })
       .catch((e) => setError(errMessage(e, t)));
   }
 
@@ -77,11 +83,14 @@ export function Account() {
 function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Profile) => void }) {
   const { t } = useI18n();
   const toast = useToast();
-  const [displayName, setDisplayName] = useState(profile.display_name);
-  const [email, setEmail] = useState(profile.email);
+  // null / missing fields start as "" so the inputs stay controlled.
+  const savedName = profile.display_name ?? "";
+  const savedEmail = profile.email ?? "";
+  const [displayName, setDisplayName] = useState(savedName);
+  const [email, setEmail] = useState(savedEmail);
   const [busy, setBusy] = useState(false);
 
-  const dirty = displayName !== profile.display_name || email !== profile.email;
+  const dirty = displayName !== savedName || email !== savedEmail;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -135,7 +144,8 @@ function PasswordForm() {
   const [busy, setBusy] = useState(false);
 
   const mismatch = confirm !== "" && next !== confirm;
-  const valid = current !== "" && next.length >= 8 && !mismatch;
+  // An empty confirm is not a match: only the native `required` stopped it.
+  const valid = current !== "" && next.length >= 8 && confirm === next;
 
   async function save(e: FormEvent) {
     e.preventDefault();

@@ -14,32 +14,32 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test? |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------- |
-| SMD-01 | Groups models into STT / Embedding / Diarization cards       | Happy path    | P1       | No                        |
-| SMD-02 | Buttons per status (available / downloaded / active / cloud) | Happy path    | P1       | No                        |
-| SMD-03 | Download starts polling and shows progress                   | Happy path    | P1       | No                        |
-| SMD-04 | Polling stops when the download finishes and on unmount      | Loading       | P1       | No                        |
-| SMD-05 | Activate from card and from the backend select               | Happy path    | P1       | No                        |
-| SMD-06 | Backend select with no active STT model                      | Empty state   | P2       | No                        |
-| SMD-07 | Delete a model                                               | Happy path    | P2       | No                        |
-| SMD-08 | Test a model shows pass / fail                               | Happy path    | P2       | No                        |
-| SMD-09 | Loading: no "empty" flash before the list arrives            | Loading       | P2       | No                        |
-| SMD-10 | Empty list `[]`                                              | Empty state   | P2       | No                        |
-| SMD-11 | `GET /api/models` returns `null`: crash                      | Empty state   | P1       | No                        |
-| SMD-12 | Response is an object, not an array                          | Empty state   | P1       | No                        |
-| SMD-13 | Missing / null optional fields on a model                    | Empty state   | P2       | No                        |
-| SMD-14 | Load fails (401 / 403 / 500 / network / bad JSON)            | Error         | P2       | No                        |
-| SMD-15 | Action fails (pipeline offline 503, 404, network)            | Error         | P2       | No                        |
-| SMD-16 | Polling error does not loop forever silently                 | Error         | P2       | No                        |
-| SMD-17 | OpenAI API key save                                          | Validation    | P2       | No                        |
-| SMD-18 | Non-admin sees model mutations                               | Permissions   | P1       | No                        |
-| SMD-19 | Signed-out deep link redirects to /login                     | Permissions   | P1       | No                        |
-| SMD-20 | Render crash shows route error fallback; Back works          | Error         | P1       | No                        |
-| SMD-21 | Arabic: RTL and Arabic strings                               | RTL           | P2       | No                        |
-| SMD-22 | Phone width: cards stack, controls fit                       | Responsive    | P3       | No                        |
-| SMD-23 | Labels, progress bar and alerts are accessible               | Accessibility | P2       | No                        |
-| SMD-24 | Error colour and badges in both themes                       | Theme         | P3       | No                        |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                       |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------------------- |
+| SMD-01 | Groups models into STT / Embedding / Diarization cards       | Happy path    | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-02 | Buttons per status (available / downloaded / active / cloud) | Happy path    | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-03 | Download starts polling and shows progress                   | Happy path    | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-04 | Polling stops when the download finishes and on unmount      | Loading       | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-05 | Activate from card and from the backend select               | Happy path    | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-06 | Backend select with no active STT model                      | Empty state   | P2       | Yes (`ModelsSection.test.tsx`; it.fails: no placeholder option) |
+| SMD-07 | Delete a model                                               | Happy path    | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-08 | Test a model shows pass / fail                               | Happy path    | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-09 | Loading: no "empty" flash before the list arrives            | Loading       | P2       | No (it.fails: bug)                                              |
+| SMD-10 | Empty list `[]`                                              | Empty state   | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-11 | `GET /api/models` returns `null`: crash                      | Empty state   | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-12 | Response is an object, not an array                          | Empty state   | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-13 | Missing / null optional fields on a model                    | Empty state   | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-14 | Load fails (401 / 403 / 500 / network / bad JSON)            | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-15 | Action fails (pipeline offline 503, 404, network)            | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-16 | Polling error does not loop forever silently                 | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-17 | OpenAI API key save                                          | Validation    | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-18 | Non-admin sees model mutations                               | Permissions   | P1       | Yes (ModelsSection.test.tsx)                                    |
+| SMD-19 | Signed-out deep link redirects to /login                     | Permissions   | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-20 | Render crash shows route error fallback; Back works          | Error         | P1       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-21 | Arabic: RTL and Arabic strings                               | RTL           | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-22 | Phone width: cards stack, controls fit                       | Responsive    | P3       | No (e2e-only)                                                   |
+| SMD-23 | Labels, progress bar and alerts are accessible               | Accessibility | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-24 | Error colour and badges in both themes                       | Theme         | P3       | No                                                              |
 
 ## Cases
 
@@ -47,7 +47,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/models` → `[{ "id": "whisper-small", "type": "stt", "name": "Whisper small", "size": "466 MB", "platform": "cpu", "status": "active", "progress": 100, "active": true }, { "id": "whisper-large", "type": "stt", "name": "Whisper large", "size": "2.9 GB", "platform": "cuda", "status": "available", "progress": 0, "active": false }, { "id": "e5", "type": "embedding", "name": "E5 base", "size": "420 MB", "platform": "cpu", "status": "downloaded", "progress": 100, "active": false }]`.
 - **Steps:**
   1. Open `/settings/models`.
@@ -57,7 +57,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** SMD-01 data plus `{ "id": "openai", "type": "stt", "name": "OpenAI Whisper", "size": "", "platform": "cloud", "status": "downloaded", "progress": 0, "active": false }` and a `downloading` model.
 - **Steps:**
   1. Open `/settings/models`; inspect each card.
@@ -67,7 +67,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** fake timers. `POST /api/models/whisper-large/download` → 202. `GET /api/models` sequence for that model: `downloading` progress 10, then 55, then `downloaded` 100.
 - **Steps:**
   1. Click "Download" on "Whisper large".
@@ -78,7 +78,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** fake timers; one model `downloading`.
 - **Steps:**
   1. Open the tab; advance 600 ms (GET count +1).
@@ -90,7 +90,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** two downloaded STT models, `whisper-small` active, `whisper-medium` downloaded; `PATCH` → 200.
 - **Steps:**
   1. Check the `combobox` "Active STT backend".
@@ -102,7 +102,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`; it.fails: no placeholder option)
 - **Preconditions / data:** (a) no STT models downloaded; (b) one downloaded STT model, none `active`.
 - **Steps:**
   1. Open `/settings/models`; in (b), try to choose the only option.
@@ -112,7 +112,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `e5` downloaded; `DELETE /api/models/e5` → 204; reload returns it `available`.
 - **Steps:**
   1. Click "Delete" on "E5 base".
@@ -122,7 +122,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `POST /api/models/whisper-small/test` → 200; reload returns `last_test: { "ok": true, "latency_ms": 412 }`; second run `last_test: { "ok": false, "latency_ms": 0, "detail": "CUDA missing" }`.
 - **Steps:**
   1. Click "Test" on "Whisper small".
@@ -132,7 +132,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** `GET /api/models` pending.
 - **Steps:**
   1. Open `/settings/models`.
@@ -142,7 +142,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/models` → `[]`.
 - **Steps:**
   1. Open `/settings/models`.
@@ -152,7 +152,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/models` → `null` (200, JSON).
 - **Steps:**
   1. Open `/settings/models`.
@@ -162,7 +162,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/models` → `{ "items": [ ... ] }` and, separately, `{ "models": null }`.
 - **Steps:**
   1. Open `/settings/models`.
@@ -172,7 +172,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `[{ "id": "x", "type": "stt", "name": "X", "status": "downloading" }, { "id": "y", "type": "diarization", "name": null, "size": null, "platform": null, "status": "weird", "progress": null, "active": false, "last_test": null }, { "id": "z", "type": "ocr", "name": "Z", "status": "available" }]`.
 - **Steps:**
   1. Open `/settings/models`.
@@ -182,7 +182,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/models` → 500 problem+json `{ "title": "Internal Server Error", "status": 500, "detail": "pipeline offline" }`; 403 `{ "title": "Forbidden", "status": 403 }`; 401; fetch rejects; 200 with body `not json` and `Content-Type: application/json`.
 - **Steps:**
   1. Open `/settings/models`.
@@ -192,7 +192,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `POST /api/models/whisper-large/download` → 503 `{ "title": "Service Unavailable", "status": 503, "detail": "pipeline offline" }`; `DELETE` → 404; `PATCH` → network reject.
 - **Steps:**
   1. Click "Download", "Delete", "Activate" in turn.
@@ -202,7 +202,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** fake timers; one model `downloading`; next GETs reject (500).
 - **Steps:**
   1. Advance 6 s.
@@ -212,7 +212,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** empty storage; second run with `mkt:openai_api_key = "sk-old"`.
 - **Steps:**
   1. Type `sk-test-123` in "OpenAI API key"; click "Save".
@@ -223,7 +223,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ModelsSection.test.tsx; server gate in models_test.go)
 - **Preconditions / data:** `user.is_admin = false`; SMD-01 data; mutation endpoints → 403 `{ "title": "Forbidden", "status": 403 }`.
 - **Steps:**
   1. Open `/settings/models` as the normal user; click "Download".
@@ -233,7 +233,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings/models`.
@@ -243,7 +243,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`; start at `/settings`. `GET /api/models` → `null` (see SMD-11).
 - **Steps:**
   1. Click "Models".
@@ -254,7 +254,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** `mkt:locale=ar`; SMD-01 data.
 - **Steps:**
   1. Open `/settings/models`.
@@ -264,7 +264,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375x812.
 - **Steps:**
   1. Open `/settings/models`.
@@ -274,7 +274,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
 - **Preconditions / data:** SMD-02 data.
 - **Steps:**
   1. Run axe; query by role.

@@ -35,7 +35,7 @@ export function stagesKey(s: QueuesSnapshot | undefined | null): string {
     .filter((q) => want.has(q.stage))
     .map(
       (q) =>
-        `${q.stage}:${q.counts.pending}:${q.counts.running}:${q.counts.done_24h}:${q.counts.failed_open}`
+        `${q.stage}:${q.counts?.pending}:${q.counts?.running}:${q.counts?.done_24h}:${q.counts?.failed_open}`
     )
     .sort()
     .join("|");

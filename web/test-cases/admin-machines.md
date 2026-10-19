@@ -24,31 +24,31 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 | ID     | Title                                                                    | Category      | Priority | Covered by existing test?                                                   |
 | ------ | ------------------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------------------------------- |
 | MCH-01 | Home, pending request and joined machine render                          | Happy path    | P1       | Yes (`Machines.test.tsx`)                                                   |
-| MCH-02 | Non-admin gate; signed-out redirect                                      | Permissions   | P1       | Partial (`Machines.test.tsx`: non-admin only, no signed-out case)           |
+| MCH-02 | Non-admin gate; signed-out redirect                                      | Permissions   | P1       | Yes (Machines.cases.test.tsx)                                               |
 | MCH-03 | Skeleton on first load only                                              | Loading       | P2       | Yes (`MachinesStable.test.tsx`)                                             |
-| MCH-04 | First load fails: alert banner and Try again                             | Error         | P1       | No                                                                          |
-| MCH-05 | Later poll fails: stale line, data kept, recovers                        | Error         | P2       | No                                                                          |
-| MCH-06 | `nodes: []` shows both empty texts                                       | Empty state   | P2       | No                                                                          |
-| MCH-07 | `nodes: null` / missing shows empty lists, not an error                  | Empty state   | P1       | No                                                                          |
-| MCH-08 | `home: null` / missing does not blank the page                           | Error         | P1       | No                                                                          |
-| MCH-09 | Node nested lists null: workers, stages, stages_off, shares, overrides   | Empty state   | P1       | No                                                                          |
-| MCH-10 | Storage servers: `servers: null`, `addresses: null`                      | Empty state   | P1       | No                                                                          |
-| MCH-11 | Relay: `extensions`, `home_only`, `calls`, `totals`, `allow` null        | Empty state   | P1       | No                                                                          |
-| MCH-12 | Canonicalize: `problems`, `servers_added[].addresses` null               | Empty state   | P2       | Partial (`CanonicalizePanel.test.tsx`: "renders with no report yet")        |
-| MCH-13 | Files: `nodes: null`, processes/dates null                               | Empty state   | P2       | No                                                                          |
-| MCH-14 | Accept-joins toggle failure shows a toast and re-enables                 | Error         | P2       | Partial (`Machines.test.tsx`: success only)                                 |
-| MCH-15 | Approve: wrong code, no count, expired, other error, 0 tries left        | Validation    | P1       | Partial (`Machines.test.tsx`: wrong code with count, expired, format)       |
-| MCH-16 | Pending request already expired disables the form                        | Validation    | P2       | No                                                                          |
-| MCH-17 | Revoke / remove: Cancel, Escape, API failure                             | Error         | P1       | Partial (`Machines.test.tsx`: confirm path only)                            |
-| MCH-18 | Path map editor: blank rows dropped, remove row, cancel                  | Validation    | P2       | Partial (`Machines.test.tsx`: edit + reset)                                 |
-| MCH-19 | Storage server: blank name ignored, address parsing, delete, failure     | Validation    | P2       | Partial (`Machines.test.tsx`: edit addresses)                               |
-| MCH-20 | Node status badges: online, offline, draining, paused, revoked, rejected | Happy path    | P2       | Partial (`Machines.test.tsx`: online, revoked, paused)                      |
+| MCH-04 | First load fails: alert banner and Try again                             | Error         | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-05 | Later poll fails: stale line, data kept, recovers                        | Error         | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-06 | `nodes: []` shows both empty texts                                       | Empty state   | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-07 | `nodes: null` / missing shows empty lists, not an error                  | Empty state   | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-08 | `home: null` / missing does not blank the page                           | Error         | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-09 | Node nested lists null: workers, stages, stages_off, shares, overrides   | Empty state   | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-10 | Storage servers: `servers: null`, `addresses: null`                      | Empty state   | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-11 | Relay: `extensions`, `home_only`, `calls`, `totals`, `allow` null        | Empty state   | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-12 | Canonicalize: `problems`, `servers_added[].addresses` null               | Empty state   | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-13 | Files: `nodes: null`, processes/dates null                               | Empty state   | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-14 | Accept-joins toggle failure shows a toast and re-enables                 | Error         | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-15 | Approve: wrong code, no count, expired, other error, 0 tries left        | Validation    | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-16 | Pending request already expired disables the form                        | Validation    | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-17 | Revoke / remove: Cancel, Escape, API failure                             | Error         | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-18 | Path map editor: blank rows dropped, remove row, cancel                  | Validation    | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-19 | Storage server: blank name ignored, address parsing, delete, failure     | Validation    | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-20 | Node status badges: online, offline, draining, paused, revoked, rejected | Happy path    | P2       | Yes (Machines.cases.test.tsx)                                               |
 | MCH-21 | Live status badge and socket unavailable                                 | Error         | P2       | Partial (`ClusterViews.test.tsx`: "says when the live view cannot connect") |
 | MCH-22 | Tabs switch panels; "open logs" jumps to the Logs tab                    | Navigation    | P2       | Partial (`ClusterViews.test.tsx`: tabs used, not keyboard)                  |
-| MCH-23 | Jobs link goes to the filtered queue page; Back returns                  | Navigation    | P2       | Partial (`MachinesStable.test.tsx`: href only)                              |
-| MCH-24 | Render crash shows route error fallback; Back still works                | Error         | P1       | No                                                                          |
-| MCH-25 | Polling and socket stop after leaving the page                           | Happy path    | P2       | Partial (`Machines.test.tsx`: re-reads every 5 s; no unmount check)         |
-| MCH-26 | Arabic: RTL, Arabic machine names, LTR codes and paths                   | RTL           | P2       | Partial (`Machines.test.tsx`: strings + dir only)                           |
+| MCH-23 | Jobs link goes to the filtered queue page; Back returns                  | Navigation    | P2       | No (e2e-only)                                                               |
+| MCH-24 | Render crash shows route error fallback; Back still works                | Error         | P1       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-25 | Polling and socket stop after leaving the page                           | Happy path    | P2       | Yes (Machines.cases.test.tsx)                                               |
+| MCH-26 | Arabic: RTL, Arabic machine names, LTR codes and paths                   | RTL           | P2       | Yes (Machines.cases.test.tsx)                                               |
 | MCH-27 | Phone width: cards, stage table and tabs fit                             | Responsive    | P3       | No                                                                          |
 | MCH-28 | Light and dark theme                                                     | Theme         | P3       | No                                                                          |
 | MCH-29 | Keyboard: tabs arrows (incl. RTL), dialogs trap focus, live regions      | Accessibility | P3       | Partial (`Machines.test.tsx`, `ClusterViews.test.tsx`: axe only)            |
@@ -69,7 +69,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `Machines.test.tsx` "is gated behind admin" (no GET). No signed-out case, no check that the WebSocket is not opened.
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** (a) `useAuth` -> `{ user: { is_admin: false } }`; (b) full app, auth bootstrap 401.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -89,7 +89,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster` rejects with each of: `ApiError` 500, `ApiError` 403, `ApiError` 401, `TypeError("Failed to fetch")`, 200 with truncated JSON. Then resolves `fixture()`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -100,7 +100,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; fake timers; poll 1 `fixture()`, poll 2 rejects 500, poll 3 `fixture()`.
 - **Steps:**
   1. Open the page; advance 5 s; advance 5 s again.
@@ -110,7 +110,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster` -> `{ "home": <fixture home>, "nodes": [] }`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -120,7 +120,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster` -> (a) `{ "home": <home>, "nodes": null }`, (b) `{ "home": <home> }`. Also (c) poll 1 normal, poll 2 `nodes: null`.
 - **Steps:**
   1. Open `/admin/machines` (advance 5 s for c).
@@ -130,7 +130,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster` -> (a) `{ "home": null, "nodes": [] }`, (b) `{ "nodes": [] }`, (c) home with `"name": null`, `"accept_joins_until": "not-a-date"`, `"roles_reason": ""`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -140,7 +140,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; approved node variants (one per run, rest of `baseNode` intact):
   - `workers: null` and `workers` missing
   - `workers: [{ ...w, "stages": null }]`
@@ -159,7 +159,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; home with `"storage": { "read": "ok", "write": "ok", "checked_at": null, "detail": null }` (so the servers section shows). `GET /api/cluster/storage-servers` -> (a) `{ "servers": null }`, (b) `{}`, (c) `null`, (d) rejects 500, (e) `{ "servers": [ { "id": "s1", "name": "nas", "addresses": null, "char_map": "none", "exports": {} } ] }`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -170,7 +170,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster/relay` -> base `{ "available": true, "enabled": true, "settings": { "requests_per_minute": 60, "burst": 10, "max_in_flight": 4, "max_response_mb": 50, "timeout_sec": 30 }, "extensions": [], "home_only": [], "calls": [], "totals": [] }`, then one field at a time set to `null` or removed: `extensions`, `home_only`, `calls`, `totals`, `extensions[0].allow` (with one extension), `settings`.
 - **Steps:**
   1. Open `/admin/machines` (Machines tab shows `RelayDoorCard`).
@@ -181,7 +181,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `CanonicalizePanel.test.tsx` "renders with no report yet" and "renders before the first look" (null status).
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; home with `storage` set and `canonicalize: { "state": { "phase": "done", "problems": null, "servers_added": [ { "name": "nas", "addresses": null } ], "plex_added": null }, "request": null, "requested_at": null, "requested_by": null }`; also `canonicalize: { "state": null }`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -191,7 +191,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `GET /api/cluster/files` -> (a) `{ "files": null, "nodes": null }`, (b) `{ "nodes": [ { "ip": "10.0.0.5", "processes": null, "dates": null, "archived_dates": null } ] }`, (c) rejects 500.
 - **Steps:**
   1. Open the "Logs", "Queues" and "Library" tabs.
@@ -201,7 +201,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `Machines.test.tsx` "turns accepting new machines on" (success).
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; `PUT /api/cluster/settings` rejects `ApiError` 409 `{ title: "Conflict", detail: "joins locked" }`.
 - **Steps:**
   1. Click switch "Accept new machines".
@@ -211,7 +211,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Machines.test.tsx` covers wrong code with `attempts_left: 3`, expired (410), digits-only, 5-digit refused.
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; pending "Linux box". `POST /api/cluster/nodes/p1/approve` rejects with:
   - `{ status: 400, code: "wrong_code" }` (no attempts_left) -> alert "Wrong code."
   - `{ status: 400, type: "https://x/problems/wrong_code", attempts_left: 0 }` -> "Wrong code, 0 tries left." and a reload
@@ -227,7 +227,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; pending node with `expires_at` 1 minute in the past; another with `expires_at: null`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -237,7 +237,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** Partial — `Machines.test.tsx` "asks before revoking a machine", "removes only revoked or rejected machines" (confirm path).
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; approved "Studio Mac"; `POST .../n1/revoke` rejects `ApiError` 500 `{ title: "Internal Server Error", detail: "busy" }`.
 - **Steps:**
   1. Click "Revoke"; click "Cancel".
@@ -250,7 +250,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Machines.test.tsx` "edits the path map and resets it to automatic".
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; machine with `path_map: { "/mnt/nas": "/Volumes/nas" }`; `PUT /api/cluster/nodes/n1` resolves.
 - **Steps:**
   1. Click "Edit mounts"; click add row; leave row 2 "from" filled with " smb://nas/x " and "to" blank; add row 3 with both " a " / " b ".
@@ -262,7 +262,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Machines.test.tsx` "edits the home's mounts and its storage servers" (edit addresses).
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; home with `storage`; servers `[ { "name": "home-nas", "addresses": ["10.0.0.2"], "char_map": "none" } ]`.
 - **Steps:**
   1. Click "Add a server"; leave "Name used in paths" blank; Save.
@@ -275,7 +275,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Machines.test.tsx` covers Online, Revoked, Paused.
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; nodes: `online: false` + `last_seen_at` 2 h ago; `drain: true`; `state: "rejected"`; `full_node: false`.
 - **Steps:**
   1. Open `/admin/machines`.
@@ -307,7 +307,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `MachinesStable.test.tsx` checks the href.
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** full app; admin; machine "Studio Mac" id `n1`.
 - **Steps:**
   1. Click the machine's jobs link (`machines.jobs.view`).
@@ -319,7 +319,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** full app in `MemoryRouter` with history `["/admin/health", "/admin/machines"]`; admin. Force a throw with `GET /api/cluster` -> `{ "home": null, "nodes": [] }` (MCH-08) or a node with `workers: [{ "stages": null }]` (MCH-09).
 - **Steps:**
   1. Navigate to `/admin/machines`.
@@ -330,7 +330,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Machines.test.tsx` "re-reads the cluster every 5 seconds".
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** admin; fake timers; `FakeSocket`.
 - **Steps:**
   1. Open the page; advance 10 s.
@@ -341,7 +341,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `Machines.test.tsx` "renders in Arabic, right to left" (strings and dir).
+- **Covered by existing test?** Yes (Machines.cases.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; home name "خادم البيت"; pending node "حاسوب المكتب"; path map `{ "smb://nas/أفلام": "/Volumes/أفلام" }`.
 - **Steps:**
   1. Open `/admin/machines`; look at the pending code input, path map and stage table.

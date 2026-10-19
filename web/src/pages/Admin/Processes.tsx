@@ -109,7 +109,7 @@ export function ProcessesCard() {
       ) : (
         <>
           <div className="mkt-stage-cards">
-            {doc.processes.map((p) => (
+            {(doc.processes ?? []).map((p) => (
               <ProcessRow key={p.role} p={p} />
             ))}
           </div>

@@ -19,6 +19,8 @@ export interface DisplayTitleVideo {
 
 export const DISPLAY_TITLE_MAX = 200;
 
+const KNOWN_SOURCES = new Set(["rules", "llm", "manual"]);
+
 export function DisplayTitle({
   video,
   canEdit,
@@ -38,7 +40,9 @@ export function DisplayTitle({
     if (!editing) setText(video.display_title ?? "");
   }, [video.display_title, editing]);
 
-  const source = video.display_title_source || "";
+  const rawSource = video.display_title_source || "";
+  // An unknown source (a newer server) gets no badge rather than a raw key.
+  const source = KNOWN_SOURCES.has(rawSource) ? rawSource : "";
   if (!video.display_title && !canEdit) return null;
 
   async function save(value: string | null) {
@@ -68,8 +72,11 @@ export function DisplayTitle({
             dir="auto"
             maxLength={DISPLAY_TITLE_MAX}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditing(false);
+            }}
           />
-          <Button size="sm" disabled={busy || text.trim() === ""} onClick={() => save(text)}>
+          <Button size="sm" disabled={busy || text.trim() === ""} onClick={() => save(text.trim())}>
             {t("common.save")}
           </Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>

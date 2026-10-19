@@ -10,28 +10,28 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 ## Summary
 
-| ID     | Title                                                   | Category      | Priority | Covered by existing test?                           |
-| ------ | ------------------------------------------------------- | ------------- | -------- | --------------------------------------------------- |
-| SAP-01 | Renders theme, language and density groups              | Happy path    | P1       | No                                                  |
-| SAP-02 | Initial checked radios reflect stored values            | Happy path    | P1       | No                                                  |
-| SAP-03 | No stored values: System, browser language, Comfortable | Empty state   | P2       | Partial (`theme.test.ts`: readMode only)            |
-| SAP-04 | Corrupt stored values fall back                         | Empty state   | P2       | Partial (`theme.test.ts`: theme only)               |
-| SAP-05 | Choose Light / Dark sets data-theme and storage         | Happy path    | P1       | Partial (`theme.test.ts`: setMode, not UI)          |
-| SAP-06 | System follows the OS, including a live OS switch       | Happy path    | P1       | Partial (`theme.test.ts`: watchSystemTheme, not UI) |
-| SAP-07 | Explicit Light/Dark ignores a live OS switch            | Happy path    | P2       | Partial (`theme.test.ts`)                           |
-| SAP-08 | Theme persists across reload with no flash              | Navigation    | P1       | Partial (`theme.test.ts`: boot script is in head)   |
-| SAP-09 | Switch to Arabic: RTL, Arabic strings, persisted        | RTL           | P1       | Partial (`i18n.test.tsx`: provider only)            |
-| SAP-10 | Switch back to English                                  | RTL           | P2       | No                                                  |
-| SAP-11 | Density compact sets data-density and persists          | Happy path    | P2       | No                                                  |
-| SAP-12 | Density is not restored on reload until the tab opens   | Navigation    | P2       | No                                                  |
-| SAP-13 | localStorage blocked: choices still apply this session  | Error         | P2       | Partial (`theme.test.ts`: read throws)              |
-| SAP-14 | Theme change in another browser tab                     | Navigation    | P3       | No                                                  |
-| SAP-15 | Signed-out deep link redirects to /login                | Permissions   | P1       | No                                                  |
-| SAP-16 | Render crash shows route error fallback; Back works     | Error         | P1       | No                                                  |
-| SAP-17 | Keyboard: arrow keys move within each radio group       | Accessibility | P2       | No                                                  |
-| SAP-18 | Radio groups are labelled                               | Accessibility | P2       | No                                                  |
-| SAP-19 | Phone width: groups stack, no horizontal scroll         | Responsive    | P3       | No                                                  |
-| SAP-20 | Both themes readable on this tab                        | Theme         | P3       | No                                                  |
+| ID     | Title                                                   | Category      | Priority | Covered by existing test? |
+| ------ | ------------------------------------------------------- | ------------- | -------- | ------------------------- |
+| SAP-01 | Renders theme, language and density groups              | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAP-02 | Initial checked radios reflect stored values            | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAP-03 | No stored values: System, browser language, Comfortable | Empty state   | P2       | Yes (`Settings.test.tsx`) |
+| SAP-04 | Corrupt stored values fall back                         | Empty state   | P2       | Yes (`Settings.test.tsx`) |
+| SAP-05 | Choose Light / Dark sets data-theme and storage         | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAP-06 | System follows the OS, including a live OS switch       | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAP-07 | Explicit Light/Dark ignores a live OS switch            | Happy path    | P2       | Yes (`Settings.test.tsx`) |
+| SAP-08 | Theme persists across reload with no flash              | Navigation    | P1       | No (e2e-only)             |
+| SAP-09 | Switch to Arabic: RTL, Arabic strings, persisted        | RTL           | P1       | Yes (`Settings.test.tsx`) |
+| SAP-10 | Switch back to English                                  | RTL           | P2       | Yes (`Settings.test.tsx`) |
+| SAP-11 | Density compact sets data-density and persists          | Happy path    | P2       | Yes (`Settings.test.tsx`) |
+| SAP-12 | Density is not restored on reload until the tab opens   | Navigation    | P2       | No (it.fails: bug)        |
+| SAP-13 | localStorage blocked: choices still apply this session  | Error         | P2       | Yes (`Settings.test.tsx`) |
+| SAP-14 | Theme change in another browser tab                     | Navigation    | P3       | No                        |
+| SAP-15 | Signed-out deep link redirects to /login                | Permissions   | P1       | Yes (`Settings.test.tsx`) |
+| SAP-16 | Render crash shows route error fallback; Back works     | Error         | P1       | Yes (`Settings.test.tsx`) |
+| SAP-17 | Keyboard: arrow keys move within each radio group       | Accessibility | P2       | Yes (`Settings.test.tsx`) |
+| SAP-18 | Radio groups are labelled                               | Accessibility | P2       | Yes (`Settings.test.tsx`) |
+| SAP-19 | Phone width: groups stack, no horizontal scroll         | Responsive    | P3       | No (e2e-only)             |
+| SAP-20 | Both themes readable on this tab                        | Theme         | P3       | No                        |
 
 ## Cases
 
@@ -39,7 +39,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** signed in; empty `localStorage`; `navigator.language = "en-US"`; matchMedia stub `matches: false`.
 - **Steps:**
   1. Open `/settings/appearance`.
@@ -49,7 +49,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `localStorage`: `mkt:theme=dark`, `mkt:locale=en`, `mkt:density=compact`.
 - **Steps:**
   1. Open `/settings/appearance`.
@@ -59,7 +59,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `theme.test.ts` "defaults to system when no key is stored" (lib only)
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** empty storage; `navigator.language = "ar-EG"` in a second run.
 - **Steps:**
   1. Open `/settings/appearance`.
@@ -69,7 +69,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `theme.test.ts` "EC: a corrupted stored value falls back to system" (theme only)
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `mkt:theme="purple"`, `mkt:locale="fr"`, `mkt:density="huge"`.
 - **Steps:**
   1. Open `/settings/appearance`.
@@ -79,7 +79,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `theme.test.ts` (setMode, no UI)
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** start with `mkt:theme` unset, OS dark.
 - **Steps:**
   1. Click "Light".
@@ -90,7 +90,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `theme.test.ts` "watchSystemTheme re-applies on OS change while in system mode" (no UI)
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full `App` (so `ThemeSync` subscribes); matchMedia `(prefers-color-scheme: light)` stub with `matches: true`; `mkt:theme=dark`.
 - **Steps:**
   1. Open `/settings/appearance`, click "System".
@@ -102,7 +102,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `theme.test.ts` "watchSystemTheme leaves an explicit choice alone"
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full `App`; OS light.
 - **Steps:**
   1. Click "Dark".
@@ -113,7 +113,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `theme.test.ts` checks `theme-boot.js` is a blocking script in `<head>`
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** browser e2e; OS dark.
 - **Steps:**
   1. On `/settings/appearance` click "Light".
@@ -124,7 +124,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** RTL
-- **Covered by existing test?** Partial — `i18n.test.tsx` "switches to Arabic: rtl dir + Arabic-Indic digits" (provider only)
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** English start.
 - **Steps:**
   1. Click "العربية".
@@ -135,7 +135,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `mkt:locale=ar`.
 - **Steps:**
   1. Click "English".
@@ -145,7 +145,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** empty storage.
 - **Steps:**
   1. Open `/settings/appearance` (check `data-density` right after mount).
@@ -156,7 +156,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** `mkt:density=compact` stored; full app.
 - **Steps:**
   1. Open `/library` (fresh load).
@@ -167,7 +167,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `theme.test.ts` "resolves dark when storage throws"
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `localStorage.getItem` and `setItem` throw `SecurityError`.
 - **Steps:**
   1. Open `/settings/appearance`; click "Light", "العربية", "Compact".
@@ -187,7 +187,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings/appearance`.
@@ -197,7 +197,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`; start at `/settings`. `vi.mock("../lib/theme", ...)` so `readMode` throws `new Error("boom")` (it runs in a `useState` initializer, so the tab throws during render).
 - **Steps:**
   1. Click "Appearance".
@@ -208,7 +208,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `mkt:theme=light`.
 - **Steps:**
   1. Tab into the Theme group; press ArrowDown twice; press Tab.
@@ -218,7 +218,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Query `getByRole("radiogroup", { name: "Theme" })` etc.; run axe.
@@ -228,7 +228,7 @@ jsdom has no `matchMedia`: stub `window.matchMedia = vi.fn(q => ({ matches, medi
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e at 375x812, English and Arabic.
 - **Steps:**
   1. Open `/settings/appearance`.

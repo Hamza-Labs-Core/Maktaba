@@ -13,40 +13,40 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 ## Summary
 
-| ID     | Title                                                         | Category      | Priority | Covered by existing test?                                                                        |
-| ------ | ------------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------ |
-| SRL-01 | Renders a tab per section, first tab selected, grouped fields | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-02 | Save sends only edited fields, shows saved notice             | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-03 | Save going to a TV change draft links to it                   | Happy path    | P2       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-04 | Back to default for a saved change                            | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-05 | Discard changes drops all edits in the section only           | Happy path    | P1       | No                                                                                               |
-| SRL-06 | Loading state while rules load                                | Loading       | P2       | No                                                                                               |
-| SRL-07 | Load fails (401 / 500 / network / bad JSON)                   | Error         | P1       | No                                                                                               |
-| SRL-08 | `sections: []`                                                | Empty state   | P2       | No                                                                                               |
-| SRL-09 | `sections: null` or missing                                   | Empty state   | P1       | No                                                                                               |
-| SRL-10 | A section with `fields: null` or missing: crash               | Empty state   | P1       | No                                                                                               |
-| SRL-11 | Null / missing nested lists on a field                        | Empty state   | P1       | No                                                                                               |
-| SRL-12 | Server 400 shown under its field                              | Validation    | P1       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-13 | PATCH 403 / 500 / network without a field                     | Error         | P1       | No                                                                                               |
-| SRL-14 | Reload after a successful save fails                          | Error         | P2       | No                                                                                               |
-| SRL-15 | Number validation: required, whole, min, max                  | Validation    | P1       | Partial (`RulesSection.test.tsx`: min only)                                                      |
-| SRL-16 | Time, URL, colour and select validation on single fields      | Validation    | P2       | Partial (`RulesSection.test.tsx`: url/time in tables only)                                       |
-| SRL-17 | Table cells: typed checks, add/duplicate/remove rows          | Validation    | P1       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-18 | Map table (key / values) edit                                 | Validation    | P2       | No                                                                                               |
-| SRL-19 | Chips editor: add by Enter/comma, dedupe, Backspace, remove   | Validation    | P2       | No                                                                                               |
-| SRL-20 | Save disabled with nothing to save or while busy              | Validation    | P2       | Partial (`RulesSection.test.tsx`)                                                                |
-| SRL-21 | Invalid saved values and unknown names banners                | Happy path    | P2       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-22 | Search filters fields and opens folded groups                 | Navigation    | P2       | Yes (`RulesSection.test.tsx`)                                                                    |
-| SRL-23 | Fold, Expand all / Collapse all                               | Navigation    | P3       | Partial (`RulesSection.test.tsx`: single fold only)                                              |
-| SRL-24 | Non-admin is read-only everywhere                             | Permissions   | P1       | Partial (`RulesSection.test.tsx`: number/switch/select/table; not chips/days/time/strip/unknown) |
-| SRL-25 | Signed-out deep link redirects to /login                      | Permissions   | P1       | No                                                                                               |
-| SRL-26 | Section tab and unsaved edits on navigation / reload          | Navigation    | P2       | No                                                                                               |
-| SRL-27 | Render crash shows route error fallback; Back works           | Error         | P1       | No                                                                                               |
-| SRL-28 | Arabic: localized schema, RTL layout, Arabic weekdays         | RTL           | P2       | Partial (`localizeRules.test.ts`: function only)                                                 |
-| SRL-29 | Tabs keyboard: arrows, Home/End, mirrored in RTL              | Accessibility | P2       | No                                                                                               |
-| SRL-30 | Labels, descriptions and live regions                         | Accessibility | P2       | Partial (`RulesSection.test.tsx`: aria-invalid, group names)                                     |
-| SRL-31 | Phone width: tables and bar fit                               | Responsive    | P2       | No                                                                                               |
-| SRL-32 | Both themes: changed/unsaved/error marks readable             | Theme         | P3       | No                                                                                               |
+| ID     | Title                                                         | Category      | Priority | Covered by existing test?                                             |
+| ------ | ------------------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------- |
+| SRL-01 | Renders a tab per section, first tab selected, grouped fields | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-02 | Save sends only edited fields, shows saved notice             | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-03 | Save going to a TV change draft links to it                   | Happy path    | P2       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-04 | Back to default for a saved change                            | Happy path    | P1       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-05 | Discard changes drops all edits in the section only           | Happy path    | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-06 | Loading state while rules load                                | Loading       | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-07 | Load fails (401 / 500 / network / bad JSON)                   | Error         | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-08 | `sections: []`                                                | Empty state   | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-09 | `sections: null` or missing                                   | Empty state   | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-10 | A section with `fields: null` or missing: crash               | Empty state   | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-11 | Null / missing nested lists on a field                        | Empty state   | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-12 | Server 400 shown under its field                              | Validation    | P1       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-13 | PATCH 403 / 500 / network without a field                     | Error         | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-14 | Reload after a successful save fails                          | Error         | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-15 | Number validation: required, whole, min, max                  | Validation    | P1       | Yes (`RulesSection.test.tsx`, `RulesSection.cases.test.tsx`)          |
+| SRL-16 | Time, URL, colour and select validation on single fields      | Validation    | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-17 | Table cells: typed checks, add/duplicate/remove rows          | Validation    | P1       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-18 | Map table (key / values) edit                                 | Validation    | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-19 | Chips editor: add by Enter/comma, dedupe, Backspace, remove   | Validation    | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-20 | Save disabled with nothing to save or while busy              | Validation    | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-21 | Invalid saved values and unknown names banners                | Happy path    | P2       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-22 | Search filters fields and opens folded groups                 | Navigation    | P2       | Yes (`RulesSection.test.tsx`)                                         |
+| SRL-23 | Fold, Expand all / Collapse all                               | Navigation    | P3       | Partial (`RulesSection.test.tsx`: single fold only)                   |
+| SRL-24 | Non-admin is read-only everywhere                             | Permissions   | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-25 | Signed-out deep link redirects to /login                      | Permissions   | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-26 | Section tab and unsaved edits on navigation / reload          | Navigation    | P2       | No (it.fails: bug)                                                    |
+| SRL-27 | Render crash shows route error fallback; Back works           | Error         | P1       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-28 | Arabic: localized schema, RTL layout, Arabic weekdays         | RTL           | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-29 | Tabs keyboard: arrows, Home/End, mirrored in RTL              | Accessibility | P2       | Yes (`RulesSection.cases.test.tsx`; it.fails: RTL arrows in @ds Tabs) |
+| SRL-30 | Labels, descriptions and live regions                         | Accessibility | P2       | Yes (`RulesSection.cases.test.tsx`)                                   |
+| SRL-31 | Phone width: tables and bar fit                               | Responsive    | P2       | No (e2e-only)                                                         |
+| SRL-32 | Both themes: changed/unsaved/error marks readable             | Theme         | P3       | No                                                                    |
 
 ## Cases
 
@@ -94,7 +94,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** admin; fixture.
 - **Steps:**
   1. On "Channels" set "Shortest slot (min)" to 3 (invalid, below 5) and "Slot step (min)" to 15; on "Grouping" set "Playlist group from (videos)" to 7.
@@ -105,7 +105,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/rules` pending.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -115,7 +115,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/rules` → 500 problem+json `{ "title": "Internal Server Error", "status": 500, "detail": "db" }`; 401 `{ "title": "Unauthorized", "status": 401 }`; fetch rejects `TypeError("Failed to fetch")`; 200 JSON content-type with body `{bad`.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -125,7 +125,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/rules` → `{ "sections": [] }`.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -135,7 +135,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/rules` → `{ "sections": null }`; then `{}`.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -145,7 +145,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `{ "sections": [{ "key": "planner", "title": "Channels", "what": "x", "fields": null }] }`; then the same without `fields`; then one good section plus one with `fields: null`.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -155,7 +155,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** one section with these fields, each tested alone:
   - `unknown: null` on the section.
   - `choices: null` on a `str` field (`khutbah_day`).
@@ -181,7 +181,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** admin in UI but server says 403 `{ "title": "Forbidden", "status": 403, "detail": "admin only" }`; then 500 `{ "title": "Internal Server Error", "status": 500 }`; then fetch rejects.
 - **Steps:**
   1. Edit "Shortest slot (min)" to 45; Save.
@@ -191,7 +191,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** PATCH → 200; the next `GET /api/rules` → 500.
 - **Steps:**
   1. Edit, Save.
@@ -201,7 +201,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — "checks a typed number against its minimum before saving" (min only)
+- **Covered by existing test?** Yes (`RulesSection.test.tsx`, `RulesSection.cases.test.tsx`)
 - **Preconditions / data:** fixture; for max use `withTv()` "Volume" (0–10).
 - **Steps:**
   1. Clear "Shortest slot (min)" (int, required).
@@ -215,7 +215,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — url/time covered only inside tables
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `withTv()` (fields `news_start` time-as-text, `dz_art_url`); add a `tv_strip` section field `{ name: "bg_color", kind: "str", default: "#0b5d3b" }`; a `select` field whose saved value is not in `choices` (`quran_rotation` value `"random"`).
 - **Steps:**
   1. Type `25:00` into "News from" (text fallback when value is `24:00`; otherwise time input).
@@ -238,7 +238,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** fixture "Mix channel: topics per daypart" (`mix_daypart_topics`, map, default `{ "morning": ["raqaiq", "tafsir", ...], ... }`).
 - **Steps:**
   1. Change the "Values (comma separated)" cell of `morning` to `tafsir, , fiqh`.
@@ -251,7 +251,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** fixture "Topics kept off the mix channel" (`mix_exclude_topics`, default `["current_affairs"]`).
 - **Steps:**
   1. Type `fiqh` and press Enter.
@@ -266,7 +266,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — covered after save and with errors
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** PATCH pending.
 - **Steps:**
   1. Open the tab: check Save and Discard.
@@ -308,7 +308,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — "is read-only for a non-admin" (number, switch, select, Add row, banner); "does not offer the preview to a non-admin"
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `user.is_admin = false`; fixture + `withTv()` + a `tv_strip` section + section `unknown: ["old_rule"]` + a field with `changed: true`.
 - **Steps:**
   1. Open `/settings/rules`; try to edit each control kind.
@@ -318,7 +318,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings/rules`.
@@ -328,7 +328,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** admin; fixture.
 - **Steps:**
   1. Click the "Grouping" tab; edit "Playlist group from (videos)" to 7.
@@ -340,7 +340,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`; start at `/settings/appearance`. `GET /api/rules` → `{ "sections": [{ "key": "planner", "title": "Channels", "what": "", "fields": null }] }` (see SRL-10).
 - **Steps:**
   1. Click "Rules".
@@ -351,7 +351,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `localizeRules.test.ts` tests `localizeSections` only
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** `mkt:locale=ar`; fixture plus a `tv_output` section from the schema.
 - **Steps:**
   1. Open `/settings/rules`; open the TV output tab; switch language to English from Appearance and come back.
@@ -361,7 +361,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`; it.fails: RTL arrows in @ds Tabs)
 - **Preconditions / data:** fixture (3 tabs).
 - **Steps:**
   1. Focus "Channels" tab; press ArrowRight, ArrowRight, ArrowRight, End, Home.
@@ -372,7 +372,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** Partial — group names and `aria-invalid` are used in tests
+- **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
 - **Preconditions / data:** fixture; one invalid edit; one server error.
 - **Steps:**
   1. Run axe on the page; inspect a row.
@@ -382,7 +382,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375x812; `withTv()` "Live broadcasts" with 2 rows (8 columns).
 - **Steps:**
   1. Open the TV tab.

@@ -12,7 +12,7 @@
 // account-scoped — surfaced via the note copy. The push token is redacted
 // at the response boundary; PATCH can only change categories/locale (no
 // device name field exists).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Input } from "@ds/components/Input/Input";
@@ -56,12 +56,14 @@ function DevicesInner() {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [editing, setEditing] = useState<Device | null>(null);
   const [deleting, setDeleting] = useState<Device | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   function load() {
     setError(null);
+    setDevices(null);
     api
-      .get<{ items: Device[] }>("/api/devices")
-      .then((r) => setDevices(r.items ?? []))
+      .get<{ items?: Device[] | null }>("/api/devices")
+      .then((r) => setDevices(Array.isArray(r?.items) ? r.items : []))
       .catch((e) => {
         setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
         setDevices([]);
@@ -71,6 +73,8 @@ function DevicesInner() {
   useEffect(load, []);
 
   async function remove(d: Device) {
+    if (removing) return;
+    setRemoving(true);
     try {
       await api.delete(`/api/devices/${encodeURIComponent(d.id)}`);
       toast.show({ tone: "success", message: t("devices.removed") });
@@ -81,8 +85,12 @@ function DevicesInner() {
         tone: "error",
         message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
       });
+    } finally {
+      setRemoving(false);
     }
   }
+
+  const dateText = (v: unknown) => (typeof v === "string" && v ? formatDate(v) : "—");
 
   return (
     <section className="mkt-page mkt-devices">
@@ -123,12 +131,12 @@ function DevicesInner() {
             {devices.map((d) => (
               <tr key={d.id}>
                 <td>
-                  {platformIcon(d.platform)} {t(`devices.platform.${d.platform}`)}
+                  {platformIcon(d.platform)} {platformLabel(t, d.platform)}
                 </td>
                 <td className="mkt-mono mkt-truncate">{d.bundle_id}</td>
                 <td>{d.app_version ?? "—"}</td>
-                <td>{formatDate(d.last_seen_at)}</td>
-                <td>{formatDate(d.registered_at)}</td>
+                <td>{dateText(d.last_seen_at)}</td>
+                <td>{dateText(d.registered_at)}</td>
                 <td className="mkt-row-actions">
                   <Button size="sm" variant="ghost" onClick={() => setEditing(d)}>
                     {t("common.edit")}
@@ -173,7 +181,7 @@ function DevicesInner() {
               <Button variant="ghost" onClick={() => setDeleting(null)}>
                 {t("common.cancel")}
               </Button>
-              <Button variant="destructive" onClick={() => remove(deleting)}>
+              <Button variant="destructive" loading={removing} onClick={() => remove(deleting)}>
                 {t("devices.remove")}
               </Button>
             </>
@@ -184,6 +192,14 @@ function DevicesInner() {
       )}
     </section>
   );
+}
+
+// platformLabel names a platform; an unknown one shows as sent, not as
+// a raw i18n key.
+function platformLabel(t: (k: string) => string, platform: string): string {
+  const key = `devices.platform.${platform}`;
+  const v = t(key);
+  return v === key ? String(platform ?? "") : v;
 }
 
 export function platformIcon(platform: string): string {
@@ -233,14 +249,18 @@ function RegisterModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   const [bundleId, setBundleId] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // guards Enter-key submits too (the button's busy state only covers clicks)
+  const inflight = useRef(false);
 
   async function submit() {
+    if (inflight.current) return;
+    inflight.current = true;
     setBusy(true);
     try {
       await api.post("/api/devices/register", {
         platform,
-        token,
-        bundle_id: bundleId,
+        token: token.trim(),
+        bundle_id: bundleId.trim(),
         categories,
       });
       toast.show({ tone: "success", message: t("devices.registered") });
@@ -251,6 +271,7 @@ function RegisterModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
         message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
       });
     } finally {
+      inflight.current = false;
       setBusy(false);
     }
   }
@@ -305,6 +326,8 @@ function RegisterModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
           required
         />
         <CategoryPicker value={categories} onChange={setCategories} t={t} />
+        {/* two text fields and no submit button block Enter-to-submit */}
+        <button type="submit" hidden tabIndex={-1} />
       </form>
     </Modal>
   );
@@ -330,7 +353,8 @@ function EditModal({
     try {
       await api.patch(`/api/devices/${encodeURIComponent(device.id)}`, {
         categories,
-        locale: locale.trim() || undefined,
+        // "" clears the locale on the server (it stores NULL for blank)
+        locale: locale.trim(),
       });
       toast.show({ tone: "success", message: t("devices.updated") });
       onDone();

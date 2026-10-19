@@ -9,13 +9,14 @@
 //
 // ACL: AdminGate is a UX guard only — every endpoint re-checks the
 // principal server-side and 403s non-admins.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Select } from "@ds/components/Select/Select";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { AdminGate } from "../../components/AdminGate";
 import { useI18n } from "../../lib/i18n";
+import { ApiError } from "../../lib/api";
 import { BarList, Heatmap, LineChart } from "../../components/charts/Charts";
 import {
   analyticsApi,
@@ -31,6 +32,40 @@ import {
 } from "../../lib/analytics";
 
 const RANGES: RangeKey[] = ["today", "7d", "30d", "90d", "1y", "all"];
+
+// The server (or a misrouted proxy) may send null lists, missing keys or
+// not even an object; every card treats those as empty instead of crashing.
+const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v.filter((x) => x != null) as T[]) : []);
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+
+function cleanSummary(v: unknown): Summary {
+  const s = obj(v);
+  return {
+    range: String(s.range ?? ""),
+    total_watch_sec: num(s.total_watch_sec),
+    total_sessions: num(s.total_sessions),
+    unique_viewers: num(s.unique_viewers),
+    completion_rate: num(s.completion_rate),
+    devices: list(s.devices),
+    platforms: list(s.platforms),
+    libraries: list(s.libraries),
+    genres: list(s.genres),
+  };
+}
+
+function cleanActivity(v: unknown): ActivityResponse {
+  const a = obj(v);
+  return {
+    bucket: (a.bucket as ActivityResponse["bucket"]) ?? "day",
+    series: list(a.series),
+    // A null row stays a (blank) row so the days keep their places.
+    heatmap: Array.isArray(a.heatmap)
+      ? a.heatmap.map((row) => (Array.isArray(row) ? row.map(num) : []))
+      : [],
+  };
+}
 
 export function AdminAnalytics() {
   return (
@@ -49,29 +84,37 @@ function AnalyticsInner() {
   const [activity, setActivity] = useState<ActivityResponse | null>(null);
   const [users, setUsers] = useState<ActiveUser[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Only the latest load may write state (fast range switching).
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setErr(null);
-    try {
-      const [s, tv, ac, us] = await Promise.all([
-        analyticsApi.summary(range),
-        analyticsApi.topVideos(range),
-        analyticsApi.activityStats(range, "day"),
-        analyticsApi.users(range),
-      ]);
-      setSummary(s);
-      setTop(tv.videos);
-      setActivity(ac);
-      setUsers(us.users);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+    // Each card fills in on its own; one failing endpoint must not blank the rest.
+    const [s, tv, ac, us] = await Promise.allSettled([
+      analyticsApi.summary(range),
+      analyticsApi.topVideos(range),
+      analyticsApi.activityStats(range, "day"),
+      analyticsApi.users(range),
+    ]);
+    if (seq !== loadSeq.current) return;
+    // A card whose endpoint failed is cleared, so it never shows the old
+    // range's numbers under the new range.
+    setSummary(s.status === "fulfilled" ? cleanSummary(s.value) : null);
+    setTop(tv.status === "fulfilled" ? list(obj(tv.value).videos) : null);
+    setActivity(cleanActivity(ac.status === "fulfilled" ? ac.value : {}));
+    setUsers(us.status === "fulfilled" ? list(obj(us.value).users) : null);
+    const failed = [s, tv, ac, us].find((r) => r.status === "rejected");
+    if (failed) {
+      const e: unknown = failed.reason;
+      setErr(e instanceof ApiError ? e.message : t("common.error"));
     }
-  }, [range]);
+  }, [range, t]);
 
   const loadLive = useCallback(async () => {
     try {
       const l = await analyticsApi.live();
-      setLive(l.sessions);
+      setLive(list<LiveSession>(obj(l).sessions));
     } catch {
       /* live is best-effort; leave prior value */
     }
@@ -149,8 +192,8 @@ function AnalyticsInner() {
                 <tr key={s.session_id}>
                   <td dir="auto">{s.username}</td>
                   <td dir="auto">{s.title}</td>
-                  <td>{formatWatchTime(s.elapsed_sec)}</td>
-                  <td>{formatPercent(s.percent_complete)}</td>
+                  <td>{formatWatchTime(num(s.elapsed_sec))}</td>
+                  <td>{formatPercent(num(s.percent_complete))}</td>
                   <td>{s.device_type || "—"}</td>
                 </tr>
               ))}
@@ -184,13 +227,18 @@ function AnalyticsInner() {
         <Card header={<h2>{t("analytics.watchTimeOverTime")}</h2>}>
           <LineChart
             ariaLabel={t("analytics.watchTimeOverTime")}
-            points={(activity?.series ?? []).map((p) => ({ label: p.bucket, value: p.watch_sec }))}
+            points={(activity?.series ?? []).map((p) => ({
+              label: p.bucket ?? "",
+              value: num(p.watch_sec),
+            }))}
           />
         </Card>
 
         {/* Peak hours */}
         <Card header={<h2>{t("analytics.peakHours")}</h2>}>
-          {activity ? (
+          {activity && activity.heatmap.length === 0 ? (
+            <p className="mkt-muted">—</p>
+          ) : activity ? (
             <Heatmap
               matrix={activity.heatmap}
               dayLabels={dayLabels}
@@ -206,9 +254,9 @@ function AnalyticsInner() {
           <BarList
             ariaLabel={t("analytics.topVideos")}
             items={(top ?? []).map((v) => ({
-              label: v.title,
-              value: v.sessions,
-              sub: `${v.sessions} · ${formatWatchTime(v.watch_sec)}`,
+              label: v.title ?? "",
+              value: num(v.sessions),
+              sub: `${num(v.sessions)} · ${formatWatchTime(num(v.watch_sec))}`,
             }))}
           />
         </Card>
@@ -218,9 +266,9 @@ function AnalyticsInner() {
           <BarList
             ariaLabel={t("analytics.activeUsers")}
             items={(users ?? []).map((u) => ({
-              label: u.username,
-              value: u.watch_sec,
-              sub: formatWatchTime(u.watch_sec),
+              label: u.username ?? "",
+              value: num(u.watch_sec),
+              sub: formatWatchTime(num(u.watch_sec)),
             }))}
           />
         </Card>
@@ -230,9 +278,9 @@ function AnalyticsInner() {
           <BarList
             ariaLabel={t("analytics.genres")}
             items={(summary?.genres ?? []).map((g) => ({
-              label: g.label,
-              value: g.sessions,
-              sub: String(g.sessions),
+              label: g.label ?? "",
+              value: num(g.sessions),
+              sub: String(num(g.sessions)),
             }))}
           />
         </Card>
@@ -242,9 +290,9 @@ function AnalyticsInner() {
           <BarList
             ariaLabel={t("analytics.devices")}
             items={(summary?.devices ?? []).map((d) => ({
-              label: d.label,
-              value: d.sessions,
-              sub: String(d.sessions),
+              label: d.label ?? "",
+              value: num(d.sessions),
+              sub: String(num(d.sessions)),
             }))}
           />
         </Card>
@@ -254,9 +302,9 @@ function AnalyticsInner() {
           <BarList
             ariaLabel={t("analytics.libraries")}
             items={(summary?.libraries ?? []).map((l) => ({
-              label: l.label,
-              value: l.sessions,
-              sub: formatWatchTime(l.watch_sec),
+              label: l.label ?? "",
+              value: num(l.sessions),
+              sub: formatWatchTime(num(l.watch_sec)),
             }))}
           />
         </Card>

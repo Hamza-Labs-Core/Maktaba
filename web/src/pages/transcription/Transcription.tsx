@@ -23,6 +23,51 @@ function pct(done: number, total: number): number {
   return Math.min(100, Math.max(0, (done / total) * 100));
 }
 
+const NO_WINDOW = (window_sec: number): TranscriptionWindow => ({
+  window_sec,
+  jobs: 0,
+  audio_hours: 0,
+  audio_hours_per_hour: 0,
+  realtime_factor: 0,
+  avg_job_rtf: null,
+});
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
+const list = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
+
+/**
+ * The summary with every list an array and every object present (a nil Go
+ * slice arrives as null, an older API leaves keys out), or null when the
+ * payload is not a summary at all (e.g. a proxy's HTML page).
+ */
+function safeSummary(raw: unknown): TranscriptionSummary | null {
+  if (!isObject(raw)) return null;
+  const s = raw as unknown as TranscriptionSummary;
+  const rate: Partial<TranscriptionSummary["rate"]> = isObject(s.rate) ? s.rate : {};
+  return {
+    ...s,
+    totals: {
+      videos: 0,
+      videos_transcribed: 0,
+      audio_hours: 0,
+      hours_transcribed: 0,
+      hours_remaining: 0,
+      segments: 0,
+      ...(isObject(s.totals) ? s.totals : {}),
+    },
+    rate: {
+      ...rate,
+      last_10m: isObject(rate.last_10m) ? rate.last_10m : NO_WINDOW(600),
+      last_1h: isObject(rate.last_1h) ? rate.last_1h : NO_WINDOW(3600),
+      live: isObject(rate.live) ? rate.live : undefined,
+    },
+    eta: { seconds: null, at: null, basis: null, ...(isObject(s.eta) ? s.eta : {}) },
+    stages: list(s.stages),
+    libraries: list(s.libraries).map((l) => ({ ...l, name: l.name ?? "" })),
+    failures: list(s.failures),
+  };
+}
+
 function useHours() {
   const { t, n } = useI18n();
   return (h: number) =>
@@ -33,7 +78,9 @@ function useHours() {
 
 export function Transcription() {
   const { t } = useI18n();
-  const { summary, error, polling, reload } = useTranscriptionSummary();
+  const { summary: raw, error: loadError, polling, reload } = useTranscriptionSummary();
+  const summary = useMemo(() => (raw === null ? null : safeSummary(raw)), [raw]);
+  const error = loadError || (raw !== null && summary === null);
 
   if (!summary) {
     return (
@@ -340,10 +387,10 @@ function Libraries({ rows }: { rows: TranscriptionLibrary[] }) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => {
+            {sorted.map((r, i) => {
               const p = pct(r.hours_done, r.hours) || pct(r.videos_done, r.videos);
               return (
-                <tr key={r.library_id || r.name}>
+                <tr key={r.library_id || `${r.name}#${i}`}>
                   <th scope="row">{bidiIsolate(r.name || t("transcription.libs.unnamed"))}</th>
                   <td className="mkt-q-num" data-label={cols[1].label}>
                     {t("transcription.of", { done: n(r.videos_done), total: n(r.videos) })}
@@ -355,7 +402,9 @@ function Libraries({ rows }: { rows: TranscriptionLibrary[] }) {
                     <span className="mkt-tr-libbar">
                       <ProgressBar
                         value={p}
-                        label={t("transcription.libs.progressAria", { name: r.name })}
+                        label={t("transcription.libs.progressAria", {
+                          name: r.name || t("transcription.libs.unnamed"),
+                        })}
                         tone="success"
                       />
                       <span className="mkt-tr-libbar__pct">
@@ -376,6 +425,12 @@ function Libraries({ rows }: { rows: TranscriptionLibrary[] }) {
 function Failures({ s }: { s: TranscriptionSummary }) {
   const { t, n } = useI18n();
   const fmt = useFmt();
+  // a stage this page has no name for shows as itself, not as an i18n key
+  const stageName = (stage: string) => {
+    const key = `transcription.stage.${stage}`;
+    const name = t(key);
+    return name === key ? stage : name;
+  };
   return (
     <section className="mkt-tr-section" aria-labelledby="mkt-tr-fail-h">
       <h2 id="mkt-tr-fail-h" className="mkt-q-section-title">
@@ -391,7 +446,7 @@ function Failures({ s }: { s: TranscriptionSummary }) {
                 <Link to={`/queue/items/video/${encodeURIComponent(f.video_id)}`}>
                   {bidiIsolate(f.title)}
                 </Link>
-                <span className="mkt-tr-chip">{t(`transcription.stage.${f.stage}`)}</span>
+                <span className="mkt-tr-chip">{stageName(f.stage)}</span>
               </div>
               <p className="mkt-tr-fail__cause">
                 <strong>{f.error_cause ?? t("transcription.fail.unknownCause")}</strong>
@@ -401,7 +456,7 @@ function Failures({ s }: { s: TranscriptionSummary }) {
                 {[
                   f.library_name ? bidiIsolate(f.library_name) : null,
                   t("transcription.fail.attempts", { n: n(f.attempts) }),
-                  fmt.ago(f.finished_at),
+                  f.finished_at ? fmt.ago(f.finished_at) : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}

@@ -14,36 +14,36 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                            |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------------------- |
-| QDT-01 | Renders the stage page from detail + snapshot               | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                         |
-| QDT-02 | Shows Loading until detail and stage info are known         | Loading       | P2       | No                                                                   |
-| QDT-03 | Unknown stage shows "There is no queue called …"            | Navigation    | P1       | No                                                                   |
-| QDT-04 | 500 / network / 401 on detail is not reported as "no queue" | Error         | P1       | No                                                                   |
-| QDT-05 | Stage ids with special characters are encoded               | Navigation    | P3       | No                                                                   |
-| QDT-06 | Detail list fields `null` or missing                        | Empty state   | P1       | No                                                                   |
-| QDT-07 | Rate `points` `null` / rate call fails                      | Empty state   | P1       | No                                                                   |
-| QDT-08 | Snapshot / libraries list fields `null` or missing          | Empty state   | P1       | No                                                                   |
-| QDT-09 | Empty queue: nothing running, waiting or failed             | Empty state   | P2       | No                                                                   |
-| QDT-10 | Render crash shows route error fallback; Back works         | Error         | P1       | No                                                                   |
-| QDT-11 | Signed-out user is sent to `/login`                         | Permissions   | P1       | No                                                                   |
-| QDT-12 | Non-admin: actions answer 403 with a readable alert         | Permissions   | P1       | No                                                                   |
-| QDT-13 | Pause (with interrupt) and Resume                           | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                         |
-| QDT-14 | Failed pause / resume / pool change shows an alert          | Error         | P2       | No                                                                   |
-| QDT-15 | Pool stepper: bounds, Auto, shared note                     | Validation    | P2       | Yes (`QueueDetail.test.tsx`)                                         |
-| QDT-16 | "Retry failed (N)" retries every retry group                | Happy path    | P1       | Partial (`QueueDetail.test.tsx`: one group, no failure, no disabled) |
-| QDT-17 | Failure group Apply and per-group Retry                     | Happy path    | P2       | Partial (`QueueDetail.test.tsx`: retry label only)                   |
-| QDT-18 | Write mode select for external-write stages                 | Happy path    | P2       | No                                                                   |
-| QDT-19 | Running jobs follow the live job stream                     | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                         |
-| QDT-20 | No-worker banner and served-by note                         | Happy path    | P2       | Partial (`QueueDetail.test.tsx`: no-worker only)                     |
-| QDT-21 | Re-queue dialog is prefilled with this stage                | Happy path    | P2       | Yes (`QueueDetail.test.tsx`)                                         |
-| QDT-22 | Neighbour chips switch stage; no stale data; Back/Forward   | Navigation    | P1       | No                                                                   |
-| QDT-23 | `?host=` narrows running jobs; "Show every machine"         | Navigation    | P2       | Partial (`hostFilter.test.tsx`: no link back / unknown host)         |
-| QDT-24 | Log paging and Next up / running links                      | Navigation    | P2       | No                                                                   |
-| QDT-25 | Phone width 375 px                                          | Responsive    | P3       | No                                                                   |
-| QDT-26 | Arabic: RTL, Arabic labels, mirrored neighbours             | RTL           | P3       | No                                                                   |
-| QDT-27 | Light and dark theme                                        | Theme         | P3       | No                                                                   |
-| QDT-28 | Keyboard and accessibility basics                           | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                  |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                          |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------- |
+| QDT-01 | Renders the stage page from detail + snapshot               | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                                       |
+| QDT-02 | Shows Loading until detail and stage info are known         | Loading       | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-03 | Unknown stage shows "There is no queue called …"            | Navigation    | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-04 | 500 / network / 401 on detail is not reported as "no queue" | Error         | P1       | Yes (`QueueDetail.cases.test.tsx`; it.fails: a 401 does not redirect to /login)    |
+| QDT-05 | Stage ids with special characters are encoded               | Navigation    | P3       | No                                                                                 |
+| QDT-06 | Detail list fields `null` or missing                        | Empty state   | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-07 | Rate `points` `null` / rate call fails                      | Empty state   | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-08 | Snapshot / libraries list fields `null` or missing          | Empty state   | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-09 | Empty queue: nothing running, waiting or failed             | Empty state   | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-10 | Render crash shows route error fallback; Back works         | Error         | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-11 | Signed-out user is sent to `/login`                         | Permissions   | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-12 | Non-admin: actions answer 403 with a readable alert         | Permissions   | P1       | Yes (`QueueDetail.cases.test.tsx`; it.fails: controls still offered to non-admins) |
+| QDT-13 | Pause (with interrupt) and Resume                           | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                                       |
+| QDT-14 | Failed pause / resume / pool change shows an alert          | Error         | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-15 | Pool stepper: bounds, Auto, shared note                     | Validation    | P2       | Yes (`QueueDetail.test.tsx`)                                                       |
+| QDT-16 | "Retry failed (N)" retries every retry group                | Happy path    | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-17 | Failure group Apply and per-group Retry                     | Happy path    | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-18 | Write mode select for external-write stages                 | Happy path    | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-19 | Running jobs follow the live job stream                     | Happy path    | P1       | Yes (`QueueDetail.test.tsx`)                                                       |
+| QDT-20 | No-worker banner and served-by note                         | Happy path    | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-21 | Re-queue dialog is prefilled with this stage                | Happy path    | P2       | Yes (`QueueDetail.test.tsx`)                                                       |
+| QDT-22 | Neighbour chips switch stage; no stale data; Back/Forward   | Navigation    | P1       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-23 | `?host=` narrows running jobs; "Show every machine"         | Navigation    | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-24 | Log paging and Next up / running links                      | Navigation    | P2       | Yes (`QueueDetail.cases.test.tsx`)                                                 |
+| QDT-25 | Phone width 375 px                                          | Responsive    | P3       | No (e2e-only)                                                                      |
+| QDT-26 | Arabic: RTL, Arabic labels, mirrored neighbours             | RTL           | P3       | No                                                                                 |
+| QDT-27 | Light and dark theme                                        | Theme         | P3       | No                                                                                 |
+| QDT-28 | Keyboard and accessibility basics                           | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                |
 
 ## Cases
 
@@ -61,7 +61,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues/fingerprint` never resolves; snapshot resolves.
 - **Steps:**
   1. Open `/queue/fingerprint`.
@@ -71,7 +71,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues/nope` → 404 `application/problem+json` `{ "title": "Not Found", "status": 404 }`; `/api/queues/nope/rate` → 404; snapshot normal.
 - **Steps:**
   1. Open `/queue/nope` directly.
@@ -82,7 +82,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`; it.fails: a 401 does not redirect to /login)
 - **Preconditions / data:** `GET /api/queues/fingerprint` → (a) 500 `{ "title": "Internal Server Error" }`; (b) `fetch` rejects `TypeError("Failed to fetch")`; (c) 401; (d) 200 `text/html` body.
 - **Steps:**
   1. Open `/queue/fingerprint`.
@@ -102,7 +102,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues/fingerprint` → `detailFixture("fingerprint")` with, one at a time set to `null` and then deleted: `failures`, `next_up`, `log`, `running`, `info.edges`, `info.fed_by`, `summary.served_by`, `running[0].progress.steps`, `failures[0].sample_subjects`, `kpis` (whole object). Snapshot without this stage (so the REST `info` / `summary` are used).
 - **Steps:**
   1. Open `/queue/fingerprint`.
@@ -112,7 +112,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `/api/queues/fingerprint/rate` → (a) `{ "bucket_sec": 600, "points": null }`; (b) `{}`; (c) 500; (d) `{ "points": [] }`.
 - **Steps:**
   1. Open `/queue/fingerprint`.
@@ -122,7 +122,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** (a) `GET /api/queues` → `{ ...snapshotFixture, stages: null }` (and `queues: null`, `pools: null` each); (b) `/api/queues/libraries` → `{ "items": null }` and `{}`; (c) `pools[n].stages: null` for this stage's pool.
 - **Steps:**
   1. Open `/queue/fingerprint`; open "Re-queue a library or season…".
@@ -132,7 +132,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** detail with `running: []`, `next_up: []`, `failures: []`, `log: []`, summary counts all 0, `waiting_reason: "idle"`, `eta_sec: null`.
 - **Steps:**
   1. Open the stage page.
@@ -142,7 +142,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** full app routes; start at `/queue`; `GET /api/queues/fingerprint` → detail with `failures: null` (QDT-06) or mock `RateChart` to throw.
 - **Steps:**
   1. On `/queue`, click the "Fingerprint" card.
@@ -154,7 +154,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** no user in `AuthProvider`.
 - **Steps:**
   1. Open `/queue/fingerprint`.
@@ -164,7 +164,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`; it.fails: controls still offered to non-admins)
 - **Preconditions / data:** non-admin user; all `POST`/`PUT`/`PATCH` → 403 `{ "title": "Forbidden", "status": 403, "detail": "admin only" }`.
 - **Steps:**
   1. Click "Pause this queue", "More workers", "Retry failed (N)", change "Writes to other systems".
@@ -185,7 +185,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `POST …/pause` → 500 `{ "title": "Internal Server Error", "detail": "db down" }`; `PUT /api/pools/nas_read` rejects `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Click "Pause this queue"; click "More workers".
@@ -205,7 +205,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueDetail.test.tsx` "retries failed groups by cause"
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** detail `failures` with two `action: "retry"` groups (counts 3 and 4, causes `a`, `b`) and one `action: "apply"` group; second retry call rejects 500 in one run.
 - **Steps:**
   1. Click "Retry failed (7)".
@@ -215,7 +215,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueDetail.test.tsx` checks a "Retry 2" button exists
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** external-write stage `plex_collection` with a failure group `action: "apply"`; another with `action: "retry"`.
 - **Steps:**
   1. Click "Apply"; click "Retry N".
@@ -225,7 +225,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** stage `info.external_write: true`, `write_mode: "auto"`; `PATCH` resolves; second detail fetch returns `write_mode: "review"`.
 - **Steps:**
   1. Choose "Review first" in "Writes to other systems".
@@ -245,7 +245,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueDetail.test.tsx` "explains when no live worker serves the queue"
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** summary `no_worker: true`, `running: 0`, `pending: 5`; another run with `served_by: ["This PC", "Mac"]`.
 - **Steps:**
   1. Open the stage page.
@@ -265,7 +265,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** app routes; `/queue/fingerprint` loaded; `GET /api/queues/detect` delayed 500 ms; `GET /api/queues/link` immediate.
 - **Steps:**
   1. Click neighbour chip "Place episodes" (→ `/queue/detect`), then quickly another chip to `/queue/link`.
@@ -276,7 +276,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `hostFilter.test.tsx` "narrows a stage's running jobs to the machine"
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** `/queue/probe?host=node-1&name=Studio%20Mac`; workers with `node_id: "node-1"`; one running job claimed by that worker, one by another; then `?host=node-zz` (unknown).
 - **Steps:**
   1. Open the URL; click "Show every machine".
@@ -286,7 +286,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
 - **Preconditions / data:** detail `log` with lines; `GET /api/activity?stage=fingerprint&level=info&cursor=c1&limit=100` → `{ items: [...], next: null }`; first problems request returns `next: "c1"`.
 - **Steps:**
   1. Tick "Problems only"; click "Load older".
@@ -297,7 +297,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375×812.
 - **Steps:**
   1. Open `/queue/fingerprint`.

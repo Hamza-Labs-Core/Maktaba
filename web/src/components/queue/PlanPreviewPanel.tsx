@@ -95,9 +95,10 @@ export function PlanPreviewPanel({
 
   const summary = status?.summary;
   const changes = summary?.changes;
-  const ready = status?.ready.preview ?? false;
+  const ready = status?.ready?.preview ?? false;
   const failed = !running && status?.error;
-  const lastPhase = status?.log[status.log.length - 1];
+  const log = status?.log ?? [];
+  const lastPhase = log[log.length - 1];
 
   return (
     <section className="mkt-q-preview" aria-labelledby="mkt-q-preview-h">
@@ -192,10 +193,10 @@ export function PlanPreviewPanel({
           </Link>
         </p>
       )}
-      {!compact && status && status.log.length > 0 && (
+      {!compact && log.length > 0 && (
         <details className="mkt-q-preview__log">
           <summary>{t("queue.preview.log")}</summary>
-          <pre dir="auto">{status.log.join("\n")}</pre>
+          <pre dir="auto">{log.join("\n")}</pre>
         </details>
       )}
     </section>

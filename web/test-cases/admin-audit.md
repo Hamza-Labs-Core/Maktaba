@@ -14,34 +14,34 @@
 
 | ID     | Title                                                       | Category      | Priority | Covered by existing test? |
 | ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| AUD-01 | Security feed loads and renders rows                        | Happy path    | P1       | No                        |
+| AUD-01 | Security feed loads and renders rows                        | Happy path    | P1       | Yes (AuditLog.test.tsx)   |
 | AUD-02 | Loading state                                               | Loading       | P3       | No                        |
-| AUD-03 | Empty feed shows empty state                                | Empty state   | P2       | No                        |
-| AUD-04 | `items` null or missing                                     | Empty state   | P1       | No                        |
-| AUD-05 | Null / missing optional fields in an entry                  | Empty state   | P1       | No                        |
-| AUD-06 | Load more pages with the timestamp cursor                   | Happy path    | P1       | No                        |
-| AUD-07 | Load more hidden when a page is short                       | Happy path    | P2       | No                        |
-| AUD-08 | Load more failure                                           | Error         | P2       | No                        |
-| AUD-09 | Switch to Library source needs an id                        | Validation    | P2       | No                        |
-| AUD-10 | Library feed loads and pages by integer id                  | Happy path    | P1       | No                        |
-| AUD-11 | Typing a library id fires one request per keystroke / races | Error         | P2       | No                        |
-| AUD-12 | Library feed 404 for unknown id                             | Error         | P2       | No                        |
-| AUD-13 | Initial load errors + Try again                             | Error         | P2       | No                        |
-| AUD-14 | Event filter                                                | Happy path    | P2       | No                        |
-| AUD-15 | Actor filter                                                | Happy path    | P2       | No                        |
-| AUD-16 | Date range filter                                           | Happy path    | P2       | No                        |
-| AUD-17 | Filters match nothing                                       | Empty state   | P2       | No                        |
+| AUD-03 | Empty feed shows empty state                                | Empty state   | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-04 | `items` null or missing                                     | Empty state   | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-05 | Null / missing optional fields in an entry                  | Empty state   | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-06 | Load more pages with the timestamp cursor                   | Happy path    | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-07 | Load more hidden when a page is short                       | Happy path    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-08 | Load more failure                                           | Error         | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-09 | Switch to Library source needs an id                        | Validation    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-10 | Library feed loads and pages by integer id                  | Happy path    | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-11 | Typing a library id fires one request per keystroke / races | Error         | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-12 | Library feed 404 for unknown id                             | Error         | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-13 | Initial load errors + Try again                             | Error         | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-14 | Event filter                                                | Happy path    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-15 | Actor filter                                                | Happy path    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-16 | Date range filter                                           | Happy path    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-17 | Filters match nothing                                       | Empty state   | P2       | Yes (AuditLog.test.tsx)   |
 | AUD-18 | Refresh reloads from the first page                         | Happy path    | P3       | No                        |
-| AUD-19 | Export CSV content and escaping                             | Happy path    | P2       | No                        |
-| AUD-20 | CSV export does not allow formula injection                 | Permissions   | P1       | No                        |
-| AUD-21 | Page crash shows route error fallback; Back works           | Navigation    | P1       | No                        |
-| AUD-22 | Non-admin sees "Admins only"                                | Permissions   | P1       | No                        |
-| AUD-23 | Signed-out user redirected to /login                        | Permissions   | P1       | No                        |
+| AUD-19 | Export CSV content and escaping                             | Happy path    | P2       | Yes (AuditLog.test.tsx)   |
+| AUD-20 | CSV export does not allow formula injection                 | Permissions   | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-21 | Page crash shows route error fallback; Back works           | Navigation    | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-22 | Non-admin sees "Admins only"                                | Permissions   | P1       | Yes (AuditLog.test.tsx)   |
+| AUD-23 | Signed-out user redirected to /login                        | Permissions   | P1       | Yes (AuditLog.test.tsx)   |
 | AUD-24 | Deep link, Back/Forward, state not kept                     | Navigation    | P3       | No                        |
 | AUD-25 | Phone width (375px)                                         | Responsive    | P3       | No                        |
 | AUD-26 | Arabic / RTL                                                | RTL           | P3       | No                        |
 | AUD-27 | Light and dark theme                                        | Theme         | P3       | No                        |
-| AUD-28 | Keyboard and labels                                         | Accessibility | P2       | No                        |
+| AUD-28 | Keyboard and labels                                         | Accessibility | P2       | Yes (AuditLog.test.tsx)   |
 
 ## Cases
 
@@ -49,7 +49,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** admin; `GET /api/security/audit?limit=50` → `{ "items":[{ "id":2,"event":"login.failed","actor_user_id":"u1","target_id":"u1","payload":{"ip":"10.0.0.2"},"ts":"2026-10-18T10:00:00.123456789Z" },{ "id":1,"event":"user.created","actor_user_id":"u1","target_id":"u9","payload":"note","ts":"2026-10-17T09:00:00Z" }] }`
 - **Steps:**
   1. Open `/admin/audit`.
@@ -69,7 +69,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** GET → `{ "items": [] }`.
 - **Steps:**
   1. Open page.
@@ -79,7 +79,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** list field read from both endpoints: `items`. Run: `{ "items": null }`, `{}`, and the same for the library feed and for a "Load more" page.
 - **Steps:**
   1. Open page (and switch to Library with id "l1"; and click Load more after a full first page).
@@ -89,7 +89,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** items:
   - `{ "id":3,"event":"x","actor_user_id":null,"target_id":null,"payload":null,"ts":"2026-10-18T10:00:00Z" }`
   - `{ "id":4,"event":"y","ts":"2026-10-18T09:00:00Z" }` (optional keys missing)
@@ -103,7 +103,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** first GET → 50 items, last has `ts:"2026-10-01T00:00:00.5Z"`; second GET (`cursor=2026-10-01T00%3A00%3A00.5Z`) → 10 items.
 - **Steps:**
   1. Open page; click "Load more".
@@ -113,7 +113,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** (a) first page 49 items; (b) first page exactly 50 then second page `[]`.
 - **Steps:**
   1. Open page; in (b) click Load more.
@@ -123,7 +123,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** page 1 → 50 items; page 2 → 500 problem `{ "title":"internal","status":500,"detail":"db down" }` or fetch rejects.
 - **Steps:**
   1. Click Load more.
@@ -133,7 +133,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** security feed loaded.
 - **Steps:**
   1. Set Source to "Library".
@@ -144,7 +144,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** `GET /api/libraries/lib%201/audit?limit=50` → 50 items with last `id: 120`, `next_cursor: 120`; page 2 (`cursor=120`) → 5 items.
 - **Steps:**
   1. Source = Library; type "lib 1"; wait. Click Load more.
@@ -154,7 +154,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** GET for `/api/libraries/l/audit` resolves slowly (500 ms) with rows A; `/api/libraries/l1/audit` resolves fast (50 ms) with rows B.
 - **Steps:**
   1. Source = Library; type "l1" quickly.
@@ -164,7 +164,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** `GET /api/libraries/nope/audit?limit=50` → 404 problem `{ "title":"not found","status":404,"detail":"library not found" }`.
 - **Steps:**
   1. Source = Library, id "nope".
@@ -174,7 +174,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** GET → (a) 403 problem `{ "title":"forbidden","status":403 }`; (b) 500 `text/plain` "boom"; (c) fetch rejects; (d) 200 `application/json` body `{oops`; (e) 401.
 - **Steps:**
   1. Open page. 2. Make GET succeed, click "Try again".
@@ -184,7 +184,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** rows with events `login.failed` x2, `user.created` x1, `token.revoked` x1.
 - **Steps:**
   1. Open "Event" select; pick "login.failed". 2. Pick "All events". 3. Pick "user.created", then switch Source to Library and enter an id whose feed has no `user.created`.
@@ -194,7 +194,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** actors `u1-alice`, `u2-bob`, missing.
 - **Steps:**
   1. Type "u1" in "Actor". 2. Type "U1". 3. Clear.
@@ -204,7 +204,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** rows at 2026-10-17T09:00Z, 2026-10-18T10:00:30Z, 2026-10-19T12:00Z; test in a fixed TZ (e.g. `TZ=UTC`).
 - **Steps:**
   1. From = 2026-10-18T00:00. 2. To = 2026-10-18T10:00. 3. From later than To.
@@ -214,7 +214,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** rows loaded; full page of 50.
 - **Steps:**
   1. Type actor "zzz".
@@ -234,7 +234,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** spy on `URL.createObjectURL` / anchor click; rows incl. payload `{"msg":"a, \"b\"\nc"}`, actor missing, event filter set to one event.
 - **Steps:**
   1. Click "Export CSV".
@@ -244,7 +244,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** an entry whose user-controlled fields start with `=`, `+`, `-`, `@` (e.g. `target_id: "=HYPERLINK(\"http://evil\")"`, or a payload string `"+cmd"`); audit events can carry usernames chosen by other users.
 - **Steps:**
   1. Export CSV.
@@ -254,7 +254,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** full app router; GET → `{ "items": {} }` (non-array object: `rows.forEach` throws in the events memo) or mock `Select` to throw.
 - **Steps:**
   1. Start on `/admin/users`, click sidebar "Audit log".
@@ -265,7 +265,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** `/api/auth/me` → `is_admin:false`.
 - **Steps:**
   1. Open `/admin/audit` directly.
@@ -275,7 +275,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** `/api/auth/me` → 401.
 - **Steps:**
   1. Open `/admin/audit`.
@@ -325,7 +325,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (AuditLog.test.tsx)
 - **Preconditions / data:** rows loaded.
 - **Steps:**
   1. Tab through toolbar, filters, table, Load more.

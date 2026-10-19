@@ -13,6 +13,8 @@ import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { Button } from "@ds/components/Button/Button";
+import { AdminGate } from "../../components/AdminGate";
 import { EnrichmentPanel } from "../../components/EnrichmentPanel";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
@@ -26,7 +28,32 @@ interface Pending {
   confidence: number;
 }
 
+// Typing in a field (the panel's manual search) must not move the queue.
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
+
+// 0..1 → whole percent; a missing/odd value shows 0 %, never NaN.
+function pct(confidence: unknown): number {
+  const c = typeof confidence === "number" && Number.isFinite(confidence) ? confidence : 0;
+  return Math.round(Math.min(1, Math.max(0, c)) * 100);
+}
+
 export function AdminEnrichment() {
+  return (
+    <AdminGate>
+      <EnrichmentInner />
+    </AdminGate>
+  );
+}
+
+function EnrichmentInner() {
   const { t } = useI18n();
   const [items, setItems] = useState<Pending[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -34,11 +61,13 @@ export function AdminEnrichment() {
   const listRef = useRef<HTMLUListElement | null>(null);
 
   function load() {
+    setErr(null);
     api
-      .get<{ items: Pending[] }>("/api/enrichment/pending")
+      .get<{ items?: Pending[] | null } | null>("/api/enrichment/pending")
       .then((r) => {
-        setItems(r.items ?? []);
-        setSelected((cur) => cur ?? r.items?.[0]?.video_id ?? null);
+        const list = r?.items ?? [];
+        setItems(list);
+        setSelected((cur) => cur ?? list[0]?.video_id ?? null);
       })
       .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")));
   }
@@ -50,6 +79,7 @@ export function AdminEnrichment() {
     function onKey(e: KeyboardEvent) {
       if (!items || items.length === 0) return;
       if (e.key !== "j" && e.key !== "k") return;
+      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const idx = items.findIndex((it) => it.video_id === selected);
       const next = e.key === "j" ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1);
       setSelected(items[next].video_id);
@@ -58,7 +88,19 @@ export function AdminEnrichment() {
     return () => window.removeEventListener("keydown", onKey);
   }, [items, selected]);
 
-  if (err) return <ErrorState kind="server" title={t("common.error")} description={err} />;
+  if (err)
+    return (
+      <ErrorState
+        kind="server"
+        title={t("common.error")}
+        description={err}
+        action={
+          <Button variant="secondary" onClick={load}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
+    );
 
   return (
     <section className="mkt-page mkt-enrich-review">
@@ -84,7 +126,7 @@ export function AdminEnrichment() {
             aria-label={t("enrich.review.title")}
           >
             {items.map((it) => (
-              <li key={it.video_id}>
+              <li key={it.video_id} role="presentation">
                 <button
                   type="button"
                   role="option"
@@ -98,7 +140,7 @@ export function AdminEnrichment() {
                   <span className="mkt-enrich-review__match" dir="auto">
                     {it.candidate_title}
                   </span>
-                  <Badge tone="accent">{Math.round(it.confidence * 100)}%</Badge>
+                  <Badge tone="accent">{pct(it.confidence)}%</Badge>
                 </button>
               </li>
             ))}

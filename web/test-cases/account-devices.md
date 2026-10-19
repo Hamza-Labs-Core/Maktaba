@@ -8,29 +8,29 @@
 
 ## Summary
 
-| ID     | Title                                                     | Category      | Priority | Covered by existing test? |
-| ------ | --------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| ADV-01 | Device cards render                                       | Happy path    | P1       | No                        |
-| ADV-02 | Remove a device through the confirm dialog                | Happy path    | P1       | No                        |
-| ADV-03 | Cancel / Escape / backdrop on the confirm dialog          | Accessibility | P2       | No                        |
-| ADV-04 | Remove fails: error toast, dialog stays, device stays     | Error         | P1       | No                        |
-| ADV-05 | Double click on confirm "Remove" sends one DELETE         | Loading       | P2       | No                        |
-| ADV-06 | Removing the last device shows the empty state            | Empty state   | P2       | No                        |
-| ADV-07 | `items: []` shows the empty state                         | Empty state   | P2       | No                        |
-| ADV-08 | `items: null` / missing `items` shows the empty state     | Empty state   | P1       | No                        |
-| ADV-09 | Null / missing optional device fields                     | Empty state   | P1       | No                        |
-| ADV-10 | Unknown platform value                                    | Empty state   | P2       | No                        |
-| ADV-11 | Id with special characters is URL-encoded                 | Happy path    | P2       | No                        |
-| ADV-12 | Loading state                                             | Loading       | P3       | No                        |
-| ADV-13 | List load errors (500, 404, network, malformed) and Retry | Error         | P2       | No                        |
-| ADV-14 | 401 mid-session                                           | Permissions   | P1       | No                        |
-| ADV-15 | Signed out deep link redirects to /login                  | Permissions   | P1       | No                        |
-| ADV-16 | Crash during render shows a fallback; Back recovers       | Error         | P1       | No                        |
-| ADV-17 | Nav link, Back and Forward                                | Navigation    | P2       | No                        |
-| ADV-18 | Arabic / RTL                                              | RTL           | P2       | No                        |
-| ADV-19 | Light and dark theme                                      | Theme         | P3       | No                        |
-| ADV-20 | Phone width 375px                                         | Responsive    | P3       | No                        |
-| ADV-21 | Keyboard and screen reader basics                         | Accessibility | P2       | No                        |
+| ID     | Title                                                     | Category      | Priority | Covered by existing test?                                                                                          |
+| ------ | --------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| ADV-01 | Device cards render                                       | Happy path    | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-02 | Remove a device through the confirm dialog                | Happy path    | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-03 | Cancel / Escape / backdrop on the confirm dialog          | Accessibility | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-04 | Remove fails: error toast, dialog stays, device stays     | Error         | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-05 | Double click on confirm "Remove" sends one DELETE         | Loading       | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-06 | Removing the last device shows the empty state            | Empty state   | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-07 | `items: []` shows the empty state                         | Empty state   | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-08 | `items: null` / missing `items` shows the empty state     | Empty state   | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-09 | Null / missing optional device fields                     | Empty state   | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-10 | Unknown platform value                                    | Empty state   | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-11 | Id with special characters is URL-encoded                 | Happy path    | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-12 | Loading state                                             | Loading       | P3       | No                                                                                                                 |
+| ADV-13 | List load errors (500, 404, network, malformed) and Retry | Error         | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-14 | 401 mid-session                                           | Permissions   | P1       | Partial (ConnectedDevices.test.tsx: no blank page passes; 401 redirect is it.fails: bug)                           |
+| ADV-15 | Signed out deep link redirects to /login                  | Permissions   | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-16 | Crash during render shows a fallback; Back recovers       | Error         | P1       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-17 | Nav link, Back and Forward                                | Navigation    | P2       | Partial (ConnectedDevices.test.tsx: dialog/scroll cleanup on leave; sidebar aria-current is AppShell, not covered) |
+| ADV-18 | Arabic / RTL                                              | RTL           | P2       | Yes (ConnectedDevices.test.tsx)                                                                                    |
+| ADV-19 | Light and dark theme                                      | Theme         | P3       | No                                                                                                                 |
+| ADV-20 | Phone width 375px                                         | Responsive    | P3       | No                                                                                                                 |
+| ADV-21 | Keyboard and screen reader basics                         | Accessibility | P2       | Partial (ConnectedDevices.test.tsx: dialog labelling, live region; per-device button names it.todo: bug)           |
 
 ## Cases
 
@@ -38,7 +38,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** signed in; `GET /api/me/devices` → `{ "items": [ { "id": "d1", "user_id": "u1", "platform": "ios", "bundle_id": "app.maktaba.ios", "app_version": "1.4.0", "registered_at": "2026-09-01T10:00:00Z", "last_seen_at": "2026-10-18T08:30:00Z" }, { "id": "d2", "user_id": "u1", "platform": "android", "bundle_id": "app.maktaba.android", "registered_at": "2026-09-02T10:00:00Z", "last_seen_at": "2026-10-17T08:30:00Z" } ] }`
 - **Steps:**
   1. Open `/account/devices`.
@@ -48,7 +48,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** as ADV-01; `DELETE /api/devices/d1` → 204; second `GET /api/me/devices` → `{ "items": [ <d2 only> ] }`
 - **Steps:**
   1. Click "Remove" on the iOS card.
@@ -59,7 +59,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** as ADV-01
 - **Steps:**
   1. Open the dialog; click "Cancel".
@@ -72,7 +72,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** variants for `DELETE /api/devices/d1`: (a) 404 `{ "title": "Not Found", "status": 404, "detail": "device not found" }`; (b) 403 `{ "title": "Forbidden", "status": 403 }`; (c) 500 problem+json without detail; (d) fetch rejects.
 - **Steps:**
   1. Click "Remove" on the iOS card, then confirm.
@@ -82,7 +82,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** `DELETE /api/devices/d1` resolves after a delay
 - **Steps:**
   1. Open the dialog and click the dialog's "Remove" twice quickly.
@@ -92,7 +92,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** first `GET` → one device; `DELETE` → 204; second `GET` → `{ "items": [] }`
 - **Steps:**
   1. Remove the only device.
@@ -102,7 +102,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** `GET /api/me/devices` → `{ "items": [] }`
 - **Steps:**
   1. Open `/account/devices`.
@@ -112,7 +112,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** variants of `GET /api/me/devices`: (a) `{ "items": null }`; (b) `{}`; (c) 200 `text/html` body (api client returns a string, so `r.items` is `undefined`); (d) 200 `application/json` body `null`.
 - **Steps:**
   1. Open `/account/devices`.
@@ -122,7 +122,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** one device each with: (a) `"app_version": null`; (b) `"app_version": ""`; (c) `"bundle_id": null`; (d) `"last_seen_at": null`; (e) `last_seen_at` missing; (f) `"categories": null` (not read by this page, must not matter).
 - **Steps:**
   1. Open `/account/devices`.
@@ -132,7 +132,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** device with `"platform": "windows"`; another with `"platform": ""`; another with `"platform": null`
 - **Steps:**
   1. Open `/account/devices`.
@@ -142,7 +142,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** device `"id": "a/b c?#"`
 - **Steps:**
   1. Remove that device.
@@ -162,7 +162,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** variants of the first `GET /api/me/devices`: (a) 500 `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; (b) 404 `{ "title": "Not Found", "status": 404 }`; (c) fetch rejects; (d) 200 `application/json` body `{bad`. Second call → list as ADV-01.
 - **Steps:**
   1. Open `/account/devices`.
@@ -173,7 +173,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (ConnectedDevices.test.tsx: no blank page passes; 401 redirect is it.fails: bug)
 - **Preconditions / data:** auth probe returns a user; `GET /api/me/devices` → 401 `{ "title": "Unauthorized", "status": 401 }`; also a 401 on `DELETE`
 - **Steps:**
   1. Open `/account/devices`; then try a remove.
@@ -183,7 +183,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/account/devices` directly.
@@ -193,7 +193,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** start on `/account`. Make the page throw during render, e.g. `GET /api/me/devices` → `{ "items": [ { "id": "d1", "platform": "ios", "bundle_id": { "x": 1 }, "last_seen_at": "2026-10-18T08:30:00Z" } ] }` (an object rendered as a React child throws "Objects are not valid as a React child"); or mock `Card` to throw.
 - **Steps:**
   1. From `/account`, click sidebar "Devices".
@@ -205,7 +205,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (ConnectedDevices.test.tsx: dialog/scroll cleanup on leave; sidebar aria-current is AppShell, not covered)
 - **Preconditions / data:** as ADV-01
 - **Steps:**
   1. From `/library` click sidebar "Devices"; open the remove dialog.
@@ -217,7 +217,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ConnectedDevices.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; list as ADV-01
 - **Steps:**
   1. Open `/account/devices`; open the remove dialog.
@@ -247,7 +247,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (ConnectedDevices.test.tsx: dialog labelling, live region; per-device button names it.todo: bug)
 - **Preconditions / data:** as ADV-01
 - **Steps:**
   1. Tab to a "Remove" button, press Enter, Tab through the dialog, press Escape.

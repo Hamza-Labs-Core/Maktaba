@@ -25,6 +25,7 @@ import {
   type Destination,
   type DestinationKind,
   type OutputState,
+  type OutputView,
   type ScheduleRule,
   type SimulcastView,
 } from "../../../lib/tvSimulcastApi";
@@ -72,6 +73,42 @@ function useErr() {
   };
 }
 
+const OFF_USAGE: SimulcastView["usage"] = {
+  month: "",
+  minutes: 0,
+  hours: 0,
+  cap_hours: 0,
+  percent: 0,
+  capped: false,
+  cost_usd: 0,
+  budget_exhausted: false,
+};
+
+/** Lists and objects an older or partial API leaves out (or sends as null) read as empty. */
+function normalise(v: SimulcastView | null): SimulcastView {
+  const x = (v ?? {}) as Partial<SimulcastView>;
+  const destinations = x.destinations ?? [];
+  return {
+    enabled: !!x.enabled,
+    ready: !!x.ready,
+    reason: x.reason,
+    notice: x.notice,
+    settings: {
+      max_hours_per_month: 0,
+      lead_seconds: 0,
+      tail_seconds: 0,
+      ...(x.settings ?? {}),
+      // unknown: no cap beyond the destinations there are
+      max_outputs_per_channel:
+        x.settings?.max_outputs_per_channel ?? Math.max(1, destinations.length),
+    },
+    destinations,
+    attachments: (x.attachments ?? []).map((a) => ({ ...a, rules: a.rules ?? [] })),
+    usage: { ...OFF_USAGE, ...(x.usage ?? {}) },
+    default_ingest: x.default_ingest ?? {},
+  };
+}
+
 export function SimulcastPanel() {
   const { t, n, formatDate } = useI18n();
   const errText = useErr();
@@ -81,35 +118,57 @@ export function SimulcastPanel() {
   const [editing, setEditing] = useState<Channel | null>(null);
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setView(await tvSimulcastApi.status());
-    } catch {
-      setView(null);
+      setView(normalise(await tvSimulcastApi.status()));
+      setLoadErr(null);
+    } catch (e) {
+      // 403 / 404: no simulcast on this server (or not an admin) - leave the panel out
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+        setHidden(true);
+        return;
+      }
+      setLoadErr(e instanceof Error ? e.message : String(e));
     }
   }, []);
   useEffect(() => {
     void load();
     channelsApi
       .list()
-      .then((r) => setChannels([...r.items].sort((a, b) => a.number - b.number)))
+      .then((r) => setChannels([...(r?.items ?? [])].sort((a, b) => a.number - b.number)))
       .catch(() => setChannels([]));
   }, [load]);
 
-  if (!view) return null;
+  if (hidden) return null;
+  if (!view) {
+    if (!loadErr) return null;
+    return (
+      <Card className="mkt-livetv__card mkt-simulcast">
+        <h2>{t("simulcast.title")}</h2>
+        <p role="alert" className="mkt-q-status--bad">
+          {t("common.error")} {loadErr}
+        </p>
+      </Card>
+    );
+  }
   const u = view.usage;
   const reason = (r?: string) => (r ? (REASONS[r] ? t(REASONS[r]) : r) : "");
 
-  async function act(key: string, f: () => Promise<unknown>, ok: string) {
+  /** Runs an action; true when it went through. */
+  async function act(key: string, f: () => Promise<unknown>, ok: string): Promise<boolean> {
     setBusy(key);
     setMsg(null);
     try {
       await f();
       setMsg({ ok: true, text: ok });
       await load();
+      return true;
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
+      return false;
     } finally {
       setBusy(null);
     }
@@ -130,9 +189,9 @@ export function SimulcastPanel() {
       )}
       <p>
         {t("simulcast.usage", {
-          hours: n(Math.round(u.hours * 10) / 10),
-          cap: n(u.cap_hours),
-          usd: u.cost_usd.toFixed(2),
+          hours: n(Math.round((u.hours ?? 0) * 10) / 10),
+          cap: n(u.cap_hours ?? 0),
+          usd: (u.cost_usd ?? 0).toFixed(2),
         })}{" "}
         {u.capped ? (
           <span className="mkt-q-status--bad">{t("simulcast.capped")}</span>
@@ -196,7 +255,17 @@ export function SimulcastPanel() {
                 busy={busy}
                 reason={reason}
                 formatDate={formatDate}
-                onEdit={() => setEditing(channels.find((c) => c.id === a.channel_id) ?? null)}
+                onEdit={() =>
+                  setEditing(
+                    channels.find((c) => c.id === a.channel_id) ??
+                      // not in the channel list (yet): edit it by what the row knows
+                      ({
+                        id: a.channel_id,
+                        number: a.channel_number,
+                        name: a.channel_name,
+                      } as Channel)
+                  )
+                }
                 onStart={() =>
                   act("start:" + a.id, () => tvSimulcastApi.start(a.id), t("simulcast.started"))
                 }
@@ -250,7 +319,7 @@ function OutputRow({
   onStop: () => void;
 }) {
   const { t } = useI18n();
-  const o = a.output;
+  const o: OutputView = a.output ?? { state: "off", platform_note: false, minutes: 0 };
   const when = (s?: string) => (s ? formatDate(s) : "");
   // an open output (live, starting, waiting for an input, errored) can be stopped
   const running = o.state !== "off" && !(o.state === "scheduled" && !o.detail);
@@ -331,7 +400,7 @@ function Destinations({
 }: {
   view: SimulcastView;
   busy: string | null;
-  act: (key: string, f: () => Promise<unknown>, ok: string) => Promise<void>;
+  act: (key: string, f: () => Promise<unknown>, ok: string) => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const [form, setForm] = useState<{
@@ -358,7 +427,7 @@ function Destinations({
       ingest_url: form.url.trim(),
       ...(form.key.trim() ? { stream_key: form.key.trim() } : {}),
     };
-    await act(
+    const ok = await act(
       "dest",
       () =>
         form.id
@@ -366,7 +435,8 @@ function Destinations({
           : tvSimulcastApi.createDestination({ ...body, kind: form.kind }),
       t("simulcast.destSaved")
     );
-    setForm(null);
+    // a failed save keeps the form (and what was typed) open
+    if (ok) setForm(null);
   }
 
   return (

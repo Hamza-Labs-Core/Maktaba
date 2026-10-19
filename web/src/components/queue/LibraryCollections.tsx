@@ -17,7 +17,16 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
     setData(null);
     queueApi
       .libraryCollections(libraryId)
-      .then((d) => alive && setData(d))
+      .then(
+        (d) =>
+          alive &&
+          setData({
+            ...d,
+            topics: d?.topics ?? [],
+            clip_groups: d?.clip_groups ?? [],
+            promos: d?.promos ?? [],
+          })
+      )
       .catch(() => {});
     return () => {
       alive = false;
