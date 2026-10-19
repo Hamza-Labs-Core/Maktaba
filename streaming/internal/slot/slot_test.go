@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 )
 
@@ -172,5 +173,47 @@ func TestSlotFenceTrackAndRelease(t *testing.T) {
 	st.Drain()
 	if ok, why := st.MayRun(); ok || why != "draining" {
 		t.Fatalf("draining: %v %s", ok, why)
+	}
+}
+
+type readsOnly struct{ look channel.Look }
+
+func (r readsOnly) ProgramsFrom(context.Context, uuid.UUID, time.Time, int) ([]channel.ProgramBlock, error) {
+	return []channel.ProgramBlock{{Seq: 42}}, nil
+}
+func (r readsOnly) Look(context.Context, uuid.UUID) (channel.Look, error) { return r.look, nil }
+func (r readsOnly) SetRuntime(context.Context, channel.Runtime) error     { return nil }
+func (r readsOnly) ClearRuntime(context.Context, uuid.UUID) error         { return nil }
+
+// A slot bound to a TV release reads its programmes, looks and settings from it.
+func TestSlotReadsItsRelease(t *testing.T) {
+	r := Repo{State: NewState(Blue, "r1"), Reads: readsOnly{look: channel.Look{Name: "from the release"}}}
+	bs, err := r.ProgramsFrom(context.Background(), uuid.New(), time.Now(), 5)
+	if err != nil || len(bs) != 1 || bs[0].Seq != 42 {
+		t.Fatalf("programmes %v %v", bs, err)
+	}
+	if l, _ := r.Look(context.Background(), uuid.New()); l.Name != "from the release" {
+		t.Fatalf("look %+v", l)
+	}
+	rs := ReleaseSettings{Raw: func(sec string) json.RawMessage {
+		switch sec {
+		case "tv_output":
+			return json.RawMessage(`{"fps":25,"keyint_seconds":4}`)
+		case "tv":
+			return json.RawMessage(`{"horizon_days":3}`)
+		}
+		return json.RawMessage(`{}`)
+	}}
+	if o := rs.Output(context.Background()); o.FPS != 25 || o.KeyintSeconds != 4 {
+		t.Fatalf("release output %+v", o)
+	}
+	if rs.TV(context.Background()).HorizonDays != 3 {
+		t.Fatal("release tv rules")
+	}
+	// the budget applies over the release's settings
+	st := NewState(Green, "r1")
+	st.SetBudget(Budget{MaxActive: 3})
+	if o := (Settings{Settings: rs, State: st}).Output(context.Background()); o.MaxActive != 3 || o.FPS != 25 {
+		t.Fatalf("budget over release %+v", o)
 	}
 }

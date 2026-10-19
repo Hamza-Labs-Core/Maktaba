@@ -43,12 +43,14 @@ type Supervisor struct {
 type child struct {
 	proc       Process
 	status     ChildStatus
-	cmd        *exec.Cmd   // the running process, nil between runs
-	tree       *procTree   // its process group / job, nil between runs
-	exits      []time.Time // exits that led to a restart, for the crash-loop window
-	killReason string      // set before the supervisor kills the child
-	failed     bool        // in a crash loop (state failed or retrying from it)
-	wanted     bool        // run it (an on-demand process is not until asked for)
+	cmd        *exec.Cmd    // the running process, nil between runs
+	tree       *procTree    // its process group / job, nil between runs
+	exits      []time.Time  // exits that led to a restart, for the crash-loop window
+	killReason string       // set before the supervisor kills the child
+	failed     bool         // in a crash loop (state failed or retrying from it)
+	wanted     bool         // run it (an on-demand process is not until asked for)
+	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
+	basePath   string       // the binary the process was built with
 	wake       chan struct{}
 }
 
@@ -91,6 +93,12 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 		s.children = append(s.children, &child{
 			proc:   p,
 			wanted: !p.OnDemand,
+			basePath: func() string {
+				if p.Cmd != nil {
+					return p.Cmd.Path
+				}
+				return ""
+			}(),
 			wake:   make(chan struct{}, 1),
 			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand},
 		})
@@ -211,8 +219,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		}
 		startedAt := s.now()
 		var info ExitInfo
-		prepareTree(cmd)
-		if err := cmd.Start(); err != nil {
+		startErr := applyBinding(cmd, c.binding, c.basePath)
+		if startErr == nil {
+			prepareTree(cmd)
+			startErr = cmd.Start()
+		}
+		if err := startErr; err != nil {
 			info = ExitInfo{At: startedAt, Code: -1, Reason: ReasonStartFailed, Error: err.Error()}
 			c.status.LastExit = &info
 			c.status.PID = 0

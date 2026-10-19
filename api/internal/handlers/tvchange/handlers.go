@@ -544,44 +544,73 @@ func (h *Handler) Rollback(w http.ResponseWriter, r *http.Request) {
 	notYet(w, r, "rollback", "33.9")
 }
 
-// Slot is one TV slot of a streaming host.
+// Slot is one TV slot of a streaming host (tv_slots, story 33.1).
 type Slot struct {
-	HostID    string  `json:"host_id"`
-	Slot      string  `json:"slot"`
-	Role      string  `json:"role"`
-	State     string  `json:"state"`
-	ReleaseID *string `json:"release_id,omitempty"`
-	Version   string  `json:"version,omitempty"`
+	HostID       string     `json:"host_id"`
+	Slot         string     `json:"slot"`
+	Role         string     `json:"role"`
+	State        string     `json:"state"`
+	ReleaseID    *string    `json:"release_id,omitempty"`
+	Version      string     `json:"version,omitempty"`
+	Epoch        int64      `json:"epoch"`
+	PID          int        `json:"pid,omitempty"`
+	Warm         []string   `json:"warm"`
+	EncodersUsed int        `json:"encoders_used"`
+	BeatAt       *time.Time `json:"beat_at,omitempty"`
 }
 
-// Slots serves GET /api/tv/slots: the tv_slots rows once the two-slot runtime (story
-// 33.1) writes them; until then the one TV process, as the live slot of the home.
+// slotUnhealthyAfter: three missed beats (story 33.1 AC4).
+const slotUnhealthyAfter = 15 * time.Second
+
+// Slots serves GET /api/tv/slots: every host's TV slots from tv_slots — role
+// (live, standby, staging, ...) and routing epoch, state (a slot missing three
+// beats is unhealthy), release, version, warm channels, encoders. A home that runs
+// the engine in one process (no slot rows: [tv] slots = off, or before 33.1) is
+// reported as one live slot.
 func (h *Handler) Slots(w http.ResponseWriter, r *http.Request) {
 	if _, ok := admin(w, r); !ok {
 		return
 	}
 	out := []Slot{}
-	rows, err := h.DB.QueryContext(r.Context(), `SELECT host_id, slot, role, state, release_id, COALESCE(version, '') FROM tv_slots ORDER BY host_id, slot`)
+	rows, err := h.DB.QueryContext(r.Context(), `SELECT host_id, slot, role, state, release_id, COALESCE(version, ''),
+		role_epoch, COALESCE(pid, 0), COALESCE(warm, '[]'), encoders_used, beat_at
+		FROM tv_slots ORDER BY host_id, slot`)
 	if err == nil {
 		defer rows.Close()
+		now := time.Now()
 		for rows.Next() {
 			var s Slot
 			var rel sql.NullString
-			if rows.Scan(&s.HostID, &s.Slot, &s.Role, &s.State, &rel, &s.Version) == nil {
-				if rel.Valid {
-					v := rel.String
-					s.ReleaseID = &v
-				}
-				out = append(out, s)
+			var warm []byte
+			var beat timeScan
+			if rows.Scan(&s.HostID, &s.Slot, &s.Role, &s.State, &rel, &s.Version, &s.Epoch, &s.PID, &warm,
+				&s.EncodersUsed, &beat) != nil {
+				continue
 			}
+			if rel.Valid {
+				v := rel.String
+				s.ReleaseID = &v
+			}
+			s.Warm = []string{}
+			_ = json.Unmarshal(warm, &s.Warm)
+			if t := beat.t; !t.IsZero() {
+				s.BeatAt = &t
+				if s.State == "healthy" && now.Sub(t) > slotUnhealthyAfter {
+					s.State = "unhealthy"
+				}
+			} else if s.State == "healthy" {
+				s.State = "starting"
+			}
+			out = append(out, s)
 		}
 	}
 	runtime := "slots"
-	if err != nil {
+	if err != nil || len(out) == 0 {
 		runtime = "single"
+		out = out[:0]
 		var rel sql.NullString
 		_ = h.DB.QueryRowContext(r.Context(), `SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'`).Scan(&rel)
-		s := Slot{HostID: "home", Slot: "blue", Role: "live", State: "healthy"}
+		s := Slot{HostID: "home", Slot: "blue", Role: "live", State: "healthy", Warm: []string{}}
 		if rel.Valid {
 			v := rel.String
 			s.ReleaseID = &v
@@ -678,6 +707,8 @@ func (s *timeScan) Scan(v any) error {
 		}
 	case []byte:
 		return s.Scan(string(x))
+	case nil:
+		s.t = time.Time{}
 	}
 	return nil
 }

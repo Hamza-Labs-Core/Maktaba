@@ -200,3 +200,55 @@ func TestSlotExitReporter(t *testing.T) {
 		t.Fatal("no report")
 	}
 }
+
+// A slot bound to a TV release runs that release's binary (checked against its
+// SHA-256) with MAKTABA_TV_RELEASE; a wrong checksum refuses the start.
+func TestSlotReleaseBinding(t *testing.T) {
+	dir := fakeStreamingBin(t)
+	base := filepath.Join(dir, filepath.Base(mustBin(t, dir)))
+	rel := filepath.Join(dir, "releases", "1.2.3")
+	if err := os.MkdirAll(rel, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	relBin := filepath.Join(rel, filepath.Base(base))
+	if err := os.WriteFile(relBin, []byte("release binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum, _ := fileSHA256(relBin)
+	p, err := BuildSlot("green", Options{Config: slotCfg(), BinDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := cloneCmd(p.Cmd)
+	if err := applyBinding(cmd, &SlotBinding{ReleaseID: "r-1", Version: "1.2.3", SHA256: sum}, p.Cmd.Path); err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Path != relBin || cmd.Args[0] != relBin || envMap(cmd.Env)["MAKTABA_TV_RELEASE"] != "r-1" {
+		t.Fatalf("bound command: %s %v", cmd.Path, cmd.Args)
+	}
+	cmd = cloneCmd(p.Cmd)
+	if err := applyBinding(cmd, &SlotBinding{ReleaseID: "r-1", Version: "1.2.3", SHA256: strings.Repeat("0", 64)}, p.Cmd.Path); err == nil ||
+		!strings.Contains(err.Error(), "tv_slot_refused") {
+		t.Fatalf("a wrong checksum started: %v", err)
+	}
+	if err := applyBinding(cmd, &SlotBinding{ReleaseID: "r-1", Version: "../x"}, p.Cmd.Path); err == nil {
+		t.Fatal("a bad version resolved")
+	}
+	cmd.Path = relBin
+	if err := applyBinding(cmd, nil, p.Cmd.Path); err != nil || cmd.Path != p.Cmd.Path {
+		t.Fatalf("unbound: %s %v", cmd.Path, err)
+	}
+	s := New([]Process{p}, testPolicy())
+	if s.Bind("green", &SlotBinding{ReleaseID: "r"}) != nil || s.Bind("purple", nil) == nil {
+		t.Fatal("Bind")
+	}
+}
+
+func mustBin(t *testing.T, dir string) string {
+	t.Helper()
+	ents, err := os.ReadDir(dir)
+	if err != nil || len(ents) == 0 {
+		t.Fatal("no fake binary")
+	}
+	return ents[0].Name()
+}

@@ -198,6 +198,18 @@ func (s *Supervisor) Handler() http.Handler {
 			http.Error(w, "POST /slots/{instance}/start|stop", http.StatusBadRequest)
 			return
 		}
+		if parts[1] == "start" && r.ContentLength > 0 {
+			// {release_id, version, sha256}: the TV release the slot runs (story 33.2)
+			var b SlotBinding
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b); err != nil {
+				http.Error(w, "bad body", http.StatusBadRequest)
+				return
+			}
+			if err := s.Bind(parts[0], &b); err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+		}
 		if err := s.Want(RoleTVSlot, parts[0], parts[1] == "start"); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

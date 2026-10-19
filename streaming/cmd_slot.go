@@ -90,8 +90,29 @@ func runSlot(args []string) error {
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = ident.ID
 	repo := slot.Repo{PGRepo: chRepo, State: state}
-	settings := slot.Settings{Settings: b.settings, State: state}
-	scfg := b.stationConfig(chRepo)
+	var base channel.Settings = b.settings
+	var reads channel.Repo = chRepo
+	// story 33.2: a slot started for a TV release airs that release's lineup,
+	// schedule generation and settings, never "whatever is in channels now"
+	if rel := os.Getenv("MAKTABA_TV_RELEASE"); rel != "" {
+		id, err := uuid.Parse(rel)
+		if err != nil {
+			return fmt.Errorf("MAKTABA_TV_RELEASE %q is not a release id", rel)
+		}
+		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		rr, err := channel.NewReleaseRepo(rctx, pool, b.hostname, id)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("TV release %s: %w", rel, err)
+		}
+		rr.HostID = ident.ID
+		repo.Reads, reads = rr, rr
+		base = slot.ReleaseSettings{Raw: rr.Settings}
+		logger.Info("tv slot: bound to its release", "release_id", rel, "sched_gen", rr.SchedGen,
+			"event", "tv_slot_release")
+	}
+	settings := slot.Settings{Settings: base, State: state}
+	scfg := b.stationConfig(reads)
 	scfg.AlignSegments = true // two slots' segments start at the same instants (33.4)
 	start := channel.SettingsStarter(scfg, settings, b.encoders)
 	engine := newSlotEngine(b, repo, settings, slot.Layout{Root: cfg.Cache.Root, Name: *name}, start, ident)

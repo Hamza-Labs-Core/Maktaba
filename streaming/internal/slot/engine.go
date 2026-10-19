@@ -2,8 +2,10 @@ package slot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -79,11 +81,55 @@ func (f Fence) Release(ctx context.Context, ch uuid.UUID, gen int64) {
 	}
 }
 
-// Repo is the slot engine's repo: reads pass through; channel_runtime (one row
-// per channel: the channel on air) is written by the live slot only.
+// Repo is the slot engine's repo: reads come from Reads (the slot's TV release,
+// channel.ReleaseRepo, when it is bound to one; else the PGRepo's live view);
+// channel_runtime (one row per channel: the channel on air) is written by the
+// live slot only.
 type Repo struct {
 	*channel.PGRepo
 	State *State
+	Reads channel.Repo
+}
+
+// ProgramsFrom implements channel.Repo (the release's generation when bound).
+func (r Repo) ProgramsFrom(ctx context.Context, id uuid.UUID, from time.Time, limit int) ([]channel.ProgramBlock, error) {
+	if r.Reads != nil {
+		return r.Reads.ProgramsFrom(ctx, id, from, limit)
+	}
+	return r.PGRepo.ProgramsFrom(ctx, id, from, limit)
+}
+
+// Look implements channel.Repo (the release's definition when bound).
+func (r Repo) Look(ctx context.Context, id uuid.UUID) (channel.Look, error) {
+	if r.Reads != nil {
+		return r.Reads.Look(ctx, id)
+	}
+	return r.PGRepo.Look(ctx, id)
+}
+
+// ReleaseSettings are a release's rules (tv, tv_output, tv_strip) over the
+// host's env fallbacks (story 33.2: a slot never reads app_settings for what it
+// airs). Raw returns a section's stored overrides.
+type ReleaseSettings struct {
+	Raw func(section string) json.RawMessage
+}
+
+// TV implements channel.Settings.
+func (s ReleaseSettings) TV(context.Context) channel.TVSettings {
+	tv, _ := channel.ApplyTVRules(channel.TVSettingsFromEnv(), s.Raw("tv"))
+	return tv
+}
+
+// Output implements channel.Settings.
+func (s ReleaseSettings) Output(context.Context) channel.OutputSettings {
+	out, _ := channel.ApplyOutputRules(channel.OutputSettingsFromEnv(), s.Raw("tv_output"))
+	return out
+}
+
+// Strip implements channel.StripSource.
+func (s ReleaseSettings) Strip(context.Context) channel.StripSettings {
+	st, _ := channel.ApplyStripRules(channel.DefaultStripSettings(), s.Raw("tv_strip"), false)
+	return st
 }
 
 // SetRuntime implements channel.Repo.

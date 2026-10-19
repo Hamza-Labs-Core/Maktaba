@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 )
 
 // The tv-slot role (Epic 33 story 33.1): the channel engine runs in up to three
@@ -119,4 +121,57 @@ func SlotExitReporter(streamAddr string) func(Process, ExitInfo) {
 			}
 		}()
 	}
+}
+
+// SlotBinding binds a slot instance to a TV release (story 33.2): the slot runs
+// that release's streaming binary, bin/releases/<version>/, only when its SHA-256
+// is the release's (ResolveReleaseBinary), and gets MAKTABA_TV_RELEASE.
+type SlotBinding struct {
+	ReleaseID string `json:"release_id"`
+	Version   string `json:"version"`
+	SHA256    string `json:"sha256"`
+}
+
+// applyBinding points a slot's command at its release's binary (at each start:
+// a restart re-checks the file). No binding: the command as built.
+func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
+	if b == nil || b.ReleaseID == "" {
+		if base != "" && cmd.Path != base { // unbound again: the binary built with
+			cmd.Path = base
+			if len(cmd.Args) > 0 {
+				cmd.Args[0] = base
+			}
+		}
+		return nil
+	}
+	rb, err := ResolveReleaseBinary(filepath.Dir(base), b.Version, b.SHA256, version.Version, base)
+	if err != nil {
+		return fmt.Errorf("tv_slot_refused: %w", err)
+	}
+	cmd.Path = rb.Path
+	if len(cmd.Args) > 0 {
+		cmd.Args[0] = rb.Path
+	}
+	env := make([]string, 0, len(cmd.Env)+1)
+	for _, e := range cmd.Env {
+		if !strings.HasPrefix(e, "MAKTABA_TV_RELEASE=") {
+			env = append(env, e)
+		}
+	}
+	cmd.Env = append(env, "MAKTABA_TV_RELEASE="+b.ReleaseID)
+	return nil
+}
+
+// Bind sets (nil: clears) the TV release a slot instance runs from its next
+// start on.
+func (s *Supervisor) Bind(instance string, b *SlotBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.children {
+		if c.proc.Role == RoleTVSlot && c.proc.Instance == instance {
+			c.binding = b
+			return nil
+		}
+	}
+	return fmt.Errorf("no %s process %q", RoleTVSlot, instance)
 }
