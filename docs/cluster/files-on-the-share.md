@@ -108,9 +108,26 @@ Options:
 | `--level LEVEL` | logs at or above `debug`, `info`, `warning` or `error` |
 | `--follow` | keep printing new lines as they arrive |
 | `--dir PATH` | read another folder (for example a machine's local fallback folder, or a copy) |
+| `--archive [DIR]` | read the home's long-term archive instead of the share (`logs`, `jobs`, `llm`, `events`, `ls`); `DIR` defaults to `MAKTABA_ARCHIVE_DIR`, else `~/.maktaba/archive`; not with `--follow` |
 
 The day's files of all processes are merged in time order. These commands read the share
 directly, so they work while the home is off.
+
+### The archive, on the home
+
+The home keeps the logs, job events, LLM usage and its own events for a year in its archive
+(`MAKTABA_ARCHIVE_DIR`, default `~/.maktaba/archive`, on the home's own disk; see the design,
+section 7.10), compressed, one file per process and day. On the home:
+
+```sh
+maktaba-pipeline cluster where                       # also shows the archive folder and if it is there
+maktaba-pipeline cluster ls --archive                # archived machines and their days
+maktaba-pipeline cluster logs --archive --ip 192.168.50.31 --date 2026-03-02 --level error
+maktaba-pipeline cluster jobs --archive /mnt/backup/maktaba-archive --date 2026-03-02
+```
+
+The archive holds closed days only, so `--follow` does not apply. Like the share readers,
+these never follow a link planted in the folder.
 
 ### With ordinary tools
 
