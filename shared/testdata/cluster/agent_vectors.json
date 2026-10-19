@@ -1,0 +1,53 @@
+{
+  "comment": "Epic 31 phase 2 agent channel, handshake v2 (design-agent.md 4.2-4.4): mutual authentication and forward secrecy. Go and Python both check these.",
+  "node_static_private": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+  "node_static_public": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=",
+  "client_eph_private": "lpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLU=",
+  "client_eph_public": "CCZK5pC0Edjj7eQPhxklheoRSggnRKd2EFqsBeqxBS4=",
+  "server_eph_private": "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2A=",
+  "server_eph_public": "ZLEBsdC+WocEvQePmJUAH8A+jp+VIvGI3RKNmEbUhGY=",
+  "home_static_private": "tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NU=",
+  "home_static_public": "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8=",
+  "client_nonce": "yMnKy8zNzs/Q0dLT1NXW1w==",
+  "server_nonce": "2Nna29zd3t/g4eLj5OXm5w==",
+  "hello": "{\"eph\":\"CCZK5pC0Edjj7eQPhxklheoRSggnRKd2EFqsBeqxBS4=\",\"host\":\"studio-linux\",\"kind\":\"node\",\"node_id\":\"6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7\",\"nonce\":\"yMnKy8zNzs/Q0dLT1NXW1w==\",\"pid\":4242,\"t\":\"hello\",\"v\":2,\"worker_id\":\"node-6f1c2a3b-4242\"}",
+  "challenge": "{\"nonce\":\"2Nna29zd3t/g4eLj5OXm5w==\",\"server_eph\":\"ZLEBsdC+WocEvQePmJUAH8A+jp+VIvGI3RKNmEbUhGY=\",\"t\":\"challenge\"}",
+  "transcript_hash": "1n1dRQyEP83xX9hvH0Qlt0rlyFp+0uK4dQbGAQfSgoI=",
+  "dh_ee": "5Dl3+tIs1y6leMLGXroX5RD2jUlSBT6flEXbyYP5Ikk=",
+  "dh_se": "JsLBf9uCFhyyGtFuchMVNVtk0XYxGbEL/JYlMNx8wWM=",
+  "dh_es": "Msw1SZrdViecsHW8yKiNso9ClVXP58HSE3FSYAIviiQ=",
+  "k_c2s": "QeIXYZoj6AcAq7EDFr8v2Qjps4vOst3+a7mDXkAvzAY=",
+  "k_s2c": "qOOVs1q/XE+0pWMhZ/QiMyUSywmSuE0kR4GwnCFPEtY=",
+  "client_proof": "sApXg8IEEJnKypGLCak5S2F12TquclN1GDD2g7VEHYE=",
+  "server_proof": "BwG7ZpH2hfYxpYOk6JTxUd/LMjfB8t/ehUih1euADrs=",
+  "frames": [
+    {
+      "dir": "s2c",
+      "counter": 0,
+      "plaintext": "{\"proof\":\"BwG7ZpH2hfYxpYOk6JTxUd/LMjfB8t/ehUih1euADrs=\",\"session\":\"s1\",\"settings\":{\"log_level\":\"info\",\"metrics_every\":2},\"t\":\"welcome\"}",
+      "sealed": "k7T15n6Pz4W+oacGtPuvqh18gwCyHJ94ZC3D4+va9VCr/48uWeRx5OGilkzoGVr+c2jG47dDkEmmkuCYYqD7v1wyiFHw8eso/9obNYCWSrnsLhtBUcdiDc3FSgJSmSHcVaLFpbpyz62dO/ORn7s+BRq8IA7RnLS7UJtXO9R9Mc9BXlZGLwu5Y8M3hWWFwQeBKWJlxVphug=="
+    },
+    {
+      "dir": "c2s",
+      "counter": 0,
+      "plaintext": "{\"system\":{\"cpu_pct\":12.5},\"t\":\"metrics\",\"ts\":\"2026-10-19T00:00:00Z\"}",
+      "sealed": "i/VTf6pc9hAVtS4ARuLDj4U2LoPM7bLjzrXskKfwPwCxNsC/Oo1b8Ja+G0xGbEB1GTG5qquzfNxyCpK4jAyYQD3eCeyex+yFWYcdAVLAd3K7Pw9uDQ=="
+    },
+    {
+      "dir": "c2s",
+      "counter": 1,
+      "plaintext": "{\"records\":[{\"event\":\"x\",\"level\":\"warning\",\"ts\":\"2026-10-19T00:00:01Z\"}],\"t\":\"logs\"}",
+      "sealed": "uMLZEnAvLECrr5A7ODvHQzzRIjRf01joPddCLitK8sEiFKa4KQjmRKpfHYr2sW0Ke7+9+i3sLFiB5oW/ohxEw+Zdi5w5YIXrQ4Z7hA7dgytHarObNRp5pjf37YT6RTV4QeJxbQ=="
+    }
+  ],
+  "home": {
+    "home_key": "eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpc=",
+    "hello": "{\"eph\":\"CCZK5pC0Edjj7eQPhxklheoRSggnRKd2EFqsBeqxBS4=\",\"host\":\"home-mac\",\"kind\":\"home\",\"nonce\":\"yMnKy8zNzs/Q0dLT1NXW1w==\",\"pid\":1,\"t\":\"hello\",\"v\":2,\"worker_id\":\"mac-main-1\"}",
+    "challenge": "{\"nonce\":\"2Nna29zd3t/g4eLj5OXm5w==\",\"server_eph\":\"ZLEBsdC+WocEvQePmJUAH8A+jp+VIvGI3RKNmEbUhGY=\",\"t\":\"challenge\"}",
+    "transcript_hash": "3UKy9Vk60ud2Df68p7u0lEdnkc/9byS6GHB8Rtk6nIw=",
+    "k_c2s": "WSXsI6ZZ/zgR9BFtORTGNZL7ZALzbJuBfKxP3fr41TA=",
+    "k_s2c": "EsdzJ3SKSsklGr1VBCey1W1tXhwz55mbFKH+raZyC70=",
+    "client_proof": "xH7q47m8sq6NBu2QnxRDmWaMxNusbhlSi/gj++mxSww=",
+    "server_proof": "HLFdUHNFlX8AQCbI2XYuY+JQf+7tVfRUVstgTStI0RA="
+  }
+}

@@ -1,0 +1,61 @@
+# Maktaba node worker (Epic 31) — systemd SYSTEM unit: the main worker of a headless
+# machine that joined a Maktaba home. Installed by
+# `sudo deploy/packaging/node/install-node.sh --system [--run-as USER]` to
+# /etc/systemd/system/; extra transcription workers are maktaba-node@<N>.service.
+#
+# Use this variant when the share is mounted system-wide (/etc/fstab, autofs) and the
+# worker should start at boot with no user session. It runs as User= below (the
+# installer's drop-in maktaba-node.service.d/10-run-as.conf names the account); that
+# account must be able to read and write the share, and its node config is
+# ~<user>/.config/maktaba/node.json (join as that user: the installer does).
+[Unit]
+Description=Maktaba node worker
+Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
+After=network-online.target remote-fs.target
+Wants=network-online.target
+# Keep retrying for as long as the home is unreachable (no start-rate limit).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+WorkingDirectory=~
+Environment=MAKTABA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# Optional settings (KEY=VALUE); they win over the lines above.
+EnvironmentFile=-/etc/maktaba/node.env
+# A node takes its database from the node config; MAKTABA_DATABASE_URL would turn the
+# worker into a home worker on that database.
+UnsetEnvironment=MAKTABA_DATABASE_URL
+# `run --node`: work as this machine's node, or exit 78 when it has not joined a home
+# (never fall back to another database). bin/maktaba-pipeline is the venv's own
+# command (a stand-in only for a pipeline without that entry point).
+ExecStart=/opt/maktaba/node/bin/maktaba-pipeline run --node
+# Crash, home unreachable, not joined yet (78): start again after 30 s, for as long as it
+# takes, so the worker also starts by itself once `maktaba-pipeline join` completes.
+# A clean exit (stopped) is final, and so is 77: the home removed this machine (revoked,
+# not a member, database login refused), which no restart can fix.
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=77
+# SIGTERM to the worker first so it hands its jobs back; SIGKILL to what is left.
+KillMode=mixed
+TimeoutStopSec=60
+SyslogIdentifier=maktaba-node
+
+# Hardening. Not ProtectHome= (the node config and the model / audio caches live in the
+# account's home) and not PrivateDevices= (GPU stages need /dev/nvidia*). The share is
+# written to (subtitles beside the media), so the filesystem is not made read-only
+# beyond /usr, /boot and /etc.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

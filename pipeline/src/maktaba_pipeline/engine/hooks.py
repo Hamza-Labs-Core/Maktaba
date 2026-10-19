@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from ..cluster.agent import jobs as job_events
 from .causes import classify
 from .events import job_ref, log_event, publish
 from .propagate import enqueue_follow_up
@@ -53,6 +54,11 @@ async def on_failure(
     input deserves a fresh attempt); a retry clears the flag because the retry
     is the follow-up.
     """
+    job_events.finished(
+        job_id,
+        "failed",
+        outcome=job_events.failure(kind, message, retryable=new_state == "pending"),
+    )
     row = await _job_row(db, job_id)
     if row is None:
         return
@@ -105,6 +111,9 @@ async def on_failure(
 
 
 async def on_cancelled(db: Any, job_id: int) -> None:
+    job_events.finished(
+        job_id, "failed", outcome=job_events.failure("cancelled", None, retryable=False)
+    )
     row = await _job_row(db, job_id)
     if row is None:
         return
@@ -116,6 +125,9 @@ async def on_cancelled(db: Any, job_id: int) -> None:
 
 
 async def on_paused(db: Any, job_id: int, reason: str) -> None:
+    job_events.finished(
+        job_id, "paused", outcome=job_events.failure("paused", reason, retryable=True)
+    )
     row = await _job_row(db, job_id)
     if row is None:
         return
@@ -133,6 +145,7 @@ async def on_progress(
 
     Throttled to one write per job every 2 s (the transcribe stage ticks once per segment).
     """
+    job_events.progress(job_id, step=step, done=done, total=total)
     t = time.monotonic()
     if t - _last_progress.get(job_id, float("-inf")) < _PROGRESS_EVERY_SEC:
         return

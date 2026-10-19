@@ -41,15 +41,30 @@ type Layout interface {
 // HLS / MPEG-TS request, one pipeline per channel shared by every viewer,
 // a warm grace window after the last viewer, and the per-host cap.
 type Engine struct {
-	Repo         Repo
-	Layout       Layout
-	Start        StartFunc
-	Host         string
+	Repo   Repo
+	Layout Layout
+	Start  StartFunc
+	Host   string
+	// Identity is this host in the cluster (its id goes into
+	// channel_runtime; a channel on air on another live host is refused).
+	Identity HostIdentity
+	// StaleAfter: another host's row older than this no longer owns its
+	// channel (0: DefaultRuntimeStaleAfter).
+	StaleAfter time.Duration
+	// Status, when set, reports the encoder and hardware slots free for
+	// the streaming_hosts heartbeat (the engine adds its own counts).
+	Status       func(ctx context.Context) HostStatus
 	WarmGrace    time.Duration
 	ReadyTimeout time.Duration
+	// Limits, when set, is read before each start and each reap: the
+	// channels-on-air cap and the warm grace (the tv_output settings), so a
+	// settings change applies without a restart. Nil: the cap given to
+	// NewEngine and WarmGrace.
+	Limits func(ctx context.Context) (maxActive int, warmGrace time.Duration)
 
 	mu       sync.Mutex
 	stations map[uuid.UUID]Pipeline
+	started  map[uuid.UUID]time.Time
 	reg      *registry
 	now      func() time.Time
 }
@@ -67,6 +82,7 @@ func NewEngine(repo Repo, layout Layout, start StartFunc, perHostCap int, now fu
 		Repo: repo, Layout: layout, Start: start,
 		WarmGrace: DefaultWarmGrace, ReadyTimeout: DefaultReadyTimeout,
 		stations: map[uuid.UUID]Pipeline{},
+		started:  map[uuid.UUID]time.Time{},
 		reg:      newRegistry(perHostCap, now),
 		now:      now,
 	}
@@ -121,6 +137,10 @@ func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, err
 	if _, err := e.Repo.Look(ctx, channelID); err != nil {
 		return nil, err
 	}
+	if err := e.ownedElsewhere(ctx, channelID); err != nil {
+		return nil, err
+	}
+	e.applyLimits(ctx)
 	if err := e.reg.admit(channelID); err != nil {
 		return nil, err
 	}
@@ -133,6 +153,7 @@ func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, err
 	// call back into the engine; Pipeline.Stop is non-blocking.
 	e.reg.putWith(channelID, p.Stop, 0)
 	started := e.now()
+	e.started[channelID] = started
 	go func() {
 		<-p.Done()
 		e.mu.Lock()
@@ -142,13 +163,109 @@ func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, err
 		// re-tune writing the new station's row.
 		if e.stations[channelID] == p {
 			delete(e.stations, channelID)
+			delete(e.started, channelID)
 			e.reg.remove(channelID)
 			_ = e.Repo.ClearRuntime(context.Background(), channelID)
 		}
 	}()
-	_ = e.Repo.SetRuntime(ctx, Runtime{ChannelID: channelID, Host: e.Host, PID: p.PID(),
-		State: StateLive, StartedAt: started, LastSegmentAt: started})
+	_ = e.Repo.SetRuntime(ctx, e.runtimeOf(channelID, p, started))
 	return p, nil
+}
+
+// statsReporter is a pipeline that reports its encoder and counters
+// (*Station).
+type statsReporter interface{ Stats() StationStats }
+
+// runtimeOf is the channel_runtime row for a running pipeline.
+func (e *Engine) runtimeOf(channelID uuid.UUID, p Pipeline, started time.Time) Runtime {
+	rt := Runtime{ChannelID: channelID, Host: e.Host, HostID: e.Identity.ID,
+		StreamBaseURL: e.Identity.StreamBaseURL, PID: p.PID(), State: StateLive,
+		StartedAt: started, LastSegmentAt: e.now(), ViewerCount: e.reg.viewers(channelID)}
+	if sr, ok := p.(statsReporter); ok {
+		st := sr.Stats()
+		rt.Encoder, rt.Restarts, rt.NVENCFallbacks = st.Encoder, st.Restarts, st.NVENCFallbacks
+	}
+	return rt
+}
+
+// SyncRuntime rewrites every running channel's channel_runtime row
+// (viewers, encoder, restarts, NVENC fallbacks). Runs under the engine
+// lock so it is ordered against a stopping station clearing its row.
+func (e *Engine) SyncRuntime(ctx context.Context) {
+	e.mu.Lock()
+	for id, p := range e.stations {
+		if !p.Alive() {
+			continue
+		}
+		wctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_ = e.Repo.SetRuntime(wctx, e.runtimeOf(id, p, e.started[id]))
+		cancel()
+	}
+	e.mu.Unlock()
+	if w, ok := e.Repo.(HostStatusWriter); ok {
+		st := HostStatus{NVENCFree: -1, VTFree: -1}
+		if e.Status != nil {
+			st = e.Status(ctx)
+		}
+		st.Identity = e.Identity
+		if st.Identity.Host == "" {
+			st.Identity.Host = e.Host
+		}
+		st.ActiveChannels = e.reg.size()
+		st.MaxActive = e.reg.capacity()
+		wctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_ = w.SetHostStatus(wctx, st)
+		cancel()
+	}
+}
+
+// ownedElsewhere refuses a start while another live host runs the
+// channel (one encode per channel cluster-wide). A row of this host, or
+// one whose heartbeat is stale, does not block.
+func (e *Engine) ownedElsewhere(ctx context.Context, channelID uuid.UUID) error {
+	o, ok := e.Repo.(RuntimeOwner)
+	if !ok || e.Identity.ID == "" {
+		return nil
+	}
+	rt, hb, found, err := o.RuntimeOf(ctx, channelID)
+	if err != nil || !found || rt.HostID == "" || rt.HostID == e.Identity.ID {
+		return nil
+	}
+	stale := e.StaleAfter
+	if stale <= 0 {
+		stale = DefaultRuntimeStaleAfter
+	}
+	if hb.IsZero() || e.now().Sub(hb) > stale {
+		return nil
+	}
+	return &RunningElsewhereError{HostID: rt.HostID, Host: rt.Host, StreamBaseURL: rt.StreamBaseURL}
+}
+
+// ClearStaleRuntime drops this host's channel_runtime rows left from
+// before a restart (stations live in memory: none survived it). Call it
+// once at boot, before the first station starts.
+func (e *Engine) ClearStaleRuntime(ctx context.Context) (int64, error) {
+	c, ok := e.Repo.(HostRuntimeClearer)
+	if !ok {
+		return 0, nil
+	}
+	return c.ClearHostRuntime(ctx, e.Identity.ID, e.Host)
+}
+
+// applyLimits re-reads the cap and warm grace from Limits.
+func (e *Engine) applyLimits(ctx context.Context) time.Duration {
+	grace := e.WarmGrace
+	if e.Limits == nil {
+		return grace
+	}
+	maxActive, g := e.Limits(ctx)
+	if maxActive > 0 {
+		e.reg.setCap(maxActive)
+	}
+	if g >= 0 {
+		grace = g
+	}
+	return grace
 }
 
 // EnsureReady starts (or reuses) the channel and waits for its first
@@ -231,8 +348,8 @@ func (e *Engine) Detach(channelID uuid.UUID) { e.reg.detach(channelID) }
 func (e *Engine) Touch(channelID uuid.UUID) { e.reg.touch(channelID) }
 
 // ReapIdle stops channels idle past the warm grace window.
-func (e *Engine) ReapIdle(_ context.Context) []uuid.UUID {
-	return e.reg.reapIdle(e.WarmGrace)
+func (e *Engine) ReapIdle(ctx context.Context) []uuid.UUID {
+	return e.reg.reapIdle(e.applyLimits(ctx))
 }
 
 // StopAll stops every station (shutdown). Stops run outside the engine

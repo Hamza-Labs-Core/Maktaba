@@ -27,6 +27,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 )
 
@@ -196,11 +197,19 @@ func TestParity_AgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = 'rate_style' AND subject_id = $1::uuid AND state = 'pending'`, seasonA).Scan(&queued); err != nil || queued != 1 {
 		t.Fatalf("rate_style queued %d %v", queued, err)
 	}
-	rec = f.do("GET", "/api/seasons/styles?pinned=true", "", viewer())
 	var list struct{ Items []SeasonStyle }
+	for _, p := range []*principal.Principal{libViewer(), admin()} {
+		rec = f.do("GET", "/api/seasons/styles?pinned=true", "", p)
+		decode(t, rec, &list)
+		if rec.Code != 200 || len(list.Items) != 1 || *list.Items[0].OverrideStyle != "cinematic" {
+			t.Fatalf("list as %s %d %s", p.UserID, rec.Code, rec.Body.String())
+		}
+	}
+	// a viewer granted no library sees none of its seasons
+	rec = f.do("GET", "/api/seasons/styles?pinned=true", "", viewer())
 	decode(t, rec, &list)
-	if rec.Code != 200 || len(list.Items) != 1 || *list.Items[0].OverrideStyle != "cinematic" {
-		t.Fatalf("list %d %s", rec.Code, rec.Body.String())
+	if rec.Code != 200 || len(list.Items) != 0 {
+		t.Fatalf("ungranted list %d %s", rec.Code, rec.Body.String())
 	}
 	if rec = f.do("PUT", "/api/seasons/"+seasonA+"/style", `{"style":null}`, admin()); rec.Code != 200 {
 		t.Fatalf("clear %d %s", rec.Code, rec.Body.String())
@@ -220,7 +229,10 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		VALUES ('88888888-8888-4888-8888-888888888888', $1, 'clips', 'rest', 'x', 'مقاطع', 'h')`, libL)
 	mustExec(t, db, `INSERT INTO promo_links (video_id, library_id, series_id, season_id, season, score, evidence)
 		VALUES ('66666666-6666-4666-8666-666666666666', $1, $2, $3, 1, 0.9, 'title names the show')`, libL, seriesX, seasonA)
-	rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer())
+	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("ungranted collections %d %s", rec.Code, rec.Body.String())
+	}
+	rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", libViewer())
 	var cols LibraryCollectionsResponse
 	decode(t, rec, &cols)
 	if rec.Code != 200 || len(cols.Topics) != 1 || cols.Topics[0].Items != 1 || *cols.Topics[0].Collection != "قناة - ملف - السيرة" ||

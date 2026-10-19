@@ -25,6 +25,7 @@ does not depend on whether the extra is installed).
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 import re
 import threading
@@ -115,13 +116,15 @@ def collection_name(model: str, prefix: str | None = None) -> str:
 
 
 def search_available() -> bool:
-    """True when chromadb and sentence-transformers can be imported."""
-    try:
-        importlib.import_module("chromadb")
-        importlib.import_module("sentence_transformers")
-    except ImportError:
-        return False
-    return True
+    """True when chromadb and sentence-transformers are installed.
+
+    Found, not imported: importing them loads torch (seconds, and its memory), and every
+    worker asks this at start to decide whether it serves ``index``. A broken install
+    still fails, at the first index job (``search_unavailable``).
+    """
+    return all(
+        importlib.util.find_spec(m) is not None for m in ("chromadb", "sentence_transformers")
+    )
 
 
 # --------------------------------------------------------------------------- embedder

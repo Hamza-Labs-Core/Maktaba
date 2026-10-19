@@ -33,9 +33,9 @@ func (r *PGRepo) Device(ctx context.Context) (Device, error) {
 	deviceID := newDeviceID()
 	_, err = r.pool.Exec(ctx, `
 		INSERT INTO hdhr_device (id, device_id, device_uuid, friendly_name, tuner_count, enabled)
-		VALUES (1, $1, $2, 'Maktaba', 4, false)
+		VALUES (1, $1, $2, 'Maktaba', $3, false)
 		ON CONFLICT (id) DO NOTHING
-	`, deviceID, uuid.NewString())
+	`, deviceID, uuid.NewString(), DefaultTunerCount)
 	if err != nil {
 		return Device{}, err
 	}

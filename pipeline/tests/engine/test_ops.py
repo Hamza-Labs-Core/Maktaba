@@ -13,7 +13,7 @@ from maktaba_pipeline.db.jobs_state import mark_done
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
-from maktaba_pipeline.engine.health import HealthCollector, NasProbe, sample_once
+from maktaba_pipeline.engine.health import HealthCollector, NasProbe, measure
 from maktaba_pipeline.engine.paths import PathMap
 from maktaba_pipeline.engine.prune import prune_once
 from maktaba_pipeline.engine.reconcile import reconcile_once
@@ -163,7 +163,7 @@ async def test_prune_applies_retention_and_keeps_latest_done(db: Database) -> No
             to_ts(db, now() - timedelta(days=age)),
             level,
         )
-    # health samples: old ones fold into a rollup
+    # health samples are the hub's cache now: the worker's pruner leaves them alone
     await db.execute(
         "INSERT INTO health_samples (at, host, metric, value) VALUES ($1,'h','cpu.pct',10)",
         to_ts(db, now() - timedelta(hours=60)),
@@ -199,7 +199,7 @@ async def test_prune_applies_retention_and_keeps_latest_done(db: Database) -> No
     ev = sorted((r["level"],) for r in await db.fetch("SELECT level FROM job_events"))
     assert ev == [("debug",), ("error",), ("info",)]
     hs = await db.fetch("SELECT host, metric, value FROM health_samples ORDER BY value")
-    assert [(r["host"], round(float(r["value"]))) for r in hs] == [("*rollup*", 15), ("h", 99)]
+    assert [(r["host"], round(float(r["value"]))) for r in hs] == [("h", 10), ("h", 20), ("h", 99)]
     assert await db.fetchval("SELECT count(*) FROM channel_plans") == 20
     assert await db.fetchval("SELECT count(*) FROM workers") == 0
     assert report.channel_plans == 5 and report.workers == 1
@@ -239,7 +239,7 @@ async def test_nas_probe_times_a_real_file_and_counts_stderr(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_sample_once_writes_health_samples(db: Database) -> None:
+async def test_measure_takes_the_health_numbers_and_writes_nothing(db: Database) -> None:
     c = HealthCollector()
     c.record_open(12.0)
     c.record_timeout()
@@ -247,12 +247,18 @@ async def test_sample_once_writes_health_samples(db: Database) -> None:
     async def plex() -> float:
         return 42.0
 
+    async def down() -> float:
+        raise OSError("unreachable")
+
     c.probes["net.plex_ms"] = plex
-    written = await sample_once(db, c, host="pc", probe_network=True)
-    assert written["nas.open_ms_p50"] == 12.0 and written["nas.timeouts"] == 1.0
-    assert written["net.plex_ms"] == 42.0 and written["nas.reads_busy"] == 0.0
-    stored = {r["metric"] for r in await db.fetch("SELECT metric FROM health_samples")}
-    assert {"nas.open_ms_p50", "nas.open_ms_p95", "nas.timeouts", "net.plex_ms"} <= stored
+    c.probes["net.tv_ms"] = down
+    got = await measure(c, probe_network=True)
+    assert got["nas.open_ms_p50"] == 12.0 and got["nas.timeouts"] == 1.0
+    assert got["net.plex_ms"] == 42.0 and got["net.tv_ms"] == -1.0
+    assert "nas.reads_busy" not in got  # the hub counts it
+    assert "net.plex_ms" not in await measure(c)  # probes only when asked
+    # workers never write health_samples (the hub's cache, design-agent.md 7.9)
+    assert await db.fetchval("SELECT count(*) FROM health_samples") == 0
 
 
 # ------------------------------------------------------------------ workers

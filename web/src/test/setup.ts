@@ -34,6 +34,15 @@ Object.defineProperty(globalThis, "localStorage", {
   value: new MemoryStorage(),
 });
 
+// No real sockets in unit tests: jsdom's WebSocket would dial localhost.
+// Without one the cluster socket reports "unavailable" and the pages use
+// their SSE / REST fallbacks; socket tests stub a fake WebSocket.
+Object.defineProperty(globalThis, "WebSocket", {
+  configurable: true,
+  writable: true,
+  value: undefined,
+});
+
 beforeEach(() => {
   localStorage.clear();
 });

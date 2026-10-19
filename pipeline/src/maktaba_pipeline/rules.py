@@ -35,6 +35,7 @@ from .schedule.tv_settings import (
     DizqueExportConfig,
     ExactDatesConfig,
     MaktabaTvConfig,
+    MaktabaTvOutputConfig,
     PlexLiveConfig,
     RepairConfig,
 )
@@ -72,7 +73,11 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                  "into dizqueTV: removing what the plan dropped, rewriting a channel that is "
                  "on air"),
     "tv": (MaktabaTvConfig, "Maktaba TV", "how Maktaba's own channels air: filler between "
-           "programmes, the Ramadan grids, live broadcasts, loudness"),
+           "programmes, the Ramadan grids, live broadcasts, loudness, the guide's days "
+           "ahead"),
+    "tv_output": (MaktabaTvOutputConfig, "Maktaba TV output", "how a channel on air is "
+                  "encoded: encoder, picture, bitrates, how many channels and NVENC "
+                  "sessions at once"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
     "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),

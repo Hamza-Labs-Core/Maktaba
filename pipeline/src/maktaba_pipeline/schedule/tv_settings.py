@@ -19,6 +19,7 @@ __all__ = [
     "ExactDatesConfig",
     "LiveSlot",
     "MaktabaTvConfig",
+    "MaktabaTvOutputConfig",
     "PlexLiveConfig",
     "RepairConfig",
     "channel_numbers",
@@ -30,6 +31,10 @@ EX = "Exact dates"
 AU = "Channel audit"
 RP = "Repair"
 TV = "Maktaba TV"
+TVG = "Guide"
+TVO = "Maktaba TV output"
+TVN = "Hardware encoder"
+TVC = "Channels on air"
 PL = "Plex Live TV"
 
 
@@ -95,6 +100,36 @@ class MaktabaTvConfig:
     #: even loudness across programmes and filler
     loudnorm: bool = True
     loudnorm_target_lufs: float = -16.0
+    #: every channel's schedule is planned this many days ahead (what the guide shows)
+    horizon_days: int = 7
+    #: a channel is topped up when less than this many days are planned
+    topup_below_days: int = 3
+
+
+@dataclass(frozen=True)
+class MaktabaTvOutputConfig:
+    """How the streaming service encodes a channel on air. Read when a channel starts; a
+    setting not changed here keeps the streaming host's ``MAKTABA_CHANNEL_*`` value, else
+    this default."""
+
+    #: ``auto``: on a Mac VideoToolbox when its hardware encoder answers a test encode,
+    #: elsewhere NVENC when an NVIDIA GPU does; else libx264
+    encoder: str = "auto"
+    resolution: str = "1920x1080"
+    fps: int = 30
+    video_kbps: int = 6000
+    audio_codec: str = "aac"
+    audio_kbps: int = 192
+    segment_seconds: int = 4
+    #: channels this host keeps on air at once (one encode each, however many watch);
+    #: 0: 16 with VideoToolbox, else 8
+    max_active_channels: int = 0
+    #: seconds a channel stays on air after its last viewer leaves
+    warm_grace_seconds: int = 60
+    #: NVENC sessions at once across all channels; past it a block is encoded by libx264
+    nvenc_max_sessions: int = 6
+    #: VideoToolbox sessions at once (0: no cap)
+    videotoolbox_max_sessions: int = 0
 
 
 def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
@@ -264,6 +299,98 @@ register(
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
         "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
+        "horizon_days": Help(
+            TVG,
+            "Guide days ahead",
+            "Every channel's schedule is planned this many days ahead; the guide (XMLTV) "
+            "Plex and the apps read shows as far.",
+            minimum=1,
+            maximum=31,
+        ),
+        "topup_below_days": Help(
+            TVG,
+            "Top up below (days)",
+            "A channel with less than this many days planned is extended back to the days "
+            "ahead above. Checked every few minutes.",
+            minimum=1,
+            maximum=31,
+        ),
+    },
+)
+register(
+    MaktabaTvOutputConfig,
+    {
+        "encoder": Help(
+            TVO,
+            "Video encoder",
+            "auto: on a Mac, Apple VideoToolbox when its hardware encoder answers a test "
+            "encode; elsewhere the NVIDIA GPU (NVENC) when it does; else the processor "
+            "(libx264). nvenc, videotoolbox or software force one.",
+            choices=("auto", "nvenc", "videotoolbox", "software"),
+        ),
+        "resolution": Help(
+            TVO,
+            "Picture size",
+            "Every programme is scaled to this (width x height); black bars keep its shape.",
+            choices=("3840x2160", "2560x1440", "1920x1080", "1280x720", "1024x576", "854x480"),
+        ),
+        "fps": Help(TVO, "Frames per second", minimum=10, maximum=60),
+        "video_kbps": Help(
+            TVO,
+            "Video bitrate (kbit/s)",
+            "Per channel. 6000 suits 1080p; 3000 suits 720p.",
+            minimum=300,
+            maximum=50000,
+        ),
+        "audio_codec": Help(
+            TVO,
+            "Audio codec",
+            "aac plays everywhere; ac3 for players that want Dolby Digital.",
+            choices=("aac", "ac3"),
+        ),
+        "audio_kbps": Help(TVO, "Audio bitrate (kbit/s)", minimum=64, maximum=640),
+        "segment_seconds": Help(
+            TVO,
+            "HLS segment (seconds)",
+            "Shorter starts a channel sooner; longer is steadier on a slow network.",
+            minimum=1,
+            maximum=10,
+        ),
+        "max_active_channels": Help(
+            TVC,
+            "Channels on air at once",
+            "On each streaming host. Viewers of the same channel share its one encode; a "
+            "channel nobody watches makes way for a new one. 0: 16 with VideoToolbox (Apple "
+            "Silicon has several media engines), else 8.",
+            minimum=0,
+            maximum=64,
+        ),
+        "warm_grace_seconds": Help(
+            TVC,
+            "Keep on air after the last viewer (seconds)",
+            "So zapping back is instant.",
+            minimum=0,
+            maximum=3600,
+        ),
+        "nvenc_max_sessions": Help(
+            TVN,
+            "Most NVENC sessions",
+            "A GeForce card encodes only a few streams at once. Past this many a block is "
+            "encoded by the processor (libx264); the channel goes back to the GPU at its "
+            "next programme once a session is free. The next programme starts 3 seconds "
+            "early, so a channel holds two sessions for a moment.",
+            minimum=1,
+            maximum=64,
+        ),
+        "videotoolbox_max_sessions": Help(
+            TVN,
+            "Most VideoToolbox sessions",
+            "Apple VideoToolbox sessions at once on a Mac; past this many a block is encoded "
+            "by the processor (libx264) and the channel goes back at its next programme. 0: "
+            "no limit.",
+            minimum=0,
+            maximum=64,
+        ),
     },
 )
 register(

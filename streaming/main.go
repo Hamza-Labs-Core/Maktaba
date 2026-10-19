@@ -375,34 +375,73 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	if pool != nil {
 		hostname, _ := os.Hostname()
 		chRepo := channel.NewPGRepo(pool, hostname)
-		profile, encPref := channel.ProfileFromEnv()
-		profile.Encoder = channel.DetectEncoder(context.Background(), cfg.FFmpeg.Binary, encPref)
-		logger.Info("channels: output profile", "encoder", profile.Encoder,
-			"width", profile.Width, "height", profile.Height, "fps", profile.FPS,
-			"audio", profile.AudioCodec, "event", "channel_profile")
+		// The Maktaba TV settings (rules tv / tv_output in app_settings, over
+		// today's MAKTABA_CHANNEL_* env): read at each station start, so a
+		// change applies the next time a channel goes on air.
+		tvSettings := channel.NewPGSettings(pool, logger)
+		encoders := &channel.EncoderResolver{FFmpeg: cfg.FFmpeg.Binary}
+		out := tvSettings.Output(context.Background())
+		enc := encoders.Resolve(context.Background(), out.Encoder)
+		ident := channel.LocalIdentity(context.Background(), pool, hostname, os.Getenv("MAKTABA_PUBLIC_BASE_URL"))
+		logger.Info("channels: output profile", "encoder", enc.Name, "preference", out.Encoder,
+			"vt_software", enc.VTSoftware, "width", out.Width, "height", out.Height, "fps", out.FPS,
+			"audio", out.AudioCodec, "nvenc_max", out.NVENCMax, "vt_max", out.VTMax,
+			"max_active", out.EffectiveMaxActive(enc.Name), "role", ident.Role, "host_id", ident.ID,
+			"event", "channel_profile")
 		ytdlp := os.Getenv("MAKTABA_YTDLP")
-		start := channel.StationStarter(channel.StationConfig{
+		start := channel.SettingsStarter(channel.StationConfig{
 			FFmpeg:   cfg.FFmpeg.Binary,
-			Profile:  profile,
 			Repo:     chRepo,
 			Prober:   channel.NewFFprobe(cfg.FFmpeg.ProbeBinary),
 			Resolver: channel.NewYtDlp(ytdlp),
 			PathMap:  pathmap.FromEnv(),
 			FontFile: channel.FindFont(),
 			Logger:   logger,
-		})
-		engine := channel.NewEngine(chRepo, layout, start, envIntDefault("MAKTABA_CHANNEL_MAX_ACTIVE", channel.DefaultPerHostCap), time.Now)
+			Gate:     channel.DefaultEncoderGate(),
+			VTGate:   channel.DefaultVTGate(),
+		}, tvSettings, encoders)
+		engine := channel.NewEngine(chRepo, layout, start, out.EffectiveMaxActive(enc.Name), time.Now)
 		engine.Host = hostname
+		engine.Identity = ident
+		engine.Limits = func(ctx context.Context) (int, time.Duration) {
+			o := tvSettings.Output(ctx)
+			return o.EffectiveMaxActive(encoders.Resolve(ctx, o.Encoder).Name), o.WarmGrace
+		}
+		engine.Status = func(ctx context.Context) channel.HostStatus {
+			return channel.HostStatus{
+				Encoder:   encoders.Resolve(ctx, tvSettings.Output(ctx).Encoder).Name,
+				NVENCFree: channel.DefaultEncoderGate().Free(),
+				VTFree:    channel.DefaultVTGate().Free(),
+			}
+		}
+		// Stations live in memory: rows this host left before a restart
+		// describe nothing on air.
+		clearCtx, clearCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if n, err := engine.ClearStaleRuntime(clearCtx); err != nil {
+			logger.Warn("channels: clearing stale runtime rows failed", "err", err.Error(), "event", "channel_runtime_clear_failed")
+		} else if n > 0 {
+			logger.Info("channels: cleared stale runtime rows", "rows", n, "event", "channel_runtime_cleared")
+		}
+		clearCancel()
 		chHandler := &channel.HTTPHandler{Engine: engine}
 		extraMounts = append(extraMounts, chHandler.Mount)
 
 		// Reap idle channel encoders on the same cadence as the session
-		// reaper (warm grace + zero viewers → teardown).
+		// reaper (warm grace + zero viewers → teardown), and keep each
+		// running channel's channel_runtime row current (viewers, encoder,
+		// restarts, NVENC fallbacks) for the admin "on air" list.
+		// The heartbeat (every 10 s) is what keeps this host's rows live
+		// cluster-wide: a row older than ~45 s no longer owns its channel.
 		go func() {
-			t := time.NewTicker(30 * time.Second)
+			engine.SyncRuntime(context.Background())
+			t := time.NewTicker(channel.HeartbeatInterval)
 			defer t.Stop()
-			for range t.C {
-				engine.ReapIdle(context.Background())
+			for i := 1; ; i++ {
+				<-t.C
+				if i%3 == 0 {
+					engine.ReapIdle(context.Background())
+				}
+				engine.SyncRuntime(context.Background())
 			}
 		}()
 
@@ -417,9 +456,24 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		// Plex/IPTV guide + playlist, unauthenticated on this port
 		// (/xmltv.xml, /lineup.m3u, /channel/{id}/logo).
 		guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
-			PublicBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE")}
+			PublicBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE"),
+			AheadFunc: func(ctx context.Context) time.Duration {
+				return time.Duration(tvSettings.TV(ctx).HorizonDays) * 24 * time.Hour
+			}}
 		extraMounts = append(extraMounts, guideHandler.Mount)
-		startSSDPIfEnabled(logger, hdhrRepo)
+
+		// SSDP discovery follows hdhr_device.enabled live (polled). Only
+		// the home advertises the HDHomeRun device (it is the front door
+		// for the tuner, XMLTV and M3U); a node never does, so two
+		// machines never announce the same DeviceID.
+		if ident.IsHome() {
+			ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger,
+				LocationBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL")}
+			go ssdp.Run(context.Background())
+		} else {
+			logger.Info("hdhr: this host is a cluster node; the home advertises the tuner",
+				"event", "hdhr_ssdp_node")
+		}
 	}
 
 	return server.New(server.Deps{
@@ -434,31 +488,6 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
 	})
-}
-
-// startSSDPIfEnabled launches the HDHomeRun SSDP responder in the
-// background when the feature is enabled (AC1/AC9). When disabled it does
-// nothing, so the LAN sees no advertisement.
-func startSSDPIfEnabled(logger *slog.Logger, repo *hdhr.PGRepo) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	dev, err := repo.Device(ctx)
-	cancel()
-	if err != nil || !dev.Enabled {
-		return
-	}
-	// LocationBase is the http base advertised in the SSDP LOCATION
-	// header; set it from MAKTABA_PUBLIC_BASE_URL when the box's
-	// reachable address is known (SSDP can't cross Docker bridges — see
-	// deploy notes). Empty is tolerated: discovery clients that probe the
-	// device directly still resolve /device.xml.
-	resp := &hdhr.Responder{DeviceUUID: dev.UUID, LocationBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL")}
-	go func() {
-		if err := resp.Run(context.Background()); err != nil {
-			logger.Warn("hdhr ssdp responder stopped",
-				"err", err.Error(), "event", "hdhr_ssdp_stopped")
-		}
-	}()
-	logger.Info("hdhr: SSDP responder started", "event", "hdhr_ssdp_started")
 }
 
 // buildProbeStores constructs the probe Backend + transcript streamer

@@ -71,6 +71,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         -trimpath -ldflags "-buildid= -s -w" \
         -o /out/healthcheck .
 
+# The home's cluster keys and its long-term archive (Epic 31) live on
+# volumes mounted here; a new named volume takes its directory's owner, so
+# the API can write them.
+RUN mkdir -p /out/keys /out/archive
+
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.source="https://github.com/Hamza-Labs-Core/Maktaba"
 LABEL org.opencontainers.image.title="maktaba-api"
@@ -78,6 +83,8 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 COPY --from=builder /out/maktaba-api /usr/local/bin/maktaba-api
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
+COPY --from=builder --chown=65532:65532 /out/keys /var/maktaba/keys
+COPY --from=builder --chown=65532:65532 /out/archive /var/maktaba/archive
 COPY --from=builder /src/shared/db/migrations /var/maktaba/migrations
 
 ENV HEALTHCHECK_URL=http://127.0.0.1:9100/healthz \

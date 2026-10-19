@@ -20,8 +20,12 @@ path maps), plan 03-10 (transcription checkpoints, worker slots), Epic 15 (servi
 `_maktaba._tcp`, pairing codes, server keys). Supersedes the coordinator layout of
 plan 19-04 (the engine already has claims, pools and a registry).
 
-**Documents.** [design.md](design.md) (architecture, protocol, schema, security,
-placement, cross-platform) · [plan.md](plan.md) (tracks, tasks, tests).
+**Documents.** Phase 1 (joining, built): [design.md](design.md) (architecture, protocol,
+schema, security, placement, cross-platform) · [plan.md](plan.md) (tracks, tasks, tests).
+Phase 2 (the cluster channel: live metrics, logs and jobs, files on the share, LLMs, the
+hub): [design-agent.md](design-agent.md) (requirements trace, protocol, files, hub, LLMs) ·
+[plan-agent.md](plan-agent.md) (tracks T4–T6, H1, P1, end-to-end checklist). User
+documentation: [docs/cluster](../../../docs/cluster/README.md).
 
 ---
 

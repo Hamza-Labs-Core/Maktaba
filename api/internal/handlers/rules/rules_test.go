@@ -237,6 +237,8 @@ func TestPatch_InvalidRejected(t *testing.T) {
 		{"int as string", "planner", `{"set":{"min_slot_minutes":"30"}}`, "min_slot_minutes", "whole number"},
 		{"below minimum", "planner", `{"set":{"min_slot_minutes":4}}`, "min_slot_minutes", "at least 5"},
 		{"float below minimum", "detect", `{"set":{"core_band":0.5}}`, "core_band", "at least 1"},
+		{"above maximum", "tv", `{"set":{"horizon_days":32}}`, "horizon_days", "at most 31"},
+		{"bad encoder", "tv_output", `{"set":{"encoder":"quicksync"}}`, "encoder", "one of"},
 		{"bad choice", "planner", `{"set":{"khutbah_day":"friday"}}`, "khutbah_day", "one of"},
 		{"bad time", "planner", `{"set":{"khutbah_start":"25:00"}}`, "khutbah_start", "HH:MM"},
 		{"time past 24:00", "planner", `{"set":{"khutbah_end":"24:30"}}`, "khutbah_end", "HH:MM"},

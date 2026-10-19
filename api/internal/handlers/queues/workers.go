@@ -102,13 +102,23 @@ func (h *Handler) Workers(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
 		return
 	}
-	ws, err := h.loadWorkers(r.Context(), h.now())
+	ws, err := h.WorkersView(r.Context())
 	if err != nil {
 		writeErr(w, r, "workers", err)
 		return
 	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"workers": ws})
+}
+
+// WorkersView is the GET /api/workers list, serve labels included (the
+// cluster hub streams it to the Processing page).
+func (h *Handler) WorkersView(ctx context.Context) ([]Worker, error) {
+	ws, err := h.loadWorkers(ctx, h.now())
+	if err != nil {
+		return nil, err
+	}
 	labels := map[string]string{}
-	if stages, err := h.loadStages(r.Context()); err == nil {
+	if stages, err := h.loadStages(ctx); err == nil {
 		for _, s := range stages {
 			labels[s.Stage] = s.Label
 		}
@@ -116,7 +126,7 @@ func (h *Handler) Workers(w http.ResponseWriter, r *http.Request) {
 	for i := range ws {
 		ws[i].ServesLabel = servesLabel(ws[i].Stages, labels)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"workers": ws})
+	return ws, nil
 }
 
 // servesLabel renders "Probe, Detect, +3 more" from stage labels.

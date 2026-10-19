@@ -37,6 +37,8 @@ from typing import Any
 
 from . import __version__
 from .channels.pass_ import run_topup_loop
+from .cluster import exitcodes
+from .cluster.agent import enabled as cluster_agent_enabled
 from .cluster.capabilities import capabilities
 from .cluster.node import WorkerAgent
 from .cluster.stages import StageSelector, select_stages
@@ -44,7 +46,7 @@ from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .engine.dispatch import EngineRuntime, dispatch_job
 from .engine.graph import StageDef
-from .engine.health import run_sampler
+from .engine.health import run_network_probes
 from .engine.loader import build_full_graph, register_extension_impls
 from .engine.paths import PathMap, set_active_path_map
 from .engine.prune import run_pruner
@@ -470,7 +472,8 @@ async def run(
         if owned_db:
             await database.close()
         _log.info("pipeline_runtime_stopped")
-    return 0
+    # 77 when the home refused this machine for good (revoked): services stop restarting
+    return exitcodes.exit_code(0)
 
 
 @dataclass(slots=True)
@@ -585,7 +588,6 @@ async def _start_engine(
             name="worker-hb",
         ),
         asyncio.create_task(agent.run_refresher(cfg.stage_refresh_sec), name="stage-selection"),
-        asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
         asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
         asyncio.create_task(
@@ -597,6 +599,26 @@ async def _start_engine(
             name="channel-topup",
         ),
     ]
+    if cluster_agent_enabled():
+        # the live channel to the home (design-agent.md): metrics (the health numbers
+        # among them: workers never write health_samples), logs, job events, LLM
+        from .cluster.agent.service import run_for_worker
+
+        tasks.append(asyncio.create_task(run_network_probes(collector, shutdown), name="health"))
+
+        tasks.append(
+            asyncio.create_task(
+                run_for_worker(
+                    database,
+                    worker_id=worker_id,
+                    host=host,
+                    shutdown=shutdown,
+                    worker=agent,
+                    health=collector,
+                ),
+                name="cluster-agent",
+            )
+        )
     return EngineStart(runtime=runtime, selector=selector, agent=agent, tasks=tasks)
 
 

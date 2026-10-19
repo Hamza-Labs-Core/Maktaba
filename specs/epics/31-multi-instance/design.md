@@ -100,9 +100,13 @@ Sealed payload (JSON):
   "v": 1,
   "node_id": "…",
   "database_url": "postgres://maktaba_node_1a2b3c4d:<secret>@192.168.1.20:5432/maktaba?sslmode=prefer",
-  "home": {"instance_id": "…", "name": "Mahmouds-Mac-Studio", "api_url": "http://192.168.1.20:8080"}
+  "home": {"api_url": "http://192.168.1.20:8080", "cluster_pub": "<base64 X25519>", "instance_id": "…", "name": "Mahmouds-Mac-Studio"}
 }
 ```
+
+`home.cluster_pub` (phase 2) is the home's cluster key, which a machine's agent uses to
+authenticate the hub ([design-agent.md](design-agent.md) §4.2); a machine joined before
+phase 2 has none and is asked to re-join.
 
 The database host is the address the node used to reach the API (the request's Host),
 the port `MAKTABA_CLUSTER_PG_PORT` (default 5432), the database name the home's own.

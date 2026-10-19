@@ -20,6 +20,10 @@ class _DB:
         self.locked = locked
         self.transactions = 0
 
+    async def fetchrow(self, sql: str, *_: object) -> None:
+        assert "app_settings" in sql  # the tv rules: none stored, the defaults
+        return None
+
     async def fetchval(self, sql: str, key: int, channel: int) -> bool:
         assert "pg_try_advisory_xact_lock" in sql and key == pass_.TOPUP_ADVISORY_LOCK_KEY
         return channel not in self.locked
