@@ -10,7 +10,7 @@
 | D1 | The estimate uses Cloudflare's own minutes (`streamMinutesViewedAdaptiveGroups`) when the token can read analytics, session minutes otherwise. | Cloudflare's number is what is billed; sessions are a safe upper bound. |
 | D2 | Between hourly polls, add running sessions' minutes. | The estimate errs high, never low. |
 | D3 | At 100 %: refuse new tunes, let running sessions finish (default; owner decision, README Q8). | Same rule as Epic 25.12; no mid-programme cut. |
-| D5 | Defaults sized for the owner's setup: `max_channels = 10` (≥ 100 Mb/s upload, ≈ 6.5 Mb/s per channel, README Q4), `max_streams_per_user = 2`, `viewers = all` (Q6), `storage_plan_minutes = 1000` (one $5/month block, Q1). | The storage guard, not `max_channels`, limits concurrency on one block (two 8 h pushes); the admin page shows both. |
+| D5 | Defaults sized for the owner's setup: `max_channels = 22` (every channel; 1 Gb/s upload, ≈ 6.5 Mb/s per channel ≈ 143 Mb/s, README Q4; encoders, not bandwidth, are the limit), `max_streams_per_user = 2`, `viewers = all` (Q6), `storage_plan_minutes = 1000` (one $5/month block, Q1). | The storage guard, not `max_channels`, limits concurrency on one block (two 8 h pushes); the admin page shows both. |
 | D4 | All limits are rules settings with today's behaviour (remote off) as default. | "Rules as settings" convention. |
 
 ## 1. Files

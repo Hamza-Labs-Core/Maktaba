@@ -10,10 +10,10 @@ Design: [design.md](design.md) §9; README "Cost".
 ## Acceptance criteria
 
 - **AC1** Rules section `tv_remote` holds the limits and budget settings of the README table, with
-  validation (1 ≤ `max_channels` ≤ 10; 1 ≤ `max_streams_per_user` ≤ 10; 1 ≤ `idle_timeout_minutes`
+  validation (1 ≤ `max_channels` ≤ 50; 1 ≤ `max_streams_per_user` ≤ 10; 1 ≤ `idle_timeout_minutes`
   ≤ 60; 5 ≤ `token_ttl_minutes` ≤ 1440; 1 ≤ `max_push_hours` ≤ 24; budget ≥ 0; prices ≥ 0;
   countries are ISO 3166-1 alpha-2). Defaults keep remote off. Owner defaults (README Q1, Q4, Q6,
-  Q8): `max_channels = 10` (≈ 6.5 Mb/s each of the home's ≥ 100 Mb/s upload),
+  Q8): `max_channels = 22` (every channel; ≈ 6.5 Mb/s each of the home's 1 Gb/s upload),
   `max_streams_per_user = 2`, `viewers = all`, `storage_plan_minutes = 1000` (one $5/month
   block), `budget_action = block_new`.
 - **AC2** Hourly, the controller reads `streamMinutesViewedAdaptiveGroups` (`sum.minutesViewed`) for
@@ -30,12 +30,12 @@ Design: [design.md](design.md) §9; README "Cost".
   would exceed `storage_plan_minutes`. On the default 1,000-minute block with `max_push_hours = 8`
   there is room for two full-length concurrent pushes; past that the next push gets 503
   `remote_storage_full` with the hint "buy
-  another 1,000-minute block or lower max_push_hours", even though `max_channels` is 10.
+  another 1,000-minute block or lower max_push_hours", even though `max_channels` is 22.
 - **AC6** The settings page shows, next to the budget, the current month's delivered minutes, the
-  estimate, the peak recording minutes and what each limit is doing ("2 of 10 remote channels in use", "stored minutes: 610 of 1,000").
+  estimate, the peak recording minutes and what each limit is doing ("2 of 22 remote channels in use", "stored minutes: 610 of 1,000").
 - **AC7** The settings page states there is no audio-only saving (Cloudflare bills minutes, not
   bytes) and that the upload use is one channel bitrate per pushed channel (≈ 6.5 Mb/s at the
-  default bitrate; 10 channels ≈ 65 Mb/s).
+  default bitrate; 22 channels ≈ 143 Mb/s).
 
 ## Test cases
 

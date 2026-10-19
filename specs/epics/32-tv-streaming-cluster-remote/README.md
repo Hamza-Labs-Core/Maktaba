@@ -10,7 +10,7 @@
 > cluster-wide record — slot 0117, `tv_core_runtime`, still in flight).
 
 **Documents.** [design.md](design.md) (balancer, leases, front door, failover, the Cloudflare push
-pipeline, tokens, app routing) · stories `story-32-01` … `story-32-12` · plans `plan-32-01` … `plan-32-12`.
+pipeline, tokens, app routing, simulcast) · stories `story-32-01` … `story-32-13` · plans `plan-32-01` … `plan-32-13`.
 
 ## Goal
 
@@ -46,9 +46,10 @@ that the LAN stream does not have.
 | Failover | **Move the channel to another host at the wall-clock position.** |
 | Remote | **Cloudflare Stream Live**: live inputs (RTMPS/SRT ingest), HLS/DASH playback, signed tokens, optional webhooks (polling is the truth), simulcast available. |
 | Recording | **Mode `automatic`** (Cloudflare serves live HLS only then); **each recording is deleted as soon as its broadcast ends**; the account is sized for the **$5/month 1,000-minute storage block** (Q1). |
-| Upload and remote channels | The home's upload is **≥ 100 Mb/s**: no separate remote encode; ≈ 6.5 Mb/s per remote channel; **default max 10 concurrent remote channels** (Q4). |
+| Upload and remote channels | The home's upload is **1 Gb/s**: no separate remote encode; ≈ 6.5 Mb/s per remote channel; **default max 22 concurrent remote channels** (every channel; ≈ 143 Mb/s, ~15 % of the uplink). Encoder capacity, not bandwidth, is the limit (Q4). |
 | Remote viewers | **All signed-in users**, **2 concurrent remote streams each** (a setting) (Q6). |
 | Budget at 100 % | **Refuse new remote tunes; running sessions finish** (Q8). |
+| Simulcast | **Added (2026-10-18):** a channel can be simulcast to YouTube, Facebook or any RTMP/RTMPS destination through Cloudflare live outputs, always-on or on a schedule, with a rights confirmation and its own cap (R13, story 32.13). |
 | Other questions | Q5, Q7, Q9–Q12: the spec's defaults, accepted (revisit if needed) — see "Open questions — decided". |
 
 ## Scope
@@ -62,12 +63,14 @@ that the LAN stream does not have.
 - A Cloudflare Stream integration (credentials, test connection, signing keys), moving every
   extension secret (the Plex token too) into `home_secrets` (Q7), the live input pool, the push from the encoding host, signed playback, the remote session API.
 - LAN-or-remote routing in the web app first; mobile and TV apps after.
+- Simulcast of a channel to YouTube, Facebook or any RTMP/RTMPS destination through Cloudflare live
+  outputs, always-on or on a schedule (32.13).
 - Cost controls, metrics, the runbook.
 
 ## Non-goals
 
 - Re-encoding for remote viewers (a lower "remote rendition"). v1 pushes the channel's own encode;
-  Cloudflare builds the quality ladder. Not needed: the home's upload is ≥ 100 Mb/s (Q4, decided).
+  Cloudflare builds the quality ladder. Not needed: the home's upload is 1 Gb/s (Q4, decided).
 - Remote HDHomeRun, remote XMLTV/M3U for third-party players, remote Plex. **Plex Live TV remote
   viewing is Plex's own feature**: Plex pulls `/auto/v{n}` from the front door on the LAN and
   serves its remote users itself. Maktaba does nothing extra for it beyond keeping `/auto/v{n}`
@@ -76,7 +79,8 @@ that the LAN stream does not have.
 - Recording/DVR. Cloudflare recordings are deleted as soon as each broadcast ends.
 - WebRTC (WHIP/WHEP) delivery: Cloudflare does not play RTMPS/SRT inputs over WHEP, and Maktaba's
   encoder output is MPEG-TS. Not used.
-- Simulcast to third-party platforms. Cloudflare supports it, but it is not a Maktaba feature.
+- Creating or editing YouTube/Facebook events (title, description, privacy) through their APIs:
+  simulcast (32.13) sends the media only; the event is set up on the platform.
 - Running a second front door (two homes). There is one home (Epic 31).
 
 ---
@@ -186,7 +190,7 @@ that the LAN stream does not have.
 - R9.3 The guide and channel list for remote clients are the existing JSON APIs through the relay.
 
 ### R10 — Cost and limits
-- R10.1 Limits: concurrent remote channels (`max_channels`, default 10, at most 10), remote streams per user
+- R10.1 Limits: concurrent remote channels (`max_channels`, default 22 = every channel, 1–50), remote streams per user
   (default 2), which users may watch remotely (default: every signed-in user), allowed countries.
 - R10.2 A monthly budget (USD, default 10) estimated from delivered minutes (Cloudflare analytics)
   and the storage plan; at 80 % the admin is notified; at 100 % new remote tunes get 402 (running
@@ -203,7 +207,24 @@ that the LAN stream does not have.
 ### R12 — Docs
 - R12.1 A runbook: enable a streaming node, read the Streaming hosts page, set up Cloudflare (token
   permissions, storage purchase), test, enable remote, what to do when Cloudflare is down, cost
-  examples, Plex remote.
+  examples, Plex remote, simulcast.
+
+### R13 — Simulcast (story 32.13)
+- R13.1 The admin defines destinations (YouTube Live, Facebook Live, custom RTMP/RTMPS: name,
+  ingest URL, stream key in `home_secrets`) and attaches them to a channel, `always` or on a
+  `schedule` (weekly windows, while a programme or series airs, during live slots).
+- R13.2 The channel is pushed to Cloudflare once (R7.3) and Cloudflare retransmits it to each
+  destination as a live output of the push's input (up to 50 per input); outputs are created when
+  a window starts and deleted when it ends, so a pooled input never keeps another channel's outputs.
+- R13.3 A simulcast holds the push: it is not stopped by the idle timeout while a window is
+  active; remote viewers share it. Start/stop and status per output on the Live TV page.
+- R13.4 The push and its outputs survive block changes, muxer restarts, Epic 33 hot swaps,
+  Epic 32 failovers and rotations: one continuous push session; the outputs stay attached to the
+  live input.
+- R13.5 Simulcast minutes are minutes delivered: they count towards the monthly budget and towards
+  a separate cap in output-hours (`tv_simulcast.max_hours_per_month`).
+- R13.6 Turning a simulcast on needs the admin's confirmation that they hold the rights to what the
+  channel airs (YouTube/Facebook copyright matching); nothing is simulcast unless attached.
 
 ## Acceptance (epic)
 
@@ -262,7 +283,7 @@ these numbers are provisional and move up if other work lands first.
 |---|---|---|---|
 | 0119 | 32.6 (first, small) | `0119_home_secrets.sql` | `home_secrets` (name pk, ciphertext bytea, nonce bytea, key_id, updated_at, updated_by): AES-256-GCM sealed by the home's API with a key file in the home's config directory (never in the database); REVOKE ALL from `maktaba_worker`. Holds the Cloudflare API token, the signing key PEM, the live inputs' stream keys. |
 | 0120 | 32.1, 32.2 | `0120_tv_stream_cluster.sql` | `tv_stream_hosts` (host_id pk = `instance_identity.instance_id` or `cluster_nodes.id`, role home/node, name, enabled, draining, stream_base_url, encoders jsonb, capacity, capacity_override, weight, active, load jsonb, can_push jsonb, can_live, unfit, version, last_beat_at); `channel_placements` (channel_id pk, host_id, generation bigint, state placing/live/moving/released, reason, placed_at, acked_at, released_at); sequence `tv_placement_generation_seq`; `tv_cluster_secret` (singleton: the cluster stream key, REVOKE from `maktaba_worker`); functions `tv_host_beat(...)` (returns the stream key to the caller's own host) and `tv_placement_ack(...)` (SECURITY DEFINER, own row only); `maktaba_worker` gets SELECT only on hosts and placements. |
-| 0121 | 32.7, 32.8, 32.10 | `0121_tv_remote.sql` | `tv_remote_inputs` (id, cf_uid, name, state, channel_id, ingest jsonb (no secret), last_video_uid, assigned_at, errors); `tv_remote_pushes` (id, channel_id, input_id, host_id, generation, state, video_uid, started_at, live_at, ended_at, end_reason, minutes_delivered, recording_deleted_at); `tv_remote_sessions` (id, user_id, channel_id, push_id, device, started_at, last_beat_at, ended_at, token_exp); `tv_remote_usage_daily` (day, minutes_delivered, peak_recording_minutes, cost_usd); `tv_push_secrets` (push_id pk, ingest url, key, expires_at — written by the home API for a running push only, deleted when it ends, REVOKE from `maktaba_worker`); function `tv_push_credentials(push_id)` returns that row only to the push's host role; `tv_push_report(...)`. |
+| 0121 | 32.7, 32.8, 32.10, 32.13 | `0121_tv_remote.sql` | `tv_remote_inputs` (id, cf_uid, name, state, channel_id, ingest jsonb (no secret), last_video_uid, assigned_at, errors); `tv_remote_pushes` (id, channel_id, input_id, host_id, generation, state, video_uid, started_at, live_at, ended_at, end_reason, minutes_delivered, recording_deleted_at); `tv_remote_sessions` (id, user_id, channel_id, push_id, device, started_at, last_beat_at, ended_at, token_exp); `tv_remote_usage_daily` (day, minutes_delivered, peak_recording_minutes, cost_usd); `tv_push_secrets` (push_id pk, ingest url, key, expires_at — written by the home API for a running push only, deleted when it ends, REVOKE from `maktaba_worker`); function `tv_push_credentials(push_id)` returns that row only to the push's host role; `tv_push_report(...)`. Simulcast (32.13, here if it ships with 32.7, else the next free slot): `tv_simulcast_destinations` (id, name, kind, ingest_url, key_secret → `home_secrets`), `tv_simulcast_attachments` (channel, destination, mode always/schedule, rules jsonb, enabled, manual override, rights_confirmed_by/at), `tv_simulcast_outputs` (attachment, push, input, cf_output_uid, state, window, minutes, error); `tv_remote_pushes.holds` (viewers, simulcast); `tv_remote_usage_daily.simulcast_minutes`. |
 
 `channel_runtime` (slot 0083, made cluster-wide by 0117 on `feat/tv-core`) stays the record of *what
 is actually on air where*, written by the encoding host; `channel_placements` is *what the home
@@ -282,7 +303,7 @@ decided*. Settings are rules sections in `app_settings` (as `rules.tv` / `rules.
 | `tv_cluster.pins` | `{}` | `{channel_slug: host_name}` preferred host. |
 | per host (`tv_stream_hosts`) | home on, nodes off | "Stream on this machine", capacity override, weight, drain. |
 | `tv_remote.enabled` | `false` | Remote viewing through Cloudflare. |
-| `tv_remote.max_channels` | `10` | Concurrent pushes (size of the input pool), 1–10; ≈ 6.5 Mb/s of upload each. |
+| `tv_remote.max_channels` | `22` | Concurrent pushes (size of the input pool), 1–50; ≈ 6.5 Mb/s of upload each (22 ≈ 143 Mb/s of the 1 Gb/s uplink). |
 | `tv_remote.max_streams_per_user` | `2` | Concurrent remote sessions per user. |
 | `tv_remote.viewers` | `all` | `all` \| `admins` \| list of user ids. |
 | `tv_remote.idle_timeout_minutes` | `3` | Keep a push after its last remote viewer. |
@@ -296,6 +317,10 @@ decided*. Settings are rules sections in `app_settings` (as `rules.tv` / `rules.
 | `tv_remote.storage_plan_minutes` | `1000` | Prepaid storage the estimate and the guard assume (one $5/month block; ≈ 2 concurrent 8 h pushes per block). |
 | `tv_remote.allowed_countries` | `[]` | ISO codes; empty = any (token access rules). |
 | `tv_remote.remote_detection` | `relay` | `relay` (requests through the tunnel) \| `relay_or_public_ip`. |
+| `tv_simulcast.enabled` | `false` | Simulcast to destinations (32.13); needs the Cloudflare integration, independent of `tv_remote.enabled`. |
+| `tv_simulcast.max_outputs_per_channel` | `3` | Destinations attached to one channel (Cloudflare allows 50 per input). |
+| `tv_simulcast.max_hours_per_month` | `60` | Output-hours per month across all destinations; at 100 % no new output starts. |
+| `tv_simulcast.lead_seconds` / `tail_seconds` | `60` / `30` | Start an output before a scheduled window, stop it after. |
 
 ## APIs
 
@@ -320,6 +345,15 @@ POST   /api/tv/remote/test                     test connection (R6.2)
 POST   /api/tv/remote/pushes/{id}/stop
 POST   /api/tv/remote/signing-key/rotate       invalidates every token
 POST   /api/tv/remote/webhook                  Cloudflare Notifications (public, secret header; optional)
+
+# Simulcast (admin, 32.13)
+GET    /api/tv/simulcast                       destinations, attachments, outputs (status), output-hours vs cap
+POST   /api/tv/simulcast/destinations          {name, kind: youtube|facebook|rtmp, ingest_url, stream_key}
+PUT    /api/tv/simulcast/destinations/{id}     DELETE /api/tv/simulcast/destinations/{id} (409 while in use)
+GET    /api/channels/{id}/simulcast            the channel's attachments and next windows
+PUT    /api/channels/{id}/simulcast            [{destination_id, mode: always|schedule, rules, enabled,
+                                               rights_confirmed?}] | 409 rights_confirmation_required
+POST   /api/tv/simulcast/outputs/{attachment_id}/start|stop   manual override until the next boundary
 
 # Extended
 GET    /api/tv/info                            + {cluster:{hosts_on_air}, remote:{available, reason, via_relay}}
@@ -369,10 +403,20 @@ in delivery (but holds storage and an encoder slot).
 | 3 viewers, different channels, 4 h/day | 21,600 min | $21.60 | $10 (2,000 min: 3 × 8 h rotation cap) | ≈ $31.60 |
 
 Upload bandwidth at home: each pushed channel uses its bitrate once (≈ 6.5 Mb/s at the default
-6 Mb/s video + audio), whatever the number of remote viewers. The home's upload is ≥ 100 Mb/s, so
-the default `max_channels = 10` (≈ 65 Mb/s) fits with headroom; on the default 1,000-minute
+6 Mb/s video + audio), whatever the number of remote viewers. The home's upload is 1 Gb/s, so
+the default `max_channels = 22` (every channel, ≈ 143 Mb/s, ~15 % of the uplink) fits easily;
+what limits concurrent channels is the encoders (a channel is pushed only while it is encoded on
+some host, R1/R2), not the bandwidth; on the default 1,000-minute
 storage block there is room for about 2 concurrent full-length (8 h) pushes (Q1), so running more remote
 channels at once means buying another block per two channels (or lowering `max_push_hours`).
+
+**Simulcast (32.13).** Each simulcast output is billed like a viewer watching the whole time
+("Simulcasting via SRT or RTMP live outputs" counts as minutes delivered): one output for one hour
+is 60 minutes ≈ $0.06, an always-on output ≈ 43,200 min ≈ **$43 per 30-day month**, two outputs of
+the same channel twice that. It adds no upload at home (Cloudflare fans out from the one push) but
+the push holds one input and, while it runs, its recording counts towards the storage guard.
+`tv_simulcast.max_hours_per_month` (default 60 output-hours ≈ $3.60) caps it separately from the
+budget.
 
 ## Rollout
 
@@ -381,6 +425,7 @@ channels at once means buying another block per two channels (or lowering `max_p
    behaviour). Turn on for the PC, watch the Streaming hosts page, test failover.
 2. **Phase B — Cloudflare** (32.6–32.8, 32.10, 32.11): integration page and test; remote stays off
    until enabled; first on the web app.
+   Simulcast (32.13) follows, behind `tv_simulcast.enabled` (off).
 3. **Phase C — apps** (32.9 native part): iOS/Android/tvOS/Android TV.
 4. **Docs** (32.12) with each phase.
 
@@ -400,6 +445,7 @@ channels at once means buying another block per two channels (or lowering `max_p
 | 32.10 | [Cost, limits and budget](story-32-10-cost-limits-budget.md) | Limits, monthly estimate from Cloudflare analytics, 80/100 % thresholds, storage guard. |
 | 32.11 | [Observability](story-32-11-observability.md) | Metrics, events, control-centre health samples, admin usage panel. |
 | 32.12 | [Docs and runbook](story-32-12-docs-runbook.md) | Setup, operations, failure playbook, costs, Plex remote. |
+| 32.13 | [Simulcast to YouTube, Facebook and RTMP](story-32-13-simulcast.md) | Destinations (keys in `home_secrets`), always-on or scheduled attachments, Cloudflare live outputs on the channel's push input, rights confirmation, cap in output-hours, survives failover/rotation/hot swap. |
 
 ## Dependencies
 
@@ -436,11 +482,13 @@ stories.
 3. **Is `exp` checked on every segment?** The docs say rules are checked continuously. The web
    player swaps tokens without a reload (32.9); native apps re-tune at expiry. Confirm in the
    spike. *(Spike item, as Q2.)*
-4. **Upload bandwidth — owner decision.** The home's upload is **≥ 100 Mb/s**, so no separate
+4. **Upload bandwidth — owner decision.** The home's upload is **1 Gb/s**, so no separate
    "remote rendition" encode is needed: each remote channel is pushed once at the channel bitrate
-   (**≈ 6.5 Mb/s**, the default 6 Mb/s video + audio). `tv_remote.max_channels` defaults to **10**
-   concurrent remote channels (≈ 65 Mb/s at the default bitrate, inside the uplink with headroom
-   for everything else); the setting stays capped at 10.
+   (**≈ 6.5 Mb/s**, the default 6 Mb/s video + audio). `tv_remote.max_channels` defaults to **22**
+   concurrent remote channels — every channel of the lineup (≈ 143 Mb/s, ~15 % of the uplink);
+   the setting allows 1–50. **Encoder capacity, not bandwidth, is the limit**: a channel can be
+   pushed only while a streaming host encodes it (R1/R2, `feat/tv-core` capacity) — and, on a
+   single storage block, the storage guard (Q1).
 5. **Remote API path without the relay agent — accepted default, revisit if needed.** The relay
    agent is wired into `maktaba-server` as part of the Epic 25 work before Phase B; until then, and
    for users with their own reverse proxy or tunnel, `remote_detection = relay_or_public_ip` ("a
@@ -465,6 +513,12 @@ stories.
 12. **Webhooks need a public URL — accepted default, revisit if needed.** **Polling is the source
     of truth** (live input status and lifecycle); webhooks are only an optional speed-up through
     the relay URL.
+13. **Simulcast output health (32.13).** Cloudflare documents an output as `uid`, `url`,
+    `streamKey`, `enabled` only — no connection status, and no output events in the live webhooks.
+    *Default:* Maktaba shows its own output state plus the input's status; the 32.6 spike checks
+    whether the output object or Notifications report a destination's rejection, and 32.13 uses it
+    if so. *(Spike item, as Q2/Q3.)* Simulcast itself was added by the owner on 2026-10-18
+    (scope, R13).
 
 ## Cloudflare facts this design relies on (with sources)
 
@@ -478,7 +532,7 @@ stories.
 | Signed URLs: create a signing key once (`POST /accounts/{id}/stream/keys` → `id`, `pem`, `jwk`; up to 1,000 keys; deleting a key invalidates its tokens); sign RS256 tokens locally with `sub`, `kid`, `exp` (≤ 24 h), `nbf`, `accessRules` (≤ 5 rules: `ip.geoip.country`, `ip.src`, `any`); use the token in place of the id in the URL. The `/token` API is for testing or < 1,000 tokens/day. | [Secure your Stream](https://developers.cloudflare.com/stream/viewing-videos/securing-your-stream/) |
 | Pricing: minutes delivered $1/1,000 (counted per segment request, rounded to the segment = GOP for live; preloading counts; simulcast counts); minutes stored prepaid $5 per 1,000 minutes; live recordings count as stored; running out of storage blocks new live streams; ingest and encoding free; a broadcast with no viewers costs nothing in delivery. | [Pricing](https://developers.cloudflare.com/stream/pricing/) |
 | Live webhooks via Cloudflare Notifications: `live_input.connected`, `live_input.disconnected`, `live_input.errored` with codes `ERR_GOP_OUT_OF_RANGE`, `ERR_UNSUPPORTED_VIDEO_CODEC`, `ERR_UNSUPPORTED_AUDIO_CODEC`, `ERR_STORAGE_QUOTA_EXHAUSTED`, `ERR_MISSING_SUBSCRIPTION`, `ERR_UNHEALTHY`. Live input `status` values include `connected`, `reconnecting`, `client_disconnect`, `failed_to_connect`. | [Live webhooks](https://developers.cloudflare.com/stream/stream-live/webhooks/), [API: create live input](https://developers.cloudflare.com/api/resources/stream/subresources/live_inputs/methods/create/) |
-| Simulcast: up to 50 outputs per input (`/live_inputs/{uid}/outputs`); simulcast delivery is billed. | [Simulcasting](https://developers.cloudflare.com/stream/stream-live/simulcasting/), [Pricing](https://developers.cloudflare.com/stream/pricing/) |
+| Simulcast: up to 50 concurrent outputs per input; `POST /accounts/{id}/stream/live_inputs/{input}/outputs` with `url`, `streamKey`, optional `enabled` (default on); outputs can be added, disabled or deleted during a broadcast (a deleted output disconnects within 30 s); response `uid`, `url`, `streamKey`, `enabled`. "Simulcasting via SRT or RTMP live outputs" is billed as minutes delivered. | [Simulcasting](https://developers.cloudflare.com/stream/stream-live/simulcasting/), [Pricing](https://developers.cloudflare.com/stream/pricing/) |
 | Live viewer count: `GET https://customer-<CODE>.cloudflarestream.com/<INPUT_ID>/views` → `{liveViewers}`. | [Live viewer count](https://developers.cloudflare.com/stream/getting-analytics/live-viewer-count/) |
 | Usage: GraphQL dataset `streamMinutesViewedAdaptiveGroups` (`sum.minutesViewed` by `uid`, `clientCountryName`), token with Account Analytics, 31-day query span, 90-day retention. | [Fetching bulk analytics](https://developers.cloudflare.com/stream/getting-analytics/fetching-bulk-analytics/) |
 | LL-HLS is a beta (`preferLowLatency`, needs recording `automatic`); the Stream player uses it when possible. DVR is opt-in with `dvrEnabled=true` (HLS v8, not DASH, may degrade past 3 h). Sub-second SRT/RTMPS *playback* exists but needs an ffmpeg-based player. | [Using the Stream player](https://developers.cloudflare.com/stream/viewing-videos/using-the-stream-player/), [DVR for live](https://developers.cloudflare.com/stream/stream-live/dvr-for-live/), [Using your own player](https://developers.cloudflare.com/stream/viewing-videos/using-own-player/) |

@@ -310,7 +310,8 @@ Inputs are created lazily (first need) up to `max_channels`, named
 (README Q1, decided by the owner); each broadcast's recording is deleted as soon as the broadcast
 ends (§7.7). `preferLowLatency` follows `tv_remote.low_latency`, off by default (README Q11).
 `deleteRecordingAfterDays` is not used (minimum 30 days). The pool holds at most `max_channels`
-inputs (default 10, at most 10: ≈ 6.5 Mb/s of the home's ≥ 100 Mb/s upload each, README Q4).
+inputs (default 22, every channel, 1–50: ≈ 6.5 Mb/s of the home's 1 Gb/s upload each, ≈ 143 Mb/s
+for 22, README Q4; encoder capacity, not bandwidth, limits how many channels can be pushed).
 Lowering `max_channels` deletes idle inputs above the limit. The stream key / SRT passphrase go to `home_secrets`
 (`cf_input_<uid>_key`); `tv_remote_inputs.ingest` keeps only the URLs. When a push is requested
 the API opens the key and writes `{url, key}` to `tv_push_secrets` (push id, `expires_at` = now +
@@ -453,9 +454,9 @@ The account is sized for one $5/month block of 1,000 stored minutes (README Q1).
 recording of a running broadcast is stored until it ends and is deleted right after, stored
 minutes ≈ Σ age(live pushes). With `max_push_hours = 8` (480 min) one block has room for
 **two** full-length concurrent pushes (2 × 480 ≤ 1,000); once the running pushes' ages plus 480
-would pass 1,000, the next push gets `remote_storage_full` even though `max_channels` is 10. On the
+would pass 1,000, the next push gets `remote_storage_full` even though `max_channels` is 22. On the
 default plan the storage guard is therefore usually the binding concurrency limit, and the admin
-page shows the stored-minutes headroom next to "remote channels: n of 10". Each further
+page shows the stored-minutes headroom next to "remote channels: n of 22". Each further
 1,000-minute block makes room for about two more full-length pushes; a lower `max_push_hours` fits more pushes per block at the
 cost of more frequent rotation (§7.3).
 
@@ -467,6 +468,43 @@ signal for idleness (sessions are primary). Webhooks (`live_input.connected|disc
 are optional: if the admin configures a Cloudflare Notifications webhook to
 `https://<user>.maktaba.app/api/tv/remote/webhook` with a secret, the handler verifies the secret
 and triggers an immediate reconcile (it never changes state by itself); errored events carry the `ERR_*` code shown on the admin page.
+
+### 7.9 Simulcast (story 32.13)
+
+Cloudflare retransmits whatever a live input receives to its **live outputs** (RTMP/SRT, up to 50
+per input; `POST /accounts/{id}/stream/live_inputs/{input}/outputs` `{url, streamKey, enabled}`;
+outputs can be added, disabled or deleted during a broadcast, a deleted one disconnects within
+30 s — [Simulcasting](https://developers.cloudflare.com/stream/stream-live/simulcasting/)). Maktaba
+simulcasts by adding outputs to the input its push already uses, so a channel is uploaded once
+whatever the number of destinations.
+
+- **Destinations** (`tv_simulcast_destinations`): name, kind (`youtube` | `facebook` | `rtmp`),
+  ingest URL; the stream key in `home_secrets` (`simulcast_<id>_key`).
+- **Attachments** (`tv_simulcast_attachments`): channel × destination, `always` or `schedule`
+  (rules: weekly windows in the channel's time zone; "while video X / series Y airs" and "during
+  live slots", resolved against `channel_programs`), with `lead_seconds` / `tail_seconds`;
+  adjacent matches merge into one window. Enabling needs the rights confirmation (README R13.6).
+- **Holds.** A push has `holds` (`viewers`, `simulcast`). The reconcile loop (§7.1) adds the
+  `simulcast` hold when a window opens (requesting a push as a tune would, §7.3, minus the
+  per-user gates) and removes it when the last window of that channel closes; the idle timeout
+  (§7.3) runs only when the push has no hold and no session.
+- **Outputs follow the push, not the input.** When the push is `live`, the controller creates one
+  output per open window on the push's input with the key from `home_secrets`, and deletes it when
+  the window closes or the push ends. An idle pooled input never keeps an output, so a later
+  channel on that input cannot reach a destination.
+- **Continuity.** Outputs belong to the input, so everything that keeps the input keeps them: a
+  block change or muxer restart (the pusher stays a Hub subscriber, §7.4), an Epic 33 hot swap
+  (it must keep the station's Hub; the pusher reconnects inside `timeoutSeconds` if the TS
+  restarts), a failover (§7.3: same input, new host's pusher), a rotation at `max_push_hours`
+  (same input, a new broadcast; the destination sees a gap of seconds).
+- **Status.** Maktaba's own output state (`scheduled`, `starting`, `live`, `stopping`, `off`,
+  `errored`) plus the input's status and lifecycle (§7.8). Cloudflare documents no per-output
+  health; the 32.6 spike checks for one (README Q13).
+- **Cost.** Output minutes are minutes delivered (§9): they count towards the budget and towards
+  `tv_simulcast.max_hours_per_month`. At the cap no output starts and `always` outputs stop; at
+  the budget with `block_new` no output starts and running windows finish.
+- **Out of scope.** The platform's event metadata (title, description, privacy) is set on the
+  platform; Cloudflare forwards only the media.
 
 ## 8. App routing (LAN or remote)
 
@@ -526,6 +564,10 @@ XMLTV/M3U are not offered remotely (non-goal).
   tokens, and a rotation at `max_push_hours` or a failover of a channel they watch is not a new
   tune, so it is not refused) or `warn` (notification only).
 - Idle timeout and `max_push_hours` bound pushes with no viewers and the stored minutes.
+- Simulcast (§7.9): each output adds its own minutes delivered (one always-on output ≈ 43,200
+  min ≈ $43 per 30-day month), counted in the estimate and capped separately by
+  `tv_simulcast.max_hours_per_month`; a simulcast push is not idle-stopped (holds) and its
+  recording counts towards the storage guard.
 - No audio-only mode: Cloudflare bills minutes, not bytes, and live inputs need H.264 video.
 
 ## 10. Observability
@@ -566,11 +608,14 @@ today, the Cloudflare token, any `secret` setting field) lives in `home_secrets`
 - Go unit tests with fakes: placement choose/resolve/fencing (table tests for policies, pins,
   capacity, NVENC pairs), a fake clock for heartbeats and dead detection, the splicing copier
   against two fake upstream TS servers, HMAC sign/verify, the push state machine against a fake
-  Cloudflare server (httptest) that models inputs, lifecycle, videos, keys, errors.
+  Cloudflare server (httptest) that models inputs, lifecycle, videos, keys, outputs (simulcast),
+  errors; simulcast window resolution with a fake clock and timeline.
 - Python/SQL: migration up/down tests on SQLite twins; `SECURITY DEFINER` guards on Postgres
   (skip when no Postgres), as for slot 0103.
 - Two-process end-to-end on one machine: home stack + a second `serve --role streaming` with its own
   node config and port; place a channel on it (pin), pull `/auto/v{n}` from the home, kill the
   node, see the splice to the home within 20 s.
 - Cloudflare spike (manual, real account, story 32.6): token subject, `exp` per segment, latency,
-  reconnect within `timeoutSeconds` keeps the video id, recording deletion, storage accounting.
+  reconnect within `timeoutSeconds` keeps the video id, recording deletion, storage accounting,
+  whether a live output reports its destination's state (README Q13), and that outputs survive a
+  reconnect and a new broadcast on the same input.

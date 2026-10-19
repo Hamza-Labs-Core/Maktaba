@@ -18,7 +18,7 @@ remote viewing through Cloudflare, what it costs, and what to do when something 
      API token with Stream Write and Account Analytics Read, entering it, Test connection, enabling
      remote;
   5. limits, budget and cost examples (README table); the upload bandwidth one push uses
-     (≈ 6.5 Mb/s; the default 10 channels ≈ 65 Mb/s of a ≥ 100 Mb/s uplink);
+     (≈ 6.5 Mb/s; the default 22 channels ≈ 143 Mb/s of the 1 Gb/s uplink; encoders are the limit);
   6. what remote viewers do (web, apps), what they see on each error;
   7. the failure playbook: Cloudflare down (remote unavailable; LAN unaffected), storage quota
      exhausted, ingest errors (`ERR_*` meanings), a node failing mid-push, the home down,

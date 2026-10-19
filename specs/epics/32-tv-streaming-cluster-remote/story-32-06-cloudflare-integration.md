@@ -42,7 +42,8 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
   in-progress video id plays the live broadcast; (b) whether `exp` is enforced per segment;
   (c) glass-to-glass latency of standard HLS and of LL-HLS with the channel encoder settings;
   (d) a reconnect within `timeoutSeconds` keeps the same video id; (e) deleting the recording right
-  after a broadcast frees storage; (f) concurrent live input limits on the account. Findings update
+  after a broadcast frees storage; (f) concurrent live input limits on the account; (g) whether a live output reports its
+  destination's state, and whether outputs survive a reconnect and a new broadcast (32.13, README Q13). Findings update
   the design before 32.7 is merged.
 
 ## Test cases
