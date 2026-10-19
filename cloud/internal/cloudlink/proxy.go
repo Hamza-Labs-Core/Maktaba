@@ -75,6 +75,9 @@ type reqAssembly struct {
 	body bytes.Buffer
 }
 
+// ViaHeader marks a loopback call forwarded from the relay.
+const ViaHeader = "X-Maktaba-Via"
+
 // parseRequest reconstructs an *http.Request from the HTTP/1.1-shaped
 // preamble the cloud wrote (relay/tunnel.go writes
 // "METHOD URI HTTP/1.1\r\nHost: ...\r\n<headers>\r\n\r\n").
@@ -96,6 +99,12 @@ func parseRequest(ctx context.Context, head, body []byte, baseURL string) (*http
 			out.Header.Add(k, v)
 		}
 	}
+	// Epic 32 story 32.9: mark the call as one that came through the relay
+	// (the API reports remote.via_relay and the TV player plays from
+	// Cloudflare). Any copy a client sent is replaced, and the API accepts
+	// the header only from loopback.
+	out.Header.Del(ViaHeader)
+	out.Header.Set(ViaHeader, "relay")
 	// Preserve the original Host the cloud forwarded; the loopback API
 	// may route on it. net/http special-cases Host outside Header.
 	if r.Host != "" {

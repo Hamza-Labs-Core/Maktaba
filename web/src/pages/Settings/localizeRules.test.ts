@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { localizeSections } from "./RulesSection";
 import type { RuleSection } from "../../lib/rulesApi";
 import en from "../../i18n/en.json";
+import ar from "../../i18n/ar.json";
 // The live schema the API serves, read from disk at run time: the web image builds from web/
 // alone, so a static import of a file outside it fails tsc there (hence no typed node imports).
 const FS = "node:fs";
@@ -59,5 +60,28 @@ describe("localizeSections", () => {
       "nvenc_max_sessions",
       "videotoolbox_max_sessions",
     ]);
+  });
+
+  // Epic 32 story 32.12 AC2 / TC2: every TV cluster and remote setting is
+  // described in both languages, the English copy being the schema's.
+  it("describes every tv_cluster and tv_remote setting in English and Arabic", () => {
+    const enC = en as Record<string, string>;
+    const arC = ar as Record<string, string>;
+    for (const key of ["tv_cluster", "tv_remote"]) {
+      const sec = sections().find((s) => s.key === key)!;
+      expect(sec, key).toBeTruthy();
+      expect(arC[`rules.${key}.title`], `${key} title`).toBeTruthy();
+      expect(arC[`rules.${key}.what`], `${key} what`).toBeTruthy();
+      for (const f of sec.fields) {
+        const k = `rules.${key}.${f.name}`;
+        expect(enC[`${k}.label`], `${k}.label (en)`).toBe(f.label);
+        expect(arC[`${k}.label`], `${k}.label (ar)`).toBeTruthy();
+        expect(arC[`rules.group.${f.group}`], `group ${f.group} (ar)`).toBeTruthy();
+        if (f.help) {
+          expect(enC[`${k}.help`], `${k}.help (en)`).toBe(f.help);
+          expect(arC[`${k}.help`], `${k}.help (ar)`).toBeTruthy();
+        }
+      }
+    }
   });
 });

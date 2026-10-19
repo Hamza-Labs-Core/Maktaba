@@ -44,6 +44,9 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
       "@ds": path.resolve(__dirname, "design-system"),
+      // Epic 34.6: the shared TV player (channel switching), used by the live
+      // player here and later the public TV site
+      "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
     },
   },
   server: {

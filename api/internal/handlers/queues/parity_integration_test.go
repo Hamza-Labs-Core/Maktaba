@@ -6,11 +6,12 @@ package queues
 // pulse) against a real, migrated Postgres, because the scripted driver of the
 // unit tests cannot tell whether the SQL is valid.
 //
-//	MAKTABA_TEST_PG_URL=postgres://u:p@127.0.0.1:5432/scratch_db?sslmode=disable \
+//	MAKTABA_TEST_PG_URL=postgres://u:p@127.0.0.1:5432/postgres?sslmode=disable \
 //	    go test -tags integration ./internal/handlers/queues/ -run Parity
 //
-// The database must be a scratch one with every migration applied; the test
-// writes rows into it.
+// The URL names a Postgres whose user may create databases, as for every other
+// MAKTABA_TEST_PG_URL test: the test makes its own scratch database there,
+// migrates it and drops it afterwards.
 
 import (
 	"database/sql"
@@ -31,23 +32,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 )
 
-// parityDB is the database the test writes into. MAKTABA_TEST_PG_URL names a
-// migrated scratch database used as is. Otherwise, when DATABASE_URL is set
-// (CI's integration job), a fresh database is created on that server, every
-// migration is applied to it and it is dropped afterwards, so the test's
-// DELETEs never touch the tables other packages' integration tests use.
+// parityDB is a fresh database on the server MAKTABA_TEST_PG_URL (else
+// DATABASE_URL, CI's integration job) names, with every migration applied and
+// dropped afterwards, so the test's DELETEs never touch the tables other
+// packages' integration tests use.
 func parityDB(t *testing.T) *sql.DB {
 	t.Helper()
-	if url := os.Getenv("MAKTABA_TEST_PG_URL"); url != "" {
-		return openPG(t, url)
+	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	if base == "" {
+		base = os.Getenv("DATABASE_URL")
 	}
-	base := os.Getenv("DATABASE_URL")
 	if base == "" {
 		t.Skip("neither MAKTABA_TEST_PG_URL nor DATABASE_URL is set")
 	}
 	u, err := neturl.Parse(base)
 	if err != nil {
-		t.Fatalf("DATABASE_URL: %v", err)
+		t.Fatalf("Postgres URL: %v", err)
 	}
 	admin := openPG(t, base)
 	name := fmt.Sprintf("maktaba_parity_%d_%d", os.Getpid(), time.Now().UnixNano())

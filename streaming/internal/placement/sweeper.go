@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // SweepInterval is how often the home looks for hosts that went down.
@@ -90,7 +92,8 @@ func (w *Sweeper) failover(ctx context.Context, host string) []uuid.UUID {
 			continue
 		}
 		w.Svc.log().Info("tv: channel failed over", "channel_id", it.p.Channel.String(), "from", host,
-			"to", np.Host, "generation", np.Gen, "event", "tv_failover")
+			"to", np.Host, "host_id", np.Host, "generation", np.Gen, "event", "tv_failover")
+		tvmetrics.Failovers.Inc(host)
 		moved = append(moved, it.p.Channel)
 	}
 	return moved

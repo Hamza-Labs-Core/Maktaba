@@ -20,7 +20,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["src/**/*.{js,ts,tsx}", "design-system/**/*.{js,ts,tsx}"],
+    files: ["src/**/*.{js,ts,tsx}", "design-system/**/*.{js,ts,tsx}", "packages/**/*.{js,ts,tsx}"],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: "latest",

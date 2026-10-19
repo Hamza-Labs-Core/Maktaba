@@ -548,9 +548,12 @@ func (h *Hub) writeLoop(s *Session, c *websocket.Conn, s2c *Cipher, lastRecv <-c
 		if err != nil {
 			return err
 		}
-		// not the session's context: cancelling a write mid-frame makes the
-		// websocket drop the connection without a close frame, and closing
-		// the session (a seal error, a revoke) must still send its code
+		// Not s.ctx: the websocket library hard-closes the connection when
+		// a write's context ends, even after the frame is flushed and the
+		// write is only returning. A session closing then (the reader hit a
+		// bad frame just as a pong went out) would drop the socket without
+		// the close frame that tells the agent why. This loop owns the
+		// close; a write stuck on the peer still ends at the timeout.
 		wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return c.Write(wctx, websocket.MessageBinary, sealed)

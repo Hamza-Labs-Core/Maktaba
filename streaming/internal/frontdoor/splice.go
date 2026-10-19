@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // Splicing (design §4.2, §6.2).
@@ -149,6 +151,7 @@ func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uui
 	if err != nil {
 		if ctx.Err() == nil {
 			h.Svc.Hosts.Fail(hostID)
+			tvmetrics.Errors.Inc(hostID, "ts")
 		}
 		return err
 	}
@@ -156,14 +159,13 @@ func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uui
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable {
 			h.Svc.Hosts.Fail(hostID)
+			tvmetrics.Errors.Inc(hostID, "ts")
 		}
 		return errors.New("frontdoor: node answered " + resp.Status)
 	}
 	h.Svc.Hosts.OK(hostID)
 	n, err := copyFlush(cw, resp.Body)
-	if h.Bytes != nil {
-		h.Bytes(n)
-	}
+	h.count("ts", hostID)(n)
 	if cw.err == nil && ctx.Err() == nil {
 		// the node's stream broke under a live client: a failure of that host
 		h.Svc.Hosts.Fail(hostID)

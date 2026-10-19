@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
@@ -253,6 +254,8 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	csettings := &placement.PGSettings{Pool: b.pool}
 	hosts := &placement.Hosts{Source: store, Settings: csettings, Protocol: cluster.ProtocolVersion, Logger: logger}
 	svc := &placement.Service{Store: store, Hosts: hosts, Settings: csettings, Self: ident.ID, Logger: logger}
+	// story 32.11: hosts, capacity, placements and channels on air on /metrics
+	tvmetrics.Register(svc.Collector(placement.OnAirPG(b.pool)))
 	tracker := frontdoor.NewTracker()
 	tracker.WarmGrace = func() time.Duration { return b.settings.Output(context.Background()).WarmGrace }
 

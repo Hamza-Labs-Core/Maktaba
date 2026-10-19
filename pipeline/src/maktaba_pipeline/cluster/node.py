@@ -131,8 +131,14 @@ class WorkerAgent:
         self._capabilities = capabilities
         await self.check_schema()
         if self.paused:
-            # the rest (path map, storage probe, report, switches) waits for the home:
-            # :meth:`refresh` finishes it once the schema fits
+            # the path map is built now (reads only): the cluster agent places its files
+            # on the share with it, and nothing resolves a stored path through an empty
+            # map (the home's /Volumes/... taken as a local path). The rest (storage
+            # probe, report, switches) waits for the home: :meth:`refresh` finishes it
+            try:
+                await self._resolve_paths(beat)
+            except Exception as exc:  # noqa: BLE001 - an older home schema: retried on resume
+                _log.warning("cluster_path_map_deferred", error=str(exc))
             return
         await self._finish_node_start(beat)
 
@@ -143,19 +149,7 @@ class WorkerAgent:
             beat = await nodes_db.beat(self.db, self.node_id)
             if beat is None:
                 return
-        self.samples = await load_samples(self.db)
-        self.servers = await load_servers(self.db)
-        if not self.explicit_path_map:
-            if beat.path_map_source == "admin" and beat.path_map is not None:
-                self.admin_map = dict(beat.path_map)
-            else:
-                inferred = await asyncio.to_thread(self._infer)
-                if inferred:
-                    self.legacy_map = inferred
-                elif beat.path_map:
-                    self.legacy_map = dict(beat.path_map)
-                _log.info("cluster_path_map_inferred", path_map=inferred or {})
-        await asyncio.to_thread(self._rebuild)
+        await self._resolve_paths(beat)
         storage = await self._check_storage()
         await nodes_db.report(
             self.db,
@@ -171,6 +165,23 @@ class WorkerAgent:
         self.selector.switches = await nodes_db.stage_switches(self.db, self.node_id)
         self.selector.lifted = await lifted_placements(self.db, self.graph)
         self._node_ready = True
+
+    async def _resolve_paths(self, beat: nodes_db.NodeBeat) -> None:
+        """The resolver: the admin's map, else the inferred one (else the stored one),
+        with this machine's mounts and the storage servers. Reads only."""
+        self.samples = await load_samples(self.db)
+        self.servers = await load_servers(self.db)
+        if not self.explicit_path_map:
+            if beat.path_map_source == "admin" and beat.path_map is not None:
+                self.admin_map = dict(beat.path_map)
+            else:
+                inferred = await asyncio.to_thread(self._infer)
+                if inferred:
+                    self.legacy_map = inferred
+                elif beat.path_map:
+                    self.legacy_map = dict(beat.path_map)
+                _log.info("cluster_path_map_inferred", path_map=inferred or {})
+        await asyncio.to_thread(self._rebuild)
 
     async def check_schema(self) -> bool:
         """Compare the home's schema with this code's; True when the pause changed.

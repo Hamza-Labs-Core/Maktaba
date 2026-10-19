@@ -240,3 +240,28 @@ func (s PGStore) CleanStaleRuntime(ctx context.Context) (int64, error) {
 	}
 	return tag.RowsAffected(), nil
 }
+
+// OnAirPG counts the channels on air per host and encoder from
+// channel_runtime (a heartbeat within 45 s), for the metrics (story 32.11).
+func OnAirPG(pool *pgxpool.Pool) OnAirCounter {
+	return func(ctx context.Context) (map[[2]string]int, error) {
+		rows, err := pool.Query(ctx, `SELECT COALESCE(host_id, host), COALESCE(encoder, ''), count(*)
+			FROM channel_runtime
+			WHERE state <> 'idle' AND COALESCE(heartbeat_at, last_segment_at) > now() - interval '45 seconds'
+			GROUP BY 1, 2`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := map[[2]string]int{}
+		for rows.Next() {
+			var host, enc string
+			var n int
+			if err := rows.Scan(&host, &enc, &n); err != nil {
+				return nil, err
+			}
+			out[[2]string{host, enc}] = n
+		}
+		return out, rows.Err()
+	}
+}
