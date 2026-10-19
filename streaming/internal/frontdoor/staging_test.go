@@ -332,7 +332,7 @@ func stageRig(t *testing.T, fail int) (*slotRig, *atomic.Int32) {
 	amber := newFakeSlot(t, "amber", 4000, g.ch.String())
 	g.slots.Addrs["amber"] = amber.addr()
 	var calls atomic.Int32
-	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if n := calls.Add(1); int(n) <= fail {
 			http.Error(w, "not now", http.StatusServiceUnavailable)
 			return
