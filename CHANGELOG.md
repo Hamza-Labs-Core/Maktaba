@@ -11,6 +11,24 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- TV staging verification and preview (Epic 33 stories 33.5, 33.6): a staged TV
+  change now runs on the staging slot (the third instance, started by the
+  supervisor on the change's release binary and bound to its release); the front
+  door warms the channels people watch, the probe channel and each changed
+  channel in turn, within the encoders live and the hot standby leave, and
+  samples the slot's HLS and live.ts every few seconds. The change controller
+  writes every check into the change's report (slot health, first segment,
+  cadence, wall clock and position, the programme on the air vs the new schedule
+  and vs live, TS and HLS conformity, splice alignment with live — same PIDs,
+  segment boundaries and PTS within a frame — encoder parameters vs live,
+  Cloudflare ingest rules, push continuity, guide vs stream, encoder budget) and
+  makes the change ready after `verify_soak_seconds`, or failed with the reasons;
+  the staging slot stops when the change is cancelled, fails or goes live. The
+  Changes page's Preview tab plays the staging channels for admins (the shared TV
+  player, a live-vs-staging view, the staged guide strip; staged M3U and XMLTV for
+  VLC), through `POST /api/tv/changes/{id}/preview` (a token for an hour) and the
+  front door's `/stream/staging/…`; the web port lets only admins through. No
+  staging HDHomeRun device. Still behind the `tvstaging` build tag.
 - TV slots and the hot standby (Epic 33 stories 33.1, 33.4): the channel
   engine runs in TV slot processes (`maktaba-streaming slot --slot
   blue|green|amber`, supervisor role `tv-slot`, loopback 8791-8793, probes

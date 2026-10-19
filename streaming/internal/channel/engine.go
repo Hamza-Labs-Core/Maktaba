@@ -583,6 +583,22 @@ func (e *Engine) ActiveIDs() []uuid.UUID {
 	return out
 }
 
+// Stats reports a running station's encoder, counters and the segment on air
+// (false: not on air here, or a pipeline that reports none).
+func (e *Engine) Stats(id uuid.UUID) (StationStats, bool) {
+	e.mu.Lock()
+	p, ok := e.stations[id]
+	e.mu.Unlock()
+	if !ok || !p.Alive() {
+		return StationStats{}, false
+	}
+	sr, ok := p.(statsReporter)
+	if !ok {
+		return StationStats{}, false
+	}
+	return sr.Stats(), true
+}
+
 // Running reports whether the channel has a live station on this host.
 func (e *Engine) Running(id uuid.UUID) bool {
 	e.mu.Lock()

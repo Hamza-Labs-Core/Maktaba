@@ -87,6 +87,10 @@ type StationStats struct {
 	Encoder        string // the current block's encoder
 	Restarts       int    // muxer restarts
 	NVENCFallbacks int64  // blocks encoded by libx264 instead of the hardware encoder (NVENC or VideoToolbox)
+	// OnAir is the segment being forwarded now (nil before the first one);
+	// Reached the wall-clock instant the forwarded output has reached.
+	OnAir   *Segment
+	Reached time.Time
 }
 
 // Station is one channel on air: the persistent muxer (HLS window +
@@ -120,6 +124,10 @@ type Station struct {
 	// reachedBits: float64 bits of the timeline position (s since epoch)
 	// the forwarded output has reached.
 	reachedBits atomic.Uint64
+	// onAir: the segment whose output is being forwarded now (story 33.5:
+	// the slot's status reports it so staging can be checked against the
+	// schedule and against live).
+	onAir       atomic.Pointer[Segment]
 	lookMu      sync.Mutex
 	look        Look
 	lookAt      time.Time
@@ -285,7 +293,7 @@ func (s *Station) gated(b []byte) []byte {
 			s.gateSince = time.Time{}
 			return append(keep, b[i:]...)
 		}
-		if pid == 0 || pid == TSPMTPID {
+		if pid == 0 || int(pid) == TSPMTPID {
 			keep = append(keep, p...)
 		}
 	}
@@ -681,6 +689,8 @@ type stationPlayback struct {
 }
 
 func (p *stationPlayback) Wait() (bool, error) {
+	seg := p.seg
+	p.s.onAir.Store(&seg)
 	tr := &ptsTracker{}
 	pw := &packetWriter{w: writerFunc(func(b []byte) (int, error) {
 		if tr.scan(b) {
@@ -833,7 +843,12 @@ func (s *Station) Stats() StationStats {
 	if enc == "" {
 		enc = s.cfg.Profile.Encoder
 	}
-	return StationStats{Encoder: enc, Restarts: s.MuxerRestarts(), NVENCFallbacks: s.nvencFallbacks.Load()}
+	st := StationStats{Encoder: enc, Restarts: s.MuxerRestarts(), NVENCFallbacks: s.nvencFallbacks.Load(),
+		OnAir: s.onAir.Load()}
+	if r := s.reached(); r > 0 {
+		st.Reached = s.epoch.Add(time.Duration(r * float64(time.Second)))
+	}
+	return st
 }
 
 // blockInput builds the ffmpeg input for `seg` starting now (or at the

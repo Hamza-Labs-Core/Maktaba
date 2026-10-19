@@ -2,6 +2,7 @@ package channel
 
 import (
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,13 +21,38 @@ import (
 //   - the PMT, video and audio PIDs and the service id are fixed in the
 //     arguments (TSPMTPID, TSVideoPID, TSAudioPID, TSServiceID).
 
-// Fixed MPEG-TS layout of every station's output (story 33.4 AC3).
-const (
+// Fixed MPEG-TS layout of every station's output (story 33.4 AC3). Variables
+// only so that a deliberately misbuilt binary (BuildDefect) can be made for the
+// staging verification tests; nothing assigns them otherwise.
+var (
 	TSServiceID = 1
 	TSPMTPID    = 0x1000
 	TSVideoPID  = 0x100 // the first elementary stream (-map video first)
 	TSAudioPID  = 0x101
 )
+
+// BuildDefect, set only with -ldflags "-X .../channel.BuildDefect=...", builds a
+// broken streaming binary on purpose so the staging verification of a TV release
+// (Epic 33 story 33.5) can be shown to catch it: "pids" moves the PMT and the
+// elementary stream PIDs (0x1100, 0x200, 0x201), "pts:<ms>" shifts every
+// timestamp off the wall clock by ms. A release build never sets it.
+var BuildDefect = ""
+
+// ptsShiftTicks is BuildDefect's timestamp shift (0: none).
+var ptsShiftTicks int64
+
+func init() { applyBuildDefect(BuildDefect) }
+
+func applyBuildDefect(d string) {
+	switch {
+	case d == "pids":
+		TSPMTPID, TSVideoPID, TSAudioPID = 0x1100, 0x200, 0x201
+	case strings.HasPrefix(d, "pts:"):
+		if ms, err := strconv.Atoi(strings.TrimPrefix(d, "pts:")); err == nil {
+			ptsShiftTicks = int64(ms) * 90
+		}
+	}
+}
 
 // PTSWrapTicks is the 33-bit PTS modulus.
 const PTSWrapTicks = int64(1) << 33
@@ -74,7 +100,7 @@ func WallTicks(t time.Time) int64 {
 // TSOffsetTicks is the -output_ts_offset of a block starting at t: its
 // wall-clock ticks modulo 2^33 (one wrap later when just past a wrap).
 func TSOffsetTicks(t time.Time) int64 {
-	off := WallTicks(t) % PTSWrapTicks
+	off := (WallTicks(t) + ptsShiftTicks) % PTSWrapTicks
 	if off < lowOffsetTicks {
 		off += PTSWrapTicks
 	}
@@ -187,7 +213,7 @@ func tsVideoKeyframe(p []byte) (int64, bool) {
 	if len(p) != tsPacket || p[0] != 0x47 || p[1]&0x40 == 0 {
 		return 0, false
 	}
-	if uint16(p[1]&0x1f)<<8|uint16(p[2]) != TSVideoPID {
+	if int(p[1]&0x1f)<<8|int(p[2]) != TSVideoPID {
 		return 0, false
 	}
 	pts, ok := packetPTS(p)
@@ -216,3 +242,7 @@ func tsVideoKeyframe(p []byte) (int64, bool) {
 	}
 	return 0, false
 }
+
+// EffectiveKeyint is the IDR grid a profile with these settings uses (story
+// 33.5 checks the output against it).
+func EffectiveKeyint(keyint, segment int) int { return effectiveKeyint(keyint, segment) }

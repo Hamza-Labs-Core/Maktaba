@@ -51,6 +51,10 @@ func (a *fakeAPI) server(t *testing.T) *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
+		if c, err := r.Cookie("mkt_sess"); err == nil && c.Value == "admin" {
+			_, _ = io.WriteString(w, `{"user_id":"a","is_admin":true}`)
+			return
+		}
 		if c, err := r.Cookie("mkt_sess"); err == nil && c.Value == "good" {
 			_, _ = io.WriteString(w, `{"user_id":"u"}`)
 			return
@@ -238,5 +242,43 @@ func TestStreamProxyDownIsBadGateway(t *testing.T) {
 	proxy.ServeHTTP(rec, httptest.NewRequest("GET", "/xmltv.xml", nil))
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("code %d", rec.Code)
+	}
+}
+
+// TestStagingGateAdminOnly is story 33.6 TC2: the staging preview on the web port
+// needs an admin's session (a signed-in viewer gets 403, nobody else 401), and
+// only the preview paths are let through.
+func TestStagingGateAdminOnly(t *testing.T) {
+	mux, be, _, _ := webMux(t)
+	admin := map[string]string{"Cookie": "mkt_sess=admin"}
+	pl := "/stream/staging/channel/" + chanID + "/index.m3u8"
+	seg := "/stream/staging/channel/" + chanID + "/s/amber/seg-17.ts"
+	for _, path := range []string{pl, seg} {
+		if rec := get(mux, path+"?pt=x", admin); rec.Code != 200 || rec.Body.String() != "ok:"+path {
+			t.Errorf("admin %s: %d %q", path, rec.Code, rec.Body.String())
+		}
+		if rec := get(mux, path, signedIn); rec.Code != http.StatusForbidden {
+			t.Errorf("non-admin %s: %d, want 403", path, rec.Code)
+		}
+		if rec := get(mux, path, nil); rec.Code != http.StatusUnauthorized {
+			t.Errorf("anonymous %s: %d, want 401", path, rec.Code)
+		}
+	}
+	for _, path := range []string{
+		"/stream/staging/channel/" + chanID + "/live.ts",
+		"/stream/staging/channel/" + chanID + "/s/purple/seg-1.ts",
+		"/stream/staging/channel/" + chanID + "/s/amber/../seg-1.ts",
+		"/stream/staging/lineup.m3u",
+	} {
+		if rec := get(mux, path, admin); rec.Code == http.StatusOK {
+			t.Errorf("%s: served (%q), want refused", path, rec.Body.String())
+		}
+	}
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	for i := range be.paths {
+		if be.cookies[i] != "" {
+			t.Errorf("%s reached streaming with the session cookie", be.paths[i])
+		}
 	}
 }
