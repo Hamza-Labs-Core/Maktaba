@@ -51,6 +51,15 @@ type Principal struct {
 	AccessAllLibraries bool
 
 	Source Source
+
+	// MustChangePassword is set for a web session whose password an
+	// admin reset to a temporary one (users.must_change_password). The
+	// auth gate (middleware.RequireAuthExcept) then lets the request
+	// through only to the change-password form and the few endpoints
+	// middleware.AllowedWhilePasswordChange names. The home's cookie
+	// middleware sets it from the user row; a full node from the home's
+	// introspection answer.
+	MustChangePassword bool
 }
 
 type ctxKey struct{}

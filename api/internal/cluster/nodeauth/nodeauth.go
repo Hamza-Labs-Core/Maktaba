@@ -241,7 +241,7 @@ func toPrincipal(a *delegation.IntrospectAnswer) *principal.Principal {
 	}
 	return &principal.Principal{UserID: a.Principal.UserID, IsAdmin: a.Principal.IsAdmin,
 		Libraries: a.Principal.Libraries, AccessAllLibraries: a.Principal.AccessAllLibraries || a.Principal.IsAdmin,
-		Source: src}
+		Source: src, MustChangePassword: a.Principal.MustChangePassword && src == principal.SourceCookie}
 }
 
 // resolve answers one credential: (principal, csrf hash) or nil for "not signed in".
@@ -271,6 +271,12 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		until = a.ExpiresAt
 	}
 	p := toPrincipal(a)
+	if p.MustChangePassword {
+		// a must-change answer is never reused: the next request asks the home
+		// again, so it is let through the moment the password is changed even if
+		// the home's revocation push is lost (the entry stays for lastKnown)
+		until = r.now()
+	}
 	r.put(key, &entry{p: p, csrf: a.CSRFSHA256, user: a.Principal.UserID, until: until})
 	return p, a.CSRFSHA256, nil
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
@@ -34,7 +35,7 @@ import (
 
 // TypePasswordChangeRequired is the problem type a session gets for any
 // request but the change-password form after an admin reset.
-const TypePasswordChangeRequired = "https://maktaba.dev/problems/password-change-required"
+const TypePasswordChangeRequired = middleware.TypePasswordChangeRequired
 
 // CredentialRevoker ends every credential a user holds: web sessions and
 // refresh-token families. It returns how many were revoked.
@@ -222,23 +223,8 @@ func passwordChangeRequired() *httperror.Error {
 	}
 }
 
-// allowedWhilePasswordChange lists what a session with a temporary
-// password may still reach: anything outside /api (the web app itself),
-// the auth endpoints (who am I, sign out), the public system and key
-// endpoints, its own profile, and the change-password form.
+// allowedWhilePasswordChange is the shared allowlist the auth gate applies
+// (middleware.AllowedWhilePasswordChange).
 func allowedWhilePasswordChange(r *http.Request) bool {
-	p := r.URL.Path
-	switch {
-	case !strings.HasPrefix(p, "/api/"):
-		return true
-	case strings.HasPrefix(p, "/api/auth/"),
-		strings.HasPrefix(p, "/api/system/"),
-		strings.HasPrefix(p, "/api/.well-known/"):
-		return true
-	case p == "/api/me/change-password" && r.Method == http.MethodPost:
-		return true
-	case p == "/api/me" && r.Method == http.MethodGet:
-		return true
-	}
-	return false
+	return middleware.AllowedWhilePasswordChange(r)
 }
