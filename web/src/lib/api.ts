@@ -165,13 +165,17 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
         // fall through to generic
       }
     }
+    // A plain-text body (Go's http.Error) is a useful message; an HTML page
+    // (a proxy's 502, a dev server's error page) is not something to show the
+    // user, so it only goes to the console log.
+    const html = ct.includes("html") || /^\s*</.test(text);
     const err = new ApiError({
       type: "about:blank",
       title: res.statusText || "request failed",
       status: res.status,
-      detail: text.slice(0, 256),
+      ...(html || !text ? {} : { detail: text.slice(0, 256) }),
     });
-    logApiError(method, path, err.status, err.message);
+    logApiError(method, path, err.status, html ? text.slice(0, 256) : err.message);
     throw err;
   }
 

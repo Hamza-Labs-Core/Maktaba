@@ -46,6 +46,8 @@ interface VideoListResponse {
 // Server only sorts on updated_at|created_at|title; `duration_sec` is a
 // client-side sort over the loaded page (documented limitation: the
 // list API has no duration sort key).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const SERVER_SORT: Record<SortField, string> = {
   updated_at: "updated_at",
   title: "title",
@@ -86,7 +88,13 @@ export function LibraryBrowser() {
   const [params, setParams] = useSearchParams();
 
   const [view, setView] = useState<View>(readView);
-  const sort = (params.get("sort") as SortField) || "updated_at";
+  const rawSort = params.get("sort");
+  // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
+  const sort: SortField = rawSort && rawSort in SERVER_SORT ? (rawSort as SortField) : "updated_at";
+  // Library ids are UUIDs; the server ignores any other `library` value and
+  // would list every video, so a malformed id is "not found" here.
+  const badLibrary = !!libraryId && !UUID.test(libraryId);
+  const [reloads, setReloads] = useState(0);
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const lang = params.get("language") || "";
 
@@ -122,6 +130,10 @@ export function LibraryBrowser() {
     setVideos(null);
     setErr(null);
     setCursor(null);
+    if (badLibrary) {
+      setVideos([]);
+      return;
+    }
     api
       .get<VideoListResponse>(`/api/videos?${buildQuery()}`)
       .then((res) => {
@@ -137,7 +149,7 @@ export function LibraryBrowser() {
     return () => {
       cancelled = true;
     };
-  }, [buildQuery, t]);
+  }, [buildQuery, t, badLibrary, reloads]);
 
   function loadMore() {
     // A ref, not the loadingMore state: two quick clicks run before React
@@ -176,7 +188,9 @@ export function LibraryBrowser() {
     if (sort === "duration_sec") {
       arr.sort((a, b) => (a.duration_sec ?? 0) - (b.duration_sec ?? 0));
     } else if (sort === "title") {
-      arr.sort((a, b) => (a.title || a.filename).localeCompare(b.title || b.filename, locale));
+      arr.sort((a, b) =>
+        (a.title || a.filename || "").localeCompare(b.title || b.filename || "", locale)
+      );
     }
     if (order === "desc") arr.reverse();
     return arr;
@@ -264,20 +278,18 @@ export function LibraryBrowser() {
         </ul>
       )}
 
+      {badLibrary && <ErrorState kind="not_found" title={t("library.notFound")} />}
+
       {err && (
         <ErrorState
           kind="server"
           title={t("common.error")}
           description={err}
-          action={
-            <Button onClick={() => patchParam("_r", String(Date.now()))}>
-              {t("common.retry")}
-            </Button>
-          }
+          action={<Button onClick={() => setReloads((n) => n + 1)}>{t("common.retry")}</Button>}
         />
       )}
 
-      {sorted !== null && sorted.length === 0 && !err && (
+      {sorted !== null && sorted.length === 0 && !err && !badLibrary && (
         <EmptyState
           kind={filtersActive ? "filtered_out" : "first_run"}
           title={filtersActive ? t("library.empty.filtered") : t("library.empty.title")}

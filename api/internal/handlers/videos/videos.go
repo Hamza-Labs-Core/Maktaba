@@ -173,10 +173,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var args []any
 	conds := []string{}
 	if libID := q.Get("library"); libID != "" {
-		if _, err := uuid.Parse(libID); err == nil {
-			conds = append(conds, placeholder("library_id = ", len(args)+1))
-			args = append(args, libID)
+		// A malformed id used to be ignored, which listed every video.
+		if _, err := uuid.Parse(libID); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("library must be a UUID"))
+			return
 		}
+		conds = append(conds, placeholder("library_id = ", len(args)+1))
+		args = append(args, libID)
 	}
 	if lang := q.Get("language"); lang != "" {
 		conds = append(conds, placeholder("detected_language = ", len(args)+1))
