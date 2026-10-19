@@ -17,15 +17,21 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var runMigrate bool
+	var lf layoutFlags
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
-		Long:  "setup detects your platform, gathers media roots and storage choice, seeds an admin credential, optionally downloads a Whisper model, writes server.toml, and runs the initial migration.",
+		Long: "setup detects your platform, gathers media roots and storage choice, seeds an admin credential, optionally downloads a Whisper model, writes server.toml, and runs the initial migration." +
+			"\n\nWith --self-managed or --service it instead converts this install to the side-by-side layout run by maktaba-launcher (automatic updates) and writes the OS service.",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if lf.active() {
+				return runLayoutSetup(lf)
+			}
 			return runSetup(runMigrate)
 		},
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
+	lf.register(cmd)
 	return cmd
 }
 

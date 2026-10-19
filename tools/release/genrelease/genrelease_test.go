@@ -65,6 +65,7 @@ func fakeRepo(t *testing.T, py, gov int) string {
 	write(SchemaPy, "SCHEMA_REV = "+itoa(py)+"\n")
 	write(SchemaGo, "const SchemaRev = "+itoa(gov)+"\n")
 	write(EdgeProtocolGo, "const EdgeProtocol = 3\n")
+	write(LauncherGo, "const LauncherProtocol = 1\n")
 	write(AgentProtocolGo, "const (\n\tProtocolVersion = 2\n)\n")
 	write(PythonVersion, "3.12.4\n")
 	return dir

@@ -47,6 +47,7 @@ from .schedule.tv_settings import (
 )
 from .sharepath.auto import StorageConfig
 from .tvrelease.config import MaktabaTvStagingConfig
+from .updates_settings import UpdatesConfig
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
 
@@ -114,6 +115,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "storage": (StorageConfig, "Canonical share paths", "the home registers the storage "
                 "servers it mounts and converts the stored media paths to smb://server/"
                 "share/... by itself: when, how it checks, what it pauses, the backups"),
+    "updates": (UpdatesConfig, "Updates", "new signed releases installed by themselves in the "
+                "quiet window, on the home first and then on every machine; channel, pin, "
+                "defer, skip"),
 }  # fmt: skip
 
 

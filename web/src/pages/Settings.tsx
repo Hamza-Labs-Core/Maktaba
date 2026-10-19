@@ -24,6 +24,7 @@ import { useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
 import { RulesSection } from "./Settings/RulesSection";
+import { UpdatesSettings } from "./Settings/UpdatesSettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -383,6 +384,8 @@ function AboutTab() {
           {phase === "error" && <p className="mkt-error">{t("update.phase.error")}</p>}
         </div>
       )}
+
+      {user?.is_admin && <UpdatesSettings />}
     </div>
   );
 }

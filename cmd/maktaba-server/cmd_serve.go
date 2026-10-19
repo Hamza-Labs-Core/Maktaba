@@ -86,6 +86,15 @@ type serveOptions struct {
 func runServe(cfg config.Config, opts serveOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the
+	// current release's directory, and the launcher's stop file stops us.
+	releaseDir, err := launcherRelease()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restart := watchLauncher(ctx, cancel, releaseDir)
 
 	// The `web` role is served in-process; every other role is a
 	// supervised subprocess. Decide which we're running.
@@ -110,7 +119,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 
 	// Build the supervised processes.
 	var procs []supervisor.Process
-	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir}
+	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
 		if r == supervisor.RoleTVSlot {
 			// a single slot instance (--role tv-slot --slot blue)
@@ -163,9 +172,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sup); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
+	confirmPending(ctx, sup, releaseDir)
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)
+	}
+	if restart.Load() {
+		os.Exit(exitRestart) // drained: the launcher starts current again
 	}
 	return runErr
 }
