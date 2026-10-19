@@ -20,8 +20,8 @@ const (
 	NotifyRolledBack    = "tv.change.rolled_back"    // manual or automatic, with the cause
 	NotifyWaiting       = "tv.change.waiting"        // ready for more than a day
 	NotifyRollbackEnds  = "tv.rollback.expiring"     // the rollback point goes within the hour
-	// Emitted by the two-slot runtime (stories 33.1 / 33.9) through the same Notifier;
-	// nothing sends them before it lands.
+	// From the front door's slot events (tv_slot_events, slot 0137): notifySlotEvents
+	// sends them through the same Notifier.
 	NotifyFailover  = "tv.slot.failover"   // the live slot failed over to the hot standby
 	NotifyCrashLoop = "tv.slot.crash_loop" // the staging slot keeps crashing
 )
