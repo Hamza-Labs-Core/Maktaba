@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -67,13 +68,24 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	cmd := exec.CommandContext(ctx, bin.FFmpeg, args...)
 	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
 	p := &Process{cmd: cmd, tail: &tailBuf{max: 8 << 10}}
-	cmd.Stderr = p.tail
-	// a child that outlives ffmpeg (a wrapper script's) must not hold Wait
-	// open on the stderr copy
-	cmd.WaitDelay = 2 * time.Second
-	if err := cmd.Start(); err != nil {
+	// stderr through our own pipe (an *os.File is handed to the child as
+	// is), read here into the tail: Wait never waits on the copy, so a
+	// child that outlives ffmpeg (a wrapper script's) cannot hold Stop up.
+	pr, pw, err := os.Pipe()
+	if err != nil {
 		return nil, err
 	}
+	cmd.Stderr = pw
+	if err := cmd.Start(); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return nil, err
+	}
+	_ = pw.Close()
+	go func() {
+		_, _ = io.Copy(p.tail, pr)
+		_ = pr.Close()
+	}()
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
