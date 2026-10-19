@@ -10,7 +10,10 @@ in one transaction: a new ``transcripts`` row (on the stream it decoded, recorde
 Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
 ``mlx-community/whisper-large-v3-turbo``), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_WORDS`` (``1``: sentence bounds from word timings),
-``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata).
+``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata),
+``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
+:mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
+``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``).
 """
 
 from __future__ import annotations
@@ -20,12 +23,14 @@ import importlib.util
 import math
 import os
 import platform
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ...binaries import ffmpeg_binary
 from ...db.jobs import Job
 from ...log import get_logger
+from ...stt.cohere import DEFAULT_MODEL as REFINE_MODEL
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
@@ -143,6 +148,40 @@ def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
     )
 
 
+def refine_model() -> str | None:
+    """The model of the second listen, or None when it is off (``MAKTABA_STT_REFINE=0``)."""
+    if os.environ.get("MAKTABA_STT_REFINE", "1") == "0":
+        return None
+    return os.environ.get("MAKTABA_STT_REFINE_MODEL", REFINE_MODEL)
+
+
+def _refine(
+    result: Transcript, audio: Any, model: str, share: Path | None = None
+) -> dict[str, Any]:
+    """The second listen (in a thread: it decodes on the GPU). The model comes from
+    Hugging Face or, on a machine without the licence, from the home's copy on the share
+    (``share``: the share's models folder); ``source`` says which. A worker that cannot
+    run it (no mlx-audio, no copy of the model) keeps Whisper's words and says why."""
+    from ...stt.cohere import dictionary, recogniser
+    from ...stt.refine import refine
+
+    try:
+        rec = recogniser(model, share)
+    except Exception as exc:  # noqa: BLE001 - Whisper's transcript is still a transcript
+        _log.warning("transcribe.refine_unavailable", model=model, error=str(exc))
+        return {
+            "model": model,
+            "source": "skipped",
+            "skipped": f"{type(exc).__name__}: {exc}"[:300],
+        }
+    source = str(getattr(rec, "source", "hf"))
+    try:
+        return {**refine(result, audio, rec, dictionary(), model).as_dict(), "source": source}
+    except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
+        _log.warning("transcribe.refine_failed", model=model, exc_info=True)
+        return {"model": model, "source": source, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+
+
 async def wait_for_memory(ctx: StageContext) -> None:
     """Back-pressure: while the host is short of memory (``MAKTABA_STT_MIN_FREE_PCT``,
     default 20% available), a job waits before it decodes anything, and says so. After
@@ -185,6 +224,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             # the setting, not whether this process could run it: every worker
             # computes the same fingerprint for the same input
             "vad": os.environ.get("MAKTABA_STT_VAD", "0") == "1",
+            "refine": refine_model(),
             "v": TRANSCRIBE_VERSION,
         }
     )
@@ -370,11 +410,21 @@ async def _transcribe_file(
             )
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
+    refined: dict[str, Any] | None = None
+    model = refine_model()
+    if model and result.sentences and settings.word_timestamps:
+        await ctx.progress("transcribe", round(total_sec), round(total_sec), "second listen")
+        from ...stt.cohere import loaded
+        from ...stt.model_share import resolve_models_dir
+
+        # the share is looked for until the model is loaded (a stale mount can be slow)
+        share = None if loaded(model) else await resolve_models_dir(db)
+        refined = await asyncio.to_thread(_refine, result, audio, model, share)
     del audio
     if tmap is not None:
         result = _remap(result, tmap, total_sec)
 
-    transcript_id = await _store(db, v.id, result, settings)
+    transcript_id = await _store(db, v.id, result, settings, refined)
     texts = [(s.start, s.end, s.text) for s in result.sentences]
     rtf = result.audio_sec / result.gpu_sec if result.gpu_sec > 0 else None
     return StageResult(
@@ -387,11 +437,18 @@ async def _transcribe_file(
             "model": result.model,
             "language": result.language,
             "detected_language": result.detected_language,
+            **({"refine": refined} if refined else {}),
         },
     )
 
 
-async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSettings) -> str:
+async def _store(
+    db: Any,
+    video_id: Any,
+    result: Transcript,
+    settings: WhisperSettings,
+    refined: dict[str, Any] | None = None,
+) -> str:
     """The transcript replaces the video's active one, atomically."""
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
@@ -418,7 +475,13 @@ async def _store(db: Any, video_id: Any, result: Transcript, settings: WhisperSe
             result.model,
             _backend_version(),
             settings.word_timestamps,
-            dumps({"audio_sec": round(result.audio_sec, 1), "plan": "03-10"}),
+            dumps(
+                {
+                    "audio_sec": round(result.audio_sec, 1),
+                    "plan": "03-10",
+                    **({"refine": refined} if refined else {}),
+                }
+            ),
             track["id"],
             uid(uuid4()),  # SQLite gives the column no default
             result.detected_language,  # what Whisper heard, not the language it was told

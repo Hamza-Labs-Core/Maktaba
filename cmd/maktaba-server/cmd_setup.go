@@ -101,6 +101,11 @@ func runSetup(doMigrate bool) error {
 	if err := ensureDataDir(cfg.Server.DataDir); err != nil {
 		return err
 	}
+	// The web, API and streaming ports another program holds move into the
+	// fallback range before the config is written (config/ports.go).
+	if _, err := reconcilePorts(&cfg, config.Path(), config.PortOptions{KeepOurs: true}, os.Stdout, false); err != nil {
+		return err
+	}
 	if err := cfg.Save(); err != nil {
 		return err
 	}

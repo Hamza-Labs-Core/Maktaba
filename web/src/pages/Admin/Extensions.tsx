@@ -5,10 +5,11 @@
 // "Test connection".
 //   GET  /api/extensions
 //   PUT  /api/extensions/{name}      { enabled?, settings? }
-//   POST /api/extensions/{name}/test { ok, message }
-// The Plex card also has "Sign in with Plex" (PlexSignin.tsx); the
-// Cloudflare Stream card lists each check of its test and the remote
-// viewing status (CloudflareRemote.tsx, Epic 32 story 32.6).
+//   POST /api/extensions/{name}/test { ok, message, lines? }
+// The Plex card also has "Sign in with Plex" (PlexSignin.tsx). Every
+// card lists each check of its last test (RemoteTestLines); the
+// Cloudflare Stream card adds the remote viewing status
+// (CloudflareRemote.tsx, Epic 32 story 32.6).
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -191,7 +192,9 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
           </span>
         )}
       </div>
-      {lines && ext.name !== "cloudflare_stream" && <RemoteTestLines result={lines} />}
+      {lines && ext.name !== "cloudflare_stream" && (
+        <RemoteTestLines result={lines} ext={ext.name} />
+      )}
       {ext.name === "cloudflare_stream" && <CloudflareRemote refresh={tested} />}
       {action.error && (
         <p role="alert" className="mkt-q-banner">

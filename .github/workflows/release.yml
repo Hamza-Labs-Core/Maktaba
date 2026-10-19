@@ -149,7 +149,8 @@ jobs:
           go build -trimpath \
             -ldflags "-buildid= -s -w \
               -X main.Version=${VERSION} \
-              -X main.Commit=${COMMIT}" \
+              -X main.Commit=${COMMIT} \
+              -X main.BuiltAt=$(git log -1 --pretty=%ct)" \
             -o "../dist/maktaba-cloud-${GOOS}-${GOARCH}" ./cmd/maktaba-cloud
 
       - name: Build web bundle
@@ -298,6 +299,11 @@ jobs:
           # third-party registry set the REGISTRY_TOKEN secret.
           password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
+      # The images' build time is the tagged commit's (as the binaries'), not 0.
+      - name: Source date
+        id: sde
+        run: echo "epoch=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.svc }}
         id: build
         uses: docker/build-push-action@v7.2.0
@@ -312,6 +318,7 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ steps.sde.outputs.epoch }}
           tags: |
             ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:${{ github.ref_name }}
             ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:latest
@@ -814,6 +821,14 @@ jobs:
           \`cosign verify <image>@<digest>\` and
           \`--certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}\`
           \`--certificate-oidc-issuer https://token.actions.githubusercontent.com\`."
+          # A tag with a suffix (v0.1.0-rc.1) is a pre-release, never the
+          # latest; a plain vX.Y.Z is published as the latest release. The
+          # client workflows (desktop, mobile, tv) may have created the
+          # release first, so the flags are set on edit too.
+          case "${TAG}" in
+            *-*) kind=(--prerelease --latest=false) ;;
+            *)   kind=(--prerelease=false --latest) ;;
+          esac
           # Idempotent: a re-run of the same tag after images pushed but a
           # prior publish failed must update the existing release with the
           # (re-pushed, digest-stable) assets rather than hard-failing.
@@ -821,12 +836,12 @@ jobs:
             gh release edit "${TAG}" \
               --title "${TAG}" \
               --notes "${notes}" \
-              --verify-tag
+              --verify-tag "${kind[@]}"
             gh release upload "${TAG}" dist/* --clobber
           else
             gh release create "${TAG}" \
               --title "${TAG}" \
               --notes "${notes}" \
-              --verify-tag \
+              --verify-tag "${kind[@]}" \
               dist/*
           fi

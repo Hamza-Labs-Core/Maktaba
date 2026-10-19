@@ -13,6 +13,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 )
 
 // fullNodeFromEnv: MAKTABA_FULL_NODE=1 (the node's supervisor sets it in node mode).
@@ -23,8 +24,8 @@ func fullNodeFromEnv() bool {
 
 // buildVOD is the Epic 08 byte-pumping surface alone (direct play, HLS/DASH sessions,
 // subtitles, chapters): no HDHomeRun, guide or home TV (those are the home's).
-func buildVOD(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer) http.Handler {
-	return buildPublicHandler(logger, backend, transcripts, nil)
+func buildVOD(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, store session.Store) http.Handler {
+	return buildPublicHandler(logger, backend, transcripts, nil, store)
 }
 
 // splitFullNode sends the channel routes the front door forwards (signed) and the

@@ -108,7 +108,14 @@ export interface MoveResult {
 const q = encodeURIComponent;
 
 export const tvClusterApi = {
-  get: () => api.get<TvClusterView>("/api/tv/cluster"),
+  /** Lists the API leaves out (or an older API sends as null) read as empty. */
+  get: () =>
+    api.get<TvClusterView>("/api/tv/cluster").then((v) => ({
+      ...v,
+      hosts: v.hosts ?? [],
+      on_air: v.on_air ?? [],
+      notices: v.notices ?? [],
+    })),
   updateHost: (hostId: string, body: HostUpdate) =>
     api.put<StreamingHost>(`/api/tv/cluster/hosts/${q(hostId)}`, body),
   /** hostId omitted: the cluster picks the host */

@@ -45,6 +45,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/signedurl"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
@@ -59,7 +60,16 @@ func TestMain(m *testing.M) {
 		}
 		select {}
 	}
-	os.Exit(m.Run())
+	// never this machine's real node config: every process a test here starts
+	// inherits a path that never exists (the machines set their own)
+	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func freePort(t *testing.T) int {
@@ -241,9 +251,12 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	}
 	media := filepath.ToSlash(filepath.Join(tmp, "media"))
 	_ = os.MkdirAll(media, 0o755)
-	_ = os.WriteFile(filepath.Join(media, "both.mp4"), bytes.Repeat([]byte{1}, 4096), 0o644)
-	_ = os.WriteFile(filepath.Join(media, "homeonly.mp4"), bytes.Repeat([]byte{2}, 4096), 0o644)
+	// real media (ffmpeg-generated), so VOD plays bytes end to end
+	for _, name := range []string{"both.mp4", "homeonly.mp4", "direct.mp4"} {
+		makeVideo(t, filepath.Join(media, name))
+	}
 	const lib, v1, v2 = "11111111-0000-4000-8000-000000000001", "22222222-0000-4000-8000-000000000001", "22222222-0000-4000-8000-000000000002"
+	const v3 = "22222222-0000-4000-8000-000000000003"
 	exec1 := func(q string, args ...any) {
 		t.Helper()
 		if _, err := db.ExecContext(ctx, q, args...); err != nil {
@@ -255,8 +268,13 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	       VALUES ($1, $3, $4, $5, 'both.mp4', 4096, now(), 'ready', 'Both machines read this', 60),
 	              ($2, $3, $6, 'E2ESHARE:/homeonly.mp4', 'homeonly.mp4', 4096, now(), 'ready', 'Only the home reads this', 60)`,
 		v1, v2, lib, strings.Repeat("a", 64), media+"/both.mp4", strings.Repeat("b", 64))
+	exec1(`INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime, state, title, duration_sec)
+	       VALUES ($1, $2, $3, $4, 'direct.mp4', $5, now(), 'ready', 'Direct play', 14)`,
+		v3, lib, strings.Repeat("c", 64), media+"/direct.mp4", fileSize(t, filepath.Join(media, "direct.mp4")))
 	exec1(`INSERT INTO media_info (video_id, container, video_codec, width, height, bitrate_kbps)
-	       VALUES ($1, 'mp4', 'h264', 1280, 720, 2000), ($2, 'mp4', 'h264', 1280, 720, 2000)`, v1, v2)
+	       VALUES ($1, 'mp4', 'h264', 640, 360, 1000), ($2, 'mp4', 'h264', 640, 360, 1000), ($3, 'mp4', 'h264', 640, 360, 1000)`, v1, v2, v3)
+	// v3 is plain h264/aac mp4: a browser plays it directly (aud=streaming-direct)
+	exec1(`INSERT INTO audio_tracks (video_id, track_index, codec, channels, is_default) VALUES ($1, 0, 'aac', 2, true)`, v3)
 	// a short grace so the home-gone check is quick (rules.cluster)
 	exec1(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.cluster', '{"delegate_unreachable_grace_seconds": 5}', now())`)
 
@@ -513,6 +531,93 @@ slots = "off"
 		})
 	})
 
+	t.Run("VOD bytes play: signed stream URLs on the home, the node and via the home", func(t *testing.T) {
+		csrf := func(base string) map[string]string {
+			return map[string]string{"X-Maktaba-CSRF": user.cookie(base, "mkt_csrf")}
+		}
+		open := func(base, video string, force bool, wantVOD string) openSession {
+			t.Helper()
+			resp, body := user.do("POST", base+"/api/stream/sessions", map[string]any{"video_id": video, "force_transcode": force}, csrf(base))
+			var s openSession
+			if resp.StatusCode != 201 || json.Unmarshal(body, &s) != nil || s.SessionID == "" {
+				t.Fatalf("open %s on %s: %d %s", video, base, resp.StatusCode, tail(string(body), 400))
+			}
+			if wantVOD != "" && resp.Header.Get("X-Maktaba-VOD") != wantVOD {
+				t.Fatalf("open %s on %s: served %q, want %q", video, base, resp.Header.Get("X-Maktaba-VOD"), wantVOD)
+			}
+			if !strings.Contains(s.ManifestURL, "sig=") {
+				t.Fatalf("the session's stream URL is not signed: %s", s.ManifestURL)
+			}
+			return s
+		}
+
+		// 1. the home, through its web port
+		homeSess := open(homeWebURL, v1, true, "")
+		homeSeg := playHLS(t, user, homeWebURL, homeSess.ManifestURL, "")
+		// 2. the node: its own streaming role reads the share (local)
+		nodeSess := open(nodeWebURL, v1, true, "local")
+		if strings.Contains(nodeSess.ManifestURL, "via-home") {
+			t.Fatalf("a local session goes through the home: %s", nodeSess.ManifestURL)
+		}
+		playHLS(t, user, nodeWebURL, nodeSess.ManifestURL, "local")
+		// 3. the via-home fallback: the node's web port relays the home's streaming port
+		viaSess := open(nodeWebURL, v2, true, "home")
+		if !strings.HasPrefix(viaSess.ManifestURL, "/stream/via-home/") {
+			t.Fatalf("fallback URL: %s", viaSess.ManifestURL)
+		}
+		playHLS(t, user, nodeWebURL, viaSess.ManifestURL, "home-vod-fallback")
+		// 4. direct play (aud=streaming-direct), ranged, on the home
+		direct := open(homeWebURL, v3, false, "")
+		if !strings.HasPrefix(direct.ManifestURL, "/stream/direct/"+v3+"?sig=") {
+			t.Fatalf("direct play URL: %s (mode %s)", direct.ManifestURL, direct.Mode)
+		}
+		resp, body := user.do("GET", homeWebURL+direct.ManifestURL, nil, map[string]string{"Range": "bytes=0-1023"})
+		if resp.StatusCode != http.StatusPartialContent || len(body) != 1024 {
+			t.Fatalf("direct play: %d, %d bytes", resp.StatusCode, len(body))
+		}
+
+		// each machine signs with its own stream key, beside its server.toml
+		hk, err1 := os.ReadFile(filepath.Join(homeDir, "stream-signing.key"))
+		nk, err2 := os.ReadFile(filepath.Join(nodeDir, "stream-signing.key"))
+		if err1 != nil || err2 != nil || bytes.Equal(hk, nk) {
+			t.Fatalf("per-machine stream keys: %v %v equal=%v", err1, err2, bytes.Equal(hk, nk))
+		}
+
+		// refused: tampered, expired, the node's signature on the home, no signature, no sign-in
+		u, _ := url.Parse(homeSess.ManifestURL)
+		good := u.Query().Get("sig")
+		bare := homeWebURL + u.Path
+		flip := "A"
+		if strings.HasSuffix(good, "A") {
+			flip = "B"
+		}
+		k, err := signedurl.ParseKey(hk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		past := signedurl.FromKey(k)
+		past.Now = func() time.Time { return time.Now().Add(-3 * time.Hour) }
+		expired, _, err := past.SignStreamURL(u.Path, homeSess.SessionID, "33333333-0000-4000-8000-000000000001", lib, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nu, _ := url.Parse(nodeSess.ManifestURL)
+		for name, target := range map[string]string{
+			"no signature":            bare,
+			"tampered":                bare + "?sig=" + good[:len(good)-1] + flip,
+			"expired":                 homeWebURL + expired,
+			"the node's key":          homeWebURL + nu.Path + "?sig=" + nu.Query().Get("sig"),
+			"segment without its sig": homeWebURL + strings.SplitN(homeSeg, "?", 2)[0],
+		} {
+			if resp, body := user.do("GET", target, nil, nil); resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
+				t.Errorf("%s: %d %s, want 401/403", name, resp.StatusCode, tail(string(body), 200))
+			}
+		}
+		if r, err := http.Get(homeWebURL + homeSess.ManifestURL); err != nil || r.StatusCode != http.StatusUnauthorized {
+			t.Errorf("a signed URL without a sign-in on the web port: %v %v", r, err)
+		}
+	})
+
 	t.Run("Machines page lists each machine's web address", func(t *testing.T) {
 		_, body := user.do("GET", homeWebURL+"/api/cluster", nil, nil)
 		var v struct {
@@ -583,6 +688,101 @@ slots = "off"
 			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
 		}
 	})
+}
+
+type openSession struct {
+	SessionID   string `json:"session_id"`
+	Mode        string `json:"mode"`
+	ManifestURL string `json:"manifest_url"`
+}
+
+// makeVideo writes a short real h264/aac mp4 (14 s) with ffmpeg.
+func makeVideo(t *testing.T, path string) {
+	t.Helper()
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not on PATH (the VOD byte checks transcode a real fixture)")
+	}
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc=size=640x360:rate=25", "-f", "lavfi", "-i", "sine=frequency=440",
+		"-t", "14", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ffmpeg fixture: %v\n%s", err, out)
+	}
+}
+
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Size()
+}
+
+func playlistURIs(b []byte) []string {
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// resolveRef resolves a playlist's child URI (path?query) against its playlist.
+func resolveRef(base *url.URL, ref string) *url.URL {
+	r, err := url.Parse(ref)
+	if err != nil {
+		return base
+	}
+	return base.ResolveReference(r)
+}
+
+// playHLS plays a session the way a browser does through a web port: the
+// signed master playlist, its rendition playlist (relative URI, signature
+// carried by the playlist) and two MPEG-TS segments. wantStream, when set, is
+// the web port's X-Maktaba-Stream routing. Returns the first segment's URL.
+func playHLS(t *testing.T, b *browser, base, manifest, wantStream string) string {
+	t.Helper()
+	resp, master := b.do("GET", base+manifest, nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("manifest %s: %d %s", manifest, resp.StatusCode, tail(string(master), 300))
+	}
+	if wantStream != "" && resp.Header.Get("X-Maktaba-Stream") != wantStream {
+		t.Fatalf("manifest %s routed %q, want %q", manifest, resp.Header.Get("X-Maktaba-Stream"), wantStream)
+	}
+	kids := playlistURIs(master)
+	if len(kids) == 0 || !strings.Contains(kids[0], "sig=") {
+		t.Fatalf("master playlist without signed children: %s", master)
+	}
+	mu, _ := url.Parse(manifest)
+	rendition := resolveRef(mu, kids[0])
+	var segs []string
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) && len(segs) < 2 {
+		if r, idx := b.do("GET", base+rendition.String(), nil, nil); r.StatusCode == 200 {
+			segs = playlistURIs(idx)
+		}
+		if len(segs) < 2 {
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	if len(segs) < 2 {
+		t.Fatalf("rendition %s never listed two segments: %v", rendition.Path, segs)
+	}
+	var first string
+	for _, sg := range segs[:2] {
+		su := resolveRef(rendition, sg)
+		r, data := b.do("GET", base+su.String(), nil, nil)
+		if r.StatusCode != 200 || len(data) < 188 || data[0] != 0x47 {
+			t.Fatalf("segment %s: %d, %d bytes", su.Path, r.StatusCode, len(data))
+		}
+		if first == "" {
+			first = su.String()
+		}
+		t.Logf("%s: %s -> %d bytes of MPEG-TS", base, su.Path, len(data))
+	}
+	return first
 }
 
 func cmdWithTimeout(cmd *exec.Cmd, d time.Duration) (string, error) {

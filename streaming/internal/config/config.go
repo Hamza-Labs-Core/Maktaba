@@ -34,7 +34,10 @@ type AdminConfig struct {
 }
 
 type JWTConfig struct {
-	JWKSURL            string
+	JWKSURL string
+	// StreamKeyFile is the machine's stream signing key (MAKTABA_STREAM_SIGNING_KEY):
+	// when set the signed URLs are verified against it instead of a JWKS.
+	StreamKeyFile      string
 	JWKSRefreshSec     int
 	ClockSkewLeewaySec int
 }
@@ -80,6 +83,7 @@ func Load() Config {
 		},
 		JWT: JWTConfig{
 			JWKSURL:            envStr("MAKTABA_JWKS_URL", ""),
+			StreamKeyFile:      envStr("MAKTABA_STREAM_SIGNING_KEY", ""),
 			JWKSRefreshSec:     envInt("MAKTABA_JWKS_REFRESH_SEC", 300),
 			ClockSkewLeewaySec: envInt("MAKTABA_CLOCK_SKEW_LEEWAY_SEC", 60),
 		},

@@ -68,6 +68,14 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
 	}
 
+	// This machine's stream signing key (Story 10.8): the api signs the video
+	// sessions' stream URLs with it (creating it on first start) and the
+	// streaming role verifies them with it. Per install: a node signs and
+	// verifies its own sessions, the home its own (the via-home fallback too).
+	if os.Getenv("MAKTABA_STREAM_SIGNING_KEY") == "" && (role == RoleAPI || role == RoleStreaming) {
+		add("MAKTABA_STREAM_SIGNING_KEY", StreamKeyPath())
+	}
+
 	switch role {
 	case RoleAPI:
 		add("MAKTABA_HTTP_ADDR", cfg.Server.Listen)
@@ -109,6 +117,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
+		// its cache (channel segments, transcodes) under this install's data
+		// directory: the binary's default, /var/maktaba, is the containers' path,
+		// which a user cannot create on macOS or Windows. An operator's own is kept.
+		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
+			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.Server.DataDir, "cache", "streaming"))
+		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
 		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
@@ -261,4 +275,10 @@ func LocalAddr(bind, defaultPort string) string {
 // directory of server.toml (config.Path, which honours MAKTABA_CONFIG).
 func SecretsKeyPath() string {
 	return filepath.Join(filepath.Dir(config.Path()), "secrets.key")
+}
+
+// StreamKeyPath is this machine's stream signing key: stream-signing.key in
+// the directory of server.toml (next to secrets.key).
+func StreamKeyPath() string {
+	return filepath.Join(filepath.Dir(config.Path()), "stream-signing.key")
 }

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -54,30 +55,37 @@ type Process struct {
 	mu      sync.Mutex
 	wg      sync.WaitGroup
 	exitErr error
-	stdout  io.ReadCloser
-	stderr  io.ReadCloser
+	tail    *tailBuf
 }
 
-// Spawn starts a new FFmpeg process with args. Stdout/stderr are
-// piped to the caller for log scraping. Cancel ctx to terminate.
+// Spawn starts a new FFmpeg process with args. Stdout goes to the null
+// device; stderr is kept (its last 8 KiB, Stderr) — never an undrained pipe,
+// which fills and stalls ffmpeg mid-encode. Cancel ctx to terminate.
 func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	if bin.FFmpeg == "" {
 		bin.FFmpeg = "ffmpeg"
 	}
 	cmd := exec.CommandContext(ctx, bin.FFmpeg, args...)
 	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
-	stdout, err := cmd.StdoutPipe()
+	p := &Process{cmd: cmd, tail: &tailBuf{max: 8 << 10}}
+	// stderr through our own pipe (an *os.File is handed to the child as
+	// is), read here into the tail: Wait never waits on the copy, so a
+	// child that outlives ffmpeg (a wrapper script's) cannot hold Stop up.
+	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
+	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdout: stdout, stderr: stderr}
+	_ = pw.Close()
+	go func() {
+		_, _ = io.Copy(p.tail, pr)
+		_ = pr.Close()
+	}()
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -90,11 +98,35 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	return p, nil
 }
 
-// Stdout returns the stdout pipe.
-func (p *Process) Stdout() io.Reader { return p.stdout }
+// Stdout is drained by the process itself; kept for callers of the old
+// accessor (always empty).
+func (p *Process) Stdout() io.Reader { return strings.NewReader("") }
 
-// Stderr returns the stderr pipe.
-func (p *Process) Stderr() io.Reader { return p.stderr }
+// Stderr returns the last 8 KiB ffmpeg wrote to stderr so far.
+func (p *Process) Stderr() io.Reader { return strings.NewReader(p.tail.String()) }
+
+// tailBuf keeps the last max bytes written to it.
+type tailBuf struct {
+	mu  sync.Mutex
+	max int
+	b   []byte
+}
+
+func (t *tailBuf) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.b = append(t.b, p...)
+	if len(t.b) > t.max {
+		t.b = append([]byte(nil), t.b[len(t.b)-t.max:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuf) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.b)
+}
 
 // PID returns the OS pid (0 once exited).
 func (p *Process) PID() int {

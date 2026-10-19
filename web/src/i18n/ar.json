@@ -16,6 +16,8 @@
   "common.empty": "لا يوجد شيء بعد.",
   "common.error": "حدث خطأ ما.",
   "common.retry": "إعادة المحاولة",
+  "common.pageError": "حدث خطأ في هذه الصفحة ولم يمكن عرضها.",
+  "common.reloadPage": "أعد تحميل الصفحة",
   "pwa.updateAvailable": "يتوفر إصدار جديد.",
   "pwa.reload": "إعادة التحميل",
   "common.cancel": "إلغاء",
@@ -3024,5 +3026,15 @@
   "machines.workerOnly": "عامل فقط — أعد تشغيل المثبّت مرة واحدة (install-node … -Full)",
   "machines.vod.fallback": "يقدّم {machine} الفيديو عند الطلب: المجلد المشترك غير قابل للقراءة هنا",
   "machines.vod.another": "جهاز آخر",
-  "machines.newTab": "(يفتح في تبويب جديد)"
+  "machines.newTab": "(يفتح في تبويب جديد)",
+  "ext.check.plex.reachable": "الوصول إلى الخادم",
+  "ext.check.plex.token": "رمز Plex",
+  "ext.check.plex.server": "الخادم",
+  "ext.check.plex.livetv": "Live TV",
+  "ext.check.plex.maktaba_tuner": "موالف مكتبة في Plex",
+  "ext.check.plex.dizquetv_tuner": "موالف dizqueTV في Plex",
+  "ext.check.plex.path_map": "خريطة المسارات",
+  "ext.check.dizquetv.reachable": "الوصول إلى الخادم",
+  "ext.check.dizquetv.channels": "القنوات",
+  "ext.check.dizquetv.plex_servers": "خوادم Plex في dizqueTV"
 }

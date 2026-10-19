@@ -276,3 +276,22 @@ func TestClusterFailovers24h(t *testing.T) {
 		t.Fatalf("failovers_24h = %d, want 1", resp.Failovers24h)
 	}
 }
+
+// A home with no streaming host yet answers empty lists, never null: the admin
+// page reads view.hosts.filter(...) and went blank on "hosts": null.
+func TestClusterGetEmptyListsAreArrays(t *testing.T) {
+	db := newDB(t)
+	h := &Handler{DB: db, Now: time.Now}
+	r := chi.NewRouter()
+	h.Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, admin(httptest.NewRequest("GET", "/api/tv/cluster", nil)))
+	if rec.Code != 200 {
+		t.Fatalf("get: %d %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{`"hosts":[]`, `"on_air":[]`, `"notices":[]`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("want %s in %s", want, rec.Body)
+		}
+	}
+}

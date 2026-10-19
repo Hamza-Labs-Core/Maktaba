@@ -35,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -277,7 +278,7 @@ func runServe() error {
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
-		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
+		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
 		AggregatorServices: buildAggregatorServices(),
 		StatsDataDir:       statsDataDir,
 		StatsDB:            statsDB,
@@ -293,7 +294,7 @@ func runServe() error {
 	router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
-		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", 0),
+		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
 		StartTime:          processStart,
 		AggregatorServices: buildAggregatorServices(),
 		StatsDB:            statsDB,
@@ -454,6 +455,7 @@ func runServe() error {
 				BusCtx:               busCtx,
 				BusDSN:               dsn,
 				PerfRegistry:         perfRegistry,
+				URLSigner:            streamURLSigner(auth.keys, logger),
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 

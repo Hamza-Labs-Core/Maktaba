@@ -313,6 +313,9 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	router.MountP6(r, router.P6Deps{
 		DB: appDB, PipelineClient: pipelineClient, StreamingClient: streamingClient,
 		BusCtx: ctx, BusDSN: dsn, PerfRegistry: perf.NewRegistry(),
+		// this machine's own stream key: the node signs its own VOD sessions,
+		// which its own streaming role verifies (Story 10.8, design §11.5)
+		URLSigner: streamURLSigner(nil, logger),
 	})
 	router.MountP27(r, router.P27Deps{DB: appDB, PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), DataDir: dataDir})
 	rt.mountNodeRoutes(r)
