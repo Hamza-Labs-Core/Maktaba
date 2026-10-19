@@ -97,6 +97,9 @@ class StageContext:
         force: bool = False,
     ) -> None:
         """Record progress (throttled to one write per 2 s unless ``force``)."""
+        from ..cluster.agent import jobs as job_events
+
+        job_events.progress(self.job.id, step=step, done=done, total=total, force=force)
         t = self.clock()
         if not force and t - self._last_progress < PROGRESS_INTERVAL_SEC:
             return

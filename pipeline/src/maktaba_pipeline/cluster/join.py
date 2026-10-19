@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import sys
 import time
@@ -146,6 +147,41 @@ def _identity(name: str | None, path: Path | None) -> NodeConfig:
     return cfg
 
 
+REJOIN_COMMAND = "maktaba-pipeline join --rejoin"
+
+
+def _start_over(
+    path: Path,
+    *,
+    name: str | None,
+    out: IO[str],
+    ask: Callable[[str], str] | None,
+    assume_yes: bool,
+) -> None:
+    """``join --rejoin``: keep the old node config as ``node.json.bak``, forget it."""
+    old = node_config.load(path)
+    if old is None:
+        return  # nothing to start over from: a plain join
+    where = old.home.name or old.home.url or "its home"
+    question = (
+        f"This machine is {old.name} (node {old.node_id}) of {where}. Join again as a new"
+        " machine? [y/N] "
+    )
+    if not assume_yes:
+        if ask is None:
+            raise JoinError("re-joining needs a confirmation: run it again with --yes")
+        if ask(question).strip().lower() not in ("y", "yes"):
+            raise JoinError("re-join cancelled; nothing changed")
+    backup = path.with_name(path.name + ".bak")
+    os.replace(path, backup)
+    out.write(
+        f"Kept the old settings as {backup}.\n"
+        "The home will see this machine as a new one: remove the old record"
+        f" ({old.name}, node {old.node_id}) on the home's Machines page, and set this"
+        " machine's path map and queue switches again once it is approved.\n"
+    )
+
+
 def join(
     *,
     home_url: str | None = None,
@@ -158,15 +194,29 @@ def join(
     clock: Callable[[], float] = time.monotonic,
     poll_sec: float = POLL_SEC,
     wait_sec: float = WAIT_SEC,
+    rejoin: bool = False,
+    assume_yes: bool = False,
 ) -> NodeConfig:
-    """Run the join; returns the saved, joined node config. Raises :class:`JoinError`."""
+    """Run the join; returns the saved, joined node config. Raises :class:`JoinError`.
+
+    ``rejoin``: a machine that already joined (or joined before the home had a cluster
+    key) starts over — after a confirmation (``ask``, or ``assume_yes``) its node config
+    is kept as ``node.json.bak`` and a fresh identity asks to join."""
     out = out or sys.stdout
+    path = path or node_config.config_path()
+    if rejoin:
+        _start_over(path, name=name, out=out, ask=ask, assume_yes=assume_yes)
     cfg = _identity(name, path)
     if cfg.joined:
         out.write(
             f"This machine has already joined {cfg.home.name or cfg.home.url}"
             f" (node {cfg.node_id}).\n"
         )
+        if not cfg.home.cluster_pub:
+            out.write(
+                "It joined before the home had a cluster key, so it has no live channel:"
+                " run maktaba-pipeline join --rejoin\n"
+            )
         return cfg
     kp = keypair_from_private(b64d(cfg.private_key))
 
@@ -237,6 +287,7 @@ def join(
             url=str(sealed_home.get("api_url") or base),
             instance_id=str(sealed_home.get("instance_id") or home_info.get("instance_id") or ""),
             name=str(sealed_home.get("name") or home_info.get("name") or home.name),
+            cluster_pub=str(sealed_home.get("cluster_pub") or ""),
         ),
         joined_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
