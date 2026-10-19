@@ -27,6 +27,8 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,7 +155,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	for _, rail := range []Rail{
 		h.continueRail(r, p.UserID, limit),
 		h.forYouRail(r, p.UserID, limit),
-		h.libraryRail(r, p.UserID, limit),
+		h.libraryRail(r, p, limit),
 	} {
 		if surface == "mobile-home" && rail.ID == "library" {
 			continue
@@ -258,61 +260,6 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// ContinueRailForGraphQL exposes the Continue Watching rail to the
-// GraphQL resolver layer so REST and GraphQL share the exact same
-// query, predicate, dedupe and determinism. Dismissed items are
-// filtered out (Story 14.7).
-func (h *Handler) ContinueRailForGraphQL(r *http.Request, userID string, limit int) Rail {
-	if h.DB == nil {
-		return Rail{ID: "continue", Title: "Continue Watching", ReasonKind: ReasonContinueWatching, Items: []Item{}}
-	}
-	rail := h.continueRail(r, userID, limit)
-	_, items := h.loadDismissals(r, userID)
-	rail.Items = filterItems(rail.Items, items)
-	return rail
-}
-
-// RailsForGraphQL builds the full surface-aware rail set for the
-// GraphQL resolver, applying the same caps and dismissal filtering as
-// the REST GET.
-func (h *Handler) RailsForGraphQL(r *http.Request, userID, surface string, limit int) []Rail {
-	if h.DB == nil {
-		return []Rail{}
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > maxItems {
-		limit = maxItems
-	}
-	dismissedRows, dismissedItems := h.loadDismissals(r, userID)
-	out := make([]Rail, 0, maxRows)
-	for _, rail := range []Rail{
-		h.continueRail(r, userID, limit),
-		h.forYouRail(r, userID, limit),
-		h.libraryRail(r, userID, limit),
-	} {
-		if surface == "mobile-home" && rail.ID == "library" {
-			continue
-		}
-		if dismissedRows[rail.ReasonKind] {
-			continue
-		}
-		rail.Items = filterItems(rail.Items, dismissedItems)
-		if len(rail.Items) == 0 {
-			continue
-		}
-		if len(rail.Items) > maxItems {
-			rail.Items = rail.Items[:maxItems]
-		}
-		out = append(out, rail)
-		if len(out) == maxRows {
-			break
-		}
-	}
-	return out
-}
-
 // continueRail sources from playback_state where 0.05 ≤ pos/dur ≤ 0.95.
 func (h *Handler) continueRail(r *http.Request, userID string, limit int) Rail {
 	rail := Rail{
@@ -394,20 +341,34 @@ func (h *Handler) forYouRail(r *http.Request, userID string, limit int) Rail {
 // libraryRail is a minimal stand-in until Epic 9 Story 9.9 ships
 // topics: return the most-recent unwatched videos in the user's
 // accessible libraries.
-func (h *Handler) libraryRail(r *http.Request, userID string, limit int) Rail {
+func (h *Handler) libraryRail(r *http.Request, p *principal.Principal, limit int) Rail {
 	rail := Rail{
 		ID:         "library",
 		Title:      "From your library",
 		ReasonKind: ReasonFromLibrary,
 		Items:      []Item{},
 	}
+	args := []any{p.UserID}
+	scope := ""
+	if !p.AccessAllLibraries {
+		// Only the libraries the user may read (the video detail rule).
+		if len(p.Libraries) == 0 {
+			return rail
+		}
+		ph := make([]string, len(p.Libraries))
+		for i, lib := range p.Libraries {
+			args = append(args, lib)
+			ph[i] = "$" + strconv.Itoa(len(args))
+		}
+		scope = " AND v.library_id IN (" + strings.Join(ph, ",") + ")"
+	}
+	args = append(args, limit)
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT v.id FROM videos v
 		WHERE v.state = 'ready' AND NOT EXISTS (
 		  SELECT 1 FROM playback_state ps WHERE ps.user_id = $1 AND ps.video_id = v.id
-		)
-		ORDER BY v.updated_at DESC, v.id ASC LIMIT $2
-	`, userID, limit)
+		)`+scope+`
+		ORDER BY v.updated_at DESC, v.id ASC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return rail
 	}

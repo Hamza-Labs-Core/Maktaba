@@ -1,41 +1,29 @@
-// Package graphql provides the GraphQL surface for the API (Story 7.17).
+// Package graphql is the GraphQL surface of the API (Story 7.17).
 //
-// The schema is shipped as a single “.graphql“ SDL document
-// (Schema) and parsed at boot. The schema contents define the domain
-// types the resolvers fill in.
+// The schema is one SDL document (Schema, kept byte-identical to
+// shared/graphql/schema.graphql by TestSharedSchemaInSync) laid over the
+// REST API. Every root field is answered by the REST handler that owns
+// the same operation, called in process through the API router (see
+// bridge.go), so authentication, admin checks, row-level library
+// visibility, rate limits, Idempotency-Key replay and audit writes are
+// the REST ones, not a second copy. Nested video fields (tags, media
+// info, audio tracks, subtitles, chapters, transcript, playback state)
+// are batched per list through the videos package's batch loaders, the
+// same functions the REST video detail uses (loaders.go).
 //
-// We do NOT pull in gqlgen / 99designs/gqlgen at this stage — that
-// codegen pipeline is gated by a separate task and a separate plan
-// review. Instead, this package exposes:
-//
-//   - Schema: the parsed SDL source as a string,
-//   - Handler: a thin HTTP handler that accepts “POST /graphql“
-//     queries and dispatches to the registered resolver map. The
-//     implementation is intentionally a pass-through that returns
-//     “schema-only“ 501 today; the resolver table is wired by
-//     subsequent stories.
-//
-// The point of this package is to lock in the schema shape so a
-// parity test can assert "every REST endpoint has a counterpart in
-// the SDL", per AC-2.
+// Execution uses graph-gophers/graphql-go (schema first, no codegen);
+// cost.go adds the depth and complexity limits; subscriptions.go serves
+// the Subscription fields over graphql-transport-ws on top of the
+// Story 7.16 event hub.
 package graphql
 
-import (
-	"encoding/json"
-	"net/http"
-	"regexp"
-	"strings"
-
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
-)
-
-// Schema is the SDL source for the API. Stories 7.17 AC-1 + AC-2
-// list every domain type and root field this schema must expose.
+// Schema is the SDL source for the API. Story 7.17 AC-1 + AC-2 list
+// every domain type and root field this schema must expose.
 const Schema = `
 """
-Maktaba GraphQL schema (Story 7.17). Mirrors the REST routes 1:1 — the
-parity test compares the chi router table against this SDL and fails on
-diff.
+Maktaba GraphQL schema (Story 7.17). Every root field is answered by the
+REST handler that owns the same operation, so access rules, rate limits,
+Idempotency-Key replay and audit are the REST ones.
 """
 
 scalar Time
@@ -138,6 +126,7 @@ type PlaybackState {
 type Job {
   id: ID!
   videoId: ID
+  libraryId: ID
   stage: String!
   state: String!
   priority: Int!
@@ -146,6 +135,16 @@ type Job {
   cancelRequested: Boolean!
   createdAt: Time!
   notBefore: Time
+  error: String
+}
+
+"""
+One page of jobs, newest first. nextCursor is the shared paginate cursor;
+pass it back as after to read the next page (null on the last page).
+"""
+type JobConnection {
+  items: [Job!]!
+  nextCursor: String
 }
 
 type Worker {
@@ -161,8 +160,9 @@ type StreamingSession {
   mode: String!
   manifestUrl: String
   directUrl: String
-  expiresAt: Time!
+  expiresAt: Time
   openedAt: Time!
+  lastSeenAt: Time
   closedAt: Time
 }
 
@@ -182,7 +182,7 @@ type Video {
   state: String!
   detectedLanguage: String
   durationSec: Float
-  sizeBytes: Int!
+  sizeBytes: Float!
   contentHash: String!
   metadata: JSON
   createdAt: Time!
@@ -194,6 +194,15 @@ type Video {
   tags: [Tag!]!
   latestTranscript: Transcript
   playbackState: PlaybackState
+}
+
+"""
+One page of videos in the requested sort. nextCursor is the shared
+paginate cursor; pass it back as after (null on the last page).
+"""
+type VideoConnection {
+  items: [Video!]!
+  nextCursor: String
 }
 
 type SearchMatch {
@@ -257,6 +266,17 @@ type Device {
   lastSeenAt: Time!
 }
 
+"""
+Outcome of a delete. failedPaths lists the folders or files a purge could
+not remove (the row is deleted either way); warning carries the REST
+Maktaba-Warning header, e.g. file-not-found.
+"""
+type DeleteResult {
+  deleted: Boolean!
+  failedPaths: [String!]!
+  warning: String
+}
+
 # ---------- input types ----------
 
 input LibraryCreateInput {
@@ -304,14 +324,14 @@ type Query {
   libraries: [Library!]!
   library(id: ID!): Library
 
-  videos(library: ID, language: String, q: String, limit: Int): [Video!]!
+  videos(library: ID, language: String, q: String, sort: String, limit: Int, after: String): VideoConnection!
   video(id: ID!): Video
 
   search(input: SearchInput!): SearchResult!
   searchSuggest(q: String!): [String!]!
 
   job(id: ID!): Job
-  jobs(stage: String, state: String, limit: Int): [Job!]!
+  jobs(stage: String, state: String, limit: Int, after: String): JobConnection!
   queueStats: JSON!
 
   collections: [Collection!]!
@@ -333,11 +353,11 @@ type Query {
 type Mutation {
   createLibrary(input: LibraryCreateInput!): Library!
   patchLibrary(id: ID!, input: LibraryPatchInput!): Library!
-  deleteLibrary(id: ID!, purge: Boolean): Boolean!
+  deleteLibrary(id: ID!, purge: Boolean, confirm: String): DeleteResult!
   scanLibrary(id: ID!): String!
 
   patchVideo(id: ID!, input: VideoPatchInput!): Video!
-  deleteVideo(id: ID!, purge: Boolean): Boolean!
+  deleteVideo(id: ID!, purge: Boolean, confirm: String): DeleteResult!
   processVideo(id: ID!, stage: String, priority: Int): String!
   reprocessVideo(id: ID!, fromStage: String!): [String!]!
 
@@ -366,131 +386,3 @@ type Subscription {
   playbackUpdates(videoId: ID!): JSON!
 }
 `
-
-// Handler is the GraphQL HTTP endpoint.
-//
-// We do not pull in gqlgen / a full GraphQL engine (still gated by a
-// separate plan). Instead this is a focused operation dispatcher: it
-// recognises the specific root fields the 10-foot TV clients query —
-// `recommendations`, `continueWatching`, `search`, `searchSuggest` —
-// runs them against real DB-backed resolvers, and returns a
-// spec-shaped `{"data": …}` body. Any other root field falls back to
-// the honest `schema-only` 501 so callers can tell which fields are
-// live versus still pending the full engine.
-//
-// Resolvers is optional: a zero-value Handler (no DB) keeps serving
-// the SDL on GET /graphql/schema and answers POST /graphql with 501,
-// preserving the pre-existing behaviour for callers that wire the
-// handler without a DB.
-type Handler struct {
-	Resolvers *Resolvers
-}
-
-// gqlRequest is the standard GraphQL-over-HTTP POST body.
-type gqlRequest struct {
-	Query         string         `json:"query"`
-	OperationName string         `json:"operationName"`
-	Variables     map[string]any `json:"variables"`
-}
-
-// rootFieldRE pulls the first selected root field name out of the
-// query body. Good enough for the fixed set of single-root operations
-// the TV clients send; it is intentionally not a general parser.
-var rootFieldRE = regexp.MustCompile(`(?s)\{\s*([A-Za-z_][A-Za-z0-9_]*)`)
-
-// ServeHTTP wires POST /graphql + GET /graphql/schema. The schema
-// endpoint is unauthenticated and serves the SDL string above so a
-// client tool can introspect the contract.
-func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/graphql/schema" {
-		w.Header().Set("Content-Type", "application/graphql")
-		_, _ = w.Write([]byte(Schema))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-
-	if h.Resolvers == nil {
-		h.write501(w)
-		return
-	}
-
-	var req gqlRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Query) == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(gqlErrors("malformed GraphQL request body", "bad-request"))
-		return
-	}
-
-	field := h.rootField(&req)
-	if field == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(gqlErrors("could not determine root field", "bad-request"))
-		return
-	}
-
-	// Every TV-facing query requires an authenticated principal —
-	// the resolvers are user-scoped (no cross-user leak).
-	if principal.FromContext(r.Context()) == nil {
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(gqlErrors("authentication required", "forbidden"))
-		return
-	}
-
-	data, code, err := h.Resolvers.resolve(r, field, req.Variables)
-	if err != nil {
-		w.WriteHeader(code)
-		_ = json.NewEncoder(w).Encode(gqlErrors(err.Error(), gqlCode(code)))
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{field: data}})
-}
-
-func (h Handler) rootField(req *gqlRequest) string {
-	m := rootFieldRE.FindStringSubmatch(req.Query)
-	if len(m) < 2 {
-		return ""
-	}
-	// `query`/`mutation`/`subscription` keyword captured first? skip it.
-	switch m[1] {
-	case "query", "mutation", "subscription":
-		body := req.Query[strings.Index(req.Query, m[1])+len(m[1]):]
-		if idx := strings.Index(body, "{"); idx >= 0 {
-			if mm := rootFieldRE.FindStringSubmatch(body[idx:]); len(mm) >= 2 {
-				return mm[1]
-			}
-		}
-		return ""
-	}
-	return m[1]
-}
-
-func (h Handler) write501(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(gqlErrors(
-		"GraphQL resolvers are not yet wired in this build", "schema-only"))
-}
-
-func gqlErrors(msg, code string) map[string]any {
-	return map[string]any{
-		"errors": []map[string]any{
-			{
-				"message":    msg,
-				"extensions": map[string]any{"code": code},
-			},
-		},
-	}
-}
-
-func gqlCode(httpStatus int) string {
-	switch httpStatus {
-	case http.StatusForbidden:
-		return "forbidden"
-	case http.StatusBadRequest:
-		return "bad-request"
-	case http.StatusNotImplemented:
-		return "schema-only"
-	default:
-		return "internal"
-	}
-}

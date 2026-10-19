@@ -29,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/paginate"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
@@ -105,12 +106,10 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 // List supports a thin filter set for the queue UI:
 //
-//	?stage=...&state=...&limit=...
+//	?stage=...&state=...&limit=...&cursor=...
 //
-// Pagination is offset-free — last page returned when fewer than “limit“
-// rows are emitted. The intended power tool is the cursor variant
-// owned by `paginate`, but the queue UI uses small windows so we keep
-// this surface simple.
+// Newest first; `next` is the shared paginate cursor of the following
+// page (null on the last one).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	limit, e := common.QueryInt(r, "limit", 50)
 	if e != nil {
@@ -133,13 +132,24 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		conds = append(conds, "state = $"+strconv.Itoa(len(args)+1))
 		args = append(args, v)
 	}
+	// Keyset paging through the shared cursor (Story 7.2): ?cursor= is
+	// the `next` of the previous page.
+	cur, ce := paginate.Decode(r.URL.Query().Get("cursor"))
+	if ce != nil {
+		httperror.Write(w, r, ce)
+		return
+	}
+	if frag, cargs := paginate.Where(paginate.SortSpec{TimeCol: "created_at", IDCol: "id", Desc: true}, cur, len(args)+1, paginate.IDKindBigint); frag != "" {
+		conds = append(conds, frag)
+		args = append(args, cargs...)
+	}
 	where := ""
 	if len(conds) > 0 {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
-	args = append(args, limit)
+	args = append(args, limit+1) // one more row tells whether another page exists
 	q := `SELECT ` + jobColumns + `
-	      FROM processing_jobs` + where + ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args))
+	      FROM processing_jobs` + where + ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("list jobs: "+err.Error()))
@@ -154,7 +164,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, j)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+	var next *string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		enc := paginate.Encode(paginate.Cursor{Updated: last.CreatedAt, ID: last.ID})
+		next = &enc
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "next": next})
 }
 
 // forceTooEarly refuses a force pause inside the pause grace: the job's

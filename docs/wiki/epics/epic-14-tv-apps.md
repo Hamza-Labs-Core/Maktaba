@@ -35,7 +35,7 @@ Native tvOS (Swift / SwiftUI / AVPlayer) and Android TV (Kotlin / Compose for TV
 - `GET /api/me/playback-state?in_progress=true` (Story 14.5; canonical via [plan-11-02](../../../specs/epics/11-web-ui/plan-11-02-watch-progress.md), architecture §9.4)
 - `POST /api/search`, `GET /api/search/suggest` (Story 14.4)
 - `GET /api/recommendations?surface=tv-home`, `DELETE /api/recommendations/rows/{reason_kind}`, `DELETE /api/recommendations/items/{video_id}`, `POST /api/recommendations/refresh` (Story 14.6, 14.7)
-- GraphQL: `home`, `continueWatching`, `recommendations`, `mediaById` (consumed via Apollo)
+- GraphQL (`POST /graphql`, schema `shared/graphql/schema.graphql`): `continueWatching`, `recommendations` and `video(id)` (null for a deleted video) cover the home rows and media lookups; the TV apps call the REST routes above today
 
 ## Migrations claimed by this epic
 
