@@ -9,18 +9,39 @@
 // "Back to default") clears only the edits it carried that are still
 // unchanged, so edits made while it was under way — or in another tab —
 // stay.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { PlanPreviewPanel } from "../../components/queue/PlanPreviewPanel";
 import { useAuth } from "../../lib/auth";
-import { useI18n } from "../../lib/i18n";
+import { lookupMessage, useI18n, type Locale } from "../../lib/i18n";
 import { rulesApi, rulesError, type RuleField, type RuleSection } from "../../lib/rulesApi";
 import { Editor, tableProblems, type T } from "./RuleEditors";
 import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from "./ruleKinds";
 import "./rules.css";
+
+/**
+ * The rules schema in the reader's language: the catalog keys
+ * `rules.<section>.title` / `.what`, `rules.<section>.<field>.label` /
+ * `.help` and `rules.group.<group>` replace the schema's English where they
+ * exist (names, values and choices stay as they are).
+ */
+export function localizeSections(sections: RuleSection[], locale: Locale): RuleSection[] {
+  const tr = (key: string, fallback: string) => lookupMessage(locale, key) ?? fallback;
+  return sections.map((s) => ({
+    ...s,
+    title: tr(`rules.${s.key}.title`, s.title),
+    what: tr(`rules.${s.key}.what`, s.what),
+    fields: s.fields.map((f) => ({
+      ...f,
+      label: tr(`rules.${s.key}.${f.name}.label`, f.label),
+      help: tr(`rules.${s.key}.${f.name}.help`, f.help),
+      group: tr(`rules.group.${f.group}`, f.group),
+    })),
+  }));
+}
 
 type Edits = Record<string, Record<string, unknown>>;
 type Errors = Record<string, Record<string, string>>;
@@ -191,10 +212,16 @@ function RuleRow({
 }
 
 export function RulesSection() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const canEdit = !!user?.is_admin;
-  const [sections, setSections] = useState<RuleSection[] | null>(null);
+  const [rawSections, setSections] = useState<RuleSection[] | null>(null);
+  // the schema is English; a section, group or field with a catalog entry
+  // shows it in the reader's language
+  const sections = useMemo(
+    () => (rawSections ? localizeSections(rawSections, locale) : null),
+    [rawSections, locale]
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState("");
   const [edits, setEdits] = useState<Edits>({});
@@ -216,7 +243,8 @@ export function RulesSection() {
 
   const load = useCallback(async () => {
     const r = await rulesApi.list();
-    setSections(r.sections);
+    // a fresh array: the localised copy is rebuilt from what was read
+    setSections([...r.sections]);
     setLoadError(null);
     setTab((cur) => (r.sections.some((s) => s.key === cur) ? cur : (r.sections[0]?.key ?? "")));
     // an edit that now equals the saved value is no longer an edit

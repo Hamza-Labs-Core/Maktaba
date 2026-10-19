@@ -16,6 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// DefaultTunerCount is a new device's tuner count. A tuner is one client
+// pull (Plex recording or watching); clients of the same channel share its
+// one encode, so the count is independent of how many channels the host
+// encodes at once (MAKTABA_CHANNEL_MAX_ACTIVE / tv_output).
+const DefaultTunerCount = 20
+
 // Device is the singleton emulated tuner (slot 0084 hdhr_device).
 type Device struct {
 	DeviceID     string

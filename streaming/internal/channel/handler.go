@@ -99,6 +99,14 @@ func writeEngineError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrChannelNotFound):
 		http.Error(w, "no such channel", http.StatusNotFound)
+	case errors.Is(err, ErrRunningElsewhere):
+		// one encode per channel cluster-wide: another host runs it (the
+		// home proxies or redirects there; a follow-up wires that)
+		var re *RunningElsewhereError
+		if errors.As(err, &re) && re.StreamBaseURL != "" {
+			w.Header().Set("X-Maktaba-Channel-Host", re.StreamBaseURL)
+		}
+		http.Error(w, "channel is on air on another host", http.StatusConflict)
 	case errors.Is(err, ErrAtCapacity):
 		w.Header().Set("Retry-After", "30")
 		http.Error(w, "all channel encoders busy", http.StatusServiceUnavailable)

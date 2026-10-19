@@ -183,6 +183,34 @@ func runStops(stops ...StopFunc) {
 	}
 }
 
+// setCap changes the concurrent cap (a settings change). Channels over a
+// lowered cap keep running; new ones wait for room.
+func (r *registry) setCap(c int) {
+	if c < 1 {
+		c = 1
+	}
+	r.mu.Lock()
+	r.cap = c
+	r.mu.Unlock()
+}
+
+// capacity reports the concurrent cap.
+func (r *registry) capacity() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cap
+}
+
+// viewers reports a channel's attached viewer count.
+func (r *registry) viewers(id uuid.UUID) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.entries[id]; ok {
+		return e.viewers
+	}
+	return 0
+}
+
 // len reports the active-channel count (for tests/metrics).
 func (r *registry) size() int {
 	r.mu.Lock()

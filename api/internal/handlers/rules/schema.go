@@ -35,6 +35,7 @@ type Field struct {
 	Kind        string          `json:"kind"`
 	Default     json.RawMessage `json:"default"`
 	Minimum     *float64        `json:"minimum,omitempty"`
+	Maximum     *float64        `json:"maximum,omitempty"`
 	Choices     []string        `json:"choices,omitempty"`
 	Columns     []string        `json:"columns,omitempty"`
 	ColumnKinds []string        `json:"column_kinds,omitempty"`
@@ -135,12 +136,12 @@ func (f *Field) Validate(v any) error {
 	if f.Kind == "rows" {
 		return f.validateRows(v)
 	}
-	return checkKind(f.Kind, v, f.Minimum, f.Choices)
+	return checkKind(f.Kind, v, f.Minimum, f.Maximum, f.Choices)
 }
 
 var timeRe = regexp.MustCompile(`^([0-9]{2}):([0-9]{2})$`)
 
-func checkKind(kind string, v any, minimum *float64, choices []string) error {
+func checkKind(kind string, v any, minimum, maximum *float64, choices []string) error {
 	if base, ok := strings.CutSuffix(kind, "?"); ok {
 		if v == nil {
 			return nil
@@ -165,13 +166,13 @@ func checkKind(kind string, v any, minimum *float64, choices []string) error {
 				return errors.New("must be a whole number")
 			}
 		}
-		return checkMinimum(n, minimum)
+		return checkLimits(n, minimum, maximum)
 	case "float":
 		n, ok := v.(json.Number)
 		if !ok {
 			return errors.New("must be a number")
 		}
-		return checkMinimum(n, minimum)
+		return checkLimits(n, minimum, maximum)
 	case "str":
 		s, ok := v.(string)
 		if !ok {
@@ -211,13 +212,16 @@ func checkKind(kind string, v any, minimum *float64, choices []string) error {
 	return nil
 }
 
-func checkMinimum(n json.Number, minimum *float64) error {
+func checkLimits(n json.Number, minimum, maximum *float64) error {
 	f, err := n.Float64()
 	if err != nil {
 		return errors.New("must be a number")
 	}
 	if minimum != nil && f < *minimum {
 		return fmt.Errorf("must be at least %s", strconv.FormatFloat(*minimum, 'g', -1, 64))
+	}
+	if maximum != nil && f > *maximum {
+		return fmt.Errorf("must be at most %s", strconv.FormatFloat(*maximum, 'g', -1, 64))
 	}
 	return nil
 }
@@ -286,7 +290,7 @@ func (f *Field) validateRows(v any) error {
 					}
 					return fmt.Errorf("row %d: missing column %q", n, col)
 				}
-				if err := checkKind(kind, cv, nil, nil); err != nil {
+				if err := checkKind(kind, cv, nil, nil, nil); err != nil {
 					return fmt.Errorf("row %d %s: %w", n, col, err)
 				}
 			}
@@ -297,7 +301,7 @@ func (f *Field) validateRows(v any) error {
 			return fmt.Errorf("row %d: must be a list of %d values (%s)", n, len(f.Columns), strings.Join(f.Columns, ", "))
 		}
 		for ci, col := range f.Columns {
-			if err := checkKind(f.columnKind(ci), arr[ci], nil, nil); err != nil {
+			if err := checkKind(f.columnKind(ci), arr[ci], nil, nil, nil); err != nil {
 				return fmt.Errorf("row %d %s: %w", n, col, err)
 			}
 		}

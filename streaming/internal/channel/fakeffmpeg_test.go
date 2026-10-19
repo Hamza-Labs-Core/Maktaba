@@ -22,6 +22,7 @@ import (
 //
 //	1      normal: probe prints streams, blocks emit TS, muxer copies + writes HLS
 //	wedge  the muxer never reads stdin (a hung ffmpeg)
+//	nvencfail  as 1, but a block encoding with h264_nvenc fails at once
 const fakeFFmpegEnv = "MAKTABA_FAKE_FFMPEG"
 
 func TestMain(m *testing.M) {
@@ -68,6 +69,10 @@ func fakeFFmpeg(mode string, args []string) int {
 			}
 		}
 		return fakeMuxer(dir)
+	case hasArg(args, "pipe:1") && mode == "nvencfail" && hasArg(args, "h264_nvenc"):
+		// the driver refuses the session before any output
+		_, _ = fmt.Fprintln(os.Stderr, "[h264_nvenc] OpenEncodeSessionEx failed: incompatible client key (21)")
+		return 1
 	case hasArg(args, "pipe:1"): // a block
 		dur, _ := strconv.ParseFloat(lastArgAfter(args, "-t"), 64)
 		off, _ := strconv.ParseFloat(lastArgAfter(args, "-output_ts_offset"), 64)
