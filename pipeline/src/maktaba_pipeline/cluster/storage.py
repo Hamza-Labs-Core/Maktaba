@@ -257,7 +257,8 @@ def check_storage(
     """``{read: ok|error, write: ok|error|skipped, checked_at, detail: str|None}``.
 
     Read is ``ok`` when every library with videos has at least one sample readable here
-    with its size (a library without videos has nothing to check); write is
+    with its size, or present when its size is not known yet (0) (a library without
+    videos has nothing to check); write is
     ``skipped`` when no library root is known.
     """
     detail: list[str] = []
@@ -265,7 +266,11 @@ def check_storage(
     for lib in samples:
         if not lib.videos:
             continue
-        if not any(size_of(path_map.to_local(p)) == s for p, s in lib.videos):
+        # a size of 0 is not known yet (a file found but not probed): it only has to be there
+        if not any(
+            (got := size_of(path_map.to_local(p))) is not None and (s <= 0 or got == s)
+            for p, s in lib.videos
+        ):
             read = "error"
             detail.append(f"no sample of library {lib.library_id} is readable here")
     write = "skipped"
