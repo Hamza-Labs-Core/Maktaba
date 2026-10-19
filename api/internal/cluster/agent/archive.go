@@ -293,7 +293,7 @@ func archiveDay(share, arch *os.Root, ip, kind, day string) (int, int64, error) 
 	for _, e := range entries {
 		name := e.Name()
 		src := filepath.Join(rel, name)
-		if !strings.HasSuffix(name, ".jsonl") || !plainFile(share, src) {
+		if !strings.HasSuffix(name, ".jsonl") || strings.HasPrefix(name, ".") || !plainFile(share, src) {
 			continue
 		}
 		st, err := share.Lstat(src)

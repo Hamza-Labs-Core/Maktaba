@@ -168,7 +168,7 @@ func readProcesses(root *os.Root, dir string) []json.RawMessage {
 			break
 		}
 		p := filepath.Join(dir, e.Name())
-		if !strings.HasSuffix(e.Name(), ".json") || !plainFile(root, p) {
+		if !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") || !plainFile(root, p) {
 			continue
 		}
 		b, err := readCapped(root, p, maxProcessBytes)
@@ -276,7 +276,9 @@ func dayFiles(root *os.Root, ip, kind, date string) []dayFile {
 	for _, e := range entries {
 		name := e.Name()
 		p := filepath.Join(day, name)
-		if !strings.HasSuffix(name, ".jsonl") || !plainFile(root, p) {
+		// a dotfile is a temporary file or a macOS "._<name>" sidecar (written
+		// beside every file on a share that cannot keep extended attributes)
+		if !strings.HasSuffix(name, ".jsonl") || strings.HasPrefix(name, ".") || !plainFile(root, p) {
 			continue
 		}
 		out = append(out, dayFile{root: root, path: p, workerID: strings.TrimSuffix(name, ".jsonl")})
