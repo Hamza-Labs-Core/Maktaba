@@ -13,7 +13,6 @@ package graphql
 import (
 	"fmt"
 	"math"
-	"strconv"
 
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -53,7 +52,7 @@ func (h *Handler) analyse(query, operationName string, vars map[string]any) (*pl
 		op = doc.Operations.ForName(operationName)
 	}
 	if op == nil {
-		return nil, []map[string]any{gqlErr("unknown or ambiguous operation "+strconv.Quote(operationName), "bad-request")}
+		return nil, []map[string]any{gqlErr("the operationName names no single operation of the document", "bad-request")}
 	}
 	p := &plan{operation: string(op.Operation)}
 	for _, f := range collectFields(op.SelectionSet) {
