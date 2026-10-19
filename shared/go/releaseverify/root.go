@@ -79,7 +79,10 @@ func EmbeddedRootInfo() (RootInfo, error) {
 // good copy. A failed refresh keeps the last good root; a root older than
 // MaxAge, or TUF reporting expired metadata, is ErrRootExpired and is reported
 // through OnExpired (critical notification, story 35.13). Verification never
-// fails open.
+// fails open. The cache is used only while no other user can write it (Dir and
+// its ancestors owned by this user or root, not group/other-writable, files
+// not symlinks) and while its fetched_at is not in the future; otherwise the
+// embedded root is used and Refresh refuses the directory.
 type RootStore struct {
 	// Dir is <data_dir>/sigstore; "" keeps everything in memory (embedded only).
 	Dir string
@@ -108,8 +111,14 @@ func (s *RootStore) maxAge() time.Duration {
 	return DefaultRootMaxAge
 }
 
-func (s *RootStore) cachePaths() (rootPath, metaPath string) {
-	return filepath.Join(s.Dir, "trusted_root.json"), filepath.Join(s.Dir, "trusted_root.meta.json")
+// maxFutureSkew is how far in the future a cached root's fetched_at may lie
+// (clock skew). Refresh stamps it with the local clock, so a later value means
+// the clock was wrong when it was written or the file was edited; either way
+// it would keep that root from ever ageing out, so it is ignored.
+const maxFutureSkew = 24 * time.Hour
+
+func cachePaths(dir string) (rootPath, metaPath string) {
+	return filepath.Join(dir, "trusted_root.json"), filepath.Join(dir, "trusted_root.meta.json")
 }
 
 // TrustedMaterial returns the newest good trusted root, failing closed with
@@ -141,14 +150,24 @@ func (s *RootStore) load() (*root.TrustedRoot, RootInfo, error) {
 	if s.Dir == "" {
 		return emb, embInfo, nil
 	}
-	rootPath, metaPath := s.cachePaths()
+	// The cache is only a trust anchor when no other user can write it (see
+	// trustedDir); otherwise the embedded root is used.
+	dir, err := trustedDir(s.Dir)
+	if err != nil {
+		return emb, embInfo, nil
+	}
+	rootPath, metaPath := cachePaths(dir)
+	if trustedFile(rootPath) != nil || trustedFile(metaPath) != nil {
+		return emb, embInfo, nil
+	}
 	raw, err1 := os.ReadFile(rootPath)
 	mraw, err2 := os.ReadFile(metaPath)
 	if err1 != nil || err2 != nil {
 		return emb, embInfo, nil
 	}
 	var m rootMeta
-	if json.Unmarshal(mraw, &m) != nil || !m.FetchedAt.After(embInfo.FetchedAt) {
+	if json.Unmarshal(mraw, &m) != nil || !m.FetchedAt.After(embInfo.FetchedAt) ||
+		m.FetchedAt.After(s.now().Add(maxFutureSkew)) {
 		return emb, embInfo, nil
 	}
 	tr, err := root.NewTrustedRootFromJSON(raw)
@@ -168,11 +187,20 @@ func (s *RootStore) Refresh(ctx context.Context) error {
 	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
 		return err
 	}
+	// A umask of 002 makes the new directory group-writable, which trustedDir
+	// refuses: drop group/other write from the cache directory itself.
+	if fi, err := os.Stat(s.Dir); err == nil && fi.Mode().Perm()&0o022 != 0 {
+		_ = os.Chmod(s.Dir, fi.Mode().Perm()&^0o022)
+	}
+	dir, err := trustedDir(s.Dir)
+	if err != nil {
+		return fmt.Errorf("releaseverify: refusing the trusted-root cache %s: %w", s.Dir, err)
+	}
 	fetch := s.Fetch
 	if fetch == nil {
 		fetch = fetchTUF
 	}
-	raw, err := fetch(ctx, filepath.Join(s.Dir, "tuf"))
+	raw, err := fetch(ctx, filepath.Join(dir, "tuf"))
 	if err != nil {
 		var exp *metadata.ErrExpiredMetadata
 		if errors.As(err, &exp) {
@@ -189,7 +217,7 @@ func (s *RootStore) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	rootPath, metaPath := s.cachePaths()
+	rootPath, metaPath := cachePaths(dir)
 	if err := writeFileAtomic(rootPath, raw); err != nil {
 		return err
 	}
