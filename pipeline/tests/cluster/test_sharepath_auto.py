@@ -504,7 +504,7 @@ async def test_revert_during_a_run_undoes_that_runs_rows(db: Any, tmp_path: Path
     converted = await _paths(db)
     # a second run (new local paths) is cut short after its first chunk
     for i in range(4):
-        await make_video(db, ids["lib"], path=home.file(f"Chan/late{i}.mp4"))  # type: ignore[arg-type]
+        await make_video(db, ids["lib"], path=home.file(f"Chan/late{i}.mp4"))
     await _rules(db, batch_size=100)
     real_apply = mig.apply
 
@@ -548,7 +548,7 @@ async def test_purged_and_deleted_files_do_not_hold_the_conversion(db: Any, tmp_
         home.path("Chan/purged.mp4"),
         to_ts(db, now()),
     )
-    gone = await make_video(db, ids["lib"], path=home.path("Chan/deleted.mp4"))  # type: ignore[arg-type]
+    gone = await make_video(db, ids["lib"], path=home.path("Chan/deleted.mp4"))
     await db.execute("UPDATE videos SET deleted_at = $2 WHERE id = $1", str(gone), to_ts(db, now()))
     state = await auto.run_once(db, home.env())
     assert state["phase"] == "done", state.get("problems")
