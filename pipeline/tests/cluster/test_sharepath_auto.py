@@ -138,6 +138,14 @@ async def _paused(db: Any, stage: str) -> tuple[bool, str | None]:
     return bool(row["paused"]), row["paused_by"]
 
 
+async def _notices(db: Any) -> list[tuple[str, str]]:
+    rows = await db.fetch(
+        "SELECT kind, severity FROM notifications WHERE subject = 'storage_canonicalize'"
+        " ORDER BY created_at"
+    )
+    return [(str(r["kind"]), str(r["severity"])) for r in rows]
+
+
 async def _plex_map(db: Any) -> str:
     row = await db.fetchrow("SELECT settings FROM extensions WHERE name = 'plex'")
     return str(loads(row["settings"])["path_map"])
@@ -208,6 +216,8 @@ async def test_the_full_automatic_flow(db: Any, tmp_path: Path) -> None:
         f"{home.local}=/volume1/Originals/;smb://home-nas/Originals/=/volume1/Originals/"
     )
     assert await auto.due(db, home.env()) is None
+    # the notification centre has one notice of the conversion
+    assert await _notices(db) == [("storage.canonicalize.done", "success")]
     # a new legacy path (an old scanner) is a change: due again
     await make_video(db, ids["lib"], path=home.file("Chan/new.mp4"))
     assert await auto.due(db, home.env()) == "changed"
@@ -229,6 +239,10 @@ async def test_an_unmounted_share_waits_and_converts_once_mounted(db: Any, tmp_p
     assert await bk.list_backups(db) == []
     stage = await _share_stage(db)
     assert await _paused(db, stage) == (False, None)
+    # one notice, not one per look
+    await auto.run_once(db, home.env())
+    assert await _notices(db) == [("storage.canonicalize.blocked", "warn")]
+    state, _ = await auto.load_state(db)
     # not due again before the retry time, then due
     assert await auto.due(db, home.env()) is None
     await db.execute(

@@ -188,9 +188,58 @@ async def load_state(db: Any) -> tuple[dict[str, Any], str | None]:
     return (dict(st) if isinstance(st, dict) else {}), row["request"]
 
 
+#: the notification centre (slot 0130): a notice when a conversion is done, waits,
+#: failed or was reverted; once per outcome (``state.notified``)
+_SEVERITY = {"done": "success", "blocked": "warn", "failed": "error", "held": "info"}
+
+
+async def _notify(db: Any, state: dict[str, Any]) -> None:
+    phase = state.get("phase")
+    if phase not in _SEVERITY:
+        return
+    problems = state.get("problems") or []
+    params: dict[str, Any]
+    if phase == "done":
+        last = state.get("last") or {}
+        if not last.get("batch"):
+            return
+        sig, params = f"done:{last['batch']}", {"n": int(last.get("changes") or 0)}
+    elif phase == "held":
+        rev = state.get("reverted") or {}
+        if not rev:
+            return
+        sig, params = f"held:{rev.get('batch')}", {"n": int(rev.get("rows") or 0)}
+    else:
+        codes = sorted({str(p.get("code")) for p in problems})
+        first = problems[0] if problems else {}
+        detail = str(first.get("detail") or first.get("code") or "")
+        sig, params = f"{phase}:{','.join(codes)}", {"detail": detail}
+    if state.get("notified") == sig:
+        return
+    try:
+        await db.execute(
+            "INSERT INTO notifications (id, kind, severity, title_key, params, link, audience,"
+            " subject) VALUES ($1, $2, $3, $4, $5, $6, 'admins', $7)",
+            str(uuid.uuid4()),
+            f"storage.canonicalize.{phase}",
+            _SEVERITY[phase],
+            f"notify.storage.canonicalize.{phase}",
+            dumps(params),
+            "/admin/machines",
+            "storage_canonicalize",
+        )
+    except Exception as exc:  # noqa: BLE001 - no notification centre yet: the page shows it
+        _log.debug("storage_canonicalize_notify_skipped", error=str(exc))
+        return
+    state["notified"] = sig
+
+
 async def _save(db: Any, state: Mapping[str, Any]) -> None:
     cast = "::jsonb" if is_pg(db) else ""
     data = dict(state)
+    await _notify(db, data)
+    if isinstance(state, dict) and "notified" in data:
+        state["notified"] = data["notified"]
     data["updated_at"] = now().isoformat()
     await db.execute(
         "INSERT INTO storage_canonicalize (id, state, updated_at)"

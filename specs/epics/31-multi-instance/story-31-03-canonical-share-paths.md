@@ -237,6 +237,10 @@ reports the error and is retried later.
 - the buttons **Check now**, **Revert last conversion** and **Convert automatically
   again**.
 
+**In the notification centre** (the bell, slot 0130): one notice per outcome. The notice
+says whether the conversion is done, waits (with the reason), failed or was reverted, and
+links to the Machines page.
+
 A revert pauses the share stages, runs `storage revert` on the last batch and resumes
 them. Automatic conversion then **holds** until the admin resumes it.
 
