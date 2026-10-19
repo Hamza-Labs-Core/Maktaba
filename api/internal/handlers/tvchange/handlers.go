@@ -556,11 +556,6 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	h.reply(w, r, http.StatusOK, c.ID)
 }
 
-func notYet(w http.ResponseWriter, r *http.Request, what, story string) {
-	httperror.Write(w, r, &httperror.Error{Type: httperror.TypeConflict, Title: "not available yet",
-		Status: http.StatusNotImplemented, Detail: what + " arrives with story " + story})
-}
-
 // previewStates are the states a staged change can be previewed in (33.6 AC1).
 var previewStates = map[string]bool{core.StateVerifying: true, core.StateReady: true, core.StateApproved: true}
 
