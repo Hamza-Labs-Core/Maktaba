@@ -1,16 +1,22 @@
-// Story 26.6 — Enrichment review panel (per video).
+// Story 26.6 — Enrichment review panel (per video); stub audit #4 — the
+// suggestions come from Maktaba's metadata provider (its own intel, and a
+// web search a language model read), each field with its confidence and
+// the sources it rests on.
 //
 // Server contract (api/internal/handlers/enrichment):
-//   GET  /api/videos/{id}/enrichment            -> { candidates:[Candidate] }
+//   GET  /api/videos/{id}/enrichment            -> { candidates:[Candidate], job? }
 //   POST /api/videos/{id}/enrichment/accept      { external_id, version? }
 //   POST /api/videos/{id}/enrichment/dismiss     { external_id? }
-//   POST /api/videos/{id}/enrichment/search      { query, year? }
+//   POST /api/videos/{id}/enrichment/search      { query, year? } -> 202 { candidates, job }
+//   POST /api/videos/{id}/enrichment/reenrich    -> 202 { job }
 //   POST /api/videos/{id}/enrichment/revert      { field? }
 //
 // Surfaces the top candidate as "We found this might be X (year) — NN%
 // match" with a side-by-side current-vs-proposed diff; protected
-// (user-owned) fields are badged "won't change". Accept / Dismiss /
-// Search-manually controls. Empty state offers a manual search CTA.
+// (user-owned) fields are badged "won't change". Every field shows its
+// confidence and its sources (web pages link out; Maktaba's own intel is
+// named). A search runs as the engine's `enrich` job: the panel shows it
+// and polls until it is done. Accept / Dismiss / Search controls.
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
@@ -18,7 +24,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
-import { useI18n } from "../lib/i18n";
+import { lookupMessage, useI18n } from "../lib/i18n";
 
 interface FieldDiff {
   field: string;
@@ -26,6 +32,20 @@ interface FieldDiff {
   proposed: string;
   would_change: boolean;
   protected: boolean;
+  confidence?: number;
+  sources?: string[];
+}
+interface Source {
+  id: string;
+  label: string;
+  url?: string;
+  kind?: string;
+}
+interface Fact {
+  field: string;
+  value: unknown;
+  confidence?: number;
+  sources?: string[];
 }
 interface Candidate {
   id: string;
@@ -36,27 +56,68 @@ interface Candidate {
   title?: string;
   year?: number;
   fields?: FieldDiff[];
+  sources?: Source[];
+  facts?: Fact[];
+}
+interface Job {
+  status: "pending" | "running" | "done" | "deferred" | "failed";
+  origin: string;
+  query?: string;
+  last_error?: string;
+  not_before?: string;
+}
+
+const POLL_MS = 3000;
+
+function isBusy(job: Job | null | undefined): boolean {
+  return job?.status === "pending" || job?.status === "running";
+}
+
+// A YouTube row ties a video to its listing (accepted when imported): it is
+// not a suggestion to review.
+function suggestions(cands: Candidate[] | undefined): Candidate[] {
+  return (cands ?? []).filter((c) => !(c.provider === "youtube" && c.accepted));
 }
 
 export function EnrichmentPanel({ videoId }: { videoId: string }) {
-  const { t, n } = useI18n();
+  const { t, n, locale, formatDate } = useI18n();
   const toast = useToast();
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
 
   const load = useCallback(() => {
     api
-      .get<{ candidates: Candidate[] }>(`/api/videos/${encodeURIComponent(videoId)}/enrichment`)
-      .then((r) => setCandidates(r.candidates ?? []))
+      .get<{ candidates: Candidate[]; job?: Job | null }>(
+        `/api/videos/${encodeURIComponent(videoId)}/enrichment`
+      )
+      .then((r) => {
+        setCandidates(suggestions(r.candidates));
+        setJob(r.job ?? null);
+      })
       .catch(() => setCandidates([]));
   }, [videoId]);
 
   useEffect(() => {
     setCandidates(null);
+    setJob(null);
     load();
   }, [load]);
+
+  // poll while the search runs (the engine's enrich job)
+  useEffect(() => {
+    if (!isBusy(job)) return;
+    const id = window.setTimeout(load, POLL_MS);
+    return () => window.clearTimeout(id);
+  }, [job, load]);
+
+  const fail = (e: unknown) =>
+    toast.show({
+      message: e instanceof ApiError ? e.problem.title : t("common.error"),
+      tone: "error",
+    });
 
   async function accept(c: Candidate) {
     setBusy(true);
@@ -67,10 +128,7 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
       toast.show({ message: t("enrich.accepted"), tone: "success" });
       load();
     } catch (e) {
-      toast.show({
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
-        tone: "error",
-      });
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -85,10 +143,7 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
       toast.show({ message: t("enrich.dismissed"), tone: "info" });
       load();
     } catch (e) {
-      toast.show({
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
-        tone: "error",
-      });
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -97,16 +152,31 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
   async function manualSearch() {
     setSearching(true);
     try {
-      const r = await api.post<{ candidates: Candidate[] }>(
+      const r = await api.post<{ candidates: Candidate[]; job?: Job | null }>(
         `/api/videos/${encodeURIComponent(videoId)}/enrichment/search`,
         { query: query.trim() }
       );
-      setCandidates(r.candidates ?? []);
+      setCandidates(suggestions(r.candidates));
+      setJob(r.job ?? null);
+      toast.show({ message: t("enrich.queued"), tone: "info" });
     } catch (e) {
-      toast.show({
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
-        tone: "error",
-      });
+      fail(e);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function reenrich() {
+    setSearching(true);
+    try {
+      const r = await api.post<{ job?: Job | null }>(
+        `/api/videos/${encodeURIComponent(videoId)}/enrichment/reenrich`,
+        {}
+      );
+      setJob(r.job ?? null);
+      toast.show({ message: t("enrich.queued"), tone: "info" });
+    } catch (e) {
+      fail(e);
     } finally {
       setSearching(false);
     }
@@ -114,7 +184,30 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
 
   if (candidates == null) return <p className="mkt-loading">{t("common.loading")}</p>;
 
+  const reason = (raw?: string) => {
+    const r = (raw ?? "").trim();
+    if (!r) return "";
+    const key = r.startsWith("budget:")
+      ? r
+      : r.toLowerCase().includes("rate")
+        ? "rate_limited"
+        : "";
+    return (key && lookupMessage(locale, `enrich.reason.${key}`)) || r;
+  };
+  const labels: Labels = {
+    pct: (c) => (c == null ? "" : t("enrich.confidencePct", { pct: n(Math.round(c * 100)) })),
+    fieldName: (f) => lookupMessage(locale, `enrich.fieldName.${f}`) ?? f,
+    providerName: (p) => lookupMessage(locale, `enrich.provider.${p}`) ?? p,
+    value: (v) =>
+      Array.isArray(v)
+        ? v.map(String).join(locale === "ar" ? "، " : ", ")
+        : typeof v === "number"
+          ? n(v, { useGrouping: false })
+          : String(v ?? ""),
+  };
+
   const top = candidates[0];
+  const rest = candidates.slice(1);
 
   return (
     <Card className="mkt-enrich-panel" elevation={1}>
@@ -123,68 +216,220 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && query.trim() && !isBusy(job)) void manualSearch();
+          }}
           placeholder={t("enrich.searchPlaceholder")}
           aria-label={t("enrich.searchManually")}
+          maxLength={200}
           dir="auto"
         />
         <Button
           variant="secondary"
           onClick={manualSearch}
           loading={searching}
-          disabled={!query.trim()}
+          disabled={!query.trim() || isBusy(job)}
         >
           {t("enrich.searchManually")}
         </Button>
+        <Button variant="ghost" onClick={reenrich} disabled={searching || isBusy(job)}>
+          {t("enrich.reenrich")}
+        </Button>
       </div>
+
+      {job && job.status !== "done" && (
+        <p
+          className={`mkt-enrich-panel__job mkt-enrich-panel__job--${job.status}`}
+          role="status"
+          aria-live="polite"
+          dir="auto"
+        >
+          {job.status === "deferred"
+            ? t("enrich.job.deferred", {
+                when: job.not_before ? formatDate(job.not_before) : "",
+                reason: reason(job.last_error),
+              })
+            : job.status === "failed"
+              ? t("enrich.job.failed", { reason: reason(job.last_error) })
+              : t(`enrich.job.${job.status}`)}
+        </p>
+      )}
 
       {candidates.length === 0 ? (
         <EmptyState title={t("enrich.empty.title")} description={t("enrich.empty.desc")} />
       ) : (
         <>
-          <p className="mkt-enrich-panel__headline" dir="auto">
-            {t("enrich.foundMaybe", {
-              title: top.title || top.external_id,
-              year: top.year ? ` (${n(top.year, { useGrouping: false })})` : "",
-            })}{" "}
-            <Badge tone="accent">
-              {t("enrich.matchPct", { pct: String(Math.round(top.confidence * 100)) })}
-            </Badge>
-          </p>
-
-          {top.fields && top.fields.length > 0 && (
-            <table className="mkt-enrich-diff" aria-label={t("enrich.diff")}>
-              <thead>
-                <tr>
-                  <th>{t("enrich.field")}</th>
-                  <th>{t("enrich.current")}</th>
-                  <th>{t("enrich.proposed")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {top.fields.map((f) => (
-                  <tr key={f.field} className={f.protected ? "mkt-enrich-diff__protected" : ""}>
-                    <td>{t(`enrich.fieldName.${f.field}`)}</td>
-                    <td dir="auto">{f.current || "—"}</td>
-                    <td dir="auto">
-                      {f.proposed || "—"}
-                      {f.protected && <Badge tone="neutral">{t("enrich.wontChange")}</Badge>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <CandidateView
+            c={top}
+            headline
+            busy={busy}
+            onAccept={accept}
+            onDismiss={dismiss}
+            labels={labels}
+          />
+          {rest.length > 0 && (
+            <section aria-labelledby="mkt-enrich-more">
+              <h3 id="mkt-enrich-more" className="mkt-enrich-panel__more">
+                {t("enrich.otherSuggestions")}
+              </h3>
+              {rest.map((c) => (
+                <CandidateView
+                  key={c.id}
+                  c={c}
+                  busy={busy}
+                  onAccept={accept}
+                  onDismiss={dismiss}
+                  labels={labels}
+                />
+              ))}
+            </section>
           )}
-
-          <div className="mkt-enrich-panel__actions">
-            <Button onClick={() => accept(top)} loading={busy}>
-              {t("enrich.accept")}
-            </Button>
-            <Button variant="ghost" onClick={() => dismiss(top)} disabled={busy}>
-              {t("enrich.dismiss")}
-            </Button>
-          </div>
         </>
       )}
     </Card>
+  );
+}
+
+interface Labels {
+  pct: (c?: number) => string;
+  fieldName: (f: string) => string;
+  providerName: (p: string) => string;
+  value: (v: unknown) => string;
+}
+
+function CandidateView({
+  c,
+  headline,
+  busy,
+  onAccept,
+  onDismiss,
+  labels,
+}: {
+  c: Candidate;
+  headline?: boolean;
+  busy: boolean;
+  onAccept: (c: Candidate) => void;
+  onDismiss: (c: Candidate) => void;
+  labels: Labels;
+}) {
+  const { t, n, locale } = useI18n();
+  const { pct, fieldName, providerName, value } = labels;
+  const sources = c.sources ?? [];
+  const known = new Set(sources.map((s) => s.id));
+  const anchor = (id: string) => `mkt-src-${c.id}-${id}`;
+  const sourceLabel = (s: Source) =>
+    (s.kind && lookupMessage(locale, `enrich.sourceKind.${s.kind}`)) || s.label || s.url || s.id;
+  const cites = (ids?: string[]) =>
+    (ids ?? [])
+      .filter((id) => known.has(id))
+      .map((id) => (
+        <a key={id} href={`#${anchor(id)}`} className="mkt-enrich-cite" dir="ltr">
+          [{id}]
+        </a>
+      ));
+  const sep = locale === "ar" ? "، " : ", ";
+  const usedFor = (id: string) =>
+    [...(c.fields ?? []), ...(c.facts ?? [])]
+      .filter((f) => f.sources?.includes(id))
+      .map((f) => fieldName(f.field))
+      .join(sep);
+
+  return (
+    <article className="mkt-enrich-cand" aria-label={providerName(c.provider)}>
+      <p className={headline ? "mkt-enrich-panel__headline" : "mkt-enrich-cand__title"} dir="auto">
+        {t("enrich.foundMaybe", {
+          title: c.title || c.external_id,
+          year: c.year ? ` (${n(c.year, { useGrouping: false })})` : "",
+        })}{" "}
+        <Badge tone="accent">
+          {t("enrich.matchPct", { pct: String(Math.round(c.confidence * 100)) })}
+        </Badge>{" "}
+        <Badge tone="neutral">{providerName(c.provider)}</Badge>
+      </p>
+
+      {c.fields && c.fields.length > 0 && (
+        <div className="mkt-enrich-scroll">
+          <table className="mkt-enrich-diff" aria-label={t("enrich.diff")}>
+            <thead>
+              <tr>
+                <th>{t("enrich.field")}</th>
+                <th>{t("enrich.current")}</th>
+                <th>{t("enrich.proposed")}</th>
+                <th>{t("enrich.confidence")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.fields.map((f) => (
+                <tr key={f.field} className={f.protected ? "mkt-enrich-diff__protected" : ""}>
+                  <td>{fieldName(f.field)}</td>
+                  <td dir="auto">{f.current || "—"}</td>
+                  <td dir="auto">
+                    {f.proposed || "—"}
+                    {f.protected && <Badge tone="neutral">{t("enrich.wontChange")}</Badge>}
+                  </td>
+                  <td className="mkt-enrich-conf">
+                    {pct(f.confidence)} {cites(f.sources)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {c.facts && c.facts.length > 0 && (
+        <div className="mkt-enrich-scroll">
+          <table className="mkt-enrich-diff mkt-enrich-facts">
+            <caption>{t("enrich.facts")}</caption>
+            <tbody>
+              {c.facts.map((f) => (
+                <tr key={f.field}>
+                  <th scope="row">{fieldName(f.field)}</th>
+                  <td dir="auto">{value(f.value)}</td>
+                  <td className="mkt-enrich-conf">
+                    {pct(f.confidence)} {cites(f.sources)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {sources.length > 0 && (
+        <details className="mkt-enrich-sources" open={headline}>
+          <summary>{t("enrich.sources")}</summary>
+          <ol>
+            {sources.map((s) => (
+              <li key={s.id} id={anchor(s.id)}>
+                <code dir="ltr">[{s.id}]</code>{" "}
+                {s.url ? (
+                  <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" dir="auto">
+                    {sourceLabel(s)}
+                  </a>
+                ) : (
+                  <span dir="auto">{sourceLabel(s)}</span>
+                )}
+                {usedFor(s.id) && (
+                  <span className="mkt-enrich-sources__used" dir="auto">
+                    {" "}
+                    — {t("enrich.citedBy", { fields: usedFor(s.id) })}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+
+      <div className="mkt-enrich-panel__actions">
+        <Button onClick={() => onAccept(c)} loading={busy} disabled={c.accepted}>
+          {t("enrich.accept")}
+        </Button>
+        <Button variant="ghost" onClick={() => onDismiss(c)} disabled={busy}>
+          {t("enrich.dismiss")}
+        </Button>
+      </div>
+    </article>
   );
 }

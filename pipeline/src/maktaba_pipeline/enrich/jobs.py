@@ -30,6 +30,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
+from ..engine.sql import to_ts
 from ..pipeline.backoff import compute_backoff
 
 __all__ = [
@@ -78,6 +79,11 @@ class EnrichJob:
     status: EnrichJobStatus
     force: bool
     attempts: int
+    #: a manual search's words and year (Find metadata), else None
+    query: str | None = None
+    year: int | None = None
+    #: ``manual`` | ``reenrich`` | ``auto``
+    origin: str = "auto"
 
 
 def _now() -> datetime:
@@ -85,8 +91,9 @@ def _now() -> datetime:
 
 
 _ENQUEUE_SQL = """
-INSERT INTO enrich_jobs (id, video_id, status, force, attempts, not_before, created_at, updated_at)
-VALUES ($1, $2, 'pending', $3, 0, $4, $4, $4)
+INSERT INTO enrich_jobs
+    (id, video_id, status, force, attempts, not_before, created_at, updated_at, origin)
+VALUES ($1, $2, 'pending', $3, 0, $4, $4, $4, $5)
 ON CONFLICT DO NOTHING
 RETURNING id
 """
@@ -97,6 +104,7 @@ async def enqueue_enrich(
     video_id: UUID,
     *,
     force: bool = False,
+    origin: str = "auto",
     now: datetime | None = None,
 ) -> UUID | None:
     """Enqueue a pending enrich job for ``video_id``.
@@ -106,8 +114,8 @@ async def enqueue_enrich(
     no-op (``ON CONFLICT DO NOTHING`` → ``None``) — idempotent by
     construction, which is what the ordering/resume guarantees rely on.
     """
-    ts = now or _now()
-    row = await conn.fetchrow(_ENQUEUE_SQL, str(uuid4()), str(video_id), force, ts)
+    ts = to_ts(conn, now or _now())
+    row = await conn.fetchrow(_ENQUEUE_SQL, str(uuid4()), str(video_id), force, ts, origin)
     if row is None:
         return None
     return UUID(str(row["id"]))
@@ -119,11 +127,12 @@ SET status = 'running', updated_at = $1
 WHERE id = (
     SELECT id FROM enrich_jobs
     WHERE status IN ('pending', 'deferred') AND not_before <= $1
+      AND ($2::text IS NULL OR video_id::text = $2::text)
     ORDER BY not_before ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, video_id, status, force, attempts
+RETURNING id, video_id, status, force, attempts, query, year, origin
 """
 
 # SQLite has no FOR UPDATE SKIP LOCKED; the connection wrapper / claim
@@ -134,24 +143,28 @@ SET status = 'running', updated_at = $1
 WHERE id = (
     SELECT id FROM enrich_jobs
     WHERE status IN ('pending', 'deferred') AND not_before <= $1
+      AND ($2 IS NULL OR video_id = $2)
     ORDER BY not_before ASC
     LIMIT 1
 )
-RETURNING id, video_id, status, force, attempts
+RETURNING id, video_id, status, force, attempts, query, year, origin
 """
 
 
-async def claim_enrich_job(conn: Conn, *, now: datetime | None = None) -> EnrichJob | None:
+async def claim_enrich_job(
+    conn: Conn, *, video_id: UUID | None = None, now: datetime | None = None
+) -> EnrichJob | None:
     """Atomically claim the next due enrich job, or ``None`` if idle.
 
     "Due" means ``status ∈ {pending, deferred}`` and ``not_before <= now``
     so backoff and defer windows are honoured. The claim flips the row to
     ``running`` in the same statement (``RETURNING``) — a crash mid-run
-    leaves a ``running`` row the reaper reclaims (Story 26.7 resume).
+    leaves a ``running`` row the reaper reclaims (Story 26.7 resume). ``video_id``
+    claims only that video's job (the engine's ``enrich`` stage runs one video).
     """
-    ts = now or _now()
+    ts = to_ts(conn, now or _now())
     sql = _CLAIM_SQL_SQLITE if getattr(conn, "dialect", "postgres") == "sqlite" else _CLAIM_SQL
-    row = await conn.fetchrow(sql, ts)
+    row = await conn.fetchrow(sql, ts, None if video_id is None else str(video_id))
     if row is None:
         return None
     return EnrichJob(
@@ -160,6 +173,9 @@ async def claim_enrich_job(conn: Conn, *, now: datetime | None = None) -> Enrich
         status=EnrichJobStatus(str(row["status"])),
         force=bool(row["force"]),
         attempts=int(row["attempts"]),
+        query=(str(row["query"]) if row["query"] else None),
+        year=(int(row["year"]) if row["year"] is not None else None),
+        origin=str(row["origin"] or "auto"),
     )
 
 
@@ -170,7 +186,7 @@ UPDATE enrich_jobs SET status = 'done', updated_at = $2 WHERE id = $1 RETURNING 
 
 async def complete_enrich_job(conn: Conn, job: EnrichJob, *, now: datetime | None = None) -> None:
     """Mark a claimed job done."""
-    await conn.fetchrow(_COMPLETE_SQL, str(job.id), now or _now())
+    await conn.fetchrow(_COMPLETE_SQL, str(job.id), to_ts(conn, now or _now()))
 
 
 _DEFER_SQL = """
@@ -196,7 +212,7 @@ async def defer_enrich_job(
     drains when the window passes (Story 26.7 ``test_daily_cap_defers``).
     """
     ts = now or _now()
-    await conn.fetchrow(_DEFER_SQL, str(job.id), ts + delay, reason, ts)
+    await conn.fetchrow(_DEFER_SQL, str(job.id), to_ts(conn, ts + delay), reason, to_ts(conn, ts))
 
 
 _RETRY_SQL = """
@@ -233,8 +249,11 @@ async def retry_or_fail_enrich_job(
     ts = now or _now()
     attempts = job.attempts + 1
     if attempts >= max_attempts:
-        await conn.fetchrow(_FAIL_SQL, str(job.id), attempts, error, ts)
+        await conn.fetchrow(_FAIL_SQL, str(job.id), attempts, error, to_ts(conn, ts))
         return EnrichJobStatus.FAILED
     delay = compute_backoff(attempts)
-    await conn.fetchrow(_RETRY_SQL, str(job.id), attempts, ts + timedelta(seconds=delay), error, ts)
+    await conn.fetchrow(
+        _RETRY_SQL, str(job.id), attempts, to_ts(conn, ts + timedelta(seconds=delay)), error,
+        to_ts(conn, ts),
+    )  # fmt: skip
     return EnrichJobStatus.PENDING

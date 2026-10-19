@@ -3,10 +3,18 @@
 //	GET  /api/videos/{id}/enrichment            ranked candidates + per-field diff
 //	POST /api/videos/{id}/enrichment/accept     promote a candidate (provenance-aware)
 //	POST /api/videos/{id}/enrichment/dismiss    hide candidate(s)
-//	POST /api/videos/{id}/enrichment/search     manual re-search (no auto-apply)
+//	POST /api/videos/{id}/enrichment/search     Find metadata: queue a search (no auto-apply)
 //	POST /api/videos/{id}/enrichment/revert     restore a field's pre-accept value
 //	POST /api/videos/{id}/enrichment/reenrich   enqueue a fresh enrich job (26.7)
 //	POST /api/series/{id}/enrichment/accept-all  batch-accept across a series (26.6)
+//
+// The candidates come from the pipeline's metadata provider (the engine
+// stage `enrich`, stub audit #4): `internal` (Maktaba's own intel:
+// transcripts, chapters, the book a series explains, file and folder
+// names, sibling episodes) and `web` / `llm` (a web search a language
+// model read). No outside catalogue (TMDB, TVDB) is used. Each field
+// carries its confidence and the sources it rests on (`mapped.fields`,
+// `mapped.sources`), shown in the review panel.
 //
 // Enrichment results land in the `media_metadata_enrichment` staging
 // table (slot 0077); nothing is promoted to `videos` until the user
@@ -22,10 +30,14 @@
 package enrichment
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -46,6 +58,11 @@ var mappableFields = []string{"title", "description", "poster_path"}
 type Handler struct {
 	DB      *sql.DB
 	NowFunc func() time.Time
+	// Enqueue enqueues the engine's `enrich` stage for a video (the
+	// router wires queues.Enqueue); nil leaves it to the home's sweep of
+	// enrich_jobs (every 30 s).
+	Enqueue func(ctx context.Context, videoID string, reason map[string]any) error
+	Logger  *slog.Logger
 }
 
 // Candidate is one provider match for a video.
@@ -62,15 +79,39 @@ type Candidate struct {
 	// X (year)" headline.
 	Title string `json:"title,omitempty"`
 	Year  *int   `json:"year,omitempty"`
+	// Sources is every source the candidate's fields cite: a web page
+	// (url) or a kind of Maktaba's own intel (kind), GET only.
+	Sources []Source `json:"sources,omitempty"`
+	// Facts are the candidate's fields that are not video columns
+	// (series, episode, presenter, the book, ...), with their sources.
+	Facts []Fact `json:"facts,omitempty"`
+}
+
+// Source is where a candidate's field came from.
+type Source struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+}
+
+// Fact is one non-promotable field of a candidate.
+type Fact struct {
+	Field      string   `json:"field"`
+	Value      any      `json:"value"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	Sources    []string `json:"sources,omitempty"`
 }
 
 // FieldDiff is one promotable field's current-vs-proposed comparison.
 type FieldDiff struct {
-	Field       string `json:"field"`
-	Current     string `json:"current"`
-	Proposed    string `json:"proposed"`
-	WouldChange bool   `json:"would_change"`
-	Protected   bool   `json:"protected"` // user-owned ⇒ accept skips it
+	Field       string   `json:"field"`
+	Current     string   `json:"current"`
+	Proposed    string   `json:"proposed"`
+	WouldChange bool     `json:"would_change"`
+	Protected   bool     `json:"protected"` // user-owned ⇒ accept skips it
+	Confidence  *float64 `json:"confidence,omitempty"`
+	Sources     []string `json:"sources,omitempty"`
 }
 
 func (h *Handler) now() time.Time {
@@ -187,8 +228,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for i := range cands {
 		cands[i].Fields = diffFields(v, cands[i].Mapped, prot)
 		cands[i].Title, cands[i].Year = headline(cands[i].Mapped)
+		cands[i].Sources, cands[i].Facts = provenanceOf(cands[i].Mapped)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands, "job": h.jobStatus(r, id)})
 }
 
 // PendingItem is one row in the library review queue.
@@ -317,15 +359,104 @@ func diffFields(v videoRow, mapped map[string]any, prot map[string]bool) []Field
 			continue
 		}
 		cur := v.field(f)
+		conf, srcs := fieldMeta(mapped, f)
 		out = append(out, FieldDiff{
 			Field:       f,
 			Current:     cur,
 			Proposed:    proposed,
 			WouldChange: cur != proposed,
 			Protected:   prot[f],
+			Confidence:  conf,
+			Sources:     srcs,
 		})
 	}
 	return out
+}
+
+// fieldMeta reads a field's confidence and source ids from
+// mapped.fields (the metadata provider's shape); nil when absent.
+func fieldMeta(mapped map[string]any, field string) (*float64, []string) {
+	fields, _ := mapped["fields"].(map[string]any)
+	f, _ := fields[field].(map[string]any)
+	if f == nil {
+		return nil, nil
+	}
+	var conf *float64
+	if c, ok := f["confidence"].(float64); ok {
+		conf = &c
+	}
+	var srcs []string
+	if raw, ok := f["sources"].([]any); ok {
+		for _, s := range raw {
+			if id, ok := s.(string); ok {
+				srcs = append(srcs, id)
+			}
+		}
+	}
+	return conf, srcs
+}
+
+// provenanceOf lists a candidate's sources and its non-promotable fields.
+func provenanceOf(mapped map[string]any) ([]Source, []Fact) {
+	var sources []Source
+	if raw, ok := mapped["sources"].([]any); ok {
+		for _, x := range raw {
+			m, _ := x.(map[string]any)
+			if m == nil {
+				continue
+			}
+			id := asString(m["id"])
+			if id == "" {
+				continue
+			}
+			src := Source{ID: id, Label: asString(m["label"]), Kind: asString(m["kind"])}
+			if u := asString(m["url"]); safeURL(u) {
+				src.URL = u
+			}
+			sources = append(sources, src)
+		}
+	}
+	fields, _ := mapped["fields"].(map[string]any)
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		if !contains(mappableFields, name) {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if factOrder(names[i]) != factOrder(names[j]) {
+			return factOrder(names[i]) < factOrder(names[j])
+		}
+		return names[i] < names[j]
+	})
+	var facts []Fact
+	for _, name := range names {
+		f, _ := fields[name].(map[string]any)
+		if f == nil || f["value"] == nil {
+			continue
+		}
+		conf, srcs := fieldMeta(mapped, name)
+		facts = append(facts, Fact{Field: name, Value: f["value"], Confidence: conf, Sources: srcs})
+	}
+	return sources, facts
+}
+
+// factFields is the order facts are shown in.
+var factFields = []string{"series", "season", "episode", "year", "presenter", "speakers",
+	"language", "topic", "book_title", "book_author", "book_subject", "book_chapters"}
+
+func factOrder(name string) int {
+	for i, f := range factFields {
+		if f == name {
+			return i
+		}
+	}
+	return len(factFields)
+}
+
+// safeURL: only http(s) links are handed to the panel (a source is a link).
+func safeURL(u string) bool {
+	return len(u) < 2048 && (strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://"))
 }
 
 // headline extracts the "X (year)" hint from a candidate's mapped fields.

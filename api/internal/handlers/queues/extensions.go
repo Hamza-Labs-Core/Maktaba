@@ -56,6 +56,12 @@ type extensionDef struct {
 // CloudflareExtension is the Cloudflare Stream integration's name.
 const CloudflareExtension = "cloudflare_stream"
 
+// WebSearchExtension is the web search behind "Find metadata" (stub audit
+// #4): Google Programmable Search, or Ollama's web search. The home's
+// pipeline reads the keys from home_secrets (the enrich stage runs on the
+// home); no catalogue such as TMDB is used.
+const WebSearchExtension = "web_search"
+
 var extensionCatalog = []extensionDef{
 	{
 		Name: "dizquetv", Label: "dizqueTV", Version: "1", Description: "Publish Maktaba shows and channels to a dizqueTV server.",
@@ -83,6 +89,21 @@ var extensionCatalog = []extensionDef{
 				Required: true, HomeOnly: true, SecretName: "cf_api_token"},
 			{Key: "customer_code", Label: "Customer subdomain code (customer-<code>.cloudflarestream.com)", Type: "text",
 				Help: "Learned by Test connection when empty."},
+		},
+	},
+	{
+		// Stub audit #4: "Find metadata" searches the web and a language
+		// model reads the results (rules.enrich picks the backend and the
+		// model). Without it, suggestions come from Maktaba's own intel only.
+		Name: WebSearchExtension, Label: "Web search", Version: "1",
+		Description: "Find metadata: search the web for a video and have the language model read the results (Google Programmable Search, or Ollama's web search).",
+		Fields: []SettingField{
+			{Key: "google_api_key", Label: "Google API key (Custom Search JSON API)", Type: "secret",
+				Help: "Google Cloud console: enable the Custom Search API and create an API key."},
+			{Key: "google_cx", Label: "Search engine ID (cx)", Type: "text",
+				Help: "programmablesearchengine.google.com: an engine that searches the entire web."},
+			{Key: "ollama_api_key", Label: "Ollama API key (web search)", Type: "secret",
+				Help: "Optional: ollama.com account key, for rules.enrich.search = ollama (or auto without Google)."},
 		},
 	},
 }

@@ -23,7 +23,7 @@ async def test_classify_persists_parsed_title_and_enqueues_enrich() -> None:
         library_id=lib,
         filename="Breaking.Bad.S01E02.1080p.x265-GROUP.mkv",
         settings=EnrichSettings(enabled=True),
-        providers=[ProviderKey("tmdb", configured=True)],
+        providers=[ProviderKey("google", configured=True)],
     )
     assert res.classified is True
     assert res.error is None
@@ -34,7 +34,9 @@ async def test_classify_persists_parsed_title_and_enqueues_enrich() -> None:
 
 
 @pytest.mark.asyncio
-async def test_classify_skips_enrich_without_key() -> None:
+async def test_classify_enqueues_internal_enrich_without_a_key() -> None:
+    # stub audit #4: Maktaba's own intel is always a provider, so a keyless box
+    # still gets an internal suggestion
     db = FakeEnrichDB()
     vid, lib = uuid4(), uuid4()
     res = await run_classify(
@@ -43,9 +45,23 @@ async def test_classify_skips_enrich_without_key() -> None:
         library_id=lib,
         filename="movie.2009.1080p.mkv",
         settings=EnrichSettings(enabled=True),
-        providers=[ProviderKey("tmdb", configured=False)],
+        providers=[ProviderKey("google", configured=False)],
     )
     assert res.classified is True
+    assert res.enrich_enqueued is True
+
+
+@pytest.mark.asyncio
+async def test_classify_skips_enrich_when_off() -> None:
+    db = FakeEnrichDB()
+    vid, lib = uuid4(), uuid4()
+    res = await run_classify(
+        db,
+        video_id=vid,
+        library_id=lib,
+        filename="movie.2009.1080p.mkv",
+        settings=EnrichSettings(enabled=False),
+    )
     assert res.enrich_enqueued is False
     assert db.jobs == {}
 

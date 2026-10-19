@@ -30,6 +30,7 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
+from .enrich.config import EnrichConfig
 from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
@@ -102,6 +103,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                    "when channels switch, rollback, the hot standby"),
     "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
                  "picture: what is on now and next, and a clock rotating between cities"),
+    "enrich": (EnrichConfig, "Finding metadata", "Find metadata and Re-enrich: Maktaba's "
+               "own intel (transcripts, chapters, the book, file and folder names, sibling "
+               "episodes) and a web search a language model reads; the daily caps"),
     "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "
                        "for the guide, the channel strip and the dizqueTV export"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "

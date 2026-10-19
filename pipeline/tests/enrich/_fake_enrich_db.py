@@ -64,7 +64,9 @@ class FakeEnrichDB:
 
     # --- enrich_jobs ---
 
-    def _enqueue(self, job_id: str, video_id: str, force: bool, ts: datetime) -> _Row | None:
+    def _enqueue(
+        self, job_id: str, video_id: str, force: bool, ts: datetime, origin: str = "auto"
+    ) -> _Row | None:
         # Honour the open-video unique index: skip if an open job exists.
         for j in self.jobs.values():
             if j["video_id"] == str(video_id) and j["status"] in _OPEN:
@@ -77,14 +79,17 @@ class FakeEnrichDB:
             "attempts": 0,
             "not_before": ts,
             "last_error": None,
+            "origin": origin,
         }
         return _Row(id=job_id)
 
-    def _claim(self, ts: datetime) -> _Row | None:
+    def _claim(self, ts: datetime, video_id: str | None = None) -> _Row | None:
         due = [
             j
             for j in self.jobs.values()
-            if j["status"] in ("pending", "deferred") and j["not_before"] <= ts
+            if j["status"] in ("pending", "deferred")
+            and j["not_before"] <= ts
+            and (video_id is None or j["video_id"] == video_id)
         ]
         if not due:
             return None
@@ -97,6 +102,9 @@ class FakeEnrichDB:
             status="running",
             force=j["force"],
             attempts=j["attempts"],
+            query=None,
+            year=None,
+            origin=j.get("origin", "auto"),
         )
 
     def _set(self, job_id: str, *, status: str) -> _Row | None:

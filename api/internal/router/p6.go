@@ -235,6 +235,17 @@ func MountP6(r chi.Router, d P6Deps) {
 	// (26.6), the web context card (26.9), and the cross-library series
 	// browser (26.10). All degrade gracefully with a nil DB.
 	enrichHandler := &enrichment.Handler{DB: d.DB}
+	if d.DB != nil {
+		// Find metadata / Re-enrich run as the engine's enrich stage (stub
+		// audit #4), so they show in the control centre.
+		enrichHandler.Enqueue = func(ctx context.Context, videoID string, reason map[string]any) error {
+			_, err := queues.Enqueue(ctx, d.DB, queues.EnqueueParams{
+				SubjectKind: "video", SubjectID: videoID, Stage: "enrich", Force: true,
+				Reason: queues.ReasonFor(ctx, "find_metadata", reason),
+			})
+			return err
+		}
+	}
 	enrichHandler.Mount(r)
 
 	contextHandler := &contextcard.Handler{DB: d.DB}

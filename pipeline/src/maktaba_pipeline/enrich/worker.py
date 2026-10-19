@@ -17,6 +17,8 @@ Outcome routing mirrors the plan:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -31,6 +33,7 @@ from .jobs import (
 )
 
 __all__ = [
+    "EnrichRun",
     "EnrichService",
     "ProviderPaused",
     "RateLimited",
@@ -43,9 +46,20 @@ log = get_logger(component="enrich_worker")
 class ProviderPaused(Exception):
     """Raised by the service when a provider's breaker is open."""
 
+    def __init__(self, reason: str = "provider_paused", *, retry_after_sec: float = 900.0):
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after_sec = retry_after_sec
+
 
 class RateLimited(Exception):
-    """Raised by the service when a provider is rate-limited / over cap."""
+    """Raised by the service when a provider is rate-limited / over a daily cap. What
+    the service could do without it (the internal suggestion) is already written."""
+
+    def __init__(self, reason: str = "rate_limited", *, retry_after_sec: float = 900.0):
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after_sec = retry_after_sec
 
 
 class EnrichService(Protocol):
@@ -56,32 +70,54 @@ class EnrichService(Protocol):
     / :class:`RateLimited` for the defer-class conditions.
     """
 
-    async def enrich_video(self, conn: Conn, video_id: UUID, *, force: bool) -> object: ...
+    async def enrich_video(
+        self,
+        conn: Conn,
+        video_id: UUID,
+        *,
+        force: bool,
+        query: str | None = None,
+        year: int | None = None,
+    ) -> object: ...
+
+
+@dataclass
+class EnrichRun:
+    """What :func:`process_one_enrich_job` did with the job it claimed."""
+
+    job: EnrichJob
+    #: ``done`` | ``deferred`` | ``pending`` (retry later) | ``failed``
+    status: str
+    result: object = None
+    reason: str = ""
+    retry_after_sec: float = 0.0
 
 
 async def process_one_enrich_job(
     conn: Conn,
     service: EnrichService,
-) -> EnrichJob | None:
-    """Claim and process a single enrich job; return it, or ``None`` if idle.
+    *,
+    video_id: UUID | None = None,
+) -> EnrichRun | None:
+    """Claim and process a single enrich job; return what happened, or ``None`` if idle.
 
-    This is the unit the worker loop calls per tick. Splitting it out
-    keeps the outcome routing (the heart of the story) testable without
-    standing up the full claim/wakeup machinery.
+    This is the unit the engine's ``enrich`` stage runs (``video_id``: that video's
+    job only). Splitting it out keeps the outcome routing (the heart of the story)
+    testable without standing up the full claim/wakeup machinery.
     """
-    job = await claim_enrich_job(conn)
+    job = await claim_enrich_job(conn, video_id=video_id)
     if job is None:
         return None
     try:
-        await service.enrich_video(conn, job.video_id, force=job.force)
-    except ProviderPaused:
-        await defer_enrich_job(conn, job, reason="provider_paused")
-        log.info("enrich_deferred", video_id=str(job.video_id), reason="provider_paused")
-        return job
-    except RateLimited:
-        await defer_enrich_job(conn, job, reason="rate_limited")
-        log.info("enrich_deferred", video_id=str(job.video_id), reason="rate_limited")
-        return job
+        result = await service.enrich_video(
+            conn, job.video_id, force=job.force, query=job.query, year=job.year
+        )
+    except (ProviderPaused, RateLimited) as exc:
+        await defer_enrich_job(
+            conn, job, reason=exc.reason, delay=timedelta(seconds=exc.retry_after_sec)
+        )
+        log.info("enrich_deferred", video_id=str(job.video_id), reason=exc.reason)
+        return EnrichRun(job, "deferred", reason=exc.reason, retry_after_sec=exc.retry_after_sec)
     except Exception as exc:  # noqa: BLE001 — bounded by retry/fail; never reraised onto videos.state
         status = await retry_or_fail_enrich_job(conn, job, error=str(exc))
         log.warning(
@@ -91,7 +127,7 @@ async def process_one_enrich_job(
             outcome=status.value,
             error=str(exc),
         )
-        return job
+        return EnrichRun(job, status.value, reason=str(exc))
     await complete_enrich_job(conn, job)
     log.info("enrich_done", video_id=str(job.video_id))
-    return job
+    return EnrichRun(job, "done", result=result)

@@ -100,7 +100,7 @@
 - **Preconditions / data:** `/enrichment` → (a) `{ "candidates": null }`, (b) `{}`, (c) 500, (d) `{ "candidates": [ { "id": "c1", "provider": "tmdb", "external_id": "tmdb:1", "confidence": 0.8, "accepted": false, "fields": null } ] }`; also `POST .../search` → `{ "candidates": null }`. List fields: `candidates`, `candidates[].fields`.
 - **Steps:**
   1. Open `/videos/v1`; click "Metadata". For the search case type "x" and click "Search manually".
-- **Expected:** (a)(b)(c) "No suggestions" / "No web matches were found. Try a manual search."; (d) headline "We found this might be tmdb:1" + "80% match", no diff table, Accept/Dismiss shown; search with null → empty state. No crash. (c) wanted: an error message rather than "No suggestions".
+- **Expected:** (a)(b)(c) "No suggestions" / "Nothing found yet. Search with your own words, or search again from what Maktaba knows about this video."; (d) headline "We found this might be tmdb:1" + "80% match", no diff table, Accept/Dismiss shown; search with null → empty state. No crash. (c) wanted: an error message rather than "No suggestions".
 
 ### VID-05 — Stats with missing numbers and `viewers: null`
 
