@@ -35,11 +35,12 @@ var (
 	keyPEM  string
 )
 
-// signingPEM is one RSA key for the whole package (key generation is slow
-// under -race).
+// signingPEM is one RSA key for the whole package, 1024 bits (key generation
+// is slow under -race, and a 2048-bit prime search now and then takes seconds:
+// cftest's key says more).
 func signingPEM() string {
 	keyOnce.Do(func() {
-		k, _ := rsa.GenerateKey(rand.Reader, 2048)
+		k, _ := rsa.GenerateKey(rand.Reader, 1024)
 		p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
 		keyPEM = base64.StdEncoding.EncodeToString(p)
 	})

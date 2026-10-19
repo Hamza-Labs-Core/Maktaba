@@ -509,8 +509,12 @@ func write(w http.ResponseWriter, status int, result any, errs ...cf.Error) {
 }
 
 // keyPEM is an RSA key as Cloudflare returns it (base64 PEM). One per test
-// binary: a 2048-bit key takes ~100 ms to make (seconds under -race), and
-// the fake's keys differ by ID, which is all the tests compare.
+// binary, and 1024 bits, the smallest Go makes: a 2048-bit key takes ~100 ms
+// to make and, its prime search being random, now and then seconds under
+// -race on a busy runner, all of it charged to whichever test asks first
+// (TestCFTestConnection passed the unit tier's per-test cap that way). The
+// fake's keys differ by ID, which is all the tests compare; the signatures
+// the tests verify work the same with either size.
 var (
 	keyOnce sync.Once
 	keyPEM  string
@@ -518,7 +522,7 @@ var (
 
 func newKeyPEM() string {
 	keyOnce.Do(func() {
-		k, _ := rsa.GenerateKey(rand.Reader, 2048)
+		k, _ := rsa.GenerateKey(rand.Reader, 1024)
 		p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
 		keyPEM = base64.StdEncoding.EncodeToString(p)
 	})
