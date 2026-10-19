@@ -147,7 +147,7 @@ func (w *WebSearch) secret(ctx context.Context, name string) (string, string, st
 }
 
 // do sends one request bounded by the check timeout.
-func (w *WebSearch) do(ctx context.Context, c *http.Client, req *http.Request) (answer, error) {
+func (w *WebSearch) do(c *http.Client, req *http.Request) (answer, error) {
 	start := time.Now()
 	resp, err := c.Do(req)
 	if err != nil {
@@ -194,7 +194,7 @@ func (w *WebSearch) google(ctx context.Context, c *http.Client, key, cx string) 
 		return Line{Key: "google", Code: CodeBadURL, Detail: "the Google search request cannot be built"}
 	}
 	req.Header.Set("Accept", "application/json")
-	a, err := w.do(ctx, c, req)
+	a, err := w.do(c, req)
 	if err != nil {
 		code, det := classify(err, base, w.timeout())
 		return Line{Key: "google", Code: code, Detail: Redact(det, key)}
@@ -265,7 +265,7 @@ func (w *WebSearch) ollama(ctx context.Context, c *http.Client, key string) Line
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
-	a, err := w.do(ctx, c, req)
+	a, err := w.do(c, req)
 	if err != nil {
 		code, det := classify(err, base, w.timeout())
 		return Line{Key: "ollama", Code: code, Detail: Redact(det, key)}
