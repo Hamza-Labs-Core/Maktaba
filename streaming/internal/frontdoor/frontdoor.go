@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,8 @@ type Handler struct {
 	// SpliceRetry is the pause between two attempts to reach a channel's source
 	// (0: 500 ms).
 	SpliceRetry time.Duration
+
+	clientOnce sync.Once
 }
 
 // NewClient is the front door's HTTP client: keep-alives, no overall timeout (TS
@@ -71,9 +74,11 @@ func (h *Handler) log() *slog.Logger {
 }
 
 func (h *Handler) client() *http.Client {
-	if h.Client == nil {
-		h.Client = NewClient()
-	}
+	h.clientOnce.Do(func() {
+		if h.Client == nil {
+			h.Client = NewClient()
+		}
+	})
 	return h.Client
 }
 
