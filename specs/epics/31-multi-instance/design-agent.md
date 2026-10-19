@@ -73,10 +73,25 @@ channel: the hub closes its sessions at once and refuses new ones.
 Back-pressure: the agent keeps a bounded buffer (logs 10 000 records, metrics the latest
 only); the hub's per-browser queues drop the oldest frames for slow viewers and say so.
 
-## 4. Files by node IP (home)
+## 4. Files by node IP, on the shared storage
 
-The hub writes what each process sends to `MAKTABA_CLUSTER_DIR` (default
-`~/.maktaba/cluster`), one directory per **node IP** (the remote address of the
+The files live **on the share with the videos**, under a `maktaba` folder, so every
+machine can read them through its own path to the share (owner, 2026-10-19).
+
+- **Share root** (database form, like `libraries.root_path`): `MAKTABA_SHARE_ROOT` when
+  set; otherwise the deepest directory common to every library root; when the libraries
+  share nothing but the filesystem root, the root of the library with the most videos.
+- **Cluster directory**: `<share root>/maktaba/cluster`, translated to the local path by
+  the process's path map (phase 1 §6: the home's API takes `MAKTABA_PATH_MAP` in the same
+  format as the workers' `--path-map`; a node uses its stored map). `MAKTABA_CLUSTER_DIR`
+  overrides with a local path. If the share is not reachable the hub writes to
+  `~/.maktaba/cluster` and says so in its events and on the Machines page.
+- **Secrets stay local**: `home-agent.key` is in `~/.maktaba/` on the home, never on the share.
+- **One writer per file**: the hub writes every file; any machine reads them —
+  `maktaba-pipeline cluster logs|metrics|events [--ip IP] [--date D] [--follow]` on a node
+  reads the share directly with its own map.
+
+The hub writes what each process sends, one directory per **node IP** (the remote address of the
 connection; the home's own processes use the home's LAN address), JSON Lines, rotated
 daily, kept `MAKTABA_CLUSTER_RETENTION_DAYS` (default 14), each file capped at
 `MAKTABA_CLUSTER_FILE_MB` (default 256; past it records are counted, not written):
