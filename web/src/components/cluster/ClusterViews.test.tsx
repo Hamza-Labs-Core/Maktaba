@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 
@@ -19,6 +20,7 @@ vi.mock("../../lib/auth", () => {
 import { Machines } from "../../pages/Admin/Machines";
 import type { ClusterProcess } from "../../lib/clusterApi";
 import { clusterSocket } from "../../lib/clusterSocket";
+import { clusterStreamConfig } from "../../lib/clusterStream";
 import { FakeSocket } from "../../test/fakeSocket";
 import { routeGet } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
@@ -199,7 +201,9 @@ function setup() {
   const utils = render(
     <I18nProvider>
       <ToastProvider>
-        <Machines />
+        <MemoryRouter>
+          <Machines />
+        </MemoryRouter>
       </ToastProvider>
     </I18nProvider>
   );
@@ -224,6 +228,8 @@ describe("Cluster views", () => {
     FakeSocket.all = [];
     vi.stubGlobal("WebSocket", FakeSocket);
     clusterSocket.reset();
+    // every hub frame applied at once (production batches them once a second)
+    clusterStreamConfig.flushMs = 0;
     get.mockReset();
     post.mockReset();
     put.mockReset();
@@ -232,6 +238,7 @@ describe("Cluster views", () => {
     clusterSocket.reset();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+    clusterStreamConfig.flushMs = 1_000;
     document.documentElement.dir = "ltr";
   });
 
@@ -251,11 +258,16 @@ describe("Cluster views", () => {
 
     const mac = machine("Studio Mac");
     expect(within(mac).getByText("node-n1-1")).toBeInTheDocument();
-    expect(within(mac).getByText(/Lecture 4/)).toBeInTheDocument();
-    expect(within(mac).getByRole("progressbar", { name: "Progress of Lecture 4" })).toHaveAttribute(
-      "aria-valuenow",
-      "50"
-    );
+    // the jobs are a count with a link to the Processing page, not progress bars
+    expect(within(mac).queryByRole("progressbar")).toBeNull();
+    expect(within(mac).queryByText(/Lecture 4/)).toBeNull();
+    expect(within(mac).getAllByText("Jobs running: 1").length).toBeGreaterThan(0);
+    expect(
+      within(mac).getByRole("link", { name: "View the jobs on Studio Mac in the queues" })
+    ).toHaveAttribute("href", "/queue?host=n1&name=Studio%20Mac");
+    expect(
+      within(nas).getByRole("link", { name: "View the jobs on nas in the queues" })
+    ).toHaveAttribute("href", "/queue?host=home");
     expect(within(mac).getByText("12.5× real time")).toBeInTheDocument();
     expect(within(mac).getByText("30 tokens/s")).toBeInTheDocument();
     expect(within(mac).getByText("6.5 GB")).toBeInTheDocument();

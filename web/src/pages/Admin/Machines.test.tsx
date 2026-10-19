@@ -98,7 +98,9 @@ function renderPage() {
   return render(
     <I18nProvider>
       <ToastProvider>
-        <Machines />
+        <MemoryRouter>
+          <Machines />
+        </MemoryRouter>
       </ToastProvider>
     </I18nProvider>
   );

@@ -38,6 +38,8 @@ export interface JobRef {
     total_units: number;
     message?: string;
   } | null;
+  /** the worker (workers.id) running it; absent on older servers, null while it waits */
+  claimed_by?: string | null;
 }
 
 export interface Pool {
@@ -579,6 +581,9 @@ export const queueApi = {
   plexSigninUse: (id: string, name: string) =>
     api.post<Extension>(`/api/extensions/plex/signin/${q(id)}/use`, { name }),
   workers: () => api.get<{ workers: WorkerHost[] }>("/api/workers"),
+  /** Jobs running now, oldest first; host: "home" or a joined machine's id (Epic 31). */
+  running: (host?: string) =>
+    api.get<{ host: string; jobs: JobRef[] }>(`/api/queues/running${qs({ host })}`),
   libraries: () => api.get<{ items: LibraryQueueRow[] }>("/api/queues/libraries"),
   health: (hours = 4) => api.get<{ series: HealthSeries[] }>(`/api/queues/health${qs({ hours })}`),
   explain: (text: string, libraryId?: string, limit?: number) =>

@@ -331,3 +331,45 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Fixed-size tiles: every machine shows the same tiles, each one line of
+   value and one of detail (cut with an ellipsis, the whole in the title)
+   above a sparkline box that is there before it has points. Numbers update
+   in place; nothing below moves. */
+.mkt-cl-tiles .mkt-cl-tile {
+  block-size: 7.5rem;
+  overflow: hidden;
+}
+.mkt-cl-tiles--small .mkt-cl-tile {
+  block-size: 6.75rem;
+}
+.mkt-cl-tile dt,
+.mkt-cl-tile__value,
+.mkt-cl-tile__detail,
+.mkt-cl-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mkt-cl-tile dd {
+  min-inline-size: 0;
+}
+.mkt-cl-tile__detail {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-tiles .mkt-cl-spark {
+  block-size: 24px;
+  flex: none;
+}
+.mkt-cl-line {
+  min-block-size: 1.4em;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-proc__jobs {
+  min-inline-size: 9ch;
+}
+.mkt-cl-proc__since {
+  min-inline-size: 16ch;
+}
