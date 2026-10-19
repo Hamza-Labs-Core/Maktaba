@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -248,27 +250,63 @@ func (h *Handler) Revert(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reverted": reverted})
 }
 
-// Search runs a manual re-search. The 26.5 provider service is not yet
-// wired, so v1 clears any dismissals for the video (so previously hidden
-// candidates resurface) and returns the current candidate set WITHOUT
-// applying anything — satisfying "manual search returns candidates;
-// videos unchanged until an explicit accept" (Story 26.6 AC).
+// searchRequest is the POST …/search body: the librarian's words and,
+// optionally, a year. An empty query re-searches from the video's own
+// intel (title, series, the book, the presenter).
+type searchRequest struct {
+	Query string `json:"query"`
+	Year  *int   `json:"year,omitempty"`
+}
+
+// maxQueryRunes bounds a manual search (the pipeline cuts it at 150 too).
+const maxQueryRunes = 200
+
+// Search runs a manual search (Find metadata, stub audit #4). The metadata
+// provider is the pipeline's `enrich` stage (internal intel plus, when
+// configured, a web search a language model reads; no outside catalogue):
+// this queues the video's enrich job with the query, enqueues the engine
+// job so it runs now and shows in the control centre, clears dismissals
+// (hidden candidates resurface) and answers 202 with the current
+// candidates and the job. Nothing is applied to the video until an
+// explicit accept (Story 26.6 AC); the panel polls GET …/enrichment until
+// the job is done.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
-	// Body is accepted but the {query, year, provider} fields are only
-	// consumed once the provider search service (26.5) is wired.
-	var body map[string]any
-	_ = common.ReadJSON(r, &body, 4<<10)
+	var body searchRequest
+	if e := common.ReadJSON(r, &body, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	body.Query = strings.TrimSpace(body.Query)
+	var errs []httperror.FieldError
+	if utf8.RuneCountInString(body.Query) > maxQueryRunes {
+		errs = append(errs, httperror.FieldError{Field: "query", Message: "at most 200 characters"})
+	}
+	if body.Year != nil && (*body.Year < 1000 || *body.Year > 2200) {
+		errs = append(errs, httperror.FieldError{Field: "year", Message: "a year such as 2019"})
+	}
+	if len(errs) > 0 {
+		httperror.Write(w, r, httperror.Unprocessable(errs))
+		return
+	}
 	if e := h.canEdit(r); e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
 	if h.DB == nil {
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}, "reason": "no_db"})
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
+	if _, err := h.loadVideo(r, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("video "+id))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load video"))
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -276,17 +314,26 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("clear dismissals"))
 		return
 	}
+	note, err := h.queueEnrich(r, id, "manual", body.Query, body.Year)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("queue search"))
+		return
+	}
 	cands, err := h.loadCandidates(r, id, "")
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load candidates"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands})
+	out := map[string]any{"queued": true, "candidates": cands, "job": h.jobStatus(r, id)}
+	if note != "" {
+		out["note"] = note
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, out)
 }
 
-// Reenrich enqueues a fresh out-of-band enrich job (Story 26.7). The
-// enrich worker refreshes by stored external_id where one is accepted,
-// else re-searches.
+// Reenrich queues a fresh out-of-band enrich job (Story 26.7) and enqueues
+// the engine's `enrich` stage for it, so it runs now and shows in the
+// control centre (stub audit #4: nothing ran these jobs).
 func (h *Handler) Reenrich(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
@@ -301,21 +348,110 @@ func (h *Handler) Reenrich(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
-	// Clear any dismissal and enqueue a forced enrich job. The partial
-	// unique index keeps at most one open job per video; ON CONFLICT
-	// re-arms the existing row instead of erroring.
 	_, _ = h.DB.ExecContext(r.Context(),
 		`UPDATE media_metadata_enrichment SET is_dismissed = false WHERE video_id = $1`, id)
-	if _, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO enrich_jobs (id, video_id, status, force, not_before, created_at, updated_at)
-		 VALUES ($1,$2,'pending',true,$3,$3,$3)`,
-		uuid.NewString(), id, h.now()); err != nil {
-		// A live open job already exists (open-video unique index) — that
-		// is the desired idempotent outcome, not an error.
-		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"enqueued": true, "note": "job already pending"})
+	note, err := h.queueEnrich(r, id, "reenrich", "", nil)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("queue enrich"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"enqueued": true})
+	out := map[string]any{"enqueued": true, "job": h.jobStatus(r, id)}
+	if note != "" {
+		out["note"] = note
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, out)
+}
+
+// queueEnrich makes the video's open enrich job carry this request (a
+// waiting one is re-armed for now with the new query; a new one is
+// inserted), then enqueues the engine job. The partial unique index keeps
+// one open job per video, so a job already running keeps its query: the
+// note says so. The engine enqueue is best effort: the home's sweep picks
+// the queued row up within 30 s anyway.
+func (h *Handler) queueEnrich(r *http.Request, videoID, origin, query string, year *int) (string, error) {
+	ctx := r.Context()
+	now := h.now()
+	var y any
+	if year != nil {
+		y = *year
+	}
+	res, err := h.DB.ExecContext(ctx, `
+		UPDATE enrich_jobs SET force = true, origin = $2, query = $3, year = $4,
+		       status = 'pending', not_before = $5, updated_at = $5
+		WHERE video_id = $1 AND status IN ('pending', 'deferred')`,
+		videoID, origin, nullStr(query), y, now)
+	if err != nil {
+		return "", err
+	}
+	note := ""
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := h.DB.ExecContext(ctx, `
+			INSERT INTO enrich_jobs (id, video_id, status, force, attempts, not_before, created_at, updated_at, origin, query, year)
+			VALUES ($1,$2,'pending',true,0,$3,$3,$3,$4,$5,$6)`,
+			uuid.NewString(), videoID, now, origin, nullStr(query), y); err != nil {
+			// the open-video unique index: a job is running right now
+			note = "a search for this video is running; its suggestions replace these when it finishes"
+		}
+	}
+	if h.Enqueue != nil {
+		if err := h.Enqueue(ctx, videoID, map[string]any{"origin": origin}); err != nil && h.Logger != nil {
+			h.Logger.Warn("enrichment: engine enqueue failed; the sweep picks the job up",
+				"video_id", videoID, "err", err)
+		}
+	}
+	return note, nil
+}
+
+// JobStatus is the video's latest enrich job, for the panel's "searching…"
+// state and the reason a web part waits (a daily cap, a quota).
+type JobStatus struct {
+	Status    string `json:"status"`
+	Origin    string `json:"origin"`
+	Query     string `json:"query,omitempty"`
+	Year      *int   `json:"year,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+	NotBefore string `json:"not_before,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// jobStatus returns the latest enrich job of a video, or nil.
+func (h *Handler) jobStatus(r *http.Request, videoID string) *JobStatus {
+	if h.DB == nil {
+		return nil
+	}
+	var (
+		j              JobStatus
+		query, lastErr sql.NullString
+		year           sql.NullInt64
+		nb, up         any
+	)
+	if e := h.DB.QueryRowContext(r.Context(), `
+		SELECT status, origin, query, year, last_error, not_before, updated_at
+		FROM enrich_jobs WHERE video_id = $1 ORDER BY created_at DESC LIMIT 1`, videoID).
+		Scan(&j.Status, &j.Origin, &query, &year, &lastErr, &nb, &up); e != nil {
+		return nil
+	}
+	j.Query, j.LastError = query.String, lastErr.String
+	if year.Valid {
+		v := int(year.Int64)
+		j.Year = &v
+	}
+	j.NotBefore, j.UpdatedAt = tsString(nb), tsString(up)
+	return &j
+}
+
+// tsString formats a timestamp column whatever the driver hands back
+// (time.Time on Postgres, text on SQLite).
+func tsString(v any) string {
+	switch t := v.(type) {
+	case time.Time:
+		return t.UTC().Format(time.RFC3339)
+	case []byte:
+		return string(t)
+	case string:
+		return t
+	}
+	return ""
 }
 
 // AcceptAll batch-accepts the best episode match for every episode in a

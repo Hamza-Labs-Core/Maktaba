@@ -10,6 +10,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Find metadata and Re-enrich work.** A video's metadata suggestions come from
+  Maktaba's own intel (transcripts, chapters, the book a series explains, file and
+  folder names, sibling episodes, tags, speakers) and, when configured, a web search
+  (Google Programmable Search, or Ollama's web search; extension "Web search", with a
+  real Test connection) that the language model reads. No outside catalogue. Every
+  field carries its confidence and its sources in the review panel. The searches run
+  as the engine's `enrich` stage (shown in the control centre; queued jobs no longer
+  pile up), are cached, and stay within daily caps (`rules.enrich`). The model gets no
+  tools, its answer is validated JSON, and page text is treated as untrusted data.
+
 ## [0.1.0] - 2026-10-19
 
 The first tagged release of Maktaba: a self-hosted library for lectures,

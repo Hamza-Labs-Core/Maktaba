@@ -364,7 +364,19 @@ class WorkerAgent:
             await self._check_canonicalize(full=full)
         elif self._last_storage:
             await self._check_canonicalize(full=False)
+        if self.node_id is None:
+            await self._sweep_enrich()
         return await self.apply()
+
+    async def _sweep_enrich(self) -> None:
+        """The home turns queued enrich_jobs (Find metadata, Re-enrich, automatic) into
+        engine ``enrich`` jobs (:mod:`..enrich.sweep`)."""
+        from ..enrich.sweep import sweep
+
+        try:
+            await sweep(self.db)
+        except Exception:  # noqa: BLE001 - an older schema, a busy database: next time
+            _log.debug("enrich_sweep_failed", exc_info=True)
 
     async def beat(self) -> None:
         """A node's heartbeat on its cluster row: revoked -> stop; drain -> claim nothing."""

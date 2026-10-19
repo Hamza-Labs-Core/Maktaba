@@ -64,6 +64,7 @@ CORE_MODULES: dict[str, str] = {
     "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
     "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
+    "enrich": "maktaba_pipeline.engine.stages.enrich",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 
