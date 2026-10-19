@@ -57,6 +57,9 @@ type Slots struct {
 	// failed probes in a row that end a live slot (default 2).
 	ProbeEvery time.Duration
 	FailAfter  int
+	// StreamSample is how much of a staging channel's live.ts a sample reads
+	// (0: 3 s; tests shorten it).
+	StreamSample time.Duration
 
 	clientOnce sync.Once
 	mu         sync.Mutex

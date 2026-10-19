@@ -695,7 +695,11 @@ func (s *Slots) sample(ctx context.Context, name string, id uuid.UUID, n int, no
 		smp.TS = verify.AnalyzeSegments(segs, verify.Options{Grid: s.gridOf(), Now: now})
 	}
 	if stream {
-		smp.Stream = s.sampleStream(ctx, base, id, streamSampleFor, now)
+		d := streamSampleFor
+		if s.StreamSample > 0 {
+			d = s.StreamSample
+		}
+		smp.Stream = s.sampleStream(ctx, base, id, d, now)
 	}
 	return smp
 }

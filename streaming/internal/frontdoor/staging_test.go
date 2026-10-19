@@ -227,6 +227,7 @@ func TestNoStagingSSDP(t *testing.T) {
 // the rolling state and the samples (what GET /internal/tv/staging answers).
 func TestStagingSampleAndView(t *testing.T) {
 	g, _, _, change := stagingRig(t)
+	g.slots.StreamSample = 150 * time.Millisecond
 	g.slots.mu.Lock()
 	g.slots.stage.plan.Probe = g.ch.String()
 	g.slots.stage.plan.Changed = []string{uuid.NewString()}
