@@ -49,10 +49,29 @@ type Handler struct {
 	// Schema overrides the embedded schema (tests). Nil → embedded.
 	Schema *Schema
 
+	// Staging, when set and on, takes saves of the sections a TV release snapshots
+	// (rules.tv, rules.tv_output) into the open settings draft instead of writing them
+	// (Epic 33, story 33.12 AC8). Nil: every section is written directly.
+	Staging SettingsStager
+
 	initOnce sync.Once
 	schema   *Schema
 	initErr  error
 	locks    sync.Map // section key -> *sync.Mutex
+}
+
+// SettingsStager is the TV change drafts (api/internal/tvchange) as the rules handler
+// sees them.
+type SettingsStager interface {
+	// StagesSection reports whether saves of section go to a TV change draft now.
+	StagesSection(ctx context.Context, section string) bool
+	// SaveSettingsDraft records section's stored overrides as they will be; it
+	// returns the draft's id and number.
+	SaveSettingsDraft(ctx context.Context, p *principal.Principal, section string,
+		overrides map[string]json.RawMessage) (id string, number int64, err error)
+	// PendingSection is section's overrides in the open settings draft, if it has them
+	// (a second save builds on the first).
+	PendingSection(ctx context.Context, section string) (map[string]json.RawMessage, bool)
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -217,6 +236,12 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	staged := h.Staging != nil && h.Staging.StagesSection(ctx, sec.Key)
+	if staged {
+		if pend, ok := h.Staging.PendingSection(ctx, sec.Key); ok {
+			current.values = pend
+		}
+	}
 	next := map[string]json.RawMessage{}
 	for name, raw := range current.values {
 		if sec.field(name) != nil {
@@ -241,6 +266,18 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(changed)
 
+	if staged {
+		// a TV setting goes on the air through a TV change (story 33.12 AC8)
+		_ = tx.Rollback()
+		id, num, derr := h.Staging.SaveSettingsDraft(ctx, p, sec.Key, next)
+		if derr != nil {
+			httperror.Write(w, r, httperror.Internal("save to draft: "+derr.Error()))
+			return
+		}
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"section": sec.Key, "changed": changed,
+			"draft_change": map[string]any{"id": id, "number": num}})
+		return
+	}
 	if len(next) == 0 {
 		_, err = tx.ExecContext(ctx, `DELETE FROM app_settings WHERE key = $1`, key)
 	} else {

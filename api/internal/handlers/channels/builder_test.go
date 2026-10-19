@@ -18,9 +18,13 @@ func newBuilderEnv(t *testing.T) artEnv {
 	e := newArtEnv(t)
 	for _, ddl := range []string{
 		`ALTER TABLE channels ADD COLUMN edited_at TEXT`,
-		`CREATE TABLE channel_schedule_state (channel_id TEXT PRIMARY KEY, stale BOOLEAN NOT NULL DEFAULT 0)`,
+		`CREATE TABLE channel_schedule_state (channel_id TEXT NOT NULL, sched_gen INTEGER NOT NULL DEFAULT 0,
+			stale BOOLEAN NOT NULL DEFAULT 0, PRIMARY KEY (channel_id, sched_gen))`,
+		`CREATE TABLE tv_routing (scope TEXT PRIMARY KEY, live_gen INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE channel_programs (channel_id TEXT NOT NULL, start_at TEXT NOT NULL,
 			end_at TEXT NOT NULL, title_snapshot TEXT)`,
+		// slot 0128: the live readers read the live generation's view
+		`CREATE VIEW channel_programs_live AS SELECT * FROM channel_programs`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, title TEXT, filename TEXT NOT NULL,
 			duration_sec REAL, deleted_at TEXT)`,
 		`CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT NOT NULL, name_override TEXT)`,

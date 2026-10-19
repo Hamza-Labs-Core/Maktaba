@@ -159,7 +159,7 @@ and the last `keep_versions` (3).
 
 ## 4. Schedule generations
 
-### 4.1 Schema (slot 0124)
+### 4.1 Schema (slot 0128)
 
 - `channel_programs.sched_gen bigint not null default 0` — every existing row is generation 0.
 - Unique `(channel_id, sched_gen, seq)`; time index `(channel_id, sched_gen, start_at, end_at)`;
@@ -523,7 +523,7 @@ simulcast outputs see nothing.
 
 ### 11.1 Store
 
-`tv_changes` (slot 0123) holds the object; `tv_change_events` every transition; `audit_log` every
+`tv_changes` (slot 0127) holds the object; `tv_change_events` every transition; `audit_log` every
 admin action (category `tv_change`, `target_kind = tv_change`).
 
 ### 11.2 Transitions (controller, `api/internal/tvchange`)

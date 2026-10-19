@@ -381,6 +381,11 @@ export function ChannelEditor({
       className="mkt-cb-modal"
       title={isEdit ? t("channels.editNamed", { name: draft.name ?? "" }) : t("channels.new")}
     >
+      {draft.draft && (
+        <div className="mkt-cb-banner" role="status">
+          {t("channels.tvDraft", { n: draft.draft.number })}
+        </div>
+      )}
       {origin === "plan" && (
         <div
           className={`mkt-cb-banner${stopsFollowing ? " mkt-cb-banner--warn" : ""}`}

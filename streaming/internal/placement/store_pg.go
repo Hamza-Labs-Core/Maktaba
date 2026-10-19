@@ -217,7 +217,7 @@ func (s PGStore) ChannelSlug(ctx context.Context, ch uuid.UUID) (string, error) 
 
 func (s PGStore) HasLiveBlocks(ctx context.Context, ch uuid.UUID, within time.Duration) (bool, error) {
 	var ok bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM channel_programs
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM channel_programs_live
 		WHERE channel_id = $1 AND kind = 'live' AND end_at > now()
 		  AND start_at < now() + make_interval(secs => $2))`, ch, within.Seconds()).Scan(&ok)
 	return ok, err

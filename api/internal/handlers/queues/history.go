@@ -73,7 +73,7 @@ SELECT ss.id FROM series_episodes se
 
 	channelSlotsSQL = `
 SELECT c.id::text, c.name, count(*)
-  FROM channel_programs p JOIN channels c ON c.id = p.channel_id
+  FROM channel_programs_live p JOIN channels c ON c.id = p.channel_id
  WHERE p.video_id = $1::uuid AND p.end_at > $2
  GROUP BY c.id, c.name
  ORDER BY c.name

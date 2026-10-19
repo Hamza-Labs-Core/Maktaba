@@ -297,9 +297,11 @@ export function RulesSection() {
     setNotice(null);
     try {
       let changed = 0;
+      let draft: number | null = null;
       try {
         const r = await rulesApi.patch(sectionKey, set, reset ?? []);
         changed = r?.changed?.length ?? 0;
+        draft = r?.draft_change?.number ?? null;
       } catch (e) {
         const { message, field } = rulesError(e);
         if (field) {
@@ -325,7 +327,12 @@ export function RulesSection() {
       });
       setNotice({
         ok: true,
-        text: reset ? t("settings.rules.resetDone") : t("settings.rules.saved", { n: changed }),
+        text:
+          draft !== null
+            ? t("settings.rules.savedToDraft", { n: draft })
+            : reset
+              ? t("settings.rules.resetDone")
+              : t("settings.rules.saved", { n: changed }),
       });
       try {
         await load();

@@ -34,6 +34,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 from . import __version__
 from .channels.pass_ import run_topup_loop
@@ -750,17 +751,24 @@ def _rewrite_for_sqlite(sql: str, args: tuple[Any, ...]) -> tuple[str, tuple[Any
     """
 
     if not _PG_PLACEHOLDER_RE.search(sql):
-        return sql, args  # already uses ``?`` placeholders (the SQLite twins of jobs_state)
+        # already uses ``?`` placeholders (the SQLite twins of jobs_state)
+        return sql, tuple(_sqlite_value(a) for a in args)
 
     new_args: list[Any] = []
 
     def _sub(match: re.Match[str]) -> str:
         idx = int(match.group(1)) - 1
-        new_args.append(args[idx])
+        new_args.append(_sqlite_value(args[idx]))
         return "?"
 
     new_sql = _PG_PLACEHOLDER_RE.sub(_sub, sql)
     return new_sql, tuple(new_args)
+
+
+def _sqlite_value(v: Any) -> Any:
+    """A parameter SQLite can bind: a UUID as its text (the scheduler's repo binds UUIDs
+    as Postgres takes them; SQLite stores ids as TEXT)."""
+    return str(v) if isinstance(v, UUID) else v
 
 
 def _sqlite_path_from_url(url: str) -> str:

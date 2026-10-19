@@ -13,6 +13,23 @@ from maktaba_pipeline.channels import pass_
 from maktaba_pipeline.channels.repo import SqlRepo
 
 
+@pytest.fixture(autouse=True)
+def _one_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These fakes are no database: the top-up sees only the live generation (0) and no
+    stale channel to draft (Epic 33's parts of topup_once are tested in tests/tvrelease)."""
+    from maktaba_pipeline.tvrelease import generation as tvgen
+    from maktaba_pipeline.tvrelease import stage as tvstage
+
+    async def gens(db: Any, at: Any) -> list[tuple[bool, SqlRepo]]:
+        return [(True, SqlRepo(db, gen=0))]
+
+    async def no_stale(db: Any, repo: Any) -> list[str]:
+        return []
+
+    monkeypatch.setattr(tvgen, "open_generations", gens)
+    monkeypatch.setattr(tvstage, "stale_to_draft", no_stale)
+
+
 class _DB:
     dialect = "postgres"
 

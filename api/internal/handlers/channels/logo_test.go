@@ -51,7 +51,8 @@ func newLogoServer(t *testing.T) (*sql.DB, http.Handler) {
 		mode_config TEXT NOT NULL DEFAULT '{}', source_filter TEXT,
 		transition TEXT NOT NULL DEFAULT 'cut', enabled BOOLEAN NOT NULL DEFAULT 1,
 		sort_order INTEGER NOT NULL DEFAULT 0,
-		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`); err != nil {
+		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+		lifecycle TEXT NOT NULL DEFAULT 'live')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`CREATE TABLE channel_art_overrides (

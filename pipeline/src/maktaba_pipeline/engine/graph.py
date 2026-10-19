@@ -600,6 +600,42 @@ GRAPH: tuple[StageDef, ...] = (
         # dz_watermark_*): on a node the paths would not exist
         placement="home",
     ),
+    # Epic 33: TV changes. The API's change controller enqueues them (payload
+    # {"change_id"}): build a change's release and schedule generation, put an approved
+    # change on the air (the interim swap until the two-slot runtime), the daily GC.
+    StageDef(
+        name="tv_stage",
+        label="Stage TV change",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="channels",
+        lane_order=3,
+        version=1,
+        # the art checksums of a release are read from the files on the home
+        placement="home",
+        max_attempts=2,
+    ),
+    StageDef(
+        name="tv_swap",
+        label="Swap TV change",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="channels",
+        lane_order=4,
+        version=1,
+        placement="home",
+        max_attempts=1,
+    ),
+    StageDef(
+        name="tv_gc",
+        label="TV staging clean-up",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="channels",
+        lane_order=5,
+        version=1,
+        placement="home",
+    ),
     # ---- media lane (legacy) -------------------------------------------
     _legacy(
         "scan",

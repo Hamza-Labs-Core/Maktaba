@@ -19,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
 // P27Deps bundles the dependencies for the Epic 27 handlers.
@@ -45,10 +46,13 @@ func MountP27(r chi.Router, d P27Deps) {
 	}
 	// Live TV access: HDHomeRun tuner admin, where the TV streams live, and
 	// Plex Live TV (status, refresh, register).
-	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets, Remote: d.RemoteInfo}
+	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets, Remote: d.RemoteInfo,
+		Staging: StagingInfo(d.DB)}
 	// a channel created, edited, renumbered or deleted by hand: Plex's
 	// channel map follows (the plex_livetv stage decides what to push)
-	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex}
+	// Epic 33: with TV staging on, editor saves go into a TV change draft
+	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex,
+		Drafts: tvchange.NewDrafts(d.DB)}
 	chh.Mount(r)
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB}).Mount(r)

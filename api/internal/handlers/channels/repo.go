@@ -32,7 +32,7 @@ func (rp *repo) get(ctx context.Context, id string) (Channel, error) {
 	if !isUUID(id) {
 		return Channel{}, sql.ErrNoRows
 	}
-	row := rp.db.QueryRowContext(ctx, `SELECT `+channelCols+` FROM channels WHERE id = $1`, id)
+	row := rp.db.QueryRowContext(ctx, `SELECT `+channelCols+` FROM channels WHERE id = $1 AND lifecycle = 'live'`, id)
 	return scanChannel(row)
 }
 
@@ -41,7 +41,8 @@ func (rp *repo) get(ctx context.Context, id string) (Channel, error) {
 // handler so the repo stays a pure data accessor.
 func (rp *repo) list(ctx context.Context, f listFilter) ([]Channel, error) {
 	q := `SELECT ` + channelCols + ` FROM channels`
-	var conds []string
+	// staged (a TV change's additions) and retired channels are not the lineup (Epic 33)
+	conds := []string{"lifecycle = 'live'"}
 	var args []any
 	i := 1
 	if f.libraryID != "" {
@@ -92,10 +93,10 @@ func (rp *repo) slugTaken(ctx context.Context, libraryID *string, slug string) (
 	var err error
 	if libraryID == nil {
 		err = rp.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM channels WHERE library_id IS NULL AND slug = $1`, slug).Scan(&n)
+			`SELECT count(*) FROM channels WHERE library_id IS NULL AND slug = $1 AND lifecycle = 'live'`, slug).Scan(&n)
 	} else {
 		err = rp.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM channels WHERE library_id = $1 AND slug = $2`, *libraryID, slug).Scan(&n)
+			`SELECT count(*) FROM channels WHERE library_id = $1 AND slug = $2 AND lifecycle = 'live'`, *libraryID, slug).Scan(&n)
 	}
 	return n > 0, err
 }
@@ -126,7 +127,7 @@ func (rp *repo) delete(ctx context.Context, id string) error {
 func (rp *repo) nowPlaying(ctx context.Context, channelID string, now time.Time) (*NowPlaying, error) {
 	row := rp.db.QueryRowContext(ctx, `
 		SELECT title_snapshot, start_at, end_at
-		FROM channel_programs
+		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2
 		ORDER BY start_at DESC LIMIT 1
 	`, channelID, now)

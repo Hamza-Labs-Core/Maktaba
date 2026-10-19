@@ -55,7 +55,7 @@ func (r *PGRepo) load(ctx context.Context) (Device, error) {
 func (r *PGRepo) Lineup(ctx context.Context) ([]LineupChannel, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, number, name, slug FROM channels
-		WHERE enabled = true ORDER BY sort_order ASC, number ASC
+		WHERE enabled = true AND lifecycle = 'live' ORDER BY sort_order ASC, number ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func strUpperHex(b []byte) string {
 func (r *PGRepo) GuideChannels(ctx context.Context) ([]GuideChannel, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, number, name, slug, COALESCE(logo_path, ''), category FROM channels
-		WHERE enabled = true ORDER BY sort_order ASC, number ASC
+		WHERE enabled = true AND lifecycle = 'live' ORDER BY sort_order ASC, number ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -115,8 +115,8 @@ func (r *PGRepo) GuideChannels(ctx context.Context) ([]GuideChannel, error) {
 func (r *PGRepo) GuidePrograms(ctx context.Context, start, end time.Time) ([]GuideProgram, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.channel_id, cp.kind, cp.start_at, cp.end_at, cp.title_snapshot
-		FROM channel_programs cp
-		JOIN channels c ON c.id = cp.channel_id AND c.enabled = true
+		FROM channel_programs_live cp
+		JOIN channels c ON c.id = cp.channel_id AND c.enabled = true AND c.lifecycle = 'live'
 		WHERE cp.start_at < $2 AND cp.end_at > $1
 		ORDER BY cp.channel_id ASC, cp.start_at ASC
 	`, start, end)

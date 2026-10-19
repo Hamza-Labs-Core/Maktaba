@@ -57,6 +57,9 @@ CORE_MODULES: dict[str, str] = {
     "rate_style": "maktaba_pipeline.engine.stages.rate_style",
     "plan_channels": "maktaba_pipeline.engine.stages.plan_channels",
     "write_channels": "maktaba_pipeline.engine.stages.write_channels",
+    "tv_stage": "maktaba_pipeline.engine.stages.tv_stage",
+    "tv_swap": "maktaba_pipeline.engine.stages.tv_swap",
+    "tv_gc": "maktaba_pipeline.engine.stages.tv_gc",
     "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
     "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
 }

@@ -235,6 +235,10 @@ func (h *Handler) loadStripChannel(w http.ResponseWriter, r *http.Request) (Chan
 		return Channel{}, false
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		c, _, ok := h.loadEffective(w, r, id)
+		return c, ok
+	}
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -255,6 +259,9 @@ func (h *Handler) writeStrip(r *http.Request, c Channel, strip map[string]any) e
 	mc, err := setLookKey(c.ModeConfig, "strip", v)
 	if err != nil {
 		return err
+	}
+	if h.staging(r.Context()) {
+		return h.stripDraft(r, c, mc)
 	}
 	now := time.Now().UTC()
 	_, err = h.DB.ExecContext(r.Context(), `UPDATE channels SET mode_config = $1, updated_at = $2 WHERE id = $3`,

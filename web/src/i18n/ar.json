@@ -112,6 +112,8 @@
   "settings.rules.removeUnknown": "إزالتها",
   "settings.rules.saved": "تم الحفظ. {n} من القواعد تختلف عن الافتراضي.",
   "settings.rules.resetDone": "عادت إلى الافتراضي.",
+  "channels.tvDraft": "تعديل مسودة التغيير رقم {n}: ما تحفظه يُبث حين يُعتمد التغيير (البث المباشر، التغييرات).",
+  "settings.rules.savedToDraft": "حُفظ في مسودة التغيير رقم {n}: يُبث حين يُعتمد التغيير (البث المباشر، التغييرات).",
   "settings.rules.notSaved": "لم يُحفظ: {message}",
   "settings.rules.loadError": "تعذّر تحميل القواعد.",
   "settings.rules.on": "مفعّل",

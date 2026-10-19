@@ -1,0 +1,155 @@
+"""The ``tv_staging`` rules (Epic 33, README "Settings"): every TV change goes through
+staging and waits for an admin's approval (owner decisions): every kind of change needs an
+approval, a watched channel switches at its programme boundary, the hot standby is on.
+
+Interim: ``enabled`` ships **off** until the Changes page (story 33.11) exists, so an
+approval is never API-only; the owner's decision is "on once built", and the default flips
+to on when 33.11 lands.
+
+The README lists ``auto_promote`` as one map; here it is one setting per kind
+(``auto_promote_<kind>``) so the settings page shows each with its choices."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..settings import Help, register
+
+__all__ = ["AUTO_RULES", "CHANGE_KINDS", "MaktabaTvStagingConfig", "auto_rule"]
+
+#: what a TV change may carry (story 33.10 AC3)
+CHANGE_KINDS = ("lineup", "schedule", "settings", "art", "live_slots", "binary", "rollback")
+#: auto-promote rules, strictest first
+AUTO_RULES = ("approval", "quiet_window", "immediate")
+
+TST = "TV staging"
+TSA = "TV staging approval"
+TSS = "TV staging swap"
+
+
+@dataclass(frozen=True)
+class MaktabaTvStagingConfig:
+    """How TV changes are staged, approved and put on the air (rules ``tv_staging``)."""
+
+    #: changes go through staging. Interim default off until the Changes page (story 33.11)
+    #: lands; then on (owner: "on once built"). Off: direct writes as before Epic 33
+    enabled: bool = False
+    auto_promote_lineup: str = "approval"
+    auto_promote_settings: str = "approval"
+    auto_promote_live_slots: str = "approval"
+    auto_promote_art: str = "approval"
+    auto_promote_schedule: str = "approval"
+    auto_promote_binary: str = "approval"
+    auto_promote_rollback: str = "approval"
+    #: local window ("HH:MM-HH:MM") for an auto-promote rule switched on (and front-door
+    #: restarts)
+    quiet_window: str = "03:00-05:00"
+    quiet_max_viewers: int = 0
+    #: boundary: a watched channel switches at its next programme boundary; immediate
+    swap_wait: str = "boundary"
+    boundary_max_wait_minutes: int = 30
+    keep_warm_minutes: int = 15
+    rollback_retention_hours: int = 24
+    verify_soak_seconds: int = 120
+    verify_probe_seconds: int = 30
+    #: slug; empty: the lowest-numbered live channel
+    probe_channel: str = ""
+    staging_max_extra_encodes: int = 0
+    rolling_swap: str = "auto"
+    auto_rollback: bool = True
+    hot_standby: bool = True
+    standby_warm: str = "demand"
+    require_second_admin: bool = False
+    param_change_push: str = "approve"
+
+
+def auto_rule(cfg: MaktabaTvStagingConfig, kinds: list[str] | tuple[str, ...]) -> str:
+    """The strictest auto-promote rule among ``kinds`` (story 33.10 AC6)."""
+    rules = [str(getattr(cfg, f"auto_promote_{k}", "approval")) for k in kinds] or ["approval"]
+    return min(rules, key=lambda r: AUTO_RULES.index(r) if r in AUTO_RULES else 0)
+
+
+_RULE = (
+    "approval: an admin approves it; quiet_window: put on the air in the quiet window "
+    "with no warnings; immediate: as soon as it is verified with no warnings."
+)
+
+register(
+    MaktabaTvStagingConfig,
+    {
+        "enabled": Help(
+            TST,
+            "Stage every TV change",
+            "A lineup, schedule, settings or art change is prepared next to what is on the "
+            "air, checked, and put on the air only when an admin approves it (Live TV -> "
+            "Changes). Off: changes go on the air at once, as before. Off by default until "
+            "the Changes page is built; it then becomes the default.",
+        ),
+        **{
+            f"auto_promote_{k}": Help(
+                TSA, f"{k.replace('_', ' ').capitalize()} changes", _RULE, choices=AUTO_RULES
+            )
+            for k in CHANGE_KINDS
+        },
+        "quiet_window": Help(
+            TSA, "Quiet window", "Local time, HH:MM-HH:MM, for a rule switched to quiet_window."
+        ),
+        "quiet_max_viewers": Help(
+            TSA, "Viewers at most in the quiet window", minimum=0, maximum=1000
+        ),
+        "require_second_admin": Help(
+            TSA, "A second admin approves", "The approver must not be the change's author."
+        ),
+        "swap_wait": Help(
+            TSS,
+            "When a channel switches",
+            "boundary: a watched channel switches at the end of the programme on the air; "
+            "immediate: every channel at once.",
+            choices=("boundary", "immediate"),
+        ),
+        "boundary_max_wait_minutes": Help(
+            TSS, "Longest wait for a boundary (minutes)", minimum=0, maximum=600
+        ),
+        "keep_warm_minutes": Help(
+            TSS, "Previous version kept warm (minutes)", "For an instant rollback.", minimum=0,
+            maximum=1440,
+        ),
+        "rollback_retention_hours": Help(
+            TSS, "Previous version kept (hours)", "For a rollback after the warm period.",
+            minimum=1, maximum=720,
+        ),
+        "verify_soak_seconds": Help(TSS, "Checks run for (seconds)", minimum=0, maximum=3600),
+        "verify_probe_seconds": Help(
+            TSS, "Each changed channel probed for (seconds)", minimum=5, maximum=600
+        ),
+        "probe_channel": Help(TSS, "Probe channel", "A slug; empty: the lowest-numbered."),
+        "staging_max_extra_encodes": Help(
+            TSS, "Extra encodes while staging", "0: what the machine has free.", minimum=0,
+            maximum=64,
+        ),
+        "rolling_swap": Help(
+            TSS, "Rolling swap", "When there are not enough encoders to run both versions.",
+            choices=("auto", "always", "never"),
+        ),
+        "auto_rollback": Help(
+            TSS, "Roll back automatically", "A crash or a failed check just after a switch."
+        ),
+        "hot_standby": Help(
+            TSS, "Hot standby", "A second copy of what is on the air takes over at once on a crash."
+        ),
+        "standby_warm": Help(
+            TSS,
+            "What the standby keeps warm",
+            "demand: every channel with viewers or a push; viewers: channels with people "
+            "watching first, when encoders are short.",
+            choices=("demand", "viewers"),
+        ),
+        "param_change_push": Help(
+            TSS,
+            "Picture changes on pushed channels",
+            "approve: the approval acknowledges that simulcast outputs may reconnect; defer: "
+            "that channel switches when its push ends.",
+            choices=("approve", "defer"),
+        ),
+    },
+)  # fmt: skip

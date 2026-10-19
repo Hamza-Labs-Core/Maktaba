@@ -35,10 +35,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from ...channels.repo import live_gen
 from ...db.jobs import Job
 from ...schedule.tv_channel import filler_items, filler_lists, plan_art
 from ...schedule.tv_settings import MaktabaTvConfig
-from ..changes import ChangeSet, apply_or_review
+from ..changes import ChangeSet, apply_or_review, approved_digests
 from ..context import StageContext, StageFailure
 from ..graph import CH_WRITE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -350,7 +351,7 @@ async def _actual(db: Any, ids: list[str]) -> dict[str, dict[str, Any]]:
     for cid in ids:
         r = await db.fetchrow(
             "SELECT id, number, name, category, mode, mode_config, transition, enabled, sort_order,"
-            " logo_path FROM channels WHERE id = $1",
+            " logo_path FROM channels WHERE id = $1 AND lifecycle = 'live'",
             cid,
         )
         if r is not None:
@@ -387,11 +388,15 @@ async def compute_changes(
     wp = WritePlan()
     taken_numbers = {
         int(r["number"]): str(r["id"])
-        for r in await db.fetch("SELECT id, number FROM channels WHERE library_id IS NULL")
+        for r in await db.fetch(
+            "SELECT id, number FROM channels WHERE library_id IS NULL AND lifecycle = 'live'"
+        )
     }
     taken_slugs = {
         str(r["slug"]): str(r["id"])
-        for r in await db.fetch("SELECT id, slug FROM channels WHERE library_id IS NULL")
+        for r in await db.fetch(
+            "SELECT id, slug FROM channels WHERE library_id IS NULL AND lifecycle = 'live'"
+        )
     }
     tool_ids = {str(r["external_id"]) for r in links.values() if r["created_by_tool"]}
     for key, want in desired.items():
@@ -513,6 +518,7 @@ async def apply_changes(db: Any, wp: WritePlan) -> dict[str, str]:
             await _link(db, w, cid, stamp)
             written[w.key] = cid
         pools_changed = await _apply_pools(db, wp.pools, stamp)
+        gen = await live_gen(db)
         stale = set(written.values())
         if pools_changed:
             # what fills the gaps changed: every channel the tool made plans its filler anew
@@ -528,10 +534,11 @@ async def apply_changes(db: Any, wp: WritePlan) -> dict[str, str]:
             if await db.fetchrow("SELECT 1 AS x FROM channels WHERE id = $1", cid) is None:
                 continue
             await db.execute(
-                "INSERT INTO channel_schedule_state (channel_id, stale) VALUES ($1, $2)"
-                " ON CONFLICT (channel_id) DO UPDATE SET stale = EXCLUDED.stale",
+                "INSERT INTO channel_schedule_state (channel_id, stale, sched_gen) VALUES ($1, $2, $3)"
+                " ON CONFLICT (channel_id, sched_gen) DO UPDATE SET stale = EXCLUDED.stale",
                 cid,
                 True if is_pg(db) else 1,
+                gen,
             )
     return written
 
@@ -658,6 +665,8 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     tv: MaktabaTvConfig = await ctx.rules("tv")
     changes, wp = await compute_changes(db, plan, tv)
     written: dict[str, str] = {}
+    if await _staging(db):
+        return await _run_staged(db, job, ctx, changes, wp)
 
     async def apply(_cs: ChangeSet) -> None:
         nonlocal written
@@ -686,6 +695,67 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 "removed": len(wp.pools.delete),
             },
         },
+    )
+
+
+async def _staging(db: Any) -> bool:
+    """``rules.tv_staging.enabled`` (Epic 33; on by default)."""
+    from ...tvrelease.stage import enabled
+
+    return await enabled(db)
+
+
+async def _run_staged(
+    db: Any, job: Job, ctx: StageContext, changes: ChangeSet, wp: WritePlan
+) -> StageResult:
+    """With staging on (story 33.12): the write plan becomes a TV change. ``auto`` (or an
+    approved digest) stages it - a release and a schedule generation next to the air -
+    and it waits for an admin's approval on the Changes page; ``review`` parks the digest
+    as before and drafts the change so the Changes page shows its diff (its Approve is
+    this queue's Apply). ``channels``, the filler pools and the links are written by the
+    swap, not here, so this run's output never changes and Plex is told nothing (the
+    swap enqueues ``plex_livetv``)."""
+    from ...tvrelease.stage import stage_write_channels
+
+    plan_id = await db.fetchval("SELECT id FROM channel_plans ORDER BY id DESC LIMIT 1")
+    info: dict[str, Any] = {}
+
+    async def stage(_cs: ChangeSet) -> None:
+        nonlocal info
+        info = await stage_write_channels(
+            db, wp=wp, changes=changes, job=job, write_mode="auto",
+            approved=approved_digests(job.payload), plan_id=plan_id,
+        )  # fmt: skip
+
+    mode = await apply_or_review(ctx, changes, stage)
+    if mode == "review":
+        info = await stage_write_channels(
+            db, wp=wp, changes=changes, job=job, write_mode="review",
+            approved=approved_digests(job.payload), plan_id=plan_id,
+        )  # fmt: skip
+    final = await db.fetch(
+        "SELECT subject_id, content_hash FROM external_links WHERE target = $1 AND subject_kind = $2"
+        " ORDER BY subject_id",
+        TARGET,
+        SUBJECT_KIND,
+    )
+    summary = {
+        "staged": True,
+        "tv_change": info or None,
+        "created": len(wp.create),
+        "updated": len(wp.update),
+        "removed": len(wp.delete),
+        "conflicts": wp.conflicts,
+        "user_edited": wp.user_edited,
+        "filler_pools": {"written": len(wp.pools.write), "removed": len(wp.pools.delete)},
+    }
+    if mode == "review":
+        return StageResult(
+            output_hash=canonical_hash("review"), outcome="awaiting_review", summary=summary
+        )
+    return StageResult(
+        output_hash=canonical_hash([[str(r["subject_id"]), r["content_hash"]] for r in final]),
+        summary=summary,
     )
 
 

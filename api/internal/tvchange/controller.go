@@ -1,0 +1,325 @@
+package tvchange
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+)
+
+// CatalogID is the engine's catalog subject (pipeline engine/graph.py CATALOG_ID).
+const CatalogID = "00000000-0000-0000-0000-00000000ca7a"
+
+// Pipeline stages the controller enqueues (pipeline engine/stages/tv_*.py).
+const (
+	StageTVStage = "tv_stage"
+	StageTVSwap  = "tv_swap"
+	StageTVGC    = "tv_gc"
+)
+
+// controllerLock is the advisory lock that keeps the controller to one API process
+// (story 33.10 AC9).
+const controllerLock = "tv_change_controller"
+
+// EnqueueFunc queues a pipeline stage for the catalog subject with a payload.
+type EnqueueFunc func(ctx context.Context, stage string, payload map[string]any, why string) error
+
+// Controller drives changes through the states no admin presses (design §11.2):
+// staged -> verifying -> ready / failed, an approval given ahead, an approved change's
+// swap time, an auto-promote rule switched on, a queued draft whose turn came, and
+// the daily GC. All state is in the database: a restarted API resumes where the last
+// one stopped (AC9).
+type Controller struct {
+	DB      *sql.DB
+	Store   *Store
+	Now     func() time.Time
+	Logger  *slog.Logger
+	Enqueue EnqueueFunc
+	// Viewers counts the people watching (channel_runtime) for the quiet window; nil
+	// reads channel_runtime.viewer_count.
+	Viewers  func(ctx context.Context) int
+	Interval time.Duration
+	// Location is the quiet window's zone (nil: the server's local zone).
+	Location *time.Location
+
+	lastGC time.Time
+}
+
+// NewController wires a controller over db.
+func NewController(db *sql.DB, logger *slog.Logger) *Controller {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	c := &Controller{DB: db, Store: &Store{DB: db}, Logger: logger, Interval: 5 * time.Second}
+	c.Enqueue = c.enqueueQueue
+	return c
+}
+
+func (c *Controller) now() time.Time {
+	if c.Now != nil {
+		return c.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+// enqueueQueue calls processing_jobs_enqueue; a pending job that coalesced is pointed
+// at this change (one change in flight at a time, so the newest request wins).
+func (c *Controller) enqueueQueue(ctx context.Context, stage string, payload map[string]any, why string) error {
+	res, err := queues.Enqueue(ctx, c.DB, queues.EnqueueParams{
+		SubjectKind: "catalog", SubjectID: CatalogID, Stage: stage, Force: true,
+		Reason: map[string]any{"why": why, "by": "tv_change_controller"}, Payload: payload,
+	})
+	if err != nil {
+		return err
+	}
+	if !res.Accepted() {
+		return fmt.Errorf("enqueue %s: %s", stage, res.Outcome)
+	}
+	if res.JobID != nil && payload != nil && res.Outcome != queues.OutcomeInserted {
+		if id, ok := payload["change_id"].(string); ok {
+			_, _ = c.DB.ExecContext(ctx, `UPDATE processing_jobs
+				SET payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('change_id', $2::text)
+				WHERE id = $1 AND state = 'pending'`, *res.JobID, id)
+		}
+	}
+	return nil
+}
+
+// Run ticks until ctx ends. Only the process holding the advisory lock acts.
+func (c *Controller) Run(ctx context.Context) {
+	iv := c.Interval
+	if iv <= 0 {
+		iv = 5 * time.Second
+	}
+	var conn *sql.Conn
+	defer func() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}()
+	t := time.NewTicker(iv)
+	defer t.Stop()
+	for {
+		if !IsSQLite(c.DB) && conn == nil {
+			cn, err := c.DB.Conn(ctx)
+			if err == nil {
+				var got bool
+				if err := cn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, controllerLock).Scan(&got); err == nil && got {
+					conn = cn
+				} else {
+					_ = cn.Close()
+				}
+			}
+		}
+		if IsSQLite(c.DB) || conn != nil {
+			if err := c.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				c.Logger.Warn("tv change controller tick failed", "event", "tv_change_controller_failed", "error", err.Error())
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// Tick runs one pass over the open changes.
+func (c *Controller) Tick(ctx context.Context) error {
+	cfg, err := LoadConfig(ctx, c.DB)
+	if err != nil {
+		return err
+	}
+	open, err := c.Store.List(ctx, []string{StateDraft, StateStaged, StateVerifying, StateReady, StateApproved}, 200)
+	if err != nil {
+		return err
+	}
+	inFlight := false
+	for _, ch := range open {
+		if ch.State != StateDraft {
+			inFlight = true
+		}
+	}
+	for i := len(open) - 1; i >= 0; i-- { // oldest first
+		ch := open[i]
+		switch ch.State {
+		case StateStaged:
+			if err := c.Store.Move(ctx, c.DB, ch, StateVerifying, ActionStartVerify, nil,
+				map[string]any{"interim": "verified on the database until the two-slot runtime (33.1/33.5)"}, nil); err != nil {
+				return err
+			}
+			fallthrough
+		case StateVerifying:
+			if err := c.verifyAndMove(ctx, ch); err != nil {
+				return err
+			}
+		case StateReady:
+			if err := c.ready(ctx, cfg, ch); err != nil {
+				return err
+			}
+		case StateApproved:
+			if ch.SwapAt == nil || !c.now().Before(*ch.SwapAt) {
+				if err := c.startSwap(ctx, ch, ActionSwapStart, nil); err != nil {
+					return err
+				}
+			}
+		case StateDraft:
+			if !inFlight && stageRequested(ch) {
+				if err := c.requestStage(ctx, ch, false); err != nil {
+					c.Logger.Warn("tv change stage enqueue failed", "change_id", ch.ID, "error", err.Error())
+				} else {
+					inFlight = true // one at a time: the next draft waits for this one
+				}
+			}
+		}
+	}
+	if c.now().Sub(c.lastGC) >= 24*time.Hour {
+		if c.Enqueue != nil {
+			if err := c.Enqueue(ctx, StageTVGC, map[string]any{}, "tv staging daily clean-up"); err == nil {
+				c.lastGC = c.now()
+			}
+		}
+	}
+	return nil
+}
+
+func stageRequested(ch *Change) bool {
+	st, _ := ch.Diff["stage"].(map[string]any)
+	if st == nil {
+		return false
+	}
+	if _, ok := st["requested_at"]; !ok {
+		return false
+	}
+	at, _ := st["enqueued_at"].(string)
+	if at == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, at)
+	// a stage job that did not move it within two minutes (queued behind another
+	// change, or lost): ask again
+	return err != nil || time.Since(t) > 2*time.Minute
+}
+
+// RequestStage marks a draft to be staged and enqueues tv_stage when nothing else is
+// in flight (else the controller does when its turn comes).
+func (c *Controller) RequestStage(ctx context.Context, ch *Change, actor *string) error {
+	other, err := c.Store.InFlightChange(ctx, c.DB)
+	if err != nil {
+		return err
+	}
+	if other != nil && other.ID != ch.ID {
+		st := map[string]any{"requested_at": c.now().Format(time.RFC3339)}
+		ch.Diff["stage"] = st
+		if err := c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"diff": ch.Diff}); err != nil {
+			return err
+		}
+		return &ConflictError{State: ch.State, Reason: "change_in_flight", InFlight: other.ID}
+	}
+	_ = actor
+	return c.requestStage(ctx, ch, true)
+}
+
+func (c *Controller) requestStage(ctx context.Context, ch *Change, first bool) error {
+	st, _ := ch.Diff["stage"].(map[string]any)
+	if st == nil {
+		st = map[string]any{}
+	}
+	if _, ok := st["requested_at"]; !ok || first {
+		st["requested_at"] = c.now().Format(time.RFC3339)
+	}
+	if c.Enqueue == nil {
+		return errors.New("no queue")
+	}
+	if err := c.Enqueue(ctx, StageTVStage, map[string]any{"change_id": ch.ID}, "stage TV change"); err != nil {
+		return err
+	}
+	st["enqueued_at"] = c.now().Format(time.RFC3339)
+	ch.Diff["stage"] = st
+	return c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"diff": ch.Diff})
+}
+
+func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
+	if len(ch.ApprovedBy) > 0 {
+		return c.Store.Move(ctx, c.DB, ch, StateApproved, ActionAutoApprove, nil,
+			map[string]any{"approved_by": ch.ApprovedBy}, nil)
+	}
+	loc := c.Location
+	if loc == nil {
+		loc = time.Local
+	}
+	warn, _ := ch.VerifyReport["warnings"].(float64)
+	if AutoPromote(cfg, ch.Kinds, c.now().In(loc), c.viewers(ctx), warn > 0, ch.SwapAt) {
+		return c.startSwap(ctx, ch, ActionAutoPromote, map[string]any{"rule": StrictestRule(cfg, ch.Kinds)})
+	}
+	return nil
+}
+
+func (c *Controller) viewers(ctx context.Context) int {
+	if c.Viewers != nil {
+		return c.Viewers(ctx)
+	}
+	var n sql.NullInt64
+	if err := c.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(viewer_count), 0) FROM channel_runtime`).Scan(&n); err != nil {
+		return 1 << 20 // unknown: never "quiet"
+	}
+	return int(n.Int64)
+}
+
+// startSwap moves a change to swapping and enqueues the tv_swap job (the interim swap
+// commit until the two-slot runtime; then the front door's swap).
+func (c *Controller) startSwap(ctx context.Context, ch *Change, action string, detail map[string]any) error {
+	if c.Enqueue == nil {
+		return errors.New("no queue")
+	}
+	if err := c.Store.Move(ctx, c.DB, ch, StateSwapping, action, nil, detail, nil); err != nil {
+		return err
+	}
+	if err := c.Enqueue(ctx, StageTVSwap, map[string]any{"change_id": ch.ID}, "swap TV change"); err != nil {
+		// nothing switched: back to where it was, so the next tick tries again
+		prev := StateApproved
+		if action == ActionAutoPromote {
+			prev = StateReady
+		}
+		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		return err
+	}
+	return nil
+}
+
+// Promote is Swap now: an approved change (or a ready one whose rule allows it).
+func (c *Controller) Promote(ctx context.Context, ch *Change, actor *string) error {
+	switch ch.State {
+	case StateApproved:
+		return c.startSwapBy(ctx, ch, ActionPromote, actor)
+	case StateReady:
+		cfg, err := LoadConfig(ctx, c.DB)
+		if err != nil {
+			return err
+		}
+		if StrictestRule(cfg, ch.Kinds) == RuleApproval {
+			return &ConflictError{State: ch.State, Reason: "approval_required"}
+		}
+		return c.startSwapBy(ctx, ch, ActionPromote, actor)
+	}
+	return &ConflictError{State: ch.State}
+}
+
+func (c *Controller) startSwapBy(ctx context.Context, ch *Change, action string, actor *string) error {
+	if c.Enqueue == nil {
+		return errors.New("no queue")
+	}
+	prev := ch.State
+	if err := c.Store.Move(ctx, c.DB, ch, StateSwapping, action, actor, nil, nil); err != nil {
+		return err
+	}
+	if err := c.Enqueue(ctx, StageTVSwap, map[string]any{"change_id": ch.ID}, "swap TV change"); err != nil {
+		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		return err
+	}
+	return nil
+}
