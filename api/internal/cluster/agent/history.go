@@ -563,7 +563,10 @@ func (h *Hub) metricsFromCache(w http.ResponseWriter, r *http.Request, q history
 	if !to.After(from) || !h.cfg.Cache.Covers("metrics", from, to) {
 		return false
 	}
-	recs, err := h.cfg.Cache.ReadMetrics(r.Context(), CacheQuery{IP: q.ip, From: from, To: to})
+	// the cache thins evenly in SQL to at most limit rows (a day of one IP
+	// is 8 640 frames per process); `thinned` then reports only the hub's
+	// own thinning, which a cache that honours Limit never needs
+	recs, err := h.cfg.Cache.ReadMetrics(r.Context(), CacheQuery{IP: q.ip, From: from, To: to, Limit: q.limit})
 	if err != nil {
 		h.log().Warn("cluster: cache read failed; reading the files", "err", err, "event", "cluster_cache_read_failed")
 		return false
