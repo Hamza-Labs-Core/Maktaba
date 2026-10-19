@@ -26,6 +26,8 @@ import (
 // tune call is needed. Every fetch keeps the channel warm.
 type HTTPHandler struct {
 	Engine *Engine
+
+	pdt pdtCache
 }
 
 // Mount wires the channel routes.
@@ -54,6 +56,20 @@ func (h *HTTPHandler) servePlaylist(w http.ResponseWriter, r *http.Request) {
 		name = "master.m3u8"
 	}
 	h.Engine.Touch(id)
+	if name == "index.m3u8" {
+		// segments dated by their timestamps, the same in every slot (33.4)
+		b, err := readShared(filepath.Join(p.Dir(), name))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		b = h.pdt.rewritePDT(p.Dir(), b, time.Now())
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-cache, no-store")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, _ = w.Write(b)
+		return
+	}
 	serveShared(w, r, p.Dir(), name)
 }
 

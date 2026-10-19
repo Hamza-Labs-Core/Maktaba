@@ -24,7 +24,41 @@ func (h *Handler) MountInternal(r chi.Router) {
 		g.Post("/internal/tv/ensure/{channel}", h.internalEnsure)
 		g.Post("/internal/tv/place/{channel}", h.internalPlace)
 		g.Post("/internal/tv/drain/{host}", h.internalDrain)
+		// Epic 33 story 33.1: the slots and the routing switch (33.7 swaps with it)
+		g.Get("/internal/tv/slots", h.internalSlots)
+		g.Post("/internal/tv/routing/switch", h.internalSwitch)
 	})
+}
+
+func (h *Handler) internalSlots(w http.ResponseWriter, _ *http.Request) {
+	if h.Slots == nil {
+		http.Error(w, "no TV slots on this host", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Slots.View())
+}
+
+// switchBody is POST /internal/tv/routing/switch: make slot live under epoch.
+type switchBody struct {
+	Slot  string `json:"slot"`
+	Epoch int64  `json:"epoch"`
+}
+
+func (h *Handler) internalSwitch(w http.ResponseWriter, r *http.Request) {
+	if h.Slots == nil {
+		http.Error(w, "no TV slots on this host", http.StatusNotFound)
+		return
+	}
+	var b switchBody
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if err := h.Slots.Switch(r.Context(), b.Slot, b.Epoch); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Slots.View())
 }
 
 type placeBody struct {

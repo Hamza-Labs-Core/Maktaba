@@ -478,3 +478,68 @@ func TestRetimerSwitchAcrossWrapKeepsAudio(t *testing.T) {
 	monotonic(t, "video", tr.dts[0x100], 6000)
 	monotonic(t, "audio", tr.dts[0x101], 12000)
 }
+
+// A bounded (audio) PES the old source was cut in the middle of never reaches
+// the output: ffmpeg's FLV muxer fails on a truncated AAC frame (and the push
+// reconnects). A complete one goes out whole.
+func TestRetimerDropsACutAudioPES(t *testing.T) {
+	r := NewRetimer()
+	a := newGen(0x1000, 0x100, 0x101, 900_000)
+	b := newGen(0x1000, 0x100, 0x101, 900_000+200*3000)
+	var out []byte
+	feed := func(x []byte) {
+		o, err := r.Process(x)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, o...)
+	}
+	feed(a.frames(40))
+	audio := func(marker byte, apts int64) ([]byte, []byte) {
+		p1 := a.header(0x101, true, false)
+		pes := []byte{0, 0, 1, 0xc0, 0x01, 0x2c, 0x80, 0x80, 5, 0, 0, 0, 0, 0} // PES_packet_length 300
+		putTS(pes[9:], 2, apts)
+		copy(p1[4:], pes)
+		for i := 4 + len(pes); i < tsSize; i++ {
+			p1[i] = marker
+		}
+		p2 := a.header(0x101, false, false)
+		for i := 4; i < tsSize; i++ {
+			p2[i] = marker
+		}
+		return p1, p2
+	}
+	// a whole bounded PES: out (when complete)
+	w1, w2 := audio(0xaa, a.apts+100000)
+	feed(w1)
+	feed(w2)
+	// the cut one: its first packet only, then the source ends
+	c1, _ := audio(0xbb, a.apts+200000)
+	feed(c1)
+	r.Switch()
+	feed(b.frames(40))
+	if !bytesContain(out, 0xaa) {
+		t.Fatal("the complete bounded PES did not go out")
+	}
+	if bytesContain(out, 0xbb) {
+		t.Fatal("the cut PES reached the output")
+	}
+	if tr := readTrack(t, out); tr.ccBreak != 0 {
+		t.Errorf("%d continuity breaks", tr.ccBreak)
+	}
+}
+
+func bytesContain(b []byte, marker byte) bool {
+	run := 0
+	for _, c := range b {
+		if c == marker {
+			run++
+			if run >= 100 {
+				return true
+			}
+		} else {
+			run = 0
+		}
+	}
+	return false
+}

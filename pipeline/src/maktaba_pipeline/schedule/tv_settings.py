@@ -134,6 +134,10 @@ class MaktabaTvOutputConfig:
     audio_codec: str = "aac"
     audio_kbps: int = 192
     segment_seconds: int = 4
+    #: an IDR every this many seconds, on the wall clock: every TV slot's (and host's)
+    #: output of a channel has the same keyframes and timestamps, so a switch between
+    #: them is seamless (Epic 33 story 33.4); lowered to a divisor of the segment length
+    keyint_seconds: int = 2
     #: channels this host keeps on air at once (one encode each, however many watch);
     #: 0: 16 with VideoToolbox, else 8
     max_active_channels: int = 0
@@ -538,6 +542,15 @@ register(
             TVO,
             "HLS segment (seconds)",
             "Shorter starts a channel sooner; longer is steadier on a slow network.",
+            minimum=1,
+            maximum=10,
+        ),
+        "keyint_seconds": Help(
+            TVO,
+            "Keyframe every (seconds)",
+            "On the wall clock, the same in every TV process and machine, so the switch "
+            "from one to another (a failover, a change going live) is seamless. Lowered to "
+            "a divisor of the HLS segment.",
             minimum=1,
             maximum=10,
         ),

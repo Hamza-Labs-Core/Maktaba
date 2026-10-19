@@ -2,9 +2,12 @@ package channel
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // OutputProfile is the fixed format every block of a channel is
@@ -27,6 +30,13 @@ type OutputProfile struct {
 	// hardware encoder answered); VTPrioSpeed: ffmpeg has -prio_speed.
 	VTSoftware  bool
 	VTPrioSpeed bool
+	// HLSSegmentOption is how this ffmpeg names the HLS muxer's options for its
+	// segments: hls_segment_options (ffmpeg 5+) or hls_ts_options (4.x); empty:
+	// hls_segment_options (HLSSegmentOptionFor detects it).
+	HLSSegmentOption string
+	// KeyintSeconds is the wall-clock IDR grid (story 33.4; default 2, 1-10;
+	// lowered to a divisor of SegmentSeconds when it is not one).
+	KeyintSeconds int
 }
 
 // Encoder names.
@@ -72,11 +82,9 @@ func (p OutputProfile) normalised() OutputProfile {
 	if p.HLSListSize <= 0 {
 		p.HLSListSize = d.HLSListSize
 	}
+	p.KeyintSeconds = effectiveKeyint(p.KeyintSeconds, p.SegmentSeconds)
 	return p
 }
-
-// keyintSeconds is the forced keyframe interval; HLS segments cut on it.
-const keyintSeconds = 2
 
 // BlockInput describes one block's ffmpeg invocation.
 type BlockInput struct {
@@ -104,8 +112,15 @@ type BlockInput struct {
 	FontFile   string
 
 	// TSOffsetSec shifts the block's output timestamps onto the channel
-	// timeline so consecutive blocks are monotonic in the muxer.
-	TSOffsetSec float64
+	// timeline so consecutive blocks are monotonic in the muxer. TSOffsetTicks,
+	// when set, is the exact offset in 90 kHz ticks and wins (story 33.4: the
+	// block's wall-clock start, TSOffsetTicks).
+	TSOffsetSec   float64
+	TSOffsetTicks int64
+	// WallStart is the block's wall-clock start (on the frame grid,
+	// AlignStart): its IDRs fall on wall-clock multiples of the keyframe
+	// interval. Zero: every interval from the block's start, as before 33.4.
+	WallStart time.Time
 }
 
 // BlockArgs builds the ffmpeg args for one block: read in real time
@@ -159,7 +174,9 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 		if !in.HasVideo {
 			vIn = itoa(addInput("-re", "-f", "lavfi", "-i", blackSrc)) + ":v"
 		}
-		filters = append(filters, "["+vIn+"]"+fitPad+",fps="+fps+",format=yuv420p[vb]")
+		// the first frame at t = 0 whatever the seek: the frames, and the
+		// keyframe grid, then sit on the wall-clock frame grid (story 33.4)
+		filters = append(filters, "["+vIn+"]setpts=PTS-STARTPTS,"+fitPad+",fps="+fps+",format=yuv420p[vb]")
 		vLabel = "vb"
 		if wm := in.Watermark; wm != nil && wm.Path != "" {
 			wi := addInput(imageInput(wm.Path)...)
@@ -219,14 +236,23 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 	}
 	args = append(args, "-filter_complex", strings.Join(filters, ";"),
 		"-map", "["+vLabel+"]", "-map", aMap)
-	args = append(args, videoEncoderArgs(p)...)
+	args = append(args, videoEncoderArgs(p, in.WallStart)...)
 	args = append(args, audioEncoderArgs(p)...)
 	if in.DurationSec > 0 {
 		args = append(args, "-t", formatSec(in.DurationSec))
 	}
+	offset := formatSec(in.TSOffsetSec)
+	if in.TSOffsetTicks > 0 {
+		offset = TSOffsetSeconds(in.TSOffsetTicks)
+	}
 	args = append(args,
 		"-max_muxing_queue_size", "4096",
-		"-output_ts_offset", formatSec(in.TSOffsetSec),
+		"-output_ts_offset", offset,
+		// the timestamps are the timeline's exactly (no mux delay added) and
+		// the stream layout is fixed (story 33.4)
+		"-mpegts_copyts", "1")
+	args = append(args, tsLayoutArgs()...)
+	args = append(args,
 		// Flag each block's first packets as a discontinuity so the
 		// muxer's demuxer doesn't treat the CC reset as corruption.
 		"-mpegts_flags", "+initial_discontinuity",
@@ -234,23 +260,50 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 	return args
 }
 
-// videoEncoderArgs: H.264 CBR-ish with a keyframe every keyintSeconds.
-func videoEncoderArgs(p OutputProfile) []string {
-	gop := itoa(p.FPS * keyintSeconds)
+// tsLayoutArgs fix the PMT PID, the first elementary stream PID and the service
+// id of an MPEG-TS output (story 33.4 AC3).
+func tsLayoutArgs() []string {
+	return []string{"-mpegts_pmt_start_pid", itoa(TSPMTPID), "-mpegts_start_pid", itoa(TSVideoPID),
+		"-mpegts_service_id", itoa(TSServiceID)}
+}
+
+// hlsSegmentOptions are the same options for the HLS segments.
+func hlsSegmentOptions() string {
+	return "mpegts_copyts=1:mpegts_pmt_start_pid=" + itoa(TSPMTPID) + ":mpegts_start_pid=" + itoa(TSVideoPID) +
+		":mpegts_service_id=" + itoa(TSServiceID)
+}
+
+// videoEncoderArgs: H.264 CBR-ish, closed GOPs without B-frames, an IDR on
+// every wall-clock multiple of KeyintSeconds (phase: the block's first one).
+func videoEncoderArgs(p OutputProfile, start time.Time) []string {
+	k := p.KeyintSeconds
+	if k <= 0 {
+		k = effectiveKeyint(0, p.SegmentSeconds)
+	}
+	gop := itoa(p.FPS * k)
 	rate := itoa(p.VideoKbps) + "k"
 	buf := itoa(p.VideoKbps*2) + "k"
-	kf := "expr:gte(t,n_forced*" + itoa(keyintSeconds) + ")"
+	kf := keyframeArg(start, k, p.FPS)
 	switch p.Encoder {
 	case EncoderNVENC:
 		return []string{"-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "cbr",
 			"-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-profile:v", "high",
-			"-g", gop, "-bf", "0", "-forced-idr", "1", "-force_key_frames", kf}
+			"-g", gop, "-bf", "0", "-flags", "+cgop", "-forced-idr", "1", "-force_key_frames", kf}
 	case EncoderVideoToolbox:
-		return videoToolboxArgs(p, rate, buf)
+		return videoToolboxArgs(p, rate, buf, start)
 	}
 	return []string{"-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high",
-		"-b:v", rate, "-maxrate", rate, "-bufsize", buf,
+		"-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-bf", "0", "-flags", "+cgop",
 		"-g", gop, "-keyint_min", gop, "-sc_threshold", "0", "-force_key_frames", kf}
+}
+
+// keyframeArg: the wall-clock grid of k seconds when the block's start is
+// known, else every k seconds from the block's start (before 33.4).
+func keyframeArg(start time.Time, k, fps int) string {
+	if !start.IsZero() {
+		return KeyframeExpr(KeyframePhase(start, k, fps), k, fps)
+	}
+	return "expr:gte(t,n_forced*" + itoa(k) + ")"
 }
 
 // videoToolboxArgs: Apple's hardware encoder for live output: real-time
@@ -258,10 +311,10 @@ func videoEncoderArgs(p OutputProfile) []string {
 // the hardware encoder only unless none answered (-allow_sw), bitrate held
 // near constant by -b:v / -maxrate / -bufsize, no B-frames, and a keyframe
 // at every HLS segment boundary (the GOP is one segment long).
-func videoToolboxArgs(p OutputProfile, rate, buf string) []string {
+func videoToolboxArgs(p OutputProfile, rate, buf string, start time.Time) []string {
 	seg := p.SegmentSeconds
 	if seg <= 0 {
-		seg = keyintSeconds
+		seg = DefaultKeyintSeconds
 	}
 	allowSW := "0"
 	if p.VTSoftware {
@@ -273,7 +326,7 @@ func videoToolboxArgs(p OutputProfile, rate, buf string) []string {
 	}
 	gop := itoa(p.FPS * seg)
 	return append(args, "-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-profile:v", "high",
-		"-g", gop, "-bf", "0", "-force_key_frames", "expr:gte(t,n_forced*"+itoa(seg)+")")
+		"-g", gop, "-bf", "0", "-force_key_frames", keyframeArg(start, seg, p.FPS))
 }
 
 func audioEncoderArgs(p OutputProfile) []string {
@@ -339,6 +392,7 @@ func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
 		"-f", "hls",
+		"-" + hlsSegOpt(p.HLSSegmentOption), hlsSegmentOptions(),
 		"-hls_time", itoa(p.SegmentSeconds),
 		"-hls_list_size", itoa(p.HLSListSize),
 		"-hls_delete_threshold", "3",
@@ -347,6 +401,8 @@ func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 		"-hls_segment_filename", dir + "/seg-%d.ts",
 		dir + "/index.m3u8",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
+		"-mpegts_copyts", "1", "-mpegts_pmt_start_pid", itoa(TSPMTPID), "-mpegts_start_pid", itoa(TSVideoPID),
+		"-mpegts_service_id", itoa(TSServiceID),
 		"-f", "mpegts", "-mpegts_flags", "+resend_headers", "pipe:1",
 	}
 }
@@ -394,3 +450,33 @@ func formatSec(s float64) string {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+func hlsSegOpt(name string) string {
+	if name == "" {
+		return "hls_segment_options"
+	}
+	return name
+}
+
+var (
+	hlsOptMu    sync.Mutex
+	hlsOptCache = map[string]string{}
+)
+
+// HLSSegmentOptionFor is the name the ffmpeg binary gives the HLS muxer's
+// segment options (asked once per binary): hls_segment_options, or the older
+// hls_ts_options of ffmpeg 4.x.
+func HLSSegmentOptionFor(ffmpeg string) string {
+	hlsOptMu.Lock()
+	defer hlsOptMu.Unlock()
+	if v, ok := hlsOptCache[ffmpeg]; ok {
+		return v
+	}
+	v := "hls_segment_options"
+	if out, err := exec.Command(ffmpeg, "-hide_banner", "-h", "muxer=hls").CombinedOutput(); err == nil && //nolint:gosec // the configured ffmpeg
+		!strings.Contains(string(out), "hls_segment_options") && strings.Contains(string(out), "hls_ts_options") {
+		v = "hls_ts_options"
+	}
+	hlsOptCache[ffmpeg] = v
+	return v
+}

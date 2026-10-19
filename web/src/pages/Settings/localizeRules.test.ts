@@ -55,6 +55,7 @@ describe("localizeSections", () => {
       "audio_codec",
       "audio_kbps",
       "segment_seconds",
+      "keyint_seconds",
       "max_active_channels",
       "warm_grace_seconds",
       "nvenc_max_sessions",
