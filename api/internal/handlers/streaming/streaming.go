@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -233,17 +234,24 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	// Persist row. The streaming service hands back the open session of the
 	// same (user, video) when there is one (a reload, a second tab): that is
 	// the row already stored, refreshed instead of a duplicate-key 500.
-	_, err = h.DB.ExecContext(r.Context(), `
+	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO streaming_sessions
 		(id, user_id, video_id, client_profile, mode, audio_track_id, subtitle_lang,
 		 start_sec, max_bitrate_kbps, burn_subs, opened_at, last_seen_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
 		ON CONFLICT (id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at, closed_at = NULL
+		WHERE streaming_sessions.user_id = EXCLUDED.user_id
 	`, resp.SessionID, p.UserID, req.VideoID, req.ClientProfile, resp.Mode,
 		req.AudioTrack, req.SubtitleTrack, req.StartSec, req.MaxBitrateKbps,
 		req.BurnSubs, h.now())
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("persist session: "+err.Error()))
+		return
+	}
+	if n, nerr := res.RowsAffected(); nerr == nil && n == 0 {
+		// The id is another user's session: never hand it (or a URL
+		// signed for it) to this caller.
+		httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
 		return
 	}
 
@@ -253,8 +261,14 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusCreated, resp)
 }
 
-// GetSession implements AC-2.
+// GetSession implements AC-2. Only the session's owner or an admin may
+// read it; anyone else gets 404, so a session id does not leak.
 func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
@@ -282,17 +296,41 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load session"))
 		return
 	}
+	if !mayActOn(p, sess.UserID) {
+		httperror.Write(w, r, httperror.NotFound("session "+id))
+		return
+	}
 	if closedAt.Valid {
 		sess.ClosedAt = &closedAt.Time
 	}
 	common.WriteJSON(w, r, http.StatusOK, sess)
 }
 
-// CloseSession implements AC-3.
+// CloseSession implements AC-3. Only the session's owner or an admin may
+// close it; anyone else (and an unknown id) gets 404.
 func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
+		return
+	}
+	var owner string
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT user_id FROM streaming_sessions WHERE id = $1`, id).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("session "+id))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load session"))
+		return
+	}
+	if !mayActOn(p, owner) {
+		httperror.Write(w, r, httperror.NotFound("session "+id))
 		return
 	}
 	if h.Service != nil {
@@ -354,21 +392,27 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve video_id + duration.
-	var videoID string
+	// Resolve the owner, video_id + duration.
+	var ownerID, videoID string
 	var duration sql.NullFloat64
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT s.video_id, v.duration_sec
+		SELECT s.user_id, s.video_id, v.duration_sec
 		FROM streaming_sessions s
 		LEFT JOIN videos v ON v.id = s.video_id
 		WHERE s.id = $1
-	`, sessionID).Scan(&videoID, &duration)
+	`, sessionID).Scan(&ownerID, &videoID, &duration)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("session "+sessionID))
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load session"))
+		return
+	}
+	// Only the owner (or an admin) may report progress on a session; the
+	// position lands on the owner's playback state either way.
+	if !mayActOn(p, ownerID) {
+		httperror.Write(w, r, httperror.NotFound("session "+sessionID))
 		return
 	}
 
@@ -406,7 +450,7 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		  position_sec = EXCLUDED.position_sec,
 		  completed    = EXCLUDED.completed,
 		  updated_at   = EXCLUDED.updated_at
-	`, p.UserID, videoID, req.PositionSec, completed, h.now())
+	`, ownerID, videoID, req.PositionSec, completed, h.now())
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("upsert progress: "+err.Error()))
 		return
@@ -419,6 +463,15 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		"position_sec": req.PositionSec,
 		"completed":    completed,
 	})
+}
+
+// mayActOn reports whether p may read or act on a session owned by
+// ownerID: its owner, or an admin.
+func mayActOn(p *principal.Principal, ownerID string) bool {
+	if p == nil {
+		return false
+	}
+	return p.IsAdmin || (p.UserID != "" && strings.EqualFold(p.UserID, ownerID))
 }
 
 func (h *Handler) now() time.Time {

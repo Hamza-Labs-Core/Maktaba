@@ -30,6 +30,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -168,6 +169,10 @@ type FailureRow struct {
 	Error       *string    `json:"error"`
 	FinishedAt  *time.Time `json:"finished_at"`
 	Attempts    int        `json:"attempts"`
+
+	// libraryID is the job's (or its video's) library, for the per-caller
+	// filter; never sent.
+	libraryID string
 }
 
 // ---------- SQL ----------
@@ -276,7 +281,8 @@ SELECT COALESCE(sum(amount) FILTER (WHERE metric LIKE 'stt.audio_sec:%'), 0)::fl
 
 	failuresSQL = `
 SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::text), l.name,
-       j.stage, j.error_cause, j.error, j.finished_at, j.attempts
+       j.stage, j.error_cause, j.error, j.finished_at, j.attempts,
+       COALESCE(j.library_id, v.library_id)::text
   FROM processing_jobs j
   LEFT JOIN videos v ON v.id = j.subject_id
   LEFT JOIN libraries l ON l.id = COALESCE(j.library_id, v.library_id)
@@ -290,9 +296,12 @@ SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::tex
 
 // ---------- handler ----------
 
-// Summary implements GET /api/transcription/summary.
+// Summary implements GET /api/transcription/summary. The per-library rows
+// and the failures are kept to the libraries the caller can read (the
+// cache is shared, so it is filtered per request); the totals stay global.
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
-	if principal.FromContext(r.Context()) == nil {
+	p := principal.FromContext(r.Context())
+	if p == nil {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
@@ -301,7 +310,29 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("transcription summary: "+err.Error()))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, s)
+	common.WriteJSON(w, r, http.StatusOK, visibleTo(s, p))
+}
+
+// visibleTo is s with Libraries and Failures kept to what p can read. A
+// failure with no library is shown to all-library callers only.
+func visibleTo(s *Summary, p *principal.Principal) *Summary {
+	if p.AccessAllLibraries {
+		return s
+	}
+	out := *s
+	out.Libraries = []LibraryRow{}
+	for _, l := range s.Libraries {
+		if videos.CanRead(p, l.LibraryID) {
+			out.Libraries = append(out.Libraries, l)
+		}
+	}
+	out.Failures = []FailureRow{}
+	for _, f := range s.Failures {
+		if f.libraryID != "" && videos.CanRead(p, f.libraryID) {
+			out.Failures = append(out.Failures, f)
+		}
+	}
+	return &out
 }
 
 // ETATTL is how old a summary the Processing card's time left may come from:
@@ -451,11 +482,12 @@ func (h *Handler) loadFailures(ctx context.Context, s *Summary) error {
 	defer rows.Close()
 	for rows.Next() {
 		var f FailureRow
-		var lib, cause, msg sql.NullString
+		var lib, cause, msg, libID sql.NullString
 		var fin sql.NullTime
-		if err := rows.Scan(&f.JobID, &f.VideoID, &f.Title, &lib, &f.Stage, &cause, &msg, &fin, &f.Attempts); err != nil {
+		if err := rows.Scan(&f.JobID, &f.VideoID, &f.Title, &lib, &f.Stage, &cause, &msg, &fin, &f.Attempts, &libID); err != nil {
 			return err
 		}
+		f.libraryID = libID.String
 		f.LibraryName = strPtr(lib)
 		f.ErrorCause = strPtr(cause)
 		if msg.Valid {

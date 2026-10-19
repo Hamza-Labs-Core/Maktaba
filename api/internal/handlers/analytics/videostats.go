@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -27,6 +29,21 @@ func (h *Handler) VideoStats(w http.ResponseWriter, r *http.Request) {
 	videoID := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(videoID); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("id must be a uuid"))
+		return
+	}
+
+	// A video the caller cannot read is not found, like an unknown one.
+	var libraryID string
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, videoID).Scan(&libraryID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("video "+videoID))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load video"))
+		return
+	}
+	if !videos.CanRead(p, libraryID) {
+		httperror.Write(w, r, httperror.NotFound("video "+videoID))
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -51,5 +52,6 @@ func (h *Handler) Running(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "running jobs", err)
 		return
 	}
+	jobs = filterRefs(principal.FromContext(r.Context()), jobs)
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"host": host, "jobs": jobs})
 }

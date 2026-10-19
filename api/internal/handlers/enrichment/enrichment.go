@@ -177,7 +177,9 @@ func (h *Handler) canRead(r *http.Request, libraryID string) *httperror.Error {
 	if p.AccessAllLibraries || p.HasLibrary(libraryID) {
 		return nil
 	}
-	return httperror.Forbidden("", "")
+	// a video in a library the caller cannot read is not found, like an
+	// unknown one, so its existence does not leak
+	return httperror.NotFound("video")
 }
 
 // canEdit returns nil if the principal may edit a library (admin in v1,
@@ -216,6 +218,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e := h.canRead(r, v.LibraryID); e != nil {
+		if e.Status == http.StatusNotFound {
+			e = httperror.NotFound("video " + id)
+		}
 		httperror.Write(w, r, e)
 		return
 	}

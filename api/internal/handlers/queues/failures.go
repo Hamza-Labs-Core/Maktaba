@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 )
 
@@ -339,7 +340,7 @@ func (h *Handler) StageFailures(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "failures", err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"groups": groups})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"groups": scopeFailures(principal.FromContext(r.Context()), groups)})
 }
 
 // Issues implements GET /api/issues (all stages).
@@ -357,5 +358,5 @@ func (h *Handler) Issues(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "issues", err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"groups": groups})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"groups": scopeFailures(principal.FromContext(r.Context()), groups)})
 }

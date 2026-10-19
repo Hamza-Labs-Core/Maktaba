@@ -1,6 +1,7 @@
 package graphql
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -27,6 +28,11 @@ type Handler struct {
 	// DefaultMaxDepth / DefaultMaxComplexity.
 	MaxDepth      int
 	MaxComplexity int
+	// Persisted is the persisted-query store (persisted.go); nil holds
+	// nothing, so every hash misses. PersistedOnly reports allowlist mode
+	// (the graphql.persisted_only setting); nil is off.
+	Persisted     *PersistedStore
+	PersistedOnly func(context.Context) bool
 
 	once   sync.Once
 	parsed *gql.Schema
@@ -49,6 +55,9 @@ type gqlRequest struct {
 	Query         string         `json:"query"`
 	OperationName string         `json:"operationName"`
 	Variables     map[string]any `json:"variables"`
+	// Persisted queries (persisted.go): Apollo's extension, or the id.
+	Extensions       persistedExt `json:"extensions"`
+	PersistedQueryID string       `json:"persistedQueryId"`
 }
 
 // maxBody caps a POST /graphql body.
@@ -82,9 +91,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var req gqlRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.Query) == "" {
+	if err := dec.Decode(&req); err != nil {
 		writeGQL(w, http.StatusBadRequest, map[string]any{"errors": []map[string]any{
 			gqlErr("malformed GraphQL request body: want {query, operationName, variables}", "bad-request")}})
+		return
+	}
+	register, status, perrs := h.resolvePersisted(r.Context(), &req)
+	if perrs != nil {
+		writeGQL(w, status, map[string]any{"errors": perrs})
 		return
 	}
 	if req.Variables == nil {
@@ -95,6 +109,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if errs != nil {
 		writeGQL(w, http.StatusBadRequest, map[string]any{"errors": errs})
 		return
+	}
+	if register {
+		h.registerPersisted(r.Context(), req.Query)
 	}
 	if plan.operation == "subscription" {
 		writeGQL(w, http.StatusBadRequest, map[string]any{"errors": []map[string]any{

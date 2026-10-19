@@ -51,7 +51,11 @@ func jobRow(id int64, stage, state string) []driver.Value {
 func TestGet_ReturnsErrorAndEstimate(t *testing.T) {
 	db, r := newJobsFixture(&queuestest.Rule{Match: "from processing_jobs where id = $1", Cols: jobCols,
 		Rows: [][]driver.Value{jobRow(9, "probe", "failed")}})
-	rec := call(r, "GET", "/api/jobs/9", false)
+	// a job of no library is an admin's to see; anyone else gets 404
+	if rec := call(r, "GET", "/api/jobs/9", false); rec.Code != 404 {
+		t.Fatalf("non-admin: status %d %s", rec.Code, rec.Body.String())
+	}
+	rec := call(r, "GET", "/api/jobs/9", true)
 	if rec.Code != 200 {
 		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
 	}

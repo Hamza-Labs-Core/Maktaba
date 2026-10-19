@@ -12,6 +12,7 @@ package graphql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"sync"
@@ -86,15 +87,29 @@ func (q *root) JobUpdates(ctx context.Context) (<-chan *job, error) {
 	})
 }
 
-// LibraryEvents: channel "library:<id>".
+// LibraryEvents: channel "library:<id>", for a library the caller can
+// read (as /ws/library/{id}); any other id is not found.
 func (q *root) LibraryEvents(ctx context.Context, args struct{ LibraryID ID }) (<-chan JSON, error) {
+	p := principal.FromContext(ctx)
+	if p == nil || !(p.IsAdmin || p.AccessAllLibraries || p.HasLibrary(string(args.LibraryID))) {
+		return nil, errors.New("library " + string(args.LibraryID) + " not found")
+	}
 	return subscribe(ctx, q.rs.Hub, "library:"+string(args.LibraryID), func(e ws.Event) (JSON, bool) {
 		return eventEnvelope(e), true
 	})
 }
 
-// PlaybackUpdates: channel "playback:<video id>".
+// PlaybackUpdates: channel "playback:<video id>", for a video the caller
+// can read: GET /api/videos/{id} decides (the REST library rule).
 func (q *root) PlaybackUpdates(ctx context.Context, args struct{ VideoID ID }) (<-chan JSON, error) {
+	if p := principal.FromContext(ctx); p == nil || !(p.IsAdmin || p.AccessAllLibraries) {
+		var v struct {
+			ID string `json:"id"`
+		}
+		if err := q.get(ctx, "/api/videos/"+seg(args.VideoID), nil, &v); err != nil || v.ID == "" {
+			return nil, errors.New("video " + string(args.VideoID) + " not found")
+		}
+	}
 	return subscribe(ctx, q.rs.Hub, "playback:"+string(args.VideoID), func(e ws.Event) (JSON, bool) {
 		return eventEnvelope(e), true
 	})
@@ -240,10 +255,18 @@ func (h *Handler) runSubscription(ctx context.Context, id string, p gqlRequest, 
 		b, _ := json.Marshal(errs)
 		send(wsMessage{ID: id, Type: "error", Payload: b})
 	}
+	register, _, perrs := h.resolvePersisted(ctx, &p)
+	if perrs != nil {
+		sendErrs(perrs)
+		return
+	}
 	plan, errs := h.analyse(p.Query, p.OperationName, p.Variables)
 	if errs != nil {
 		sendErrs(errs)
 		return
+	}
+	if register {
+		h.registerPersisted(ctx, p.Query)
 	}
 	if plan.operation != "subscription" {
 		sendErrs([]map[string]any{{"message": "only subscriptions run over the WebSocket; send queries and mutations as POST /graphql",

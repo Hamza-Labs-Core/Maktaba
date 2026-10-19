@@ -89,6 +89,7 @@ var runtimeKeys = map[string]func(json.RawMessage) bool{
 	runtimecfg.PauseGrace:           numberIn(1, 3600),   // force pause after a requested pause waited this long
 	runtimecfg.WSHeartbeat:          numberIn(5, 300),    // SSE keep-alive (30 s)
 	runtimecfg.OpenRegistration:     isBool,              // self-service registration (off)
+	runtimecfg.GraphQLPersistedOnly: isBool,              // GraphQL persisted-query allowlist (off)
 }
 
 func numberIn(lo, hi float64) func(json.RawMessage) bool {

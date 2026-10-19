@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -138,10 +139,14 @@ func youtubeReason(err error) string {
 // annotateMatches sets each item's match state by comparing its title
 // against local parsed titles / video titles (Story 26.8 D4). Cheap and
 // local; a DB-less handler leaves everything "importable".
+//
+// Only videos in libraries the caller (principal on ctx) can read count
+// as a match, so a hidden library's video id never leaks.
 func (h *Handler) annotateMatches(ctx context.Context, items []YTItem) {
+	scope, scopeArgs, none := ytLibraryScope(principal.FromContext(ctx), "library_id", 2)
 	for i := range items {
 		items[i].Match = YTMatch{State: "importable"}
-		if h.DB == nil {
+		if h.DB == nil || none {
 			continue
 		}
 		norm := strings.ToLower(strings.TrimSpace(items[i].Title))
@@ -151,9 +156,9 @@ func (h *Handler) annotateMatches(ctx context.Context, items []YTItem) {
 		var vid string
 		err := h.DB.QueryRowContext(ctx, `
 			SELECT id FROM videos
-			WHERE LOWER(COALESCE(title,'')) = $1
+			WHERE LOWER(COALESCE(title,'')) = $1`+scope+`
 			LIMIT 1
-		`, norm).Scan(&vid)
+		`, append([]any{norm}, scopeArgs...)...).Scan(&vid)
 		if err == nil && vid != "" {
 			items[i].Match = YTMatch{State: "in_library", VideoID: vid}
 			continue
@@ -161,15 +166,38 @@ func (h *Handler) annotateMatches(ctx context.Context, items []YTItem) {
 		// Already staged onto a local video by an earlier import.
 		var imported string
 		err = h.DB.QueryRowContext(ctx, `
-			SELECT video_id FROM youtube_imports
-			WHERE youtube_id = $1
-			ORDER BY imported_at DESC
+			SELECT yi.video_id FROM youtube_imports yi
+			JOIN videos v ON v.id = yi.video_id
+			WHERE yi.youtube_id = $1`+strings.Replace(scope, "library_id", "v.library_id", 1)+`
+			ORDER BY yi.imported_at DESC
 			LIMIT 1
-		`, items[i].YouTubeID).Scan(&imported)
+		`, append([]any{items[i].YouTubeID}, scopeArgs...)...).Scan(&imported)
 		if err == nil && imported != "" {
 			items[i].Match = YTMatch{State: "imported", VideoID: imported}
 		}
 	}
+}
+
+// ytLibraryScope is the " AND col IN (...)" filter for p's readable
+// libraries ("" for an all-library caller; none=true for no access).
+// Placeholders start at $next.
+func ytLibraryScope(p *principal.Principal, col string, next int) (string, []any, bool) {
+	if p == nil {
+		return "", nil, true
+	}
+	if p.AccessAllLibraries {
+		return "", nil, false
+	}
+	if len(p.Libraries) == 0 {
+		return "", nil, true
+	}
+	ph := make([]string, len(p.Libraries))
+	args := make([]any, len(p.Libraries))
+	for i, l := range p.Libraries {
+		ph[i] = "$" + strconv.Itoa(next+i)
+		args[i] = l
+	}
+	return " AND " + col + " IN (" + strings.Join(ph, ",") + ")", args, false
 }
 
 func queryHash(query string) string {

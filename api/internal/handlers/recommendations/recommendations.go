@@ -153,8 +153,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 	rails := make([]Rail, 0, maxRows)
 	for _, rail := range []Rail{
-		h.continueRail(r, p.UserID, limit),
-		h.forYouRail(r, p.UserID, limit),
+		h.continueRail(r, p, limit),
+		h.forYouRail(r, p, limit),
 		h.libraryRail(r, p, limit),
 	} {
 		if surface == "mobile-home" && rail.ID == "library" {
@@ -261,12 +261,19 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // continueRail sources from playback_state where 0.05 ≤ pos/dur ≤ 0.95.
-func (h *Handler) continueRail(r *http.Request, userID string, limit int) Rail {
+// Like every rail it keeps to the libraries p can read: a lost library
+// grant hides its videos even with playback history left behind.
+func (h *Handler) continueRail(r *http.Request, p *principal.Principal, limit int) Rail {
 	rail := Rail{
 		ID:         "continue",
 		Title:      "Continue Watching",
 		ReasonKind: ReasonContinueWatching,
 		Items:      []Item{},
+	}
+	args := []any{p.UserID, limit}
+	scope, ok := railScope(p, &args)
+	if !ok {
+		return rail
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT ps.video_id, ps.position_sec, COALESCE(v.duration_sec, 0), ps.updated_at
@@ -276,9 +283,9 @@ func (h *Handler) continueRail(r *http.Request, userID string, limit int) Rail {
 		  AND v.duration_sec IS NOT NULL
 		  AND v.duration_sec > 0
 		  AND ps.position_sec / v.duration_sec BETWEEN 0.05 AND 0.95
-		  AND ps.completed = FALSE
+		  AND ps.completed = FALSE`+scope+`
 		ORDER BY ps.updated_at DESC, ps.video_id ASC LIMIT $2
-	`, userID, limit)
+	`, args...)
 	if err != nil {
 		return rail
 	}
@@ -311,17 +318,24 @@ func (h *Handler) continueRail(r *http.Request, userID string, limit int) Rail {
 // forYouRail reads from user_recs (Pipeline-populated nightly). Order
 // is deterministic: (score DESC, video_id ASC) so two equal-score
 // videos always sort the same way (Story 14.7 determinism AC).
-func (h *Handler) forYouRail(r *http.Request, userID string, limit int) Rail {
+func (h *Handler) forYouRail(r *http.Request, p *principal.Principal, limit int) Rail {
 	rail := Rail{
 		ID:         "for-you",
 		Title:      "For You",
 		ReasonKind: ReasonForYou,
 		Items:      []Item{},
 	}
+	args := []any{p.UserID, limit}
+	scope, ok := railScope(p, &args)
+	if !ok {
+		return rail
+	}
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT video_id, score FROM user_recs
-		WHERE user_id = $1 ORDER BY score DESC, video_id ASC LIMIT $2
-	`, userID, limit)
+		SELECT ur.video_id, ur.score FROM user_recs ur
+		JOIN videos v ON v.id = ur.video_id
+		WHERE ur.user_id = $1`+scope+`
+		ORDER BY ur.score DESC, ur.video_id ASC LIMIT $2
+	`, args...)
 	if err != nil {
 		return rail
 	}
@@ -336,6 +350,24 @@ func (h *Handler) forYouRail(r *http.Request, userID string, limit int) Rail {
 		rail.Items = append(rail.Items, it)
 	}
 	return rail
+}
+
+// railScope is the " AND v.library_id IN (...)" filter for p's readable
+// libraries, appending its args after *args ("" for an all-library
+// caller; ok=false when p reads no library).
+func railScope(p *principal.Principal, args *[]any) (string, bool) {
+	if p.AccessAllLibraries {
+		return "", true
+	}
+	if len(p.Libraries) == 0 {
+		return "", false
+	}
+	ph := make([]string, len(p.Libraries))
+	for i, lib := range p.Libraries {
+		*args = append(*args, lib)
+		ph[i] = "$" + strconv.Itoa(len(*args))
+	}
+	return " AND v.library_id IN (" + strings.Join(ph, ",") + ")", true
 }
 
 // libraryRail is a minimal stand-in until Epic 9 Story 9.9 ships

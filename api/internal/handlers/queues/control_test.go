@@ -555,7 +555,7 @@ func TestExtensions(t *testing.T) {
 	t.Run("list masks secrets and never leaks unknown keys", func(t *testing.T) {
 		// a token still in the settings (before the start-up move) is masked too
 		f := newFixture(row("plex", true, `{"url":"http://plex:32400","token":"SUPERSECRET","stray":"LEAK"}`))
-		rec := f.do("GET", "/api/extensions", "", viewer())
+		rec := f.do("GET", "/api/extensions", "", admin())
 		if rec.Code != 200 {
 			t.Fatalf("status %d", rec.Code)
 		}
@@ -584,7 +584,7 @@ func TestExtensions(t *testing.T) {
 		f.h.Secrets = secrets.NewMemory()
 		_ = f.h.Secrets.Put(ctx, plexToken, []byte("SUPERSECRET"), "")
 		_ = f.h.Secrets.Put(ctx, "cf_api_token", []byte("CFSECRET"), "")
-		rec := f.do("GET", "/api/extensions", "", viewer())
+		rec := f.do("GET", "/api/extensions", "", admin())
 		body := rec.Body.String()
 		if strings.Contains(body, "SUPERSECRET") || strings.Contains(body, "CFSECRET") {
 			t.Fatalf("secret leaked: %s", body)

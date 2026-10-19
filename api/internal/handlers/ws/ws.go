@@ -151,6 +151,19 @@ type Handler struct {
 	// Settings holds the runtime heartbeat interval
 	// (ws.heartbeat_interval_sec; nil or unset: 30 s).
 	Settings *runtimecfg.Reader
+	// Filter, when set, decides per subscriber what of an event it may
+	// see (initial, replayed and live frames alike): the queue channels'
+	// library scope (queues.FilterEvent). nil sends every event.
+	Filter func(p *principal.Principal, channel string, e Event) (Event, bool)
+	// VideoLibrary resolves a video id to its library id for
+	// /ws/playback/{video_id} ("" + nil error: no such video). nil: only
+	// a caller who reads every library may subscribe.
+	VideoLibrary func(ctx context.Context, videoID string) (string, error)
+}
+
+// canReadLibrary is the videos rule: admin / all libraries, or granted.
+func canReadLibrary(p *principal.Principal, libraryID string) bool {
+	return p != nil && (p.IsAdmin || p.AccessAllLibraries || p.HasLibrary(libraryID))
 }
 
 // DefaultHeartbeat is the SSE keep-alive comment interval.
@@ -171,13 +184,45 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/ws/jobs", h.serveSSE("jobs"))
 	r.Get("/ws/queues", h.serveSSE("queues"))
 	r.Get("/ws/library/{id}", func(w http.ResponseWriter, r *http.Request) {
-		ch := "library:" + chi.URLParam(r, "id")
-		h.sseChannel(ch, w, r)
+		id := chi.URLParam(r, "id")
+		// a library the caller cannot read is not found (no stream)
+		if p := principal.FromContext(r.Context()); p != nil && !canReadLibrary(p, id) {
+			httperror.Write(w, r, httperror.NotFound("library "+id))
+			return
+		}
+		h.sseChannel("library:"+id, w, r)
 	})
 	r.Get("/ws/playback/{video_id}", func(w http.ResponseWriter, r *http.Request) {
-		ch := "playback:" + chi.URLParam(r, "video_id")
-		h.sseChannel(ch, w, r)
+		id := chi.URLParam(r, "video_id")
+		if p := principal.FromContext(r.Context()); p != nil && !h.canReadVideo(r.Context(), p, id) {
+			httperror.Write(w, r, httperror.NotFound("video "+id))
+			return
+		}
+		h.sseChannel("playback:"+id, w, r)
 	})
+}
+
+// canReadVideo reports whether p may read video id's events.
+func (h *Handler) canReadVideo(ctx context.Context, p *principal.Principal, id string) bool {
+	if p.IsAdmin || p.AccessAllLibraries {
+		return true
+	}
+	if h.VideoLibrary == nil {
+		return false
+	}
+	lib, err := h.VideoLibrary(ctx, id)
+	if err != nil || lib == "" {
+		return false
+	}
+	return p.HasLibrary(lib)
+}
+
+// filter applies h.Filter for p on channel.
+func (h *Handler) filter(p *principal.Principal, channel string, e Event) (Event, bool) {
+	if h.Filter == nil {
+		return e, true
+	}
+	return h.Filter(p, channel, e)
 }
 
 // serveSSE is the static-channel variant.
@@ -215,8 +260,10 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 
 	if h.Initial != nil {
 		if ev := h.Initial(ctx, channel); ev != nil {
-			writeFrame(w, *ev)
-			flusher.Flush()
+			if e, ok := h.filter(p, channel, *ev); ok {
+				writeFrame(w, e)
+				flusher.Flush()
+			}
 		}
 	}
 
@@ -230,7 +277,9 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		if last := parseLastEventID(r); last > 0 {
 			if evs, err := h.Replay.Replay(ctx, channel, last); err == nil {
 				for _, e := range evs {
-					writeFrame(w, Event(e))
+					if fe, ok := h.filter(p, channel, Event(e)); ok {
+						writeFrame(w, fe)
+					}
 				}
 				flusher.Flush()
 			}
@@ -250,8 +299,10 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 			_, _ = w.Write([]byte(": ping\n\n"))
 			flusher.Flush()
 		case e := <-sub.C:
-			writeFrame(w, e)
-			flusher.Flush()
+			if fe, ok := h.filter(p, channel, e); ok {
+				writeFrame(w, fe)
+				flusher.Flush()
+			}
 		}
 	}
 }

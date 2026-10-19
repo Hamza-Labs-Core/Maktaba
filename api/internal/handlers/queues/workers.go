@@ -99,7 +99,8 @@ func servedBy(workers []Worker) map[string]Coverage {
 
 // Workers implements GET /api/workers.
 func (h *Handler) Workers(w http.ResponseWriter, r *http.Request) {
-	if !requireAuth(w, r) {
+	// host names, addresses and versions are operator detail
+	if !requireAdmin(w, r) {
 		return
 	}
 	ws, err := h.WorkersView(r.Context())

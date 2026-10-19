@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -142,6 +143,12 @@ func (h *Handler) ItemHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
+		httperror.Write(w, r, httperror.NotFound(kind+" "+id))
+		return
+	}
+	// an item of a library the caller cannot read (or catalog-wide, no
+	// library) is not found, like an unknown one
+	if !canSeeLibraryOf(principal.FromContext(ctx), out.Subject.LibraryID) {
 		httperror.Write(w, r, httperror.NotFound(kind+" "+id))
 		return
 	}

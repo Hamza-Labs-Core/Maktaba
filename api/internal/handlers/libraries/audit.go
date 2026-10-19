@@ -29,6 +29,7 @@ import (
 // “category='library'“. Keep in sync with the Python sibling.
 const (
 	EventScanTriggered      = "scan-triggered"
+	EventLibraryCreated     = "library-created"
 	EventSettingsChanged    = "settings-changed"
 	EventVideoPurged        = "video-purged"
 	EventLibraryDeleted     = "library-deleted"
@@ -169,7 +170,11 @@ func WriteAudit(
 	}
 	var actorParam any
 	if actor != nil {
-		actorParam = *actor
+		// actor_user_id references users(id): a non-UUID actor (none in
+		// practice) is kept in the payload instead of failing the insert.
+		if _, err := uuid.Parse(*actor); err == nil {
+			actorParam = *actor
+		}
 	}
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
@@ -181,33 +186,58 @@ func WriteAudit(
 	}
 }
 
-// AuditedDelete wraps the existing :meth:`Delete` with a best-effort
-// audit record. Wiring is opt-in via :meth:`Handler.MountAudit` so the
-// existing tests keep passing without an audit_log table.
+// AuditedDelete wraps :meth:`Delete` with a best-effort audit record.
+// Mount wires it as DELETE /api/libraries/{id}.
+//
+// The row records the *outcome*: a deletion that hit the 412
+// confirmation gate is still worth surfacing, because it tells operators
+// a destructive call was attempted. A call refused before it reached a
+// real library (not admin, malformed or unknown id) writes nothing.
 func (h *Handler) AuditedDelete(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	id := chi.URLParam(r, "id")
 	lib, _ := h.loadLibrary(r.Context(), id)
-
 	purge := strings.EqualFold(r.URL.Query().Get("purge"), "true")
 
-	// Defer the audit write so we capture the *outcome* — a deletion
-	// that hit a 412 confirmation gate is still worth surfacing in the
-	// audit feed because it tells operators a destructive call was
-	// attempted.
-	defer func() {
-		var actor *string
-		if p != nil {
-			s := p.UserID
-			actor = &s
-		}
-		payload := map[string]any{
-			"name":  lib.Name,
-			"roots": lib.Roots,
-			"purge": purge,
-		}
-		WriteAudit(r.Context(), h.DB, EventLibraryDeleted, actor, id, payload)
-	}()
+	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+	h.Delete(sw, r)
 
-	h.Delete(w, r)
+	if sw.status >= 300 && sw.status != http.StatusPreconditionFailed {
+		return
+	}
+	WriteAudit(r.Context(), h.DB, EventLibraryDeleted, ActorOf(p), id, map[string]any{
+		"name":    lib.Name,
+		"roots":   lib.Roots,
+		"purge":   purge,
+		"status":  sw.status,
+		"deleted": sw.status < 300,
+	})
+}
+
+// statusWriter remembers the status the wrapped handler wrote.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (s *statusWriter) WriteHeader(code int) {
+	if !s.wrote {
+		s.status, s.wrote = code, true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusWriter) Write(b []byte) (int, error) {
+	s.wrote = true
+	return s.ResponseWriter.Write(b)
+}
+
+// ActorOf is the audit actor for p: its user id, or nil for no caller.
+func ActorOf(p *principal.Principal) *string {
+	if p == nil || p.UserID == "" {
+		return nil
+	}
+	s := p.UserID
+	return &s
 }

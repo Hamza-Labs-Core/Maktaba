@@ -249,7 +249,10 @@ func TestEveryRootFieldIsWired(t *testing.T) {
 			continue
 		}
 		t.Run("subscription."+f.Name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(principal.WithPrincipal(context.Background(), &principal.Principal{UserID: "u1"}))
+			// an admin: libraryEvents / playbackUpdates refuse a library the
+			// caller cannot read (fields_pg_test covers a member)
+			ctx, cancel := context.WithCancel(principal.WithPrincipal(context.Background(),
+				&principal.Principal{UserID: "u1", IsAdmin: true, AccessAllLibraries: true}))
 			defer cancel()
 			q := "subscription { " + f.Name + argLiteral(f.Arguments) + selectionFor(f.Type) + " }"
 			ch, err := h.schema().Subscribe(ctx, q, "", nil)

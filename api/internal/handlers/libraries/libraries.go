@@ -138,7 +138,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/libraries", h.Create)
 	r.Get("/api/libraries/{id}", h.Get)
 	r.Patch("/api/libraries/{id}", h.Patch)
-	r.Delete("/api/libraries/{id}", h.Delete)
+	// Every library mutation writes a category='library' audit row
+	// (audit.go): create, patch, delete and scan.
+	r.Delete("/api/libraries/{id}", h.AuditedDelete)
 	r.Post("/api/libraries/{id}/scan", h.Scan)
 	// Story 9.7 AC-1: the cache-first StatsCached handler is the
 	// AC-compliant one (full by_content_type/storage/jobs/last_sweep
@@ -272,6 +274,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	WriteAudit(r.Context(), h.DB, EventLibraryCreated, ActorOf(p), id, map[string]any{
+		"name": req.Name, "roots": roots,
+	})
 	w.Header().Set("Location", "/api/libraries/"+id)
 	common.WriteJSON(w, r, http.StatusCreated, Library{
 		ID: id, Name: req.Name, Roots: roots, Settings: settings,
@@ -424,6 +429,19 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("commit"))
 		return
 	}
+	changed := []string{}
+	if req.Name != nil {
+		changed = append(changed, "name")
+	}
+	if req.Roots != nil {
+		changed = append(changed, "roots")
+	}
+	if len(req.Settings) > 0 {
+		changed = append(changed, "settings")
+	}
+	WriteAudit(r.Context(), h.DB, EventSettingsChanged, ActorOf(p), id, map[string]any{
+		"fields": changed, "name": cur.Name, "roots": cur.Roots,
+	})
 	cur.UpdatedAt = now
 	common.WriteJSON(w, r, http.StatusOK, cur)
 }
@@ -492,8 +510,14 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	common.WriteNoContent(w)
 }
 
-// Scan implements AC-5: enqueue a scan job at priority 50.
+// Scan implements AC-5: enqueue a scan job at priority 50. Admin-only,
+// like every library.* action (Story 10.13 v1).
 func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
@@ -511,6 +535,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		// Soft-fail mode: report 202 with an empty job_id so the route
 		// is callable in environments where the job queue isn't wired
 		// (CI / dev unit tests). Production must inject a real enqueuer.
+		WriteAudit(r.Context(), h.DB, EventScanTriggered, ActorOf(p), id, map[string]any{"job_id": ""})
 		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"job_id": ""})
 		return
 	}
@@ -519,6 +544,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("enqueue scan: "+err.Error()))
 		return
 	}
+	WriteAudit(r.Context(), h.DB, EventScanTriggered, ActorOf(p), id, map[string]any{"job_id": jobID})
 	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"job_id": jobID})
 }
 
@@ -539,6 +565,10 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
+		return
+	}
+	if !canSeeLibrary(r, id) {
+		httperror.Write(w, r, httperror.NotFound("library "+id))
 		return
 	}
 	if _, err := h.loadLibrary(r.Context(), id); err != nil {
@@ -606,6 +636,13 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.WriteJSON(w, r, http.StatusOK, resp)
+}
+
+// canSeeLibrary reports whether the caller may read library id (admin,
+// all-libraries, or a grant), the rule List and Get use.
+func canSeeLibrary(r *http.Request, id string) bool {
+	p := principal.FromContext(r.Context())
+	return p != nil && (p.AccessAllLibraries || p.HasLibrary(id))
 }
 
 // loadLibrary fetches a single library row; sql.ErrNoRows is returned

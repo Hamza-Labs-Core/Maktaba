@@ -331,9 +331,10 @@ func findExtension(name string) (extensionDef, bool) {
 	return extensionDef{}, false
 }
 
-// Extensions implements GET /api/extensions.
+// Extensions implements GET /api/extensions. Admin-only: the settings
+// name the external servers (Plex, dizqueTV) and their accounts.
 func (h *Handler) Extensions(w http.ResponseWriter, r *http.Request) {
-	if !requireAuth(w, r) {
+	if !requireAdmin(w, r) {
 		return
 	}
 	rows, err := h.loadExtensionRows(r.Context())

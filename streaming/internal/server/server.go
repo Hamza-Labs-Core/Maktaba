@@ -201,7 +201,7 @@ func libResolverForDirect(p *probe.Cache) auth.LibraryResolverFunc {
 // libResolverForSession looks up the session, then the video, then
 // returns the video's library.
 func libResolverForSession(p *probe.Cache, s session.Store) auth.LibraryResolverFunc {
-	return func(ctx context.Context, r *http.Request, _ *auth.Claims) (uuid.UUID, error) {
+	return func(ctx context.Context, r *http.Request, cl *auth.Claims) (uuid.UUID, error) {
 		sid := chi.URLParam(r, "session_id")
 		id, err := uuid.Parse(sid)
 		if err != nil {
@@ -211,12 +211,32 @@ func libResolverForSession(p *probe.Cache, s session.Store) auth.LibraryResolver
 		if err != nil || !ok {
 			return uuid.Nil, errors.New("session not found")
 		}
+		if !sessionOwnedBy(row.UserID, cl) {
+			// a URL signed for another user's session: the same 404 as an
+			// unknown session, so the session's existence does not leak
+			return uuid.Nil, errors.New("session not found")
+		}
 		probeRow, err := p.Lookup(ctx, row.VideoID)
 		if err != nil {
 			return uuid.Nil, err
 		}
 		return probeRow.LibraryID, nil
 	}
+}
+
+// sessionOwnedBy reports whether the signed URL's user (usr) may use a
+// session owned by owner. The API signs a session's manifest for the user
+// who opened it, so the two match; a session stored without an owner, or a
+// token without usr (older signers), keeps the signature + lib[] check.
+func sessionOwnedBy(owner uuid.UUID, cl *auth.Claims) bool {
+	if cl == nil || owner == uuid.Nil || cl.IsAdmin {
+		return true
+	}
+	usr, err := cl.UserID()
+	if err != nil {
+		return cl.Usr == ""
+	}
+	return usr == owner
 }
 
 // videoIDForSession resolves the session id (stored in context by
