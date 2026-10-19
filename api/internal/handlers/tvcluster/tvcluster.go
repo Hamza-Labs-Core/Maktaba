@@ -254,7 +254,7 @@ func (h *Handler) hosts(ctx context.Context, st Settings) ([]Host, error) {
 	}
 	defer rows.Close()
 	now := h.now()
-	var out []Host
+	out := []Host{} // JSON [] when no machine streams TV yet, never null
 	for rows.Next() {
 		var x Host
 		var base, src, encs, active, load, push, unfit, ver sql.NullString
