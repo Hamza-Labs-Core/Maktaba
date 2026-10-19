@@ -112,7 +112,9 @@ func TestVODSignedPlaybackThroughSharedStore(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sessions := session.NewMemoryStore(time.Second)
 	grpcSrv := buildGRPCServer(logger, backend, sessions)
-	public := buildPublicHandler(logger, backend, nil, nil, sessions)
+	bg := newBackground(context.Background())
+	t.Cleanup(func() { bg.Stop(time.Second) })
+	public := buildPublicHandler(bg, logger, backend, nil, nil, sessions)
 	t.Cleanup(func() {
 		ids, _ := sessions.List(context.Background())
 		for _, r := range ids {
