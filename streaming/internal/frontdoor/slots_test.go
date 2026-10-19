@@ -287,7 +287,7 @@ func TestFailoverToHotStandby(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var switched atomic.Int64
-	g.slots.OnSwitch = func(from, to string, epoch int64) { switched.Store(epoch) }
+	g.slots.OnSwitch = func(_, _ string, epoch int64) { switched.Store(epoch) }
 	go g.slots.Run(ctx)
 	pl := "/stream/channel/" + g.ch.String() + "/index.m3u8"
 	_, before := g.get(t, pl)
@@ -352,7 +352,7 @@ func TestFailoverToHotStandby(t *testing.T) {
 		var v int64
 		for _, l := range strings.Split(b, "\n") {
 			if strings.HasPrefix(l, "#EXT-X-MEDIA-SEQUENCE:") {
-				fmt.Sscanf(l, "#EXT-X-MEDIA-SEQUENCE:%d", &v)
+				_, _ = fmt.Sscanf(l, "#EXT-X-MEDIA-SEQUENCE:%d", &v)
 			}
 		}
 		return v

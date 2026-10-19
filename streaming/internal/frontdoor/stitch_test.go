@@ -47,9 +47,9 @@ func render(t *testing.T, st *Stitcher) rendered {
 	for _, l := range strings.Split(string(st.Render()), "\n") {
 		switch {
 		case strings.HasPrefix(l, "#EXT-X-MEDIA-SEQUENCE:"):
-			fmt.Sscanf(l, "#EXT-X-MEDIA-SEQUENCE:%d", &r.seq)
+			_, _ = fmt.Sscanf(l, "#EXT-X-MEDIA-SEQUENCE:%d", &r.seq)
 		case strings.HasPrefix(l, "#EXT-X-DISCONTINUITY-SEQUENCE:"):
-			fmt.Sscanf(l, "#EXT-X-DISCONTINUITY-SEQUENCE:%d", &r.disc)
+			_, _ = fmt.Sscanf(l, "#EXT-X-DISCONTINUITY-SEQUENCE:%d", &r.disc)
 		case l == "#EXT-X-DISCONTINUITY":
 			pending = true
 		case strings.HasPrefix(l, pdtTag):

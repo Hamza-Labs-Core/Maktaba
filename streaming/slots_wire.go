@@ -66,7 +66,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			return c, nv, vt
 		},
 		RemoteViewers: remoteViewers(b),
-		OnSwitch: func(from, to string, epoch int64) {
+		OnSwitch: func(_, _ string, _ int64) {
 			relayMu.Lock()
 			ctl := relayCtl
 			relayMu.Unlock()
@@ -75,11 +75,11 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			}
 		}}
 	for {
-		if err := slots.Bootstrap(ctx); err == nil {
+		err := slots.Bootstrap(ctx)
+		if err == nil {
 			break
-		} else {
-			logger.Warn("tv: reading the slot roles failed; retrying", "err", err.Error(), "event", "tv_slot_bootstrap_failed")
 		}
+		logger.Warn("tv: reading the slot roles failed; retrying", "err", err.Error(), "event", "tv_slot_bootstrap_failed")
 		time.Sleep(2 * time.Second)
 	}
 	go slots.Run(context.Background())
