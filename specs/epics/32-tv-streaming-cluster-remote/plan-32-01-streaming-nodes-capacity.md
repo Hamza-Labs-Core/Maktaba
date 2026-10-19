@@ -1,7 +1,7 @@
 # Plan 32.1 — Streaming nodes and capacity — implementation
 
 > Implementation plan for [story-32-01](story-32-01-streaming-nodes-capacity.md).
-> Design: [design.md](design.md) §2, §5. Writes slot **0120** (`tv_stream_hosts`,
+> Design: [design.md](design.md) §2, §5. Writes slot **0120** (extends `streaming_hosts` from 0117,
 > `channel_placements`, `tv_placement_generation_seq`, `tv_cluster_secret`, `tv_host_beat`,
 > `tv_placement_ack`).
 > `feat/tv-core` is on `main` (PR #63; slot 0117, `OutputSettings`, encoder gates).
@@ -11,7 +11,7 @@
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | A node's streaming role reuses the Epic 31 node config; no second join. | One approval per machine; the node's role already reads channel tables. |
-| D2 | Hosts write their row only through `tv_host_beat` (SECURITY DEFINER, own row). | Same guard as `cluster_node_beat`; a node cannot edit another host or the placements. |
+| D2 | Hosts write their row only through `tv_host_beat` (SECURITY DEFINER, own row); tv-core's direct heartbeat upsert of `streaming_hosts` (0117) moves into the function. | Same guard as `cluster_node_beat`; a node cannot edit another host or the placements. |
 | D3 | Capacity is computed by the host (it knows its encoder) and may be overridden by the admin. | `EffectiveMaxActive` lives in tv-core's streaming code. |
 | D4 | The cluster stream key is 32 random bytes in `tv_cluster_secret` (singleton, REVOKE from `maktaba_worker`), created by the home at first boot and returned by `tv_host_beat` to each host. | The function must be able to read it, so it cannot be in `home_secrets` (sealed with a key file outside the database). Rotation: replace the row; hosts pick it up within one beat; the front door accepts both keys for 10 s. |
 | D5 | Node mode mounts only signed channel routes and health. | R1.4; closes the open streaming port on nodes. |
@@ -40,32 +40,28 @@
 
 ```sql
 -- +goose Up
-CREATE TABLE IF NOT EXISTS tv_stream_hosts (
-  host_id           UUID PRIMARY KEY,
-  role              TEXT NOT NULL CHECK (role IN ('home','node')),
-  name              TEXT NOT NULL,
-  enabled           BOOLEAN NOT NULL DEFAULT false,
-  draining          BOOLEAN NOT NULL DEFAULT false,
-  stream_base_url   TEXT,
-  stream_base_url_source TEXT NOT NULL DEFAULT 'reported' CHECK (stream_base_url_source IN ('reported','admin')),
-  encoders          JSONB NOT NULL DEFAULT '[]',
-  capacity          INTEGER NOT NULL DEFAULT 0,
-  capacity_override INTEGER,
-  weight            INTEGER NOT NULL DEFAULT 1,
-  active            JSONB NOT NULL DEFAULT '[]',
-  load              JSONB NOT NULL DEFAULT '{}',
-  can_push          JSONB NOT NULL DEFAULT '{}',
-  can_live          BOOLEAN NOT NULL DEFAULT false,
-  unfit             TEXT,
-  version           TEXT,
-  last_beat_at      TIMESTAMPTZ,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- streaming_hosts exists since slot 0117 (feat/tv-core, PR #63): host_id TEXT pk, host, role,
+-- stream_base_url, encoder, max_active (= capacity), active_channels, nvenc_free, vt_free,
+-- started_at, heartbeat_at. Epic 32 extends it instead of adding a second hosts table.
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS draining BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS stream_base_url_source TEXT NOT NULL DEFAULT 'reported'
+  CHECK (stream_base_url_source IN ('reported','admin'));
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS encoders JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS capacity_override INTEGER;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS weight INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS active JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS load JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS can_push JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS can_live BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS unfit TEXT;
+ALTER TABLE streaming_hosts ADD COLUMN IF NOT EXISTS version TEXT;
+-- existing rows: the home keeps streaming; nodes stay off until the admin switches them on
+UPDATE streaming_hosts SET enabled = (role = 'home') WHERE NOT enabled;
 CREATE SEQUENCE IF NOT EXISTS tv_placement_generation_seq;
 CREATE TABLE IF NOT EXISTS channel_placements (
   channel_id   UUID PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
-  host_id      UUID NOT NULL REFERENCES tv_stream_hosts(host_id) ON DELETE CASCADE,
+  host_id      TEXT NOT NULL REFERENCES streaming_hosts(host_id) ON DELETE CASCADE,
   generation   BIGINT NOT NULL,
   state        TEXT NOT NULL CHECK (state IN ('placing','live','moving','released')),
   reason       TEXT NOT NULL,
@@ -88,7 +84,7 @@ CREATE TABLE IF NOT EXISTS tv_cluster_secret (
 -- cluster revoke/remove path (API) — not a FK, because the home row has no cluster_nodes row.
 ```
 
-SQLite twin: same tables, no roles, no functions (the Go store does the upsert directly).
+SQLite twin: the same `ADD COLUMN`s on `streaming_hosts` (JSONB as TEXT) and tables, no roles, no functions (the Go store does the upsert directly).
 
 ## 3. Steps
 

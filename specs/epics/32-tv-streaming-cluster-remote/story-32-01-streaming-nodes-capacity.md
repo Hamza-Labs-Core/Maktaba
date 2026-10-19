@@ -17,7 +17,7 @@ Design: [design.md](design.md) §2, §5.
 ## Acceptance criteria
 
 - **AC1** Cluster setting `tv_cluster.nodes_stream` (rules section `tv_cluster`, default `false`)
-  and a per-host switch "Stream on this machine" (`tv_stream_hosts.enabled`, default `true` for the
+  and a per-host switch "Stream on this machine" (`streaming_hosts.enabled`, default `true` for the
   home, `false` for nodes). A node takes channels only when both are on.
 - **AC2** `maktaba-server serve --role streaming` on a machine with an Epic 31 node config runs in
   node mode: database URL, node id and path map come from the node config and
@@ -38,7 +38,8 @@ Design: [design.md](design.md) §2, §5.
 - **AC7** Channel art (logo, watermark, loading picture) for a station on a node is fetched from
   the home's signed `/internal/tv/assets/{channel}/{kind}` and cached by content hash; an art
   change on the home is picked up within the station's look TTL (1 min).
-- **AC8** Slot 0120 creates `tv_stream_hosts` (and `channel_placements`, used by 32.2) with
+- **AC8** Slot 0120 extends `streaming_hosts` (created by tv-core in 0117; no second hosts table)
+  with the columns of the README data model, creates `channel_placements` (used by 32.2) with
   `maktaba_worker` limited to SELECT, `tv_cluster_secret` (revoked), and the `tv_host_beat` /
   `tv_placement_ack` functions; SQLite twin without roles.
 - **AC9** With `nodes_stream = false` nothing changes for users: the home is the only online host.

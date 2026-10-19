@@ -7,14 +7,14 @@
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | Each component registers its metrics where it runs (streaming: hosts, placements, front door, pushers; API: remote controller). | Matches the existing per-service `/metrics` (`api/internal/middleware/metrics.go`, `streaming/internal/channel/registry.go`). |
+| D1 | Each component registers its metrics where it runs (streaming: hosts, placements, front door, push relay; API: remote controller). | Matches the existing per-service `/metrics` (`api/internal/middleware/metrics.go`, `streaming/internal/channel/registry.go`). |
 | D2 | The home writes a few `health_samples` per minute. | The control centre already charts `health_samples`; no new store. |
 | D3 | No user or IP labels. | Cardinality and privacy. |
 
 ## 1. Files
 
 **Create**
-- `streaming/internal/placement/metrics.go`, `streaming/internal/frontdoor/metrics.go`, `streaming/internal/channel/pusher_metrics.go`
+- `streaming/internal/placement/metrics.go`, `streaming/internal/frontdoor/metrics.go`, `streaming/internal/frontdoor/relay/metrics.go`
 - `api/internal/tvremote/metrics.go`
 - `api/internal/tvremote/health.go` — minute ticker → `health_samples` (`tv_hosts_up`, `tv_channels_on_air`, `tv_remote_viewers`, `tv_remote_pushes_live`, `tv_remote_cost_usd`)
 - `web/src/pages/Admin/LiveTV/RemotePanel.tsx` + test
@@ -28,7 +28,7 @@
 ## 2. Events
 
 `slog` with `event=` keys from design §10; fields `channel_id`, `host_id`, `push_id`, `code`. The
-pusher logs its ffmpeg command with the key replaced by `***`.
+push relay logs its ffmpeg command with the key replaced by `***`.
 
 ## 3. Tests
 
