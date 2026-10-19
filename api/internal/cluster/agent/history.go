@@ -26,8 +26,8 @@ import (
 // timestamp. Nothing comes from the database.
 //
 //	GET /api/cluster/files
-//	GET /api/cluster/files/{ip}/logs?date&level&q&limit&before
-//	GET /api/cluster/files/{ip}/jobs?date&stage&event&limit&before
+//	GET /api/cluster/files/{ip}/logs?date&level&q&worker_id&limit&before
+//	GET /api/cluster/files/{ip}/jobs?date&stage&event&worker_id&limit&before
 //	GET /api/cluster/files/{ip}/llm?date&limit&before
 //	GET /api/cluster/files/{ip}/events?date&limit&before
 //	GET /api/cluster/files/{ip}/metrics?date&from&to&limit
@@ -62,16 +62,20 @@ type FilesIndex struct {
 	IPs   []MachineFiles `json:"ips"`
 }
 
-// isPlainDir / isPlainFile refuse symlinks: the share is writable by every
-// machine, and a link must not lead a reader out of the cluster folder.
-func isPlainDir(p string) bool {
-	st, err := os.Lstat(p)
-	return err == nil && st.Mode().IsDir()
-}
+// Readers go through an os.Root at the cluster folder and refuse links
+// (plainDirs / plainFile): the share is writable by every machine, and a
+// link must not lead a reader out of the cluster folder.
 
-func isPlainFile(p string) bool {
-	st, err := os.Lstat(p)
-	return err == nil && st.Mode().IsRegular()
+// openCluster opens the cluster folder; nil when it does not exist yet.
+func openCluster(dir string) (*os.Root, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	root, err := os.OpenRoot(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return root, err
 }
 
 // Files implements GET /api/cluster/files.
@@ -81,31 +85,38 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 	}
 	loc := h.Location()
 	out := FilesIndex{Files: loc, IPs: []MachineFiles{}}
-	entries, err := os.ReadDir(loc.Dir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	root, err := openCluster(loc.Dir)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		return
+	}
+	if root == nil {
+		common.WriteJSON(w, r, http.StatusOK, out)
+		return
+	}
+	defer func() { _ = root.Close() }()
+	entries, err := readDirIn(root, ".")
+	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
 		return
 	}
 	for _, e := range entries {
-		if !ValidIPDir(e.Name()) || !isPlainDir(filepath.Join(loc.Dir, e.Name())) {
+		if !ValidIPDir(e.Name()) || plainDirs(root, e.Name()) != nil {
 			continue
 		}
-		ipPath := filepath.Join(loc.Dir, e.Name())
-		m := MachineFiles{IP: e.Name(), Processes: readProcesses(filepath.Join(ipPath, "processes")), Dates: map[string][]string{}}
+		m := MachineFiles{IP: e.Name(), Processes: readProcesses(root, filepath.Join(e.Name(), "processes")),
+			Dates: map[string][]string{}}
 		for _, kind := range DayKinds {
-			m.Dates[kind] = listDates(filepath.Join(ipPath, kind))
+			m.Dates[kind] = listDates(root, filepath.Join(e.Name(), kind))
 		}
 		out.IPs = append(out.IPs, m)
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-func readProcesses(dir string) []json.RawMessage {
+func readProcesses(root *os.Root, dir string) []json.RawMessage {
 	out := []json.RawMessage{}
-	if !isPlainDir(dir) {
-		return out
-	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirIn(root, dir)
 	if err != nil {
 		return out
 	}
@@ -114,10 +125,10 @@ func readProcesses(dir string) []json.RawMessage {
 			break
 		}
 		p := filepath.Join(dir, e.Name())
-		if !strings.HasSuffix(e.Name(), ".json") || !isPlainFile(p) {
+		if !strings.HasSuffix(e.Name(), ".json") || !plainFile(root, p) {
 			continue
 		}
-		b, err := readCapped(p, maxProcessBytes)
+		b, err := readCapped(root, p, maxProcessBytes)
 		if err != nil || !json.Valid(b) {
 			continue
 		}
@@ -126,8 +137,8 @@ func readProcesses(dir string) []json.RawMessage {
 	return out
 }
 
-func readCapped(p string, n int64) ([]byte, error) {
-	f, err := os.Open(p) //nolint:gosec // a validated path under the cluster folder
+func readCapped(root *os.Root, p string, n int64) ([]byte, error) {
+	f, err := root.Open(p)
 	if err != nil {
 		return nil, err
 	}
@@ -142,17 +153,14 @@ func readCapped(p string, n int64) ([]byte, error) {
 	return b, nil
 }
 
-func listDates(dir string) []string {
+func listDates(root *os.Root, dir string) []string {
 	out := []string{}
-	if !isPlainDir(dir) {
-		return out
-	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirIn(root, dir)
 	if err != nil {
 		return out
 	}
 	for _, e := range entries {
-		if ValidDate(e.Name()) && isPlainDir(filepath.Join(dir, e.Name())) {
+		if ValidDate(e.Name()) && plainDirs(root, filepath.Join(dir, e.Name())) == nil {
 			out = append(out, e.Name())
 		}
 	}
@@ -160,21 +168,19 @@ func listDates(dir string) []string {
 	return out
 }
 
-// dayFile is one process's file for a day.
+// dayFile is one process's file for a day (relative to the cluster root).
 type dayFile struct {
 	path     string
 	workerID string
 }
 
-// dayFiles lists <dir>/<ip>/<kind>/<date>/*.jsonl.
-func dayFiles(dir, ip, kind, date string) []dayFile {
-	day := filepath.Join(dir, ip, kind, date)
-	for _, p := range []string{filepath.Join(dir, ip), filepath.Join(dir, ip, kind), day} {
-		if !isPlainDir(p) {
-			return nil
-		}
+// dayFiles lists <ip>/<kind>/<date>/*.jsonl.
+func dayFiles(root *os.Root, ip, kind, date string) []dayFile {
+	if root == nil {
+		return nil
 	}
-	entries, err := os.ReadDir(day)
+	day := filepath.Join(ip, kind, date)
+	entries, err := readDirIn(root, day)
 	if err != nil {
 		return nil
 	}
@@ -182,7 +188,7 @@ func dayFiles(dir, ip, kind, date string) []dayFile {
 	for _, e := range entries {
 		name := e.Name()
 		p := filepath.Join(day, name)
-		if !strings.HasSuffix(name, ".jsonl") || !isPlainFile(p) {
+		if !strings.HasSuffix(name, ".jsonl") || !plainFile(root, p) {
 			continue
 		}
 		out = append(out, dayFile{path: p, workerID: strings.TrimSuffix(name, ".jsonl")})
@@ -192,8 +198,11 @@ func dayFiles(dir, ip, kind, date string) []dayFile {
 
 // eachLine calls fn for every line of a file; lines longer than
 // maxLineBytes are skipped.
-func eachLine(p string, fn func(line []byte)) {
-	f, err := os.Open(p) //nolint:gosec // a validated path under the cluster folder
+func eachLine(root *os.Root, p string, fn func(line []byte)) {
+	if !plainFile(root, p) {
+		return
+	}
+	f, err := root.Open(p)
 	if err != nil {
 		return
 	}
@@ -215,7 +224,7 @@ func eachLine(p string, fn func(line []byte)) {
 		case err != nil && !errors.Is(err, io.EOF):
 			return
 		}
-		if !skipping {
+		if !skipping && len(long)+len(chunk) <= maxLineBytes+1 {
 			line := chunk
 			if long != nil {
 				line = append(long, chunk...)
@@ -379,8 +388,15 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	needle := []byte(strings.ToLower(qs.Get("q")))
-	stage, event := qs.Get("stage"), qs.Get("event")
-	dir := h.Location().Dir
+	stage, event, worker := qs.Get("stage"), qs.Get("event"), qs.Get("worker_id")
+	root, err := openCluster(h.Location().Dir)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		return
+	}
+	if root != nil {
+		defer func() { _ = root.Close() }()
+	}
 
 	keep := &recHeap{}
 	more := false
@@ -426,18 +442,21 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 			heap.Push(keep, record{ts: ts, data: data})
 		}
 	}
-	for _, f := range dayFiles(dir, q.ip, q.kind, q.date) {
+	for _, f := range dayFiles(root, q.ip, q.kind, q.date) {
+		if worker != "" && f.workerID != worker {
+			continue
+		}
 		wid := f.workerID
 		if q.kind == KindEvents && wid == "hub" {
 			wid = ""
 		}
-		eachLine(f.path, func(line []byte) { consider(line, wid, "") })
+		eachLine(root, f.path, func(line []byte) { consider(line, wid, "") })
 	}
 	// the hub files a node's connection events under the home's folder
 	if home := IPDir(h.homeIP); q.kind == KindEvents && q.ip != home {
-		for _, f := range dayFiles(dir, home, KindEvents, q.date) {
+		for _, f := range dayFiles(root, home, KindEvents, q.date) {
 			if f.workerID == "hub" {
-				eachLine(f.path, func(line []byte) { consider(line, "", q.ip) })
+				eachLine(root, f.path, func(line []byte) { consider(line, "", q.ip) })
 			}
 		}
 	}
@@ -471,8 +490,15 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	dir := h.Location().Dir
-	files := dayFiles(dir, q.ip, q.kind, q.date)
+	root, err := openCluster(h.Location().Dir)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		return
+	}
+	if root != nil {
+		defer func() { _ = root.Close() }()
+	}
+	files := dayFiles(root, q.ip, q.kind, q.date)
 	perFile := q.limit
 	if len(files) > 1 {
 		perFile = max(q.limit/len(files), minSamplesPerLog)
@@ -482,7 +508,7 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	for _, f := range files {
 		var kept []record
 		stride, n := 1, 0
-		eachLine(f.path, func(line []byte) {
+		eachLine(root, f.path, func(line []byte) {
 			var head struct {
 				TS json.RawMessage `json:"ts"`
 			}

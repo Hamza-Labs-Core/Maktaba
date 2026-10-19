@@ -246,7 +246,7 @@ func (h *Hub) snapshot(topic string) any {
 	case TopicJobs:
 		h.mu.RLock()
 		defer h.mu.RUnlock()
-		return map[string]any{"recent": append([]json.RawMessage{}, h.jobs...)}
+		return map[string]any{"jobs": append([]json.RawMessage{}, h.jobs...)}
 	case TopicMetrics:
 		ps := h.Processes()
 		out := make([]map[string]any, 0, len(ps))

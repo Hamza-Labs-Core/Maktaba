@@ -160,11 +160,11 @@ func TestSweeperRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	for p, want := range map[string]bool{
-		"192.168.50.1/events/2026-10-01":         false,
+		"192.168.50.1/events/2026-10-01":           false,
 		"192.168.50.1/events/2026-10-29/hub.jsonl": true,
 		"192.168.50.1/logs/2026-10-01/w1.jsonl":    true,
-		"192.168.50.7/logs/2026-10-01":           false,
-		"192.168.50.7/metrics/2026-10-02":        false,
+		"192.168.50.7/logs/2026-10-01":             false,
+		"192.168.50.7/metrics/2026-10-02":          false,
 		"192.168.50.8/logs/2026-10-01/w8.jsonl":    true,
 		"192.168.50.9/logs/2026-10-01/w9.jsonl":    true,
 	} {
@@ -180,12 +180,12 @@ func TestPathMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	for in, want := range map[string]string{
-		"Y:/Channel/a.mp4":       "/Volumes/Y/Channel/a.mp4",
-		"y:/Channel/a.mp4":       "/Volumes/Y/Channel/a.mp4",
-		`O:\Movies\b.mkv`:        "/Volumes/O/Movies/b.mkv",
-		`\\NAS\share\maktaba`:    "/mnt/share/maktaba",
-		"/already/local/x":       "/already/local/x",
-		"Z:/unmapped/z":          "Z:/unmapped/z",
+		"Y:/Channel/a.mp4":    "/Volumes/Y/Channel/a.mp4",
+		"y:/Channel/a.mp4":    "/Volumes/Y/Channel/a.mp4",
+		`O:\Movies\b.mkv`:     "/Volumes/O/Movies/b.mkv",
+		`\\NAS\share\maktaba`: "/mnt/share/maktaba",
+		"/already/local/x":    "/already/local/x",
+		"Z:/unmapped/z":       "Z:/unmapped/z",
 	} {
 		if got := m.ToLocal(in); got != want {
 			t.Errorf("ToLocal(%q) = %q, want %q", in, got, want)

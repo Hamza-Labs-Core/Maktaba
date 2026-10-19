@@ -598,7 +598,7 @@ func (rt *Router) Snapshot() map[string]any {
 		}
 	}
 	sort.Slice(queued, func(i, j int) bool { return queued[i].ID < queued[j].ID })
-	return map[string]any{"models": models, "running": running, "queued": queued}
+	return map[string]any{"requests": append(running, queued...), "models": models}
 }
 
 // sessionSink returns output to a requesting process.

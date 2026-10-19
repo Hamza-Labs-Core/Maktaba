@@ -95,6 +95,11 @@ func (l *Locator) Resolve(ctx context.Context) Location {
 		return l.fallback(root, fmt.Sprintf("the share %s (%s) is not reachable: %v", root, localRoot, err))
 	}
 	dir := filepath.Join(localRoot, "maktaba", "cluster")
+	// maktaba/cluster must be real directories on the share: a link
+	// planted by any machine must not move the hub's files elsewhere
+	if err := shareDirs(localRoot); err != nil {
+		return l.fallback(root, fmt.Sprintf("cannot use %s on the share: %v", dir, err))
+	}
 	if err := ensureWritable(dir); err != nil {
 		return l.fallback(root, fmt.Sprintf("cannot write %s on the share: %v", dir, err))
 	}
@@ -131,6 +136,21 @@ func shareReachable(root string) error {
 		return errors.New("empty directory (not mounted?)")
 	}
 	return nil
+}
+
+// shareDirs creates maktaba/cluster under the share root through an
+// os.Root and checks neither is a link.
+func shareDirs(localRoot string) error {
+	root, err := os.OpenRoot(localRoot)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	rel := filepath.Join("maktaba", "cluster")
+	if err := root.MkdirAll(rel, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
+		return err
+	}
+	return plainDirs(root, rel)
 }
 
 func ensureWritable(dir string) error {

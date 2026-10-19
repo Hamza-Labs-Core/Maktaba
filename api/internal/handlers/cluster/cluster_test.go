@@ -646,3 +646,40 @@ func TestSQLiteHome(t *testing.T) {
 	problemOf(t, do("PUT", "/api/cluster/settings", `{"accept_joins":true}`, admin()), 409, "roles_unsupported")
 	problemOf(t, do("POST", "/api/cluster/join", joinBody(nodeID, nodePubB64), nil), 403, "joins_closed")
 }
+
+// ---------- the cluster channel hooks (design-agent.md §2, §5) ----------
+
+func TestChannelHooks(t *testing.T) {
+	f := newFixture(t)
+	var revoked, changed []string
+	f.h.OnRevoke = func(id string) { revoked = append(revoked, id) }
+	f.h.OnNodeChanged = func(id string) { changed = append(changed, id) }
+	f.openJoins()
+	jr := f.join()
+	decode(t, f.approve(nodeCode(t, jr.HomePubkey)), 200, nil)
+
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"name":"renamed"}`, admin()), 200, nil)
+	if len(changed) != 0 {
+		t.Fatalf("a rename reloaded stages: %v", changed)
+	}
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"drain":true}`, admin()), 200, nil)
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"stages":{"probe":false}}`, admin()), 200, nil)
+	if len(changed) != 2 || changed[0] != nodeID {
+		t.Fatalf("changed = %v", changed)
+	}
+	// a failed revoke does not fire
+	problemOf(t, f.do("POST", "/api/cluster/nodes/00000000-0000-4000-8000-000000000001/revoke", "", admin()), 404, "")
+	if len(revoked) != 0 {
+		t.Fatalf("revoked = %v", revoked)
+	}
+	decode(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()), 200, nil)
+	if len(revoked) != 1 || revoked[0] != nodeID {
+		t.Fatalf("revoked = %v", revoked)
+	}
+	if rec := f.do("DELETE", "/api/cluster/nodes/"+nodeID, "", admin()); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if len(revoked) != 2 {
+		t.Fatalf("remove did not close sessions: %v", revoked)
+	}
+}

@@ -421,7 +421,8 @@ func (h *Hub) onMetrics(s *Session, metrics json.RawMessage) {
 }
 
 func (h *Hub) onJob(s *Session, job json.RawMessage) {
-	data, err := json.Marshal(map[string]any{"session": s.ID, "ip": s.IP, "job": job})
+	data, err := json.Marshal(map[string]any{"session": s.ID, "ip": s.IP, "node_name": s.NodeName,
+		"worker_id": s.WorkerID, "host": s.Host, "job": job})
 	if err != nil {
 		return
 	}

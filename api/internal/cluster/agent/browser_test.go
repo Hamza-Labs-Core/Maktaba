@@ -85,19 +85,26 @@ func TestBrowserProcessesMetricsJobsAndCmd(t *testing.T) {
 	a.send(map[string]any{"t": "job", "event": "claimed", "job_id": 42, "stage": "transcribe"})
 	m = b.nextType("job")
 	var jm struct {
-		Session string         `json:"session"`
-		IP      string         `json:"ip"`
-		Job     map[string]any `json:"job"`
+		Session  string         `json:"session"`
+		IP       string         `json:"ip"`
+		NodeName *string        `json:"node_name"`
+		WorkerID string         `json:"worker_id"`
+		Host     string         `json:"host"`
+		Job      map[string]any `json:"job"`
 	}
 	_ = json.Unmarshal(m.Data, &jm)
-	if jm.Session != a.Session || jm.IP != "127.0.0.1" || jm.Job["job_id"] != float64(42) || jm.Job["t"] != nil {
+	if jm.Session != a.Session || jm.IP != "127.0.0.1" || jm.Job["job_id"] != float64(42) || jm.Job["t"] != nil ||
+		jm.NodeName == nil || *jm.NodeName != "box" || jm.WorkerID == "" || jm.Host != "test-host" {
 		t.Fatalf("job = %s", m.Data)
 	}
 	// a late subscriber gets the recent jobs
 	late := f.browser("viewer")
 	late.send(map[string]any{"op": "subscribe", "topics": []string{TopicJobs}})
 	s := late.next(func(m browserMsg) bool { return m.Type == "snapshot" })
-	if !strings.Contains(string(s.Data), `"job_id":42`) {
+	var js struct {
+		Jobs []json.RawMessage `json:"jobs"`
+	}
+	if json.Unmarshal(s.Data, &js) != nil || len(js.Jobs) != 1 || !strings.Contains(string(s.Data), `"job_id":42`) {
 		t.Fatalf("jobs snapshot = %s", s.Data)
 	}
 

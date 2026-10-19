@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -83,8 +84,9 @@ type FileWriter struct {
 	in chan fileRecord
 
 	mu    sync.Mutex
-	dir   string // the cluster dir
-	ipDir string // the home's folder name
+	dir   string   // the cluster dir
+	root  *os.Root // every write goes through it: nothing leaves the dir
+	ipDir string   // the home's folder name
 	files map[string]*openFile
 
 	dropped atomic.Int64 // buffer full
@@ -110,6 +112,10 @@ func (fw *FileWriter) SetTarget(dir, ipDir string) {
 		return
 	}
 	fw.closeAllLocked()
+	if fw.root != nil {
+		_ = fw.root.Close()
+		fw.root = nil
+	}
 	fw.dir, fw.ipDir = dir, ipDir
 }
 
@@ -162,6 +168,10 @@ func (fw *FileWriter) Run(ctx context.Context) {
 				default:
 					fw.mu.Lock()
 					fw.closeAllLocked()
+					if fw.root != nil {
+						_ = fw.root.Close()
+						fw.root = nil
+					}
 					fw.mu.Unlock()
 					return
 				}
@@ -257,12 +267,34 @@ func (fw *FileWriter) write(rec fileRecord) {
 }
 
 func (fw *FileWriter) open(kind, date string) (*openFile, error) {
-	dir := filepath.Join(fw.dir, fw.ipDir, kind, date)
-	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
+	if fw.root == nil {
+		root, err := os.OpenRoot(fw.dir)
+		if err != nil {
+			return nil, err
+		}
+		fw.root = root
+	}
+	rel := filepath.Join(fw.ipDir, kind, date)
+	if err := fw.root.MkdirAll(rel, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
 		return nil, err
 	}
-	p := filepath.Join(dir, hubFile)
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644) //nolint:gosec // readable by every machine
+	// the share is writable by every machine: a planted link must not
+	// steer the hub's writes anywhere
+	if err := plainDirs(fw.root, rel); err != nil {
+		return nil, err
+	}
+	p := filepath.Join(rel, hubFile)
+	f, err := fw.root.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, 0o644) //nolint:gosec // readable by every machine
+	if errors.Is(err, fs.ErrExist) {
+		st, lerr := fw.root.Lstat(p)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if !st.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s: %w", p, errNotPlain)
+		}
+		f, err = fw.root.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -272,6 +304,50 @@ func (fw *FileWriter) open(kind, date string) (*openFile, error) {
 		return nil, err
 	}
 	return &openFile{date: date, path: p, f: f, w: bufio.NewWriterSize(f, 64<<10), size: st.Size()}, nil
+}
+
+var errNotPlain = errors.New("not a plain directory or file (a link?)")
+
+// plainDirs checks that every component of rel under root is a real
+// directory, not a link.
+func plainDirs(root *os.Root, rel string) error {
+	cur := ""
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		st, err := root.Lstat(cur)
+		if err != nil {
+			return err
+		}
+		if !st.Mode().IsDir() {
+			return fmt.Errorf("%s: %w", cur, errNotPlain)
+		}
+	}
+	return nil
+}
+
+// plainFile checks rel is a regular file inside plain directories.
+func plainFile(root *os.Root, rel string) bool {
+	if plainDirs(root, filepath.Dir(rel)) != nil {
+		return false
+	}
+	st, err := root.Lstat(rel)
+	return err == nil && st.Mode().IsRegular()
+}
+
+// readDirIn lists a plain directory under root.
+func readDirIn(root *os.Root, rel string) ([]os.DirEntry, error) {
+	if err := plainDirs(root, rel); err != nil {
+		return nil, err
+	}
+	d, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = d.Close() }()
+	return d.ReadDir(-1)
 }
 
 // ---------- retention ----------
@@ -289,19 +365,26 @@ type Sweeper struct {
 }
 
 // Sweep runs once over dir; homeIPDir is the hub's own folder. It returns
-// the number of day directories (or hub files) removed.
+// the number of day directories (or hub files) removed. Everything goes
+// through an os.Root and refuses links: the share is writable by every
+// machine, and the sweep must not delete anything outside it.
 func (s *Sweeper) Sweep(dir, homeIPDir string) (int, error) {
 	if s.Days <= 0 || dir == "" {
 		return 0, nil
 	}
-	now := s.Now().UTC()
-	cutoff := now.AddDate(0, 0, -s.Days).Format("2006-01-02")
-	horizon := now.AddDate(0, 0, -s.Days)
-	entries, err := os.ReadDir(dir)
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
+		return 0, err
+	}
+	defer func() { _ = root.Close() }()
+	now := s.Now().UTC()
+	cutoff := now.AddDate(0, 0, -s.Days).Format("2006-01-02")
+	horizon := now.AddDate(0, 0, -s.Days)
+	entries, err := readDirIn(root, ".")
+	if err != nil {
 		return 0, err
 	}
 	live := map[string]bool{}
@@ -310,27 +393,26 @@ func (s *Sweeper) Sweep(dir, homeIPDir string) (int, error) {
 	}
 	removed := 0
 	for _, e := range entries {
-		if !e.IsDir() || !ValidIPDir(e.Name()) {
+		if !e.IsDir() || !ValidIPDir(e.Name()) || plainDirs(root, e.Name()) != nil {
 			continue
 		}
-		ipPath := filepath.Join(dir, e.Name())
 		if e.Name() == homeIPDir {
-			removed += removeOldHubFiles(ipPath, cutoff)
+			removed += removeOldHubFiles(root, e.Name(), cutoff)
 		}
-		if live[e.Name()] || newestWrite(ipPath).After(horizon) {
+		if live[e.Name()] || newestWrite(root, e.Name()).After(horizon) {
 			continue
 		}
 		for _, kind := range DayKinds {
-			removed += removeOldDays(filepath.Join(ipPath, kind), cutoff)
+			removed += removeOldDays(root, filepath.Join(e.Name(), kind), cutoff)
 		}
 	}
 	return removed, nil
 }
 
-func removeOldHubFiles(ipPath, cutoff string) int {
+func removeOldHubFiles(root *os.Root, ip, cutoff string) int {
 	n := 0
 	for _, kind := range []string{KindEvents, KindQueues, KindLibrary} {
-		days, err := os.ReadDir(filepath.Join(ipPath, kind))
+		days, err := readDirIn(root, filepath.Join(ip, kind))
 		if err != nil {
 			continue
 		}
@@ -338,25 +420,32 @@ func removeOldHubFiles(ipPath, cutoff string) int {
 			if !d.IsDir() || !ValidDate(d.Name()) || d.Name() >= cutoff {
 				continue
 			}
-			dayDir := filepath.Join(ipPath, kind, d.Name())
-			if os.Remove(filepath.Join(dayDir, hubFile)) == nil {
+			dayDir := filepath.Join(ip, kind, d.Name())
+			if plainDirs(root, dayDir) != nil {
+				continue
+			}
+			f := filepath.Join(dayDir, hubFile)
+			if st, err := root.Lstat(f); err == nil && st.Mode().IsRegular() && root.Remove(f) == nil {
 				n++
 			}
-			_ = os.Remove(dayDir) // only when empty
+			_ = root.Remove(dayDir) // only when empty
 		}
 	}
 	return n
 }
 
-func removeOldDays(kindPath, cutoff string) int {
-	days, err := os.ReadDir(kindPath)
+func removeOldDays(root *os.Root, kindRel, cutoff string) int {
+	days, err := readDirIn(root, kindRel)
 	if err != nil {
 		return 0
 	}
 	n := 0
 	for _, d := range days {
-		if d.IsDir() && ValidDate(d.Name()) && d.Name() < cutoff {
-			if os.RemoveAll(filepath.Join(kindPath, d.Name())) == nil {
+		day := filepath.Join(kindRel, d.Name())
+		// a link named like a day is not followed: only real directories go,
+		// and RemoveAll inside the root never leaves it
+		if ValidDate(d.Name()) && d.Name() < cutoff && plainDirs(root, day) == nil {
+			if root.RemoveAll(day) == nil {
 				n++
 			}
 		}
@@ -364,14 +453,15 @@ func removeOldDays(kindPath, cutoff string) int {
 	return n
 }
 
-// newestWrite is the latest modification time of any file under p.
-func newestWrite(p string) time.Time {
+// newestWrite is the latest modification time of any file under rel
+// (links are not followed).
+func newestWrite(root *os.Root, rel string) time.Time {
 	var newest time.Time
-	_ = filepath.WalkDir(p, func(_ string, d os.DirEntry, err error) error {
+	_ = fs.WalkDir(root.FS(), filepath.ToSlash(rel), func(_ string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
+		if info, err := d.Info(); err == nil && info.Mode().IsRegular() && info.ModTime().After(newest) {
 			newest = info.ModTime()
 		}
 		return nil
