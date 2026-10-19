@@ -265,8 +265,23 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 	}
 	diff["pending"] = pd.M
 	diff["summary"] = Summarize(pd)
-	if err := d.Store.Set(ctx, tx, c.ID, map[string]any{"diff": diff}); err != nil {
+	fields := map[string]any{"diff": diff}
+	withdrawn := !created && len(c.ApprovedBy) > 0
+	if withdrawn {
+		// an approval given ahead covered what the draft held then, not this edit
+		fields["approved_by"] = []string{}
+		fields["approved_at"] = (*time.Time)(nil)
+	}
+	if err := d.Store.Set(ctx, tx, c.ID, fields); err != nil {
 		return DraftRef{}, err
+	}
+	if withdrawn {
+		st := StateDraft
+		if err := d.Store.Event(ctx, tx, c.ID, Event{ActorUserID: by, ActorSource: actorSource(by, kind),
+			FromState: &st, ToState: &st, Action: "approval_withdrawn",
+			Detail: map[string]any{"approved_by": c.ApprovedBy, "what": what}}); err != nil {
+			return DraftRef{}, err
+		}
 	}
 	if !created {
 		st := StateDraft

@@ -395,10 +395,20 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tv_staging rules: "+err.Error()))
 		return
 	}
-	if cfg.RequireSecondAdmin && c.CreatedBy != nil && *c.CreatedBy == p.UserID {
-		httperror.Write(w, r, httperror.Conflict("", "a second admin approves this change").
-			With("state", c.State).With("error", "second_admin_required"))
-		return
+	if cfg.RequireSecondAdmin {
+		// the creator and every admin who saved an edit into the change are its authors
+		authors, err := h.Store.Contributors(r.Context(), h.DB, c)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("tv change authors: "+err.Error()))
+			return
+		}
+		for _, u := range authors {
+			if u == p.UserID {
+				httperror.Write(w, r, httperror.Conflict("", "a second admin approves this change").
+					With("state", c.State).With("error", "second_admin_required"))
+				return
+			}
+		}
 	}
 	if needsParamAck(c) && !body.AckParamChange {
 		httperror.Write(w, r, httperror.Conflict("", "this change changes the picture of a pushed channel: acknowledge it").
