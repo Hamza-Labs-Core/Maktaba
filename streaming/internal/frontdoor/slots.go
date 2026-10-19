@@ -82,8 +82,8 @@ type Slots struct {
 	// them again until it succeeds (a crashed slot must not stay "live" there:
 	// on its restart readRole would make it live again)
 	rolesDirty bool
-	stage         *stagingRun
-	lastSample    time.Time
+	stage      *stagingRun
+	lastSample time.Time
 }
 
 // slotHealth is what the last probes of a slot said.
