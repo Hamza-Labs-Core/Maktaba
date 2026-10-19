@@ -234,8 +234,8 @@ describe("Machines admin page", () => {
 
   it("edits the path map and resets it to automatic", async () => {
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Edit path map" }));
-    const to = screen.getByLabelText("Path on this machine, row 1");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit mounts" }));
+    const to = screen.getByLabelText("Local mount on this machine, row 1");
     await userEvent.clear(to);
     await userEvent.type(to, "/Volumes/media");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -250,6 +250,95 @@ describe("Machines admin page", () => {
     const cards = await screen.findAllByRole("button", { name: "Reset to automatic" });
     await userEvent.click(cards[0]);
     expect(put).toHaveBeenCalledWith("/api/cluster/nodes/n1", { path_map: null });
+  });
+
+  it("shows each share a machine checked (story 31.3)", async () => {
+    const v = fixture();
+    v.nodes[1] = {
+      ...baseNode,
+      storage: {
+        read: "error",
+        write: "ok",
+        checked_at: NOW,
+        detail: null,
+        shares: [
+          {
+            share: "smb://home-nas/Originals",
+            local: "O:/",
+            source: "drive",
+            read: "ok",
+            write: "ok",
+            detail: null,
+          },
+          {
+            share: "smb://home-nas/Music",
+            local: null,
+            source: null,
+            read: "error",
+            write: "skipped",
+            detail: "not mounted here",
+          },
+        ],
+      },
+    };
+    get.mockResolvedValue(v);
+    renderPage();
+    const shares = await screen.findByRole("list", { name: "Shares" });
+    expect(within(shares).getByText("smb://home-nas/Originals")).toBeInTheDocument();
+    expect(within(shares).getByText("O:/")).toBeInTheDocument();
+    expect(within(shares).getByText("not mounted here")).toBeInTheDocument();
+  });
+
+  it("edits the home's mounts and its storage servers (story 31.3)", async () => {
+    const v = fixture();
+    v.home = {
+      ...v.home,
+      storage: {
+        read: "ok",
+        write: "ok",
+        checked_at: NOW,
+        detail: null,
+        path_map: { "smb://home-nas/Originals/": "/Volumes/Originals/" },
+      },
+      path_map: null,
+    };
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === "/api/cluster/storage-servers"
+          ? {
+              servers: [
+                {
+                  id: "s1",
+                  name: "home-nas",
+                  addresses: ["192.168.50.94"],
+                  char_map: "none",
+                  exports: {},
+                },
+              ],
+            }
+          : v
+      )
+    );
+    renderPage();
+    expect(await screen.findByText("smb://home-nas/")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit home-nas" }));
+    const addrs = screen.getByLabelText("Addresses (IPs, host names, .local name)");
+    await userEvent.clear(addrs);
+    await userEvent.type(addrs, "192.168.50.10, home-nas.local");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(put).toHaveBeenCalledWith("/api/cluster/storage-servers/home-nas", {
+      addresses: ["192.168.50.10", "home-nas.local"],
+      char_map: "none",
+    });
+    const edits = screen.getAllByRole("button", { name: "Edit mounts" });
+    await userEvent.click(edits[0]);
+    const to = screen.getByLabelText("Local mount on this machine, row 1");
+    await userEvent.clear(to);
+    await userEvent.type(to, "/Volumes/O");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(put).toHaveBeenCalledWith("/api/cluster/home/path-map", {
+      path_map: { "smb://home-nas/Originals/": "/Volumes/O" },
+    });
   });
 
   it("asks before revoking a machine", async () => {

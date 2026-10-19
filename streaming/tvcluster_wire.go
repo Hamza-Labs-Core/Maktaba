@@ -343,6 +343,8 @@ func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 			qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			if m, err := cluster.NodePathMap(qctx, pool, id); err == nil {
 				pm.Store(m)
+				// story 31.3: canonical smb:// paths resolve through it everywhere
+				pathmap.SetDefault(m)
 			}
 			cancel()
 		}

@@ -26,7 +26,9 @@ Phase 2 (the cluster channel: live metrics, logs and jobs, files on the share, L
 hub): [design-agent.md](design-agent.md) (requirements trace, protocol, files, hub, LLMs) ·
 [plan-agent.md](plan-agent.md) (tracks T4–T6, H1, P1, end-to-end checklist). The service door
 (machines call Plex through the home, which adds the token): [story](story-31-relay-service-door.md)
-· [plan](plan-31-relay-service-door.md). User
+· [plan](plan-31-relay-service-door.md). Story 31.3
+(canonical share paths `smb://<server>/<share>/...`, mount discovery per OS, the path migration):
+[story-31-03](story-31-03-canonical-share-paths.md) · [plan-31-03](plan-31-03-canonical-share-paths.md). User
 documentation: [docs/cluster](../../../docs/cluster/README.md).
 
 ---

@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 )
@@ -254,7 +255,7 @@ func sessionVideoPath(ctx context.Context, s session.Store, p *probe.Cache) (str
 	if err != nil {
 		return "", err
 	}
-	return probeRow.Path, nil
+	return pathmap.Resolve(probeRow.Path), nil // story 31.3: canonical -> this machine
 }
 
 // EnsureCacheRoot creates the cache root if it doesn't exist. Called

@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
@@ -167,6 +168,14 @@ func runServe() error {
 	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
 	backendCancel()
 	defer closeStores()
+	shareCtx, shareCancel := context.WithCancel(context.Background())
+	defer shareCancel()
+	if nodeMode {
+		// story 31.3: a node's share map is its own cluster map (buildNodeTV)
+		pathmap.SetDefault(pathmap.FromEnv())
+	} else {
+		startShareMap(shareCtx, pool, logger)
+	}
 
 	var publicHandler http.Handler
 	if nodeMode {
