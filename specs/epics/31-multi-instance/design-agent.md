@@ -125,47 +125,60 @@ What this phase adds is speed and sight:
   `welcome` on, every frame is a WebSocket **binary** frame holding one sealed frame (§4.4).
   A text frame after authentication is a protocol error.
 
-### 4.2 Handshake — a machine's process
+### 4.2 Handshake — a machine's process (v2: mutual, forward secret)
 
-A machine proves it holds the X25519 private key it paired with (phase 1:
-`cluster_nodes.node_pubkey`). The hub answers with a fresh X25519 key pair for every
-connection.
+Both sides prove who they are and every connection has fresh keys (a Noise-style
+pattern of three Diffie-Hellman results):
 
-1. C→S text `hello`:
-   `{"t":"hello","v":1,"kind":"node","node_id":"<uuid>","worker_id":"node-1a2b3c4d-4242","pid":4242,"host":"studio-linux","ip":"192.168.50.31","os":"linux","version":"0.4.0","nonce":"<b64, 16 bytes>"}`
-   (`ip`, `os` and `version` are informational and optional; `ip` is the process's IP
-   folder, §7.3.)
-2. The hub looks up the node. Unless it is `approved`, it closes with `4003 not_member`
-   (the same answer for unknown, pending, rejected and revoked: no oracle). Otherwise
-   S→C text `challenge`: `{"t":"challenge","server_pub":"<b64, 32 bytes>","nonce":"<b64, 16 bytes>"}`.
-3. Both sides derive:
+- the **machine** proves it holds the X25519 key it paired with (phase 1:
+  `cluster_nodes.node_pubkey`);
+- the **home** proves it holds its long-term **cluster key**: an X25519 key pair the API
+  keeps in `~/.maktaba/cluster/home-cluster.key` (local disk, mode 0600, never the share;
+  `MAKTABA_HOME_CLUSTER_KEY` names another path), whose public half reaches every machine
+  inside its sealed pairing credentials (phase 1 payload: `home.cluster_pub`) and is kept in
+  the node config. A device in the middle can pose as neither side;
+- both send a fresh ephemeral key, so recording traffic and later stealing a long-term key
+  does not decrypt it (forward secrecy).
+
+1. C→S text `hello` (its exact bytes are kept for the transcript):
+   `{"t":"hello","v":2,"kind":"node","node_id":"<uuid>","worker_id":"node-1a2b3c4d-4242","pid":4242,"host":"studio-linux","eph":"<b64, 32-byte X25519 public>","nonce":"<b64, 16 bytes>"}`
+   (optional informational `ip`, `os`, `version`).
+2. The hub looks up the node; unless it is `approved` it closes with `4003 not_member`
+   (same answer for unknown, pending, rejected, revoked). Otherwise S→C text `challenge`:
+   `{"t":"challenge","server_eph":"<b64, 32 bytes>","nonce":"<b64, 16 bytes>"}`.
+3. Both sides derive (each from its own private halves):
    ```
-   shared = X25519(node_priv, server_pub) = X25519(server_priv, node_pub)     32 bytes
-   salt   = client_nonce ‖ server_nonce                                         32 bytes
-   okm    = HKDF-SHA256(ikm = shared, salt = salt, info = "maktaba-agent-v1", L = 64)
-   k_c2s  = okm[0:32]      k_s2c = okm[32:64]
+   dh_ee = X25519(client_eph,  server_eph)        forward secrecy
+   dh_se = X25519(node_static, server_eph)        the machine is who it says
+   dh_es = X25519(client_eph,  home_static)       the home is who it says
+   th    = SHA-256(hello_bytes ‖ challenge_bytes) the transcript, as sent
+   okm   = HKDF-SHA256(ikm = dh_ee ‖ dh_se ‖ dh_es, salt = client_nonce ‖ server_nonce,
+                       info = "maktaba-agent-v2", L = 64)
+   k_c2s = okm[0:32]      k_s2c = okm[32:64]
    ```
-   An all-zero `shared` (a low-order peer key) is refused by both sides.
-4. C→S text `auth`: `{"t":"auth","proof":"<b64 of HMAC-SHA256(k_c2s, "maktaba-agent-auth" ‖ server_nonce)>"}`.
-   The hub compares in constant time; a wrong proof closes with `4004 auth_failed`.
-5. S→C sealed `welcome` (the first sealed frame, counter 0):
-   `{"t":"welcome","session":"<id>","settings":{"log_level":"info","metrics_every":2,"share_root":"/Volumes/Originals","retention_days":14,"file_mb":256}}`.
-   From here on every frame in both directions is sealed. The process's first sealed frame
-   (C→S counter 0) is normally `metrics`, followed by `llm.models`.
+   Any all-zero DH result (a low-order key) is refused by both sides.
+4. C→S text `auth`: `{"t":"auth","proof":"<b64 HMAC-SHA256(k_c2s, "maktaba-agent-auth" ‖ th)>"}`;
+   the hub compares in constant time, else `4004 auth_failed`.
+5. S→C sealed `welcome` (first sealed frame, counter 0) with
+   `"proof":"<b64 HMAC-SHA256(k_s2c, "maktaba-agent-server" ‖ th)>"`, `session` and
+   `settings`. The process checks the proof (a wrong or undecryptable welcome closes the
+   connection and is reported as "this is not the home I joined"). From here every frame
+   both ways is sealed.
+
+A node config without `home.cluster_pub` (joined before v2) cannot connect: the agent logs
+"re-join this machine" and the worker keeps pulling from the queues without the channel.
 
 The whole handshake must finish within 10 s of the upgrade (`4008 timeout`).
 
 ### 4.3 Handshake — a home process
 
-A process on the home has no pairing key. The API keeps a **home agent key**: 32 random
-bytes in `~/.maktaba/cluster/home-agent.key` of the user running the API (mode 0600; on the
-local disk, never on the share), created at the API's first start.
-`MAKTABA_HOME_AGENT_KEY` names another path, for when the API and the home's workers run as
-different users or in different containers (mount the same file into both).
+A process on the home has no pairing key; it shares the **home agent key** with the API:
+32 random bytes in `~/.maktaba/cluster/home-agent.key` (local, 0600; `MAKTABA_HOME_AGENT_KEY`
+names another path). Same steps with `kind: "home"`, no `node_id`, and
+`ikm = home_key ‖ dh_ee` (both sides hold the key: mutual; `dh_ee` gives forward secrecy).
+Transcript, HKDF (`info = "maktaba-agent-v2"`), proofs and sealing are identical.
 
-The steps are those of §4.2 with three differences: `hello.kind` is `"home"` and carries no
-`node_id`; the `challenge` carries only the `nonce`; and `shared = home_key`. Salt, HKDF,
-keys, proof and sealing are identical.
+Vectors for both variants: `shared/testdata/cluster/agent_vectors.json`.
 
 ### 4.4 Sealed frames
 
