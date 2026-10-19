@@ -98,6 +98,7 @@ func readPTS(p []byte) (int64, bool) {
 type fakeSlot struct {
 	name     string
 	first    int64
+	ahead    time.Duration // the playlist runs this far ahead (a slot further along)
 	srv      *httptest.Server
 	mu       sync.Mutex
 	role     string
@@ -124,7 +125,10 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 	})
 	r.Get("/stream/channel/{id}/index.m3u8", func(w http.ResponseWriter, _ *http.Request) {
 		// 2 s segments on the wall-clock grid, numbered from this slot's first
-		now := time.Now()
+		f.mu.Lock()
+		ahead := f.ahead
+		f.mu.Unlock()
+		now := time.Now().Add(ahead)
 		end := now.Truncate(2 * time.Second)
 		start := end.Add(-10 * time.Second)
 		n := (start.Unix() / 2) - 880000000
@@ -141,11 +145,14 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 		w.WriteHeader(200)
 		fl := w.(http.Flusher)
 		var cc byte
-		frame := int64(3000)
-		next := time.Now().Truncate(time.Second / 30)
+		// a fast timeline (a frame every 10 ms of wall clock, 3000 ticks apart,
+		// an IDR every 5 frames on the tick grid) keeps the test short
+		next := time.Now()
+		base := next.UnixNano() / int64(10*time.Millisecond)
 		for i := 0; ; i++ {
-			pts := (next.Unix()*90000 + int64(next.Nanosecond())*9/100000) % (1 << 33)
-			key := (pts/frame)%60 == 0
+			n := base + int64(i)
+			pts := (n * 3000) % (1 << 33)
+			key := n%5 == 0
 			var b []byte
 			if i%10 == 0 || key {
 				b = append(b, patPMT(cc)...)
@@ -156,7 +163,7 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 				return
 			}
 			fl.Flush()
-			next = next.Add(time.Second / 30)
+			next = next.Add(10 * time.Millisecond)
 			select {
 			case <-r.Context().Done():
 				return
@@ -196,6 +203,7 @@ func newSlotRig(t *testing.T) *slotRig {
 	g := &slotRig{ch: ch}
 	g.blue = newFakeSlot(t, "blue", 1000, ch.String())
 	g.green = newFakeSlot(t, "green", 7000, ch.String())
+	g.green.ahead = 2 * time.Second // green already has the segment after blue's last
 	store := placement.NewMemStore()
 	store.SetHosts([]placement.Host{{ID: "home", Name: "mac", Role: placement.RoleHome, Enabled: true, Capacity: 8,
 		Weight: 1, CanLive: true}})
@@ -234,9 +242,6 @@ func (g *slotRig) get(t *testing.T, path string) (int, string) {
 // the playlist (stitched, segment URIs per slot), its segments, and after a
 // switch the new slot — the old slot still serves what an old playlist names.
 func TestFrontDoorRoutesToLiveSlot(t *testing.T) {
-	if testing.Short() {
-		t.Skip("seconds of wall-clock segments and TS; runs without -short")
-	}
 	g := newSlotRig(t)
 	if live, epoch := g.slots.Live(); live != "blue" || epoch != 1 {
 		t.Fatalf("bootstrap: live %s epoch %d", live, epoch)
@@ -262,7 +267,6 @@ func TestFrontDoorRoutesToLiveSlot(t *testing.T) {
 	if err := g.slots.Switch(context.Background(), "green", 2); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(2100 * time.Millisecond) // a new 2 s segment on the grid
 	_, body = g.get(t, pl)
 	if !strings.Contains(body, "#EXT-X-DISCONTINUITY\n") || !strings.Contains(body, "s/green/seg-") {
 		t.Fatalf("after the switch:\n%s", body)
@@ -286,9 +290,6 @@ func TestFrontDoorRoutesToLiveSlot(t *testing.T) {
 // no media-sequence reset; a TS client's connection is kept and its timestamps
 // stay monotonic (the retiming splicer).
 func TestFailoverToHotStandby(t *testing.T) {
-	if testing.Short() {
-		t.Skip("seconds of wall-clock segments and TS; runs without -short")
-	}
 	g := newSlotRig(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -322,7 +323,7 @@ func TestFailoverToHotStandby(t *testing.T) {
 			}
 		}
 	}()
-	time.Sleep(2500 * time.Millisecond) // past a keyframe: the client is joined
+	time.Sleep(200 * time.Millisecond) // past a keyframe: the client is joined
 	mu.Lock()
 	n0 := len(pts)
 	mu.Unlock()
@@ -340,7 +341,7 @@ func TestFailoverToHotStandby(t *testing.T) {
 	if live, epoch := g.slots.Live(); live != "green" || epoch != 2 || took > 2*time.Second {
 		t.Fatalf("after the kill: live %s epoch %d after %v", live, epoch, took)
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(400 * time.Millisecond)
 	mu.Lock()
 	n1, gotLast := len(pts), last
 	var back int
@@ -350,7 +351,7 @@ func TestFailoverToHotStandby(t *testing.T) {
 		}
 	}
 	mu.Unlock()
-	if n1-n0 < 30 || time.Since(gotLast) > time.Second || back > 0 {
+	if n1-n0 < 15 || time.Since(gotLast) > 300*time.Millisecond || back > 0 {
 		t.Fatalf("TS after the failover: %d new frames, last %v ago, %d timestamps not increasing", n1-n0, time.Since(gotLast), back)
 	}
 	_, after := g.get(t, pl)
@@ -486,3 +487,60 @@ func TestSlotSegmentFile(t *testing.T) {
 }
 
 func filepathToSlash(p string) string { return strings.ReplaceAll(p, `\`, "/") }
+
+// The routing view, the staging slot through the supervisor (in a staging build),
+// the supervisor's exit report and the standby switch with hot_standby.
+func TestSlotsViewAndSupervisor(t *testing.T) {
+	g := newSlotRig(t)
+	var mu sync.Mutex
+	var asked []string
+	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(200)
+	}))
+	defer sup.Close()
+	g.slots.Supervisor = sup.URL
+	on := DefaultStagingSettings()
+	on.Enabled = true
+	g.slots.Settings = func(context.Context) StagingSettings { return on }
+	g.slots.probeAll(context.Background())
+	g.slots.SyncWarm(context.Background())
+	if h := g.slots.Healthy(); !h["blue"] || !h["green"] {
+		t.Fatalf("healthy %v", h)
+	}
+	if len(g.slots.LiveStations()) != 1 {
+		t.Fatalf("live stations %v", g.slots.LiveStations())
+	}
+	v := g.slots.View()
+	if v["live"] != "blue" || v["standby"] != "green" || len(v["slots"].([]SlotView)) != 2 {
+		t.Fatalf("view %v", v)
+	}
+	name, err := g.slots.StartStaging(context.Background())
+	if StagingBuild {
+		if err != nil || name != "amber" {
+			t.Fatalf("staging: %q %v", name, err)
+		}
+		_ = g.slots.StopStaging(context.Background())
+	} else if err == nil {
+		t.Fatal("staging without the build flag")
+	}
+	// hot standby off: the supervisor stops the standby instance
+	on.HotStandby = false
+	g.slots.SyncWarm(context.Background())
+	mu.Lock()
+	got := strings.Join(asked, ",")
+	mu.Unlock()
+	if !strings.Contains(got, "POST /slots/green/stop") {
+		t.Fatalf("supervisor asked %q", got)
+	}
+	// the supervisor's report fails over at once
+	on.HotStandby = true
+	g.slots.SyncWarm(context.Background())
+	g.blue.crash()
+	g.slots.Exited(context.Background(), "blue")
+	if live, _ := g.slots.Live(); live != "green" || g.slots.Switches() != 1 {
+		t.Fatalf("after the exit report: %s", live)
+	}
+}

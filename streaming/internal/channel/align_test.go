@@ -309,3 +309,37 @@ func TestTwoStationsAligned_RealFFmpeg(t *testing.T) {
 		t.Fatalf("stream layouts differ or are not fixed:\nblue  %s\ngreen %s", pa, pb)
 	}
 }
+
+// The playlist's program dates come from each segment's first video PTS.
+func TestRewritePDTFromPTS(t *testing.T) {
+	dir := t.TempDir()
+	at := AlignStart(time.Now().Add(-6*time.Second), 30)
+	ticks := WallTicks(at) % PTSWrapTicks
+	pkt := make([]byte, tsPacket)
+	pkt[0], pkt[1], pkt[2], pkt[3] = 0x47, 0x40|byte(TSVideoPID>>8), byte(TSVideoPID&0xff), 0x10
+	pes := []byte{0, 0, 1, 0xe0, 0, 0, 0x80, 0x80, 5,
+		0x21 | byte(ticks>>29)&0x0e, byte(ticks >> 22), byte(ticks>>14) | 1, byte(ticks >> 7), byte(ticks<<1) | 1,
+		0, 0, 0, 1, 0x65}
+	copy(pkt[4:], pes)
+	if _, ok := tsVideoKeyframe(pkt); !ok {
+		t.Fatal("keyframe not seen")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "seg-7.ts"), pkt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pl := "#EXTM3U\n#EXTINF:2.000000,\n#EXT-X-PROGRAM-DATE-TIME:2001-01-01T00:00:00.000+0000\nseg-7.ts\n" +
+		"#EXTINF:2.000000,\n#EXT-X-PROGRAM-DATE-TIME:2001-01-01T00:00:02.000+0000\nseg-8.ts\n"
+	var c pdtCache
+	out := string(c.rewritePDT(dir, []byte(pl), time.Now()))
+	want := pdtTag + at.UTC().Format(pdtLayout)
+	if !strings.Contains(out, want) || !strings.Contains(out, "2001-01-01T00:00:02.000+0000") {
+		t.Fatalf("rewritten:\n%s\nwant %s", out, want)
+	}
+	if _, ok := c.firstPTS(filepath.Join(dir, "seg-7.ts")); !ok {
+		t.Fatal("not cached")
+	}
+	c.rewritePDT(dir, []byte("#EXTM3U\n"), time.Now()) // nothing listed: pruned
+	if len(c.m) != 0 {
+		t.Fatalf("cache %v", c.m)
+	}
+}
