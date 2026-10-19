@@ -9,6 +9,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 )
 
@@ -61,9 +62,12 @@ func cleanupExpired(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
 }
 
 // purgeDeletedAccounts removes users whose deletion hold has elapsed.
-// We run once an hour. CASCADE on the FK chains drops sessions,
-// oauth links, servers, etc., automatically.
+// We run once an hour. Each account first goes through the GDPR erasure
+// (privacy.DataSubjectService, story 30.2) so its push logs, which have
+// no FK to users, go with it; CASCADE on the FK chains then drops
+// sessions, oauth links, servers, etc.
 func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
+	purger := privacy.NewAccountPurger(pool.DB)
 	t := time.NewTicker(1 * time.Hour)
 	defer t.Stop()
 	for {
@@ -71,13 +75,16 @@ func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Poo
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if _, err := pool.DB.ExecContext(ctx, `
-                DELETE FROM users WHERE id IN (
-                    SELECT user_id FROM account_deletions
-                    WHERE cancelled_at IS NULL AND purge_after < now()
-                )
-            `); err != nil {
+			res, err := purger.PurgeDue(ctx)
+			if err != nil {
 				logger.Warn("worker: deletion purge", "err", err)
+				continue
+			}
+			for id, ferr := range res.Failed {
+				logger.Warn("worker: deletion purge left an account for the next pass", "user_id", id, "err", ferr)
+			}
+			if res.Purged > 0 {
+				logger.Info("worker: purged deleted accounts", "accounts", res.Purged, "push_log_rows", res.PushRows)
 			}
 		}
 	}
