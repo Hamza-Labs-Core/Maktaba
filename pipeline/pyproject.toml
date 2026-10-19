@@ -31,6 +31,12 @@ stt = [
     # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
     "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "silero-vad>=6.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    # the second listen (stt/refine.py): Cohere Transcribe Arabic on MLX, and the
+    # CAMeL Tools MSA dictionary that respells the words it hears
+    "mlx-audio==0.5.9 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    # Cohere's tokenizer; mlx-audio does not declare it
+    "sentencepiece>=0.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "camel-tools>=1.6,<2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 dev = [
     "grpcio-tools>=1.68",

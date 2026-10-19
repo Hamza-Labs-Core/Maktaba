@@ -24,7 +24,7 @@ from pathlib import Path
 
 from ..text.arabic import fold
 
-__all__ = ["Quote", "VerseRef", "find_quotes", "locate", "surah_by_name"]
+__all__ = ["Quote", "VerseRef", "find_quotes", "locate", "surah_by_name", "verse_runs"]
 
 _DATA = Path(__file__).resolve().parent.parent / "data" / "quran"
 _BASMALA = tuple(fold("بسم الله الرحمن الرحيم").split())
@@ -138,6 +138,37 @@ def locate(quote: str) -> VerseRef | None:
     if len(hits) != 1:
         return None
     return _ref(ix, hits[0], n)
+
+
+#: the fewest words in a row that count as reciting: «إن الله على كل شيء قدير» is speech
+#: and Quran alike, and either way the words are the same
+MIN_RUN_WORDS = 4
+
+
+def verse_runs(words: list[str], min_words: int = MIN_RUN_WORDS) -> list[bool]:
+    """Which of a transcript's words are part of a run of at least ``min_words`` folded
+    words that follows the Quran text word for word (recitation, or a verse quoted in a
+    lesson). ``words`` are folded already (:func:`~maktaba_pipeline.text.arabic.fold`)."""
+    ix = _index()
+    out = [False] * len(words)
+    i = 0
+    while i + 1 < len(words):
+        best = 0
+        for start in ix.by_two.get((words[i], words[i + 1]), ()):
+            n = 2
+            while (
+                i + n < len(words)
+                and start + n < len(ix.words)
+                and ix.words[start + n] == words[i + n]
+            ):
+                n += 1
+            best = max(best, n)
+        if best >= min_words:
+            out[i : i + best] = [True] * best
+            i += best
+        else:
+            i += 1
+    return out
 
 
 @lru_cache(maxsize=1)
