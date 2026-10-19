@@ -108,9 +108,80 @@
   border-radius: var(--radius-md);
   min-width: 0;
 }
-.mkt-rules__group > h3 {
-  margin-block-end: var(--space-2);
+/* collapsible groups: a heading with a fold button, counts beside it */
+.mkt-rules__grouphead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-rules__grouptitle {
+  margin: 0;
   font-size: var(--font-size-lg);
+}
+.mkt-rules__sub .mkt-rules__grouptitle {
+  font-size: var(--font-size-md, 1rem);
+}
+.mkt-rules__fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  margin-inline-start: calc(-1 * var(--space-2));
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: start;
+}
+.mkt-rules__fold:hover:not(:disabled) {
+  background: var(--color-subtle);
+}
+.mkt-rules__fold:disabled {
+  cursor: default;
+}
+.mkt-rules__fold:focus-visible,
+.mkt-rules__day:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.mkt-rules__chev {
+  inline-size: 0.5em;
+  block-size: 0.5em;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.mkt-rules__fold[aria-expanded="false"] .mkt-rules__chev {
+  transform: rotate(-45deg);
+}
+[dir="rtl"] .mkt-rules__fold[aria-expanded="false"] .mkt-rules__chev {
+  transform: rotate(135deg);
+}
+.mkt-rules__groupcounts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.mkt-rules__groupbody {
+  display: flex;
+  flex-direction: column;
+  margin-block-start: var(--space-2);
+}
+.mkt-rules__sub {
+  margin-block-start: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-subtle) 40%, transparent);
+  min-width: 0;
+}
+.mkt-rules__own > .mkt-rules__set:first-child,
+.mkt-rules__groupbody > .mkt-rules__set:first-child {
+  border-block-start: 0;
 }
 
 .mkt-rules__set {
@@ -119,9 +190,6 @@
   gap: var(--space-2) var(--space-5);
   padding-block: var(--space-3);
   border-block-start: 1px solid var(--color-border);
-}
-.mkt-rules__group > h3 + .mkt-rules__set {
-  border-block-start: 0;
 }
 .mkt-rules__set--wide {
   grid-template-columns: minmax(0, 1fr);
@@ -186,6 +254,89 @@
   color: var(--color-error);
   font-size: var(--font-size-sm);
 }
+.mkt-rules__set--bad .mkt-rules__input,
+.mkt-rules__input[aria-invalid="true"],
+.mkt-rules__cell[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+.mkt-rules__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* numbers: slider + box + unit */
+.mkt-rules__num {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-rules__slider {
+  flex: 1 1 160px;
+  min-inline-size: 120px;
+  max-inline-size: 320px;
+  accent-color: var(--color-accent);
+}
+.mkt-rules__input--num {
+  inline-size: 12ch;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-rules__unit {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-rules__select {
+  max-inline-size: 260px;
+}
+
+/* tags */
+.mkt-rules__chips {
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-rules__chiplist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-rules__chipinput {
+  max-inline-size: 320px;
+}
+
+/* weekdays */
+.mkt-rules__days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.mkt-rules__day {
+  min-inline-size: 3.2em;
+  min-block-size: 32px;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mkt-rules__day[aria-pressed="true"] {
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.mkt-rules__day:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.mkt-rules__days[aria-invalid="true"] .mkt-rules__day {
+  border-color: var(--color-error);
+}
 .mkt-rules__switch {
   display: inline-flex;
   align-items: center;
@@ -239,6 +390,27 @@
 .mkt-rules__cell-x {
   inline-size: 1%;
 }
+.mkt-rules__cell--url {
+  min-inline-size: 26ch;
+}
+.mkt-rules__cellnum {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-rules__cellerr {
+  display: block;
+  margin-block-start: 2px;
+  color: var(--color-error);
+  font-size: 12px;
+}
+.mkt-rules__rowbtns {
+  display: inline-flex;
+  gap: 2px;
+}
+.mkt-rules__empty {
+  padding: var(--space-2) var(--space-3);
+}
 .mkt-rules__sr {
   position: absolute;
   inline-size: 1px;
@@ -251,5 +423,53 @@
 @media (max-width: 760px) {
   .mkt-rules__set {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* tables stack as one card per row, each cell labelled */
+  .mkt-rules__tablewrap {
+    border: 0;
+    overflow: visible;
+  }
+  .mkt-rules__table,
+  .mkt-rules__table tbody,
+  .mkt-rules__table tr,
+  .mkt-rules__table td {
+    display: block;
+    inline-size: 100%;
+    box-sizing: border-box;
+  }
+  .mkt-rules__table thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .mkt-rules__table tr {
+    margin-block-end: var(--space-3);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+  .mkt-rules__table td {
+    border: 0;
+    padding-block: var(--space-1);
+  }
+  .mkt-rules__table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-block-end: 2px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .mkt-rules__cell,
+  .mkt-rules__cell--short,
+  .mkt-rules__cell--url {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  .mkt-rules__cell-x {
+    text-align: end;
   }
 }
