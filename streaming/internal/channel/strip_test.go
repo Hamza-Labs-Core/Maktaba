@@ -233,7 +233,7 @@ func TestStripFiltersNeverCarryTitles(t *testing.T) {
 	st := stripOn()
 	st.Overflow = "scroll"
 	st.ShowMode = "interval"
-	in, files, err := BuildStrip(DefaultProfile(), st, `C:\Windows\Fonts\arial.ttf`, "قناة", s, start, time.Minute, 125, dir, "k")
+	in, files, err := BuildStrip(DefaultProfile(), st, "C:/Windows/Fonts/arial.ttf", "قناة", s, start, time.Minute, 125, dir, "k")
 	if err != nil || in == nil {
 		t.Fatal(err)
 	}
