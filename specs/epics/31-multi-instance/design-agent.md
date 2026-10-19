@@ -62,6 +62,7 @@ channel: the hub closes its sessions at once and refuses new ones.
 |---|---|---|
 | `metrics` | C→S, every 2 s | `ts`, `system` {cpu_pct, load1, mem_total, mem_available, swap_used, disks [{path,total,free}], net {rx_bps,tx_bps}}, `gpu` {nvidia [{name,util_pct,mem_used,mem_total,temp_c}], apple {active_gb,cache_gb,peak_gb}}, `process` {rss, cpu_pct, threads, uptime_s}, `pipeline` {role, stages, stages_off, jobs [{job_id,stage,subject,since,progress}], claims_per_min, stt {audio_sec_per_s, files_in_flight}}, `llm` {in_flight, tokens_per_s} |
 | `logs` | C→S, batched ≤ 250 ms | `[ {ts, level, event, logger, fields} ]` at or above the session's log level |
+| `job` | C→S, as it happens | `{event: claimed\|progress\|done\|failed\|skipped\|paused\|deferred, job_id, stage, subject_kind, subject_id, title, attempt, started_at, ts, duration_ms, progress {step, done, total}, outcome {kind, retryable, error}, output {audio_sec, segments, bytes, …}}` — every job this process runs |
 | `dropped` | C→S | counts of log records dropped while disconnected (bounded buffer) |
 | `llm.models` | C→S, on change | runtimes `[{provider, base_url, models [{name, size, family, quant, loaded}], max_parallel}]` |
 | `llm.request` | both | `{id, model, op: chat\|generate\|embed, body, stream}`: S→C to the machine that runs it; C→S when a process asks the cluster |
@@ -105,8 +106,15 @@ two processes to one file is not safe on NFS/SMB, so each process writes its own
     logs/2026-10-19/<worker_id>.jsonl      # {ts, level, event, logger, fields}
     metrics/2026-10-19/<worker_id>.jsonl   # one line per metrics frame
     llm/2026-10-19/<worker_id>.jsonl       # requests this process ran: {ts, id, model, op, from, prompt_tokens, completion_tokens, ms, error}
+    jobs/2026-10-19/<worker_id>.jsonl      # every job event this process had (claimed … done / failed), with durations and outcome
     events/2026-10-19/hub.jsonl            # the home's hub only: connect, disconnect, auth refused, commands and results
+    queues/2026-10-19/hub.jsonl            # the home's hub only: queue snapshot every 10 s (per stage: waiting, ready, running, paused, failed, done/min, oldest wait; pools: busy/size; flows)
+    library/2026-10-19/hub.jsonl           # the home's hub only: library snapshot every 5 min (per library: videos, hours, bytes, transcribed videos/hours, series, seasons, tagged, indexed; totals)
 ```
+
+Queue and library numbers are the cluster's, not one machine's: the home's hub takes them
+from the queue it already watches (the same snapshot that feeds the Processing page) and
+writes them under the home's IP folder; job events are each machine's own.
 
 Rotated daily (a new day directory), kept `MAKTABA_CLUSTER_RETENTION_DAYS` (default 14;
 each process removes its own expired files, the hub any left by processes gone for good),
@@ -123,7 +131,9 @@ merging a day's per-process files by timestamp. Nothing goes to the database.
 `GET /api/cluster/stream` (admin, Server-Sent Events, the transport the web already uses
 for live pages): `snapshot` on connect (every connected process: identity, latest
 metrics, models), then `metrics`, `log` (when the viewer subscribed `?logs=<node>&level=`),
-`llm` (request start/finish), `node` (connect / disconnect / auth refused). REST:
+`llm` (request start/finish), `job` (every job event from every process), `queues`
+(every 2 s, the queue snapshot), `library` (every 5 min), `process` (connect / disconnect /
+auth refused). REST:
 `GET /api/cluster/nodes/{ip}/logs?date=&level=&q=&limit=` and
 `/metrics?date=&from=&to=` read the files; `POST /api/cluster/processes/{session}/cmd`.
 
