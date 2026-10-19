@@ -41,7 +41,20 @@ class PathMap:
                     pairs.append((a.strip(), b.strip()))
         return cls(tuple(sorted((_norm(a), _norm(b)) for a, b in pairs if a and b)))
 
+    def rewrite(self, db_path: str) -> str:
+        """The prefix rewrite alone, no file-system access: for a path another system
+        opens (Plex's view of the NAS), not this machine."""
+        p = db_path.replace("\\", "/")
+        best: tuple[str, str] | None = None
+        for src, dst in self.entries:
+            if p.lower().startswith(src.lower()) and (best is None or len(src) > len(best[0])):
+                best = (src, dst)
+        if best is None:
+            return db_path
+        return best[1] + p[len(best[0]) :]
+
     def to_local(self, db_path: str) -> str:
+        """This machine's path: :meth:`rewrite`, then the spelling that exists here."""
         p = db_path.replace("\\", "/")
         best: tuple[str, str] | None = None
         for src, dst in self.entries:
