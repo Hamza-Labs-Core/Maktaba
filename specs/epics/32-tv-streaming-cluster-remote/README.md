@@ -10,7 +10,8 @@
 > cluster-wide record — slot 0117, `tv_core_runtime`; merged in PR #63).
 
 **Documents.** [design.md](design.md) (balancer, leases, front door, failover, the Cloudflare push
-pipeline, tokens, app routing, simulcast) · stories `story-32-01` … `story-32-13` · plans `plan-32-01` … `plan-32-13`.
+pipeline, tokens, app routing, simulcast) · stories `story-32-01` … `story-32-13` · plans `plan-32-01` … `plan-32-13` ·
+the operator runbook [docs/tv-cluster-and-remote.md](../../../docs/tv-cluster-and-remote.md) (story 32.12).
 
 ## Goal
 
@@ -489,6 +490,11 @@ stories.
 3. **Is `exp` checked on every segment?** The docs say rules are checked continuously. The web
    player swaps tokens without a reload (32.9); native apps re-tune at expiry. Confirm in the
    spike. *(Spike item, as Q2.)*
+   *Status (32.12, 2026-10-19):* the spike (`maktaba-api cloudflare spike`) has not been run
+   against a real account yet, so Q2 and Q3 stay open; the runbook's §9 "Measured behaviour"
+   lists the measurements still due and gets the report's numbers. The web player does not
+   depend on the answer to Q3: hls.js rewrites the token on every request, and Safari swaps in
+   the new URL at each token refresh.
 4. **Upload bandwidth — owner decision.** The home's upload is **1 Gb/s**, so no separate
    "remote rendition" encode is needed: each remote channel is pushed once at the channel bitrate
    (**≈ 6.5 Mb/s**, the default 6 Mb/s video + audio). `tv_remote.max_channels` defaults to **22**

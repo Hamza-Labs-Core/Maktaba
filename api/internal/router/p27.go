@@ -9,6 +9,7 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/go-chi/chi/v5"
@@ -31,6 +32,9 @@ type P27Deps struct {
 	DataDir string
 	// Secrets is the home's sealed store: the Plex token is there.
 	Secrets secrets.Store
+	// RemoteInfo reports remote viewing for /api/tv/info (Epic 32 story
+	// 32.9); nil: not available.
+	RemoteInfo func(ctx context.Context) tv.RemoteAvailability
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -41,7 +45,7 @@ func MountP27(r chi.Router, d P27Deps) {
 	}
 	// Live TV access: HDHomeRun tuner admin, where the TV streams live, and
 	// Plex Live TV (status, refresh, register).
-	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets}
+	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets, Remote: d.RemoteInfo}
 	// a channel created, edited, renumbered or deleted by hand: Plex's
 	// channel map follows (the plex_livetv stage decides what to push)
 	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex}

@@ -38,6 +38,9 @@ func TestParseRequest_PreservesMethodHeadersHostBody(t *testing.T) {
 	if req.Header.Get("X-Custom") != "yes" {
 		t.Errorf("custom header lost")
 	}
+	if got := req.Header.Values(ViaHeader); len(got) != 1 || got[0] != "relay" {
+		t.Errorf("X-Maktaba-Via = %v, want exactly [relay] (a client copy is replaced)", got)
+	}
 	if req.ContentLength != 5 {
 		t.Errorf("content-length = %d, want 5", req.ContentLength)
 	}

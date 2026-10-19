@@ -83,6 +83,8 @@ export interface TvClusterView {
   hosts: StreamingHost[];
   on_air: OnAirChannel[];
   notices: ClusterNotice[];
+  /** Channels placed by a failover in the last 24 h (story 32.11 AC5). */
+  failovers_24h?: number;
 }
 
 export interface HostUpdate {

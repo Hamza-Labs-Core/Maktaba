@@ -253,3 +253,26 @@ func TestMoveAndStopForwarded(t *testing.T) {
 }
 
 func jsonBody(s string) io.Reader { return strings.NewReader(s) }
+
+// Story 32.11 AC5: failovers in the last 24 h for the System Health TV line.
+func TestClusterFailovers24h(t *testing.T) {
+	db := newDB(t)
+	now := time.Now()
+	seed(t, db, now)
+	if _, err := db.Exec(`INSERT INTO channel_placements VALUES ('c3', 'h', 9, 'live', 'failover', ?, NULL, NULL),
+		('c4', 'h', 3, 'released', 'failover', ?, NULL, NULL)`, ts(now.Add(-time.Hour)), ts(now.Add(-48*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{DB: db, Now: func() time.Time { return now }}
+	r := chi.NewRouter()
+	h.Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, admin(httptest.NewRequest("GET", "/api/tv/cluster", nil)))
+	var resp Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Failovers24h != 1 {
+		t.Fatalf("failovers_24h = %d, want 1", resp.Failovers24h)
+	}
+}
