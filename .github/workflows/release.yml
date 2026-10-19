@@ -480,6 +480,14 @@ jobs:
             nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out/
             nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t out/
           done
+          # A pre-release version is 0.1.0~rc.1 inside the package (so apt/dnf
+          # order it before 0.1.0), but GitHub renames "~" in an asset's name
+          # to ".", and checksums.txt would then name a file the release does
+          # not have. The file names use "." from the start.
+          for f in out/*~*; do
+            [ -e "$f" ] || continue
+            mv "$f" "${f//\~/.}"
+          done
           ls -l out
 
       - name: Upload packages
