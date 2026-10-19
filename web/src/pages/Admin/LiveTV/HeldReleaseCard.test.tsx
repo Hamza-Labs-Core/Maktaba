@@ -73,6 +73,17 @@ describe("HeldReleaseCard", () => {
     );
   });
 
+  it("offers no Update now on a build without the update orchestrator", async () => {
+    get.mockResolvedValue({ ...heldOverview, auto_install_available: false });
+    renderCard();
+    expect(await screen.findByTestId("held-not-built")).toHaveTextContent(
+      "Automatic install arrives with the update orchestrator."
+    );
+    expect(screen.queryByRole("button", { name: "Approve and update now" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Skip this version" })).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it("renders nothing when nothing is held", async () => {
     get.mockResolvedValue({ ...heldOverview, plan: { ...heldOverview.plan, held: false } });
     const { container } = renderCard();

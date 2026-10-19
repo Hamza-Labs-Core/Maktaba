@@ -2981,7 +2981,7 @@
   "updates.settings.badPin": "Write a version such as 1.5.9.",
   "updates.settings.pinBelow": "A pin cannot be below the installed version {version}.",
   "updates.settings.badAge": "Write a whole number of hours, 0 or more.",
-  "updates.settings.notBuilt": "This version only checks for updates and tells you; installing by itself comes with the next versions.",
+  "updates.settings.notBuilt": "Automatic install arrives with the update orchestrator.",
   "updates.settings.stale": "No successful update check for 14 days. Check the network or GitHub access.",
   "updates.plan.none": "No update planned: you are up to date.",
   "updates.plan.at": "Version {version} installs on {at}.",

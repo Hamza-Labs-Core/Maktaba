@@ -263,6 +263,9 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 		if errors.As(err, &w) {
 			return Decision{Action: "withdrawn", Reason: w.reason, Version: pl.Target.Version}, nil
 		}
+		if errors.Is(err, ErrAutoInstallNotBuilt) {
+			return Decision{Action: "none", Reason: WaitNotBuilt, Version: pl.Target.Version}, nil
+		}
 		return Decision{Action: "failed", Reason: err.Error(), Version: pl.Target.Version, RunID: run.ID}, err
 	}
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
@@ -294,9 +297,18 @@ type BlockedError struct{ Reason string }
 
 func (e *BlockedError) Error() string { return "update_blocked: " + e.Reason }
 
+// ErrAutoInstallNotBuilt: this build has no update orchestrator (story 35.4), so
+// nothing may plan a run. Unlike ErrOrchestratorUnavailable (a build that should
+// install but whose supervisor cannot), it records no run and sends no notice.
+var ErrAutoInstallNotBuilt = errors.New("auto_install_not_built")
+
 // start re-checks the release on GitHub, inserts the run and hands it to the
 // supervisor. A supervisor without an orchestrator fails the run (recorded, audited).
+// A build without automatic installs refuses before anything is recorded.
 func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, actor string) (Run, error) {
+	if !AutoInstallAvailable() {
+		return Run{}, ErrAutoInstallNotBuilt
+	}
 	if s.Discoverer != nil {
 		reason, err := s.Discoverer.Recheck(ctx, r, pol.Channel)
 		if err != nil {
@@ -339,6 +351,9 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 // window and the release age, never the checks. version "" is the planned target; a
 // held contract release is approved by it.
 func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error) {
+	if !AutoInstallAvailable() {
+		return Run{}, ErrAutoInstallNotBuilt
+	}
 	pol, err := s.Policy(ctx)
 	if err != nil {
 		return Run{}, err
