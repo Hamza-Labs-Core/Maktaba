@@ -465,7 +465,7 @@ func TestRetimerSwitchAcrossWrapKeepsAudio(t *testing.T) {
 	before := len(readTrack(t, out).dts[0x101])
 	r.Switch()
 	b := newGen(0x1000, 0x100, 0x101, ptsWrap-3000) // the IDR just before the wrap
-	b.apts = ptsWrap + 100                           // its audio just after it
+	b.apts = ptsWrap + 100                          // its audio just after it
 	o, err = r.Process(b.frames(60))
 	if err != nil {
 		t.Fatal(err)
