@@ -66,8 +66,9 @@ Design: [design.md](design.md) §5.5, §5.6, §13.4, §13.5, §14, §15, §17; R
 - **TC6** `TestRefuseDowngrade`, `TestRefuseReplaySameVersion`, `TestPinBelowWatermark`,
   `TestChannelSwitchNoDowngrade`, `TestNodeRefusesVersionMismatch`.
 - **TC7** `TestMachineAgentRejectsWrongHomeKey`, `TestMirrorTamperCaughtByNode`.
-- **TC8** `.github/workflows/e2e-cluster-update.yml` — AC10 on `macos-14`, `ubuntu-24.04`,
-  `windows-2022` runners connected through a tailnet or a self-hosted lab (open point in the plan).
+- **TC8** Per-OS E2E in CI (`macos-14`, `ubuntu-24.04`, `windows-2022`): each runner updates a
+  single-machine home from v0.0.1-e2e to v0.0.2-e2e. The three-OS **cluster** E2E (AC10) runs on a
+  self-hosted lab later (follow-up, owner decision); CI is not gated on it.
 - **TC9** `TestDelegationFailClosed`, `TestRevocationPushLatency`, `TestDelegationReplay`.
 
 ## Edge cases

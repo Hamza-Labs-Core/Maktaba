@@ -217,8 +217,13 @@ then the wheel); extras by platform (`stt` on Apple Silicon, as the installer). 
 PyPI (or `MAKTABA_PIP_INDEX_URL`) and are accepted only by hash. The shared logic moves from the
 shell/PowerShell installers into Go (`cmd/maktaba-server/internal/pyenv`), and the installers call
 `maktaba-server pyenv build`, so there is one implementation. A machine without internet access
-cannot build the environment: the step fails with `pypi_unreachable` (a wheelhouse mirrored by the
-home is a follow-up, open question).
+does not need it: **the home hosts a wheelhouse** (`wheelhouse = true`). During its own `stage` step
+the home runs `pip download --only-binary=:all: --require-hashes -c constraints.txt --platform <tag>
+--python-version 3.12` for every platform in `cluster_nodes.platform` into
+`updates/downloads/<v>/wheelhouse/<platform>/` and serves it on the artifact mirror; nodes install with
+`--no-index --find-links <local copy>` and the same hashes, so the source of a file never matters. A
+dependency without a binary wheel for a platform falls back to PyPI on that node (logged); a node with
+neither fails with `pypi_unreachable`.
 
 ### 3.5 Watermark and downgrades
 
@@ -489,7 +494,7 @@ already used by `supervisor.ChildEnv` for streaming). In node mode:
 | `api` | env `MAKTABA_NODE_MODE=1`, `DATABASE_URL` = the node's role, `MAKTABA_HOME_STREAM_URL` (the home's streaming port, §11.3), `MAKTABA_AUTO_MIGRATE` unset (and the API refuses to migrate in node mode), `MAKTABA_HOME_API_URL` from node config, delegation key from the machine agent (§10), schema guard (§9.3), route classes (§11). No hub, no scheduler (Updater, TV controller, publishers), no secrets key: those are home components; their constructors are skipped in node mode and their routes are `home` class. |
 | `web` | in process, as on the home; `/api` → the node API; `/stream`, `/xmltv.xml`, `/lineup.m3u` → the home's front door (§11.3). |
 | `pipeline` | `--node` (Epic 31, unchanged). |
-| `streaming` | only when the node is an Epic 32 streaming host (`tv_cluster.nodes_stream` and per-machine switch); unchanged from Epic 32.1. Otherwise not started. |
+| `streaming` | always, for **VOD** (Epic 08): it reads media from the NAS through the node's own mounts and the canonical share-path resolver (story 31.3). TV stations only when the node is an Epic 32 streaming host (`tv_cluster.nodes_stream` and per-machine switch), unchanged from Epic 32.1. |
 
 Ports are the home's defaults (API 8080, web 8088, streaming 8081) and configurable in the node's
 `server.toml`; the node writes its web URL into its `cluster_node_report` so the Machines page can
@@ -525,8 +530,15 @@ release (downloaded from the home's mirror and verified), builds the venv, regis
 service, removes the old worker units (`com.maktaba.node*`, `maktaba-node*.service`, the
 `maktaba-node` task) after the new service runs, and reports `full_node = true`. Extra worker
 instances (`--instances N`) become `[pipeline] instances = N` in the node's `server.toml`. Worker-only
-nodes keep working and are updated by the rollout too: their machine agent is absent, so the home
-shows them as "worker-only — convert to update automatically" (open question: auto-convert).
+nodes are **converted automatically on their next update** (owner decision): the rollout sends their
+pipeline agent `cmd update.convert {run_id, version}` (a new command in the pipeline release that ships
+35.8). The Python agent downloads the platform archive from the home's mirror, verifies it with
+`sigstore-python` against the same pinned identity and the checksums (both hash-pinned in the
+pipeline's constraints), and runs `bin/releases/<v>/maktaba-server setup --node --converting`, which
+does the steps above and reports through the new machine agent. A worker-only node too old to know
+`update.convert` is shown "worker-only — re-run the installer once" (its installer run converts it).
+This PC (the Windows worker node joined today) converts on the first rollout after 35.8 ships if its
+pipeline has `update.convert`, else on its next installer run.
 
 ## 10. Auth across machines (story 35.9)
 
@@ -662,15 +674,17 @@ meaning (a node's proxy strips an incoming one, as the web proxy does).
   `<data_dir>/cache/proxy/<sha256(url)>` with the response's `ETag`/`Cache-Control`; immutable
   content-addressed art (Epic 33 art digests) is cached forever, the rest revalidated; LRU eviction
   at `proxy_cache_mb`.
-- Video on demand (Epic 08): proxied to the home in v1 (the transcoder's sessions are home state);
-  a node-local VOD is a follow-up.
+- Video on demand (Epic 08): **served by the node itself** — its streaming role reads the file from
+  the NAS through its own mounts (story 31.3 resolver) and transcodes locally; nothing passes through
+  the home. Fallback in §11.5.
 
 ### 11.4 Pages on a node
 
 | Page | On a node |
 |---|---|
 | Home, Library, Video detail, Collections, People | `any` reads, local; images via the proxy cache |
-| Player (VOD), Live TV player, Guide | stream through the home (§11.3) |
+| Player (VOD) | local: the node's streaming role reads the NAS itself (fallback §11.5) |
+| Live TV player, Guide | through the home's front door (§11.3) |
 | Search | `home` (vector index) |
 | Continue watching, history, favourites | `home` |
 | Processing, Machines, Logs | `home` (hub WebSocket proxied) |
@@ -683,6 +697,26 @@ The SPA is the node's build; when the node is behind the home (during a rollout)
 answer with fields the SPA ignores (additive APIs). A node whose code is paused shows the paused page
 (R6.4): "This machine is waiting for its update (v1.4.2 → v1.5.0). Use Maktaba on <home name> —
 http://…" with an automatic reload when the node's version changes.
+
+### 11.5 Media access and the VOD fallback
+
+Media is read where it is needed. Every machine reads library files from the NAS through its own
+mounts and the canonical share-path resolver (story 31.3, #81): the node's VOD playback and
+transcoding, scanning, thumbnails (home-only stage, on the home), transcription and channel encoding.
+None of it travels through the home or the cluster link (§18), which carry only control,
+database-adjacent calls, the secret-holding service door and machine-to-machine TV streams.
+
+Fallback, only when a machine's storage check (Epic 31 §6) says `read: error`: VOD on that machine is
+served by **a ticketed stream from a machine that can read the share** — the home if its storage check
+is good, else the least-loaded full node whose check is good. The requesting node asks the home on its
+control channel (`vod.fallback {video_id, profile}`); the home picks the server, starts the session
+there (on itself, or by a command on that node's control channel) and returns a stream ticket; the
+requesting node opens the stream (`purpose: vod`) and serves the bytes to its browser as if local.
+When the serving machine is another node, the home splices the two ticketed streams (nodes never
+accept connections from each other). Redirecting the browser to the other machine was rejected: it
+changes the address the user opened, needs a sign-in there, and breaks the player's same-origin
+session. The Machines page shows "VOD served by <machine>: share not readable here" on the affected
+machine, with its storage check detail; the fallback stops as soon as the check is good again.
 
 ## 12. Discovery (story 35.11)
 
@@ -806,8 +840,9 @@ cluster key (channel, Epic 31 v2); per-node delegation keys (HTTP). A node insta
 verified itself; the home cannot make it install an unsigned or older build. The home resolves every
 user session; nodes cache short and fail closed. Backups stay on the home's disk. Nothing in an API
 request names a file path or URL to install from. The update flow's admin actions are audited.
-Residual risks: LAN HTTP between machines (session ids and delegation signatures are visible to a LAN
-eavesdropper, like browser cookies today — TLS is the Epic 31 follow-up), and a compromised GitHub
+Residual risks: the legacy plain-HTTP paths while `cluster.link.mode` is `prefer` (closed by
+`require`, §18), browsers on plain HTTP to each machine's web UI (unchanged; HTTPS optional), and a
+compromised GitHub
 workflow with tag-push rights (mitigated by branch/tag protection and the 24 h release age).
 
 ## 16. Observability
@@ -841,3 +876,185 @@ control centre (Epic 33.15 health samples gain `update.state`).
 - **Chaos**: kill -9 the supervisor at each step; power-cut (VM reset) during migrate and after the
   pointer flip; drop the node's network mid-apply; corrupt a staged binary; replay an older signed
   release; flood the delegation endpoint.
+
+## 18. The cluster link: machine-to-machine TLS (story 35.16)
+
+Owner decisions (2026-10-19): include machine-to-machine TLS now; use **encrypted sockets rather than
+many HTTP requests**; WebSockets over mutual TLS on the existing API port; **"auth first, then stream
+on another"**: one control channel per machine, and every data stream on its own connection opened
+with a ticket from the control channel.
+
+### 18.1 What exists today and what moves
+
+| Flow today | Transport today | On the link |
+|---|---|---|
+| Cluster agent of every pipeline process (Epic 31 phase 2) | `ws://home:8080/api/cluster/agent`, frames sealed with the v2 handshake keys | Full nodes: the machine's **control channel** carries the machine agent; local pipeline processes connect to the supervisor's loopback agent endpoint, which forwards their sessions as control-channel sessions (their v2 sealing is kept end to end, so the Python agent does not change). Worker-only nodes keep the direct v2 WebSocket until converted. |
+| Service door (story 31.R) `svc.*` | agent WebSocket | control channel (small requests); answers > 1 MiB move to a data stream (`purpose: svc_body`) |
+| Front door → streaming node (Epic 32 §4, TS/HLS pulls; 33.8 relay source pulls) | HTTP to the node's streaming port, HMAC with the cluster stream key | one **data stream** per pull, the home asking the node (§18.5); the node's streaming port binds loopback once `require` |
+| Art fetches by streaming nodes (Epic 32 R1.5) | HTTP to the home | control channel request (small, cached) |
+| Session checks, `home` route proxy, SSO exchange (35.9, 35.10) | signed HTTP (delegation HMAC) | control channel requests; the HMAC path stays only for machines not on the link (`prefer`) |
+| Release mirror, wheelhouse (35.12, §3.4), backups | HTTP | one data stream per file |
+| Postgres | TCP, `sslmode=prefer` (Epic 31) | TCP with TLS `verify-full` + client certificate (§18.8) |
+| Browser ↔ any machine's web UI | HTTP | unchanged (optional HTTPS, §18.9) |
+| Library media (NAS) | each machine's own mounts | unchanged: never on the link (§11.5) |
+
+### 18.2 The cluster CA
+
+- ECDSA P-256 root, 10 years, created by the home's API at first start after this story
+  (`cluster-ca.key`, 0600, beside `secrets.key`; a sealed copy in `home_secrets` under
+  `cluster.ca.key` so a restore of the database and the secrets key recovers it). Never on a node,
+  never on the share, excluded from diagnostics bundles.
+- Machine certificates: ECDSA P-256 key generated **on the machine** (never leaves it), CSR sent to
+  the home; leaf valid 30 days (`cluster.tls.cert_days`), `not_before` = now − 5 min (clock skew),
+  `KeyUsage` digitalSignature, `ExtKeyUsage` clientAuth + serverAuth, SAN URI
+  `maktaba://node/<node id>`, CN `maktaba_node_<32 hex>` (= its database role, §18.8). Renewed when a
+  third of its life is left.
+- The home's own certificates: `server` (SANs: every address of the home — IPs, host name, `.local`
+  name, the addresses nodes use in `node.json`), `pg_server` (the same SANs, for Postgres), `client`
+  (`maktaba://home/<instance id>`, used when the home's front door is the TLS client of a stream it
+  asked for). Re-issued when the home's address set changes.
+- Every issued certificate is a `cluster_certs` row (slot S4).
+
+### 18.3 Issuance at join and migration of joined machines
+
+- **New joins:** the join request (Epic 31 §3.1) gains `csr`; at approval the sealed bundle gains
+  `tls: {ca_cert, ca_sha256, cert}` — the CA fingerprint is pinned through the pairing code's
+  protection, so no trust-on-first-use.
+- **Already joined machines** (this PC included): after updating to the release with this story, the
+  machine sends `cert.csr {csr}` on its existing v2 agent session — authenticated both ways by the
+  pairing key and the home's cluster key, so the CA certificate returned on it is as trustworthy as
+  the join bundle. No re-join. A machine joined before the v2 handshake has no `home.cluster_pub` and
+  must re-join (as Epic 31 already says).
+- **Renewal:** `cert.renew {csr}` on the control channel; the new certificate is used for new
+  connections, the old one until its connections close. A machine whose certificate expired (offline
+  for over 30 days) falls back to the v2 agent session to renew (allowed in `prefer`; in `require` the
+  v2 session is accepted only for `cert.*`).
+
+### 18.4 Control channel
+
+```
+node ──TLS 1.3 (client cert)──► home API port (8080)
+        ClientHello sniffed on the port: TLS → TLS listener (VerifyClientCertIfGiven, cluster CA);
+        plain HTTP → the existing HTTP server, unchanged for browsers and apps
+     ──GET /api/cluster/link (Upgrade: websocket)──►
+        home: cert chains to the cluster CA, not expired, serial not revoked,
+              SAN node id is an approved cluster_nodes row whose cert_serial matches
+     ◄── hello {session, settings, max_streams}  (text frame)
+        node: server cert chains to the pinned CA and names the address it dialled
+```
+
+- The first byte decides TLS vs plain HTTP on the API's existing port (`0x16` = TLS handshake), so
+  no new port and no firewall change; browsers and apps keep plain HTTP until `web_https` (§18.9).
+- Authentication is the TLS client certificate bound to the node id; nothing else is sent before it.
+  The Epic 31 node identity check (approved, not revoked, same pairing key on record) runs on the
+  certificate's node id.
+- **Per-frame sealing dropped on the link.** TLS 1.3 already gives confidentiality, integrity,
+  replay protection, mutual authentication and forward secrecy with per-machine keys from a CA whose
+  key never leaves the home. Sealing again would double the crypto, add a second protocol to keep
+  correct in Go, and its strict per-session counters would serialise the multiplexing. Sealing stays
+  where TLS is absent: the legacy direct WebSocket, and the pipeline processes' own v2 sessions that
+  the supervisor forwards (kept end to end because it costs nothing and needs no Python change).
+- **Framing on the control channel** (binary WebSocket messages): `{id u32, kind u8 (req|resp|chunk|end|cancel|event), class u8, len}` + payload ≤ 16 KiB. Classes and order of service by the sender's
+  scheduler: `control` (agent frames, commands, `auth.revoked`, `cert.*`, tickets) first, then `rpc`
+  (session checks, proxied `home` API requests, service door, art). A request body or answer larger
+  than 1 MiB is not sent here: the home answers with a stream ticket and it moves to a data stream.
+  HTTP over the channel: the node's home proxy (§11.2) uses a `RoundTripper` that sends the request
+  as `req` + `chunk`s and reads `resp` + `chunk`s, so the proxy code is unchanged; WebSocket upgrades
+  of proxied routes (the hub socket) become a data stream with `purpose: ws_proxy`.
+- Keepalive: WebSocket ping every 15 s; 3 missed → closed.
+
+### 18.5 Data streams and tickets
+
+Every data stream is its own `wss://` with mutual TLS (same certificate), opened only with a ticket:
+
+```
+node ──control: stream.open {purpose, resource}──► home  (or the home decides: stream.offer {…} to the node)
+home: machine's control session live? purpose allowed for it? under max_streams? resource allowed?
+     ◄── stream.ticket {ticket, url: "/api/cluster/link/stream", expires_at}
+node ──TLS (client cert) ──GET /api/cluster/link/stream  Authorization: Maktaba-Ticket <ticket>──► home
+home: ticket valid, unused, unexpired, issued to THIS certificate's node id, purpose/resource match → 101
+```
+
+Ticket: 32 random bytes (base64url) handed out on the control channel; the home keeps, in memory,
+`sha256(ticket) → {node_id, cert_serial, control_session, purpose, resource, nonce, issued_at,
+expires_at = +30 s, used}`. Single use; a second presentation or one by another certificate is refused
+and logged (`link_ticket_reuse`, an alert after 3 in 10 min). Purposes: `tv_pull` (resource: channel
+id + slot + epoch), `relay_pull`, `artifact` (version + file name), `wheelhouse`, `backup`, `vod`
+(fallback session id, §11.5), `svc_body`, `ws_proxy`.
+
+Who opens: always the **node** (nodes never accept connections; the home never dials a node). When
+the home needs bytes from a node — the front door pulling a channel the node encodes — the home sends
+`stream.offer {purpose: tv_pull, resource, ticket}` on the node's control channel and the node dials
+the stream and serves the slot's TS/HLS on it; the front door reads it as its upstream (Epic 32
+§4.4 replaced). The node's streaming port then binds loopback only.
+
+Each stream is one WebSocket with its own TCP connection and flow control: a busy TV stream cannot
+delay another stream or the control channel. Chunks ≤ 64 KiB per message; TS is forwarded as
+received. Per-machine limit `cluster.link.max_streams` (32; the home answers `stream.refused
+{reason: limit}`); per-purpose limits follow existing settings (Epic 32 capacity for `tv_pull`).
+
+### 18.6 Lifetimes, revocation, reconnect
+
+| Event | Effect |
+|---|---|
+| Control channel drops (network, home API restart) | The node reconnects with backoff (1 s doubling to 30 s, ±20 % jitter). In-flight requests fail at once with `link_lost`; idempotent ones (GET, session checks) retry once after reconnect; proxied browser requests get 502 `home_unreachable`. **Open data streams keep running for `stream_grace_seconds` (60)**; if the same machine's control session is back in time they are re-attached to it, otherwise the home closes them (TV: Epic 32/33 failover or restart path; downloads resume by range on a new ticket). No new ticket is issued without a live control session. |
+| Machine revoked | The home closes the control channel (`4010 revoked`) and **every stream at once** (no grace), marks the certificate revoked, refuses its serial; Postgres: role `NOLOGIN` (Epic 31). |
+| Certificate expires | New connections refused; existing ones closed at expiry; renewal path §18.3. |
+| Home CA rotated (manual, rare) | New CA issued; both trusted for 7 days; machines renew under the new CA over their control channel; the old one is removed. |
+| Ticket not used within 30 s | Expires; the requester asks again. |
+
+### 18.7 Mode and migration
+
+`cluster.link.mode`: `off` (today's paths), `prefer` (default from this release: a machine with a
+certificate uses the link, the others the legacy paths), `require` (legacy paths refused: plain agent
+WebSocket from nodes, delegation HMAC over HTTP, front-door HTTP to node streaming ports). The home
+switches to `require` by itself when every approved machine has held a control session for 24 h, and
+says so on the Machines page; an admin can set it back. The order for the existing node (this PC):
+update → `cert.csr` on the v2 session → control channel up → streams move → Postgres DSN switches to
+`verify-full` at the next restart (§18.8) → nothing else.
+
+### 18.8 Postgres
+
+Kept as its own TCP connection (pgx / psycopg pools, `LISTEN/NOTIFY`, the hottest path for workers),
+with TLS: the home's Postgres gets `ssl = on`, `ssl_cert_file` / `ssl_key_file` = the `pg_server`
+certificate, `ssl_ca_file` = the cluster CA (`maktaba-server setup --pg-tls` writes them and runs
+`ALTER SYSTEM` + `pg_reload_conf()` when the migration user may; otherwise prints the lines for the
+admin), and `pg_hba.conf` `hostssl … clientcert=verify-full` for the `maktaba_node_*` roles once
+`require`. Nodes connect with `sslmode=verify-full sslrootcert=<ca> sslcert=<cert> sslkey=<key>`;
+the certificate's CN is the node's role, so a stolen password alone is useless.
+**Tunnelling Postgres through the link** was weighed and not chosen: it would put the database behind
+the same TCP connection as control traffic (or need one more stream per pooled connection), add a hop
+and a failure mode to every query, and break the drivers' own reconnect and `LISTEN` behaviour, for
+the benefit of one fewer port. It can be revisited (follow-up).
+
+### 18.9 Browsers (optional HTTPS)
+
+Unchanged by default. With `cluster.tls.web_https`, each machine also serves its web UI on 8443 with a
+`web` certificate from the cluster CA (SANs: its addresses); `GET /api/cluster/ca.crt` (public) gives
+the CA certificate, and the Machines page shows its SHA-256 fingerprint to compare before installing
+it. The docs explain installing it on macOS (Keychain, "Always Trust"), Windows (Trusted Root store),
+Linux (`/usr/local/share/ca-certificates` + `update-ca-certificates`), iOS/Android (profile / user
+CA), and that browsers then accept every machine's HTTPS address; `Secure` cookies work without
+`MAKTABA_DEV`.
+
+### 18.10 Comparison of transports (why WebSockets over mTLS)
+
+| | `wss://` + mTLS, control channel + ticketed streams (chosen) | Raw TLS + a multiplexer (yamux) on one socket | QUIC |
+|---|---|---|---|
+| Port / firewall | the API's existing port (TLS sniffed) | a new port | UDP, often blocked |
+| Reuse | the Epic 31 hub, agent framing, Go and Python WebSocket libraries, proxies | new listener and dialer | new stack |
+| Head-of-line blocking | none between streams (one TCP connection each); control isolated | one TCP connection for everything: a busy stream delays control unless rate-limited | none |
+| Auth of each stream | mTLS + single-use ticket from a live control session | implicit in the session | implicit |
+| Cost | our framing on the control channel, one TLS handshake per stream (resumption keeps it cheap) | mature mux, but one shared fate | complexity, Windows/NAT quirks |
+
+### 18.11 Tests
+
+Unit: CA issue/renew/revoke, SAN and CN rules, expired and wrong-CA certificates refused, the TLS
+sniffer (TLS and plain on one port), ticket single use / expiry / wrong node / wrong purpose /
+reuse alert, `max_streams`, control framing (16 KiB cap, class order: a flood of `rpc` never delays
+a `control` frame beyond one message), the HTTP-over-control `RoundTripper` (bodies, cancel, large
+answer moved to a stream). Integration: a node and a home with Postgres in `verify-full`; kill the
+control channel with a TV stream open (stream survives 60 s, re-attaches; after 60 s closes and the
+front door fails over); revoke during streams (all closed at once); migrate a v2-only joined node
+without re-join; `prefer` → `require` switch; legacy paths refused in `require`. Load: 20 TV pulls
+plus a release download on one machine with control-channel p99 latency < 50 ms.

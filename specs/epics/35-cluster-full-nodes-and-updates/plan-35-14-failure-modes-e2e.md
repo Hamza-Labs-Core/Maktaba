@@ -38,9 +38,9 @@
 4. Rollout failure tests in `clustertest` (offline, platform hold, home lost mid-apply).
 5. VM power-loss harness on Linux (Lima), then the macOS variant (Tart/UTM if a runner allows; else
    `kill -9` only, recorded in the runbook).
-6. Nightly three-OS E2E: build v0.0.1-e2e/v0.0.2-e2e, install home and nodes, join, update, assert.
-   Open point: GitHub-hosted runners cannot multicast to each other; the job uses `--home URL` joins
-   over a tailnet, or runs on the owner's lab machines as self-hosted runners.
+6. Per-OS E2E in CI: build v0.0.1-e2e/v0.0.2-e2e, update a single-machine home on each OS, assert.
+   The three-OS cluster E2E (home and nodes joined, rollout) runs later on a self-hosted lab
+   (follow-up, owner decision 2026-10-19); CI keeps the per-OS tests and is not gated on it.
 7. Triage: each failure fixed or listed in the runbook's known issues.
 
 ## 3. Tests
@@ -50,6 +50,6 @@ fails when a step is added without a chaos row).
 
 ## 4. Rollout
 
-Phase E. The unit and integration parts run on every PR from phase B on; the nightly E2E becomes a
-required check for release tags (`release.yml` refuses to publish when the last nightly on the tagged
-commit failed).
+Phase E. The unit and integration parts run on every PR from phase B on; the per-OS E2E runs
+nightly and on release tags; the three-OS cluster E2E is a follow-up on a self-hosted lab and does not
+gate releases.
