@@ -29,14 +29,18 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Iterator, MutableMapping
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator, Mapping, MutableMapping
+from contextlib import contextmanager, suppress
 from typing import Any
 
 import structlog
 
 __all__ = [
     "DEFAULT_REDACTED_FIELDS",
+    "LEVEL_NUMBERS",
+    "add_sink",
+    "remove_sink",
+    "set_sink_level",
     "MAX_MSG_BYTES",
     "REDACTED_VALUE",
     "TRUNCATION_SUFFIX",
@@ -121,6 +125,7 @@ def init(
         truncate_msg,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
+        _sinks_processor,
     ]
 
     # Ring sink for the diagnostics export. Installed unless explicitly
@@ -145,9 +150,11 @@ def init(
             processors.append(make_ring_processor(ring))
         processors.append(structlog.dev.ConsoleRenderer())
 
+    global _console_level
+    _console_level = level
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(level),
+        wrapper_class=structlog.make_filtering_bound_logger(min(level, _sink_level)),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
         cache_logger_on_first_use=False,
@@ -174,7 +181,11 @@ def set_level(level: int) -> None:
     pinned at configure() time. We rebuild the wrapper class here to
     keep the operator UX consistent with the Go logger's ``SetLevel``.
     """
-    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(level))
+    global _console_level
+    _console_level = level
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(min(level, _sink_level))
+    )
 
 
 @contextmanager
@@ -271,4 +282,67 @@ def _rename_event_to_msg(
     """
     if "event" in event_dict and "msg" not in event_dict:
         event_dict["msg"] = event_dict.pop("event")
+    return event_dict
+
+
+# --- sinks (the cluster agent's log shipper, design-agent.md section 3) --------------
+
+#: level name -> number, for the sinks' gate and the console gate below
+LEVEL_NUMBERS: dict[str, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warn": logging.WARNING,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "exception": logging.ERROR,
+    "critical": logging.CRITICAL,
+    "fatal": logging.CRITICAL,
+}
+
+LogSink = Callable[[Mapping[str, Any]], None]
+_SINKS: list[LogSink] = []
+_console_level = logging.INFO
+#: the lowest level any sink asked for (records below the console level still reach
+#: the sinks, then stop before the ring and the console)
+_sink_level = logging.INFO
+
+
+def add_sink(sink: LogSink) -> None:
+    """Receive every record (already redacted and truncated) before it is rendered.
+
+    A sink runs on the logging thread and must be cheap and never raise (it is guarded:
+    an exception is swallowed). It must not log itself."""
+    if sink not in _SINKS:
+        _SINKS.append(sink)
+
+
+def remove_sink(sink: LogSink) -> None:
+    if sink in _SINKS:
+        _SINKS.remove(sink)
+
+
+def set_sink_level(level: int) -> None:
+    """Let records down to ``level`` through to the sinks (the console keeps its own)."""
+    global _sink_level
+    if level == _sink_level:
+        return
+    _sink_level = level
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(min(_console_level, _sink_level))
+    )
+
+
+def _sinks_processor(
+    _logger: Any,
+    _name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    if _SINKS:
+        for sink in tuple(_SINKS):
+            with suppress(Exception):  # a sink never breaks logging
+                sink(event_dict)
+    if _sink_level < _console_level:
+        number = LEVEL_NUMBERS.get(str(event_dict.get("level", "info")).lower(), logging.INFO)
+        if number < _console_level:
+            raise structlog.DropEvent
     return event_dict

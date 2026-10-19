@@ -40,6 +40,7 @@ Linux — the systemd unit.
 | `homebrew/maktaba.rb` | Homebrew formula **template** (`__VERSION__` / `__SHA256_*__` filled at release) |
 | `launchd/com.maktaba.*.plist` | macOS launchd units |
 | `install.sh` | curl-pipe-bash installer (detect OS/arch, download, verify, install) |
+| `node/` | worker-only install for a machine that joined a home (Epic 31): launchd agent, systemd units, Windows task/service, installers — see [`node/README.md`](node/README.md) |
 
 ## Install paths (.deb / .rpm)
 

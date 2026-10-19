@@ -25,6 +25,7 @@ require (
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect

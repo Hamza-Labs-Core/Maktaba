@@ -55,3 +55,19 @@ func TestQueryHashHidesContent(t *testing.T) {
 		t.Fatal("hash matches input — must be hashed")
 	}
 }
+
+// Streaming and upgrades reach the real writer through the middleware.
+func TestHTTPPassesFlushAndUnwrap(t *testing.T) {
+	var flushed, unwrapped bool
+	h := HTTP(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("x"))
+		flushed = http.NewResponseController(w).Flush() == nil
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		unwrapped = ok && u.Unwrap() != nil
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if !flushed || !rec.Flushed || !unwrapped {
+		t.Fatalf("flushed=%v recorder=%v unwrapped=%v", flushed, rec.Flushed, unwrapped)
+	}
+}

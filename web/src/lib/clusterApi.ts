@@ -1,6 +1,7 @@
 // Typed client for the multi-instance admin API (Epic 31, design §8):
 // this home and the machines that joined it or ask to.
 import { api, ApiError } from "./api";
+import type { QueuesSnapshot } from "./queueApi";
 
 export interface ClusterHome {
   instance_id: string;
@@ -115,4 +116,261 @@ export function approveFailure(e: unknown): ApproveFailure {
     return { kind: "other", message: e.problem.detail || e.problem.title };
   }
   return { kind: "other", message: e instanceof Error ? e.message : String(e) };
+}
+
+// ---------------------------------------------------------------- phase 2
+// The cluster channel (design-agent.md §3–§6): live processes, their
+// metrics and models, the files they write on the share, commands.
+
+export interface DiskMetric {
+  path: string;
+  total: number;
+  free: number;
+}
+
+export interface NvidiaGpu {
+  name: string;
+  util_pct: number;
+  mem_used: number;
+  mem_total: number;
+  temp_c: number;
+}
+
+export interface PipelineJob {
+  job_id: number | string;
+  stage: string;
+  subject: string;
+  since: string;
+  /** a fraction (0..1) or a percentage; see jobProgress */
+  progress: number | null;
+}
+
+/** Where a process saves its files (§4): on the share, or locally and why. */
+export interface FilesTarget {
+  dir: string;
+  on_share: boolean;
+  reason: string | null;
+}
+
+/** One metrics frame (§3). Any sub-object may be missing. */
+export interface ClusterMetrics {
+  ts?: string | number;
+  system?: {
+    cpu_pct?: number;
+    load1?: number;
+    mem_total?: number;
+    mem_available?: number;
+    swap_used?: number;
+    disks?: DiskMetric[];
+    net?: { rx_bps?: number; tx_bps?: number };
+  };
+  gpu?: {
+    nvidia?: NvidiaGpu[];
+    apple?: { active_gb?: number; cache_gb?: number; peak_gb?: number } | null;
+  };
+  process?: { rss?: number; cpu_pct?: number; threads?: number; uptime_s?: number };
+  pipeline?: {
+    role?: string;
+    stages?: string[];
+    stages_off?: Record<string, string>;
+    jobs?: PipelineJob[];
+    claims_per_min?: number;
+    stt?: { audio_sec_per_s?: number; files_in_flight?: number };
+  };
+  llm?: { in_flight?: number; tokens_per_s?: number };
+  files?: FilesTarget;
+}
+
+export interface LlmModel {
+  name: string;
+  size: number | null;
+  family: string | null;
+  quant: string | null;
+  loaded: boolean;
+}
+
+export interface LlmRuntime {
+  provider: string;
+  base_url: string;
+  models: LlmModel[];
+  max_parallel: number;
+}
+
+export interface ClusterProcess {
+  session: string;
+  kind: "home" | "node";
+  node_id: string | null;
+  node_name: string | null;
+  ip: string;
+  host: string;
+  worker_id: string;
+  pid: number;
+  connected_at: string;
+  metrics: ClusterMetrics | null;
+  llm: { runtimes: LlmRuntime[] } | null;
+}
+
+/** A job event (§3 `job`). */
+export interface JobEvent {
+  event: "claimed" | "progress" | "done" | "failed" | "skipped" | "paused" | "deferred";
+  job_id: number | string;
+  stage: string;
+  subject_kind: string;
+  subject_id: string;
+  title: string | null;
+  attempt: number;
+  started_at: string | null;
+  ts: string | number;
+  duration_ms: number | null;
+  progress: { step: string; done: number; total: number } | null;
+  outcome: { kind: string; retryable: boolean; error: string | null } | null;
+  output: Record<string, unknown> | null;
+}
+
+export interface LibraryStats {
+  library_id?: string | number;
+  name?: string;
+  videos?: number;
+  hours?: number;
+  bytes?: number;
+  transcribed_videos?: number;
+  transcribed_hours?: number;
+  series?: number;
+  seasons?: number;
+  tagged?: number;
+  indexed?: number;
+}
+
+export interface LibrarySample {
+  ts: string | number;
+  libraries: LibraryStats[];
+  totals: LibraryStats | null;
+}
+
+export type LogLevel = "debug" | "info" | "warning" | "error";
+export const LOG_LEVELS: LogLevel[] = ["debug", "info", "warning", "error"];
+
+export interface ClusterLogRecord {
+  ts: string | number;
+  level: string;
+  event: string;
+  logger?: string;
+  fields?: Record<string, unknown>;
+  worker_id?: string;
+}
+
+export interface FileProcess {
+  worker_id: string;
+  node_id: string | null;
+  name: string | null;
+  host: string;
+  os: string | null;
+  pid: number | null;
+  role: string | null;
+  started_at: string | null;
+}
+
+/** Days on record per kind (YYYY-MM-DD). */
+export interface FileDates {
+  logs?: string[];
+  metrics?: string[];
+  llm?: string[];
+  events?: string[];
+  jobs?: string[];
+  queues?: string[];
+  library?: string[];
+}
+
+export interface FileNode {
+  ip: string;
+  processes: FileProcess[];
+  /** the days the share holds */
+  dates: FileDates;
+  /** the days the home's long-term archive holds (design-agent.md §7.10); the
+   * history endpoints read them from the archive once the share has let them go */
+  archived_dates?: FileDates;
+}
+
+export interface ClusterFiles {
+  files: FilesTarget | null;
+  nodes: FileNode[];
+}
+
+export interface LogPage {
+  records: ClusterLogRecord[];
+  next_before: string | number | null;
+}
+
+export interface LogQuery {
+  date?: string;
+  level?: LogLevel;
+  q?: string;
+  limit?: number;
+  before?: string | number | null;
+}
+
+export type ProcessCommand = "drain" | "undrain" | "reload_stages" | "log_level" | "disconnect";
+
+export interface CommandResult {
+  ok: boolean;
+  detail: string | null;
+}
+
+function query(params: Record<string, string | number | null | undefined>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${q(k)}=${q(String(v))}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
+export const clusterChannelApi = {
+  files: () => api.get<ClusterFiles>("/api/cluster/files"),
+  logs: (ip: string, p: LogQuery = {}) =>
+    api.get<LogPage>(
+      `/api/cluster/files/${q(ip)}/logs${query({
+        date: p.date,
+        level: p.level,
+        q: p.q,
+        limit: p.limit,
+        before: p.before,
+      })}`
+    ),
+  metrics: (ip: string, p: { date?: string; from?: string; to?: string } = {}) =>
+    api.get<{ samples: { ts: string | number; worker_id: string; metrics: ClusterMetrics }[] }>(
+      `/api/cluster/files/${q(ip)}/metrics${query(p)}`
+    ),
+  jobs: (
+    ip: string,
+    p: { date?: string; stage?: string; event?: string; limit?: number; before?: string | number }
+  ) =>
+    api.get<{
+      records: (JobEvent & { worker_id?: string })[];
+      next_before: string | number | null;
+    }>(`/api/cluster/files/${q(ip)}/jobs${query(p)}`),
+  queues: (ip: string, p: { date?: string; from?: string; to?: string } = {}) =>
+    api.get<{ samples: { ts: string | number; snapshot: QueuesSnapshot }[] }>(
+      `/api/cluster/files/${q(ip)}/queues${query(p)}`
+    ),
+  library: (ip: string, p: { date?: string } = {}) =>
+    api.get<{ samples: LibrarySample[] }>(`/api/cluster/files/${q(ip)}/library${query(p)}`),
+  cmd: (session: string, name: ProcessCommand, args: Record<string, unknown> = {}) =>
+    api.post<CommandResult>(`/api/cluster/processes/${q(session)}/cmd`, { name, args }),
+};
+
+/** A timestamp (ISO string, epoch seconds or epoch ms) as epoch ms; NaN when unreadable. */
+export function tsMs(ts: string | number | null | undefined): number {
+  if (typeof ts === "number") return ts < 1e12 ? ts * 1000 : ts;
+  if (typeof ts === "string") {
+    const asNum = Number(ts);
+    if (ts.trim() !== "" && Number.isFinite(asNum)) return tsMs(asNum);
+    return Date.parse(ts);
+  }
+  return NaN;
+}
+
+/** Job progress as 0..100, accepting either a fraction or a percentage. */
+export function jobProgress(p: number | null | undefined): number | null {
+  if (typeof p !== "number" || !Number.isFinite(p)) return null;
+  const pct = p <= 1 ? p * 100 : p;
+  return Math.max(0, Math.min(100, pct));
 }

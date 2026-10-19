@@ -1,0 +1,38 @@
+# Maktaba node worker (Epic 31) — systemd USER template unit: extra transcription
+# worker <N> of a machine that joined a Maktaba home, beside maktaba-node.service.
+#
+#   systemctl --user enable --now maktaba-node@1.service maktaba-node@2.service
+#
+# Each instance claims only `transcribe` and names its speech-to-text metrics with
+# MAKTABA_STT_SLOT=stt-<N>, so a restarted worker continues its series. When any
+# instance is installed, the installer adds a drop-in to maktaba-node.service that
+# excludes `transcribe` from the main worker. Put per-instance settings in
+# ~/.config/maktaba/node@<N>.env (for example other MAKTABA_PIPELINE_STAGES).
+#
+# See maktaba-node.service for the ordering, restart and exit-code (77, 78) notes.
+[Unit]
+Description=Maktaba node worker %i (transcription)
+Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=MAKTABA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+Environment=MAKTABA_STT_SLOT=stt-%i
+Environment=MAKTABA_PIPELINE_STAGES=transcribe
+EnvironmentFile=-%h/.config/maktaba/node.env
+EnvironmentFile=-%h/.config/maktaba/node@%i.env
+UnsetEnvironment=MAKTABA_DATABASE_URL
+ExecStart=%h/.local/share/maktaba/node/bin/maktaba-pipeline run --node
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=77
+KillMode=mixed
+TimeoutStopSec=60
+SyslogIdentifier=maktaba-node@%i
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

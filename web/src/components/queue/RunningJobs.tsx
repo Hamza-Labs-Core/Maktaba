@@ -9,7 +9,14 @@ import { useFmt } from "./format";
 export const jobHref = (j: Pick<JobRef, "subject_kind" | "subject_id">) =>
   `/queue/items/${encodeURIComponent(j.subject_kind)}/${encodeURIComponent(j.subject_id)}`;
 
-export function RunningJobs({ jobs }: { jobs: JobRef[] }) {
+export function RunningJobs({
+  jobs,
+  machines,
+}: {
+  jobs: JobRef[];
+  /** job id -> the machine it runs on (live, from the cluster hub) */
+  machines?: ReadonlyMap<number, string | null>;
+}) {
   const { t, n } = useI18n();
   const fmt = useFmt();
   if (jobs.length === 0) return <p className="mkt-q-empty">{t("queue.running.none")}</p>;
@@ -24,6 +31,8 @@ export function RunningJobs({ jobs }: { jobs: JobRef[] }) {
             <div className="mkt-q-running__head">
               <Link to={jobHref(j)}>{bidiIsolate(j.subject_label)}</Link>
               <span className="mkt-q-muted">
+                {machines?.get(j.id) &&
+                  `${t("queue.card.on", { machine: bidiIsolate(machines.get(j.id) as string) })} · `}
                 {j.started_at && t("queue.running.for", { time: fmt.since(j.started_at) })}
                 {j.attempts > 1 &&
                   ` · ${t("queue.running.attempt", { n: n(j.attempts), max: n(j.max_attempts) })}`}

@@ -168,6 +168,8 @@ class StageSelector:
     storage: dict[str, Any] | None = None
     switches: dict[str, bool] = field(default_factory=dict)
     drain: bool = False
+    #: drained from the cluster channel (`cmd drain`, this process only, until `undrain`)
+    held: bool = False
     #: home-only stages a node may run all the same (see :func:`lifted_placements`)
     lifted: frozenset[str] = frozenset()
     served: tuple[str, ...] = ()
@@ -187,7 +189,7 @@ class StageSelector:
             role=self.role,
             storage=self.storage,
             switches=self.switches,
-            drain=self.drain,
+            drain=self.drain or self.held,
             detail=detail,
             lifted=self.lifted,
         )

@@ -73,6 +73,16 @@ type Handler struct {
 	PollRatePerMin int
 	NowFunc        func() time.Time
 	Logger         *slog.Logger
+	// ClusterPub is the base64 public half of the home's cluster key
+	// (design-agent.md §4.2), sealed into every approved machine's
+	// credentials as home.cluster_pub.
+	ClusterPub string
+	// OnRevoke is called after a machine is revoked or removed: the
+	// cluster channel closes its sessions at once (design-agent.md §2).
+	OnRevoke func(nodeID string)
+	// OnNodeChanged is called after an admin changes a machine's stage
+	// switches or drain: its processes reload their stages at once.
+	OnNodeChanged func(nodeID string)
 }
 
 // Mount wires the routes.
@@ -700,7 +710,7 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 	role := cluster.RoleName(n.ID)
 	payload, err := cluster.MarshalPayload(cluster.Payload{
 		DatabaseURL: cluster.DatabaseURL(role, password, host, h.pgPort(), dbName),
-		Home:        cluster.PayloadHome{APIURL: apiURL, InstanceID: id.InstanceID, Name: id.Name},
+		Home:        cluster.PayloadHome{APIURL: apiURL, ClusterPub: h.ClusterPub, InstanceID: id.InstanceID, Name: id.Name},
 		NodeID:      n.ID,
 		V:           cluster.PayloadVersion,
 	})
@@ -776,6 +786,9 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "revoke", err)
 		return
 	}
+	if h.OnRevoke != nil {
+		h.OnRevoke(n.ID)
+	}
 	h.writeNode(w, r, n.ID)
 }
 
@@ -837,6 +850,9 @@ func (h *Handler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "update machine", err)
 		return
 	}
+	if h.OnNodeChanged != nil && (req.Drain != nil || len(req.Stages) > 0) {
+		h.OnNodeChanged(n.ID)
+	}
 	h.writeNode(w, r, n.ID)
 }
 
@@ -859,6 +875,9 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.DeleteNode(ctx, n.ID); err != nil {
 		errInternal(w, r, "remove machine", err)
 		return
+	}
+	if h.OnRevoke != nil {
+		h.OnRevoke(n.ID)
 	}
 	if n.DBRole != nil && *n.DBRole != "" {
 		if err := h.Roles.Drop(ctx, *n.DBRole); err != nil {

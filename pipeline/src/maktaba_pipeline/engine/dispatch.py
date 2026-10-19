@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..cluster.agent import jobs as job_events
 from ..db.jobs import Job
 from ..db.jobs_state import StageError, mark_failed_or_retry
 from ..extensions.store import ExtensionState
@@ -81,11 +82,24 @@ async def dispatch_job(
                 ),
             )
             return
+        job_events.claimed(job)
         try:
             async with heartbeat_for(db, job_id=job.id):
                 await handler(db, job)
-        except Exception as exc:  # noqa: BLE001 - a legacy handler crash is a classified failure
+        except BaseException as exc:
+            if not isinstance(exc, Exception):  # cancelled: the worker is stopping
+                job_events.finished(
+                    job.id,
+                    "paused",
+                    outcome=job_events.failure("interrupted", "worker stopping", retryable=True),
+                )
+                raise
             _log.exception("legacy_handler_failed", job_id=job.id, stage=job.stage)
+            job_events.finished(
+                job.id,
+                "failed",
+                outcome=job_events.failure(type(exc).__name__, str(exc), retryable=True),
+            )
             await mark_failed_or_retry(
                 db,
                 job_id=job.id,
@@ -97,6 +111,9 @@ async def dispatch_job(
                 ),
             )
             return
+        # a handler that failed or paused its job reported it through the state hooks;
+        # whatever is still running here ended well
+        job_events.finished(job.id, "done")
         await after_legacy_done(db, job.id, runtime.graph)
         return
     ctx = await runtime.context_for(db, job)

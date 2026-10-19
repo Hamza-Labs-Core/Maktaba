@@ -94,6 +94,7 @@ func newFixture(t *testing.T) *fixture {
 		JoinRatePerMin: -1,
 		PollRatePerMin: -1,
 		NowFunc:        func() time.Time { return f.now },
+		ClusterPub:     "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8=",
 	}
 	f.h.Mount(f.r)
 	if _, err := f.h.Bootstrap(context.Background(), "home-mac"); err != nil {
@@ -396,8 +397,14 @@ func TestApproveSealsCredentials(t *testing.T) {
 	id, _ := f.store.Identity(context.Background())
 	wantURL := "postgres://maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7:" + pw + "@192.168.1.20:6543/maktaba?sslmode=prefer"
 	if p.V != 1 || p.NodeID != nodeID || p.DatabaseURL != wantURL ||
-		p.Home != (cluster.PayloadHome{APIURL: "http://192.168.1.20:8080", InstanceID: id.InstanceID, Name: "home-mac"}) {
+		p.Home != (cluster.PayloadHome{APIURL: "http://192.168.1.20:8080", ClusterPub: "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8=",
+			InstanceID: id.InstanceID, Name: "home-mac"}) {
 		t.Errorf("payload = %+v", p)
+	}
+	// the home part keeps its keys sorted, cluster_pub in its place
+	if i, j, k := strings.Index(string(plain), `"api_url"`), strings.Index(string(plain), `"cluster_pub"`),
+		strings.Index(string(plain), `"instance_id"`); i >= j || j >= k {
+		t.Errorf("key order: %s", plain)
 	}
 
 	// Once the node's worker registers, the envelope is gone.
@@ -645,4 +652,41 @@ func TestSQLiteHome(t *testing.T) {
 	}
 	problemOf(t, do("PUT", "/api/cluster/settings", `{"accept_joins":true}`, admin()), 409, "roles_unsupported")
 	problemOf(t, do("POST", "/api/cluster/join", joinBody(nodeID, nodePubB64), nil), 403, "joins_closed")
+}
+
+// ---------- the cluster channel hooks (design-agent.md §2, §5) ----------
+
+func TestChannelHooks(t *testing.T) {
+	f := newFixture(t)
+	var revoked, changed []string
+	f.h.OnRevoke = func(id string) { revoked = append(revoked, id) }
+	f.h.OnNodeChanged = func(id string) { changed = append(changed, id) }
+	f.openJoins()
+	jr := f.join()
+	decode(t, f.approve(nodeCode(t, jr.HomePubkey)), 200, nil)
+
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"name":"renamed"}`, admin()), 200, nil)
+	if len(changed) != 0 {
+		t.Fatalf("a rename reloaded stages: %v", changed)
+	}
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"drain":true}`, admin()), 200, nil)
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"stages":{"probe":false}}`, admin()), 200, nil)
+	if len(changed) != 2 || changed[0] != nodeID {
+		t.Fatalf("changed = %v", changed)
+	}
+	// a failed revoke does not fire
+	problemOf(t, f.do("POST", "/api/cluster/nodes/00000000-0000-4000-8000-000000000001/revoke", "", admin()), 404, "")
+	if len(revoked) != 0 {
+		t.Fatalf("revoked = %v", revoked)
+	}
+	decode(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()), 200, nil)
+	if len(revoked) != 1 || revoked[0] != nodeID {
+		t.Fatalf("revoked = %v", revoked)
+	}
+	if rec := f.do("DELETE", "/api/cluster/nodes/"+nodeID, "", admin()); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if len(revoked) != 2 {
+		t.Fatalf("remove did not close sessions: %v", revoked)
+	}
 }

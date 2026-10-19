@@ -155,7 +155,16 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
                 </span>
               )}
               <span className="mkt-q-logline__text">
-                {l.subject_label && <strong>{bidiIsolate(l.subject_label)}</strong>} {l.message}
+                {l.subject_label && <strong>{bidiIsolate(l.subject_label)}</strong>}{" "}
+                {l.kind?.startsWith("hubjob:") && (
+                  <>
+                    {t(`queue.jobEvent.${l.kind.slice(7)}`)}
+                    {typeof l.data?.machine === "string" &&
+                      ` · ${t("queue.card.on", { machine: bidiIsolate(l.data.machine) })}`}
+                    {l.message && " · "}
+                  </>
+                )}
+                {l.message}
               </span>
             </li>
           ))}
