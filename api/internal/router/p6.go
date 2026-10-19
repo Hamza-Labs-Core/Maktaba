@@ -292,11 +292,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	reportsHandler.Mount(r)
 
-	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
-	// clients (Epic 14). Resolvers reuse the recommendations + search
-	// DB logic so REST and GraphQL return identical data; other root
-	// fields still answer the honest schema-only 501.
-	gqlHandler := graphql.Handler{Resolvers: graphql.NewResolvers(d.DB)}
+	// GraphQL (Story 7.17): one schema over these REST handlers. Each
+	// root field runs its REST route in process through r, so access,
+	// rate limits, Idempotency-Key replay and audit are the REST ones;
+	// subscriptions read this hub. GET /graphql is the
+	// graphql-transport-ws upgrade.
+	gqlHandler := graphql.NewHandlerFromEnv(graphql.NewResolvers(r, d.DB, hub))
 	r.Method(http.MethodPost, "/graphql", gqlHandler)
+	r.Method(http.MethodGet, "/graphql", gqlHandler)
 	r.Method(http.MethodGet, "/graphql/schema", gqlHandler)
 }

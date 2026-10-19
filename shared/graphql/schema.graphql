@@ -1,8 +1,8 @@
 
 """
-Maktaba GraphQL schema (Story 7.17). Mirrors the REST routes 1:1 — the
-parity test compares the chi router table against this SDL and fails on
-diff.
+Maktaba GraphQL schema (Story 7.17). Every root field is answered by the
+REST handler that owns the same operation, so access rules, rate limits,
+Idempotency-Key replay and audit are the REST ones.
 """
 
 scalar Time
@@ -105,6 +105,7 @@ type PlaybackState {
 type Job {
   id: ID!
   videoId: ID
+  libraryId: ID
   stage: String!
   state: String!
   priority: Int!
@@ -113,6 +114,16 @@ type Job {
   cancelRequested: Boolean!
   createdAt: Time!
   notBefore: Time
+  error: String
+}
+
+"""
+One page of jobs, newest first. nextCursor is the shared paginate cursor;
+pass it back as after to read the next page (null on the last page).
+"""
+type JobConnection {
+  items: [Job!]!
+  nextCursor: String
 }
 
 type Worker {
@@ -128,8 +139,9 @@ type StreamingSession {
   mode: String!
   manifestUrl: String
   directUrl: String
-  expiresAt: Time!
+  expiresAt: Time
   openedAt: Time!
+  lastSeenAt: Time
   closedAt: Time
 }
 
@@ -149,7 +161,7 @@ type Video {
   state: String!
   detectedLanguage: String
   durationSec: Float
-  sizeBytes: Int!
+  sizeBytes: Float!
   contentHash: String!
   metadata: JSON
   createdAt: Time!
@@ -161,6 +173,15 @@ type Video {
   tags: [Tag!]!
   latestTranscript: Transcript
   playbackState: PlaybackState
+}
+
+"""
+One page of videos in the requested sort. nextCursor is the shared
+paginate cursor; pass it back as after (null on the last page).
+"""
+type VideoConnection {
+  items: [Video!]!
+  nextCursor: String
 }
 
 type SearchMatch {
@@ -224,6 +245,17 @@ type Device {
   lastSeenAt: Time!
 }
 
+"""
+Outcome of a delete. failedPaths lists the folders or files a purge could
+not remove (the row is deleted either way); warning carries the REST
+Maktaba-Warning header, e.g. file-not-found.
+"""
+type DeleteResult {
+  deleted: Boolean!
+  failedPaths: [String!]!
+  warning: String
+}
+
 # ---------- input types ----------
 
 input LibraryCreateInput {
@@ -271,14 +303,14 @@ type Query {
   libraries: [Library!]!
   library(id: ID!): Library
 
-  videos(library: ID, language: String, q: String, limit: Int): [Video!]!
+  videos(library: ID, language: String, q: String, sort: String, limit: Int, after: String): VideoConnection!
   video(id: ID!): Video
 
   search(input: SearchInput!): SearchResult!
   searchSuggest(q: String!): [String!]!
 
   job(id: ID!): Job
-  jobs(stage: String, state: String, limit: Int): [Job!]!
+  jobs(stage: String, state: String, limit: Int, after: String): JobConnection!
   queueStats: JSON!
 
   collections: [Collection!]!
@@ -300,11 +332,11 @@ type Query {
 type Mutation {
   createLibrary(input: LibraryCreateInput!): Library!
   patchLibrary(id: ID!, input: LibraryPatchInput!): Library!
-  deleteLibrary(id: ID!, purge: Boolean): Boolean!
+  deleteLibrary(id: ID!, purge: Boolean, confirm: String): DeleteResult!
   scanLibrary(id: ID!): String!
 
   patchVideo(id: ID!, input: VideoPatchInput!): Video!
-  deleteVideo(id: ID!, purge: Boolean): Boolean!
+  deleteVideo(id: ID!, purge: Boolean, confirm: String): DeleteResult!
   processVideo(id: ID!, stage: String, priority: Int): String!
   reprocessVideo(id: ID!, fromStage: String!): [String!]!
 

@@ -135,8 +135,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/videos/{id}/chapters", h.Chapters)
 }
 
-// List implements AC-1. Filters: library, language, type (content_type),
-// tag, q (full-text), sort, limit, cursor.
+// List implements AC-1. Filters: library, language, q, sort, limit and
+// cursor (`next` of the previous page).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -224,9 +224,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
-	query := "SELECT id, library_id, path, filename, title, description, state, " +
-		"detected_language, duration_sec, size_bytes, content_hash, metadata, " +
-		"created_at, updated_at FROM videos" + where +
+	query := "SELECT " + videoColumns + " FROM videos" + where +
 		" ORDER BY " + sortExpr(sort) + " DESC, id DESC LIMIT " + pidx(len(args))
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
@@ -288,41 +286,26 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	v.Playable = &playable
 	h.loadDisplay(r.Context(), &v)
 
-	// Tags
-	tagRows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.name FROM tags t
-		JOIN video_tags vt ON vt.tag_id = t.id
-		WHERE vt.video_id = $1 ORDER BY t.name
-	`, id)
-	if err == nil {
-		defer tagRows.Close()
-		for tagRows.Next() {
-			var name string
-			if scanErr := tagRows.Scan(&name); scanErr == nil {
-				v.Tags = append(v.Tags, name)
-			}
+	// Tags, the latest active transcript and this user's playback
+	// state come from the batch readers the GraphQL layer shares
+	// (batch.go). Each is best-effort, as before.
+	ids := []string{id}
+	if tags, err := TagsByVideo(r.Context(), h.DB, ids); err == nil {
+		for _, t := range tags[id] {
+			v.Tags = append(v.Tags, t.Name)
 		}
 	}
-
-	// Latest non-superseded transcript.
-	var transID string
-	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT id FROM transcripts WHERE video_id = $1 AND is_active = TRUE
-		ORDER BY created_at DESC LIMIT 1
-	`, id).Scan(&transID)
-	if err == nil {
-		v.LatestTrans = &transID
+	if trans, err := ActiveTranscripts(r.Context(), h.DB, ids); err == nil {
+		if t, ok := trans[id]; ok {
+			transID := t.ID
+			v.LatestTrans = &transID
+		}
 	}
-
-	// PlaybackState (per-user) — best-effort.
 	if p := principal.FromContext(r.Context()); p != nil && p.UserID != "" {
-		var ps PlaybackState
-		err := h.DB.QueryRowContext(r.Context(), `
-			SELECT position_sec, completed, updated_at FROM playback_state
-			WHERE user_id = $1 AND video_id = $2
-		`, p.UserID, id).Scan(&ps.PositionSec, &ps.Completed, &ps.UpdatedAt)
-		if err == nil {
-			v.PlaybackState = &ps
+		if states, err := PlaybackStates(r.Context(), h.DB, p.UserID, ids); err == nil {
+			if ps, ok := states[id]; ok {
+				v.PlaybackState = &ps
+			}
 		}
 	}
 
@@ -644,12 +627,7 @@ func fillDisplay(v *Video, auto, manual, src sql.NullString) {
 
 // loadVideo reads the row by id; sql.ErrNoRows surfaces unchanged.
 func (h *Handler) loadVideo(ctx context.Context, id string) (Video, error) {
-	row := h.DB.QueryRowContext(ctx, `
-		SELECT id, library_id, path, filename, title, description, state,
-		       detected_language, duration_sec, size_bytes, content_hash,
-		       metadata, created_at, updated_at
-		FROM videos WHERE id = $1
-	`, id)
+	row := h.DB.QueryRowContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id = $1`, id)
 	return scanVideoRow(row)
 }
 
@@ -674,10 +652,17 @@ func (h *Handler) canRead(ctx context.Context, libraryID string) *httperror.Erro
 	if p == nil {
 		return httperror.Forbidden("", "authentication required")
 	}
-	if p.AccessAllLibraries || p.HasLibrary(libraryID) {
+	if CanRead(p, libraryID) {
 		return nil
 	}
 	return httperror.Forbidden("", "")
+}
+
+// CanRead reports whether p may read videos of libraryID: the rule the
+// detail, segments, subtitles and chapters routes apply, shared with the
+// GraphQL layer for videos it reaches through another resource.
+func CanRead(p *principal.Principal, libraryID string) bool {
+	return p != nil && (p.AccessAllLibraries || p.HasLibrary(libraryID))
 }
 
 // canWrite: writes are admin-only (Story 10.13 v1).
