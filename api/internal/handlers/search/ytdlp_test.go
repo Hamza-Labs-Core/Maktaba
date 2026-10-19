@@ -44,13 +44,13 @@ func fakeYtDlp(mode string) int {
 	}
 	switch mode {
 	case "ok":
-		fmt.Print(fakeSearchJSON)
+		fmt.Fprint(os.Stdout, fakeSearchJSON)
 		return 0
 	case "slow":
 		time.Sleep(10 * time.Second)
 		return 0
 	case "garbage":
-		fmt.Print("not json")
+		fmt.Fprint(os.Stdout, "not json")
 		return 0
 	default:
 		fmt.Fprint(os.Stderr, "ERROR: boom")

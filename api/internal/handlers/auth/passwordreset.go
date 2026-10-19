@@ -198,16 +198,16 @@ const temporaryAlphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ234567
 // e.g. "k7Qm-xR2p-..." (about 92 bits).
 func temporaryPassword() (string, error) {
 	var b strings.Builder
-	max := big.NewInt(int64(len(temporaryAlphabet)))
+	n := big.NewInt(int64(len(temporaryAlphabet)))
 	for i := 0; i < 16; i++ {
 		if i > 0 && i%4 == 0 {
 			b.WriteByte('-')
 		}
-		n, err := rand.Int(rand.Reader, max)
+		k, err := rand.Int(rand.Reader, n)
 		if err != nil {
 			return "", err
 		}
-		b.WriteByte(temporaryAlphabet[n.Int64()])
+		b.WriteByte(temporaryAlphabet[k.Int64()])
 	}
 	return b.String(), nil
 }

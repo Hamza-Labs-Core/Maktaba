@@ -291,11 +291,11 @@ func publishedAt(e ytdlpEntry) string {
 	return ""
 }
 
-func snippet(s string, max int) string {
+func snippet(s string, limit int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= limit {
 		return s
 	}
-	return strings.TrimSpace(string(r[:max])) + "…"
+	return strings.TrimSpace(string(r[:limit])) + "…"
 }
