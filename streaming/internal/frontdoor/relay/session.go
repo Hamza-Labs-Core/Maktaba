@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // Origin names where a source's TS comes from (a host and its placement
@@ -175,6 +177,9 @@ func (s *Session) log() *slog.Logger {
 }
 
 func (s *Session) report(state, detail string) {
+	if state == "error" {
+		tvmetrics.PushErrors.Inc("relay_ffmpeg")
+	}
 	if s.Report != nil {
 		s.Report(state, Mask(detail, s.Creds.Key))
 	}

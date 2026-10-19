@@ -3,8 +3,10 @@
 //
 //	GET   /api/tv/info   (any signed-in user) where the TV streams live:
 //	                     the streaming base URL, the HDHomeRun address Plex
-//	                     wants, the XMLTV + M3U URLs, and the same-origin
-//	                     paths the web app plays through the web port.
+//	                     wants, the XMLTV + M3U URLs, the same-origin
+//	                     paths the web app plays through the web port, and
+//	                     remote{available, reason, via_relay, ...}: whether
+//	                     the caller is away from home (remote.go, Epic 32.9).
 //	GET   /api/tv/hdhr   (admin) the emulated HDHomeRun tuner (slot 0084
 //	                     hdhr_device), provisioned on first read.
 //	PATCH /api/tv/hdhr   (admin) {enabled?, friendly_name?, tuner_count?}
@@ -80,6 +82,9 @@ type Handler struct {
 	// there (ext.plex.token), not in extensions.settings. nil: only a token
 	// still in the settings (before the start-up move) counts.
 	Secrets secrets.Store
+	// Remote reports remote viewing for /api/tv/info (Epic 32 story 32.9);
+	// nil: not available on this server.
+	Remote func(ctx context.Context) RemoteAvailability
 }
 
 // Mount wires the routes.
@@ -264,6 +269,11 @@ type Info struct {
 	XMLTVPath       string `json:"xmltv_path"`
 	M3UPath         string `json:"m3u_path"`
 	HLSPathTemplate string `json:"hls_path_template"`
+	// Remote: whether this request came from away from home and whether
+	// remote viewing can serve it (story 32.9).
+	Remote RemoteInfo `json:"remote"`
+	// Cluster: the streaming hosts on air (Epic 32).
+	Cluster ClusterInfo `json:"cluster"`
 }
 
 // Device is the GET/PATCH /api/tv/hdhr body.
@@ -317,6 +327,8 @@ func (h *Handler) info(r *http.Request) Info {
 		XMLTVPath:       XMLTVPath,
 		M3UPath:         M3UPath,
 		HLSPathTemplate: HLSPathTemplate,
+		Remote:          h.remoteInfo(r),
+		Cluster:         ClusterInfo{HostsOnAir: h.hostsOnAir(r.Context())},
 	}
 }
 

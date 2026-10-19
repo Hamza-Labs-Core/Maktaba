@@ -47,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
@@ -409,10 +410,11 @@ func runServe() error {
 			homeSecrets := router.OpenHomeSecrets(context.Background(), appDB,
 				secrets.KeyPath(os.Getenv), logger)
 			var mountRemote func(r chi.Router)
+			var remoteCtl *tvremote.Controller
 			router.MountP6(r, router.P6Deps{
 				Secrets: homeSecrets,
 				OnQueues: func(q *queues.Handler) {
-					_, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
+					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger,
 					})
 				},
@@ -479,6 +481,7 @@ func runServe() error {
 				PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"),
 				DataDir:       statsDataDir,
 				Secrets:       homeSecrets,
+				RemoteInfo:    router.RemoteAvailability(remoteCtl),
 			})
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote

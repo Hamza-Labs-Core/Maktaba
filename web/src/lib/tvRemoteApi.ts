@@ -88,15 +88,58 @@ export interface RemotePush {
   detail?: string;
   relay_state?: string;
   viewers: number;
+  /** Cloudflare's live viewer count (null: hidden or unavailable, story 32.11 EC1). */
+  cf_viewers?: number | null;
+  channel_name?: string;
+  channel_number?: number;
+  ended_at?: string;
+}
+
+/** An open remote session (story 32.11 AC4): a user name and a device, never an address. */
+export interface RemoteSessionView {
+  id: string;
+  user: string;
+  device: string;
+  channel_id: string;
+  channel_name?: string;
+  channel_number?: number;
+  push_id?: string;
+  started_at: string;
+  last_beat_at: string;
+}
+
+/** A remote event from the API's log ring (story 32.11 AC4). */
+export interface RemoteEvent {
+  at: string;
+  level: string;
+  event: string;
+  message: string;
+  channel_id?: string;
+  push_id?: string;
+  host_id?: string;
+  code?: string;
+}
+
+export interface RemoteInput {
+  id: string;
+  cf_uid: string;
+  name: string;
+  state: string;
+  channel_id?: string;
+  assigned_at?: string;
+  error?: string;
+  error_at?: string;
 }
 
 export interface RemoteControllerStatus {
   ready: boolean;
   reason?: string;
   unavailable?: string;
-  inputs: { id: string; cf_uid: string; name: string; state: string; error?: string }[];
+  inputs: RemoteInput[];
   pushes: RemotePush[];
   sessions: number;
+  session_list?: RemoteSessionView[];
+  events?: RemoteEvent[];
   estimate: RemoteEstimate;
   storage: RemoteStorage;
   limits: {

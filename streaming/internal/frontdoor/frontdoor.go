@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // Handler is the front door.
@@ -153,7 +154,7 @@ func (h *Handler) servePlaylist(w http.ResponseWriter, r *http.Request) {
 			retry := resp.StatusCode == http.StatusConflict ||
 				(resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable)
 			if !retry || attempt == 1 {
-				copyResponse(w, resp, h.Bytes)
+				copyResponse(w, resp, h.count("hls", p.Host))
 				return
 			}
 			_ = resp.Body.Close()
@@ -207,7 +208,7 @@ func (h *Handler) serveSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "segment unavailable", http.StatusBadGateway)
 		return
 	}
-	copyResponse(w, resp, h.Bytes)
+	copyResponse(w, resp, h.count("hls", p.Host))
 }
 
 // forward sends a signed GET for path to the placement's host and accounts the
@@ -217,6 +218,7 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 	base := strings.TrimRight(host.BaseURL, "/")
 	if !ok || base == "" {
 		h.fail(p)
+		tvmetrics.Errors.Inc(p.Host, kindOf(path))
 		return nil, errors.New("frontdoor: host address unknown")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
@@ -231,6 +233,7 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 	if err != nil {
 		if ctx.Err() == nil {
 			h.fail(p)
+			tvmetrics.Errors.Inc(p.Host, kindOf(path))
 		}
 		return nil, err
 	}
@@ -239,6 +242,7 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 		h.Svc.Invalidate(p.Channel) // the node says it is not its channel (stale cache)
 	case resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable:
 		h.fail(p)
+		tvmetrics.Errors.Inc(p.Host, kindOf(path))
 	default:
 		h.Svc.Hosts.OK(p.Host)
 	}
@@ -248,6 +252,28 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 func (h *Handler) fail(p placement.Placement) {
 	h.Svc.Invalidate(p.Channel)
 	h.Svc.Hosts.Fail(p.Host)
+}
+
+// count is the byte counter of a forwarded answer: the Bytes hook and
+// maktaba_tv_frontdoor_bytes_total{kind,host} (story 32.11).
+func (h *Handler) count(kind, host string) func(int64) {
+	return func(n int64) {
+		if h.Bytes != nil {
+			h.Bytes(n)
+		}
+		tvmetrics.Bytes.Add(float64(n), kind, host)
+	}
+}
+
+// kindOf is the error kind of a forwarded path: playlist, segment or ts.
+func kindOf(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/live.ts"):
+		return "ts"
+	case strings.HasSuffix(path, ".m3u8"):
+		return "playlist"
+	}
+	return "segment"
 }
 
 // copyResponse passes the upstream answer through, flushing as it goes.

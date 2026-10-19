@@ -57,6 +57,9 @@ type Controller struct {
 	TuneWait time.Duration
 	// PollEvery is the long poll's step (default 250 ms).
 	PollEvery time.Duration
+	// EventSource returns raw JSON log lines for the admin page's remote
+	// events (tests); nil: this API's log ring.
+	EventSource func() []json.RawMessage
 
 	once  sync.Once
 	st    *store
@@ -321,7 +324,7 @@ func (c *Controller) step(ctx context.Context, cl *cf.Client, code string, s Set
 				return err
 			}
 			_ = c.st.setInput(ctx, in.ID, map[string]any{"state": InputBroadcasting, "last_video_uid": lc.VideoUID})
-			c.log().Info("tv_remote: push live", "push_id", p.ID, "channel_id", p.ChannelID,
+			c.log().Info("tv_remote: push live", "push_id", p.ID, "channel_id", p.ChannelID, "host_id", p.HostID,
 				"video_uid", lc.VideoUID, "after", now.Sub(p.StartedAt).Round(time.Second).String(), "event", "tv_push_live")
 			return nil
 		}
@@ -423,7 +426,7 @@ func (c *Controller) stop(ctx context.Context, p Push, reason string, now time.T
 		return err
 	}
 	c.st.notify(ctx, "tv_push", p.ID)
-	c.log().Info("tv_remote: push stopping", "push_id", p.ID, "channel_id", p.ChannelID, "reason", reason,
+	c.log().Info("tv_remote: push stopping", "push_id", p.ID, "channel_id", p.ChannelID, "host_id", p.HostID, "reason", reason,
 		"event", "tv_push_stop")
 	return nil
 }
@@ -602,8 +605,10 @@ func (c *Controller) retryOrFail(ctx context.Context, cl *cf.Client, s Settings,
 		np.ID, p.ID); err != nil {
 		return err
 	}
-	c.log().Warn("tv_remote: push retried", "push_id", p.ID, "next_push_id", np.ID, "why", why,
-		"event", "tv_push_error")
+	code := ErrCode(why, "push_retried")
+	rmetrics().pushError(code)
+	c.log().Warn("tv_remote: push retried", "push_id", p.ID, "next_push_id", np.ID, "channel_id", p.ChannelID,
+		"host_id", p.HostID, "why", why, "code", code, "event", "tv_push_error")
 	return nil
 }
 
@@ -625,8 +630,10 @@ func (c *Controller) fail(ctx context.Context, cl *cf.Client, p Push, why string
 			}
 		}
 	}
-	c.log().Error("tv_remote: push failed", "push_id", p.ID, "channel_id", p.ChannelID, "why", why,
-		"retried", retried, "event", "tv_push_error")
+	code := ErrCode(why, "push_failed")
+	rmetrics().pushError(code)
+	c.log().Error("tv_remote: push failed", "push_id", p.ID, "channel_id", p.ChannelID, "host_id", p.HostID,
+		"why", why, "code", code, "retried", retried, "event", "tv_push_error")
 	return c.failSessions(ctx, p, why, now)
 }
 

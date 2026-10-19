@@ -207,6 +207,25 @@ export function postBeacon(path: string, body: unknown): void {
   }
 }
 
+// deleteBeacon sends a fire-and-forget DELETE that survives page unload
+// (keepalive fetch with the CSRF header; navigator.sendBeacon can do neither
+// DELETE nor headers). Epic 32.9: a remote TV session ends on page unload.
+export function deleteBeacon(path: string): void {
+  const headers = new Headers();
+  const tok = csrfToken();
+  if (tok) headers.set(CSRF_HEADER, tok);
+  try {
+    void fetch(`${BASE}${path}`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // teardown: the server times the session out after 150 s anyway
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),

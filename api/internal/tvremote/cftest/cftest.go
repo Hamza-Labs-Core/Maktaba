@@ -45,11 +45,14 @@ type Server struct {
 	StorageMinutes float64
 	StorageLimit   float64
 
-	Inputs  map[string]*cf.LiveInput
-	Videos  map[string]*cf.Video
-	Keys    map[string]cf.SigningKey
-	Lives   map[string]cf.Lifecycle // input uid -> lifecycle
-	KeyPost int                     // POST /stream/keys calls
+	Inputs map[string]*cf.LiveInput
+	Videos map[string]*cf.Video
+	Keys   map[string]cf.SigningKey
+	Lives  map[string]cf.Lifecycle // input uid -> lifecycle
+	// Views is GET /{input}/views's liveViewers per input; an input missing
+	// here answers without the field (a hidden viewer count).
+	Views   map[string]int
+	KeyPost int // POST /stream/keys calls
 	// Requests are "METHOD path" of every call.
 	Requests []string
 
@@ -317,6 +320,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 				lc = cf.Lifecycle{IsInput: s.Inputs[parts[0]] != nil}
 			}
 			_ = json.NewEncoder(w).Encode(lc)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "views" {
+			if n, ok := s.Views[parts[0]]; ok {
+				_ = json.NewEncoder(w).Encode(map[string]int{"liveViewers": n})
+			} else {
+				_, _ = w.Write([]byte(`{}`))
+			}
 			return
 		}
 		if len(parts) == 3 && parts[1] == "manifest" {

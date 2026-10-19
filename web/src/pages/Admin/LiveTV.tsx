@@ -29,7 +29,9 @@ import {
   type TvInfo,
 } from "../../lib/channels";
 import { rulesApi, rulesError, type RuleSection } from "../../lib/rulesApi";
+import { docLink } from "./LiveTV/docs";
 import { OnAir } from "./LiveTV/OnAir";
+import { RemotePanel } from "./LiveTV/RemotePanel";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
 import { useTvCluster } from "./LiveTV/useTvCluster";
 import "../../styles/tvcluster.css";
@@ -113,6 +115,11 @@ function LiveTVInner() {
         <h1>{t("livetv.title")}</h1>
       </header>
       <p>{t("livetv.intro")}</p>
+      <p className="mkt-livetv__hint">
+        <a href={docLink("streamingHosts")} target="_blank" rel="noreferrer">
+          {t("livetv.docLink")}
+        </a>
+      </p>
 
       <Card className="mkt-livetv__card">
         <h2>{t("livetv.tuner")}</h2>
@@ -164,6 +171,8 @@ function LiveTVInner() {
 
       <ClusterSections />
 
+      <RemotePanel />
+
       <PlexPanel info={info} device={device} />
 
       <Card className="mkt-livetv__card">
@@ -185,6 +194,12 @@ function LiveTVInner() {
           <li>{t("livetv.plexStep5")}</li>
         </ol>
         <p className="mkt-livetv__hint">{t("livetv.otherPlayers")}</p>
+        <p className="mkt-livetv__hint">
+          {t("livetv.plexRemote")}{" "}
+          <a href={docLink("plex")} target="_blank" rel="noreferrer">
+            {t("livetv.plexRemoteLink")}
+          </a>
+        </p>
       </Card>
     </section>
   );
@@ -213,6 +228,19 @@ function ClusterSections() {
     <>
       {error && <p className="mkt-livetv__hint">{t("tv.cluster.staleView", { error })}</p>}
       <StreamingHosts view={view} onChanged={reload} />
+      <p className="mkt-livetv__hint" data-testid="cluster-help">
+        <a href={docLink("streamingHosts")} target="_blank" rel="noreferrer">
+          {t("tv.cluster.helpHosts")}
+        </a>
+        {" · "}
+        <a href={docLink("placement")} target="_blank" rel="noreferrer">
+          {t("tv.cluster.helpPlacement")}
+        </a>
+        {" · "}
+        <a href={docLink("failover")} target="_blank" rel="noreferrer">
+          {t("tv.cluster.helpFailover")}
+        </a>
+      </p>
       <OnAir view={view} onChanged={reload} />
     </>
   );

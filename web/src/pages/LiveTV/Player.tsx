@@ -1,36 +1,54 @@
-// Story 27.7 — Live channel player.
+// Story 27.7 — Live channel player; Epic 32.9 (LAN or remote) and Epic 34.6
+// (channel switching) through the shared TV player (@maktaba/tvplayer).
 //
 // The "watching TV" experience, distinct from the on-demand player. It
 // plays a channel's live HLS joined at the live edge and layers the
 // affordances people expect from a TV:
-//   • channel surfing — ch-up/ch-down (keys, on-screen, D-pad) + number
-//     entry with a commit timeout; rapid surfing is debounced so holding
-//     ch-up doesn't open N sessions (EC2)
-//   • a tune banner — number/logo/name + current program + next-up +
-//     progress, auto-hiding after ~5s, re-summoned with Info/OK (AC3)
-//   • a mini-guide overlay (the guide button) over the still-playing
-//     channel (AC4)
-//   • "watch from beginning" — hands the current program's video_id to
-//     the on-demand player at offset 0 (AC5)
-//   • PiP where supported (AC6)
+//   • switching like a TV: ▲/▼ (keys, PageUp/PageDown, CH+/CH−, on-screen,
+//     a vertical swipe on the picture), digits + Enter (or 1.5 s), L /
+//     Backspace for the last channel, I or a tap for the mini-guide, G for
+//     the full guide; rapid surfing moves the tuning card at once and tunes
+//     300 ms after the last press, one tune in flight
+//   • make before break: the channel playing keeps playing until the new
+//     one has buffered its first segment; the tuning card (logo, number,
+//     now, next) shows over the old picture from the press to the new first
+//     frame, so there is never a black screen
+//   • the neighbours' playlists (previous, next, last channel) are fetched
+//     ahead — only channels already on air, and never a segment
+//   • a tune banner, a mini-guide with now/next, "watch from beginning", PiP
+//   • deep links: /live/{number}; every switch rewrites the URL (replace
+//     while surfing, push once a channel has played 5 s)
 //
-// Deep link: /live/{number} tunes directly; an unknown/disabled number
-// resolves to an empty state (EC6).
-//
-// Playback is the channel's HLS playlist through the web port
-// (/stream/channel/{id}/index.m3u8, proxied to the streaming service).
-// Tuning is lazy — requesting the playlist starts the channel — so a
-// first request can fail while the encoder warms up; the player retries a
-// few times before showing the "can't play here" slate.
-//
-// Safari/iOS play the playlist natively; other browsers get hls.js,
-// lazy-loaded into its own chunk (useLiveHls), which also rejoins the live
-// edge after a mid-play stall and shows a "Reconnecting…" indicator.
+// Two paths (Epic 32.9, from GET /api/tv/info's remote.via_relay):
+//   LAN    the channel's HLS through the web port
+//          (/stream/channel/{id}/index.m3u8; requesting it starts the
+//          channel, so a first request may fail while the encoder warms up
+//          and is retried)
+//   remote away from home: POST /api/tv/remote/tune, a heartbeat every
+//          60 s that swaps the signed token without reloading the media,
+//          and the session ended on a switch, on stop and on unload
+// A LAN playback that fails three times while remote viewing is available
+// offers "Watch remotely"; a LAN failure re-reads /api/tv/info and moves to
+// the remote path when the device is now away (Wi-Fi → mobile data, EC1).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
+import {
+  MiniGuide,
+  NumberOverlay,
+  PREPARE_RETRIES,
+  PREPARE_RETRY_MS,
+  SwitchLog,
+  TuningCard,
+  useTvSwitcher,
+  type ResolveContext,
+  type Stream,
+  type SwitchError,
+  type TvAction,
+  type TvSwitcher,
+} from "@maktaba/tvplayer";
 import { useI18n } from "../../lib/i18n";
 import {
   channelLogo,
@@ -38,16 +56,50 @@ import {
   isAiring,
   liveStreamUrl,
   progressFraction,
+  tvApi,
   type Channel,
   type NowEntry,
+  type TvInfo,
 } from "../../lib/channels";
-import { useLiveHls } from "./useLiveHls";
+import { RemoteSession } from "../../lib/remoteTv";
 
 const BANNER_MS = 5000;
-const SURF_COMMIT_MS = 400; // debounce rapid surfing (EC2)
-const NUMBER_COMMIT_MS = 1500; // number-entry commit window (AC2)
-export const LIVE_RETRIES = 3; // lazy tuning: the first playlist request may race the encoder
-export const LIVE_RETRY_MS = 2000;
+/** A channel that played this long is a history entry of its own (push, not replace). */
+const SETTLED_PUSH_MS = 5000;
+export const LIVE_RETRIES = PREPARE_RETRIES; // lazy tuning: the first playlist request may race the encoder
+export const LIVE_RETRY_MS = PREPARE_RETRY_MS;
+/** LAN failures in a row before "Watch remotely" is offered (32.9 AC8). */
+export const LAN_FAILS_TO_OFFER = 3;
+
+type Path = "lan" | "remote";
+
+/** The words of a switch error (32.9 AC6, 34.6 EC1). */
+function errorKey(e: SwitchError | null, path: Path): string {
+  switch (e?.code) {
+    case "unsupported":
+      return "live.noHls";
+    case "budget_exhausted":
+      return "live.remote.budget";
+    case "user_streams_full":
+      return "live.remote.userFull";
+    case "remote_channels_full":
+      return "live.remote.channelsFull";
+    case "remote_storage_full":
+      return "live.remote.storageFull";
+    case "remote_unavailable":
+      return "live.remote.notSetUp";
+    case "remote_not_allowed":
+      return "live.remote.notAllowed";
+    case "remote_timeout":
+      return "live.remote.timeout";
+    case "no_such_channel":
+      return "live.notFound.title";
+  }
+  return path === "remote" ? "live.remote.blocked" : "live.unavailable";
+}
+
+/** Telemetry of the switches (34.6 AC9), kept in memory for diagnostics. */
+export const switchLog = new SwitchLog();
 
 export function Player() {
   const { number } = useParams();
@@ -56,26 +108,15 @@ export function Player() {
 
   const [lineup, setLineup] = useState<Channel[] | null>(null);
   const [nowEntries, setNowEntries] = useState<NowEntry[]>([]);
-  const [tuning, setTuning] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [info, setInfo] = useState<TvInfo | null>(null);
+  const [path, setPath] = useState<Path | null>(null);
+  const [lanFails, setLanFails] = useState(0);
   const [bannerVisible, setBannerVisible] = useState(true);
   const [miniGuide, setMiniGuide] = useState(false);
-  const [numberBuffer, setNumberBuffer] = useState("");
-  const [notFound, setNotFound] = useState(false);
   const [, tick] = useState(0);
-
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const attachVideo = useCallback((el: HTMLVideoElement | null) => {
-    videoRef.current = el;
-    setVideoEl(el);
-  }, []);
   const offsetRef = useRef(0);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const surfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const numberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settledAt = useRef<number>(0);
 
   const targetNumber = Number(number);
 
@@ -105,55 +146,125 @@ export function Player() {
     };
   }, [loadMeta]);
 
+  // LAN or remote (32.9 AC3): the server knows whether we came through the relay.
+  const readInfo = useCallback(
+    () =>
+      tvApi
+        .info()
+        .then((i) => {
+          setInfo(i);
+          return i;
+        })
+        .catch(() => null),
+    []
+  );
+  useEffect(() => {
+    void readInfo().then((i) => setPath(i?.remote?.via_relay ? "remote" : "lan"));
+  }, [readInfo]);
+
   const channel = useMemo(
     () => lineup?.find((c) => c.number === targetNumber) ?? null,
     [lineup, targetNumber]
   );
+  const nowById = useMemo(() => {
+    const m = new Map<string, NowEntry>();
+    for (const e of nowEntries) m.set(e.channel.id, e);
+    return m;
+  }, [nowEntries]);
+  const nowRef = useRef(nowById);
+  nowRef.current = nowById;
   const nowMs = Date.now() + offsetRef.current;
-  const entry = useMemo(
-    () => nowEntries.find((e) => e.channel.id === channel?.id) ?? null,
-    [nowEntries, channel]
+  const sw = useRef<TvSwitcher<Channel> | null>(null);
+
+  const resolve = useCallback(
+    async (c: Channel, ctx: ResolveContext): Promise<Stream> => {
+      if (path === "remote") {
+        return RemoteSession.open(c.id, ctx, { onEnded: () => sw.current?.retune() });
+      }
+      // a retry re-requests the playlist (the cache-buster defeats a cached error)
+      const base = liveStreamUrl(c.id);
+      return {
+        url: ctx.attempt > 0 ? `${base}?retry=${ctx.attempt}` : base,
+        path: "lan",
+        release() {},
+      };
+    },
+    [path]
   );
 
-  // Tune whenever the resolved channel changes: point the <video> at the
-  // channel's playlist and wait for the first frame.
+  const onSettled = useCallback(
+    (c: Channel, from: Channel | null) => {
+      setLanFails(0);
+      const now = Date.now();
+      const replace = !from || now - settledAt.current < SETTLED_PUSH_MS;
+      settledAt.current = now;
+      setBannerVisible(true);
+      if (c.number !== Number(number)) nav(`/live/${c.number}`, { replace });
+    },
+    [nav, number]
+  );
+
+  const onAction = useCallback(
+    (a: TvAction) => {
+      switch (a.type) {
+        case "guide":
+          nav("/guide");
+          return;
+        case "info":
+          setMiniGuide((v) => !v);
+          return;
+        case "enter":
+          setBannerVisible((v) => !v);
+          return;
+        case "escape":
+          setMiniGuide(false);
+          return;
+      }
+    },
+    [nav]
+  );
+
+  // a LAN stream that died: is this device away now (EC1)? else count it (AC8)
+  const onLanTrouble = useCallback(() => {
+    if (path !== "lan") return;
+    setLanFails((n) => n + 1);
+    void readInfo().then((i) => {
+      if (i?.remote?.via_relay && i.remote.available) setPath("remote");
+    });
+  }, [path, readInfo]);
+
+  const player = useTvSwitcher<Channel>({
+    channels: lineup,
+    channel: path ? channel : null,
+    resolve,
+    pathKey: path ?? "",
+    onSettled,
+    onAction,
+    telemetry: switchLog.sink,
+    isWarm: (c) => nowRef.current.get(c.id)?.on_air ?? false,
+    // LAN only: the playlists of neighbours already on air (asking for an idle
+    // channel's playlist would start its encoder); remote neighbours would each
+    // need a tune (a push and a stream slot), so none
+    prefetchUrls: (ns) =>
+      path === "lan"
+        ? ns.filter((c) => nowRef.current.get(c.id)?.on_air).map((c) => liveStreamUrl(c.id))
+        : [],
+    onFatal: () => {
+      onLanTrouble();
+      sw.current?.retune();
+    },
+  });
+  sw.current = player;
+  const { state } = player;
+
+  // a failed tune on the LAN counts towards "Watch remotely"
+  const lastErr = useRef<SwitchError | null>(null);
   useEffect(() => {
-    if (lineup === null) return; // still loading lineup
-    if (!channel) {
-      setNotFound(true);
-      return;
+    if (state.phase === "error" && state.error && state.error !== lastErr.current) {
+      lastErr.current = state.error;
+      onLanTrouble();
     }
-    setNotFound(false);
-    setTuning(true);
-    setFailed(false);
-    setAttempt(0);
-    setBannerVisible(true);
-    return () => {
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-    };
-  }, [channel, lineup]);
-
-  const onPlaying = useCallback(() => setTuning(false), []);
-  const onStreamFailed = useCallback(() => {
-    if (retryTimer.current) clearTimeout(retryTimer.current);
-    if (attempt + 1 >= LIVE_RETRIES) {
-      setTuning(false);
-      setFailed(true);
-      return;
-    }
-    retryTimer.current = setTimeout(() => setAttempt((a) => a + 1), LIVE_RETRY_MS);
-  }, [attempt]);
-
-  // A retry re-requests the playlist (the cache-buster defeats a cached
-  // error); attempt 0 is the plain URL.
-  const base = channel ? liveStreamUrl(channel.id) : "";
-  const src = base && attempt > 0 ? `${base}?retry=${attempt}` : base;
-  const { mode: hlsMode, reconnecting } = useLiveHls(videoEl, failed ? "" : src, onStreamFailed);
-  // With hls.js the element's own error events are MSE noise — hls.js
-  // reports (and recovers) them itself, escalating via onStreamFailed.
-  const onVideoError = useCallback(() => {
-    if (hlsMode !== "hls") onStreamFailed();
-  }, [hlsMode, onStreamFailed]);
+  }, [state.phase, state.error, onLanTrouble]);
 
   // Auto-hide the banner ~5s after it appears (suppressed while the
   // mini-guide is open to avoid stacked overlays, EC3).
@@ -165,51 +276,17 @@ export function Player() {
     return () => {
       if (bannerTimer.current) clearTimeout(bannerTimer.current);
     };
-  }, [bannerVisible, miniGuide, channel]);
+  }, [bannerVisible, miniGuide, state.current]);
 
-  // surf debounces to the channel the user lands on for >SURF_COMMIT_MS.
-  const surf = useCallback(
-    (dir: number) => {
-      if (!lineup || lineup.length === 0) return;
-      const idx = lineup.findIndex((c) => c.number === targetNumber);
-      const nextIdx = ((idx === -1 ? 0 : idx) + dir + lineup.length) % lineup.length;
-      const nextNum = lineup[nextIdx].number;
-      setBannerVisible(true);
-      if (surfTimer.current) clearTimeout(surfTimer.current);
-      surfTimer.current = setTimeout(() => nav(`/live/${nextNum}`), SURF_COMMIT_MS);
-    },
-    [lineup, targetNumber, nav]
-  );
-
-  const commitNumber = useCallback(
-    (buf: string) => {
-      const num = Number(buf);
-      const exists = lineup?.some((c) => c.number === num);
-      if (exists) nav(`/live/${num}`);
-      setNumberBuffer("");
-    },
-    [lineup, nav]
-  );
-
-  const onDigit = useCallback(
-    (d: string) => {
-      setNumberBuffer((prev) => {
-        const buf = (prev + d).slice(0, 4);
-        if (numberTimer.current) clearTimeout(numberTimer.current);
-        numberTimer.current = setTimeout(() => commitNumber(buf), NUMBER_COMMIT_MS);
-        return buf;
-      });
-    },
-    [commitNumber]
-  );
-
+  const playing = state.current;
+  const entry = playing ? (nowById.get(playing.id) ?? null) : null;
   const watchFromStart = useCallback(() => {
     const vid = entry?.current?.video_id;
     if (vid) nav(`/videos/${encodeURIComponent(vid)}/watch?t=0`);
   }, [entry, nav]);
 
   async function togglePip() {
-    const el = videoRef.current as
+    const el = player.activeVideo() as
       | (HTMLVideoElement & { requestPictureInPicture?: () => Promise<unknown> })
       | null;
     if (!el) return;
@@ -221,34 +298,15 @@ export function Player() {
     }
   }
 
-  // D-pad / remote map (AC8): up/down surf, g opens mini-guide, OK/Enter
-  // toggles banner, digits do number entry, b watches from beginning.
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const k = e.key;
-      if (k === "ArrowUp") {
-        e.preventDefault();
-        surf(1);
-      } else if (k === "ArrowDown") {
-        e.preventDefault();
-        surf(-1);
-      } else if (k === "g" || k === "G") {
-        e.preventDefault();
-        setMiniGuide((v) => !v);
-      } else if (k === "Enter" || k === " " || k === "i" || k === "I") {
-        e.preventDefault();
-        setBannerVisible((v) => !v);
-      } else if (/^[0-9]$/.test(k)) {
-        e.preventDefault();
-        onDigit(k);
-      } else if (k === "Escape") {
-        setMiniGuide(false);
-      }
-    },
-    [surf, onDigit]
-  );
+  const unmute = () => {
+    const el = player.activeVideo();
+    if (el) {
+      el.muted = false;
+      void el.play?.()?.catch?.(() => {});
+    }
+  };
 
-  if (notFound) {
+  if (lineup !== null && !channel && !playing) {
     return (
       <section className="mkt-page">
         <ErrorState
@@ -262,69 +320,115 @@ export function Player() {
   }
   if (lineup === null) return <p className="mkt-loading">{t("common.loading")}</p>;
 
+  const shown = state.target ?? playing ?? channel;
+  const shownEntry = shown ? (nowById.get(shown.id) ?? null) : null;
   const current = entry?.current ?? null;
   const next = entry?.next ?? null;
   const prog = current ? progressFraction(current, nowMs) : null;
-  const unsupported = hlsMode === "unsupported";
-  const degraded = failed || !src || unsupported;
-  const logo = channel ? channelLogo(channel) : null;
+  const switching = state.target !== null || (state.phase === "loading" && !playing);
+  const failedFirst = state.phase === "error" && !playing;
+  const unsupported = state.error?.code === "unsupported" || player.mode === "unsupported";
+  const degraded = failedFirst || unsupported;
+  const directLink = channel && path !== "remote" ? liveStreamUrl(channel.id) : null;
+  const offerRemote = path === "lan" && lanFails >= LAN_FAILS_TO_OFFER && !!info?.remote?.available;
+  const remoteMissing = path === "remote" && info?.remote && !info.remote.available;
+
+  let statusLine: string | null = null;
+  if (state.phase === "error") {
+    statusLine = t(errorKey(state.error, path ?? "lan"));
+    if (state.error?.code === "remote_unavailable" && state.error.message !== state.error.code) {
+      statusLine += ` (${state.error.message})`;
+    }
+  } else if (state.status === "remote_starting") statusLine = t("live.remote.starting");
+  else if (switching) statusLine = path === "remote" ? t("live.remote.tuning") : t("live.tuning");
+
+  const card = shown && (switching || state.phase === "error") && !degraded && (
+    <TuningCard
+      className="mkt-live__card"
+      channel={{ id: shown.id, number: shown.number, name: shown.name, logo: channelLogo(shown) }}
+      now={shownEntry?.current?.title ?? t("guide.noContent")}
+      next={shownEntry?.next ? `${t("guide.nextLabel")}: ${shownEntry.next.title}` : undefined}
+      status={statusLine}
+      error={state.phase === "error"}
+    />
+  );
+  const logo = playing ? channelLogo(playing) : null;
 
   return (
     <section
       className="mkt-live"
-      onKeyDown={onKeyDown}
+      onKeyDown={player.onKeyDown}
       tabIndex={0}
       aria-label={t("live.title")}
       data-testid="live-player"
+      data-path={path ?? ""}
     >
       <div className="mkt-live__stage">
-        {degraded ? (
+        {[0, 1].map((i) => (
+          <video
+            key={i}
+            ref={player.videoRef[i]}
+            data-testid={i === player.activeIndex ? "live-video" : "live-video-standby"}
+            className={
+              "mkt-live__video" + (i === player.activeIndex ? " is-active" : " is-standby")
+            }
+            hidden={degraded}
+            playsInline
+            controls={i === player.activeIndex}
+            aria-hidden={i === player.activeIndex ? undefined : true}
+            tabIndex={i === player.activeIndex ? undefined : -1}
+          />
+        ))}
+        {degraded && (
           <div className="mkt-live__slate" data-testid="live-slate">
-            <p>{unsupported ? t("live.noHls") : t("live.unavailable")}</p>
-            {src && (
+            <p>
+              {unsupported
+                ? t("live.noHls")
+                : remoteMissing
+                  ? `${t("live.remote.notSetUp")}${info?.remote?.reason ? ` (${info.remote.reason})` : ""}`
+                  : statusLine || t("live.unavailable")}
+            </p>
+            {directLink && (
               <p className="mkt-live__slate-hint">
                 {t("live.openElsewhere")}{" "}
-                <a href={base} data-testid="live-direct-link">
+                <a href={directLink} data-testid="live-direct-link">
                   {t("live.directLink")}
                 </a>
               </p>
             )}
+            {offerRemote && (
+              <Button onClick={() => setPath("remote")} data-testid="watch-remote">
+                {t("live.remote.watch")}
+              </Button>
+            )}
           </div>
-        ) : (
-          <video
-            ref={attachVideo}
-            data-testid="live-video"
-            className="mkt-live__video"
-            autoPlay
-            playsInline
-            controls
-            onPlaying={onPlaying}
-            onLoadedData={onPlaying}
-            onError={onVideoError}
-          />
         )}
+        {/* swipes and taps over the picture, above the native controls bar */}
+        <div className="mkt-live__touch" ref={player.gestureRef} aria-hidden="true" />
 
         <span className="mkt-live__badge" aria-label={t("live.liveLabel")}>
           ● {t("live.liveLabel")}
+          {path === "remote" && <span className="mkt-live__via"> · {t("live.remote.badge")}</span>}
         </span>
-        {tuning && <div className="mkt-live__tuning">{t("live.tuning")}</div>}
-        {reconnecting && !tuning && !degraded && (
+        {card}
+        {player.reconnecting && !degraded && (
           <div className="mkt-live__tuning" role="status" data-testid="live-reconnecting">
             {t("live.reconnecting")}
           </div>
         )}
-        {numberBuffer && (
-          <div className="mkt-live__numentry" data-testid="number-entry">
-            {numberBuffer}
-          </div>
+        {(player.numberBuffer || player.noChannel !== null) && (
+          <NumberOverlay
+            className="mkt-live__numentry"
+            text={player.numberBuffer || t("live.noChannel", { n: String(player.noChannel ?? "") })}
+          />
         )}
 
-        {bannerVisible && !miniGuide && channel && (
+        {bannerVisible && !miniGuide && !card && playing && (
           <div className="mkt-live__banner" data-testid="tune-banner">
             <div className="mkt-live__banner-id">
               {logo && <img className="mkt-live__logo" src={logo} alt="" />}
-              <span className="mkt-guide__channum">{channel.number}</span>
-              <strong>{channel.name}</strong>
+              <span className="mkt-guide__channum">{playing.number}</span>
+              <strong>{playing.name}</strong>
             </div>
             <div className="mkt-live__banner-prog">
               <strong>{current ? current.title : t("guide.noContent")}</strong>
@@ -339,39 +443,24 @@ export function Player() {
         )}
 
         {miniGuide && (
-          <div
+          <MiniGuide
             className="mkt-live__miniguide"
-            data-testid="mini-guide"
-            role="dialog"
-            aria-label={t("live.miniGuide")}
-          >
-            <header>
-              <strong>{t("live.miniGuide")}</strong>
-              <Button size="sm" variant="ghost" onClick={() => setMiniGuide(false)}>
-                {t("common.close")}
-              </Button>
-            </header>
-            <ul>
-              {nowEntries.map((e) => (
-                <li key={e.channel.id}>
-                  <button
-                    type="button"
-                    className={e.channel.id === channel?.id ? "is-current" : ""}
-                    onClick={() => {
-                      setMiniGuide(false);
-                      nav(`/live/${e.channel.number}`);
-                    }}
-                  >
-                    <span className="mkt-guide__channum">{e.channel.number}</span>
-                    <span className="mkt-guide__channame">{e.channel.name}</span>
-                    <span className="mkt-live__mg-prog">
-                      {e.current ? e.current.title : t("guide.noContent")}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+            title={t("live.miniGuide")}
+            closeLabel={t("common.close")}
+            nextLabel={t("guide.nextLabel")}
+            currentId={state.target?.id ?? playing?.id ?? null}
+            rows={nowEntries.map((e) => ({
+              channel: { id: e.channel.id, number: e.channel.number, name: e.channel.name },
+              now: e.current ? e.current.title : t("guide.noContent"),
+              next: e.next?.title,
+            }))}
+            onClose={() => setMiniGuide(false)}
+            onPick={(id) => {
+              setMiniGuide(false);
+              const c = lineup.find((x) => x.id === id);
+              if (c) player.tune(c);
+            }}
+          />
         )}
       </div>
 
@@ -379,12 +468,21 @@ export function Player() {
         <Button variant="ghost" onClick={() => nav("/guide")}>
           ← {t("live.openGuide")}
         </Button>
-        <Button variant="secondary" onClick={() => surf(1)} aria-label={t("live.channelUp")}>
+        <Button variant="secondary" onClick={() => player.surf(1)} aria-label={t("live.channelUp")}>
           ▲ {t("live.channelUp")}
         </Button>
-        <Button variant="secondary" onClick={() => surf(-1)} aria-label={t("live.channelDown")}>
+        <Button
+          variant="secondary"
+          onClick={() => player.surf(-1)}
+          aria-label={t("live.channelDown")}
+        >
           ▼ {t("live.channelDown")}
         </Button>
+        {state.last && (
+          <Button variant="secondary" onClick={player.last} aria-label={t("live.lastChannel")}>
+            ↺ {t("live.lastChannel")}
+          </Button>
+        )}
         <Button variant="secondary" onClick={() => setMiniGuide((v) => !v)}>
           {t("live.guideBtn")}
         </Button>
@@ -396,6 +494,16 @@ export function Player() {
         <Button variant="secondary" onClick={togglePip}>
           {t("player.pip")}
         </Button>
+        {player.mutedByPolicy && (
+          <Button variant="secondary" onClick={unmute} data-testid="live-unmute">
+            {t("live.tapForSound")}
+          </Button>
+        )}
+        {offerRemote && !degraded && (
+          <Button variant="secondary" onClick={() => setPath("remote")} data-testid="watch-remote">
+            {t("live.remote.watch")}
+          </Button>
+        )}
       </div>
     </section>
   );

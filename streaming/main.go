@@ -46,6 +46,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
@@ -148,6 +149,9 @@ func runServe() error {
 	// Recent-logs endpoint on the admin port (already firewalled in
 	// production), drained by the API's diagnostics-export proxy.
 	adminMux.Handle("/logs/recent", mlog.RecentHandler(mlog.Ring()))
+	// Epic 32 story 32.11: Maktaba TV cluster metrics (Prometheus text) on the
+	// admin port, next to /healthz.
+	adminMux.Handle("/metrics", tvmetrics.Handler())
 
 	// Real read stores. When DATABASE_URL is set the probe backend and
 	// transcript streamer are Postgres-backed (the production path);

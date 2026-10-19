@@ -85,3 +85,34 @@ produces and uploads the release build in Xcode (**Product ▸ Archive ▸
 Distribute App ▸ TestFlight**). When an Xcode target + signing material
 are provisioned, the `xcodebuild archive`/`exportArchive` steps can be
 added to the `tvos` job to automate it.
+
+## Live TV at home and away (Epic 32 story 32.9, phase C — not built yet)
+
+The web player (`web/src/pages/LiveTV/Player.tsx`, through the shared
+`@maktaba/tvplayer` module) already chooses between the LAN stream and
+Cloudflare. The native apps get live channels later and follow the same
+contract; nothing here is implemented yet:
+
+- **Which path.** The Epic 25.10 resolver picks the endpoint: a reachable
+  LAN endpoint → LAN HLS from the home (`/stream/channel/{id}/index.m3u8`,
+  signed in as today); the relay → the remote API. `GET /api/tv/info`'s
+  `remote.via_relay` says the same from the server side. **Stream
+  affinity:** a session stays on the path it started on until it ends.
+- **Remote.** `POST /api/tv/remote/tune {channel_id, device}` → `200
+  {session_id, hls_url, expires_at, refresh_after}` or `202 {retry_after}`
+  (tune again with the same body until live); `POST
+  /api/tv/remote/sessions/{id}/heartbeat` every 60 s; `DELETE
+  /api/tv/remote/sessions/{id}` on stop and channel change. Errors: 402
+  budget reached, 403 not allowed, 429 `user_streams_full` /
+  `remote_channels_full`, 503 not set up — the same words as the web player
+  (`live.remote.*`).
+- **Token refresh.** AVPlayer / ExoPlayer cannot rewrite segment URLs
+  cheaply, so at `refresh_after` the app takes the new `hls_url` from the
+  heartbeat (or tunes again) and swaps the item at the next segment
+  boundary (AVQueuePlayer / an ExoPlayer playlist), accepting a short
+  re-buffer.
+- **Guide.** The existing JSON APIs (`/api/channels`, `/api/channels/guide`,
+  `/api/channels/now`) through the relay; XMLTV/M3U are LAN only.
+- **Switching.** The same controls as the web player (Epic 34.6): CH+/CH−
+  and the D-pad, number keys + OK, last channel, a mini-guide with now/next;
+  keep the old channel playing until the new one can play.

@@ -238,6 +238,8 @@ export interface NowEntry {
   channel: Channel;
   current?: Program | null;
   next?: Program | null;
+  /** Encoding now on a streaming host (its playlist is cheap to prefetch). */
+  on_air?: boolean;
 }
 
 export interface NowResponse {
@@ -257,6 +259,19 @@ export interface TvInfo {
   xmltv_path: string;
   m3u_path: string;
   hls_path_template: string;
+  /** Epic 32.9: whether this request came from away from home and remote viewing can serve it. */
+  remote?: TvRemoteInfo;
+  /** Epic 32: the streaming hosts on air. */
+  cluster?: { hosts_on_air: number };
+}
+
+export interface TvRemoteInfo {
+  available: boolean;
+  reason: string | null;
+  /** The request came through the relay (or a public address): play from Cloudflare. */
+  via_relay: boolean;
+  max_streams: number;
+  token_ttl_minutes: number;
 }
 
 // The emulated HDHomeRun tuner Plex / Jellyfin / Emby add as a DVR.
@@ -420,7 +435,12 @@ async function guideFrom(
 async function nowFrom(
   req: Promise<{
     server_time?: string;
-    channels?: Array<{ channel: WireHeader; current?: WireBlock | null; next?: WireBlock | null }>;
+    channels?: Array<{
+      channel: WireHeader;
+      current?: WireBlock | null;
+      next?: WireBlock | null;
+      on_air?: boolean;
+    }>;
   }>
 ): Promise<NowResponse> {
   const r = await req;
@@ -430,6 +450,7 @@ async function nowFrom(
       channel: fromHeader(e.channel),
       current: e.current ? fromBlock(e.current, 0) : null,
       next: e.next ? fromBlock(e.next, 1) : null,
+      on_air: e.on_air === true,
     })),
   };
 }

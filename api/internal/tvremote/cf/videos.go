@@ -117,6 +117,32 @@ func (c *Client) Lifecycle(ctx context.Context, code, inputUID string) (Lifecycl
 	return lc, err
 }
 
+// LiveViewers is GET customer-<code>.cloudflarestream.com/{input}/views
+// (story 32.11): Cloudflare's live viewer count. ok is false when the count
+// is hidden or unavailable (the admin page shows "—").
+func (c *Client) LiveViewers(ctx context.Context, code, inputUID string) (n int, ok bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.CustomerBaseURL(code)+"/"+url.PathEscape(inputUID)+"/views", nil)
+	if err != nil {
+		return 0, false
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, false
+	}
+	var v struct {
+		LiveViewers *int `json:"liveViewers"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&v) != nil || v.LiveViewers == nil {
+		return 0, false
+	}
+	return *v.LiveViewers, true
+}
+
 // ManifestURL is the HLS manifest of a video or input id, or of a signed
 // token in its place (design §7.6).
 func (c *Client) ManifestURL(code, idOrToken string) string {

@@ -210,6 +210,9 @@ type Response struct {
 	Hosts    []Host   `json:"hosts"`
 	OnAir    []OnAir  `json:"on_air"`
 	Notices  []Notice `json:"notices"`
+	// Failovers24h: channels whose current placement came from a failover in
+	// the last 24 h (the System Health TV line, story 32.11 AC5).
+	Failovers24h int `json:"failovers_24h"`
 }
 
 // Get answers the whole page (one poll every 5 s).
@@ -368,7 +371,26 @@ func (h *Handler) read(ctx context.Context) (Response, error) {
 		return resp, err
 	}
 	resp.Hosts, resp.OnAir = hosts, onAir
+	resp.Failovers24h = h.failovers(ctx, 24*time.Hour)
 	return resp, nil
+}
+
+// failovers counts the placements made by a failover within d (0 on error).
+func (h *Handler) failovers(ctx context.Context, d time.Duration) int {
+	rows, err := h.DB.QueryContext(ctx, `SELECT placed_at FROM channel_placements WHERE reason = 'failover'`)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+	since := h.now().Add(-d)
+	n := 0
+	for rows.Next() {
+		var at dbTime
+		if rows.Scan(&at) == nil && at.ok && !at.t.Before(since) {
+			n++
+		}
+	}
+	return n
 }
 
 func (h *Handler) onAir(ctx context.Context, byID map[string]*Host, viewers map[string]Viewers) ([]OnAir, error) {
