@@ -526,6 +526,11 @@ func TestNoAutoRollbackAfterGrace(t *testing.T) {
 	if _, standby, _, _ := g.slots.Roles(); standby != "green" {
 		t.Fatalf("standby %q after the grace", standby)
 	}
+	// the standby was restarted on the live release (no supervisor here: the
+	// fake reports it)
+	g.green.mu.Lock()
+	g.green.release = "rel-2"
+	g.green.mu.Unlock()
 	g.slots.probeAll(ctx)
 	g.amber.crash()
 	g.slots.Failover(ctx, "amber", "test")
@@ -755,5 +760,105 @@ func TestStitcherClearedPlanGrowsAgain(t *testing.T) {
 	out := parseStitched(string(st.Render()))
 	if last := out[len(out)-1]; !last.pdt.Equal(t0.Add(16*time.Second)) || st.Reached() {
 		t.Fatalf("after the plan was cleared the playlist ends at %v (had %d entries)", last.pdt, n)
+	}
+}
+
+// Failover promotes only a standby on the live release: a standby still on an
+// older release (or refusing its release) is no failover target.
+func TestFailoverRefusesAStandbyOnAnotherRelease(t *testing.T) {
+	g := newSwapRig(t)
+	ctx := context.Background()
+	g.green.mu.Lock()
+	g.green.release = "rel-0"
+	g.green.mu.Unlock()
+	g.slots.probeAll(ctx)
+	g.blue.crash()
+	if g.slots.Failover(ctx, "blue", "test") {
+		t.Fatal("failed over to a standby on another release")
+	}
+	if live, _ := g.slots.Live(); live != "blue" {
+		t.Fatalf("live %s", live)
+	}
+	g.green.mu.Lock()
+	g.green.release = "rel-1"
+	g.green.mu.Unlock()
+	g.slots.check(ctx, "green")
+	if !g.slots.Failover(ctx, "blue", "test") {
+		t.Fatal("no failover to the standby on the live release")
+	}
+	if live, _ := g.slots.Live(); live != "green" {
+		t.Fatalf("live %s after the failover", live)
+	}
+}
+
+func TestStandbyAirsLive(t *testing.T) {
+	h := func(rel string, mismatch bool) *slotHealth {
+		return &slotHealth{ok: true, status: slot.Status{Release: rel, Mismatch: mismatch}}
+	}
+	for _, c := range []struct {
+		live, standby *slotHealth
+		want          bool
+	}{
+		{h("r1", false), h("r1", false), true},
+		{h("r1", false), h("r0", false), false},
+		{h("r1", false), h("", false), false},
+		{h("", false), h("", false), true},
+		{h("r1", false), h("r1", true), false},
+		{nil, h("", false), true},
+	} {
+		if got, _ := standbyAirsLive(c.live, c.standby); got != c.want {
+			t.Fatalf("live %+v standby %+v: %v", c.live, c.standby, got)
+		}
+	}
+}
+
+// A start always carries the binding: the standby is bound to the live slot's
+// release, any other start is unbound — never the supervisor's last binding
+// (a former staging slot would start its staged release).
+func TestSupervisorStartsCarryTheBinding(t *testing.T) {
+	g := newSwapRig(t)
+	var mu sync.Mutex
+	bodies := map[string]string{}
+	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = string(b)
+		mu.Unlock()
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(sup.Close)
+	g.slots.Supervisor = sup.URL
+	ctx := context.Background()
+	_, standby, _, _ := g.slots.Roles()
+	g.slots.supervise(ctx, standby, true)
+	g.slots.supervise(ctx, "amber", true)
+	mu.Lock()
+	defer mu.Unlock()
+	if b := bodies["/slots/"+standby+"/start"]; !strings.Contains(b, `"release_id":"rel-1"`) {
+		t.Fatalf("standby start body %q", b)
+	}
+	if b := bodies["/slots/amber/start"]; b != `{"release_id":""}` {
+		t.Fatalf("staging start body %q (want unbound)", b)
+	}
+}
+
+// A long-lived tuner connection is not cut after a few failovers spread over
+// time: MaxSplices counts within SpliceWindow.
+func TestSpliceLimitSlides(t *testing.T) {
+	var at []time.Time
+	t0 := time.Date(2026, 10, 19, 20, 0, 0, 0, time.UTC)
+	for i := 0; i < 20; i++ {
+		if !spliceAllowed(&at, t0.Add(time.Duration(i)*(SpliceWindow/2))) {
+			t.Fatalf("splice %d refused (one every half window)", i)
+		}
+	}
+	at = nil
+	for i := 0; i < MaxSplices; i++ {
+		if !spliceAllowed(&at, t0.Add(time.Duration(i)*time.Second)) {
+			t.Fatalf("splice %d refused", i)
+		}
+	}
+	if spliceAllowed(&at, t0.Add(10*time.Second)) {
+		t.Fatal("a source that keeps breaking is spliced forever")
 	}
 }

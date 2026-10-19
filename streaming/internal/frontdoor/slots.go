@@ -78,6 +78,10 @@ type Slots struct {
 	previous      string
 	previousUntil time.Time
 	boundAt       map[string]time.Time
+	// rolesDirty: the last write of the roles to tv_slots failed; Run writes
+	// them again until it succeeds (a crashed slot must not stay "live" there:
+	// on its restart readRole would make it live again)
+	rolesDirty bool
 	stage         *stagingRun
 	lastSample    time.Time
 }
@@ -268,6 +272,33 @@ func (s *Slots) persist(ctx context.Context) error {
 	if s.Pool == nil {
 		return nil
 	}
+	err := s.persistOnce(ctx)
+	s.mu.Lock()
+	// a newer epoch in the table is another front door's: nothing to retry
+	s.rolesDirty = err != nil && !errors.Is(err, errRolesStale)
+	s.mu.Unlock()
+	return err
+}
+
+// errRolesStale: tv_slots has a newer routing epoch than this front door.
+var errRolesStale = errors.New("frontdoor: tv_slots has a newer routing epoch")
+
+// persistDirty writes the roles again when the last write failed.
+func (s *Slots) persistDirty(ctx context.Context) {
+	s.mu.Lock()
+	dirty := s.rolesDirty
+	s.mu.Unlock()
+	if !dirty {
+		return
+	}
+	if err := s.persist(ctx); err != nil {
+		s.log().Warn("tv: writing the slot roles failed again", "err", err.Error(), "event", "tv_slot_roles_failed")
+		return
+	}
+	s.log().Info("tv: the slot roles were written", "event", "tv_slot_roles_written")
+}
+
+func (s *Slots) persistOnce(ctx context.Context) error {
 	live, standby, staging, epoch := s.Roles()
 	previous, _ := s.Previous()
 	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -285,7 +316,7 @@ func (s *Slots) persist(ctx context.Context) error {
 		return err
 	}
 	if cur > epoch {
-		return fmt.Errorf("frontdoor: routing epoch %d in tv_slots is newer than %d", cur, epoch)
+		return fmt.Errorf("%w: %d > %d", errRolesStale, cur, epoch)
 	}
 	if _, err := tx.Exec(qctx, `UPDATE tv_slots SET role = 'idle' WHERE host_id = $1 AND role = 'live'`, s.Host); err != nil {
 		return err
@@ -321,6 +352,7 @@ func (s *Slots) Run(ctx context.Context) {
 	defer t.Stop()
 	for {
 		s.probeAll(ctx)
+		s.persistDirty(ctx)
 		if time.Since(s.lastWarmAt()) >= 2*time.Second {
 			s.SyncWarm(ctx)
 		}
@@ -475,6 +507,13 @@ func (s *Slots) Failover(ctx context.Context, from, why string) bool {
 			"slot", from, "why", why, "event", "tv_slot_failover_unavailable")
 		return false
 	}
+	if ok, liveRel := standbyAirsLive(s.health[from], h); !ok {
+		s.mu.Unlock()
+		s.log().Warn("tv: the live slot is down and the hot standby does not run the live release; waiting for its restart",
+			"slot", from, "standby", to, "live_release", liveRel, "standby_release", h.status.Release,
+			"mismatch", h.status.Mismatch, "why", why, "event", "tv_slot_failover_refused")
+		return false
+	}
 	s.failing[from] = true
 	s.epoch++
 	epoch := s.epoch
@@ -573,9 +612,43 @@ func (s *Slots) StopStaging(ctx context.Context) error {
 	return s.persist(ctx)
 }
 
-// supervise asks the supervisor to start or stop an instance.
+// standbyAirsLive reports whether a standby may take over from the live slot:
+// it is not refusing its release (Mismatch) and, when the live slot was bound
+// to a release, it is bound to the same one — never an older (or staged)
+// release. An unbound live slot (no release yet) accepts an unbound standby.
+func standbyAirsLive(live, standby *slotHealth) (bool, string) {
+	if standby == nil || standby.status.Mismatch {
+		return false, ""
+	}
+	liveRel := ""
+	if live != nil {
+		liveRel = live.status.Release
+	}
+	if liveRel == "" {
+		return true, ""
+	}
+	return standby.status.Release == liveRel, liveRel
+}
+
+// supervise asks the supervisor to start or stop an instance. A start always
+// carries the instance's binding (the supervisor keeps an instance's last
+// binding otherwise: a former staging slot would start its staged release as
+// the standby): the standby is bound to the live slot's release, any other
+// start is unbound (it binds itself to the live release).
 func (s *Slots) supervise(ctx context.Context, name string, start bool) {
 	if s.Supervisor == "" {
+		return
+	}
+	if start {
+		s.mu.Lock()
+		rel := ""
+		if name == s.standby {
+			if h := s.health[s.live]; h != nil {
+				rel = h.status.Release
+			}
+		}
+		s.mu.Unlock()
+		s.superviseRelease(ctx, name, rel)
 		return
 	}
 	verb := "stop"

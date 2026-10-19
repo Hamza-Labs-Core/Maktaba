@@ -15,8 +15,14 @@ import (
 
 // Splicing (design §4.2, §6.2).
 const (
-	// MaxSplices: how many times one client connection may move to a new upstream.
+	// MaxSplices: how many times one client connection may move to a new
+	// upstream within SpliceWindow (a source that keeps breaking). A tuner or
+	// DVR connection lives for days and every failover moves it once, so the
+	// limit slides; a swap's or rollback's planned switch is spliced inside one
+	// source (slotTS) and never counts.
 	MaxSplices = 3
+	// SpliceWindow is the window MaxSplices counts in.
+	SpliceWindow = 10 * time.Minute
 	// spliceGiveUp: a client that got no bytes for this long is let go.
 	spliceGiveUp = 25 * time.Second
 	// tsWriteTimeout drops a TS client whose connection stalls.
@@ -70,7 +76,7 @@ func (c *clientWriter) Flush() {}
 // (satisfies hdhr.Streamer: the tuner lease stays on the home for the whole client
 // connection). When the source ends or fails while the client is still there it
 // resolves again — a dead host's channel is re-placed — and continues on the same
-// connection with the new host's TS, up to MaxSplices times (AC4 of 32.4).
+// connection with the new host's TS, up to MaxSplices times per SpliceWindow (AC4 of 32.4).
 func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer) error {
 	detach := h.Tracker.AttachTS(ch)
 	defer detach()
@@ -87,6 +93,7 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 		out = rw
 	}
 	sources := 0
+	var splicedAt []time.Time // the recent splices (SpliceWindow)
 	lastData := time.Now()
 	var lastErr error
 	for {
@@ -127,7 +134,7 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 				h.log().Info("tv: tuner connection spliced onto a new source", "channel_id", ch.String(),
 					"host_id", p.Host, "splice", sources-1, "event", "tv_splice")
 			}
-			if sources > MaxSplices {
+			if sources > 1 && !spliceAllowed(&splicedAt, time.Now()) {
 				return errors.New("frontdoor: splices exhausted")
 			}
 		}
@@ -147,6 +154,19 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 		case <-time.After(h.retryDelay()):
 		}
 	}
+}
+
+// spliceAllowed records a splice at now and reports whether the connection is
+// still within MaxSplices splices in the last SpliceWindow.
+func spliceAllowed(at *[]time.Time, now time.Time) bool {
+	kept := (*at)[:0]
+	for _, t := range *at {
+		if now.Sub(t) < SpliceWindow {
+			kept = append(kept, t)
+		}
+	}
+	*at = append(kept, now)
+	return len(*at) <= MaxSplices
 }
 
 func (h *Handler) retryDelay() time.Duration {

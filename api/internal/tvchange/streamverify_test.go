@@ -218,6 +218,11 @@ func TestStreamVerificationSoaksToReady(t *testing.T) {
 // A check failing on two samples in a row fails the change with the reasons; the
 // staging slot is then stopped.
 func TestStreamVerificationFailsAndStops(t *testing.T) {
+	if testing.Short() {
+		// three controller ticks over one or two backends: ~1.7 s under -race,
+		// over the unit tier's per-test cap; the integration tier runs it
+		t.Skip("integration tier (slow: three ticks per backend)")
+	}
 	for _, be := range tvchangetest.Backends(t) {
 		t.Run(be.Name, func(t *testing.T) {
 			w := newSVWorld(t, be.DB)
