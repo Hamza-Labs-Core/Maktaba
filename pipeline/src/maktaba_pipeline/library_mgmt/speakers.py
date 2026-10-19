@@ -43,8 +43,8 @@ __all__ = [
 ]
 
 #: AC-1 — voices farther than this distance from any candidate are
-#: treated as unknown. Library-tunable via ``settings.speaker_match_threshold``
-#: (Story 9.1).
+#: treated as unknown. Not a library setting yet: no stage diarizes or matches
+#: voiceprints, so a per-library threshold would have nothing to tune.
 DEFAULT_MATCH_THRESHOLD: float = 0.35
 
 #: A 512-dim float32 voiceprint as a list of floats. The DB shape is

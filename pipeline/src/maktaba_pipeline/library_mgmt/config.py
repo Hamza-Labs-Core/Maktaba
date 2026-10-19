@@ -57,10 +57,16 @@ ALLOWED_STT_BACKENDS: frozenset[str] = frozenset({"whisper-mlx", "faster-whisper
 #: a round-trip but is flagged as a warning on PATCH so the UI can
 #: surface a "you typed an unknown key" hint (Story 9.1 AC-1 forward-
 #: compat clause).
+#:
+#: Not settings (removed: they had no effect and cannot have one yet):
+#: ``multi_audio`` (the transcript is one active per video, read so by subtitles,
+#: search and chapters: transcribing every track needs per-track transcripts through
+#: every one of them), ``speaker_match_threshold`` (no stage diarizes or matches
+#: voiceprints) and ``stt.max_usd_per_month`` (the transcriber is local Whisper: no
+#: paid backend runs, so there is no spend to cap). A stored one is an unknown key.
 RECOGNISED_KEYS: frozenset[str] = frozenset(
     {
         "language",
-        "multi_audio",
         "stt",
         "embedding",
         "diarize",
@@ -69,8 +75,7 @@ RECOGNISED_KEYS: frozenset[str] = frozenset(
         "default_subtitle_lang",
         "ignore_globs",
         "sweep_interval_sec",
-        # Story 9.10/9.11 effective-config keys (defaults below).
-        "speaker_match_threshold",
+        # Story 9.10 effective-config key (default below).
         "topic_clusters",
     }
 )
@@ -83,7 +88,7 @@ _ISO639_1_RE = re.compile(r"^[a-z]{2}$")
 #: Recognised keys per nested object. Used to validate sub-blobs like
 #: ``stt`` and ``embedding``.
 _NESTED_KEYS: dict[str, frozenset[str]] = {
-    "stt": frozenset({"backend", "model", "profile", "initial_prompt", "max_usd_per_month"}),
+    "stt": frozenset({"backend", "model", "profile", "initial_prompt"}),
     "embedding": frozenset({"model", "device"}),
 }
 
@@ -92,7 +97,6 @@ _NESTED_KEYS: dict[str, frozenset[str]] = {
 #: well-known fallbacks; absent for keys the user must set explicitly.
 EFFECTIVE_DEFAULTS: dict[str, Any] = {
     "language": "auto",
-    "multi_audio": False,
     "diarize": False,
     "chapter_inference": True,
     "auto_tag_topics": True,
@@ -102,7 +106,6 @@ EFFECTIVE_DEFAULTS: dict[str, Any] = {
     # 0: no periodic sweep (scans run when asked for); the reconciler sweeps a
     # library that sets it (architecture §3.1 suggests 6 h)
     "sweep_interval_sec": 0,
-    "speaker_match_threshold": 0.35,
     "topic_clusters": None,  # auto: sqrt(N)/2 capped at 32
     "stt": {"backend": "whisper-mlx", "model": "large-v3", "profile": "default"},
     "embedding": {"model": "intfloat/multilingual-e5-large", "device": "auto"},
@@ -175,7 +178,7 @@ def _validate_key(key: str, value: Any, result: ValidationResult) -> None:
             result.errors.append(ValidationError(key, "must be an ISO-639-1 code"))
         return
 
-    if key in ("multi_audio", "diarize", "chapter_inference", "auto_tag_topics"):
+    if key in ("diarize", "chapter_inference", "auto_tag_topics"):
         if not isinstance(value, bool):
             result.errors.append(ValidationError(key, "must be boolean"))
         return
@@ -190,14 +193,6 @@ def _validate_key(key: str, value: Any, result: ValidationResult) -> None:
     if key == "ignore_globs":
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             result.errors.append(ValidationError(key, "must be a list of strings"))
-        return
-
-    if key == "speaker_match_threshold":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            result.errors.append(ValidationError(key, "must be a number"))
-            return
-        if not 0.0 <= float(value) <= 1.0:
-            result.errors.append(ValidationError(key, "must be in [0, 1]"))
         return
 
     if key == "topic_clusters":
@@ -247,10 +242,6 @@ def _validate_stt_field(name: str, value: Any, result: ValidationResult) -> None
     elif name in ("model", "profile", "initial_prompt"):
         if not isinstance(value, str):
             result.errors.append(ValidationError(f"stt/{name}", "must be a string"))
-    elif name == "max_usd_per_month" and (
-        isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0
-    ):
-        result.errors.append(ValidationError(f"stt/{name}", "must be a non-negative number"))
 
 
 def _validate_embedding_field(name: str, value: Any, result: ValidationResult) -> None:
