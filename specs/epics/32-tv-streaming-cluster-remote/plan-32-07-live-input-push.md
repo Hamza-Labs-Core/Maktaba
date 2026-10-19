@@ -10,7 +10,7 @@
 |---|---|---|
 | D1 | A **pool** of inputs (≤ `max_channels`), not one input per channel. | Bounded secrets and Cloudflare objects; the pool size *is* the concurrency limit; per-channel stable URLs are not needed because tokens are per broadcast. |
 | D2 | Recording `automatic` + delete each recording at the end of its broadcast. | HLS playback of a live input requires `automatic`; deleting keeps stored minutes ≈ running broadcasts. |
-| D3 | The pusher is a **Hub subscriber + ffmpeg `-c copy`**, not a third output of the muxer. | No second encode; a failing push never disturbs the muxer, HLS or tuners; restartable on its own. |
+| D3 | The push is a **push relay in the home's front door + ffmpeg `-c copy`** (Epic 33 story 33.8), not a pusher on the encoding host nor a third output of the muxer. One continuous RTMPS/SRT session per channel; the relay switches its source on swaps and failovers. | No second encode; a failing push never disturbs the muxer, HLS or tuners; restartable on its own. |
 | D4 | RTMPS default, SRT optional. | RTMPS works with every ffmpeg build with TLS and is Cloudflare's recommendation for LL-HLS; SRT needs libsrt (checked per host). |
 | D5 | Polling is the source of truth; webhooks only trigger a reconcile. | The home has no public URL unless the relay is set up; polling works everywhere. |
 | D6 | `timeoutSeconds: 30` on inputs. | Failover and short uplink drops continue the same broadcast (same video id, same tokens). |
@@ -25,14 +25,14 @@
 - `api/internal/tvremote/reconcile.go` — loop every 2 s + on NOTIFY (`tv_push`, `tv_placement`), advisory lock `tv_remote`
 - `api/internal/tvremote/cleanup.go` — recording deletion, startup sweep
 - `api/internal/handlers/tvremote/webhook.go` — `POST /api/tv/remote/webhook` (secret header), allowlisted
-- `streaming/internal/channel/pusher.go` — Hub subscriber → ffmpeg; supervision; `tv_push_report`
-- `streaming/internal/channel/pushctl.go` — on each host: watch `tv_remote_pushes` for pushes placed here (NOTIFY + 2 s poll), start/stop pushers, fetch credentials
+- `streaming/internal/frontdoor/relay/relay.go` — per pushed channel: source (local Hub or a node's signed TS through the splicer) → one ffmpeg; source switch at an IDR with continuous timestamps (Epic 33.8); supervision; `tv_push_report`
+- `streaming/internal/frontdoor/relay/ctl.go` — on the home: watch `tv_remote_pushes` (NOTIFY + 2 s poll), start/stop relays, fetch credentials
 - tests for each (`cftest` fake server from 32.6; fake ffmpeg runner from `fakeffmpeg_test.go`)
 
 **Modify**
 - `streaming/internal/channel/engine.go` — `Engine.Pushing(channel)`: a push holds `reg.attach`
 - `streaming/internal/placement` — `Need.Push` honoured (32.2 `Choose`)
-- `streaming/main.go` — start `pushctl` on every streaming host when remote is enabled
+- `streaming/main.go` — start the relay controller in the home's front door when remote or simulcast is enabled (never on nodes)
 - `api/internal/router` — mount webhook (public) and admin push stop
 
 ## 2. Migration 0121 (Postgres, abridged)
@@ -48,7 +48,7 @@ CREATE TABLE tv_remote_pushes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   input_id UUID NOT NULL REFERENCES tv_remote_inputs(id),
-  host_id UUID, generation BIGINT,
+  host_id TEXT, generation BIGINT,
   state TEXT NOT NULL CHECK (state IN ('requested','connecting','live','stopping','cleanup','done','failed')),
   video_uid TEXT, ingest TEXT NOT NULL CHECK (ingest IN ('rtmps','srt')),
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(), live_at TIMESTAMPTZ, ended_at TIMESTAMPTZ,
@@ -60,9 +60,9 @@ CREATE TABLE tv_remote_usage_daily (day DATE PRIMARY KEY, minutes_delivered NUME
   peak_recording_minutes NUMERIC NOT NULL DEFAULT 0, cost_usd NUMERIC NOT NULL DEFAULT 0, source TEXT);
 CREATE TABLE tv_push_secrets (push_id UUID PRIMARY KEY REFERENCES tv_remote_pushes(id) ON DELETE CASCADE,
   url TEXT NOT NULL, key TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL);
--- tv_push_credentials(push_id) SECURITY DEFINER: session_user = db role of the push's host
---   (cluster_nodes.db_role for host_id) or the home's own user; returns (url, key).
--- tv_push_report(push_id, state, detail) SECURITY DEFINER: same guard; only host-side states
+-- tv_push_credentials(push_id) SECURITY DEFINER: only the home's own user (the front door's
+--   push relay, Epic 33.8); returns (url, key). No node role can call it.
+-- tv_push_report(push_id, state, detail) SECURITY DEFINER: same guard; only relay-side states
 --   (connecting, live_seen, error, stopped).
 -- maktaba_worker: SELECT on tv_remote_pushes (no secret columns there), nothing on
 --   tv_push_secrets / tv_remote_sessions / tv_remote_usage_daily; EXECUTE on the two functions.
@@ -84,7 +84,7 @@ func (c *Controller) step(ctx context.Context, p Push) error {
       if c.sessions.Active(p) == 0 && c.idleFor(p) >= idleTimeout { return c.store.Stopping(p, "idle") }
       if c.age(p) >= maxPushHours && c.sessions.Active(p) > 0 { return c.rotate(p) }
       if pl := c.placement(p.Channel); pl.Host != p.HostID { c.store.FollowPlacement(p, pl) } // failover
-  case Stopping:    // host stops the pusher; then input disabled
+  case Stopping:    // the relay stops the push; then input disabled
       c.cf.SetEnabled(ctx, p.InputUID, false); return c.store.Cleanup(p)
   case Cleanup:     // wait ≤ 120 s for the video to leave live-inprogress; delete it
       return c.cleanupRecording(ctx, p)
@@ -93,7 +93,7 @@ func (c *Controller) step(ctx context.Context, p Push) error {
 }
 ```
 
-## 4. Pusher (host side)
+## 4. Push relay (home front door; Epic 33.8)
 
 ```go
 args := []string{"-hide_banner", "-nostats", "-loglevel", "warning",
@@ -105,14 +105,17 @@ case "srt":   args = append(args, "-f", "mpegts", creds.URL+"?streamid="+creds.S
 }
 ```
 
-Stdin is fed from `Station.Subscribe()`; the log line masks `creds.Key`; backoff 1 → 10 s; three
-Hub drops in 5 min → report `error: uplink too slow`.
+Stdin is fed by the relay from the routed source (the home's `Station.Subscribe()` or a node's
+signed `live.ts` through the splicer); a source change is a switch at an IDR with continuous
+timestamps, never an ffmpeg restart (Epic 33.8). The log line masks `creds.Key`; an ffmpeg crash
+restarts within 1 s on the same input; falling behind three times in 5 min → report
+`error: uplink too slow`.
 
 ## 5. Tests
 
 State machine with fake clock + fake Cloudflare (inputs, lifecycle with scripted `live`, videos,
 delete, errors `ERR_*`); one push per channel under concurrency (unique index); rotation; failover
-follow (placement moves → host changes, same input); startup sweep; pusher args and masking; the
+follow (placement moves → relay source switches, same session); startup sweep; relay args and masking; the
 Postgres guard on `tv_push_credentials`; migration up/down.
 
 ## 6. Rollout

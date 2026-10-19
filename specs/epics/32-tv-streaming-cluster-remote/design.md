@@ -31,8 +31,11 @@ request ─► front door (home streaming)
 
 ### 2.1 Identity
 
-`tv_stream_hosts.host_id` is the home's `instance_identity.instance_id` or the node's
-`cluster_nodes.id` (Epic 31). The home's streaming process creates its row at boot
+`streaming_hosts` (created by `feat/tv-core`, slot 0117; Epic 32 adds the columns it needs in
+0120 rather than a second hosts table) is keyed by `host_id` (TEXT): the home's
+`instance_identity.instance_id` or the node's `cluster_nodes.id` (Epic 31). Its `host` is the
+host name, `max_active` the capacity (§2.3), `active_channels` the count on air and
+`heartbeat_at` the last beat. The home's streaming process creates its row at boot
 (role `home`, `enabled = true`); a node's row is created by its first heartbeat (role `node`,
 `enabled = false` until the admin switches it on). A revoked or removed cluster node loses its
 host row (FK `ON DELETE CASCADE`; revoke sets `enabled = false` and the node's role can no longer
@@ -43,7 +46,7 @@ log in, so it stops beating).
 Every 5 s each streaming host calls
 
 ```sql
-tv_host_beat(host_id uuid, info jsonb) RETURNS jsonb
+tv_host_beat(host_id text, info jsonb) RETURNS jsonb
 -- info: {version, encoders:["videotoolbox","software"], capacity, active:[channel_id…],
 --        load:{cpu, gpu_enc, gpu_sessions, nvenc_max}, stream_base_url,
 --        can_push:{rtmps:true, srt:false}, can_live:true}
@@ -91,7 +94,7 @@ attempts (connect refused, 5xx from the node's `/internal/tv/health`, TLS/timeou
 ```sql
 channel_placements(
   channel_id     uuid primary key references channels(id) on delete cascade,
-  host_id        uuid not null references tv_stream_hosts(host_id),
+  host_id        text not null references streaming_hosts(host_id),
   generation     bigint not null,          -- cluster-wide sequence; fencing token
   state          text not null check (state in ('placing','live','moving','released')),
   reason         text not null,            -- first_request | failover | drain | move | pin | remote_push
@@ -130,7 +133,8 @@ query.
 
 ```
 candidates := online hosts with free > 0 and, when the channel has live blocks in the next
-              horizon window, can_live; when a remote push is wanted, can_push[ingest]
+              horizon window, can_live (a remote push needs nothing of the host: the
+              home's push relay pushes, §7.4)
 pin := tv_cluster.pins[channel.slug]
 if pin in candidates: return pin
 if policy == home_first:
@@ -231,14 +235,14 @@ OS default path from Epic 31 §7) runs in node mode:
 | `DATABASE_URL` | `node.json.database_url` (the node's own Epic 31 role) |
 | path map | `cluster_node_beat(node)` returns the stored map (inferred or admin) → `MAKTABA_STREAM_PATH_MAP` |
 | host id | `node.json.node_id` |
-| stream base URL | first private IPv4 of the interface that reaches the home, `:` streaming port; admin-editable in `tv_stream_hosts` |
+| stream base URL | first private IPv4 of the interface that reaches the home, `:` streaming port; admin-editable in `streaming_hosts` |
 | output settings | `rules.tv_output` (tv-core), per-host overrides applied by capacity override |
 | channel art | `GET {home}/internal/tv/assets/{channel}/{kind}` (signed), cached under the node's cache dir by `sha256`; the station's `localAsset` resolves through this cache |
 | fonts, ffmpeg, yt-dlp | local install; missing yt-dlp → `can_live = false` |
 
 Database access needed by a streaming node with the `maktaba_worker` group role: `channels`,
 `channel_programs`, `channel_schedule_state`, `videos`, `channel_art_overrides` (read),
-`channel_runtime` (write), `channel_placements`/`tv_stream_hosts`/`tv_remote_pushes` (read), the
+`channel_runtime` (write), `channel_placements`/`streaming_hosts`/`tv_remote_pushes` (read), the
 functions of §2.2, §3.4, §7.4. `streaming_sessions` is revoked from workers (slot 0103) and is not
 used by channels.
 
@@ -290,8 +294,9 @@ A second home is out of scope (Epic 31: one home).
 - **Remote controller** (`api/internal/tvremote`): the input pool, the push state machine,
   sessions, token minting, limits and budget; one reconcile loop every 2 s (and on NOTIFY), with a
   Postgres advisory lock so only one API process acts.
-- **Pusher** (`streaming/internal/channel/pusher.go`, every streaming host): a Hub subscriber that
-  feeds an ffmpeg stream-copy process to the input.
+- **Push relay** (`streaming/internal/frontdoor/relay`, on the home only; Epic 33.8): pulls the
+  channel's TS from the encoding host and feeds one continuous ffmpeg stream-copy session to the
+  input (§7.4).
 
 ### 7.2 Live input pool
 
@@ -347,7 +352,7 @@ Input states:
    │                  live  ◄──── viewers heartbeat
    │                   │  no viewer for idle_timeout   │ age ≥ max_push_hours → rotate:
    │                   ▼                               │   new push (new video) on the same
-   │                stopping ── host stops pusher      │   input after this one ends
+   │                stopping ── relay stops the push   │   input after this one ends
    │                   ▼
    │               cleanup ── input enabled=false; wait ≤ 120 s for the recording;
    │                   │       DELETE video; input → idle
@@ -356,10 +361,10 @@ Input states:
 ```
 
 Failover (§6): when the channel's placement moves while the push is `connecting|live`, the push
-row's `host_id`/`generation` are updated; the old host's pusher stops with its station; the new
-host's push controller sees a `live` push placed on it and starts a pusher to the same input. If
-the gap is under `timeoutSeconds` (30 s) Cloudflare continues the same video: the session tokens
-stay valid. A longer gap creates a new video: the controller notices the new `videoUID` from the
+row's `host_id`/`generation` are updated and the home's push relay (§7.4) switches its source to
+the new host's TS; the RTMPS/SRT session to the input stays up, so Cloudflare continues the same
+video and the session tokens stay valid. Only when the front door itself is down longer than
+`timeoutSeconds` (30 s) does Cloudflare create a new video: the controller notices the new `videoUID` from the
 lifecycle endpoint, and the next heartbeat of each session returns a new token and URL.
 
 Rotation (age ≥ `max_push_hours`, default 8) costs remote viewers a short re-buffer once per 8 h
@@ -367,10 +372,17 @@ of a continuous push: the web player swaps to the new video's URL from its next 
 apps re-tune. Accepted as the default (README Q9); it is what keeps two pushes inside one
 1,000-minute storage block (§7.7).
 
-### 7.4 The pusher (on the encoding host)
+### 7.4 The push relay (in the home's front door)
 
-- **No second encode.** It subscribes to the station's Hub (the same MPEG-TS that `/auto/v{n}`
-  gets) and runs:
+> Amended by Epic 33 story 33.8 ([continuous push across swaps](../33-tv-staging-hot-swap/story-33-08-continuous-push-simulcast.md)):
+> the push runs in the home's front door, not on the encoding host, so one RTMPS/SRT session per
+> channel survives hot swaps, rollbacks and failovers.
+
+- **Where.** `streaming/internal/frontdoor/relay` on the home. For each pushed channel the relay
+  pulls the channel's MPEG-TS from wherever it is encoded — the home's own station (local Hub) or
+  a node's station (the signed `/stream/channel/{id}/live.ts`, §4.4, through the splicing copier of
+  §4.2) — and feeds one long-lived ffmpeg. No node runs a pusher.
+- **No second encode.** The relay's ffmpeg copies video (and audio unless it must be AAC):
 
   RTMPS (default):
   `ffmpeg -hide_banner -loglevel warning -f mpegts -i pipe:0 -map 0:v:0 -map 0:a:0 -c:v copy
@@ -380,22 +392,28 @@ apps re-tune. Accepted as the default (README Q9); it is what keeps two pushes i
   `ffmpeg … -c copy -f mpegts "<srt.url>?streamid=<streamId>&passphrase=<passphrase>&mode=caller"`
   (host and port from the input's `srt.url`, as returned by the API).
 
-- Audio: Cloudflare accepts AAC only; when `tv_output.audio_codec = ac3` the pusher transcodes audio
-  to AAC (cheap) and leaves video copied.
+- **One continuous session.** When the source changes — a block boundary, a muxer restart, an
+  Epic 33 swap or rollback, an Epic 32 failover or move to another host — the relay switches its
+  *source* at an IDR with continuous timestamps (33.8 AC2–AC3); the ffmpeg process and its
+  RTMPS/SRT connection stay up, so Cloudflare keeps the same broadcast (video id, tokens) and
+  simulcast outputs (§7.9) see no disconnect. A relay ffmpeg crash is restarted within 1 s on the
+  same input (inside `timeoutSeconds`).
+- **LAN cost.** A node-encoded channel that is pushed crosses the LAN once more (node → home,
+  ≈ 6.5 Mb/s per channel) before the home uploads it; with the home's 1 Gb/s uplink and LAN this
+  is fine (22 channels ≈ 143 Mb/s each way).
+- Audio: Cloudflare accepts AAC only; when `tv_output.audio_codec = ac3` the relay transcodes audio
+  to AAC (cheap, continuous across switches, 33.8 AC9) and leaves video copied.
 - Video already fits Cloudflare's input rules: H.264 high, CBR, keyframe every 2 s, closed GOP,
   `-bf 0` (feat/tv-core encoder args), 6 Mb/s default (inside 2–14 Mb/s); the settings page warns
   when `video_kbps + audio_kbps` leaves that range while remote is on.
-- Credentials: `tv_push_credentials(push_id)` (SECURITY DEFINER; the caller's `session_user` must be
-  the db role of `tv_remote_pushes.host_id`, or the home's own database user) returns the
-  `tv_push_secrets` row `{url, key}`; held in memory, never logged (the ffmpeg command line is
-  logged with the key masked).
-- Supervision: restart with backoff 1 s → 10 s while the push wants to run; report via
-  `tv_push_report(push_id, state, detail)`; a muxer restart (Station) makes the Hub restart its
-  stream, so the pusher reconnects too. A slow pusher is dropped by the Hub like any slow client
-  and restarts.
-- The push holds `reg.attach(channel)` so the station is not reaped while pushing.
-- Ability check at heartbeat: `ffmpeg -protocols` contains `rtmps` (TLS) / `libsrt`
-  (`can_push`).
+- Credentials: `tv_push_credentials(push_id)` (SECURITY DEFINER) answers only the home's own
+  database user (the front door); it returns the `tv_push_secrets` row `{url, key}`, held in
+  memory, never logged (the ffmpeg command line is logged with the key masked). Node roles never
+  see an ingest key.
+- Supervision: report via `tv_push_report(push_id, state, detail)`; the relay holds a front-door
+  lease on the channel so its station (local or on a node) is not reaped while pushing.
+- Ability check: the home's `ffmpeg -protocols` contains `rtmps` (TLS) / `libsrt` (`can_push` of
+  the home's `streaming_hosts` row).
 
 ### 7.5 Tune, heartbeat, end
 
@@ -493,9 +511,8 @@ whatever the number of destinations.
   the window closes or the push ends. An idle pooled input never keeps an output, so a later
   channel on that input cannot reach a destination.
 - **Continuity.** Outputs belong to the input, so everything that keeps the input keeps them: a
-  block change or muxer restart (the pusher stays a Hub subscriber, §7.4), an Epic 33 hot swap
-  (it must keep the station's Hub; the pusher reconnects inside `timeoutSeconds` if the TS
-  restarts), a failover (§7.3: same input, new host's pusher), a rotation at `max_push_hours`
+  block change, muxer restart, Epic 33 hot swap or rollback, or failover: the home's push relay
+  keeps one RTMPS/SRT session and only switches its source (§7.4, Epic 33.8); a rotation at `max_push_hours`
   (same input, a new broadcast; the destination sees a gap of seconds).
 - **Status.** Maktaba's own output state (`scheduled`, `starting`, `live`, `stopping`, `off`,
   `errored`) plus the input's status and lifecycle (§7.8). Cloudflare documents no per-output
@@ -586,7 +603,7 @@ control centre:
 | `maktaba_tv_frontdoor_errors_total` | host, kind | front door |
 | `maktaba_tv_remote_viewers` | channel | sessions |
 | `maktaba_tv_remote_pushes` | state | controller |
-| `maktaba_tv_remote_push_errors_total` | code | controller / pusher |
+| `maktaba_tv_remote_push_errors_total` | code | controller / push relay |
 | `maktaba_tv_remote_minutes_delivered` | month | analytics poll |
 | `maktaba_tv_remote_cost_usd` | month | estimate |
 

@@ -61,7 +61,7 @@ that the LAN stream does not have.
 - Failover and drain.
 - Admin pages for streaming hosts and channels on air.
 - A Cloudflare Stream integration (credentials, test connection, signing keys), moving every
-  extension secret (the Plex token too) into `home_secrets` (Q7), the live input pool, the push from the encoding host, signed playback, the remote session API.
+  extension secret (the Plex token too) into `home_secrets` (Q7), the live input pool, the push from the home's push relay (Epic 33.8), signed playback, the remote session API.
 - LAN-or-remote routing in the web app first; mobile and TV apps after.
 - Simulcast of a channel to YouTube, Facebook or any RTMP/RTMPS destination through Cloudflare live
   outputs, always-on or on a schedule (32.13).
@@ -157,7 +157,7 @@ that the LAN stream does not have.
   readable by node database roles, never returned by the API.
 - R6.2 "Test connection" checks the token, the Stream subscription and storage, creates the RS256
   signing key if none exists (kept on the home), learns the customer playback domain, and checks
-  that every streaming host can push (ffmpeg protocols).
+  that the home's push relay can push (ffmpeg protocols; Epic 33.8).
 - R6.3 Remote viewing is off until the integration tests green and `tv_remote.enabled` is on.
 
 ### R7 — Live inputs and the push
@@ -165,8 +165,10 @@ that the LAN stream does not have.
   each named `maktaba-<instance>-<n>`, recording mode `automatic` (required for HLS playback),
   `requireSignedURLs: true`, reconnect window 30 s, disabled while idle.
 - R7.2 When a remote viewer tunes a channel that is not pushing: take an idle input, enable it,
-  make sure the channel is placed, and have the encoding host push its MPEG-TS (stream copy) to the
-  input over RTMPS (default) or SRT. AC-3 audio is transcoded to AAC in the push only.
+  make sure the channel is placed, and have the home's front door **push relay** pull the
+  channel's MPEG-TS from the encoding host and push it (stream copy) to the input over RTMPS
+  (default) or SRT, in one session that survives swaps and failovers (Epic 33 story 33.8). A
+  node-encoded channel crosses the LAN once more (≈ 6.5 Mb/s), well within the home's 1 Gb/s. AC-3 audio is transcoded to AAC in the push only.
 - R7.3 A channel is pushed at most once, whatever the number of remote viewers.
 - R7.4 After the last remote viewer leaves, the push continues for `idle_timeout` (default 3 min),
   then stops; the input is disabled; the broadcast's recording is deleted from Cloudflare.
@@ -252,23 +254,24 @@ that the LAN stream does not have.
  │   │  placement service (balancer, leases, fencing)                │◄──┤  API only: guide, tune,    │
  │   │  HDHR /auto/v{n}  → proxy  ───────────────┐                    │   │  heartbeat (JSON)          │
  │   │  HLS /stream/channel/… → proxy|redirect ──┤                    │   └─────────────▲──────────────┘
- │   │  local engine (stations on the home)      │                    │                 │ API calls
+ │   │  engine + push relay (→ Cloudflare)       │                    │                 │ API calls
  │ API   /api/tv/cluster/*, /api/tv/remote/*     │                    │          ┌──────┴───────┐
  │   │  remote controller: input pool, pushes,   │                    │          │ remote viewer│
  │   │  token minting, budget, analytics poll    │                    │          │ web / apps   │
  │   │  home_secrets (CF token, signing key)     │                    │          └──────▲───────┘
- │ Postgres: tv_stream_hosts, channel_placements, channel_runtime,   │                 │ HLS (signed token)
+ │ Postgres: streaming_hosts, channel_placements, channel_runtime,   │                 │ HLS (signed token)
  │           tv_remote_*  ◄── node role via SECURITY DEFINER funcs   │   ┌─────────────┴──────────────┐
  └──────────────▲─────────────────────────────────▲──────────────────┘   │ Cloudflare Stream          │
                 │ SQL (Epic 31 role) + NOTIFY      │ signed HTTP         │  live inputs (pool)        │
  ┌──────────────┴──── NODE (Windows PC, NVENC) ────┴──────────────┐      │  HLS/DASH + ABR ladder     │
  │ maktaba-server serve --role streaming (node mode)              │      │  customer-<code>.cloudflare│
  │   stations (only channels placed here, fenced by generation)   │      │  stream.com/<token>/…      │
- │   hub → pusher (ffmpeg -c copy → RTMPS/SRT) ───────────────────┼─────►│                            │
+ │   signed TS to the home's push relay (no push from nodes) ─────┤      │                            │
  │   asset cache (channel art from the home), path map (Epic 31)  │      └────────────────────────────┘
  └────────────────────────────────────────────────────────────────┘
  Plex / Jellyfin / VLC / browsers on the LAN talk to the HOME only.
- Any streaming host (home included) pushes the channels it encodes.
+ The home's front door push relay (Epic 33.8) pushes every remote channel to Cloudflare, pulling
+ node-encoded channels over the LAN; one continuous session per channel.
 ```
 
 ## Data model (proposed migrations)
@@ -282,8 +285,8 @@ these numbers are provisional and move up if other work lands first.
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
 | 0119 | 32.6 (first, small) | `0119_home_secrets.sql` | `home_secrets` (name pk, ciphertext bytea, nonce bytea, key_id, updated_at, updated_by): AES-256-GCM sealed by the home's API with a key file in the home's config directory (never in the database); REVOKE ALL from `maktaba_worker`. Holds the Cloudflare API token, the signing key PEM, the live inputs' stream keys. |
-| 0120 | 32.1, 32.2 | `0120_tv_stream_cluster.sql` | `tv_stream_hosts` (host_id pk = `instance_identity.instance_id` or `cluster_nodes.id`, role home/node, name, enabled, draining, stream_base_url, encoders jsonb, capacity, capacity_override, weight, active, load jsonb, can_push jsonb, can_live, unfit, version, last_beat_at); `channel_placements` (channel_id pk, host_id, generation bigint, state placing/live/moving/released, reason, placed_at, acked_at, released_at); sequence `tv_placement_generation_seq`; `tv_cluster_secret` (singleton: the cluster stream key, REVOKE from `maktaba_worker`); functions `tv_host_beat(...)` (returns the stream key to the caller's own host) and `tv_placement_ack(...)` (SECURITY DEFINER, own row only); `maktaba_worker` gets SELECT only on hosts and placements. |
-| 0121 | 32.7, 32.8, 32.10, 32.13 | `0121_tv_remote.sql` | `tv_remote_inputs` (id, cf_uid, name, state, channel_id, ingest jsonb (no secret), last_video_uid, assigned_at, errors); `tv_remote_pushes` (id, channel_id, input_id, host_id, generation, state, video_uid, started_at, live_at, ended_at, end_reason, minutes_delivered, recording_deleted_at); `tv_remote_sessions` (id, user_id, channel_id, push_id, device, started_at, last_beat_at, ended_at, token_exp); `tv_remote_usage_daily` (day, minutes_delivered, peak_recording_minutes, cost_usd); `tv_push_secrets` (push_id pk, ingest url, key, expires_at — written by the home API for a running push only, deleted when it ends, REVOKE from `maktaba_worker`); function `tv_push_credentials(push_id)` returns that row only to the push's host role; `tv_push_report(...)`. Simulcast (32.13, here if it ships with 32.7, else the next free slot): `tv_simulcast_destinations` (id, name, kind, ingest_url, key_secret → `home_secrets`), `tv_simulcast_attachments` (channel, destination, mode always/schedule, rules jsonb, enabled, manual override, rights_confirmed_by/at), `tv_simulcast_outputs` (attachment, push, input, cf_output_uid, state, window, minutes, error); `tv_remote_pushes.holds` (viewers, simulcast); `tv_remote_usage_daily.simulcast_minutes`. |
+| 0120 | 32.1, 32.2 | `0120_tv_stream_cluster.sql` | extends `streaming_hosts` (slot 0117, tv-core: host_id TEXT pk = `instance_identity.instance_id` or `cluster_nodes.id`, host, role home/node, stream_base_url, encoder, max_active = capacity, active_channels, nvenc_free, vt_free, heartbeat_at) with enabled, draining, stream_base_url_source, encoders jsonb, capacity_override, weight, active jsonb, load jsonb, can_push jsonb, can_live, unfit, version; `channel_placements` (channel_id pk, host_id, generation bigint, state placing/live/moving/released, reason, placed_at, acked_at, released_at); sequence `tv_placement_generation_seq`; `tv_cluster_secret` (singleton: the cluster stream key, REVOKE from `maktaba_worker`); functions `tv_host_beat(...)` (returns the stream key to the caller's own host) and `tv_placement_ack(...)` (SECURITY DEFINER, own row only); `maktaba_worker` gets SELECT only on hosts and placements. |
+| 0121 | 32.7, 32.8, 32.10, 32.13 | `0121_tv_remote.sql` | `tv_remote_inputs` (id, cf_uid, name, state, channel_id, ingest jsonb (no secret), last_video_uid, assigned_at, errors); `tv_remote_pushes` (id, channel_id, input_id, host_id, generation, state, video_uid, started_at, live_at, ended_at, end_reason, minutes_delivered, recording_deleted_at); `tv_remote_sessions` (id, user_id, channel_id, push_id, device, started_at, last_beat_at, ended_at, token_exp); `tv_remote_usage_daily` (day, minutes_delivered, peak_recording_minutes, cost_usd); `tv_push_secrets` (push_id pk, ingest url, key, expires_at — written by the home API for a running push only, deleted when it ends, REVOKE from `maktaba_worker`); function `tv_push_credentials(push_id)` returns that row only to the home's front door (push relay, Epic 33.8); `tv_push_report(...)`. Simulcast (32.13, here if it ships with 32.7, else the next free slot): `tv_simulcast_destinations` (id, name, kind, ingest_url, key_secret → `home_secrets`), `tv_simulcast_attachments` (channel, destination, mode always/schedule, rules jsonb, enabled, manual override, rights_confirmed_by/at), `tv_simulcast_outputs` (attachment, push, input, cf_output_uid, state, window, minutes, error); `tv_remote_pushes.holds` (viewers, simulcast); `tv_remote_usage_daily.simulcast_minutes`. |
 
 `channel_runtime` (slot 0083, made cluster-wide by 0117 on `feat/tv-core`) stays the record of *what
 is actually on air where*, written by the encoding host; `channel_placements` is *what the home
@@ -301,7 +304,7 @@ decided*. Settings are rules sections in `app_settings` (as `rules.tv` / `rules.
 | `tv_cluster.failover` | `true` | Re-place channels of a dead host. |
 | `tv_cluster.dead_after_seconds` | `15` | Missed-heartbeat window. |
 | `tv_cluster.pins` | `{}` | `{channel_slug: host_name}` preferred host. |
-| per host (`tv_stream_hosts`) | home on, nodes off | "Stream on this machine", capacity override, weight, drain. |
+| per host (`streaming_hosts`) | home on, nodes off | "Stream on this machine", capacity override, weight, drain. |
 | `tv_remote.enabled` | `false` | Remote viewing through Cloudflare. |
 | `tv_remote.max_channels` | `22` | Concurrent pushes (size of the input pool), 1–50; ≈ 6.5 Mb/s of upload each (22 ≈ 143 Mb/s of the 1 Gb/s uplink). |
 | `tv_remote.max_streams_per_user` | `2` | Concurrent remote sessions per user. |
@@ -371,9 +374,10 @@ POST   {home-streaming}/internal/tv/ensure/{channel}  loopback: API asks the fro
   every other extension secret (the Plex token, today in `extensions.settings`; Q7) live
   in `home_secrets` (sealed by the home's API with a key file that never enters the database;
   REVOKE from `maktaba_worker`). For a running push only, the API writes that input's ingest URL
-  and key to `tv_push_secrets` (revoked from workers, deleted when the push ends); a node reads it
-  only through `tv_push_credentials(push_id)`, which checks that `session_user` is the database role
-  of the host the push is placed on (the Epic 31 pattern), and keeps it in memory only.
+  and key to `tv_push_secrets` (revoked from workers, deleted when the push ends); only the home's
+  front door (the push relay, Epic 33.8) reads it, through `tv_push_credentials(push_id)`, which
+  answers only the home's own database user, and keeps it in memory; no node ever sees an ingest
+  key.
 - **Front door ↔ nodes.** HMAC-SHA256 over `method + path + expiry` with the cluster stream key
   (in `tv_cluster_secret`, handed to each host by `tv_host_beat`); requests expire after 60 s; a node's
   streaming port answers nothing else (no HDHR, no XMLTV, no unsigned `/stream`).
@@ -439,7 +443,7 @@ budget.
 | 32.4 | [Failover and drain](story-32-04-failover-drain.md) | Dead host detection, re-placement at wall clock, TS splice, HLS discontinuity, drain and move. |
 | 32.5 | [Admin: streaming hosts and on air](story-32-05-admin-hosts-on-air.md) | Live TV admin sections for hosts and channels on air, actions, en + ar. |
 | 32.6 | [Cloudflare Stream integration](story-32-06-cloudflare-integration.md) | Credentials in `home_secrets`, test connection, signing key, customer domain, host push check. |
-| 32.7 | [Live input pool and push](story-32-07-live-input-push.md) | Pool lifecycle, push from the encoding host (stream copy to RTMPS/SRT), keep-alive, rotation, recording cleanup. |
+| 32.7 | [Live input pool and push](story-32-07-live-input-push.md) | Pool lifecycle, push from the home's push relay (stream copy to RTMPS/SRT; Epic 33.8), keep-alive, rotation, recording cleanup. |
 | 32.8 | [Signed playback for remote viewers](story-32-08-signed-remote-playback.md) | Tune/heartbeat/end API, RS256 tokens, limits checked at tune, key rotation. |
 | 32.9 | [LAN or remote in the apps](story-32-09-app-lan-remote-routing.md) | Web player with hls.js on both paths and token swap; native apps through the 25.10 probe. |
 | 32.10 | [Cost, limits and budget](story-32-10-cost-limits-budget.md) | Limits, monthly estimate from Cloudflare analytics, 80/100 % thresholds, storage guard. |
