@@ -189,13 +189,12 @@
   background: var(--q-surface);
 }
 .mkt-q-stat__label {
-  overflow: hidden;
+  margin: 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1.4;
   color: var(--color-muted);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .mkt-q-stat__value {
   display: flex;

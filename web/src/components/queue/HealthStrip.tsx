@@ -40,6 +40,7 @@ export function HealthStrip({
   return (
     <StatGrid label={t("queue.health.title")} variant="health">
       <StatTile
+        heading="h2"
         label={t("queue.health.nas")}
         value={n(nas.reads_busy)}
         unit={t("queue.health.slotsUnit", { limit: n(nas.reads_limit) })}
@@ -57,12 +58,13 @@ export function HealthStrip({
         </p>
       </StatTile>
       <StatTile
+        heading="h2"
         label={t("queue.health.cpu")}
-        value={cpu.pct === null ? "–" : n(Math.round(cpu.pct))}
-        unit={cpu.pct === null ? undefined : "%"}
+        value={cpu.pct === null ? "–" : `${n(Math.round(cpu.pct))}%`}
         spark={sparkOf(series(history, "cpu.pct") ?? spark.cpu_pct, t("queue.health.cpu"))}
       />
       <StatTile
+        heading="h2"
         label={t("queue.health.network")}
         value={probed.length === 0 ? "–" : n(reachable)}
         unit={
@@ -86,6 +88,7 @@ export function HealthStrip({
         </ul>
       </StatTile>
       <StatTile
+        heading="h2"
         label={t("queue.health.backlog")}
         value={n(backlog.ready)}
         unit={t("queue.health.waitingUnit")}

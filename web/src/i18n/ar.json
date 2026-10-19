@@ -1300,7 +1300,7 @@
   "queue.kpi.waiting": "في الانتظار",
   "queue.kpi.oldest": "الأقدم {time}",
   "queue.kpi.running": "قيد التشغيل",
-  "queue.kpi.ofPool": "{n} من {size}",
+  "queue.kpi.ofPool": "من {size}",
   "queue.kpi.rate": "المعدل (10 د)",
   "queue.kpi.rateLong": "{rate} خلال 24 ساعة",
   "queue.kpi.left": "الوقت المتبقي",

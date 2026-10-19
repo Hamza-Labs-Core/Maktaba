@@ -32,16 +32,18 @@ import "../../styles/queue.css";
 function Kpi({
   label,
   value,
+  unit,
   sub,
   tone,
 }: {
   label: string;
   value: string;
+  unit?: string;
   sub?: string;
   tone?: "error";
 }) {
   return (
-    <StatTile label={label} value={value} tone={tone}>
+    <StatTile label={label} value={value} unit={unit} tone={tone}>
       {sub ? <p>{sub}</p> : undefined}
     </StatTile>
   );
@@ -300,7 +302,8 @@ export function QueueDetail() {
           />
           <Kpi
             label={t("queue.kpi.running")}
-            value={t("queue.kpi.ofPool", { n: n(counts.running), size: n(poolSize) })}
+            value={n(counts.running)}
+            unit={t("queue.kpi.ofPool", { size: n(poolSize) })}
             sub={pool?.label}
           />
           <Kpi

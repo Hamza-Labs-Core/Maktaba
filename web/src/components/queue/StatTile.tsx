@@ -15,26 +15,29 @@ export interface StatTileProps {
   unit?: ReactNode;
   tone?: "warn" | "error";
   spark?: { values: number[]; label: string };
+  /** Draw the label as a heading (the health strip's tiles are page sections). */
+  heading?: "h2" | "h3";
   /** Detail lines under the number. */
   children?: ReactNode;
 }
 
-export function StatTile({ label, value, unit, tone, spark, children }: StatTileProps) {
+export function StatTile({ label, value, unit, tone, spark, heading, children }: StatTileProps) {
   const id = useId();
+  const Label = heading ?? "span";
   return (
     <div
       className={`mkt-q-stat${tone ? ` mkt-q-stat--${tone}` : ""}`}
       role="group"
       aria-labelledby={id}
     >
-      <span className="mkt-q-stat__label" id={id} title={label}>
+      <Label className="mkt-q-stat__label" id={id}>
         {tone && (
           <span className="mkt-q-stat__flag" aria-hidden="true">
             !
           </span>
         )}
         {label}
-      </span>
+      </Label>
       <span className="mkt-q-stat__value">
         <span className="mkt-q-stat__num">{value}</span>
         {unit !== undefined && <span className="mkt-q-stat__unit">{unit}</span>}

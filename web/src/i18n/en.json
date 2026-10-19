@@ -1300,7 +1300,7 @@
   "queue.kpi.waiting": "Waiting",
   "queue.kpi.oldest": "oldest {time}",
   "queue.kpi.running": "Running",
-  "queue.kpi.ofPool": "{n} of {size}",
+  "queue.kpi.ofPool": "of {size}",
   "queue.kpi.rate": "Rate (10 min)",
   "queue.kpi.rateLong": "{rate} over 24 h",
   "queue.kpi.left": "Time left",
