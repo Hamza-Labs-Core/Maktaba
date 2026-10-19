@@ -126,6 +126,38 @@ LLM files record usage, never prompt or output text.
 [--ip IP] [--date D] [--level L] [--follow]` on any machine read these files directly,
 merging a day's per-process files by timestamp. Nothing goes to the database.
 
+## 4a. The home decides what runs where
+
+Owner (2026-10-19): the main node handles what runs what. Phase 1 had each process work
+out its own stage set; now the **home's hub is the scheduler**:
+
+1. A process reports what it **can** run: in `hello` and on change, a `capable` frame
+   `{stages: {stage: true | reason}}` — `true`, or why it cannot (`unavailable: <detail>`,
+   `not_selected` for its own CLI filter, `version_ahead`, `storage`) — plus its pools and
+   their sizes (cpu cores, gpu batch). Capabilities (OS, GPU, extras, LLM runtimes) come
+   with it.
+2. The scheduler decides each process's **assignment** from: what it can run, placement
+   (home-only stages only on home processes), the admin's per-machine switches
+   (`cluster_node_stages`, configuration), drain, the storage check, and load (per-machine
+   CPU / memory / GPU pressure from the live metrics: a machine over
+   `MAKTABA_SCHED_MAX_MEM_PCT` (default 90) or `…_MAX_CPU_PCT` (default 95) for a minute
+   gets no new CPU-pool stages until it recovers). Every stage with work waiting is kept on
+   at least one capable process when one exists; a stage nobody can run is reported
+   ("no machine can run transcribe: needs Apple Silicon").
+3. It pushes `assign {revision, stages [...], off {stage: reason}, pools {pool: size}}`;
+   the process applies it at once (its claim loop reads the assigned set every poll) and
+   answers `assigned {revision}`. Reasons now include `home_only`, `switched_off`,
+   `draining`, `overloaded` and `not_assigned`, decided by the home.
+4. Re-decided on any change: a process connects or leaves, capabilities or switches change,
+   load crosses a threshold, a stage's backlog appears or empties; at most once a second.
+5. Without the home (channel down) a process keeps its last assignment; a process that
+   never had one (first start, home unreachable) runs nothing but what its CLI asked for
+   explicitly, and logs why.
+
+Jobs stay in the database queue and are still *claimed* (pull): a machine that dies loses
+nothing, and two processes never run the same job. The home decides which stages each
+process may claim; the queue decides which job is next.
+
 ## 5. Real-time view (browser)
 
 `GET /api/cluster/stream` (admin, Server-Sent Events, the transport the web already uses
