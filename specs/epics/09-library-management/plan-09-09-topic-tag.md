@@ -25,7 +25,7 @@ Where they differ from the table above:
 - **Trigger.** `chapter_infer` → `topic_assign` per video, then `topic_assign` →
   `topic_recluster` per library, debounced (30 min, at most 6 h). There is no nightly cron:
   a library is re-clustered once a batch of its videos has been transcribed.
-- **Mean embedding** is stored in its own table, `video_embeddings` (slot 0120, with the
+- **Mean embedding** is stored in its own table, `video_embeddings` (slot 0121, with the
   model and dimension), not on `videos`. It is written by `chapter_infer`, which already
   reads the segment vectors. The index model is e5-small (384 dims).
 - **K-means** is numpy spherical k-means (Lloyd iterations from a seeded k-means++ start,
@@ -34,7 +34,7 @@ Where they differ from the table above:
   far too few for a 47 000-video library.
 - **Labels** are the title of the video closest to each centroid (64 characters). There is
   no MLM labeller, and no rename: every recluster rebuilds the topics (new ids, new labels).
-- `library_topics.model` (slot 0120) records the embedding model; `topic_assign` only
+- `library_topics.model` (slot 0121) records the embedding model; `topic_assign` only
   scores a video against topics of its own model, even when another model has the same
   dimension.
 - `topic_recluster` rewrites the library's topics and every video's `video_topics` in one

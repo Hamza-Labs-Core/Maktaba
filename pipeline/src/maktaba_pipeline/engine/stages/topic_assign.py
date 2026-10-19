@@ -62,7 +62,7 @@ async def _centroids(
         model,
     )
     # centroids of another embedding model are never compared, whatever their dimension
-    # (topics from before slot 0120 have no model: the next recluster replaces them)
+    # (topics from before slot 0121 have no model: the next recluster replaces them)
     usable = [r for r in rows if len(bytes(r["centroid_vec"])) == 4 * dim]
     return (
         [int(r["topic_id"]) for r in usable],

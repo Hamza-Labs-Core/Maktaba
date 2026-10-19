@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // PlexStage is the pipeline stage that talks to Plex Live TV.
@@ -196,7 +197,11 @@ func (h *Handler) plexExtension(ctx context.Context) PlexExtension {
 		return strings.TrimSpace(s)
 	}
 	e.URL = str("url") // never the token
-	e.Configured = e.URL != "" && str("token") != ""
+	tokenSet := str("token") != ""
+	if !tokenSet && h.Secrets != nil {
+		tokenSet, _ = h.Secrets.Has(ctx, secrets.ExtensionName("plex", "token"))
+	}
+	e.Configured = e.URL != "" && tokenSet
 	return e
 }
 

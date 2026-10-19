@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0120 (Epic 9 / Stories 9.9 and 9.18): UUID and
+-- SQLite parity sibling for slot 0121 (Epic 9 / Stories 9.9 and 9.18): UUID and
 -- TIMESTAMPTZ become TEXT, BYTEA becomes BLOB, arrays and JSONB become JSON text.
 --
 CREATE TABLE IF NOT EXISTS video_embeddings (
@@ -53,8 +53,8 @@ INSERT INTO processing_jobs
      reasons, triggered_by_stage)
 SELECT 'video', v.id, v.id, v.library_id, 'chapter_infer', 'pending', 500, 3,
        json_array(json_object(
-           'why', 'chapter_infer joined the engine (slot 0120): backfill of indexed videos',
-           'by', 'migration:0120', 'at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))),
+           'why', 'chapter_infer joined the engine (slot 0121): backfill of indexed videos',
+           'by', 'migration:0121', 'at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))),
        'index'
 FROM videos v
 WHERE v.deleted_at IS NULL

@@ -415,11 +415,11 @@ async def test_chapter_frames_follow_the_chapters(db: Database, tmp_path: Path) 
         chapter_thumbs.reset_frame_runner()
 
 
-# ------------------------------------------------------------------- backfill (slot 0120)
+# ------------------------------------------------------------------- backfill (slot 0121)
 
 
 def _backfill_sql(db: Database) -> str:
-    name = "0120_video_embeddings" + ("" if is_pg(db) else ".sqlite") + ".sql"
+    name = "0121_video_embeddings" + ("" if is_pg(db) else ".sqlite") + ".sql"
     text = (MIGRATIONS_DIR / name).read_text(encoding="utf-8")
     (stmt,) = [s for s in up_statements(text) if "INSERT INTO processing_jobs" in s]
     return stmt
@@ -446,7 +446,7 @@ async def test_the_migration_queues_chapter_infer_once_for_indexed_videos(
     job = jobs[0]
     assert job["state"] == "pending" and int(job["priority"]) == 500
     assert str(job["video_id"]) == str(indexed) and str(job["library_id"]) == str(lib)
-    assert "slot 0120" in loads(job["reasons"])[0]["why"]
+    assert "slot 0121" in loads(job["reasons"])[0]["why"]
 
 
 # ------------------------------------------------------------------- embeddings

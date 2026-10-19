@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0120 (Epic 9 / Stories 9.9 and 9.18) - video_embeddings: one vector per video, the
+-- Slot 0121 (Epic 9 / Stories 9.9 and 9.18) - video_embeddings: one vector per video, the
 -- L2-normalised mean of its transcript segments' vectors in the semantic index (Chroma).
 -- The engine `chapter_infer` stage writes it while it reads the segment vectors for
 -- chapters; `topic_assign` and `topic_recluster` cluster these, so a library's topics never
@@ -69,8 +69,8 @@ INSERT INTO processing_jobs
      reasons, triggered_by_stage)
 SELECT 'video', v.id, v.id, v.library_id, 'chapter_infer', 'pending', 500, 3,
        jsonb_build_array(jsonb_build_object(
-           'why', 'chapter_infer joined the engine (slot 0120): backfill of indexed videos',
-           'by', 'migration:0120', 'at', to_jsonb(now()))),
+           'why', 'chapter_infer joined the engine (slot 0121): backfill of indexed videos',
+           'by', 'migration:0121', 'at', to_jsonb(now()))),
        'index'
 FROM videos v
 WHERE v.deleted_at IS NULL

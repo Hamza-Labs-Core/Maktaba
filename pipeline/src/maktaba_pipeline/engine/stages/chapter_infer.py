@@ -4,7 +4,7 @@ Runs after ``index``. Reads the video's segment vectors back out of the semantic
 (Chroma, no embedding model loaded), then:
 
 * stores their normalised mean in ``video_embeddings``: what ``topic_assign`` and
-  ``topic_recluster`` cluster (slot 0120);
+  ``topic_recluster`` cluster (slot 0121);
 * unless the library turned ``chapter_inference`` off, or the video already has chapters
   of its own (``embedded`` or ``manual``: those win, plan 08-12), replaces its
   ``source='inferred'`` chapters with :func:`~maktaba_pipeline.library_mgmt.chapter.

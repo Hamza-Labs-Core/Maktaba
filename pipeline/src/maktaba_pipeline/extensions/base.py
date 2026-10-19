@@ -31,6 +31,10 @@ class SettingField:
     #: environment variable used only to bootstrap the first stored value
     env: str | None = None
     kind: str = "string"
+    #: used by the home's API only, never by a stage (the Cloudflare API token)
+    home_only: bool = False
+    #: home_secrets name of a secret field; None means ``ext.<extension>.<key>``
+    secret_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +48,13 @@ class Manifest:
 
     def secret_keys(self) -> frozenset[str]:
         return frozenset(f.key for f in self.settings if f.secret)
+
+    def secret_name(self, key: str) -> str:
+        """Where a secret setting is kept in ``home_secrets`` (slot 0120)."""
+        for f in self.settings:
+            if f.key == key and f.secret_name:
+                return f.secret_name
+        return f"ext.{self.name}.{key}"
 
 
 @runtime_checkable

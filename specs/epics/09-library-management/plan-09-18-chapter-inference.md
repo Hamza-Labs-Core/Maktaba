@@ -44,11 +44,11 @@ chapters change. Where it differs from the table above:
 - **Re-inference** goes through the queue's retrigger (`POST /api/queue/retrigger`, stage
   `chapter_infer`); there is no `/chapters/reinfer` route.
 - While reading the vectors, the stage also stores the video's mean vector in
-  `video_embeddings` (slot 0120) for topics (Story 9.9); an unchanged vector leaves the row
+  `video_embeddings` (slot 0121) for topics (Story 9.9); an unchanged vector leaves the row
   alone, so a re-run never forces a recluster.
 - The math is numpy (the stage needs the `search` extra anyway); pure Python held the GIL
   for seconds on a 4-hour transcript.
-- Slot 0120 queues the stage once for every video indexed before it existed.
+- Slot 0121 queues the stage once for every video indexed before it existed.
 
 ## 1. Architecture diagram
 
