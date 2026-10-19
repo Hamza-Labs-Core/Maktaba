@@ -10,6 +10,7 @@ export * from "./gestures";
 export * from "./ring";
 export * from "./numberEntry";
 export * from "./live";
+export * from "./vod";
 export * from "./switcher";
 export * from "./pipeline";
 export * from "./prefetch";
