@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import Any
 
@@ -28,40 +29,46 @@ _MAX_TOKENS = 448
 
 
 class CohereRecogniser:
-    """One loaded model; :meth:`__call__` hears stretches of 16 kHz mono float32 audio.
-    MLX is not safe to drive from two threads at once, so calls are serialised."""
+    """One loaded model on its own thread; :meth:`__call__` hears stretches of 16 kHz
+    mono float32 audio (NumPy). MLX ties a GPU stream to the thread that made it, so
+    the model is loaded and run on one dedicated thread, like Whisper's
+    (:class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`); calls queue for it."""
 
     def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        self._gpu = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cohere")
+        self._model: Any = self._gpu.submit(self._load).result()
+
+    def _load(self) -> Any:
         from mlx_audio.stt.utils import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             load,
         )
 
-        self.model_id = model_id
-        self._model = load(model_id)
-        self._lock = threading.Lock()
+        return load(self.model_id)
 
     def __call__(self, stretches: list[Any]) -> list[str]:
-        """The text of each stretch (each at most 30 s), decoded together in batches.
+        """The text of each stretch (each at most 30 s), decoded together in batches."""
+        return self._gpu.submit(self._hear, stretches).result()
 
-        Uses the model's own batch decoder (``_transcribe_waveforms_batched``, pinned
-        with mlx-audio 0.5.9) so a file's stretches share GPU passes; without it, one
-        ``generate`` per stretch."""
+    def _hear(self, stretches: list[Any]) -> list[str]:
+        """On the model's thread. Uses the model's own batch decoder
+        (``_transcribe_waveforms_batched``, pinned with mlx-audio 0.5.9) so a file's
+        stretches share GPU passes; without it, one ``generate`` per stretch."""
         import mlx.core as mx
 
-        with self._lock:
-            batched = getattr(self._model, "_transcribe_waveforms_batched", None)
-            if batched is None:
-                return [
-                    str(self._model.generate(a, language="ar", max_tokens=_MAX_TOKENS).text)
-                    for a in stretches
-                ]
-            texts, _counts, _prompt = batched(
-                [mx.array(a, dtype=mx.float32) for a in stretches],
-                language="ar",
-                punctuation=True,
-                batch_size=self._model._resolve_batch_size(None),
-                max_tokens=_MAX_TOKENS,
-            )
+        batched = getattr(self._model, "_transcribe_waveforms_batched", None)
+        if batched is None:
+            return [
+                str(self._model.generate(a, language="ar", max_tokens=_MAX_TOKENS).text).strip()
+                for a in stretches
+            ]
+        texts, _counts, _prompt = batched(
+            [mx.array(a, dtype=mx.float32) for a in stretches],
+            language="ar",
+            punctuation=True,
+            batch_size=self._model._resolve_batch_size(None),
+            max_tokens=_MAX_TOKENS,
+        )
         return [str(t).strip() for t in texts]
 
 

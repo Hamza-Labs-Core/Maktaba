@@ -231,3 +231,18 @@ def test_refine_hears_a_files_stretches_together_in_order() -> None:
     stats = rf.refine(t, silence(), hear, None, "c")
     assert calls == [2] and stats.stretches == 2
     assert [s.text for s in t.sentences] == ["لا يغيب جل وعلا", "وقيل لأبي بكر خليفة"]
+
+
+def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maktaba_pipeline.stt import cohere
+
+    monkeypatch.setattr(cohere, "recogniser", lambda _m: lambda _s: ["x"])
+    monkeypatch.setattr(cohere, "dictionary", lambda: None)
+
+    def broken(*_a: Any, **_k: Any) -> Any:
+        raise ValueError("bug")
+
+    monkeypatch.setattr(rf, "refine", broken)
+    t = transcript(sentence("قال الشيخ"))
+    assert stage._refine(t, silence(), "m") == {"model": "m", "failed": "ValueError: bug"}
+    assert t.sentences[0].text == "قال الشيخ"

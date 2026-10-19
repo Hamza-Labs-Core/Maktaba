@@ -165,7 +165,11 @@ def _refine(result: Transcript, audio: Any, model: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - Whisper's transcript is still a transcript
         _log.warning("transcribe.refine_unavailable", model=model, error=str(exc))
         return {"model": model, "skipped": f"{type(exc).__name__}: {exc}"[:300]}
-    return refine(result, audio, rec, dictionary(), model).as_dict()
+    try:
+        return refine(result, audio, rec, dictionary(), model).as_dict()
+    except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
+        _log.warning("transcribe.refine_failed", model=model, exc_info=True)
+        return {"model": model, "failed": f"{type(exc).__name__}: {exc}"[:300]}
 
 
 async def wait_for_memory(ctx: StageContext) -> None:
