@@ -57,6 +57,7 @@ var (
 	ErrDigest         = errors.New("digest mismatch")
 	ErrMissingRelease = errors.New("release directory missing")
 	ErrDowngrade      = errors.New("below the watermark")
+	ErrUnsafePerm     = errors.New("writable by other users")
 )
 
 // Layout is one install root.
@@ -378,6 +379,13 @@ func (l Layout) ValidateRelease(version string) error {
 	v, err := ReadVerifiedDir(dir)
 	if err != nil {
 		return err
+	}
+	// the same rule as the Sigstore root cache (releaseverify): nothing another
+	// user could write is trusted
+	for _, p := range []string{dir, filepath.Join(dir, Exe("maktaba-server")), filepath.Join(dir, VerifiedFile)} {
+		if err := checkNotShared(p); err != nil {
+			return err
+		}
 	}
 	return checkFile(dir, Exe("maktaba-server"), v)
 }

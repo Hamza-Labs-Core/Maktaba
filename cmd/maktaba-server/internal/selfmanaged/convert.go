@@ -156,6 +156,9 @@ func stage(l layout.Layout, o Options, v string) error {
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return err
 	}
+	if err := os.Chmod(tmp, 0o755); err != nil { // the launcher refuses a shared-writable release
+		return err
+	}
 	defer os.RemoveAll(tmp)
 	for _, name := range Binaries {
 		src := filepath.Join(o.From, layout.Exe(name))

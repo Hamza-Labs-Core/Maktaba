@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -287,4 +288,18 @@ func TestLockIsExclusive(t *testing.T) {
 		t.Fatalf("after unlock: %v", err)
 	}
 	Unlock(g)
+}
+
+func TestValidateRefusesSharedWritable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits")
+	}
+	l := New(t.TempDir())
+	mkRelease(t, l, "1.5.0")
+	if err := os.Chmod(l.ServerPath("1.5.0"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ValidateRelease("1.5.0"); !errors.Is(err, ErrUnsafePerm) {
+		t.Fatalf("err = %v", err)
+	}
 }

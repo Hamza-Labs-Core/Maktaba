@@ -100,7 +100,7 @@ func CopyFile(src, dst string) error {
 	if err := tmp.Close(); err != nil {
 		return fail(err)
 	}
-	_ = os.Chmod(tmpName, st.Mode().Perm())
+	_ = os.Chmod(tmpName, st.Mode().Perm()&^0o022) // never group/other-writable
 	if err := replaceFile(tmpName, dst); err != nil {
 		_ = os.Remove(tmpName)
 		return err

@@ -106,6 +106,9 @@ func Stage(ctx context.Context, l layout.Layout, get releaseverify.Downloader, i
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return nil, err
 	}
+	if err := os.Chmod(tmp, 0o755); err != nil { // the launcher refuses a shared-writable release
+		return nil, err
+	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 
 	// the signed files, as published (VerifyDir re-checks them offline)
@@ -140,6 +143,9 @@ func Stage(ctx context.Context, l layout.Layout, get releaseverify.Downloader, i
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(tmp, n), b, 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(filepath.Join(tmp, n), 0o755); err != nil { // whatever the umask
 			return nil, err
 		}
 	}
