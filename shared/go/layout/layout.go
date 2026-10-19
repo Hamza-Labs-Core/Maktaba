@@ -432,3 +432,17 @@ func (l Layout) Versions() ([]string, error) {
 	SortVersions(out)
 	return out, nil
 }
+
+// RestartRequestPath is <install>/updates/restart: a file asking the running
+// server to exit 75 so the launcher starts the (new) current release. The API
+// writes it after a self-update; serve consumes it; the launcher clears a
+// stale one before each start.
+func (l Layout) RestartRequestPath() string { return filepath.Join(l.UpdatesDir(), "restart") }
+
+// RequestRestart writes the restart request.
+func (l Layout) RequestRestart() error {
+	return WriteFileAtomic(l.RestartRequestPath(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+// TakeRestartRequest consumes a pending restart request.
+func (l Layout) TakeRestartRequest() bool { return os.Remove(l.RestartRequestPath()) == nil }

@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
 )
 
 func newUpdateCmd() *cobra.Command {
@@ -41,6 +44,14 @@ run a lower version, and it does not lower the watermark.`,
 				return err
 			}
 			if rollback {
+				if l, ok := install.Root(self); ok { // side-by-side layout (story 35.2)
+					v, err := install.Rollback(l)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "current = %s (the previous release). Restart the service to run it.\n", v)
+					return nil
+				}
 				if err := selfupdate.Rollback(self); err != nil {
 					return err
 				}
@@ -95,6 +106,9 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, c *selfupdate.Client, se
 		return nil
 	}
 	fmt.Fprintln(out, "Downloading and verifying ...")
+	if l, ok := install.Root(self); ok {
+		return runLayoutUpdate(ctx, out, c, rel, l, check)
+	}
 	p, err := c.Prepare(ctx, rel, self)
 	if err != nil {
 		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
@@ -109,5 +123,26 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, c *selfupdate.Client, se
 		return err
 	}
 	fmt.Fprintf(out, "Updated %s to %s. Restart the service to run the new version.\n", self, rel.Tag)
+	return nil
+}
+
+// runLayoutUpdate installs into a self-managed install (story 35.2): the
+// verified release is staged in bin/releases/<v>/ and becomes current under
+// the launcher's boot-loop guard; the running binaries are never replaced.
+func runLayoutUpdate(ctx context.Context, out io.Writer, c *selfupdate.Client, rel *selfupdate.Release, l layout.Layout, check bool) error {
+	st, err := c.Stage(ctx, rel, l)
+	if err != nil {
+		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
+	}
+	fmt.Fprintf(out, "Verified %s: signed by %s at %s; staged in %s.\n", rel.Tag, st.Result.Identity,
+		st.Result.SignedAt.Format("2006-01-02 15:04:05Z"), st.Dir)
+	if check {
+		fmt.Fprintln(out, "(--check) not switching. Re-run without --check to upgrade.")
+		return nil
+	}
+	if err := st.Activate(l, "cli"); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "current = %s. Restart the service to run it; the launcher goes back to the previous release if it does not come up.\n", st.Version)
 	return nil
 }

@@ -25,7 +25,9 @@ import (
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
 )
 
 // DefaultAPIBase is the GitHub REST API.
@@ -286,3 +288,16 @@ func replaceExecutable(target string, body []byte) error {
 
 // Newer reports whether a is a strictly newer release than b.
 func Newer(a, b string) bool { return releaseverify.CompareVersions(a, b) > 0 }
+
+// Stage verifies rel and stages it side by side under the layout l
+// (bin/releases/<v>/, story 35.2): the install flow of a self-managed machine,
+// shared with the API's self-update and the orchestrator
+// (releaseverify/install). It changes no pointer; Activate does.
+func (c *Client) Stage(ctx context.Context, rel *Release, l layout.Layout) (*install.Staged, error) {
+	tm, err := c.o.Trusted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return install.Stage(ctx, l, releaseverify.HTTPDownloader(c.o.HTTP),
+		releaseverify.Input{Tag: rel.Tag, Identity: c.o.Identity, TrustedMaterial: tm}, rel.Assets, c.o.Platform)
+}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -52,11 +53,23 @@ func launcherRelease() (string, error) {
 // stopFilePoll is how often serve looks for the launcher's stop file.
 var stopFilePoll = 500 * time.Millisecond
 
-// watchStopFile cancels when the launcher's stop file appears.
-func watchStopFile(ctx context.Context, cancel context.CancelFunc) {
-	p := os.Getenv(envStopFile)
-	if p == "" {
-		return
+// exitRestart (EX_TEMPFAIL) asks the launcher to start current again.
+const exitRestart = 75
+
+// watchLauncher cancels serve when the launcher's stop file appears, or when
+// a restart is requested (<install>/updates/restart, written by the API after
+// a self-update): then restart reports true and serve exits 75 once drained,
+// so the launcher starts the new current release.
+func watchLauncher(ctx context.Context, cancel context.CancelFunc, releaseDir string) (restart *atomic.Bool) {
+	restart = new(atomic.Bool)
+	stop := os.Getenv(envStopFile)
+	var l *layout.Layout
+	if releaseDir != "" {
+		ll := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
+		l = &ll
+	}
+	if stop == "" && l == nil {
+		return restart
 	}
 	go func() {
 		t := time.NewTicker(stopFilePoll)
@@ -66,14 +79,23 @@ func watchStopFile(ctx context.Context, cancel context.CancelFunc) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if _, err := os.Stat(p); err == nil {
-					fmt.Fprintln(os.Stderr, "[serve] stop requested by the launcher")
+				if stop != "" {
+					if _, err := os.Stat(stop); err == nil {
+						fmt.Fprintln(os.Stderr, "[serve] stop requested by the launcher")
+						cancel()
+						return
+					}
+				}
+				if l != nil && l.TakeRestartRequest() {
+					fmt.Fprintln(os.Stderr, "[serve] restart requested: exiting 75 for the launcher")
+					restart.Store(true)
 					cancel()
 					return
 				}
 			}
 		}
 	}()
+	return restart
 }
 
 // confirmAfter is how long every role must run without a restart before a

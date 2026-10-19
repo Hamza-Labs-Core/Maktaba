@@ -94,7 +94,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	watchStopFile(ctx, cancel)
+	restart := watchLauncher(ctx, cancel, releaseDir)
 
 	// The `web` role is served in-process; every other role is a
 	// supervised subprocess. Decide which we're running.
@@ -176,6 +176,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)
+	}
+	if restart.Load() {
+		os.Exit(exitRestart) // drained: the launcher starts current again
 	}
 	return runErr
 }

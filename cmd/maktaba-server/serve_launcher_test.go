@@ -38,7 +38,7 @@ func TestWatchStopFile(t *testing.T) {
 	t.Setenv(envStopFile, stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	watchStopFile(ctx, cancel)
+	watchLauncher(ctx, cancel, "")
 	_ = os.WriteFile(stop, []byte("stop"), 0o644)
 	select {
 	case <-ctx.Done():
@@ -65,5 +65,30 @@ func TestHealthyFor(t *testing.T) {
 	}
 	if healthyFor(supervisor.Snapshot{}, time.Minute) {
 		t.Error("nothing running counts as healthy")
+	}
+}
+
+func TestRestartRequestExits75(t *testing.T) {
+	stopFilePoll = 10 * time.Millisecond
+	t.Setenv(envStopFile, "")
+	root := t.TempDir()
+	l := layout.New(root)
+	rel := l.ReleaseDir("1.5.0")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	restart := watchLauncher(ctx, cancel, rel)
+	if err := l.RequestRestart(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a restart request did not stop serve")
+	}
+	if !restart.Load() {
+		t.Fatal("restart not reported")
+	}
+	if _, err := os.Stat(l.RestartRequestPath()); err == nil {
+		t.Fatal("the request was not consumed")
 	}
 }

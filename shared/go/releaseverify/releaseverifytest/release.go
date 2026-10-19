@@ -52,7 +52,7 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 		exe = ".exe"
 	}
 	r := &FakeRelease{Tag: tag, Repo: repo, Platform: platform, Files: map[string][]byte{}, Binaries: map[string][]byte{}}
-	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming"} {
+	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
 		r.Binaries[b+exe] = []byte(fmt.Sprintf("#!fake %s %s %s\n", b, tag, platform))
 	}
 	base := fmt.Sprintf("maktaba-server-%s-%s-%s", ver, goos, goarch)

@@ -34,7 +34,9 @@ import (
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -157,6 +159,15 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 	self, err := s.selfPathFunc()
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("locate running binary"))
+		return
+	}
+
+	// A self-managed install (Epic 35 story 35.2; package installs too): the
+	// release is staged side by side in bin/releases/<v>/, becomes current
+	// under the launcher's boot-loop guard, and the server restarts on it
+	// (exit 75 through the launcher). The running binaries are never replaced.
+	if l, ok := install.Root(self); ok {
+		s.layoutUpdate(w, r, l, status)
 		return
 	}
 
@@ -391,6 +402,65 @@ func diskCheck(dir string, need int64) error {
 }
 
 // --- install detection + package managers ---
+
+// layoutUpdate is the self-update of a self-managed install.
+func (s *SelfUpdater) layoutUpdate(w http.ResponseWriter, r *http.Request, l layout.Layout, status UpdateStatus) {
+	st, err := s.stageLayout(r.Context(), l, status)
+	if err != nil {
+		s.writeApplyError(w, r, err)
+		return
+	}
+	if err := st.Activate(l, "api"); err != nil {
+		s.writeApplyError(w, r, fmt.Errorf("%w: %v", errSwap, err))
+		return
+	}
+	if err := l.RequestRestart(); err != nil {
+		s.u.log.Warn("self-update: restart request not written", "event", "update_restart_request_error", "err", err.Error())
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"updated":     true,
+		"version":     status.LatestVersion,
+		"restarting":  true,
+		"layout":      true,
+		"rollback_to": func() string { p, _ := l.Previous(); return p }(),
+	})
+}
+
+// stageLayout downloads, verifies and stages the release (the shared install
+// flow, releaseverify/install). Errors carry the handler's sentinels.
+func (s *SelfUpdater) stageLayout(ctx context.Context, l layout.Layout, status UpdateStatus) (*install.Staged, error) {
+	id, err := s.u.Identity()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errVerify, err)
+	}
+	tm, err := s.trusted(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errVerify, err)
+	}
+	if err := writableDir(l.ReleasesDir()); err != nil {
+		return nil, fmt.Errorf("%w: %s", errNotWritable, l.ReleasesDir())
+	}
+	assets := make(map[string]string, len(status.Assets))
+	for _, a := range status.Assets {
+		assets[a.Name] = a.URL
+	}
+	st, err := install.Stage(ctx, l, releaseverify.HTTPDownloader(s.httpc),
+		releaseverify.Input{Tag: status.LatestVersion, Identity: id, TrustedMaterial: tm}, assets, s.platform)
+	if err != nil {
+		var rvErr *releaseverify.Error
+		switch {
+		case errors.As(err, &rvErr) && (errors.Is(rvErr.Kind, releaseverify.ErrDowngrade) || errors.Is(rvErr.Kind, releaseverify.ErrReplay)):
+			return nil, fmt.Errorf("%w: %v", errDowngrade, err)
+		case errors.Is(err, releaseverify.ErrNotFound):
+			return nil, fmt.Errorf("%w: %v", errNoAsset, err)
+		case errors.As(err, &rvErr):
+			return nil, fmt.Errorf("%w: %v", errVerify, err)
+		default:
+			return nil, fmt.Errorf("%w: %v", errDownload, err)
+		}
+	}
+	return st, nil
+}
 
 func resolveSelf() (string, error) {
 	self, err := os.Executable()

@@ -250,6 +250,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		ln.guardVersion, ln.failures = "", nil
 	}
 
+	_ = ln.l.TakeRestartRequest() // a stale request must not restart the release we start now
 	stopFile := filepath.Join(ln.l.UpdatesDir(), "stop-"+randHex())
 	_ = os.Remove(stopFile)
 	defer func() { _ = os.Remove(stopFile) }()
