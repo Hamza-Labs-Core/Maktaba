@@ -22,6 +22,10 @@
 // Tuning is lazy — requesting the playlist starts the channel — so a
 // first request can fail while the encoder warms up; the player retries a
 // few times before showing the "can't play here" slate.
+//
+// Safari/iOS play the playlist natively; other browsers get hls.js,
+// lazy-loaded into its own chunk (useLiveHls), which also rejoins the live
+// edge after a mid-play stall and shows a "Reconnecting…" indicator.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -37,6 +41,7 @@ import {
   type Channel,
   type NowEntry,
 } from "../../lib/channels";
+import { useLiveHls } from "./useLiveHls";
 
 const BANNER_MS = 5000;
 const SURF_COMMIT_MS = 400; // debounce rapid surfing (EC2)
@@ -60,7 +65,12 @@ export function Player() {
   const [notFound, setNotFound] = useState(false);
   const [, tick] = useState(0);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const attachVideo = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    setVideoEl(el);
+  }, []);
   const offsetRef = useRef(0);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const surfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,7 +134,7 @@ export function Player() {
   }, [channel, lineup]);
 
   const onPlaying = useCallback(() => setTuning(false), []);
-  const onVideoError = useCallback(() => {
+  const onStreamFailed = useCallback(() => {
     if (retryTimer.current) clearTimeout(retryTimer.current);
     if (attempt + 1 >= LIVE_RETRIES) {
       setTuning(false);
@@ -133,6 +143,17 @@ export function Player() {
     }
     retryTimer.current = setTimeout(() => setAttempt((a) => a + 1), LIVE_RETRY_MS);
   }, [attempt]);
+
+  // A retry re-requests the playlist (the cache-buster defeats a cached
+  // error); attempt 0 is the plain URL.
+  const base = channel ? liveStreamUrl(channel.id) : "";
+  const src = base && attempt > 0 ? `${base}?retry=${attempt}` : base;
+  const { mode: hlsMode, reconnecting } = useLiveHls(videoEl, failed ? "" : src, onStreamFailed);
+  // With hls.js the element's own error events are MSE noise — hls.js
+  // reports (and recovers) them itself, escalating via onStreamFailed.
+  const onVideoError = useCallback(() => {
+    if (hlsMode !== "hls") onStreamFailed();
+  }, [hlsMode, onStreamFailed]);
 
   // Auto-hide the banner ~5s after it appears (suppressed while the
   // mini-guide is open to avoid stacked overlays, EC3).
@@ -241,14 +262,11 @@ export function Player() {
   }
   if (lineup === null) return <p className="mkt-loading">{t("common.loading")}</p>;
 
-  // A retry re-requests the playlist (the cache-buster defeats a cached
-  // error); attempt 0 is the plain URL.
-  const base = channel ? liveStreamUrl(channel.id) : "";
-  const src = base && attempt > 0 ? `${base}?retry=${attempt}` : base;
   const current = entry?.current ?? null;
   const next = entry?.next ?? null;
   const prog = current ? progressFraction(current, nowMs) : null;
-  const degraded = failed || !src;
+  const unsupported = hlsMode === "unsupported";
+  const degraded = failed || !src || unsupported;
   const logo = channel ? channelLogo(channel) : null;
 
   return (
@@ -262,7 +280,7 @@ export function Player() {
       <div className="mkt-live__stage">
         {degraded ? (
           <div className="mkt-live__slate" data-testid="live-slate">
-            <p>{t("live.unavailable")}</p>
+            <p>{unsupported ? t("live.noHls") : t("live.unavailable")}</p>
             {src && (
               <p className="mkt-live__slate-hint">
                 {t("live.openElsewhere")}{" "}
@@ -274,10 +292,9 @@ export function Player() {
           </div>
         ) : (
           <video
-            ref={videoRef}
+            ref={attachVideo}
             data-testid="live-video"
             className="mkt-live__video"
-            src={src}
             autoPlay
             playsInline
             controls
@@ -291,6 +308,11 @@ export function Player() {
           ● {t("live.liveLabel")}
         </span>
         {tuning && <div className="mkt-live__tuning">{t("live.tuning")}</div>}
+        {reconnecting && !tuning && !degraded && (
+          <div className="mkt-live__tuning" role="status" data-testid="live-reconnecting">
+            {t("live.reconnecting")}
+          </div>
+        )}
         {numberBuffer && (
           <div className="mkt-live__numentry" data-testid="number-entry">
             {numberBuffer}

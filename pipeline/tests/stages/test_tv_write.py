@@ -298,3 +298,54 @@ async def test_a_live_block_is_stored_with_its_address(db: Database) -> None:
     assert (
         await db.fetchval("SELECT count(*) FROM filler_pools WHERE external_key IS NOT NULL") == 0
     )
+
+
+@pytest.mark.asyncio
+async def test_a_series_or_collection_slot_plays_its_own_queue(db: Database) -> None:
+    """A slot a person picked in the channel editor: a series' episodes in season /
+    episode order, a collection's items in their order, ``order: "shuffle"`` shuffled the
+    same way every time."""
+    from maktaba_pipeline.channels.base import ChannelDef, ChannelMode
+
+    lib = await make_library(db)
+    eps = [await make_video(db, lib, title=f"ep{i}", duration=1500.0) for i in range(4)]
+    sid, col = "00000000-0000-0000-0000-0000000005e1", "00000000-0000-0000-0000-00000000c011"
+    await db.execute(
+        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'S')", sid, str(lib)
+    )
+    for n, v in enumerate(reversed(eps)):  # inserted out of order: the order is season/episode
+        await db.execute(
+            "INSERT INTO series_episodes (series_id, video_id, season, episode) VALUES ($1, $2, 1, $3)",
+            sid, str(v), 4 - n,
+        )  # fmt: skip
+    await db.execute(
+        "INSERT INTO collections (id, library_id, name) VALUES ($1, $2, 'C')", col, str(lib)
+    )
+    for n, v in enumerate(eps[:2]):
+        await db.execute(
+            "INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $2, $3)",
+            col, str(v), 2 - n,
+        )  # fmt: skip
+    slots = [
+        {"start": "00:00", "end": "06:00", "source": {"type": "series", "series_id": sid}},
+        {"start": "06:00", "end": "12:00", "source": {"type": "collection", "collection_id": col}},
+        {"start": "12:00", "end": "18:00",
+         "source": {"type": "series", "series_id": sid, "order": "shuffle"}},
+        {"start": "18:00", "end": "24:00", "source": {"type": "filler"}},
+    ]  # fmt: skip
+    ch = ChannelDef(
+        id=UUID("00000000-0000-0000-0000-00000000c4a1"),
+        mode=ChannelMode.SCHEDULE,
+        mode_config={"slots": slots},
+        source_filter=None,
+        library_id=None,
+    )
+    got = await SqlRepo(db).resolve_slot_content(ch)
+    assert got is not None
+    assert [c.video_id for c in got[0] or []] == eps
+    assert [c.video_id for c in got[1] or []] == [eps[1], eps[0]]
+    assert sorted(c.video_id for c in got[2] or []) == sorted(eps)
+    again = await SqlRepo(db).resolve_slot_content(ch)
+    assert again is not None and again[2] == got[2]  # the same shuffle every time
+    assert got[3] is None
+    assert got[0] and got[0][0].duration_ms == 1_500_000
