@@ -190,6 +190,84 @@ func TestStation_FakeFFmpeg_AirsBlocksIntoHLSAndTS(t *testing.T) {
 	}
 }
 
+// A swap's generation N+1 ends the programme on the air at boundary_max_wait
+// (tvrelease generation.py shortens its end_at and leaves its source_duration,
+// the whole programme's). The station must stop that programme at the block's
+// end, not play the source on, and start the next block of the new schedule
+// exactly there: the front door switches the channel at that instant.
+func TestStation_FakeFFmpeg_CappedProgrammeEndsAtItsBlockEnd(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	long, next := filepath.Join(dir, "long.mp4"), filepath.Join(dir, "next.mp4")
+	_ = os.WriteFile(long, []byte("x"), 0o644)
+	_ = os.WriteFile(next, []byte("x"), 0o644)
+	capAt := now.Add(1500 * time.Millisecond)
+	st := fakeStation(t, "1", []ProgramBlock{
+		// a two-hour programme 20 min in, capped 1.5 s from now (the next block is
+		// queued ahead at once: the test does not wait for the boundary)
+		{Seq: 1, Kind: KindProgram, Path: long, StartAt: now.Add(-20 * time.Minute), EndAt: capAt,
+			SourceDurationMS: int((2 * time.Hour) / time.Millisecond)},
+		{Seq: 2, Kind: KindProgram, Path: next, StartAt: capAt, EndAt: capAt.Add(time.Minute),
+			SourceDurationMS: 60_000},
+	})
+	type launch struct {
+		src      string
+		dur, off float64
+	}
+	read := func() []launch {
+		b, _ := os.ReadFile(filepath.Join(st.Dir(), "blocks.log"))
+		var out []launch
+		for _, l := range strings.Split(string(b), "\n") {
+			i := strings.Index(l, " file src=")
+			if i < 0 {
+				continue
+			}
+			var x launch
+			f := strings.Fields(l[i+len(" file "):])
+			for _, kv := range f {
+				k, v, _ := strings.Cut(kv, "=")
+				switch k {
+				case "src":
+					x.src, _ = strconv.Unquote(v)
+				case "dur":
+					x.dur, _ = strconv.ParseFloat(v, 64)
+				case "off":
+					x.off, _ = strconv.ParseFloat(v, 64)
+				}
+			}
+			out = append(out, x)
+		}
+		return out
+	}
+	var capped, after *launch
+	waitForSoft(3*time.Second, func() bool {
+		capped, after = nil, nil
+		for _, l := range read() {
+			l := l
+			switch {
+			case strings.HasSuffix(l.src, "long.mp4"):
+				capped = &l
+			case strings.HasSuffix(l.src, "next.mp4"):
+				after = &l
+			}
+		}
+		return capped != nil && after != nil
+	})
+	if capped == nil || after == nil {
+		t.Fatalf("blocks launched: capped %+v, next %+v", capped, after)
+	}
+	// the capped programme runs only to its block's end (it joined just now)
+	if capped.dur <= 0 || capped.dur > capAt.Sub(now).Seconds()+0.05 {
+		t.Errorf("the capped programme runs %.3f s, want at most %.3f s (its block's end, not its source)",
+			capped.dur, capAt.Sub(now).Seconds())
+	}
+	// the new schedule's first block starts at the cap, on the wall-clock grid
+	want := float64(TSOffsetTicks(AlignStart(capAt, 30))) / 90000
+	if d := after.off - want; d < -0.001 || d > 0.001 {
+		t.Errorf("the next block starts at offset %.3f, want %.3f (the capped end)", after.off, want)
+	}
+}
+
 func TestStation_FakeFFmpeg_MuxerRestartsOnItsOwn(t *testing.T) {
 	now := time.Now()
 	st := fakeStation(t, "1", []ProgramBlock{{Seq: 1, Kind: KindSlate, StartAt: now, EndAt: now.Add(time.Minute)}})
