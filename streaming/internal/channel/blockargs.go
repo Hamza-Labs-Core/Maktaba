@@ -392,7 +392,7 @@ func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
 		"-f", "hls",
-		"-"+hlsSegOpt(p.HLSSegmentOption), hlsSegmentOptions(),
+		"-" + hlsSegOpt(p.HLSSegmentOption), hlsSegmentOptions(),
 		"-hls_time", itoa(p.SegmentSeconds),
 		"-hls_list_size", itoa(p.HLSListSize),
 		"-hls_delete_threshold", "3",

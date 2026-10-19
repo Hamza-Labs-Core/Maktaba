@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,9 +177,8 @@ func (h *Handler) serveSlotSegment(w http.ResponseWriter, r *http.Request) {
 			h.Slots.Suspect(r.Context(), name)
 		}
 	}
-	if h.CacheRoot != "" {
-		p := filepath.Join(h.CacheRoot, "tv", name, "channel-"+id.String(), seg)
-		if f, ferr := os.Open(p); ferr == nil {
+	if p, ok := h.slotSegmentFile(name, id, seg); ok {
+		if f, ferr := os.Open(p); ferr == nil { //nolint:gosec // built from validated parts only (slotSegmentFile)
 			defer f.Close()
 			w.Header().Set("Content-Type", "video/mp2t")
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -188,6 +188,31 @@ func (h *Handler) serveSlotSegment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.NotFound(w, r)
+}
+
+// slotSegmentFile is a slot's segment file on this disk, built only from
+// known parts: the instance name from the fixed list, the parsed channel id and
+// the segment number (never the request's own strings).
+func (h *Handler) slotSegmentFile(name string, id uuid.UUID, seg string) (string, bool) {
+	if h.CacheRoot == "" {
+		return "", false
+	}
+	inst := ""
+	for _, n := range slot.Names {
+		if n == name {
+			inst = n
+		}
+	}
+	num, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(seg, "seg-"), ".ts"), 10, 63)
+	if inst == "" || err != nil {
+		return "", false
+	}
+	root := filepath.Clean(h.CacheRoot)
+	p := filepath.Join(root, "tv", inst, "channel-"+uuid.UUID(id).String(), "seg-"+strconv.FormatUint(num, 10)+".ts")
+	if rel, err := filepath.Rel(root, p); err != nil || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	return p, true
 }
 
 // proxyLiveSlot hands a request for a channel on this host to the live slot.

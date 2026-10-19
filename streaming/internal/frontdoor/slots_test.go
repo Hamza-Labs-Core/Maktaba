@@ -465,3 +465,24 @@ func TestStagingSettings(t *testing.T) {
 		t.Fatal("staging active without the build flag")
 	}
 }
+
+// A crashed slot's listed segments come from its directory on this disk; the
+// path is built only from the known parts.
+func TestSlotSegmentFile(t *testing.T) {
+	h := &Handler{CacheRoot: t.TempDir()}
+	id := uuid.New()
+	p, ok := h.slotSegmentFile("green", id, "seg-42.ts")
+	if !ok || !strings.HasSuffix(filepathToSlash(p), "/tv/green/channel-"+id.String()+"/seg-42.ts") {
+		t.Fatalf("path %q %v", p, ok)
+	}
+	for _, c := range [][2]string{{"purple", "seg-1.ts"}, {"green", "seg-..ts"}, {"green", "seg-1/../x.ts"}, {"green", "seg-x.ts"}} {
+		if _, ok := h.slotSegmentFile(c[0], id, c[1]); ok {
+			t.Errorf("%v accepted", c)
+		}
+	}
+	if _, ok := (&Handler{}).slotSegmentFile("green", id, "seg-1.ts"); ok {
+		t.Error("no cache root, but a path")
+	}
+}
+
+func filepathToSlash(p string) string { return strings.ReplaceAll(p, `\`, "/") }
