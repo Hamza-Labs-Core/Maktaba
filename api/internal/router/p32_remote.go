@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 )
@@ -60,6 +61,9 @@ type P32RemoteDeps struct {
 	Logger  *slog.Logger
 	// NoLoop: do not start the remote controller's loop (tests).
 	NoLoop bool
+	// Notifier receives the budget and simulcast-cap notices (nil: a hub over
+	// DB, whose first subscriber is the notifications table the bell reads).
+	Notifier notify.Notifier
 }
 
 // WireP32Remote builds the Cloudflare Stream integration over the
@@ -70,7 +74,11 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	in := &tvremote.Integration{DB: d.DB, Secrets: d.Secrets, Ext: q, Logger: d.Logger}
 	// Epic 32 stories 32.7-32.10: the remote controller (input pool, pushes,
 	// sessions, tokens, budget) and its reconcile loop.
-	ctl := &tvremote.Controller{DB: d.DB, Integration: in, Logger: d.Logger, Audit: remoteAudit(d.DB, d.Logger)}
+	ctl := &tvremote.Controller{DB: d.DB, Integration: in, Logger: d.Logger, Audit: remoteAudit(d.DB, d.Logger),
+		Notifier: d.Notifier}
+	if ctl.Notifier == nil && d.DB != nil {
+		ctl.Notifier = notify.NewHub(d.DB, d.Logger)
+	}
 	in.StopPushes = ctl.StopAll
 	if d.DB != nil && !d.NoLoop {
 		go ctl.Run(context.Background())

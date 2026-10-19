@@ -167,6 +167,39 @@ describe("RemotePanel", () => {
     expect(events).toHaveTextContent("ERR_UNSUPPORTED_VIDEO_CODEC");
   });
 
+  it("shows the 80 % budget notice (32.10 AC4)", async () => {
+    get.mockResolvedValue({
+      integration: integration(),
+      remote: remote({
+        budget_notice: { month: "2026-10", level: 80, total_usd: 8.1, budget_usd: 10, action: "block_new" },
+      }),
+    });
+    renderPanel();
+    const n = await screen.findByTestId("remote-budget-notice");
+    expect(n).toHaveTextContent("reached 80% of the monthly budget ($8.10 of $10.00)");
+    expect(n).not.toHaveTextContent(/refused/);
+  });
+
+  it("shows the 100 % budget notice and what it does (32.10 AC4)", async () => {
+    get.mockResolvedValue({
+      integration: integration(),
+      remote: remote({
+        budget_notice: { month: "2026-10", level: 100, total_usd: 10.2, budget_usd: 10, action: "block_new" },
+      }),
+    });
+    renderPanel();
+    const n = await screen.findByTestId("remote-budget-notice");
+    expect(n).toHaveTextContent("reached the monthly budget ($10.20 of $10.00)");
+    expect(n).toHaveTextContent(/New remote tunes are refused/);
+  });
+
+  it("shows no budget notice below 80 %", async () => {
+    get.mockResolvedValue({ integration: integration(), remote: remote() });
+    renderPanel();
+    await screen.findByTestId("remote-month");
+    expect(screen.queryByTestId("remote-budget-notice")).toBeNull();
+  });
+
   it("shows — when Cloudflare hides the viewer count (EC1)", async () => {
     const r = remote();
     (r.pushes as Array<Record<string, unknown>>)[0].cf_viewers = null;

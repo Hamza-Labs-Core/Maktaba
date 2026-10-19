@@ -3,9 +3,11 @@ package tvremote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/cf"
 )
 
@@ -135,6 +137,35 @@ func (c *Controller) budgetTick(ctx context.Context, s Settings, now time.Time) 
 	}
 	c.log().Warn("tv_remote: monthly budget threshold reached", "month", e.Month, "percent", round2(e.Percent),
 		"total_usd", round2(e.TotalUSD), "budget_usd", e.BudgetUSD, "action", e.Action, "event", event)
+	sev := notify.SeverityWarn
+	if lvl == 100 {
+		sev = notify.SeverityError
+	}
+	c.notifyThreshold(ctx, NotifyBudget, sev, e.Month, lvl, map[string]any{"month": e.Month, "level": lvl,
+		"percent": round2(e.Percent), "total_usd": round2(e.TotalUSD), "budget_usd": e.BudgetUSD,
+		"action": e.Action, "exhausted": e.Exhausted})
+}
+
+// Notification kinds of the monthly thresholds (the web app's keys are
+// "notify.<kind>", en / ar).
+const (
+	NotifyBudget       = "tv.remote.budget"  // 80 % / 100 % of the remote viewing budget (32.10 AC4)
+	NotifySimulcastCap = "tv.simulcast.cap"  // 80 % / 100 % of the simulcast output hours (32.13 AC9)
+	remoteNoticeLink   = "/admin/live-tv"    // the Live TV admin page: remote and simulcast cards
+	noticeWindow       = 32 * 24 * time.Hour // one subject is one month and level: never repeated
+)
+
+// notifyThreshold sends one threshold crossing to the bell. The caller has
+// already recorded the crossing (once per month and level); the subject
+// (kind, month, level) keeps a second API process from repeating it too.
+func (c *Controller) notifyThreshold(ctx context.Context, kind, severity, month string, level int, params map[string]any) {
+	if c.Notifier == nil {
+		return
+	}
+	if err := c.Notifier.Notify(ctx, kind, notify.Payload{Severity: severity, Params: params, Link: remoteNoticeLink,
+		Subject: fmt.Sprintf("%s:%s:%d", kind, month, level), Every: noticeWindow}); err != nil {
+		c.log().Warn("tv_remote: threshold notice not sent", "kind", kind, "err", err, "event", "tv_remote_notify_failed")
+	}
 }
 
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
