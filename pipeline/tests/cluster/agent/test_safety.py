@@ -59,7 +59,11 @@ def test_a_linked_kind_or_day_folder_is_refused(tmp_path: Path) -> None:
     f.write("metrics", {"ts": f"{DAY}T00:00:00Z"})
     f.flush()
     assert _snapshot(outside) == ["keep.txt"]
-    assert f.failed >= 1
+    # refused on the share, so the records went to the local folder instead
+    assert not f.on_share and "not a real directory" in str(f.reason)
+    local = root.parent / "local" / IP
+    assert (local / "logs" / DAY / f"{WID}.jsonl").is_file()
+    assert (local / "metrics" / DAY / f"{WID}.jsonl").is_file()
 
 
 def test_a_linked_file_is_never_appended_to(tmp_path: Path) -> None:
