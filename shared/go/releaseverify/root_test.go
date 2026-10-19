@@ -107,3 +107,44 @@ func TestRootStoreRefreshKeepsLastGood(t *testing.T) {
 		t.Fatalf("damaged cache: %+v, %v", info, err)
 	}
 }
+
+// refreshedStore is a RootStore whose cache in a fresh directory holds the
+// embedded root, refreshed a day after the embedded one was fetched.
+func refreshedStore(t *testing.T) (*rv.RootStore, string, time.Time) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "sigstore")
+	emb, _ := rv.EmbeddedRootInfo()
+	now := emb.FetchedAt.Add(24 * time.Hour)
+	raw, err := os.ReadFile("trusted_root.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &rv.RootStore{Dir: dir, Now: func() time.Time { return now },
+		Fetch: func(context.Context, string) ([]byte, error) { return raw, nil }}
+	if err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, info, err := s.TrustedMaterial(); err != nil || info.Source == "embedded" {
+		t.Fatalf("cache not used: %+v, %v", info, err)
+	}
+	return s, dir, now
+}
+
+// A fetched_at in the future (a clock that was wrong, or an edited file) must
+// not keep a cached root from ageing out: the cache is ignored.
+func TestRootStoreIgnoresFutureFetchedAt(t *testing.T) {
+	s, dir, now := refreshedStore(t)
+	meta := filepath.Join(dir, "trusted_root.meta.json")
+	future := []byte(`{"fetched_at":"` + now.Add(10*365*24*time.Hour).Format(time.RFC3339) + `"}`)
+	if err := os.WriteFile(meta, future, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, info, err := s.TrustedMaterial(); err != nil || info.Source != "embedded" {
+		t.Fatalf("future fetched_at honoured: %+v, %v", info, err)
+	}
+	// Long after the embedded root's limit, the future-dated cache does not
+	// rescue verification: it fails closed.
+	s.Now = func() time.Time { return now.Add(2 * rv.DefaultRootMaxAge) }
+	_, _, err := s.TrustedMaterial()
+	wantKind(t, err, rv.ErrRootExpired)
+}

@@ -3,12 +3,14 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 
@@ -151,5 +153,24 @@ func TestSelfUpdateBadRepoSettingFailsClosed(t *testing.T) {
 	rig.su.u.idErr = os.ErrInvalid
 	if rec := rig.post(t); rec.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Without a RootStore the embedded root is still held to the age limit: an
+// old binary that never refreshed fails closed instead of trusting stale keys.
+func TestTrustedMaterialWithoutRootStoreChecksAge(t *testing.T) {
+	emb, err := releaseverify.EmbeddedRootInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := NewUpdater(UpdaterConfig{CurrentVersion: "v1.0.0",
+		Now: func() time.Time { return emb.FetchedAt.Add(time.Hour) }})
+	if _, err := fresh.trustedMaterial(context.Background()); err != nil {
+		t.Fatalf("fresh embedded root refused: %v", err)
+	}
+	old := NewUpdater(UpdaterConfig{CurrentVersion: "v1.0.0",
+		Now: func() time.Time { return emb.FetchedAt.Add(2 * releaseverify.DefaultRootMaxAge) }})
+	if _, err := old.trustedMaterial(context.Background()); !errors.Is(err, releaseverify.ErrRootExpired) {
+		t.Fatalf("expired embedded root: err = %v, want ErrRootExpired", err)
 	}
 }
