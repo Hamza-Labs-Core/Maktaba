@@ -11,29 +11,29 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                                            |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------ |
-| ENR-01 | Queue lists pending matches and opens the first            | Happy path    | P1       | No                                                                                   |
-| ENR-02 | Clicking a row selects it and loads its panel              | Happy path    | P1       | No                                                                                   |
-| ENR-03 | j / k move the selection and stop at the ends              | Happy path    | P2       | No                                                                                   |
-| ENR-04 | j / k ignored while typing in an input                     | Accessibility | P1       | No                                                                                   |
-| ENR-05 | `items: []` shows "Nothing to review"                      | Empty state   | P2       | No                                                                                   |
-| ENR-06 | `items: null` or missing key shows the empty state         | Empty state   | P1       | No                                                                                   |
-| ENR-07 | Missing / null fields on a pending row                     | Empty state   | P2       | No                                                                                   |
-| ENR-08 | Duplicate `video_id` rows                                  | Error         | P3       | No                                                                                   |
-| ENR-09 | Loading text while the queue loads                         | Loading       | P3       | No                                                                                   |
-| ENR-10 | Queue load fails (500, network, malformed JSON)            | Error         | P2       | No                                                                                   |
-| ENR-11 | Panel candidates `null` / load fails                       | Empty state   | P1       | Partial (`EnrichmentPanel.test.tsx`: empty `[]` only; `null` and failure not tested) |
-| ENR-12 | Accept / dismiss: queue refresh and errors                 | Happy path    | P1       | No                                                                                   |
-| ENR-13 | Non-admin gets the "Admins only" state, not a server error | Permissions   | P1       | No                                                                                   |
-| ENR-14 | Signed-out redirect to `/login`                            | Permissions   | P1       | No                                                                                   |
-| ENR-15 | Language switch keeps the selection                        | Navigation    | P3       | No                                                                                   |
-| ENR-16 | Deep link, Back / Forward, discoverability                 | Navigation    | P3       | No                                                                                   |
-| ENR-17 | Render crash shows route error fallback; Back works        | Error         | P1       | No                                                                                   |
-| ENR-18 | Phone width (375 px)                                       | Responsive    | P3       | No                                                                                   |
-| ENR-19 | Arabic / RTL                                               | RTL           | P3       | No                                                                                   |
-| ENR-20 | Light and dark theme                                       | Theme         | P3       | No                                                                                   |
-| ENR-21 | Listbox semantics and focus                                | Accessibility | P2       | No                                                                                   |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                        |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------- |
+| ENR-01 | Queue lists pending matches and opens the first            | Happy path    | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-02 | Clicking a row selects it and loads its panel              | Happy path    | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-03 | j / k move the selection and stop at the ends              | Happy path    | P2       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-04 | j / k ignored while typing in an input                     | Accessibility | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-05 | `items: []` shows "Nothing to review"                      | Empty state   | P2       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-06 | `items: null` or missing key shows the empty state         | Empty state   | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-07 | Missing / null fields on a pending row                     | Empty state   | P2       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-08 | Duplicate `video_id` rows                                  | Error         | P3       | No                                                               |
+| ENR-09 | Loading text while the queue loads                         | Loading       | P3       | No                                                               |
+| ENR-10 | Queue load fails (500, network, malformed JSON)            | Error         | P2       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-11 | Panel candidates `null` / load fails                       | Empty state   | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-12 | Accept / dismiss: queue refresh and errors                 | Happy path    | P1       | No (it.fails: bug; toasts and 409 pass in `Enrichment.test.tsx`) |
+| ENR-13 | Non-admin gets the "Admins only" state, not a server error | Permissions   | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-14 | Signed-out redirect to `/login`                            | Permissions   | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-15 | Language switch keeps the selection                        | Navigation    | P3       | No                                                               |
+| ENR-16 | Deep link, Back / Forward, discoverability                 | Navigation    | P3       | No                                                               |
+| ENR-17 | Render crash shows route error fallback; Back works        | Error         | P1       | Yes (`Enrichment.test.tsx`)                                      |
+| ENR-18 | Phone width (375 px)                                       | Responsive    | P3       | No                                                               |
+| ENR-19 | Arabic / RTL                                               | RTL           | P3       | No                                                               |
+| ENR-20 | Light and dark theme                                       | Theme         | P3       | No                                                               |
+| ENR-21 | Listbox semantics and focus                                | Accessibility | P2       | Yes (`Enrichment.test.tsx`)                                      |
 
 ## Cases
 
@@ -43,7 +43,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `GET /api/enrichment/pending` → `PENDING`
 - **Steps:**
   1. Open `/admin/enrichment`.
@@ -53,7 +53,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `PENDING`
 - **Steps:**
   1. Click the "doc.mkv" option.
@@ -63,7 +63,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `PENDING`
 - **Steps:**
   1. Press `k` (at the first row).
@@ -75,7 +75,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `PENDING`; v1 panel loaded
 - **Steps:**
   1. Click the panel's search box (`aria-label` "Search manually") and type "jordan king".
@@ -85,7 +85,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `GET /api/enrichment/pending` → `{ "items": [] }`
 - **Steps:**
   1. Open the page; press `j`.
@@ -95,7 +95,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** a) `{ "items": null }`; b) `{}`
 - **Steps:**
   1. Open the page; press `j` and `k`.
@@ -105,7 +105,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** items `[{ "video_id": "v1", "video_title": null, "candidate_title": null, "provider": null, "confidence": null }, { "video_id": "v2", "video_title": "x", "candidate_title": "y", "confidence": 1.5 }]`
 - **Steps:**
   1. Open the page.
@@ -135,7 +135,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `GET /api/enrichment/pending` → a) 500 `{ "title": "Internal error" }`; b) fetch rejects; c) 200 with `{bad` as JSON
 - **Steps:**
   1. Open the page for each.
@@ -145,7 +145,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `EnrichmentPanel.test.tsx` "shows an empty state with a manual-search CTA when there are no candidates" (`[]` only)
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** queue `PENDING`; `GET /api/videos/v1/enrichment` → a) `{ "candidates": null }`; b) `{}`; c) 500; d) a candidate with `fields: null`; e) `POST .../search` → `{ "candidates": null }`
 - **Steps:**
   1. Open the page; in e) type "omar" in the search box (with j/k guarded) and click "Search manually".
@@ -155,7 +155,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug; toasts and 409 pass in `Enrichment.test.tsx`)
 - **Preconditions / data:** `PENDING`; `POST /api/videos/v1/enrichment/accept` → 200, then a run with 409 `{ "title": "Already applied" }`; dismiss → 200
 - **Steps:**
   1. In v1's panel accept the top candidate.
@@ -167,7 +167,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** signed in as `{ username: "bob", is_admin: false }`; `GET /api/enrichment/pending` → 403 `{ "title": "Forbidden", "status": 403 }`
 - **Steps:**
   1. Open `/admin/enrichment`.
@@ -177,7 +177,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** no session
 - **Steps:**
   1. Open `/admin/enrichment` directly.
@@ -209,7 +209,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** start on `/admin/users`; mock `EnrichmentPanel` to throw on render (or return `{ "items": [{ "video_id": "v1", "video_title": { "a": 1 } }] }`, an object child, which React refuses)
 - **Steps:**
   1. Navigate to `/admin/enrichment`.
@@ -250,7 +250,7 @@ Shared fixture (`PENDING`): `{ "items": [ { "video_id": "v1", "library_id": "l1"
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Enrichment.test.tsx`)
 - **Preconditions / data:** `PENDING`
 - **Steps:**
   1. Tab into the queue; press Tab again; press Enter on the second option.

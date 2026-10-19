@@ -8,28 +8,28 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                    |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | -------------------------------------------- |
-| RPW-01 | Valid token resets and lands on /login with the banner      | Happy path    | P1       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-02 | Missing token shows the no-token alert and request link     | Empty state   | P1       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-03 | Empty `?token=` behaves like missing                        | Empty state   | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-04 | Expired token (400 with detail) shows the server detail     | Error         | P1       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-05 | Used token (400 without detail) shows the invalid-link text | Error         | P1       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-06 | After a token error the user can request a new link         | Navigation    | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-07 | Password shorter than 8 keeps submit disabled               | Validation    | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-08 | Password mismatch alert                                     | Validation    | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-09 | Server error (500) is not reported as a bad link            | Error         | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-10 | Non-JSON error body does not show raw HTML                  | Error         | P2       | No (it.fails: bug, `ResetPassword.test.tsx`) |
-| RPW-11 | Network failure shows the generic error                     | Error         | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-12 | Submitting state: one request, Loading label                | Loading       | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-13 | Token with special characters is sent exactly               | Validation    | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-14 | Back after a successful reset does not reopen the form      | Navigation    | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-15 | Reset while signed in still shows the sign-in banner        | Permissions   | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-16 | Crash during render shows a fallback; Back recovers         | Error         | P1       | Yes (`App.cases.test.tsx`)                   |
-| RPW-17 | Arabic / RTL                                                | RTL           | P2       | Yes (`ResetPassword.test.tsx`)               |
-| RPW-18 | Light and dark theme                                        | Theme         | P3       | No                                           |
-| RPW-19 | Phone width 375px                                           | Responsive    | P3       | No                                           |
-| RPW-20 | Keyboard and labels                                         | Accessibility | P2       | Yes (`ResetPassword.test.tsx`)               |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                         |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------------------------------- |
+| RPW-01 | Valid token resets and lands on /login with the banner      | Happy path    | P1       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-02 | Missing token shows the no-token alert and request link     | Empty state   | P1       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-03 | Empty `?token=` behaves like missing                        | Empty state   | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-04 | Expired token (400 with detail) shows the server detail     | Error         | P1       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-05 | Used token (400 without detail) shows the invalid-link text | Error         | P1       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-06 | After a token error the user can request a new link         | Navigation    | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-07 | Password shorter than 8 keeps submit disabled               | Validation    | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-08 | Password mismatch alert                                     | Validation    | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-09 | Server error (500) is not reported as a bad link            | Error         | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-10 | Non-JSON error body does not show raw HTML                  | Error         | P2       | Yes (`ResetPassword.test.tsx`, `lib/api.test.ts`) |
+| RPW-11 | Network failure shows the generic error                     | Error         | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-12 | Submitting state: one request, Loading label                | Loading       | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-13 | Token with special characters is sent exactly               | Validation    | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-14 | Back after a successful reset does not reopen the form      | Navigation    | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-15 | Reset while signed in still shows the sign-in banner        | Permissions   | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-16 | Crash during render shows a fallback; Back recovers         | Error         | P1       | Yes (`App.cases.test.tsx`)                        |
+| RPW-17 | Arabic / RTL                                                | RTL           | P2       | Yes (`ResetPassword.test.tsx`)                    |
+| RPW-18 | Light and dark theme                                        | Theme         | P3       | No                                                |
+| RPW-19 | Phone width 375px                                           | Responsive    | P3       | No                                                |
+| RPW-20 | Keyboard and labels                                         | Accessibility | P2       | Yes (`ResetPassword.test.tsx`)                    |
 
 ## Cases
 
@@ -128,7 +128,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No (it.fails: bug, `ResetPassword.test.tsx`)
+- **Covered by existing test?** Yes (`ResetPassword.test.tsx`, `lib/api.test.ts`)
 - **Preconditions / data:** POST → `502` `text/html` `<html><body>Bad Gateway</body></html>`.
 - **Steps:**
   1. Submit.

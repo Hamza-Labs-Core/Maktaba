@@ -10,40 +10,40 @@
 
 | ID     | Title                                                                       | Category      | Priority | Covered by existing test?                                                                          |
 | ------ | --------------------------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| SHL-01 | `/` redirects to `/library`                                                 | Navigation    | P1       | No                                                                                                 |
-| SHL-02 | Unknown route shows NotFound inside the shell                               | Navigation    | P2       | No                                                                                                 |
-| SHL-03 | Unknown route while signed out goes to /login                               | Permissions   | P2       | No                                                                                                 |
-| SHL-04 | Signed out on any shell route redirects to /login with `from`               | Permissions   | P1       | No                                                                                                 |
-| SHL-05 | Auth loading shows a status, not the app or the login form                  | Loading       | P2       | No                                                                                                 |
-| SHL-06 | `/api/auth/me` 500 / network / malformed treated as signed out              | Error         | P2       | No                                                                                                 |
-| SHL-07 | Session expires mid-use (401) sends the user to /login                      | Permissions   | P1       | No                                                                                                 |
-| SHL-08 | Normal user sees no admin links                                             | Permissions   | P1       | No                                                                                                 |
-| SHL-09 | Admin sees the Administration group with every admin link                   | Permissions   | P1       | Partial (`AppShell.test.tsx`: Extensions link only)                                                |
-| SHL-10 | Non-admin deep link to an admin page shows "Admins only"                    | Permissions   | P1       | No                                                                                                 |
+| SHL-01 | `/` redirects to `/library`                                                 | Navigation    | P1       | Yes (`App.cases.test.tsx`)                                                                         |
+| SHL-02 | Unknown route shows NotFound inside the shell                               | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`; it.fails: bug, Arabic text)                                        |
+| SHL-03 | Unknown route while signed out goes to /login                               | Permissions   | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-04 | Signed out on any shell route redirects to /login with `from`               | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-05 | Auth loading shows a status, not the app or the login form                  | Loading       | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-06 | `/api/auth/me` 500 / network / malformed treated as signed out              | Error         | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-07 | Session expires mid-use (401) sends the user to /login                      | Permissions   | P1       | No (it.fails: bug, `AppShell.cases.test.tsx`)                                                      |
+| SHL-08 | Normal user sees no admin links                                             | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-09 | Admin sees the Administration group with every admin link                   | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-10 | Non-admin deep link to an admin page shows "Admins only"                    | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
 | SHL-11 | Active nav link marks only the current page                                 | Navigation    | P3       | No                                                                                                 |
-| SHL-12 | Header search submits to /search                                            | Happy path    | P2       | No                                                                                                 |
-| SHL-13 | Sign out clears the session and blocks Back                                 | Happy path    | P1       | No                                                                                                 |
-| SHL-14 | Sign out still leaves when the server call fails                            | Error         | P2       | No                                                                                                 |
-| SHL-15 | ThemeToggle cycles light → dark → system                                    | Theme         | P2       | Partial (`theme.test.ts`: lib only, not the button)                                                |
-| SHL-16 | LangToggle switches to Arabic and mirrors the shell                         | RTL           | P2       | Partial (`i18n.test.tsx`: lib only, not the button/shell)                                          |
-| SHL-17 | Notifications: `items: null` / missing / `unread: null`                     | Empty state   | P1       | No                                                                                                 |
-| SHL-18 | Notifications: load error and read-call responses missing fields            | Error         | P2       | Partial (`NotificationsBell.test.tsx`: happy paths only)                                           |
+| SHL-12 | Header search submits to /search                                            | Happy path    | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-13 | Sign out clears the session and blocks Back                                 | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-14 | Sign out still leaves when the server call fails                            | Error         | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-15 | ThemeToggle cycles light → dark → system                                    | Theme         | P2       | Yes (`AppShell.cases.test.tsx`; OS-change step in `theme.test.ts`)                                 |
+| SHL-16 | LangToggle switches to Arabic and mirrors the shell                         | RTL           | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-17 | Notifications: `items: null` / missing / `unread: null`                     | Empty state   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-18 | Notifications: load error and read-call responses missing fields            | Error         | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
 | SHL-19 | Notifications panel keyboard and focus                                      | Accessibility | P3       | Partial (`NotificationsBell.test.tsx`: Escape closes)                                              |
 | SHL-20 | Paused node replaces the whole app                                          | Error         | P1       | Yes (`NodeGuard.test.tsx`, `Paused.test.tsx`)                                                      |
-| SHL-21 | Paused page with `home: null` / unsafe `web_url`                            | Empty state   | P2       | Partial (`Paused.test.tsx`: home link shown; null/unsafe not)                                      |
-| SHL-22 | Desktop drop overlay closes after a clean drop                              | Error         | P2       | No                                                                                                 |
+| SHL-21 | Paused page with `home: null` / unsafe `web_url`                            | Empty state   | P2       | Yes (`Paused.test.tsx`)                                                                            |
+| SHL-22 | Desktop drop overlay closes after a clean drop                              | Error         | P2       | No (it.fails: bug, `AppShell.cases.test.tsx`; rejected-file path passes)                           |
 | SHL-23 | Desktop menu actions and drop import event                                  | Happy path    | P3       | Partial (`DesktopBridge.test.tsx`: navigate/scan/picker; not library slot, external, import-files) |
-| SHL-24 | Keyboard shortcuts `g l` / `g s` / `g q` / `g c` and `/`                    | Accessibility | P2       | No                                                                                                 |
-| SHL-25 | Shortcut help `?` opens, Escape closes, ignored while typing                | Accessibility | P2       | No                                                                                                 |
+| SHL-24 | Keyboard shortcuts `g l` / `g s` / `g q` / `g c` and `/`                    | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-25 | Shortcut help `?` opens, Escape closes, ignored while typing                | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
 | SHL-26 | Update toast with Reload                                                    | Happy path    | P3       | Yes (`AppShell.test.tsx`)                                                                          |
 | SHL-27 | New page scrolls to top; Back keeps the scroll                              | Navigation    | P3       | No                                                                                                 |
-| SHL-28 | Page crash shows a fallback inside the shell                                | Error         | P1       | No                                                                                                 |
-| SHL-29 | After a crash, Back and nav links recover without a refresh                 | Error         | P1       | No                                                                                                 |
-| SHL-30 | Fallback resets when the route changes (and on the same route via a new id) | Error         | P1       | No                                                                                                 |
-| SHL-31 | Crash in a header part (NotificationsBell) does not blank the app           | Error         | P1       | No                                                                                                 |
-| SHL-32 | Phone width 375px: tab bar, no sidebar, no horizontal scroll                | Responsive    | P2       | Partial (`AppShell.test.tsx`: tab bar links only, no layout)                                       |
+| SHL-28 | Page crash shows a fallback inside the shell                                | Error         | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-29 | After a crash, Back and nav links recover without a refresh                 | Error         | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-30 | Fallback resets when the route changes (and on the same route via a new id) | Error         | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-31 | Crash in a header part (NotificationsBell) does not blank the app           | Error         | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
+| SHL-32 | Phone width 375px: tab bar, no sidebar, no horizontal scroll                | Responsive    | P2       | No (e2e-only)                                                                                      |
 | SHL-33 | Light and dark theme across the shell                                       | Theme         | P3       | No                                                                                                 |
-| SHL-34 | Landmarks, skip link and labels                                             | Accessibility | P2       | No                                                                                                 |
+| SHL-34 | Landmarks, skip link and labels                                             | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`; skip-link focus move on Enter: e2e-only)                           |
 
 ## Cases
 
@@ -51,7 +51,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`App.cases.test.tsx`)
 - **Preconditions / data:** full `App` routes (or MemoryRouter with the same route tree); `/api/auth/me` → `{ "user": { "id": "u1", "username": "amal", "is_admin": false } }`; library APIs mocked to empty.
 - **Steps:**
   1. Open `/`.
@@ -62,7 +62,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`; it.fails: bug, Arabic text)
 - **Preconditions / data:** signed in.
 - **Steps:**
   1. Open `/does-not-exist/42`.
@@ -73,7 +73,7 @@
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → 401.
 - **Steps:**
   1. Open `/does-not-exist`.
@@ -83,7 +83,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → 401. Routes: `/library`, `/videos/42`, `/admin/users`, `/more`, `/search?q=x`.
 - **Steps:**
   1. Open each.
@@ -93,7 +93,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` held pending.
 - **Steps:**
   1. Open `/library`. 2. Resolve with a user.
@@ -103,7 +103,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** three runs: `/me` → `500`; `fetch` rejects; `/me` → `200 {}` (no `user`).
 - **Steps:**
   1. Open `/library`.
@@ -113,7 +113,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug, `AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in at `/library`; then the next library or notifications call returns `401` problem+json.
 - **Steps:**
   1. Trigger a refetch (navigate to `/series`, or advance the 30 s notifications poll).
@@ -123,7 +123,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/library`; read the sidebar (first `navigation` named "Primary").
@@ -133,7 +133,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `AppShell.test.tsx` "links the Extensions page for admins" checks one link.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`.
 - **Steps:**
   1. Open `/library`.
@@ -143,7 +143,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** non-admin; admin APIs → `403`.
 - **Steps:**
   1. Open `/admin/users`, `/admin/live-tv`, `/admin/logs` directly.
@@ -163,7 +163,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in at `/library`.
 - **Steps:**
   1. Type ` سورة البقرة & co` in the search box (`role="searchbox"`, name "Search") and press Enter.
@@ -174,7 +174,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in as `amal` at `/library`; `POST /api/auth/logout` → `204`; mock `purgeApiCacheOnLogout` in `src/lib/sw.ts`.
 - **Steps:**
   1. Click the header button showing `amal` (accessible name "Sign out").
@@ -185,7 +185,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/auth/logout` → `500`, then a run where `fetch` rejects.
 - **Steps:**
   1. Click sign out.
@@ -195,7 +195,7 @@
 
 - **Priority:** P2
 - **Category:** Theme
-- **Covered by existing test?** Partial — `theme.test.ts` covers `readMode`/`setMode`/`watchSystemTheme`, not the button.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`; OS-change step in `theme.test.ts`)
 - **Preconditions / data:** `localStorage["mkt:theme"] = "light"`; `matchMedia("(prefers-color-scheme: light)")` stubbed `matches: false`.
 - **Steps:**
   1. Click the theme button three times, checking after each.
@@ -206,7 +206,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `i18n.test.tsx` covers `setLocale` and `<html dir>`, not the header button or shell layout.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in, English.
 - **Steps:**
   1. Click "AR" (accessible name "Language: العربية").
@@ -217,7 +217,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/notifications?limit=30` returns in turn: `{ "items": null, "unread": 0 }`; `{ "unread": 0 }` (no `items`); `{ "items": [], "unread": null }`; `{}`; and one item with `"params": null` and one with `params` missing (`{ "id": "n1", "kind": "x", "severity": "info", "title_key": "notify.tv.slot.failover", "link": "", "audience": "all", "created_at": "2026-10-01T10:00:00Z", "read": false }`).
 - **Steps:**
   1. Render the shell; open the bell.
@@ -227,7 +227,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `NotificationsBell.test.tsx` covers happy paths.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** (a) list → `500` on first load; (b) list OK with one unread item, `POST /api/notifications/{id}/read` → `200 {}`; (c) `POST /api/notifications/read-all` → `500`; (d) list → `401`.
 - **Steps:**
   1. Open the bell in each case; click the item / "Mark all read".
@@ -257,7 +257,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `Paused.test.tsx` covers a normal home link.
+- **Covered by existing test?** Yes (`Paused.test.tsx`)
 - **Preconditions / data:** `/api/cluster/self` → node with `"home": null`; then `"home": { "web_url": "javascript:alert(1)", "reachable": false }`; then no `name`.
 - **Steps:**
   1. Render `Paused code="home_unreachable"`.
@@ -267,7 +267,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug, `AppShell.cases.test.tsx`; rejected-file path passes)
 - **Preconditions / data:** mock `registerDropHandler` in `src/lib/desktop.ts` to capture the callback; fire it with `{ accepted: ["/v/a.mp4"], rejected: [] }`.
 - **Steps:**
   1. Render `DesktopBridge` inside the app; fire the drop.
@@ -287,7 +287,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in at `/series`; focus on `body`; fake timers.
 - **Steps:**
   1. Press `g` then `l`; `g` then `s`; `g` then `q`; `g` then `c`.
@@ -301,7 +301,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in.
 - **Steps:**
   1. Press `?`. 2. Press Tab several times. 3. Press Escape. 4. Focus the search box, type `?`.
@@ -331,7 +331,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in; mock `../pages/Search` so `Search` throws `new Error("boom")` during render (any page works; the per-page files list real API shapes that throw).
 - **Steps:**
   1. Open `/library`, then click "Search" in the nav.
@@ -341,7 +341,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** as SHL-28.
 - **Steps:**
   1. On the crashed `/search`, press browser Back.
@@ -353,7 +353,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** mock `VideoDetail` to throw only when `videoId === "bad"`.
 - **Steps:**
   1. Open `/videos/bad` (fallback). 2. Navigate to `/videos/good` (same route pattern, new param). 3. Press Back to `/videos/bad`, then Forward.
@@ -363,7 +363,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** mock `./NotificationsBell` to throw during render.
 - **Steps:**
   1. Open `/library`.
@@ -373,7 +373,7 @@
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** Partial — `AppShell.test.tsx` "lists Transcription in the sidebar, behind More on the six-item tab bar" checks tab links only.
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e viewport 375x812, signed in as `a_very_long_username_here`, 120 unread notifications.
 - **Steps:**
   1. Open `/library`; scroll to the bottom of the page.
@@ -393,7 +393,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`; skip-link focus move on Enter: e2e-only)
 - **Preconditions / data:** signed in.
 - **Steps:**
   1. Press Tab once from page load; press Enter.

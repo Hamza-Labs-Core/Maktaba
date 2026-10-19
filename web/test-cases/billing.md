@@ -8,32 +8,32 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test? |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| BIL-01 | Paid plan: tier, seats, license id, sorted features        | Happy path    | P1       | No                        |
-| BIL-02 | Free tier with `features: {}` (the real default)           | Empty state   | P1       | No                        |
-| BIL-03 | Non-admin sees no license editor                           | Permissions   | P1       | No                        |
-| BIL-04 | Admin applies a valid license                              | Happy path    | P1       | No                        |
-| BIL-05 | Pasted text is not JSON                                    | Validation    | P2       | No                        |
-| BIL-06 | Server rejects the license (400)                           | Error         | P2       | No                        |
-| BIL-07 | License management disabled in this build (503)            | Error         | P2       | No                        |
-| BIL-08 | Apply/revoke 403 or network failure                        | Permissions   | P1       | No                        |
-| BIL-09 | Admin revokes the license                                  | Happy path    | P1       | No                        |
-| BIL-10 | Revoke has no confirmation and is enabled on the free tier | Validation    | P2       | No                        |
-| BIL-11 | Apply disabled for empty / whitespace input                | Validation    | P2       | No                        |
-| BIL-12 | Busy state: one request per click                          | Loading       | P2       | No                        |
-| BIL-13 | `features: null` / missing `features`                      | Empty state   | P1       | No                        |
-| BIL-14 | Missing / odd `tier`, `seats`, `license_id`                | Empty state   | P2       | No                        |
-| BIL-15 | Loading state                                              | Loading       | P3       | No                        |
-| BIL-16 | Load errors (500, 404, 403, network, malformed) and Retry  | Error         | P2       | No                        |
-| BIL-17 | 401 mid-session; signed-out deep link                      | Permissions   | P1       | No                        |
-| BIL-18 | Crash during render shows a fallback; Back recovers        | Error         | P1       | No                        |
-| BIL-19 | Nav link, Back and Forward                                 | Navigation    | P2       | No                        |
-| BIL-20 | Entitlements table column header says "Actions"            | Accessibility | P3       | No                        |
-| BIL-21 | Arabic / RTL                                               | RTL           | P2       | No                        |
-| BIL-22 | Light and dark theme                                       | Theme         | P3       | No                        |
-| BIL-23 | Phone width 375px                                          | Responsive    | P3       | No                        |
-| BIL-24 | Keyboard and labels                                        | Accessibility | P2       | No                        |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                                                     |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------------------------------- |
+| BIL-01 | Paid plan: tier, seats, license id, sorted features        | Happy path    | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-02 | Free tier with `features: {}` (the real default)           | Empty state   | P1       | Partial (Billing.test.tsx: renders; empty-entitlements message is it.fails: bug)              |
+| BIL-03 | Non-admin sees no license editor                           | Permissions   | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-04 | Admin applies a valid license                              | Happy path    | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-05 | Pasted text is not JSON                                    | Validation    | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-06 | Server rejects the license (400)                           | Error         | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-07 | License management disabled in this build (503)            | Error         | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-08 | Apply/revoke 403 or network failure                        | Permissions   | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-09 | Admin revokes the license                                  | Happy path    | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-10 | Revoke has no confirmation and is enabled on the free tier | Validation    | P2       | No (it.fails: bug)                                                                            |
+| BIL-11 | Apply disabled for empty / whitespace input                | Validation    | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-12 | Busy state: one request per click                          | Loading       | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-13 | `features: null` / missing `features`                      | Empty state   | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-14 | Missing / odd `tier`, `seats`, `license_id`                | Empty state   | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-15 | Loading state                                              | Loading       | P3       | No                                                                                            |
+| BIL-16 | Load errors (500, 404, 403, network, malformed) and Retry  | Error         | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-17 | 401 mid-session; signed-out deep link                      | Permissions   | P1       | Partial (Billing.test.tsx: signed-out redirect, no blank page; 401 redirect is it.fails: bug) |
+| BIL-18 | Crash during render shows a fallback; Back recovers        | Error         | P1       | Yes (Billing.test.tsx)                                                                        |
+| BIL-19 | Nav link, Back and Forward                                 | Navigation    | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-20 | Entitlements table column header says "Actions"            | Accessibility | P3       | No                                                                                            |
+| BIL-21 | Arabic / RTL                                               | RTL           | P2       | Yes (Billing.test.tsx)                                                                        |
+| BIL-22 | Light and dark theme                                       | Theme         | P3       | No                                                                                            |
+| BIL-23 | Phone width 375px                                          | Responsive    | P3       | No                                                                                            |
+| BIL-24 | Keyboard and labels                                        | Accessibility | P2       | Yes (Billing.test.tsx)                                                                        |
 
 ## Cases
 
@@ -41,7 +41,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** signed in as normal user; `GET /api/entitlements` → `{ "tier": "pro", "license_id": "lic_0123456789", "seats": 5, "features": { "transcode_hw": true, "cloud_relay": false, "analytics": true } }`
 - **Steps:**
   1. Open `/billing`.
@@ -51,7 +51,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Billing.test.tsx: renders; empty-entitlements message is it.fails: bug)
 - **Preconditions / data:** `GET /api/entitlements` → `{ "tier": "free", "features": {} }` (what the server returns with no license)
 - **Steps:**
   1. Open `/billing`.
@@ -61,7 +61,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** `GET /api/auth/me` → `{ "user": { "id": "u2", "username": "sam", "is_admin": false } }`; entitlements as BIL-01
 - **Steps:**
   1. Open `/billing`.
@@ -71,7 +71,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin user (`is_admin: true`); first `GET /api/entitlements` → BIL-02; `POST /api/admin/license` → 204; second `GET` → BIL-01
 - **Steps:**
   1. Open `/billing`.
@@ -83,7 +83,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; entitlements loaded
 - **Steps:**
   1. Paste `not json {` and click "Apply license".
@@ -93,7 +93,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; `POST /api/admin/license` → (a) 400 `{ "title": "Bad Request", "status": 400, "detail": "signature mismatch" }`; (b) 400 `{ "title": "Bad Request", "status": 400 }`
 - **Steps:**
   1. Paste valid JSON and apply.
@@ -103,7 +103,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; `POST /api/admin/license` → 503 `{ "title": "Service Unavailable", "status": 503, "detail": "no verifier key" }`; same for `DELETE`
 - **Steps:**
   1. Apply a license; then click "Revoke license".
@@ -113,7 +113,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** UI thinks the user is admin, server disagrees: `POST`/`DELETE /api/admin/license` → 403 `{ "title": "Forbidden", "status": 403, "detail": "admin only" }`; second run: fetch rejects
 - **Steps:**
   1. Apply a license; click "Revoke license".
@@ -123,7 +123,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; first `GET` → BIL-01; `DELETE /api/admin/license` → 204; second `GET` → BIL-02
 - **Steps:**
   1. Click "Revoke license".
@@ -133,7 +133,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** admin; (a) paid plan as BIL-01; (b) free plan as BIL-02
 - **Steps:**
   1. Click "Revoke license" once.
@@ -143,7 +143,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin
 - **Steps:**
   1. Leave the textarea empty; then type spaces and newlines only.
@@ -153,7 +153,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; `POST` / `DELETE` resolve after a delay
 - **Steps:**
   1. Click "Apply license" twice quickly.
@@ -164,7 +164,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** variants of `GET /api/entitlements`: (a) `{ "tier": "free", "features": null }`; (b) `{ "tier": "free" }`; (c) 200 `text/html` body (api returns a string); (d) 200 `application/json` body `null`.
 - **Steps:**
   1. Open `/billing`.
@@ -174,7 +174,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** variants: (a) `tier` missing; (b) `"tier": ""`; (c) `"tier": "enterprise"`; (d) `"seats": 0`; (e) `"seats": null`; (f) `"license_id": ""`; each with `"features": {}`
 - **Steps:**
   1. Open `/billing`.
@@ -194,7 +194,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** first `GET /api/entitlements`: (a) 500 `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; (b) 404 `{ "title": "Not Found", "status": 404 }` (subscriptions store not wired); (c) 403 `{ "title": "Forbidden", "status": 403, "detail": "auth required" }`; (d) fetch rejects; (e) 200 `application/json` `{bad`. Second call → BIL-01.
 - **Steps:**
   1. Open `/billing`; click "Try again".
@@ -204,7 +204,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Billing.test.tsx: signed-out redirect, no blank page; 401 redirect is it.fails: bug)
 - **Preconditions / data:** (a) auth probe OK, `GET /api/entitlements` → 401; (b) `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/billing` directly.
@@ -214,7 +214,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** start on `/account/tokens`; `GET /api/entitlements` → `{ "tier": "free", "features": null }` (crashes today, see BIL-13)
 - **Steps:**
   1. From `/account/tokens` click "Billing & license".
@@ -226,7 +226,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin; entitlements as BIL-01
 - **Steps:**
   1. From `/library` click "Billing & license"; type text into the license box; click "Cloud status"; press Back.
@@ -246,7 +246,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; admin; entitlements as BIL-01
 - **Steps:**
   1. Open `/billing`; trigger a 503 apply.
@@ -276,7 +276,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Billing.test.tsx)
 - **Preconditions / data:** admin
 - **Steps:**
   1. Tab to the textarea, paste, Tab to "Apply license", press Enter.

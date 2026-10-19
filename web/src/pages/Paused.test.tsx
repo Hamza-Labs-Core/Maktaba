@@ -132,3 +132,41 @@ describe("Paused page", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("Paused (test-cases/app-shell.md)", () => {
+  beforeEach(() => {
+    get.mockReset();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("SHL-21: home null shows the unknown-address note and never reloads", async () => {
+    const onReload = vi.fn();
+    get.mockResolvedValue(self({ paused: "", home: null as never }));
+    renderPaused({ code: "home_unreachable", onReload });
+    await act(() => vi.advanceTimersByTimeAsync(PAUSED_POLL_MS * 3));
+    expect(get).toHaveBeenCalledTimes(4);
+    expect(screen.getByText("The home's address is not known yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(onReload).not.toHaveBeenCalled();
+  });
+
+  it("SHL-21: an unsafe home web_url is not linked", async () => {
+    get.mockResolvedValue(
+      self({ paused: "", home: { web_url: "javascript:alert(1)", reachable: false } })
+    );
+    renderPaused({ code: "home_unreachable", onReload: vi.fn() });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText("The home's address is not known yet.")).toBeInTheDocument();
+  });
+
+  it("SHL-21: no machine name means no 'This is …' line", async () => {
+    get.mockResolvedValue(self({ name: undefined as never }));
+    renderPaused({ code: "paused", reason: WHY, onReload: vi.fn() });
+    await screen.findByRole("link", { name: "http://home.local:8780" });
+    expect(screen.queryByText(/^This is /)).not.toBeInTheDocument();
+  });
+});

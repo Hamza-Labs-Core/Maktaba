@@ -97,9 +97,9 @@ export function OnAir({
                     )}
                   </td>
                   <td>{c.encoder || "—"}</td>
-                  <td>{n(c.viewers.hls)}</td>
-                  <td>{n(c.viewers.tuners)}</td>
-                  <td>{n(c.viewers.remote)}</td>
+                  <td>{n(c.viewers?.hls ?? 0)}</td>
+                  <td>{n(c.viewers?.tuners ?? 0)}</td>
+                  <td>{n(c.viewers?.remote ?? 0)}</td>
                   <td>{c.since ? formatDate(c.since) : "—"}</td>
                   <td>{n(c.restarts)}</td>
                   <td>{n(c.nvenc_fallbacks)}</td>

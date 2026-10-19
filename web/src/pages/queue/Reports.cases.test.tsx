@@ -203,7 +203,9 @@ describe("Reports (test-cases/queue-reports.md)", () => {
 
   it("QRP-13: signed-out user is sent to /login; no report is loaded", async () => {
     setup({}, { path: "/queue/reports?open=channel-plan.html", user: null });
-    expect(await screen.findByText("login page (from /queue/reports)")).toBeInTheDocument();
+    expect(
+      await screen.findByText("login page (from /queue/reports?open=channel-plan.html)")
+    ).toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
     expect(document.querySelector("iframe")).toBeNull();
   });

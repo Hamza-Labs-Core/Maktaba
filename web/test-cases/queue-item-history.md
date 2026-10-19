@@ -14,35 +14,35 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------- |
-| QIH-01 | Library item renders header, re-queue, seasons, timeline    | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-02 | Video and season items: breadcrumb and "Open" link          | Happy path    | P2       | No                                                       |
-| QIH-03 | Shows Loading while history is pending                      | Loading       | P2       | No                                                       |
-| QIH-04 | Unknown id shows "Nothing is known about this item."        | Navigation    | P1       | No                                                       |
-| QIH-05 | 500 / network / 401 is not reported as "nothing known"      | Error         | P1       | No                                                       |
-| QIH-06 | Unknown `kind` in the URL                                   | Navigation    | P2       | No                                                       |
-| QIH-07 | History list fields `null` or missing                       | Empty state   | P1       | No                                                       |
-| QIH-08 | Extensions / reports / collections / retrigger lists `null` | Empty state   | P1       | No                                                       |
-| QIH-09 | Valid empty history shows empty states                      | Empty state   | P2       | Partial (`ItemHistory.test.tsx`: collections panel only) |
-| QIH-10 | Render crash shows route error fallback; Back works         | Error         | P1       | No                                                       |
-| QIH-11 | Signed-out user is sent to `/login`                         | Permissions   | P1       | No                                                       |
-| QIH-12 | Non-admin re-queue gets a readable 403                      | Permissions   | P1       | No                                                       |
-| QIH-13 | Re-queue one queue and "Everything from the start"          | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-14 | Failed re-queue shows an alert                              | Error         | P2       | No                                                       |
-| QIH-15 | Re-queue disabled where the queue cannot run on this item   | Validation    | P2       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-16 | History filter: Everything / Changes only / Problems only   | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-17 | Load older pages the timeline; failure keeps the button     | Navigation    | P2       | No                                                       |
-| QIH-18 | Live reload after a finished job keeps loaded pages         | Happy path    | P2       | Partial (`ItemHistory.test.tsx`: reload only)            |
-| QIH-19 | Plex / dizqueTV rows follow enabled extensions              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-20 | Library collections panel and review page link              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                             |
-| QIH-21 | Links between items, stages and back; data resets per item  | Navigation    | P1       | No                                                       |
-| QIH-22 | "Choose queues…" dialog is prefilled with this item         | Happy path    | P2       | No                                                       |
-| QIH-23 | Unknown kinds / outcomes do not show raw i18n keys          | Empty state   | P3       | No                                                       |
-| QIH-24 | Phone width 375 px                                          | Responsive    | P3       | No                                                       |
-| QIH-25 | Arabic: RTL and Arabic titles                               | RTL           | P3       | No                                                       |
-| QIH-26 | Light and dark theme                                        | Theme         | P3       | No                                                       |
-| QIH-27 | Keyboard and accessibility basics                           | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                      |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                          |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------- |
+| QIH-01 | Library item renders header, re-queue, seasons, timeline    | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-02 | Video and season items: breadcrumb and "Open" link          | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-03 | Shows Loading while history is pending                      | Loading       | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-04 | Unknown id shows "Nothing is known about this item."        | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-05 | 500 / network / 401 is not reported as "nothing known"      | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: a 401 does not redirect to /login)    |
+| QIH-06 | Unknown `kind` in the URL                                   | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-07 | History list fields `null` or missing                       | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-08 | Extensions / reports / collections / retrigger lists `null` | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-09 | Valid empty history shows empty states                      | Empty state   | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-10 | Render crash shows route error fallback; Back works         | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-11 | Signed-out user is sent to `/login`                         | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-12 | Non-admin re-queue gets a readable 403                      | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: re-queue still offered to non-admins) |
+| QIH-13 | Re-queue one queue and "Everything from the start"          | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-14 | Failed re-queue shows an alert                              | Error         | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-15 | Re-queue disabled where the queue cannot run on this item   | Validation    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-16 | History filter: Everything / Changes only / Problems only   | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-17 | Load older pages the timeline; failure keeps the button     | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-18 | Live reload after a finished job keeps loaded pages         | Happy path    | P2       | No (it.todo: bug)                                                                  |
+| QIH-19 | Plex / dizqueTV rows follow enabled extensions              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-20 | Library collections panel and review page link              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-21 | Links between items, stages and back; data resets per item  | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-22 | "Choose queues…" dialog is prefilled with this item         | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-23 | Unknown kinds / outcomes do not show raw i18n keys          | Empty state   | P3       | No                                                                                 |
+| QIH-24 | Phone width 375 px                                          | Responsive    | P3       | No (e2e-only)                                                                      |
+| QIH-25 | Arabic: RTL and Arabic titles                               | RTL           | P3       | No                                                                                 |
+| QIH-26 | Light and dark theme                                        | Theme         | P3       | No                                                                                 |
+| QIH-27 | Keyboard and accessibility basics                           | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                |
 
 ## Cases
 
@@ -60,7 +60,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/items/video/v-1/history` → `videoHistoryFixture` (subject library `lib-1` "Islamic lectures"); a season item with `subject.kind: "season"`.
 - **Steps:**
   1. Open `/queue/items/video/v-1`; then `/queue/items/season/s-3`.
@@ -70,7 +70,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** history request never resolves.
 - **Steps:**
   1. Open `/queue/items/library/lib-1`.
@@ -80,7 +80,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/items/video/nope/history` → 404 `{ "title": "Not Found", "status": 404 }`.
 - **Steps:**
   1. Open `/queue/items/video/nope` directly.
@@ -91,7 +91,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`; it.fails: a 401 does not redirect to /login)
 - **Preconditions / data:** history → (a) 500; (b) `fetch` rejects `TypeError("Failed to fetch")`; (c) 401; (d) 200 with `Content-Type: text/html`.
 - **Steps:**
   1. Open `/queue/items/library/lib-1`.
@@ -101,7 +101,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** `/queue/items/bogus/x`; API → 400 `{ "title": "Bad Request", "detail": "unknown kind" }`; second run where the API answers 200 with `subject.kind: "bogus"`.
 - **Steps:**
   1. Open the URL.
@@ -111,7 +111,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** `libraryHistoryFixture` with each of these set to `null`, then deleted: `kinds`, `queues`, `seasons`, `appears_in`, `timeline`, `timeline[0].triggered`, `timeline[0].reasons`, `timeline[0].changes`, `timeline[0].changes[0].items`, `queues[0].last_job`; `next` missing.
 - **Steps:**
   1. Open `/queue/items/library/lib-1`; switch filters.
@@ -121,7 +121,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** one at a time: `/api/extensions` → `{ extensions: null }`; `/api/reports` → `{ reports: null }`; `/api/items/library/lib-1/collections` → `{ topics: null, clip_groups: [], promos: [] }` (and each of the three `null`/missing); `POST /api/queue/retrigger` → `{ results: null }`.
 - **Steps:**
   1. Open the library item; click "Re-queue <queue>".
@@ -131,7 +131,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `ItemHistory.test.tsx` "has no collections panel or review link when there is nothing to show"
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** history with `kinds: []`, `queues: []`, `seasons: []`, `appears_in: []`, `timeline: []`, `next: null`.
 - **Steps:**
   1. Open the item.
@@ -141,7 +141,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** app routes; start at `/queue`; item history with `timeline: null` (QIH-07) or `Timeline` mocked to throw.
 - **Steps:**
   1. Click a library name in the Libraries table.
@@ -152,7 +152,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** no user.
 - **Steps:**
   1. Open `/queue/items/library/lib-1`.
@@ -162,7 +162,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`; it.fails: re-queue still offered to non-admins)
 - **Preconditions / data:** non-admin; `POST /api/queue/retrigger` → 403 `{ "title": "Forbidden", "detail": "admin only" }`.
 - **Steps:**
   1. Click "Re-queue <queue>"; click "Everything from the start".
@@ -182,7 +182,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** retrigger → 500 `{ "title": "Internal Server Error", "detail": "db down" }`; then rejects with `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Click "Re-queue <queue>" twice.
@@ -212,7 +212,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** first page `next: "c2"`; `GET /api/items/library/lib-1/history?cursor=c2&limit=50` → first 500, then `{ ...page2, next: null }` with `timeline: null` in a third run.
 - **Steps:**
   1. Click "Load older" (fails); click again (works).
@@ -222,7 +222,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ItemHistory.test.tsx` "refreshes when a job for this item finishes on the stream"
+- **Covered by existing test?** No (it.todo: bug)
 - **Preconditions / data:** page 1 and page 2 loaded (QIH-17); then a hub/SSE `job.finished` for `subject_id: "lib-1"`.
 - **Steps:**
   1. Emit the finished event; wait for the throttled reload (5 s).
@@ -252,7 +252,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** app routes; library item loaded; season `s-3` history delayed 500 ms; video item history ready.
 - **Steps:**
   1. Click a season bar link → `/queue/items/season/s-3`.
@@ -264,7 +264,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
 - **Preconditions / data:** video item; snapshot stages loaded; retrigger resolves.
 - **Steps:**
   1. Click "Choose queues…"; tick one queue; submit; click "Done".
@@ -284,7 +284,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375×812; library with long Arabic and English names.
 - **Steps:**
   1. Open the library item.

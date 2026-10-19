@@ -12,33 +12,33 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test? |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| SED-01 | Header, seasons and episode grid render                     | Happy path    | P1       | No                        |
-| SED-02 | "Continue watching" links to the next episode's player      | Happy path    | P1       | No                        |
-| SED-03 | `seasons: null` / missing renders "No episodes" empty state | Empty state   | P1       | No                        |
-| SED-04 | A season with `episodes: null` / missing does not crash     | Empty state   | P1       | No                        |
-| SED-05 | `gaps: null` / missing renders no ghost cells               | Empty state   | P1       | No                        |
-| SED-06 | Render crash shows route error fallback; Back still works   | Error         | P1       | No                        |
-| SED-07 | Series in a library without ACL access                      | Permissions   | P1       | No                        |
-| SED-08 | Non-admin and accept-all                                    | Permissions   | P1       | No                        |
-| SED-09 | Signed-out user is sent to `/login`                         | Permissions   | P1       | No                        |
-| SED-10 | Unknown series id (404)                                     | Error         | P2       | No                        |
-| SED-11 | Episodes 500 / network failure / malformed JSON             | Error         | P2       | No                        |
-| SED-12 | Header fails but episodes load: fallback title              | Error         | P2       | No                        |
-| SED-13 | Loading text until episodes arrive                          | Loading       | P2       | No                        |
-| SED-14 | Missing episodes show as ghost cells per season             | Happy path    | P2       | No                        |
-| SED-15 | Season 0 shows as "Specials"; absolute numbering badge      | Happy path    | P2       | No                        |
-| SED-16 | Episode number label: E01 / #12 / none                      | Happy path    | P2       | No                        |
-| SED-17 | Watched and in-progress markers                             | Happy path    | P2       | No                        |
-| SED-18 | Accept-all success and error toasts; button loading         | Happy path    | P2       | No                        |
-| SED-19 | Navigating to another series clears the old one             | Navigation    | P2       | No                        |
-| SED-20 | Episode click opens video detail; Back returns              | Navigation    | P2       | No                        |
-| SED-21 | Id with special characters is URL-encoded                   | Navigation    | P3       | No                        |
-| SED-22 | Arabic UI and Arabic titles                                 | RTL           | P2       | No                        |
-| SED-23 | Phone width: episode grid fits                              | Responsive    | P3       | No                        |
-| SED-24 | Light/dark theme: ghost cells and markers readable          | Theme         | P3       | No                        |
-| SED-25 | Keyboard and a11y: headings, links, missing cells           | Accessibility | P3       | No                        |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                                  |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------ |
+| SED-01 | Header, seasons and episode grid render                     | Happy path    | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-02 | "Continue watching" links to the next episode's player      | Happy path    | P1       | Yes (`SeriesDetail.test.tsx`; it.todo: resume position)                                    |
+| SED-03 | `seasons: null` / missing renders "No episodes" empty state | Empty state   | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-04 | A season with `episodes: null` / missing does not crash     | Empty state   | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-05 | `gaps: null` / missing renders no ghost cells               | Empty state   | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-06 | Render crash shows route error fallback; Back still works   | Error         | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-07 | Series in a library without ACL access                      | Permissions   | P1       | Yes (`SeriesDetail.test.tsx`; e2e-only: real API refuses all three endpoints)              |
+| SED-08 | Non-admin and accept-all                                    | Permissions   | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-09 | Signed-out user is sent to `/login`                         | Permissions   | P1       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-10 | Unknown series id (404)                                     | Error         | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-11 | Episodes 500 / network failure / malformed JSON             | Error         | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-12 | Header fails but episodes load: fallback title              | Error         | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-13 | Loading text until episodes arrive                          | Loading       | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-14 | Missing episodes show as ghost cells per season             | Happy path    | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-15 | Season 0 shows as "Specials"; absolute numbering badge      | Happy path    | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-16 | Episode number label: E01 / #12 / none                      | Happy path    | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-17 | Watched and in-progress markers                             | Happy path    | P2       | Yes (`SeriesDetail.test.tsx`; it.todo: watched state for screen readers needs an i18n key) |
+| SED-18 | Accept-all success and error toasts; button loading         | Happy path    | P2       | Yes (`SeriesDetail.test.tsx`; it.todo: confirm step)                                       |
+| SED-19 | Navigating to another series clears the old one             | Navigation    | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-20 | Episode click opens video detail; Back returns              | Navigation    | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-21 | Id with special characters is URL-encoded                   | Navigation    | P3       | No                                                                                         |
+| SED-22 | Arabic UI and Arabic titles                                 | RTL           | P2       | Yes (`SeriesDetail.test.tsx`)                                                              |
+| SED-23 | Phone width: episode grid fits                              | Responsive    | P3       | No                                                                                         |
+| SED-24 | Light/dark theme: ghost cells and markers readable          | Theme         | P3       | No                                                                                         |
+| SED-25 | Keyboard and a11y: headings, links, missing cells           | Accessibility | P3       | No                                                                                         |
 
 ## Cases
 
@@ -46,7 +46,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** `GET /api/series/s1` → `{ "id": "s1", "name": "Breaking Bad", "year": 2008, "numbering": "season", "poster_path": "https://img.example/bb.jpg" }`; `GET /api/series/s1/episodes` → `{ "numbering": "season", "seasons": [ { "season": 1, "episodes": [ { "video_id": "e1", "season": 1, "episode": 1, "title": "Pilot", "thumbnail": "/api/videos/e1/poster", "progress_pct": 0, "watched": true }, { "video_id": "e2", "season": 1, "episode": 2, "title": "Cat's in the Bag", "progress_pct": 0, "watched": false } ] }, { "season": 2, "episodes": [ { "video_id": "e3", "season": 2, "episode": 1, "title": "737", "progress_pct": 0, "watched": false } ] } ] }`; `GET /api/series/s1/missing` → `{ "gaps": [], "numbering": "season" }`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -56,7 +56,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`; it.todo: resume position)
 - **Preconditions / data:** as SED-01 plus `"next_episode": { "video_id": "e2", "title": "Cat's in the Bag", "progress_pct": 40, "watched": false }`.
 - **Steps:**
   1. Open `/series/s1`; click "Continue watching".
@@ -66,7 +66,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** episodes → (a) `{ "seasons": null, "numbering": "season" }`, (b) `{ "numbering": "season" }`, (c) `{ "seasons": [] }`. List fields: `seasons`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -76,7 +76,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** episodes → `{ "numbering": "season", "seasons": [ { "season": 1, "episodes": null }, { "season": 2 }, { "season": 3, "episodes": [ { "video_id": "e9", "episode": 1, "title": "Ok", "progress_pct": 0, "watched": false } ] } ] }`; gaps → `{ "gaps": [ { "season": 1, "episode": 4 } ] }`. Nested list field: `seasons[].episodes`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -86,7 +86,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** missing → (a) `{ "gaps": null }`, (b) `{}`, (c) 500, (d) `{ "gaps": [ null ] }`. List fields: `gaps`.
 - **Steps:**
   1. Open `/series/s1` with the SED-01 episodes.
@@ -96,7 +96,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** full app routes inside `AppShell`; episodes response from SED-04 (`episodes: null`), which throws during render today. Start on `/series`.
 - **Steps:**
   1. Open `/series`; click a series card to `/series/s1`.
@@ -108,7 +108,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`; e2e-only: real API refuses all three endpoints)
 - **Preconditions / data:** non-admin; the three GETs answer 404 (or 403) problem+json `{ "title": "series not found", "status": 404 }`.
 - **Steps:**
   1. Open `/series/<id in a library the user cannot see>` directly.
@@ -118,7 +118,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** `useAuth` user `{ is_admin: false }`; SED-01 data; `POST /api/series/s1/enrichment/accept-all` → 403 `{ "title": "forbidden", "status": 403 }`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -129,7 +129,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** full `App`; `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/series/s1`.
@@ -139,7 +139,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** all three GETs → 404 problem+json `{ "title": "series not found", "status": 404 }`.
 - **Steps:**
   1. Open `/series/does-not-exist`.
@@ -149,7 +149,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** episodes → (a) 500 `{ "title": "boom", "status": 500 }`; (b) fetch rejects; (c) 200 `application/json` body `{bad`. Header and missing succeed.
 - **Steps:**
   1. Open `/series/s1`.
@@ -159,7 +159,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** `GET /api/series/s1` → 500; episodes and missing as SED-01.
 - **Steps:**
   1. Open `/series/s1`.
@@ -169,7 +169,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** header resolves at once; episodes never resolves.
 - **Steps:**
   1. Open `/series/s1`.
@@ -179,7 +179,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** SED-01 episodes; gaps → `{ "gaps": [ { "season": 1, "episode": 3 }, { "season": 1, "episode": 5 }, { "season": 4, "episode": 1 } ] }`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -189,7 +189,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** episodes → `{ "numbering": "absolute", "seasons": [ { "season": 0, "episodes": [ ... ] }, { "season": 1, "episodes": [ ... ] } ] }`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -199,7 +199,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** episodes `{ episode: 1 }`, `{ episode: 12 }`, `{ episode: null, absolute_number: 12 }`, `{ episode: 0 }`, neither set.
 - **Steps:**
   1. Open `/series/s1`.
@@ -209,7 +209,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`; it.todo: watched state for screen readers needs an i18n key)
 - **Preconditions / data:** episodes: `{ watched: true, progress_pct: 100 }`, `{ watched: false, progress_pct: 42.6 }`, `{ watched: false, progress_pct: 0 }`, `{ watched: false, progress_pct: null }`.
 - **Steps:**
   1. Open `/series/s1`.
@@ -219,7 +219,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`; it.todo: confirm step)
 - **Preconditions / data:** admin; `POST /api/series/s1/enrichment/accept-all` (a) resolves after 100 ms with 204, (b) 500 `{ "title": "accept failed" }`. Render inside `ToastProvider`.
 - **Steps:**
   1. Open `/series/s1`; click "Accept all episode matches".
@@ -229,7 +229,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** `/series/s1` loaded as SED-01; for `s2` the header resolves after 300 ms with name "Other", episodes after 10 ms.
 - **Steps:**
   1. From `/series/s1`, navigate in-app to `/series/s2` (e.g. via a test nav button).
@@ -239,7 +239,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** full routes; SED-01 data; `/api/videos/e1` mocked.
 - **Steps:**
   1. Open `/series/s1`; click episode "Pilot".
@@ -260,7 +260,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesDetail.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; header name "باب الحارة"; episode titles in Arabic; season 2.
 - **Steps:**
   1. Open `/series/s1`.

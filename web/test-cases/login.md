@@ -8,35 +8,35 @@
 
 ## Summary
 
-| ID     | Title                                                           | Category      | Priority | Covered by existing test?                                                      |
-| ------ | --------------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------ |
-| LGN-01 | Sign in goes to /library by default                             | Happy path    | P1       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-02 | Sign in returns to `state.from`                                 | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-03 | Signed-out deep link round trip keeps the page (and its query)  | Navigation    | P1       | Yes (`Login.cases.test.tsx`: path without query; it.fails: bug, query dropped) |
-| LGN-04 | `?next=` app path wins over `state.from`                        | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-05 | `?next=` SSO authorize path does a full page load               | Happy path    | P1       | Yes (`Login.test.tsx`)                                                         |
-| LGN-06 | Unsafe `?next=` falls back to /library                          | Permissions   | P1       | Yes (`Login.test.tsx`)                                                         |
-| LGN-07 | Unsafe `state.from` falls back to /library                      | Permissions   | P1       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-08 | Already signed in: /login redirects to /library at once         | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-09 | Already signed in with `state.from`: goes there                 | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-10 | Session probe finishes after render: page moves on              | Loading       | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-11 | Wrong password (401) shows the invalid-credentials alert        | Error         | P1       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-12 | Server error (500) shows the generic alert                      | Error         | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-13 | Network failure shows the generic alert                         | Error         | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-14 | 200 with a body lacking `user` does not loop silently           | Error         | P2       | No (it.fails: bug, `Login.cases.test.tsx`)                                     |
-| LGN-15 | Submitting state: button disabled, one request only             | Loading       | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-16 | Old error clears on the next attempt                            | Error         | P3       | No                                                                             |
-| LGN-17 | Empty username or password does not submit                      | Validation    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-18 | Password-reset banner after reset                               | Happy path    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-19 | Cluster prompt on a node; hidden while continuing SSO           | Happy path    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-20 | `/api/cluster/self` with `home: null` / fails: form still works | Empty state   | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-21 | Forgot-password and register links                              | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-22 | Back after sign-in does not return to /login                    | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-23 | Crash during render shows a fallback; Back recovers             | Error         | P1       | Yes (`App.cases.test.tsx`)                                                     |
-| LGN-24 | Arabic / RTL                                                    | RTL           | P2       | Yes (`Login.cases.test.tsx`)                                                   |
-| LGN-25 | Light and dark theme                                            | Theme         | P3       | No                                                                             |
-| LGN-26 | Phone width 375px                                               | Responsive    | P3       | No                                                                             |
-| LGN-27 | Keyboard and labels                                             | Accessibility | P2       | Yes (`Login.cases.test.tsx`)                                                   |
+| ID     | Title                                                           | Category      | Priority | Covered by existing test?    |
+| ------ | --------------------------------------------------------------- | ------------- | -------- | ---------------------------- |
+| LGN-01 | Sign in goes to /library by default                             | Happy path    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-02 | Sign in returns to `state.from`                                 | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-03 | Signed-out deep link round trip keeps the page (and its query)  | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-04 | `?next=` app path wins over `state.from`                        | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-05 | `?next=` SSO authorize path does a full page load               | Happy path    | P1       | Yes (`Login.test.tsx`)       |
+| LGN-06 | Unsafe `?next=` falls back to /library                          | Permissions   | P1       | Yes (`Login.test.tsx`)       |
+| LGN-07 | Unsafe `state.from` falls back to /library                      | Permissions   | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-08 | Already signed in: /login redirects to /library at once         | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-09 | Already signed in with `state.from`: goes there                 | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-10 | Session probe finishes after render: page moves on              | Loading       | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-11 | Wrong password (401) shows the invalid-credentials alert        | Error         | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-12 | Server error (500) shows the generic alert                      | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-13 | Network failure shows the generic alert                         | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-14 | 200 with a body lacking `user` does not loop silently           | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-15 | Submitting state: button disabled, one request only             | Loading       | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-16 | Old error clears on the next attempt                            | Error         | P3       | No                           |
+| LGN-17 | Empty username or password does not submit                      | Validation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-18 | Password-reset banner after reset                               | Happy path    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-19 | Cluster prompt on a node; hidden while continuing SSO           | Happy path    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-20 | `/api/cluster/self` with `home: null` / fails: form still works | Empty state   | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-21 | Forgot-password and register links                              | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-22 | Back after sign-in does not return to /login                    | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-23 | Crash during render shows a fallback; Back recovers             | Error         | P1       | Yes (`App.cases.test.tsx`)   |
+| LGN-24 | Arabic / RTL                                                    | RTL           | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-25 | Light and dark theme                                            | Theme         | P3       | No                           |
+| LGN-26 | Phone width 375px                                               | Responsive    | P3       | No                           |
+| LGN-27 | Keyboard and labels                                             | Accessibility | P2       | Yes (`Login.cases.test.tsx`) |
 
 ## Cases
 
@@ -66,7 +66,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** Yes (`Login.cases.test.tsx`: path without query; it.fails: bug, query dropped)
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** full `App` routes (RequireAuth + AppShell); `GET /api/auth/me` → 401; login resolves with a user.
 - **Steps:**
   1. Open `/search?q=quran` signed out.
@@ -179,7 +179,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No (it.fails: bug, `Login.cases.test.tsx`)
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** full App routes; login → `200` `application/json` `{}` (or `text/html` body).
 - **Steps:**
   1. Submit.

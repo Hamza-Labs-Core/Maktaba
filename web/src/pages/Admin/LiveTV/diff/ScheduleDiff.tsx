@@ -53,7 +53,7 @@ export function ScheduleDiff({ changeId, staged }: { changeId: string; staged: b
     <div className="mkt-tvx-diff" data-testid="schedule-diff">
       <p className="mkt-tvx-hint">{t("tvchanges.schedules.intro", { n: n(data.total) })}</p>
       <ul className="mkt-tvx-sched">
-        {data.channels.map((c) => {
+        {(data.channels ?? []).map((c) => {
           const o = open[c.id];
           return (
             <li key={c.id}>
@@ -114,8 +114,10 @@ export function ScheduleDiff({ changeId, staged }: { changeId: string; staged: b
 function SideBySide({ d }: { d: ScheduleChannelDiff }) {
   const { t } = useI18n();
   const keyOf = (p: Programme) => `${p.start_at}|${p.end_at}|${p.title}`;
-  const beforeKeys = new Set(d.before.map(keyOf));
-  const afterKeys = new Set(d.after.map(keyOf));
+  const before = d.before ?? [];
+  const after = d.after ?? [];
+  const beforeKeys = new Set(before.map(keyOf));
+  const afterKeys = new Set(after.map(keyOf));
   const col = (rows: Programme[], other: Set<string>, side: "before" | "after") => (
     <ol className="mkt-tvx-progs" aria-label={t(`tvchanges.schedules.${side}`)}>
       {rows.length === 0 && <li className="mkt-tvx-muted">{t("tvchanges.schedules.empty")}</li>}
@@ -134,11 +136,11 @@ function SideBySide({ d }: { d: ScheduleChannelDiff }) {
     <div className="mkt-tvx-sbs">
       <div>
         <h4>{t("tvchanges.schedules.before")}</h4>
-        {col(d.before, afterKeys, "before")}
+        {col(before, afterKeys, "before")}
       </div>
       <div>
         <h4>{t("tvchanges.schedules.after")}</h4>
-        {col(d.after, beforeKeys, "after")}
+        {col(after, beforeKeys, "after")}
       </div>
     </div>
   );

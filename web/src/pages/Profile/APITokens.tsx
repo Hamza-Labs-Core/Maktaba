@@ -21,12 +21,13 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { copyText } from "../../lib/clipboard";
 
 interface TokenView {
   id: string;
   name: string;
   prefix: string;
-  scopes: string[];
+  scopes: string[] | null;
   last_used_at: string | null;
   expires_at: string | null;
   created_at: string;
@@ -46,6 +47,7 @@ export function APITokens() {
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<TokenView | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
 
   function load() {
     setError(null);
@@ -61,6 +63,8 @@ export function APITokens() {
   useEffect(load, []);
 
   async function revoke(tok: TokenView) {
+    if (revokeBusy) return;
+    setRevokeBusy(true);
     try {
       await api.delete(`/api/me/tokens/${encodeURIComponent(tok.id)}`);
       toast.show({ tone: "success", message: t("tokens.revoked") });
@@ -71,6 +75,8 @@ export function APITokens() {
         tone: "error",
         message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
       });
+    } finally {
+      setRevokeBusy(false);
     }
   }
 
@@ -111,7 +117,9 @@ export function APITokens() {
           </thead>
           <tbody>
             {tokens.map((tok) => {
-              const revoked = tok.revoked_at !== null;
+              // A missing revoked_at means active, same as null.
+              const revoked = tok.revoked_at != null;
+              const scopes = tok.scopes ?? [];
               return (
                 <tr key={tok.id} className={revoked ? "mkt-row--muted" : undefined}>
                   <td>
@@ -125,10 +133,10 @@ export function APITokens() {
                   </td>
                   <td className="mkt-mono">{tok.prefix}…</td>
                   <td>
-                    {tok.scopes.length === 0 ? (
+                    {scopes.length === 0 ? (
                       <span className="mkt-muted">{t("tokens.scopes.full")}</span>
                     ) : (
-                      tok.scopes.join(", ")
+                      scopes.join(", ")
                     )}
                   </td>
                   <td>{tok.last_used_at ? formatDate(tok.last_used_at) : t("common.never")}</td>
@@ -171,7 +179,7 @@ export function APITokens() {
               <Button variant="ghost" onClick={() => setRevoking(null)}>
                 {t("common.cancel")}
               </Button>
-              <Button variant="destructive" onClick={() => revoke(revoking)}>
+              <Button variant="destructive" loading={revokeBusy} onClick={() => revoke(revoking)}>
                 {t("tokens.revoke")}
               </Button>
             </>
@@ -194,7 +202,7 @@ function CreateTokenModal({
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (rawToken: string) => void;
+  onCreated: (rawToken: string | null) => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -208,15 +216,24 @@ function CreateTokenModal({
   }
 
   async function submit() {
+    if (busy) return;
     setBusy(true);
     try {
-      const res = await api.post<{ token: string }>("/api/me/tokens", {
+      const res = await api.post<{ token?: string } | null>("/api/me/tokens", {
         name,
         scopes,
         expires_in_days: expiresInDays,
       });
+      const raw = res && typeof res.token === "string" ? res.token : "";
+      if (raw === "") {
+        // The token was made but its secret never arrived: say so instead
+        // of a success toast with nothing to copy.
+        toast.show({ tone: "error", message: t("common.error") });
+        onCreated(null);
+        return;
+      }
       toast.show({ tone: "success", message: t("tokens.created") });
-      onCreated(res.token);
+      onCreated(raw);
     } catch (e) {
       toast.show({ tone: "error", message: errMessage(e, t) });
     } finally {
@@ -288,11 +305,12 @@ function RevealTokenModal({ token, onClose }: { token: string; onClose: () => vo
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(token);
+    // copyText falls back to execCommand("copy") on plain-http LAN
+    // origins, where navigator.clipboard does not exist.
+    if (await copyText(token)) {
       setCopied(true);
       toast.show({ tone: "success", message: t("tokens.copied") });
-    } catch {
+    } else {
       toast.show({ tone: "error", message: t("tokens.copyFailed") });
     }
   }

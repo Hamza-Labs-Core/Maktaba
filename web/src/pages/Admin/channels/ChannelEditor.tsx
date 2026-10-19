@@ -28,7 +28,7 @@ import {
   type FillerPool,
 } from "../../../lib/channels";
 import { ArtSection, PendingArtSection, type PendingArt } from "./ArtSection";
-import { FillerSection } from "./FillerSection";
+import { FillerSection, maxGapOf } from "./FillerSection";
 import { LiveSection } from "./LiveSection";
 import { PreferHost } from "./PreferHost";
 import { PreviewSection } from "./PreviewSection";
@@ -58,9 +58,11 @@ export function changedFields(before: Partial<Channel>, after: Partial<Channel>)
 
 /** Slot problems that block saving (an overlap only warns: the first slot wins). */
 function blockingSlotProblems(config: Record<string, unknown>): boolean {
+  const asSlots = (v: unknown): Slot[] => (Array.isArray(v) ? (v as Slot[]) : []);
+  const ramadan = config.ramadan;
   const grids: Slot[][] = [
-    (config.slots as Slot[] | undefined) ?? [],
-    ((config.ramadan as { slots?: Slot[] } | undefined)?.slots as Slot[] | undefined) ?? [],
+    asSlots(config.slots),
+    asSlots(ramadan && typeof ramadan === "object" ? (ramadan as { slots?: unknown }).slots : null),
   ];
   return grids.some((g) =>
     g.some((s, i) => slotProblems(s, g, i).some((p) => p !== "channels.slot.err.overlap"))
@@ -104,6 +106,9 @@ export function ChannelEditor({
     loaded: false,
   });
   const [liveFocus, setLiveFocus] = useState<number | null>(null);
+  // A new channel that was created but whose live rows failed to save: the
+  // next Save retries only the live rows, never a second POST.
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const origin = channelOrigin(draft);
 
   useEffect(() => {
@@ -146,7 +151,8 @@ export function ChannelEditor({
       [...new Set(existing.map((c) => c.category).filter((c): c is string => Boolean(c)))].sort(),
     [existing]
   );
-  const numberCollision = existing.find((c) => c.number === form.number && c.id !== draft.id);
+  const ownId = draft.id ?? createdId;
+  const numberCollision = existing.find((c) => c.number === form.number && c.id !== ownId);
   const nameError = !form.name?.trim() ? t("channels.err.nameRequired") : undefined;
   const numberError =
     !form.number || form.number <= 0
@@ -162,7 +168,8 @@ export function ChannelEditor({
   const changes = isEdit ? changedFields(draft, form) : form;
   const channelDirty = Object.keys(changes).length > 0;
   const stopsFollowing = origin === "plan" && channelDirty;
-  const blocked = Boolean(nameError || numberError || rule || slotsBad || liveBad);
+  const fillerBad = maxGapOf(config).bad;
+  const blocked = Boolean(nameError || numberError || rule || slotsBad || liveBad || fillerBad);
 
   async function uploadPending(id: string) {
     for (const kind of Object.keys(pending) as ArtKind[]) {
@@ -188,8 +195,9 @@ export function ChannelEditor({
     try {
       if (isEdit && draft.id) {
         if (channelDirty) await channelsApi.update(draft.id, changes);
-      } else {
+      } else if (!createdId) {
         const created = await channelsApi.create(form);
+        setCreatedId(created.id);
         await uploadPending(created.id);
       }
       if (live.dirty) {
@@ -205,6 +213,8 @@ export function ChannelEditor({
             tone: "error",
             message: t("channels.live.saveFailed", { why: rulesError(e).message }),
           });
+          // the channel itself was created: show it in the list behind the dialog
+          if (!isEdit) onArtChanged?.();
           return;
         }
       }
@@ -346,7 +356,7 @@ export function ChannelEditor({
     },
     {
       id: "filler",
-      label: t("channels.tab.filler"),
+      label: t("channels.tab.filler") + dot(fillerBad),
       content: <FillerSection config={config} setConfig={setConfig} pools={pools} />,
     },
     {

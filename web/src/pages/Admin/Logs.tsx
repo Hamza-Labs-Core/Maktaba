@@ -23,7 +23,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 
 interface StreamResponse {
-  entries: Record<string, unknown>[];
+  entries?: unknown[] | null;
   count: number;
 }
 
@@ -78,7 +78,9 @@ function LogsInner() {
     api
       .get<StreamResponse>(`/api/admin/logs/stream?${query}`)
       .then((r) => {
-        setLines((r.entries ?? []).map(parseLine));
+        // a null body or list is empty; one bad entry never drops the batch
+        const entries = Array.isArray(r?.entries) ? r.entries : [];
+        setLines(entries.flatMap((e) => parseLine(e) ?? []));
         setErr(false);
       })
       .catch(() => setErr(true));
@@ -248,18 +250,34 @@ function levelTone(level: string): "neutral" | "accent" | "warn" | "error" {
 
 // parseLine splits the structured record into the display fields and the
 // remaining attributes (everything that isn't a base-contract field).
-function parseLine(rec: Record<string, unknown>): LogLine {
+// A null entry is skipped; a bare string or number is shown as the message.
+function parseLine(entry: unknown): LogLine | null {
+  if (entry == null) return null;
+  if (typeof entry !== "object" || Array.isArray(entry)) {
+    const msg = typeof entry === "string" ? entry : JSON.stringify(entry);
+    return { ts: "", level: "", service: "", msg, attrs: {}, raw: {} };
+  }
+  const rec = entry as Record<string, unknown>;
   const base = new Set(["ts", "level", "service", "msg", "version", "env"]);
   const attrs: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rec)) {
     if (!base.has(k)) attrs[k] = v;
   }
   return {
-    ts: String(rec.ts ?? ""),
+    ts: tsText(rec.ts),
     level: String(rec.level ?? ""),
     service: String(rec.service ?? ""),
-    msg: String(rec.msg ?? ""),
+    msg: rec.msg == null ? "" : typeof rec.msg === "string" ? rec.msg : JSON.stringify(rec.msg),
     attrs,
     raw: rec,
   };
+}
+
+// tsText reads a numeric ts as epoch seconds (or milliseconds when it is
+// that large) so it formats as a date instead of a bare number.
+function tsText(ts: unknown): string {
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    return new Date(ts < 1e12 ? ts * 1000 : ts).toISOString();
+  }
+  return String(ts ?? "");
 }

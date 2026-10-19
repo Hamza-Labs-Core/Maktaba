@@ -8,31 +8,31 @@
 
 ## Summary
 
-| ID     | Title                                                    | Category      | Priority | Covered by existing test?               |
-| ------ | -------------------------------------------------------- | ------------- | -------- | --------------------------------------- |
-| REG-01 | Create account signs in and goes to /library             | Happy path    | P1       | Yes (`Register.test.tsx`)               |
-| REG-02 | Submit disabled until every field is filled              | Validation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-03 | Whitespace-only username or email keeps submit disabled  | Validation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-04 | Password mismatch alert and disabled submit              | Validation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-05 | Password shorter than 8 characters is not sent           | Validation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-06 | Invalid email format is not sent                         | Validation    | P3       | No                                      |
-| REG-07 | Registration closed (403) replaces the form              | Permissions   | P1       | Yes (`Register.test.tsx`)               |
-| REG-08 | Username or email taken (409) shows server detail        | Error         | P1       | Yes (`Register.test.tsx`)               |
-| REG-09 | 409 without detail shows the generic conflict text       | Error         | P2       | Yes (`Register.test.tsx`)               |
-| REG-10 | 500 shows detail or generic error                        | Error         | P2       | Yes (`Register.test.tsx`)               |
-| REG-11 | Non-JSON error body (HTML 502) does not show raw HTML    | Error         | P2       | No (it.fails: bug, `Register.test.tsx`) |
-| REG-12 | JSON error without `type` still shows an error           | Error         | P2       | Yes (`Register.test.tsx`)               |
-| REG-13 | Network failure shows the generic error                  | Error         | P2       | Yes (`Register.test.tsx`)               |
-| REG-14 | 200 with a body lacking `user` does not bounce silently  | Error         | P2       | No (it.fails: bug, `Register.test.tsx`) |
-| REG-15 | Submitting state: one request, button shows Loading      | Loading       | P2       | Yes (`Register.test.tsx`)               |
-| REG-16 | Already signed in: /register goes to /library            | Navigation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-17 | Links to sign in (form and closed state)                 | Navigation    | P2       | Yes (`Register.test.tsx`)               |
-| REG-18 | Back after creating the account does not reopen the form | Navigation    | P3       | No                                      |
-| REG-19 | Crash during render shows a fallback; Back recovers      | Error         | P1       | Yes (`App.cases.test.tsx`)              |
-| REG-20 | Arabic / RTL                                             | RTL           | P2       | Yes (`Register.test.tsx`)               |
-| REG-21 | Light and dark theme                                     | Theme         | P3       | No                                      |
-| REG-22 | Phone width 375px                                        | Responsive    | P3       | No                                      |
-| REG-23 | Keyboard, labels and autocomplete                        | Accessibility | P2       | Yes (`Register.test.tsx`)               |
+| ID     | Title                                                    | Category      | Priority | Covered by existing test?                    |
+| ------ | -------------------------------------------------------- | ------------- | -------- | -------------------------------------------- |
+| REG-01 | Create account signs in and goes to /library             | Happy path    | P1       | Yes (`Register.test.tsx`)                    |
+| REG-02 | Submit disabled until every field is filled              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-03 | Whitespace-only username or email keeps submit disabled  | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-04 | Password mismatch alert and disabled submit              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-05 | Password shorter than 8 characters is not sent           | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-06 | Invalid email format is not sent                         | Validation    | P3       | No                                           |
+| REG-07 | Registration closed (403) replaces the form              | Permissions   | P1       | Yes (`Register.test.tsx`)                    |
+| REG-08 | Username or email taken (409) shows server detail        | Error         | P1       | Yes (`Register.test.tsx`)                    |
+| REG-09 | 409 without detail shows the generic conflict text       | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-10 | 500 shows detail or generic error                        | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-11 | Non-JSON error body (HTML 502) does not show raw HTML    | Error         | P2       | Yes (`Register.test.tsx`, `lib/api.test.ts`) |
+| REG-12 | JSON error without `type` still shows an error           | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-13 | Network failure shows the generic error                  | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-14 | 200 with a body lacking `user` does not bounce silently  | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-15 | Submitting state: one request, button shows Loading      | Loading       | P2       | Yes (`Register.test.tsx`)                    |
+| REG-16 | Already signed in: /register goes to /library            | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-17 | Links to sign in (form and closed state)                 | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-18 | Back after creating the account does not reopen the form | Navigation    | P3       | No                                           |
+| REG-19 | Crash during render shows a fallback; Back recovers      | Error         | P1       | Yes (`App.cases.test.tsx`)                   |
+| REG-20 | Arabic / RTL                                             | RTL           | P2       | Yes (`Register.test.tsx`)                    |
+| REG-21 | Light and dark theme                                     | Theme         | P3       | No                                           |
+| REG-22 | Phone width 375px                                        | Responsive    | P3       | No                                           |
+| REG-23 | Keyboard, labels and autocomplete                        | Accessibility | P2       | Yes (`Register.test.tsx`)                    |
 
 ## Cases
 
@@ -142,7 +142,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No (it.fails: bug, `Register.test.tsx`)
+- **Covered by existing test?** Yes (`Register.test.tsx`, `lib/api.test.ts`)
 - **Preconditions / data:** POST → `502` `Content-Type: text/html` body `<html><body>Bad Gateway</body></html>`.
 - **Steps:**
   1. Submit.
@@ -172,7 +172,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No (it.fails: bug, `Register.test.tsx`)
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** full App routes; POST → `200 {}`.
 - **Steps:**
   1. Submit.

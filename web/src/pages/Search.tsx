@@ -12,7 +12,7 @@
 // Snippet `<mark>` runs are rendered as escaped React nodes (no raw
 // HTML). Deep-links use a formatted [mm:ss → mm:ss] range. The hit list
 // is window-capped (true virtualization deferred — see report).
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -21,6 +21,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { useAuth } from "../lib/auth";
 
 type Mode = "hybrid" | "fts" | "semantic";
 const SEARCH_LIMIT = 50;
@@ -43,7 +44,7 @@ interface YTItem {
   thumbnail: string;
   published_at?: string;
   view_count?: number;
-  match: { state: string; video_id?: string };
+  match?: { state: string; video_id?: string } | null;
 }
 interface YTBlock {
   items: YTItem[];
@@ -68,6 +69,10 @@ interface SavedSearch {
   mode: string;
 }
 
+const MODES: readonly string[] = ["hybrid", "fts", "semantic"];
+const asMode = (m: unknown): Mode => (MODES.includes(m as string) ? (m as Mode) : "hybrid");
+const YT_REASONS = new Set(["disabled", "no_key", "rate_limited", "error"]);
+
 function readMode(): Mode {
   try {
     const m = localStorage.getItem(MODE_KEY);
@@ -86,7 +91,8 @@ function ts(s: number): string {
 
 // Server emits only <mark>…</mark> wrappers; split on the literal tags
 // and keep every other run as a plain (escaped) text node.
-function renderSnippet(snippet: string): ReactNode[] {
+function renderSnippet(snippet: string | null | undefined): ReactNode[] {
+  if (typeof snippet !== "string") return [];
   const parts = snippet.split(/(<mark>|<\/mark>)/);
   const nodes: ReactNode[] = [];
   let inMark = false;
@@ -115,9 +121,12 @@ function renderSnippet(snippet: string): ReactNode[] {
 }
 
 export function Search() {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
+  const { user } = useAuth();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const [q, setQ] = useState(params.get("q") ?? "");
+  const urlQ = (params.get("q") ?? "").trim();
+  const [q, setQ] = useState(urlQ);
   const [mode, setMode] = useState<Mode>(readMode);
   const [hits, setHits] = useState<ServerHit[] | null>(null);
   const [videos, setVideos] = useState<VideoHit[]>([]);
@@ -128,6 +137,14 @@ export function Search() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Only the newest search / suggest answer may land.
+  const searchSeq = useRef(0);
+  const suggestSeq = useRef(0);
+  // The latest mode and YouTube toggle, for searches started by the URL.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const ytRef = useRef(withYouTube);
+  ytRef.current = withYouTube;
 
   useEffect(() => {
     try {
@@ -137,20 +154,37 @@ export function Search() {
     }
   }, [mode]);
 
+  useEffect(
+    () => () => {
+      if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    },
+    []
+  );
+
   const refreshSaved = () =>
     api
       .get<{ items: SavedSearch[] }>("/api/search/saved")
-      .then((r) => setSaved(r.items ?? []))
+      .then((r) => setSaved(Array.isArray(r?.items) ? r.items.filter((x) => x != null) : []))
       .catch(() => setSaved([]));
 
   useEffect(() => {
     void refreshSaved();
   }, []);
 
-  const runSearch = useMemo(
-    () => async (term: string, m: Mode, includeYouTube: boolean) => {
+  const clearResults = useCallback(() => {
+    searchSeq.current += 1;
+    setHits(null);
+    setVideos([]);
+    setYoutube(null);
+    setErr(null);
+    setPending(false);
+  }, []);
+
+  const runSearch = useCallback(
+    async (term: string, m: Mode, includeYouTube: boolean) => {
       const query = term.trim();
       if (!query) return;
+      const seq = ++searchSeq.current;
       setPending(true);
       setErr(null);
       try {
@@ -161,34 +195,64 @@ export function Search() {
           // Story 26.8: additive opt-in; absent ⇒ local-only behaviour.
           ...(includeYouTube ? { include: ["youtube"] } : {}),
         });
-        setHits(res.hits ?? []);
-        setVideos(res.videos ?? []);
-        setYoutube(includeYouTube ? (res.youtube ?? { items: [] }) : null);
+        if (seq !== searchSeq.current) return;
+        const list = <T,>(v: T[] | null | undefined) =>
+          Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
+        setHits(list(res?.hits));
+        setVideos(list(res?.videos));
+        const yt = res?.youtube;
+        setYoutube(
+          includeYouTube
+            ? { ...(yt ?? {}), items: list(yt?.items).filter((it) => it.youtube_id) }
+            : null
+        );
       } catch (e) {
+        if (seq !== searchSeq.current) return;
         setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
         setHits([]);
         setVideos([]);
+        setYoutube(null);
       } finally {
-        setPending(false);
+        if (seq === searchSeq.current) setPending(false);
       }
     },
     [t]
   );
 
-  // Auto-run once when the header box seeded `?q=` (deep link / `/`
-  // focus). Intentionally mount-only: re-running on every param/mode
-  // change would fire a search on each keystroke.
-  const didSeed = useRef(false);
+  // `?q=` drives the search: a deep link, the header search box, Back /
+  // Forward and the form all land here. `lastRun` keeps a re-run of the
+  // same effect (StrictMode) from sending a second request.
+  const lastRun = useRef<string | null>(null);
   useEffect(() => {
-    if (didSeed.current) return;
-    didSeed.current = true;
-    const seeded = params.get("q");
-    if (seeded) void runSearch(seeded, mode, withYouTube);
-  }, [params, mode, withYouTube, runSearch]);
+    if (lastRun.current === urlQ) return;
+    lastRun.current = urlQ;
+    setQ(urlQ);
+    if (urlQ) void runSearch(urlQ, modeRef.current, ytRef.current);
+    else clearResults();
+  }, [urlQ, runSearch, clearResults]);
+
+  /** Shows `term` in the URL (a history entry) and searches it. */
+  function search(term: string, m: Mode) {
+    const query = term.trim();
+    setSuggestions([]);
+    if (query === urlQ) {
+      // Same query again (a new mode, a retry): the URL does not change.
+      if (query) void runSearch(query, m, withYouTube);
+      return;
+    }
+    const nextParams = new URLSearchParams(params);
+    if (query) nextParams.set("q", query);
+    else nextParams.delete("q");
+    lastRun.current = query;
+    setParams(nextParams);
+    if (query) void runSearch(query, m, withYouTube);
+    else clearResults();
+  }
 
   function onChangeQuery(value: string) {
     setQ(value);
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    const seq = ++suggestSeq.current;
     if (!value.trim()) {
       setSuggestions([]);
       return;
@@ -196,19 +260,25 @@ export function Search() {
     suggestTimer.current = setTimeout(() => {
       api
         .get<{ suggestions: string[] }>(`/api/search/suggest?q=${encodeURIComponent(value.trim())}`)
-        .then((r) => setSuggestions(r.suggestions ?? []))
-        .catch(() => setSuggestions([]));
+        .then((r) => {
+          if (seq !== suggestSeq.current) return;
+          setSuggestions(
+            Array.isArray(r?.suggestions)
+              ? r.suggestions.filter((x): x is string => typeof x === "string")
+              : []
+          );
+        })
+        .catch(() => {
+          if (seq === suggestSeq.current) setSuggestions([]);
+        });
     }, 200);
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setSuggestions([]);
-    const nextParams = new URLSearchParams(params);
-    if (q.trim()) nextParams.set("q", q.trim());
-    else nextParams.delete("q");
-    setParams(nextParams, { replace: true });
-    void runSearch(q, mode, withYouTube);
+    suggestSeq.current += 1;
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    search(q, mode);
   }
 
   function saveCurrent() {
@@ -216,7 +286,12 @@ export function Search() {
     void api
       .post("/api/search/save", { q: q.trim(), mode })
       .then(refreshSaved)
-      .catch(() => {});
+      .catch((e) =>
+        toast.show({
+          message: e instanceof ApiError ? e.problem.title : t("common.error"),
+          tone: "error",
+        })
+      );
   }
 
   const shown = hits ? hits.slice(0, RESULT_WINDOW) : null;
@@ -301,7 +376,7 @@ export function Search() {
                   <li key={h.segment_id} className="mkt-result">
                     <Link to={`/videos/${h.video_id}/watch?t=${Math.floor(h.start_sec)}`}>
                       <span className="mkt-result__time">
-                        [{ts(h.start_sec)} → {ts(h.end_sec)}]
+                        [{ts(h.start_sec)} {dir === "rtl" ? "←" : "→"} {ts(h.end_sec)}]
                       </span>
                       <span className="mkt-result__snippet">{renderSnippet(h.snippet)}</span>
                     </Link>
@@ -311,7 +386,13 @@ export function Search() {
             </>
           )}
 
-          {youtube && <YouTubeSection block={youtube} onImported={() => {}} />}
+          {youtube && (
+            <YouTubeSection
+              block={youtube}
+              canImport={Boolean(user?.is_admin)}
+              onImported={() => {}}
+            />
+          )}
         </div>
 
         <aside className="mkt-search__side" aria-label={t("search.saved")}>
@@ -326,9 +407,10 @@ export function Search() {
                     type="button"
                     className="mkt-link-btn"
                     onClick={() => {
+                      const m = asMode(s.mode);
                       setQ(s.q);
-                      setMode(s.mode as Mode);
-                      void runSearch(s.q, s.mode as Mode, withYouTube);
+                      setMode(m);
+                      search(s.q, m);
                     }}
                   >
                     {s.q}
@@ -336,7 +418,7 @@ export function Search() {
                   <button
                     type="button"
                     className="mkt-icon-btn"
-                    aria-label={t("common.close")}
+                    aria-label={`${t("common.delete")} ${s.q}`}
                     onClick={() =>
                       void api
                         .delete(`/api/search/saved/${encodeURIComponent(s.id)}`)
@@ -361,7 +443,16 @@ export function Search() {
 // (rel="noopener noreferrer"); a match badge links an already-in-library
 // result to the local video, or offers an import to a chosen video. A
 // non-empty `reason` renders a quiet inline note, never an error toast.
-function YouTubeSection({ block, onImported }: { block: YTBlock; onImported: () => void }) {
+function YouTubeSection({
+  block,
+  canImport,
+  onImported,
+}: {
+  block: YTBlock;
+  /** Importing is an editor (admin) write; the server refuses others. */
+  canImport: boolean;
+  onImported: () => void;
+}) {
   const { t, n } = useI18n();
   const toast = useToast();
 
@@ -387,7 +478,9 @@ function YouTubeSection({ block, onImported }: { block: YTBlock; onImported: () 
       <h2 className="mkt-yt-section__title">{t("search.youtube.heading")}</h2>
       {block.items.length === 0 ? (
         <p className="mkt-muted">
-          {block.reason ? t(`search.youtube.reason.${block.reason}`) : t("search.youtube.none")}
+          {block.reason && YT_REASONS.has(block.reason)
+            ? t(`search.youtube.reason.${block.reason}`)
+            : t("search.youtube.none")}
         </p>
       ) : (
         <ul className="mkt-yt-list" role="list">
@@ -409,15 +502,15 @@ function YouTubeSection({ block, onImported }: { block: YTBlock; onImported: () 
                 </span>
               </a>
               <div className="mkt-yt-card__match">
-                {it.match.state === "in_library" && it.match.video_id ? (
+                {it.match?.state === "in_library" && it.match.video_id ? (
                   <Link to={`/videos/${it.match.video_id}`}>
                     <Badge tone="success">{t("search.youtube.inLibrary")}</Badge>
                   </Link>
-                ) : (
+                ) : canImport ? (
                   <Button size="sm" variant="secondary" onClick={() => importTo(it)}>
                     {t("search.youtube.import")}
                   </Button>
-                )}
+                ) : null}
               </div>
             </li>
           ))}

@@ -8,31 +8,31 @@
 
 ## Summary
 
-| ID     | Title                                                          | Category      | Priority | Covered by existing test? |
-| ------ | -------------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| CST-01 | No cloud service: "not configured" and setup steps             | Empty state   | P1       | No                        |
-| CST-02 | Cloud relay connected                                          | Happy path    | P1       | No                        |
-| CST-03 | Cloud relay down / degraded shows "Disconnected"               | Error         | P1       | No                        |
-| CST-04 | Status words and case accepted as "up"                         | Happy path    | P2       | No                        |
-| CST-05 | Heartbeat text sources                                         | Happy path    | P2       | No                        |
-| CST-06 | Version missing or failing: Server ID falls back               | Error         | P2       | No                        |
-| CST-07 | Health endpoint fails: "Down" card                             | Error         | P1       | No                        |
-| CST-08 | Health 401/403 is reported as "Down"                           | Permissions   | P2       | No                        |
-| CST-09 | Polling every 30 s; recovers after an error                    | Loading       | P1       | No                        |
-| CST-10 | Link goes down while the page is open                          | Error         | P1       | No                        |
-| CST-11 | Polling stops when leaving the page                            | Navigation    | P2       | No                        |
-| CST-12 | `services: null` / missing `services`                          | Empty state   | P1       | No                        |
-| CST-13 | Cloud service with null / missing `status`, `checks`, `reason` | Empty state   | P1       | No                        |
-| CST-14 | Malformed or non-JSON health response                          | Error         | P1       | No                        |
-| CST-15 | Service name matching picks the right entry                    | Happy path    | P2       | No                        |
-| CST-16 | Loading state                                                  | Loading       | P3       | No                        |
-| CST-17 | Normal user and admin see the same page; signed out redirects  | Permissions   | P1       | No                        |
-| CST-18 | Crash during render shows a fallback; Back recovers            | Error         | P1       | No                        |
-| CST-19 | Nav link, Back and Forward                                     | Navigation    | P2       | No                        |
-| CST-20 | Arabic / RTL                                                   | RTL           | P2       | No                        |
-| CST-21 | Light and dark theme                                           | Theme         | P3       | No                        |
-| CST-22 | Phone width 375px                                              | Responsive    | P3       | No                        |
-| CST-23 | Status changes are announced                                   | Accessibility | P3       | No                        |
+| ID     | Title                                                          | Category      | Priority | Covered by existing test?                                                                                            |
+| ------ | -------------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| CST-01 | No cloud service: "not configured" and setup steps             | Empty state   | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-02 | Cloud relay connected                                          | Happy path    | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-03 | Cloud relay down / degraded shows "Disconnected"               | Error         | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-04 | Status words and case accepted as "up"                         | Happy path    | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-05 | Heartbeat text sources                                         | Happy path    | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-06 | Version missing or failing: Server ID falls back               | Error         | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-07 | Health endpoint fails: "Down" card                             | Error         | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-08 | Health 401/403 is reported as "Down"                           | Permissions   | P2       | No (it.fails: bug)                                                                                                   |
+| CST-09 | Polling every 30 s; recovers after an error                    | Loading       | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-10 | Link goes down while the page is open                          | Error         | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-11 | Polling stops when leaving the page                            | Navigation    | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-12 | `services: null` / missing `services`                          | Empty state   | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-13 | Cloud service with null / missing `status`, `checks`, `reason` | Empty state   | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-14 | Malformed or non-JSON health response                          | Error         | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-15 | Service name matching picks the right entry                    | Happy path    | P2       | Partial (ServerStatus.test.tsx: case-insensitive match; cloud_storage / cloudflare_stream mismatch is it.fails: bug) |
+| CST-16 | Loading state                                                  | Loading       | P3       | No                                                                                                                   |
+| CST-17 | Normal user and admin see the same page; signed out redirects  | Permissions   | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-18 | Crash during render shows a fallback; Back recovers            | Error         | P1       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-19 | Nav link, Back and Forward                                     | Navigation    | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-20 | Arabic / RTL                                                   | RTL           | P2       | Yes (ServerStatus.test.tsx)                                                                                          |
+| CST-21 | Light and dark theme                                           | Theme         | P3       | No                                                                                                                   |
+| CST-22 | Phone width 375px                                              | Responsive    | P3       | No                                                                                                                   |
+| CST-23 | Status changes are announced                                   | Accessibility | P3       | No                                                                                                                   |
 
 ## Cases
 
@@ -40,7 +40,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** signed in; `GET /api/system/health` → `{ "status": "ok", "services": { "api": { "status": "ok" }, "streaming": { "status": "ok" } } }`; `GET /api/system/version` → `{ "version": "1.9.0", "build_sha": "abcdef0123456789" }`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -50,7 +50,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** health → `{ "status": "ok", "services": { "api": { "status": "ok" }, "cloud-relay": { "status": "ok", "checks": { "heartbeat": { "status": "ok", "reason": "2s ago" } } } } }`; version as CST-01
 - **Steps:**
   1. Open `/cloud/status`.
@@ -60,7 +60,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** health with `"cloud-relay": { "status": "down", "reason": "dial tcp: i/o timeout" }`; second run `"status": "degraded"`; third run `"status": "unknown"`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -70,7 +70,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** cloud service `status` each of `ok`, `OK`, `up`, `Up`, `healthy`, `READY`
 - **Steps:**
   1. Render the page for each value.
@@ -80,7 +80,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** cloud service variants: (a) `checks.heartbeat.reason = "5s ago"` and `reason = "x"`; (b) no `checks`, `reason = "last seen 10s ago"`; (c) `checks: { "heartbeat": { "status": "ok" } }` and no `reason`; (d) `reason: ""`
 - **Steps:**
   1. Render the page for each.
@@ -90,7 +90,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** connected health as CST-02; `GET /api/system/version`: (a) 500; (b) fetch rejects; (c) `{ "version": "1.9.0", "build_sha": "" }`; (d) `{ "version": "1.9.0" }` (no `build_sha`); (e) `{ "build_sha": null }`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -100,7 +100,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** `GET /api/system/health`: (a) 500 `{ "title": "Internal Server Error", "status": 500 }`; (b) fetch rejects; (c) 502 `text/html` from a proxy
 - **Steps:**
   1. Open `/cloud/status`.
@@ -110,7 +110,7 @@
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** auth probe OK; `GET /api/system/health` → 401 `{ "title": "Unauthorized", "status": 401 }` (or 403)
 - **Steps:**
   1. Open `/cloud/status`.
@@ -120,7 +120,7 @@
 
 - **Priority:** P1
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** fake timers; first health call rejects; second returns connected (CST-02)
 - **Steps:**
   1. Open `/cloud/status`; see the "Down" card.
@@ -131,7 +131,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** fake timers; poll 1 → connected (CST-02); poll 2 → cloud service `"status": "down"`; poll 3 → health fetch rejects; poll 4 → cloud service missing from `services`
 - **Steps:**
   1. Open the page; advance 30 s three times, checking after each.
@@ -141,7 +141,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** fake timers; health and version mocked
 - **Steps:**
   1. Open `/cloud/status`; click "Billing & license".
@@ -152,7 +152,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** health variants: (a) `{ "status": "ok", "services": null }`; (b) `{ "status": "ok" }`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -162,7 +162,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** `services` contains `"cloud-relay"` set to: (a) `{ "status": null }`; (b) `{}`; (c) `{ "status": "ok", "checks": null }`; (d) `{ "status": "ok", "checks": { "heartbeat": null } }`; (e) `"cloud-relay": null`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -172,7 +172,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** `GET /api/system/health`: (a) 200 `application/json` body `{bad`; (b) 200 `text/html` body `<!doctype html>…` (SPA fallback from a misrouted proxy); (c) 200 `application/json` body `null`
 - **Steps:**
   1. Open `/cloud/status`.
@@ -182,7 +182,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (ServerStatus.test.tsx: case-insensitive match; cloud_storage / cloudflare_stream mismatch is it.fails: bug)
 - **Preconditions / data:** services variants: (a) `{ "Cloud": {status:"ok"} }`; (b) `{ "relay": {status:"ok"} }`; (c) `{ "tunnel": {status:"down"} }`; (d) `{ "cloud_storage": { "status": "ok" }, "relay": { "status": "down" } }`; (e) `{ "cloudflare_stream": { "status": "ok" } }`
 - **Steps:**
   1. Render each.
@@ -202,7 +202,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** (a) `is_admin: false`; (b) `is_admin: true`; (c) `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/cloud/status` directly.
@@ -212,7 +212,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** start on `/billing`; `GET /api/system/health` → `{ "status": "ok", "services": null }` (crashes today, CST-12)
 - **Steps:**
   1. From `/billing` click "Cloud status".
@@ -224,7 +224,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** connected as CST-02
 - **Steps:**
   1. From `/library` click "Cloud status"; press Back; press Forward.
@@ -234,7 +234,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (ServerStatus.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; run CST-01, CST-02 and CST-07 data
 - **Steps:**
   1. Open `/cloud/status` for each.

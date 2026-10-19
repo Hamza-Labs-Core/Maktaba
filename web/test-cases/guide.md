@@ -8,34 +8,34 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                               |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------- |
-| GDE-01 | Grid renders one row per channel, cells sized by duration   | Happy path    | P1       | Yes (`Guide.test.tsx`)                                  |
-| GDE-02 | Now-line is drawn at the current time                       | Happy path    | P2       | Yes (`Guide.test.tsx`)                                  |
-| GDE-03 | Clicking the airing cell tunes the channel                  | Happy path    | P1       | Yes (`Guide.test.tsx`)                                  |
-| GDE-04 | Clicking a future cell opens the details dialog             | Happy path    | P2       | Partial (`Guide.test.tsx`: only the title is checked)   |
-| GDE-05 | Filler runs collapse into one "Up next" cell                | Happy path    | P2       | No                                                      |
-| GDE-06 | Channel logo shows, and hides when it fails to load         | Happy path    | P3       | Yes (`Guide.test.tsx`)                                  |
-| GDE-07 | What's on now view lists current and next, tapping tunes    | Happy path    | P1       | Partial (`Guide.test.tsx`: no next line, no tune click) |
-| GDE-08 | Compact view is the default on a phone                      | Responsive    | P2       | No                                                      |
-| GDE-09 | No channels shows the empty state with a working CTA        | Empty state   | P2       | Partial (`Guide.test.tsx`: CTA not clicked)             |
-| GDE-10 | `channels` / `blocks` null or missing render empty states   | Empty state   | P1       | No                                                      |
-| GDE-11 | A channel entry with a null `channel` header                | Error         | P1       | No                                                      |
-| GDE-12 | Loading text before the first response                      | Loading       | P3       | No                                                      |
-| GDE-13 | First load fails (500 / 401 / 403) shows the error state    | Error         | P1       | No                                                      |
-| GDE-14 | Network failure and malformed JSON show the error state     | Error         | P2       | No                                                      |
-| GDE-15 | A failed refresh keeps the last grid                        | Error         | P2       | No                                                      |
-| GDE-16 | Auto refresh every 30 s and 1 s now-line tick               | Happy path    | P2       | No                                                      |
-| GDE-17 | Now-line follows `server_time`, not the device clock        | Happy path    | P2       | No                                                      |
-| GDE-18 | Category filter lists categories and refetches              | Happy path    | P2       | No                                                      |
-| GDE-19 | Bad timestamps in a block do not break the grid             | Error         | P3       | No                                                      |
-| GDE-20 | Signed-out user is sent to `/login`; normal user sees guide | Permissions   | P1       | No                                                      |
-| GDE-21 | Render crash shows the route error fallback; Back works     | Error         | P1       | No                                                      |
-| GDE-22 | Back from the live player returns to the guide              | Navigation    | P2       | No                                                      |
-| GDE-23 | Phone width: grid scrolls inside its box, page does not     | Responsive    | P3       | No                                                      |
-| GDE-24 | Arabic: RTL layout, Arabic strings, time axis mirrored      | RTL           | P2       | No                                                      |
-| GDE-25 | Light and dark theme keep cells readable                    | Theme         | P3       | No                                                      |
-| GDE-26 | Keyboard: cells, filter and toggle reachable; dialog traps  | Accessibility | P2       | No                                                      |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                               |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------------------------- |
+| GDE-01 | Grid renders one row per channel, cells sized by duration   | Happy path    | P1       | Yes (`Guide.test.tsx`)                                                                  |
+| GDE-02 | Now-line is drawn at the current time                       | Happy path    | P2       | Yes (`Guide.test.tsx`)                                                                  |
+| GDE-03 | Clicking the airing cell tunes the channel                  | Happy path    | P1       | Yes (`Guide.test.tsx`)                                                                  |
+| GDE-04 | Clicking a future cell opens the details dialog             | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-05 | Filler runs collapse into one "Up next" cell                | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-06 | Channel logo shows, and hides when it fails to load         | Happy path    | P3       | Yes (`Guide.test.tsx`)                                                                  |
+| GDE-07 | What's on now view lists current and next, tapping tunes    | Happy path    | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-08 | Compact view is the default on a phone                      | Responsive    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-09 | No channels shows the empty state with a working CTA        | Empty state   | P2       | Yes (`Guide.cases.test.tsx`; CTA now admin-only)                                        |
+| GDE-10 | `channels` / `blocks` null or missing render empty states   | Empty state   | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-11 | A channel entry with a null `channel` header                | Error         | P1       | Yes (`Guide.cases.test.tsx`: error state); skipping the bad entry is No (it.fails: bug) |
+| GDE-12 | Loading text before the first response                      | Loading       | P3       | No                                                                                      |
+| GDE-13 | First load fails (500 / 401 / 403) shows the error state    | Error         | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-14 | Network failure and malformed JSON show the error state     | Error         | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-15 | A failed refresh keeps the last grid                        | Error         | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-16 | Auto refresh every 30 s and 1 s now-line tick               | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-17 | Now-line follows `server_time`, not the device clock        | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-18 | Category filter lists categories and refetches              | Happy path    | P2       | No (it.fails: bug; refetch path covered in `Guide.cases.test.tsx`)                      |
+| GDE-19 | Bad timestamps in a block do not break the grid             | Error         | P3       | Yes (`Guide.cases.test.tsx`; NaN width fixed)                                           |
+| GDE-20 | Signed-out user is sent to `/login`; normal user sees guide | Permissions   | P1       | Yes (`Guide.cases.test.tsx`: a, b; c is RequireAuth)                                    |
+| GDE-21 | Render crash shows the route error fallback; Back works     | Error         | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-22 | Back from the live player returns to the guide              | Navigation    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-23 | Phone width: grid scrolls inside its box, page does not     | Responsive    | P3       | No (e2e-only)                                                                           |
+| GDE-24 | Arabic: RTL layout, Arabic strings, time axis mirrored      | RTL           | P2       | Yes (`Guide.cases.test.tsx`; visual mirroring e2e-only)                                 |
+| GDE-25 | Light and dark theme keep cells readable                    | Theme         | P3       | No (e2e-only)                                                                           |
+| GDE-26 | Keyboard: cells, filter and toggle reachable; dialog traps  | Accessibility | P2       | Yes (`Guide.cases.test.tsx`; focus ring e2e-only)                                       |
 
 ## Cases
 
@@ -74,7 +74,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Guide.test.tsx` "opens details for a future cell without tuning" checks the title only
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** as GDE-01, but give "Later Show" `desc:"A long story"`, `poster:"/p.jpg"`, `series:"Seerah"`, `season:1`, `episode:3`, `sub_title:"Badr"`.
 - **Steps:**
   1. Open `/guide`, click "Later Show".
@@ -85,7 +85,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** one channel with blocks: program (−10 → +20 min), `kind:"filler"` (+20 → +25), `kind:"bumper"` (+25 → +27), `kind:"station_id"` (+27 → +30), program (+30 → +90). Also a second channel whose airing block is `kind:"filler"`.
 - **Steps:**
   1. Open `/guide`.
@@ -107,7 +107,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Guide.test.tsx` "toggles the What's On Now compact view" checks only the current title
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** as GDE-01 plus a second channel `number:2` with no airing block and one future block "Tonight".
 - **Steps:**
   1. Open `/guide`, click "What's on now" (button has `aria-pressed="false"`).
@@ -118,7 +118,7 @@
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** stub `window.matchMedia("(max-width: 640px)")` → `matches: true`; payload as GDE-01. Second run: `window.matchMedia` undefined.
 - **Steps:**
   1. Open `/guide`.
@@ -128,7 +128,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `Guide.test.tsx` "shows an empty state with a create CTA when there are no channels" (CTA not clicked)
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`; CTA now admin-only)
 - **Preconditions / data:** `GET /api/channels/guide` → `{ "server_time": "<now>", "channels": [] }`.
 - **Steps:**
   1. Open `/guide` (both grid and compact mode).
@@ -139,7 +139,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** run once per payload for `GET /api/channels/guide`:
   - `{ "server_time": "<now>", "channels": null }`
   - `{ "server_time": "<now>" }` (key missing)
@@ -154,7 +154,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`: error state); skipping the bad entry is No (it.fails: bug)
 - **Preconditions / data:** `GET /api/channels/guide` → `{ "server_time":"<now>", "channels": [ null ] }` and `{ "channels": [ { "channel": null, "blocks": [] } ] }`.
 - **Steps:**
   1. Open `/guide`.
@@ -174,7 +174,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** `api.get` rejects with `new ApiError({type:"about:blank", title:"Internal Server Error", status:500})`; repeat with status 401 and 403.
 - **Steps:**
   1. Open `/guide`.
@@ -184,7 +184,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** (a) stub `fetch` to reject with `TypeError("Failed to fetch")`; (b) stub `fetch` to return 200 with `Content-Type: application/json` and body `{"channels": [` (do not mock `api`).
 - **Steps:**
   1. Open `/guide`.
@@ -194,7 +194,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** fake timers; first `GET` → GDE-01 payload; second → reject 500.
 - **Steps:**
   1. Open `/guide`, wait for the grid.
@@ -205,7 +205,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** fake timers; payload as GDE-01, airing block ends at now + 2 s.
 - **Steps:**
   1. Open `/guide`; count `api.get` calls.
@@ -217,7 +217,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** `server_time` = device now + 60 min; blocks: A (now → now + 30 min), B (now + 50 → now + 90 min). Second run: `server_time: "not-a-date"`.
 - **Steps:**
   1. Open `/guide`.
@@ -227,7 +227,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug; refetch path covered in `Guide.cases.test.tsx`)
 - **Preconditions / data:** two channels whose wire headers carry `category:"movies"` and `category:"kids"`.
 - **Steps:**
   1. Open `/guide`; open the "Category" select.
@@ -238,7 +238,7 @@
 
 - **Priority:** P3
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`; NaN width fixed)
 - **Preconditions / data:** a block with `start:"bad"`, `stop:"bad"`; a block with `stop` before `start`.
 - **Steps:**
   1. Open `/guide`.
@@ -248,7 +248,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`: a, b; c is RequireAuth)
 - **Preconditions / data:** full `App` routes. (a) `useAuth` → `{user:null, loading:false}`; (b) `{user:{username:"u", is_admin:false}}`; (c) `{loading:true}`.
 - **Steps:**
   1. Navigate to `/guide`.
@@ -258,7 +258,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** full `App` with a `MemoryRouter` history `["/library", "/guide"]`. Mock `channelsApi.guide` directly (bypassing `guideFrom`) to resolve `{ server_time:"<now>", channels:[{ channel:{id:"c1",number:1,name:"X"}, programs:null }] }` so `collapseFiller(null)` throws during render.
 - **Steps:**
   1. Render at `/guide`.
@@ -270,7 +270,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
 - **Preconditions / data:** routes `/guide` and `/live/:number`; payload as GDE-01.
 - **Steps:**
   1. Open `/guide`, click "Now Playing".
@@ -282,7 +282,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No (browser e2e)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** viewport 375 × 812, grid view forced (click "Grid view").
 - **Steps:**
   1. Open `/guide`; scroll the grid sideways.
@@ -292,7 +292,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`; visual mirroring e2e-only)
 - **Preconditions / data:** `localStorage["mkt:locale"]="ar"`; payload as GDE-01 with an Arabic channel name "قناة القرآن" and title "تلاوة".
 - **Steps:**
   1. Open `/guide`; toggle compact view; open a details dialog.
@@ -302,7 +302,7 @@
 
 - **Priority:** P3
 - **Category:** Theme
-- **Covered by existing test?** No (visual / e2e)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** `<html data-theme="light">` then `"dark"`.
 - **Steps:**
   1. Open `/guide` in grid and compact views.
@@ -312,7 +312,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Guide.cases.test.tsx`; focus ring e2e-only)
 - **Preconditions / data:** payload as GDE-01.
 - **Steps:**
   1. Tab from the page start through the toolbar and cells.

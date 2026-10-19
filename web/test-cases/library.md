@@ -14,37 +14,37 @@
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                    |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------------------------------------------ |
-| LIB-01 | Grid shows one card per video with title, duration, language | Happy path    | P1       | Partial (`LibraryBrowser.test.tsx`: only title checked)      |
-| LIB-02 | `/library/:libraryId` sends `library=<id>`                   | Navigation    | P1       | No                                                           |
-| LIB-03 | `items: null` and missing `items` render the empty state     | Empty state   | P1       | No                                                           |
-| LIB-04 | Null optional video fields do not crash                      | Empty state   | P1       | No                                                           |
-| LIB-05 | WhatsOnNow `items: null` / missing does not break the page   | Empty state   | P1       | No                                                           |
-| LIB-06 | First-run empty state; admin sees "Scan now"                 | Permissions   | P1       | Partial (`LibraryBrowser.test.tsx`: text only, non-admin)    |
-| LIB-07 | Non-admin never sees "Scan now"                              | Permissions   | P1       | No                                                           |
-| LIB-08 | Library the user has no ACL access to                        | Permissions   | P1       | No                                                           |
-| LIB-09 | Unknown or malformed `libraryId`                             | Navigation    | P1       | No                                                           |
-| LIB-10 | Signed-out user is sent to `/login`                          | Permissions   | P1       | No                                                           |
-| LIB-11 | Render crash shows route error fallback; Back still works    | Error         | P1       | No                                                           |
-| LIB-12 | Loading skeleton while the list is pending                   | Loading       | P2       | No                                                           |
-| LIB-13 | Server error (500 problem+json) shows ErrorState             | Error         | P2       | No                                                           |
-| LIB-14 | Network failure and malformed JSON show generic error        | Error         | P2       | No                                                           |
-| LIB-15 | "Try again" re-fetches the list                              | Error         | P2       | No                                                           |
-| LIB-16 | Load more pages via `next`; button hides at the end          | Happy path    | P2       | Partial (`LibraryBrowser.test.tsx`: hide-at-end not checked) |
-| LIB-17 | Load more does not duplicate videos                          | Happy path    | P1       | No                                                           |
-| LIB-18 | Load more failure keeps loaded items and shows the error     | Error         | P2       | No                                                           |
-| LIB-19 | Grid/list toggle and persistence in localStorage             | Happy path    | P2       | No                                                           |
-| LIB-20 | Sort select and order toggle update URL and order            | Navigation    | P2       | No                                                           |
-| LIB-21 | Language chips filter; "Clear filters" on filtered-out empty | Navigation    | P2       | No                                                           |
-| LIB-22 | Deep link with `?sort=title&order=asc&language=ar`           | Navigation    | P2       | No                                                           |
-| LIB-23 | Problem-state badges only for problem states                 | Happy path    | P2       | No                                                           |
-| LIB-24 | Broken poster falls back to the placeholder                  | Empty state   | P3       | No                                                           |
-| LIB-25 | Card click opens video detail; Back returns with filters     | Navigation    | P2       | No                                                           |
-| LIB-26 | Arabic UI: rtl, Arabic strings, Arabic titles isolated       | RTL           | P2       | Partial (`LibraryBrowser.test.tsx`: Arabic title text only)  |
-| LIB-27 | Phone width: no horizontal scroll, toolbar wraps             | Responsive    | P3       | No                                                           |
-| LIB-28 | Light/dark theme readability                                 | Theme         | P3       | No                                                           |
-| LIB-29 | Keyboard and a11y: toolbar labels, radios, order button name | Accessibility | P3       | No                                                           |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                              |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | ---------------------------------------------------------------------- |
+| LIB-01 | Grid shows one card per video with title, duration, language | Happy path    | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-02 | `/library/:libraryId` sends `library=<id>`                   | Navigation    | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-03 | `items: null` and missing `items` render the empty state     | Empty state   | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-04 | Null optional video fields do not crash                      | Empty state   | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-05 | WhatsOnNow `items: null` / missing does not break the page   | Empty state   | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-06 | First-run empty state; admin sees "Scan now"                 | Permissions   | P1       | Yes (`LibraryBrowser.cases.test.tsx`; it.todo: no scan feedback)       |
+| LIB-07 | Non-admin never sees "Scan now"                              | Permissions   | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-08 | Library the user has no ACL access to                        | Permissions   | P1       | Yes (`LibraryBrowser.cases.test.tsx`; it.todo: no 'no access' message) |
+| LIB-09 | Unknown or malformed `libraryId`                             | Navigation    | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-10 | Signed-out user is sent to `/login`                          | Permissions   | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-11 | Render crash shows route error fallback; Back still works    | Error         | P1       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-12 | Loading skeleton while the list is pending                   | Loading       | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-13 | Server error (500 problem+json) shows ErrorState             | Error         | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-14 | Network failure and malformed JSON show generic error        | Error         | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-15 | "Try again" re-fetches the list                              | Error         | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-16 | Load more pages via `next`; button hides at the end          | Happy path    | P2       | Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`) |
+| LIB-17 | Load more does not duplicate videos                          | Happy path    | P1       | Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`) |
+| LIB-18 | Load more failure keeps loaded items and shows the error     | Error         | P2       | Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`) |
+| LIB-19 | Grid/list toggle and persistence in localStorage             | Happy path    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-20 | Sort select and order toggle update URL and order            | Navigation    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-21 | Language chips filter; "Clear filters" on filtered-out empty | Navigation    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-22 | Deep link with `?sort=title&order=asc&language=ar`           | Navigation    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-23 | Problem-state badges only for problem states                 | Happy path    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-24 | Broken poster falls back to the placeholder                  | Empty state   | P3       | No                                                                     |
+| LIB-25 | Card click opens video detail; Back returns with filters     | Navigation    | P2       | Yes (`LibraryBrowser.cases.test.tsx`)                                  |
+| LIB-26 | Arabic UI: rtl, Arabic strings, Arabic titles isolated       | RTL           | P2       | Yes (`LibraryBrowser.cases.test.tsx`; e2e-only: mirrored toolbar)      |
+| LIB-27 | Phone width: no horizontal scroll, toolbar wraps             | Responsive    | P3       | No                                                                     |
+| LIB-28 | Light/dark theme readability                                 | Theme         | P3       | No                                                                     |
+| LIB-29 | Keyboard and a11y: toolbar labels, radios, order button name | Accessibility | P3       | No                                                                     |
 
 ## Cases
 
@@ -52,7 +52,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `LibraryBrowser.test.tsx` "requests /api/videos with sort+limit and renders items" checks the URL and the title only.
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** signed in (non-admin); `localStorage` empty; `GET /api/channels/now` → `{ "server_time": "", "items": [] }`; `GET /api/videos?...` → `{ "items": [ { "id": "v1", "title": "Intro", "filename": "a.mp4", "state": "ready", "duration_sec": 65, "detected_language": "en" }, { "id": "v2", "title": null, "filename": "b.mp4", "state": "ready", "duration_sec": 3725 } ], "next": null }`
 - **Steps:**
   1. Open `/library`.
@@ -62,7 +62,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** route `/library/:libraryId`; `libraryId = "3f1c2a4e-0000-4000-8000-000000000001"`; videos → one item.
 - **Steps:**
   1. Open `/library/3f1c2a4e-0000-4000-8000-000000000001`.
@@ -73,7 +73,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** run three times: `GET /api/videos` → (a) `{ "items": null, "next": null }`, (b) `{ "next": null }`, (c) `{ "items": [], "next": null }`. List fields read from this endpoint: `items`.
 - **Steps:**
   1. Open `/library`.
@@ -83,7 +83,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** videos → `{ "items": [ { "id": "v1", "title": null, "filename": "x.mp4", "state": "ready", "detected_language": null, "duration_sec": null }, { "id": "v2", "title": "", "filename": "y.mp4", "state": "weird_new_state" } ], "next": null }`
 - **Steps:**
   1. Open `/library` in grid view, then switch to List.
@@ -94,7 +94,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels/now` → (a) `{ "server_time": "2026-10-19T10:00:00Z", "items": null }`, (b) `{}`, (c) rejects with 500, (d) `{ "items": [ { "channel": null } ] }`. Videos → one item. List fields: `items`.
 - **Steps:**
   1. Open `/library`.
@@ -104,7 +104,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `LibraryBrowser.test.tsx` "shows the first-run empty state" (non-admin, `/library`, text only).
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`; it.todo: no scan feedback)
 - **Preconditions / data:** `useAuth` user `{ is_admin: true }`; videos → `{ "items": [], "next": null }`; `POST /api/libraries/lib-1/scan` → 202.
 - **Steps:**
   1. Open `/library/lib-1`.
@@ -116,7 +116,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** user `{ is_admin: false }`; videos → `{ "items": [], "next": null }`.
 - **Steps:**
   1. Open `/library/lib-1`.
@@ -126,7 +126,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`; it.todo: no 'no access' message)
 - **Preconditions / data:** non-admin user; the server returns `{ "items": [], "next": null }` for a library outside the user's ACL (see `api/internal/handlers/videos/videos.go`). Also run with the server answering `403` problem+json `{ "title": "forbidden", "status": 403 }`.
 - **Steps:**
   1. Open `/library/<uuid of a library the user cannot see>`.
@@ -136,7 +136,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** (a) `/library/00000000-0000-4000-8000-000000000000` (valid UUID, no such library) → `{ "items": [], "next": null }`; (b) `/library/not-a-uuid`.
 - **Steps:**
   1. Open each URL.
@@ -146,7 +146,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** render the full `App` route tree; `GET /api/auth/me` (AuthProvider) → 401.
 - **Steps:**
   1. Open `/library/lib-1?language=ar`.
@@ -156,7 +156,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** full app routes inside `AppShell`; start on `/search`. Make `/library` throw during render, e.g. videos → `{ "items": [ { "id": "v1", "filename": null, "title": null, "state": "ready" } ] }` with `?sort=title` (localeCompare on undefined), or mock `WhatsOnNow` to throw.
 - **Steps:**
   1. Open `/search`, then click the "Library" nav link (URL `/library?sort=title`).
@@ -168,7 +168,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/videos` returns a never-resolving promise.
 - **Steps:**
   1. Open `/library`.
@@ -178,7 +178,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/videos` → 500, `Content-Type: application/problem+json`, body `{ "type": "about:blank", "title": "query videos failed", "status": 500 }`. Also run with 400 `{ "title": "invalid sort" }` (e.g. hand-typed `?sort=bogus`).
 - **Steps:**
   1. Open `/library`.
@@ -188,7 +188,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** (a) `fetch` rejects with `TypeError("Failed to fetch")`; (b) 200 with `Content-Type: application/json` and body `{not json`.
 - **Steps:**
   1. Open `/library`.
@@ -198,7 +198,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** first `GET /api/videos` → 500; second → `{ "items": [ { "id": "v1", "filename": "a.mp4", "state": "ready" } ], "next": null }`.
 - **Steps:**
   1. Open `/library`; wait for the error.
@@ -209,7 +209,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `LibraryBrowser.test.tsx` "paginates using the server `next` cursor" (does not check the count label, loading state or that the button goes away).
+- **Covered by existing test?** Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`)
 - **Preconditions / data:** page 1 → `{ "items": [v1], "next": "CURSOR_2" }`; `cursor=CURSOR_2` → `{ "items": [v2], "next": null }` delayed 100 ms.
 - **Steps:**
   1. Open `/library`; click "Load more 1".
@@ -219,7 +219,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`)
 - **Preconditions / data:** mimic the real server, which currently ignores `cursor` (`api/internal/handlers/videos/videos.go` never reads it): every request → `{ "items": [v1, v2], "next": "2026-10-19T10:00:00Z" }`.
 - **Steps:**
   1. Open `/library`; click "Load more".
@@ -229,7 +229,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.test.tsx`; server cursor in `listcursor_test.go`)
 - **Preconditions / data:** page 1 → `{ "items": [v1], "next": "C2" }`; `cursor=C2` → 500 `{ "title": "boom" }`.
 - **Steps:**
   1. Open `/library`; click "Load more".
@@ -239,7 +239,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** videos → two items; `localStorage` empty.
 - **Steps:**
   1. Open `/library`; click radio "List".
@@ -251,7 +251,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** videos → `[ {id:"a", title:"Beta", duration_sec:10}, {id:"b", title:"alpha", duration_sec:300}, {id:"c", title:"Gamma", duration_sec:5} ]`, `next: null`.
 - **Steps:**
   1. Open `/library`; select "Title".
@@ -263,7 +263,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** first load → items with `detected_language` "ar" and "en"; request with `language=ar` → `{ "items": [], "next": null }`.
 - **Steps:**
   1. Open `/library`; click chip "ar".
@@ -274,7 +274,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** videos for `language=ar` → two Arabic items.
 - **Steps:**
   1. Open `/library?sort=title&order=asc&language=ar` directly.
@@ -284,7 +284,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** items with `state`: `ready`, `transcoding`, `missing`, `corrupted`, `failed`, `ready_no_audio`, `superseded`.
 - **Steps:**
   1. Open `/library` in grid, then list view.
@@ -304,7 +304,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`)
 - **Preconditions / data:** full routes; videos → `[v1]`.
 - **Steps:**
   1. Open `/library?sort=title&language=en`; click the v1 card.
@@ -315,7 +315,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `LibraryBrowser.test.tsx` renders an Arabic title but does not check `dir` or Arabic UI strings.
+- **Covered by existing test?** Yes (`LibraryBrowser.cases.test.tsx`; e2e-only: mirrored toolbar)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; videos → `[ { "id": "v1", "title": "السيرة النبوية ( 18 )", "filename": "a.mp4", "state": "ready", "duration_sec": 65 } ]`.
 - **Steps:**
   1. Open `/library`; switch to List.

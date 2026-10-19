@@ -11,7 +11,7 @@
 // applied client-side over the rows already loaded, and "load more"
 // pages with the source-appropriate cursor. CSV export serialises the
 // currently filtered rows.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Select } from "@ds/components/Select/Select";
 import { Input } from "@ds/components/Input/Input";
@@ -48,6 +48,8 @@ function AuditInner() {
   const [rows, setRows] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // a failed "Load more" keeps the loaded rows and shows its error inline
+  const [moreError, setMoreError] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);
 
   // client-side filters
@@ -67,12 +69,19 @@ function AuditInner() {
     return `/api/libraries/${encodeURIComponent(id)}/audit?limit=${PAGE}${c}`;
   }
 
+  // Each request takes a sequence number; a response that is no longer the
+  // latest (the source or library id changed meanwhile) is dropped.
+  const seq = useRef(0);
+
   async function load(reset: boolean) {
     const cursor = reset ? undefined : nextCursor(rows, source);
     const url = endpoint(cursor);
+    const mine = ++seq.current;
+    setMoreError(null);
     if (!url) {
       setRows(null);
       setError(null);
+      setLoadingMore(false);
       return;
     }
     if (reset) {
@@ -82,16 +91,23 @@ function AuditInner() {
       setLoadingMore(true);
     }
     try {
-      const res = await api.get<{ items: AuditEntry[] }>(url);
-      const items = res.items ?? [];
+      const res = await api.get<{ items?: AuditEntry[] | null }>(url);
+      if (mine !== seq.current) return;
+      const items = Array.isArray(res?.items) ? res.items : [];
       setError(null);
       setExhausted(items.length < PAGE);
       setRows((prev) => (reset || !prev ? items : [...prev, ...items]));
     } catch (e) {
-      setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
-      if (reset) setRows([]);
+      if (mine !== seq.current) return;
+      const msg = e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+      if (reset) {
+        setError(msg);
+        setRows([]);
+      } else {
+        setMoreError(msg);
+      }
     } finally {
-      setLoadingMore(false);
+      if (mine === seq.current) setLoadingMore(false);
     }
   }
 
@@ -103,13 +119,16 @@ function AuditInner() {
 
   const events = useMemo(() => {
     const set = new Set<string>();
-    (rows ?? []).forEach((r) => set.add(r.event));
+    (rows ?? []).forEach((r) => {
+      if (typeof r.event === "string" && r.event) set.add(r.event);
+    });
     return [...set].sort();
   }, [rows]);
 
   const filtered = useMemo(() => {
     const fromTs = from ? new Date(from).getTime() : null;
-    const toTs = to ? new Date(to).getTime() : null;
+    // "To" is minute-precise, so it includes the whole selected minute.
+    const toTs = to ? new Date(to).getTime() + 59_999 : null;
     return (rows ?? []).filter((r) => {
       if (eventFilter && r.event !== eventFilter) return false;
       if (actorFilter && !(r.actor_user_id ?? "").includes(actorFilter)) return false;
@@ -137,7 +156,8 @@ function AuditInner() {
           .join(",")
       );
     }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    // BOM first so Excel reads the file as UTF-8 (Arabic text survives).
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -147,6 +167,19 @@ function AuditInner() {
   }
 
   const needLibraryId = source === "library" && !libraryId.trim();
+
+  const loadMore = exhausted ? null : (
+    <div className="mkt-loadmore">
+      {moreError && (
+        <p className="mkt-form__warn" role="alert">
+          {moreError}
+        </p>
+      )}
+      <Button variant="secondary" loading={loadingMore} onClick={() => load(false)}>
+        {moreError ? t("common.retry") : t("common.loadMore")}
+      </Button>
+    </div>
+  );
 
   return (
     <section className="mkt-page mkt-admin">
@@ -166,7 +199,10 @@ function AuditInner() {
         <Select
           label={t("audit.source")}
           value={source}
-          onChange={(e) => setSource(e.target.value as Source)}
+          onChange={(e) => {
+            setSource(e.target.value as Source);
+            setEventFilter("");
+          }}
           options={[
             { value: "security", label: t("audit.source.security") },
             { value: "library", label: t("audit.source.library") },
@@ -224,11 +260,15 @@ function AuditInner() {
       ) : rows === null ? (
         <p className="mkt-loading">{t("common.loading")}</p>
       ) : filtered.length === 0 ? (
-        <EmptyState
-          kind="filtered_out"
-          title={t("audit.empty.title")}
-          description={t("audit.empty.desc")}
-        />
+        <>
+          <EmptyState
+            kind="filtered_out"
+            title={t("audit.empty.title")}
+            description={t("audit.empty.desc")}
+          />
+          {/* filters can hide every loaded row; older pages may still match */}
+          {rows.length > 0 && loadMore}
+        </>
       ) : (
         <>
           <table className="mkt-table" aria-label={t("audit.title")}>
@@ -244,7 +284,7 @@ function AuditInner() {
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id}>
-                  <td>{formatDate(r.ts)}</td>
+                  <td>{validTs(r.ts) ? formatDate(r.ts) : "—"}</td>
                   <td>{r.event}</td>
                   <td className="mkt-mono mkt-truncate">{r.actor_user_id ?? "—"}</td>
                   <td className="mkt-mono mkt-truncate">{r.target_id ?? "—"}</td>
@@ -253,13 +293,7 @@ function AuditInner() {
               ))}
             </tbody>
           </table>
-          {!exhausted && (
-            <div className="mkt-loadmore">
-              <Button variant="secondary" loading={loadingMore} onClick={() => load(false)}>
-                {t("common.loadMore")}
-              </Button>
-            </div>
-          )}
+          {loadMore}
         </>
       )}
     </section>
@@ -275,6 +309,10 @@ function nextCursor(rows: AuditEntry[] | null, source: Source): string | number 
   return source === "security" ? last.ts : last.id;
 }
 
+function validTs(ts: unknown): ts is string {
+  return typeof ts === "string" && ts !== "" && !Number.isNaN(Date.parse(ts));
+}
+
 function payloadText(p: unknown): string {
   if (p == null) return "";
   if (typeof p === "string") return p;
@@ -285,7 +323,11 @@ function payloadText(p: unknown): string {
   }
 }
 
+// csvCell quotes a CSV cell and neutralises spreadsheet formulas: a cell
+// starting with =, +, - or @ gets a leading ' so Excel / Sheets show it as
+// text instead of running it (audit rows carry user-chosen values).
 function csvCell(v: unknown): string {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = String(v ?? "");
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }

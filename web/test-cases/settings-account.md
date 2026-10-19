@@ -12,26 +12,26 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 | ID     | Title                                                     | Category      | Priority | Covered by existing test? |
 | ------ | --------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| SAC-01 | Account tab shows the signed-in username                  | Happy path    | P1       | No                        |
-| SAC-02 | Admin user sees "(admin)" after the name                  | Permissions   | P2       | No                        |
-| SAC-03 | Signed-out visit redirects to /login                      | Permissions   | P1       | No                        |
-| SAC-04 | Sign out everywhere calls logout-all and goes to /login   | Happy path    | P1       | No                        |
-| SAC-05 | Sign out everywhere when logout-all fails                 | Error         | P1       | No                        |
-| SAC-06 | Back after sign out everywhere does not reopen Settings   | Navigation    | P1       | No                        |
-| SAC-07 | Collect diagnostics downloads the bundle                  | Happy path    | P2       | No                        |
-| SAC-08 | Diagnostics button is busy while collecting               | Loading       | P2       | No                        |
-| SAC-09 | Diagnostics error toast on 500 / 403 / 401                | Error         | P2       | No                        |
-| SAC-10 | Diagnostics error toast on network failure                | Error         | P2       | No                        |
+| SAC-01 | Account tab shows the signed-in username                  | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-02 | Admin user sees "(admin)" after the name                  | Permissions   | P2       | Yes (`Settings.test.tsx`) |
+| SAC-03 | Signed-out visit redirects to /login                      | Permissions   | P1       | Yes (`Settings.test.tsx`) |
+| SAC-04 | Sign out everywhere calls logout-all and goes to /login   | Happy path    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-05 | Sign out everywhere when logout-all fails                 | Error         | P1       | No (it.fails: bug)        |
+| SAC-06 | Back after sign out everywhere does not reopen Settings   | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-07 | Collect diagnostics downloads the bundle                  | Happy path    | P2       | Yes (`Settings.test.tsx`) |
+| SAC-08 | Diagnostics button is busy while collecting               | Loading       | P2       | Yes (`Settings.test.tsx`) |
+| SAC-09 | Diagnostics error toast on 500 / 403 / 401                | Error         | P2       | Yes (`Settings.test.tsx`) |
+| SAC-10 | Diagnostics error toast on network failure                | Error         | P2       | Yes (`Settings.test.tsx`) |
 | SAC-11 | Personal access tokens text is stale                      | Navigation    | P3       | No                        |
-| SAC-12 | Tab nav lists all seven tabs with correct hrefs           | Navigation    | P1       | No                        |
-| SAC-13 | Deep link to each sub-route renders that tab              | Navigation    | P1       | No                        |
-| SAC-14 | Clicking a tab link switches the panel                    | Navigation    | P1       | No                        |
-| SAC-15 | Active tab is marked (aria-current)                       | Accessibility | P2       | No                        |
-| SAC-16 | Unknown sub-route `/settings/nope`                        | Navigation    | P2       | No                        |
-| SAC-17 | Back / Forward move between tabs                          | Navigation    | P2       | No                        |
-| SAC-18 | Render crash shows route error fallback; Back still works | Error         | P1       | No                        |
-| SAC-19 | Phone width: tab nav fits, no horizontal scroll           | Responsive    | P2       | No                        |
-| SAC-20 | Arabic: RTL layout and Arabic strings                     | RTL           | P2       | No                        |
+| SAC-12 | Tab nav lists all seven tabs with correct hrefs           | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-13 | Deep link to each sub-route renders that tab              | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-14 | Clicking a tab link switches the panel                    | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-15 | Active tab is marked (aria-current)                       | Accessibility | P2       | Yes (`Settings.test.tsx`) |
+| SAC-16 | Unknown sub-route `/settings/nope`                        | Navigation    | P2       | Yes (`Settings.test.tsx`) |
+| SAC-17 | Back / Forward move between tabs                          | Navigation    | P2       | Yes (`Settings.test.tsx`) |
+| SAC-18 | Render crash shows route error fallback; Back still works | Error         | P1       | Yes (`Settings.test.tsx`) |
+| SAC-19 | Phone width: tab nav fits, no horizontal scroll           | Responsive    | P2       | No (e2e-only)             |
+| SAC-20 | Arabic: RTL layout and Arabic strings                     | RTL           | P2       | Yes (`Settings.test.tsx`) |
 | SAC-21 | Light and dark theme readable                             | Theme         | P3       | No                        |
 | SAC-22 | Keyboard: tab order through nav and actions               | Accessibility | P3       | No                        |
 
@@ -41,7 +41,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `useAuth()` → `{ user: { id: "u1", username: "maha", is_admin: false }, logoutAll }`.
 - **Steps:**
   1. Open `/settings`.
@@ -51,7 +51,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `user: { id: "u1", username: "root", is_admin: true }`.
 - **Steps:**
   1. Open `/settings`.
@@ -61,7 +61,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full `App` (or `RequireAuth` wrapper); `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings`, then repeat with `/settings/privacy` and `/settings/rules`.
@@ -71,7 +71,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `logoutAll` mock resolves; `POST /api/auth/logout-all` → 204.
 - **Steps:**
   1. Open `/settings`.
@@ -82,7 +82,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** real `AuthProvider`; `POST /api/auth/logout-all` → 500 problem+json, then repeat with fetch rejecting (network).
 - **Steps:**
   1. Open `/settings`, click "Sign out everywhere".
@@ -92,7 +92,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full app; start at `/library`, then go to `/settings`.
 - **Steps:**
   1. Click "Sign out everywhere".
@@ -103,7 +103,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `fetch("/api/diagnostics/export")` → 200, body a Blob, header `Content-Disposition: attachment; filename="diag-u1.tar.gz"`. Stub `URL.createObjectURL` / `revokeObjectURL`; spy on `HTMLAnchorElement.prototype.click`.
 - **Steps:**
   1. Open `/settings`, click "Collect diagnostics".
@@ -113,7 +113,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** fetch returns a never-resolving promise, then resolve it.
 - **Steps:**
   1. Click "Collect diagnostics".
@@ -124,7 +124,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** fetch → 500 with body `boom`, statusText `Internal Server Error`; repeat with 403 and 401.
 - **Steps:**
   1. Click "Collect diagnostics".
@@ -134,7 +134,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** fetch rejects `new TypeError("Failed to fetch")`.
 - **Steps:**
   1. Click "Collect diagnostics".
@@ -154,7 +154,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** any user; open `/settings`.
 - **Steps:**
   1. Get `navigation` named "Settings".
@@ -164,7 +164,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** mock the APIs each tab needs (see the per-tab files).
 - **Steps:**
   1. Open each URL directly: `/settings`, `/settings/sessions`, `/settings/appearance`, `/settings/privacy`, `/settings/models`, `/settings/rules`, `/settings/about`. Also `/settings/` (trailing slash).
@@ -174,7 +174,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** start at `/settings`.
 - **Steps:**
   1. Click "Appearance", then "About", then "Account".
@@ -184,7 +184,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** open `/settings/privacy`.
 - **Steps:**
   1. Inspect the "Privacy" link.
@@ -194,7 +194,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** any user.
 - **Steps:**
   1. Open `/settings/nope`; also `/settings/rules/extra`.
@@ -204,7 +204,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** start at `/settings`.
 - **Steps:**
   1. Click "Appearance", then "Privacy".
@@ -215,7 +215,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`. Start at `/library`, then go to `/settings`. Make `AccountTab` throw while rendering: `useAuth()` returns `user: { id: "u1", username: { bad: true }, is_admin: false }` (React throws "Objects are not valid as a React child"). For the shared nav, also try a crashing tab: `/settings/privacy` with `GET /api/me/history` → `{}` (see SPR).
 - **Steps:**
   1. Open `/settings`.
@@ -227,7 +227,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** browser e2e at 375x812, English and Arabic.
 - **Steps:**
   1. Open `/settings`.
@@ -238,7 +238,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"` before render; username "مها".
 - **Steps:**
   1. Open `/settings`.

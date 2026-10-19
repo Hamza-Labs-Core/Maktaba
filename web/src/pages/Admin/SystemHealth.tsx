@@ -69,6 +69,8 @@ function HealthInner() {
     api
       .get<Health>("/api/system/health")
       .then((h) => {
+        // a proxy error page arrives as a string, not the JSON object
+        if (!h || typeof h !== "object") throw new Error("bad health body");
         setHealth(h);
         setHealthErr(false);
       })
@@ -166,18 +168,21 @@ function HealthInner() {
         <p className="mkt-loading">{t("common.loading")}</p>
       ) : (
         <div className="mkt-stage-cards">
-          {Object.entries(health.services).map(([name, svc]) => (
+          {Object.keys(health.services ?? {}).length === 0 && (
+            <p className="mkt-muted">{t("common.empty")}</p>
+          )}
+          {Object.entries(health.services ?? {}).map(([name, svc]) => (
             <Card key={name} className="mkt-service-card">
               <div className="mkt-service-card__head">
                 <strong>{name}</strong>
-                <StatusBadge status={svc.status} t={t} />
+                <StatusBadge status={svc?.status} t={t} />
               </div>
-              {svc.reason && <div className="mkt-muted">{svc.reason}</div>}
-              {svc.checks &&
+              {svc?.reason && <div className="mkt-muted">{svc.reason}</div>}
+              {svc?.checks &&
                 Object.entries(svc.checks).map(([cn, c]) => (
                   <div key={cn} className="mkt-service-card__check">
                     <span className="mkt-muted">{cn}</span>
-                    <StatusBadge status={c.status} t={t} small />
+                    <StatusBadge status={c?.status} t={t} small />
                   </div>
                 ))}
             </Card>
@@ -261,11 +266,12 @@ function StatusBadge({
   t,
   small,
 }: {
-  status: string;
+  status: string | null | undefined;
   t: (k: string) => string;
   small?: boolean;
 }) {
-  const s = status.toLowerCase();
+  // a missing status is unknown, which shows as Degraded
+  const s = typeof status === "string" ? status.toLowerCase() : "";
   const up = s === "ok" || s === "up" || s === "healthy" || s === "ready" || s === "pass";
   const down = s === "down" || s === "fail" || s === "error" || s === "unhealthy";
   const tone = up ? "success" : down ? "error" : "warn";
