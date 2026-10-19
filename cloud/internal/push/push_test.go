@@ -51,7 +51,7 @@ func TestFanOutRecordsEachDelivery(t *testing.T) {
 	}
 }
 
-func TestFanOutWithoutRecorder(t *testing.T) {
+func TestFanOutWithoutRecorder(_ *testing.T) {
 	d := &Dispatcher{APNs: &FakeDriver{}}
 	d.fanOut(context.Background(), Notification{UserID: "u1"}, []target{{platform: "ios", token: "a"}})
 }
