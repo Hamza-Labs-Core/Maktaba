@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -317,4 +319,87 @@ func TestStagingInternalRoutes(t *testing.T) {
 	if c := do("POST", "/internal/tv/staging/start", `{"change_id":"x"}`, true); c != http.StatusConflict {
 		t.Fatalf("start without a release: %d", c)
 	}
+}
+
+// stageRig is the slot rig with an amber instance and a supervisor that refuses
+// the first fail starts (story 33.5 StageStart).
+func stageRig(t *testing.T, fail int) (*slotRig, *atomic.Int32) {
+	t.Helper()
+	if !StagingBuild {
+		t.Skip("staging is built with -tags tvstaging only")
+	}
+	g := newSlotRig(t)
+	amber := newFakeSlot(t, "amber", 4000, g.ch.String())
+	g.slots.Addrs["amber"] = amber.addr()
+	var calls atomic.Int32
+	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n := calls.Add(1); int(n) <= fail {
+			http.Error(w, "not now", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte("{}"))
+	}))
+	t.Cleanup(sup.Close)
+	g.slots.Supervisor = sup.URL
+	return g, &calls
+}
+
+// A staging start the supervisor did not take is not remembered as staged: the
+// controller's next tick (the same plan) asks the supervisor again.
+func TestStageStartRetriesAfterAFailedStart(t *testing.T) {
+	g, calls := stageRig(t, 1)
+	plan := StagingPlan{ChangeID: uuid.NewString(), ReleaseID: uuid.NewString(), Channels: []string{g.ch.String()}}
+	if _, err := g.slots.StageStart(context.Background(), plan); err == nil {
+		t.Fatal("the refused start reported no error")
+	}
+	if c, _, _, _ := g.slots.StagingRelease(); c != "" {
+		t.Fatalf("a failed start is staged (change %s)", c)
+	}
+	v, err := g.slots.StageStart(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("supervisor asked %d times, want 2 (the retry must reach it)", n)
+	}
+	if !v.Active || v.Slot != "amber" {
+		t.Fatalf("view after the retry: %+v", v)
+	}
+}
+
+// The controller re-sends the plan on every tick while the probe loop plans the
+// warm set from it: the plan is read under the lock (go test -race).
+func TestStagingPlanUpdateNoRace(t *testing.T) {
+	g, _ := stageRig(t, 0)
+	plan := StagingPlan{ChangeID: uuid.NewString(), ReleaseID: uuid.NewString(), Channels: []string{g.ch.String()},
+		Probe: g.ch.String(), ProbeSeconds: 5}
+	if _, err := g.slots.StageStart(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			p := plan
+			p.Changed = []string{uuid.NewString()}
+			p.MaxExtra = i % 3
+			if _, err := g.slots.StageStart(context.Background(), p); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	for i := 0; i < 30; i++ {
+		g.slots.SyncWarm(context.Background())
+		g.slots.PreviewTouch(context.Background(), uuid.New())
+	}
+	close(done)
+	wg.Wait()
 }

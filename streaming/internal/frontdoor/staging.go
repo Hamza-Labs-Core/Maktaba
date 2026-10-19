@@ -214,15 +214,25 @@ func (s *Slots) StageStart(ctx context.Context, plan StagingPlan) (StagingView, 
 	if name == "" {
 		return StagingView{}, errors.New("frontdoor: no free slot instance for staging")
 	}
-	if err := s.persist(ctx); err != nil {
+	// a start that did not reach the supervisor is forgotten, so the controller's
+	// next tick (the same plan) tries again instead of finding it "already staged"
+	failed := func(err error) (StagingView, error) {
+		s.mu.Lock()
+		if s.stage == run {
+			s.stage = nil
+		}
+		s.mu.Unlock()
 		return StagingView{}, err
 	}
+	if err := s.persist(ctx); err != nil {
+		return failed(err)
+	}
 	if err := s.bindRelease(ctx, name, plan.ReleaseID); err != nil {
-		return StagingView{}, err
+		return failed(err)
 	}
 	body, _ := json.Marshal(map[string]string{"release_id": plan.ReleaseID, "version": plan.Version, "sha256": plan.SHA256})
 	if err := s.superviseWith(ctx, name, true, body); err != nil {
-		return StagingView{}, err
+		return failed(err)
 	}
 	s.log().Info("tv: staging slot started for a change", "slot", name, "change_id", plan.ChangeID,
 		"release_id", plan.ReleaseID, "version", plan.Version, "event", "tv_staging_started")
@@ -337,7 +347,10 @@ func (s *Slots) PreviewTouch(ctx context.Context, id uuid.UUID) (bool, string) {
 		s.mu.Unlock()
 	}
 	if !warm {
-		return false, "every staging encoder is in use (budget " + fmt.Sprint(run.budget) + ")"
+		s.mu.Lock()
+		budget := run.budget
+		s.mu.Unlock()
+		return false, "every staging encoder is in use (budget " + fmt.Sprint(budget) + ")"
 	}
 	return true, ""
 }
@@ -419,6 +432,10 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	demands []ChannelDemand) {
 	s.mu.Lock()
 	run := s.stage
+	var plan StagingPlan
+	if run != nil {
+		plan = run.plan // StageStart replaces it under s.mu on every controller tick
+	}
 	s.mu.Unlock()
 	if run == nil {
 		_ = s.sendWarm(ctx, staging, slot.WarmRequest{Role: slot.RoleStaging, Epoch: epoch, Exclusive: true,
@@ -426,7 +443,7 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 		return
 	}
 	now := time.Now()
-	budget := stagingBudget(capacity, nvencMax, vtMax, liveOn, standbyWarm, run.plan.MaxExtra)
+	budget := stagingBudget(capacity, nvencMax, vtMax, liveOn, standbyWarm, plan.MaxExtra)
 	var previews []uuid.UUID
 	run.previewMu.Lock()
 	for id, at := range run.previews {
@@ -441,7 +458,7 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	s.mu.Lock()
 	// a rolling channel is done once it aired for probe_seconds and a sample
 	// measured enough of it (min(probe_seconds, 10 s) of segments, less one)
-	probeFor := time.Duration(maxInt(run.plan.ProbeSeconds, 5)) * time.Second
+	probeFor := time.Duration(maxInt(plan.ProbeSeconds, 5)) * time.Second
 	enough := minInt(int(probeFor/time.Second), sampleSeconds) - maxInt(run.expect.Segment, 1)
 	for id, at := range run.since {
 		cp := run.samples[id]
@@ -455,7 +472,7 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 		probed[k] = v
 	}
 	s.mu.Unlock()
-	warm, deferred := planStagingWarm(run.plan, demands, previews, probed, budget)
+	warm, deferred := planStagingWarm(plan, demands, previews, probed, budget)
 	s.mu.Lock()
 	keep := map[uuid.UUID]time.Time{}
 	for i := range warm {
