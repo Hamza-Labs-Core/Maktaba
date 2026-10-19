@@ -14,9 +14,10 @@
    the wire (architecture §9.9).
 5. Blocks until SIGTERM/SIGINT, then drains in-flight work and exits.
 
-``python -m maktaba_pipeline doctor`` short-circuits to a probe-only
-exit so the compose healthcheck has somewhere to land before the
-operator has a real DB on hand.
+``python -m maktaba_pipeline doctor`` runs the health checks (database,
+schema revision, job queue, ffmpeg/ffprobe, writable storage; see
+:mod:`maktaba_pipeline.doctor`) and exits non-zero when one fails; it is
+the compose healthcheck.
 """
 
 from __future__ import annotations
@@ -69,12 +70,18 @@ _DEFAULT_STAGES = (
 )
 
 
-def _doctor(log: Any) -> int:
-    """Probe-only startup. Always returns 0 until Story 22.3 §2.7 fills in
-    the real DB / Chroma / ffmpeg / MLX checks."""
+def _doctor(args: argparse.Namespace, log: Any) -> int:
+    """The health checks; 1 when any fails. The database is the one ``run`` would use:
+    ``--database-url`` / ``MAKTABA_DATABASE_URL``, else this machine's joined node."""
+    from .doctor import run_doctor
 
-    log.info("doctor stub OK", version=__version__)
-    return 0
+    url = args.database_url
+    if not url:
+        node = load_node_config()
+        url = node.database_url if node is not None and node.joined else None
+    code = asyncio.run(run_doctor(url, out=sys.stdout, quiet=args.quiet))
+    log.info("doctor", version=__version__, healthy=code == 0)
+    return code
 
 
 def _bootstrap_log() -> Any:
@@ -327,7 +334,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="If set, bind the recent-logs HTTP endpoint (/logs/recent) on this host:port.",
     )
 
-    subparsers.add_parser("doctor", help="Probe-only startup check.")
+    doctor_p = subparsers.add_parser(
+        "doctor",
+        help="Check the database, schema, queue, ffmpeg and storage; exit 1 on a failure.",
+    )
+    doctor_p.add_argument(
+        "--database-url",
+        default=os.getenv("MAKTABA_DATABASE_URL"),
+        help="Database to check (default: MAKTABA_DATABASE_URL, else the joined node's).",
+    )
+    doctor_p.add_argument("--quiet", action="store_true", help="Print only the checks that fail.")
 
     join_p = subparsers.add_parser(
         "join",
@@ -411,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
 
     command = args.command or "run"
     if command == "doctor":
-        return _doctor(log)
+        return _doctor(args, log)
     if command == "run":
         return asyncio.run(_serve(args, log))
     if command == "cluster":
