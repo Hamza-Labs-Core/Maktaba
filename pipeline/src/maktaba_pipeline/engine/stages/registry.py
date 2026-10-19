@@ -34,6 +34,7 @@ CORE_MODULES: dict[str, str] = {
     "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
     "index": "maktaba_pipeline.engine.stages.index",
     "chapter_infer": "maktaba_pipeline.engine.stages.chapter_infer",
+    "chapter_thumbs": "maktaba_pipeline.engine.stages.chapter_thumbs",
     "topic_assign": "maktaba_pipeline.engine.stages.topic_assign",
     "topic_recluster": "maktaba_pipeline.engine.stages.topic_recluster",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",

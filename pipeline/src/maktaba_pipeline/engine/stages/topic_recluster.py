@@ -7,7 +7,8 @@ videos has been transcribed, not once per video. Clusters the library's
 :func:`~maktaba_pipeline.library_mgmt.topics.pick_k` (``sqrt(N)/2`` capped at 32, or the
 library's ``topic_clusters``), and rewrites ``library_topics`` and every video's
 ``video_topics`` in one transaction. Each topic is named after the video closest to its
-centroid (its title, cut to 64 characters): a user can rename it.
+centroid (its title, cut to 64 characters). Topics are rebuilt whole each time (new ids,
+new names); ``library_topics.model`` records the embedding model they come from.
 
 Below :data:`~maktaba_pipeline.library_mgmt.topics.MIN_VIDEOS_FOR_TOPICS` vectors, or with
 ``auto_tag_topics`` off, the library's topics are removed. Needs numpy (the ``search``
@@ -122,9 +123,9 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         await db.execute("DELETE FROM library_topics WHERE library_id = $1", uid(library_id))
         await db.executemany(
             "INSERT INTO library_topics (library_id, topic_id, label, centroid_vec,"
-            " video_count, computed_at) VALUES ($1, $2, $3, $4, $5, $6)",
+            " video_count, computed_at, model) VALUES ($1, $2, $3, $4, $5, $6, $7)",
             [
-                (uid(library_id), t, labels[t], pack_vec(c), model.video_count[t], ts)
+                (uid(library_id), t, labels[t], pack_vec(c), model.video_count[t], ts, model_name)
                 for t, c in enumerate(model.centroids)
             ],
         )

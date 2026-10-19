@@ -23,12 +23,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
 from collections.abc import Callable
 from typing import Any
 
 from ...db.jobs import Job
 from ...library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
-from ...library_mgmt.topics import normalise
 from ...search.semantic import (
     SemanticUnavailable,
     StoredVector,
@@ -112,12 +112,11 @@ def _read_vectors(video_id: Any) -> list[StoredVector]:
 
 
 def _mean(vectors: list[StoredVector]) -> list[float]:
-    dim = len(vectors[0].embedding)
-    acc = [0.0] * dim
-    for vec in vectors:
-        for j, x in enumerate(vec.embedding):
-            acc[j] += x
-    return normalise(acc)
+    """The normalised mean vector (numpy: the stage needs the search extra anyway)."""
+    np: Any = importlib.import_module("numpy")
+    m = np.asarray([v.embedding for v in vectors], dtype=np.float64).sum(axis=0)
+    norm = float(np.linalg.norm(m))
+    return [float(x) for x in (m / norm if norm > 0.0 else m)]
 
 
 def _chapters(vectors: list[StoredVector]) -> list[dict[str, Any]]:

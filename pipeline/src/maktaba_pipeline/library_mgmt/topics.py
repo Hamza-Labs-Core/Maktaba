@@ -241,10 +241,14 @@ def kmeans_fit(
         if it > 0 and bool((new == labels).all()):
             break
         labels = new
+        # how well each point fits its centroid; a point handed to an emptied cluster is
+        # marked taken (+inf), so two clusters emptied in one iteration never share it
+        fit = sims[np.arange(n), labels].copy()
         for j in range(k):
             members = x[labels == j]
             if len(members) == 0:
-                far = int((sims[np.arange(n), labels]).argmin())
+                far = int(fit.argmin())
+                fit[far] = np.inf
                 c[j] = x[far]
                 labels[far] = j
                 continue

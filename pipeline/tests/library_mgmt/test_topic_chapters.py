@@ -7,6 +7,8 @@ import random
 
 import pytest
 
+pytest.importorskip("numpy")
+
 from maktaba_pipeline.library_mgmt.chapter import (
     InferredChapter,
     Segment,
@@ -132,3 +134,63 @@ def test_title_is_cut_at_a_word_and_none_without_a_sentence() -> None:
     assert "  " not in title and not title.startswith(" ")
     assert extractive_title(chapter, [Segment(0.0, 5.0, v, "نعم")]) is None
     assert extractive_title(InferredChapter(seq=1, start_sec=50.0, end_sec=60.0), segs) is None
+
+
+def _reference(
+    segments: list[Segment], *, w: int = 10, z: float = 2.5, min_sec: float = 240.0, radius: int = 3
+) -> list[tuple[float, float]]:
+    """The plain-Python statement of infer_topic_chapters (the first build), to hold the
+    numpy version to the same boundaries."""
+
+    def cos(a: list[float], b: list[float]) -> float:
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+        if na == 0 or nb == 0:
+            return 0.0
+        return sum(x * y for x, y in zip(a, b, strict=True)) / (na * nb)
+
+    def wsum(lo: int, hi: int) -> list[float]:
+        return [sum(col) for col in zip(*(s.embedding for s in segments[lo:hi]), strict=True)]
+
+    n = len(segments)
+    pos = list(range(w, n - w + 1))
+    drops = [1.0 - cos(wsum(i - w, i), wsum(i, i + w)) for i in pos]
+    mean = sum(drops) / len(drops)
+    std = math.sqrt(sum((d - mean) ** 2 for d in drops) / len(drops))
+    peaks = sorted(
+        (
+            (drops[k], pos[k])
+            for k in range(len(drops))
+            if drops[k] >= mean + z * std
+            and (k == 0 or drops[k] >= drops[k - 1])
+            and (k == len(drops) - 1 or drops[k] >= drops[k + 1])
+        ),
+        key=lambda p: (-p[0], p[1]),
+    )
+    first, last = segments[0].start_sec, segments[-1].end_sec
+    chosen: list[int] = []
+    for _, i in peaks:
+        lo, hi = max(1, i - radius), min(n - 1, i + radius)
+        i = max(
+            range(lo, hi + 1),
+            key=lambda j: (segments[j].start_sec - segments[j - 1].end_sec, -abs(j - i)),
+        )
+        t = segments[i].start_sec
+        if t - first < min_sec or last - t < min_sec:
+            continue
+        if all(abs(t - segments[j].start_sec) >= min_sec for j in chosen):
+            chosen.append(i)
+    cuts = [segments[i].start_sec for i in sorted(chosen)]
+    edges = [first, *cuts, last]
+    return list(zip(edges, edges[1:], strict=False))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_numpy_version_matches_the_reference(seed: int) -> None:
+    rng = random.Random(seed)
+    topics = [rng.randrange(6) for _ in range(rng.randrange(3, 7))]
+    pauses = {rng.randrange(40, 200): rng.uniform(1.0, 4.0) for _ in range(8)}
+    segs = _lecture(topics, per_topic=rng.randrange(35, 70), pause_at=pauses)
+    got = [(c.start_sec, c.end_sec) for c in infer_topic_chapters(segs)]
+    assert got == _reference(segs)

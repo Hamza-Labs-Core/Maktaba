@@ -52,12 +52,17 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     )
 
 
-async def _centroids(db: Any, library_id: Any, dim: int) -> tuple[list[int], TopicModel]:
+async def _centroids(
+    db: Any, library_id: Any, model: str, dim: int
+) -> tuple[list[int], TopicModel]:
     rows = await db.fetch(
-        "SELECT topic_id, centroid_vec FROM library_topics WHERE library_id = $1 ORDER BY topic_id",
+        "SELECT topic_id, centroid_vec FROM library_topics WHERE library_id = $1"
+        " AND model = $2 ORDER BY topic_id",
         uid(library_id),
+        model,
     )
-    # centroids of another embedding model (another dimension) are never compared
+    # centroids of another embedding model are never compared, whatever their dimension
+    # (topics from before slot 0120 have no model: the next recluster replaces them)
     usable = [r for r in rows if len(bytes(r["centroid_vec"])) == 4 * dim]
     return (
         [int(r["topic_id"]) for r in usable],
@@ -78,9 +83,9 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     elif not await library_setting(db, v.library_id, "auto_tag_topics"):
         reason = "auto_tag_topics is off for this library"
     else:
-        ids, model = await _centroids(db, v.library_id, len(e.vec))
+        ids, model = await _centroids(db, v.library_id, e.model, len(e.vec))
         if model.k == 0:
-            reason = "the library has no topics yet"
+            reason = f"the library has no topics of {e.model} yet"
         picks = [(ids[a.topic_id], a.score) for a in assign_topics(e.vec, model)]
     async with db.transaction():
         await db.execute("DELETE FROM video_topics WHERE video_id = $1", uid(v.id))

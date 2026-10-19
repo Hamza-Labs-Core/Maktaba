@@ -21,8 +21,10 @@
 ### As built (October 2026, queue engine)
 
 `chapter_infer` is an engine stage (`pipeline/.../engine/stages/chapter_infer.py`) on the
-home, edged from `index` (plan 03-10) and edging to `thumbnail` (the sprite pass draws a
-frame per chapter) and `topic_assign`. Where it differs from the table above:
+home, edged from `index` (plan 03-10) and edging to `chapter_thumbs` and `topic_assign`.
+Posters and sprites do not wait for it: `thumbnail` follows `content_hash` (a video with no
+audio has them too), and `chapter_thumbs` redraws only the frame per chapter start when the
+chapters change. Where it differs from the table above:
 
 - **Threshold is relative, not absolute.** The index embeds with
   `intfloat/multilingual-e5-small`, not e5-large. On 25 of the library's own lectures
@@ -42,7 +44,11 @@ frame per chapter) and `topic_assign`. Where it differs from the table above:
 - **Re-inference** goes through the queue's retrigger (`POST /api/queue/retrigger`, stage
   `chapter_infer`); there is no `/chapters/reinfer` route.
 - While reading the vectors, the stage also stores the video's mean vector in
-  `video_embeddings` (slot 0120) for topics (Story 9.9).
+  `video_embeddings` (slot 0120) for topics (Story 9.9); an unchanged vector leaves the row
+  alone, so a re-run never forces a recluster.
+- The math is numpy (the stage needs the `search` extra anyway); pure Python held the GIL
+  for seconds on a 4-hour transcript.
+- Slot 0120 queues the stage once for every video indexed before it existed.
 
 ## 1. Architecture diagram
 

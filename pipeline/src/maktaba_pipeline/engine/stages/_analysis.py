@@ -76,7 +76,14 @@ async def store_embedding(db: Any, e: VideoEmbedding) -> None:
         " ON CONFLICT (video_id) DO UPDATE SET library_id = EXCLUDED.library_id,"
         " transcript_id = EXCLUDED.transcript_id, model = EXCLUDED.model,"
         " dim = EXCLUDED.dim, segments = EXCLUDED.segments, vec = EXCLUDED.vec,"
-        " updated_at = EXCLUDED.updated_at",
+        " updated_at = EXCLUDED.updated_at"
+        # a re-run with the same vector leaves the row (and updated_at, which
+        # topic_recluster's fingerprint follows) alone
+        " WHERE video_embeddings.library_id <> EXCLUDED.library_id"
+        " OR video_embeddings.transcript_id <> EXCLUDED.transcript_id"
+        " OR video_embeddings.model <> EXCLUDED.model"
+        " OR video_embeddings.segments <> EXCLUDED.segments"
+        " OR video_embeddings.vec <> EXCLUDED.vec",
         uid(e.video_id),
         uid(e.library_id),
         uid(e.transcript_id),

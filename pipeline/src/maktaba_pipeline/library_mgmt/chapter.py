@@ -20,10 +20,11 @@ Epic 8 Story 8.12's priority rule.
 
 from __future__ import annotations
 
+import importlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class _LabelResolver(Protocol):
@@ -224,32 +225,27 @@ def infer_topic_chapters(
     w = window_segments
     if w < 1 or n < 2 * w + 1:
         return whole
-    dim = len(segments[0].embedding)
-    # prefix sums of the vectors: every window mean in O(dim)
-    prefix = [[0.0] * dim]
-    for k, s in enumerate(segments):
-        if len(s.embedding) != dim:
-            raise ValueError(f"embedding dim mismatch at index {k}: {len(s.embedding)} vs {dim}")
-        prev = prefix[-1]
-        prefix.append([p + x for p, x in zip(prev, s.embedding, strict=True)])
-
-    def window(lo: int, hi: int) -> list[float]:
-        return [b - a for a, b in zip(prefix[lo], prefix[hi], strict=True)]
-
-    positions = list(range(w, n - w + 1))
-    drops = [1.0 - _cosine(window(i - w, i), window(i, i + w)) for i in positions]
-    mean = sum(drops) / len(drops)
-    std = math.sqrt(sum((d - mean) ** 2 for d in drops) / len(drops))
+    # numpy (the search extra brings it, and the stage needs that extra anyway): a 4-hour
+    # transcript is ~4 000 x 384 numbers, which pure Python holds the GIL over for seconds
+    np: Any = importlib.import_module("numpy")
+    x = _matrix(np, segments)
+    # prefix sums of the vectors: every window sum in O(dim)
+    prefix = np.vstack([np.zeros((1, x.shape[1])), np.cumsum(x, axis=0)])
+    positions = np.arange(w, n - w + 1)
+    left = prefix[positions] - prefix[positions - w]
+    right = prefix[positions + w] - prefix[positions]
+    norms = np.linalg.norm(left, axis=1) * np.linalg.norm(right, axis=1)
+    dots = np.einsum("ij,ij->i", left, right)
+    cos = np.divide(dots, norms, out=np.zeros_like(dots), where=norms != 0.0)
+    drops = 1.0 - cos
+    std = float(drops.std())
     if std == 0.0:
         return whole
-    floor = mean + z * std
-    peaks = [
-        (drops[k], positions[k])
-        for k in range(len(drops))
-        if drops[k] >= floor
-        and (k == 0 or drops[k] >= drops[k - 1])
-        and (k == len(drops) - 1 or drops[k] >= drops[k + 1])
-    ]
+    floor = float(drops.mean()) + z * std
+    prev = np.concatenate(([-np.inf], drops[:-1]))
+    nxt = np.concatenate((drops[1:], [-np.inf]))
+    mask = (drops >= floor) & (drops >= prev) & (drops >= nxt)
+    peaks = [(float(drops[k]), int(positions[k])) for k in np.flatnonzero(mask)]
     peaks.sort(key=lambda p: (-p[0], p[1]))
     first, last = segments[0].start_sec, segments[-1].end_sec
     chosen: list[int] = []
@@ -288,16 +284,29 @@ def extractive_title(
     inside = [s for s in segments if chapter.start_sec <= s.start_sec < chapter.end_sec]
     if not inside:
         return None
-    centroid = _mean_window(inside, 0, len(inside))
     lead = [s for s in inside[:lead_segments] if len(s.text.split()) >= min_words]
     if not lead:
         return None
-    best = max(lead, key=lambda s: _cosine(centroid, s.embedding))
+    np: Any = importlib.import_module("numpy")
+    centroid = _matrix(np, inside).mean(axis=0)
+    cand = _matrix(np, lead)
+    norms = np.linalg.norm(cand, axis=1) * float(np.linalg.norm(centroid))
+    sims = np.divide(cand @ centroid, norms, out=np.zeros(len(lead)), where=norms != 0.0)
+    best = lead[int(sims.argmax())]  # the first of equals, as max() picks
     text = " ".join(best.text.split())
     if len(text) <= max_chars:
         return text
     cut = text[: max_chars - 1].rsplit(" ", 1)[0] or text[: max_chars - 1]
     return cut.rstrip(" ،,.؛:") + "…"
+
+
+def _matrix(np: Any, segments: Sequence[Segment]) -> Any:
+    """The segments' vectors as one float64 matrix (all of one dimension)."""
+    dim = len(segments[0].embedding)
+    for k, s in enumerate(segments):
+        if len(s.embedding) != dim:
+            raise ValueError(f"embedding dim mismatch at index {k}: {len(s.embedding)} vs {dim}")
+    return np.asarray([s.embedding for s in segments], dtype=np.float64)
 
 
 def _snap_to_pause(segments: Sequence[Segment], i: int, radius: int) -> int:

@@ -63,3 +63,14 @@ def test_assign_all_matches_assign_topics_and_names_each_topic() -> None:
     for t, i in enumerate(nearest):
         assert rows[i][0].topic_id == t
     assert assign_all([], TopicModel(centroids=[], video_count=[])) == ([], [])
+
+
+@pytest.mark.unit
+def test_two_clusters_emptied_at_once_take_different_points() -> None:
+    """Identical points: every start centroid coincides, so clusters 1 and 2 empty in
+    the same iteration; each must take its own point, never the same one."""
+    pts = [[1.0, 0.0, 0.0]] * 10
+    model = kmeans_fit(pts, 3)
+    assert model.k == 3
+    assert all(c >= 1 for c in model.video_count), model.video_count
+    assert sum(model.video_count) == 10

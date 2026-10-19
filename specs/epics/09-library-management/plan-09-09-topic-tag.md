@@ -33,7 +33,10 @@ Where they differ from the table above:
   pure-Python mini-batch version makes about 1 600 updates whatever the library's size,
   far too few for a 47 000-video library.
 - **Labels** are the title of the video closest to each centroid (64 characters). There is
-  no MLM labeller.
+  no MLM labeller, and no rename: every recluster rebuilds the topics (new ids, new labels).
+- `library_topics.model` (slot 0120) records the embedding model; `topic_assign` only
+  scores a video against topics of its own model, even when another model has the same
+  dimension.
 - `topic_recluster` rewrites the library's topics and every video's `video_topics` in one
   transaction; `topic_assign` tags new videos against the current centroids in between.
 

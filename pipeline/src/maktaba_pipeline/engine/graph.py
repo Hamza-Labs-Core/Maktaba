@@ -83,6 +83,7 @@ TRANSCRIBE_VERSION = 1
 SUBTITLE_VERSION = 1
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
+CHAPTER_THUMBS_VERSION = 1
 TOPIC_ASSIGN_VERSION = 1
 TOPIC_RECLUSTER_VERSION = 1
 
@@ -298,8 +299,13 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=0,
         version=CONTENT_HASH_VERSION,
         # a video imported from mediaintel exists before its file was read; its small
-        # thumbnail lives under the real hash. Its speech follows its identity.
-        edges=(Edge("thumb_small", "same"), Edge("transcribe", "same")),
+        # thumbnail lives under the real hash. Its speech follows its identity, and so do
+        # its poster and sprite: a video with no audio (or not transcribed yet) has them too
+        edges=(
+            Edge("thumb_small", "same"),
+            Edge("transcribe", "same"),
+            Edge("thumbnail", "same"),
+        ),
     ),
     _legacy(
         "probe",
@@ -637,8 +643,20 @@ GRAPH: tuple[StageDef, ...] = (
         lane="speech",
         lane_order=5,
         version=CHAPTER_VERSION,
-        # the sprite pass also draws a frame per chapter, so posters come after chapters
-        edges=(Edge("thumbnail", "same"), Edge("topic_assign", "same")),
+        # only the chapter frames depend on chapters; the poster and sprite came from
+        # content_hash already
+        edges=(Edge("chapter_thumbs", "same"), Edge("topic_assign", "same")),
+        placement="home",
+    ),
+    StageDef(
+        name="chapter_thumbs",
+        label="Chapter frames",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="speech",
+        lane_order=6,
+        version=CHAPTER_THUMBS_VERSION,
+        # the frames go to the thumbnail cache of the machine that serves them
         placement="home",
     ),
     StageDef(
@@ -647,7 +665,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="cpu",
         lane="speech",
-        lane_order=6,
+        lane_order=7,
         version=TOPIC_ASSIGN_VERSION,
         # every newly vectored video counts towards the library's next clustering
         edges=(Edge("topic_recluster", "library_of", when="always"),),
@@ -658,7 +676,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("library",),
         pool="cpu",
         lane="speech",
-        lane_order=7,
+        lane_order=8,
         version=TOPIC_RECLUSTER_VERSION,
         # once per batch of transcriptions, not per video: a 47 000-video library
         # clusters in seconds, but there is no point doing it every few seconds
