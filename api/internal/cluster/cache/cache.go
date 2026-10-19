@@ -122,6 +122,7 @@ type Cache struct {
 	wake       chan struct{}        // a final health set is waiting
 	dir        string               // the last Backfill's directory
 	passAt     map[string]time.Time // kind → start of the last complete pass
+	passEnd    map[string]time.Time // kind → when that pass ended
 	checked    bool                 // stale read positions cleared (clearStale)
 	counts     map[string]*counter
 	edges      map[string][2]time.Time // kind → oldest, newest row
@@ -180,6 +181,7 @@ func New(db *sql.DB, opts Options) *Cache {
 		slots:   map[string]seenSlot{},
 		wake:    make(chan struct{}, 1),
 		passAt:  map[string]time.Time{},
+		passEnd: map[string]time.Time{},
 		counts:  map[string]*counter{KindMetrics: {}, KindLogs: {}, KindHealth: {}},
 		edges:   map[string][2]time.Time{},
 		usedAt:  map[hostAt]usedBy{},

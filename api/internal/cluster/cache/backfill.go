@@ -150,7 +150,7 @@ func (c *Cache) pass(ctx context.Context, dir string) error {
 		}
 		if whole {
 			c.mu.Lock()
-			c.passAt[kind] = start
+			c.passAt[kind], c.passEnd[kind] = start, c.now()
 			c.mu.Unlock()
 		}
 	}

@@ -26,9 +26,12 @@ func (c *Cache) Covers(kind string, from, to time.Time) bool {
 	}
 	now := c.now()
 	c.mu.Lock()
-	at, ok := c.passAt[kind]
+	_, ok := c.passAt[kind]
+	end := c.passEnd[kind]
 	c.mu.Unlock()
-	if !ok || now.Sub(at) > c.staleAfter() {
+	// stale counts from the pass's end: a pass longer than staleAfter (a
+	// first read of a busy window, a slow share) still covers when it ends
+	if !ok || now.Sub(end) > c.staleAfter() {
 		return false
 	}
 	if !to.After(from) {
@@ -41,7 +44,8 @@ func (c *Cache) Covers(kind string, from, to time.Time) bool {
 // when 0) of q.IP in [q.From, q.To), of q.WorkerID ("" for all), at or
 // above q.Level, whose line contains q.Q (any case), newest first. Each
 // Line is the record as the files hold it: ts, level, event, logger,
-// fields.
+// fields. It reads in pages (newest first, by key), so a page of the
+// answer never pulls the whole day through the connection.
 func (c *Cache) ReadLogs(ctx context.Context, q agent.CacheQuery) ([]agent.CacheRecord, error) {
 	if c.window <= 0 {
 		return []agent.CacheRecord{}, nil
@@ -54,34 +58,76 @@ func (c *Cache) ReadLogs(ctx context.Context, q agent.CacheQuery) ([]agent.Cache
 		args = append(args, rk)
 		where += ` AND rank >= $` + strconv.Itoa(len(args))
 	}
-	rows, err := c.db.QueryContext(ctx, `SELECT worker_id, ts, level, event, logger, fields
-  FROM cluster_log_cache WHERE `+where+` ORDER BY ts DESC, worker_id DESC, h DESC`, args...)
+	needle := bytes.ToLower([]byte(q.Q))
+	page := logsPage
+	if q.Limit > 0 && len(needle) == 0 {
+		page = min(page, q.Limit)
+	}
+	out := []agent.CacheRecord{}
+	var after *logKey
+	for {
+		pageArgs, cond := args, where
+		if after != nil {
+			n := len(pageArgs)
+			pageArgs = append(append([]any{}, pageArgs...), c.ts(after.ts), after.worker, after.h)
+			cond += ` AND (ts, worker_id, h) < ($` + strconv.Itoa(n+1) + `, $` + strconv.Itoa(n+2) + `, $` + strconv.Itoa(n+3) + `)`
+		}
+		got, last, err := c.readLogsPage(ctx, cond, pageArgs, page, needle, q.Limit, &out)
+		if err != nil {
+			return nil, err
+		}
+		if got < page || (q.Limit > 0 && len(out) >= q.Limit) {
+			return out, nil
+		}
+		after = last
+	}
+}
+
+// logsPage is how many log rows one statement of ReadLogs reads.
+const logsPage = 1000
+
+// logKey is a cluster_log_cache row's key, the cursor of ReadLogs' pages.
+type logKey struct {
+	ts     time.Time
+	worker string
+	h      int64
+}
+
+// readLogsPage reads one page into out (until limit) and returns how many
+// rows it read and the last row's key.
+func (c *Cache) readLogsPage(ctx context.Context, where string, args []any, page int, needle []byte, limit int,
+	out *[]agent.CacheRecord) (int, *logKey, error) {
+	rows, err := c.db.QueryContext(ctx, `SELECT worker_id, ts, h, level, event, logger, fields
+  FROM cluster_log_cache WHERE `+where+` ORDER BY ts DESC, worker_id DESC, h DESC LIMIT `+strconv.Itoa(page), args...)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	needle := bytes.ToLower([]byte(q.Q))
-	out := []agent.CacheRecord{}
+	n := 0
+	var last logKey
 	for rows.Next() {
 		var worker, level, event, logger string
 		var ts dbTime
+		var h int64
 		var fields []byte
-		if err := rows.Scan(&worker, &ts, &level, &event, &logger, &fields); err != nil {
-			return nil, err
+		if err := rows.Scan(&worker, &ts, &h, &level, &event, &logger, &fields); err != nil {
+			return 0, nil, err
+		}
+		n++
+		last = logKey{ts: ts.T, worker: worker, h: h}
+		if limit > 0 && len(*out) >= limit {
+			continue // the page's rows are read to its end (LIMIT bounds them)
 		}
 		line, err := logLine(ts.T, level, event, logger, fields)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		if len(needle) > 0 && !bytes.Contains(bytes.ToLower(line), needle) {
 			continue
 		}
-		out = append(out, agent.CacheRecord{WorkerID: worker, TS: ts.T, Line: line})
-		if q.Limit > 0 && len(out) >= q.Limit {
-			break
-		}
+		*out = append(*out, agent.CacheRecord{WorkerID: worker, TS: ts.T, Line: line})
 	}
-	return out, rows.Err()
+	return n, &last, rows.Err()
 }
 
 // ReadMetrics answers a metrics history read: q.IP's frames in
@@ -228,7 +274,7 @@ func (c *Cache) Snapshot() Stats {
 		}
 		if at, ok := c.passAt[k]; ok {
 			s.PassAt = tp(at)
-			if now.Sub(at) <= c.staleAfter() {
+			if now.Sub(c.passEnd[k]) <= c.staleAfter() {
 				s.WarmFrom = tp(now.Add(-c.window))
 			}
 		}

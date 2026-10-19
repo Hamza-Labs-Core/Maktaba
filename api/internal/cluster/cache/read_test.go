@@ -3,6 +3,7 @@ package cache
 import (
 	"database/sql"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -150,7 +151,7 @@ func TestCovers(t *testing.T) {
 	if c.Covers(KindLogs, day, day.Add(24*time.Hour)) {
 		t.Fatal("no pass yet")
 	}
-	c.passAt[KindLogs] = now
+	c.passAt[KindLogs], c.passEnd[KindLogs] = now, now
 	for _, tc := range []struct {
 		kind     string
 		from, to time.Time
@@ -174,5 +175,57 @@ func TestCovers(t *testing.T) {
 	}
 	if st := c.Snapshot(); st.Logs.WarmFrom != nil || st.Logs.PassAt == nil {
 		t.Fatalf("stats = %+v", st.Logs)
+	}
+	// a pass that took longer than the staleness limit still covers when it ends
+	now = clk.Now()
+	c.passAt[KindLogs], c.passEnd[KindLogs] = now.Add(-5*time.Minute), now
+	if !c.Covers(KindLogs, day, now) {
+		t.Fatal("a long pass that just ended covers")
+	}
+}
+
+// ReadLogs reads in pages: a limit or a text filter spanning several pages
+// gives the same answer as one read would.
+func TestReadLogsPages(t *testing.T) {
+	db := sqliteDB(t)
+	clk := newClock("2026-10-19T12:00:00Z")
+	c := newTestCache(db, "sqlite", clk, 24*time.Hour)
+	p := agent.Proc{WorkerID: "w-a", IP: "192.168.50.31", Host: "studio"}
+	base := time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)
+	n := logsPage*2 + 500
+	recs := make([]agent.LogRecord, 0, n)
+	for i := 0; i < n; i++ {
+		ev := "tick"
+		if i%997 == 0 {
+			ev = "needle"
+		}
+		recs = append(recs, agent.LogRecord{TS: base.Add(time.Duration(i) * time.Second).Format(time.RFC3339), Level: "info",
+			Event: ev, Logger: "engine", Fields: json.RawMessage(`{"i":` + strconv.Itoa(i) + `}`)})
+	}
+	for len(recs) > 0 {
+		k := min(len(recs), 1000)
+		c.Logs(p, recs[:k])
+		c.flushLogs(bg)
+		recs = recs[k:]
+	}
+	day := agent.CacheQuery{IP: p.IP, From: base.Truncate(24 * time.Hour), To: base.Truncate(24 * time.Hour).Add(24 * time.Hour)}
+	all, err := c.ReadLogs(bg, day)
+	must(t, err)
+	if len(all) != n || !all[0].TS.Equal(base.Add(time.Duration(n-1)*time.Second)) {
+		t.Fatalf("all: %d rows, newest %s", len(all), all[0].TS)
+	}
+	q := day
+	q.Limit = logsPage + 7
+	got, err := c.ReadLogs(bg, q)
+	must(t, err)
+	if len(got) != q.Limit || !got[q.Limit-1].TS.Equal(all[q.Limit-1].TS) {
+		t.Fatalf("limit across pages: %d rows", len(got))
+	}
+	q = day
+	q.Q = "NEEDLE"
+	got, err = c.ReadLogs(bg, q)
+	must(t, err)
+	if want := (n-1)/997 + 1; len(got) != want {
+		t.Fatalf("text across pages: %d rows, want %d", len(got), want)
 	}
 }
