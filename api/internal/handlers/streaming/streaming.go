@@ -265,21 +265,25 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		FROM streaming_sessions WHERE id=$1
 	`, id)
 	var sess struct {
-		ID         string    `json:"session_id"`
-		UserID     string    `json:"user_id"`
-		VideoID    string    `json:"video_id"`
-		Mode       string    `json:"mode"`
-		OpenedAt   time.Time `json:"opened_at"`
-		LastSeenAt time.Time `json:"last_segment_fetched_at"`
-		ClosedAt   sql.NullTime
+		ID         string     `json:"session_id"`
+		UserID     string     `json:"user_id"`
+		VideoID    string     `json:"video_id"`
+		Mode       string     `json:"mode"`
+		OpenedAt   time.Time  `json:"opened_at"`
+		LastSeenAt time.Time  `json:"last_segment_fetched_at"`
+		ClosedAt   *time.Time `json:"closed_at,omitempty"`
 	}
-	if err := row.Scan(&sess.ID, &sess.UserID, &sess.VideoID, &sess.Mode, &sess.OpenedAt, &sess.LastSeenAt, &sess.ClosedAt); err != nil {
+	var closedAt sql.NullTime
+	if err := row.Scan(&sess.ID, &sess.UserID, &sess.VideoID, &sess.Mode, &sess.OpenedAt, &sess.LastSeenAt, &closedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("session "+id))
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load session"))
 		return
+	}
+	if closedAt.Valid {
+		sess.ClosedAt = &closedAt.Time
 	}
 	common.WriteJSON(w, r, http.StatusOK, sess)
 }

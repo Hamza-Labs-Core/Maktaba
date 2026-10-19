@@ -404,6 +404,14 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load user"))
 		return
 	}
+	if u.MustChangePassword {
+		// An admin reset revokes every refresh family; a family that
+		// still turns up (a reset racing a rotation) ends here too: an
+		// app cannot change the password, the web app must.
+		_ = h.RefreshTokens.RevokeFamily(r.Context(), next.FamilyID)
+		httperror.Write(w, r, passwordChangeRequired())
+		return
+	}
 
 	accessTTL := h.AccessTTL
 	if accessTTL == 0 {
@@ -708,16 +716,14 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 
 		// After an admin reset to a temporary password the session may
 		// only choose a new password (and see who it is, or sign out).
-		if u.MustChangePassword && !allowedWhilePasswordChange(r) {
-			httperror.Write(w, r, passwordChangeRequired())
-			return
-		}
-
+		// The auth gate (middleware.RequireAuthExcept) enforces it, the
+		// same gate a full node runs over the home's introspection answer.
 		p := &principal.Principal{
 			UserID:             u.ID,
 			IsAdmin:            u.IsAdmin,
 			AccessAllLibraries: u.IsAdmin,
 			Source:             principal.SourceCookie,
+			MustChangePassword: u.MustChangePassword,
 		}
 		next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 	})

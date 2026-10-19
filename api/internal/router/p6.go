@@ -85,7 +85,7 @@ type P6Deps struct {
 	// extensions' secret settings live there. nil refuses secret writes.
 	Secrets secrets.Store
 	// EnrichAutoAcceptCtx, when set, runs the review queue's auto-accept
-	// sweep (rules.enrichment.auto_accept_threshold, story 26.6) until it
+	// sweep (rules.enrich.auto_accept_threshold, story 26.6) until it
 	// ends. Nil: no sweep (tests). The threshold defaults to 0, so the
 	// sweep does nothing until an admin sets it.
 	EnrichAutoAcceptCtx context.Context
@@ -240,6 +240,17 @@ func MountP6(r chi.Router, d P6Deps) {
 	// (26.6), the web context card (26.9), and the cross-library series
 	// browser (26.10). All degrade gracefully with a nil DB.
 	enrichHandler := &enrichment.Handler{DB: d.DB}
+	if d.DB != nil {
+		// Find metadata / Re-enrich run as the engine's enrich stage (stub
+		// audit #4), so they show in the control centre.
+		enrichHandler.Enqueue = func(ctx context.Context, videoID string, reason map[string]any) error {
+			_, err := queues.Enqueue(ctx, d.DB, queues.EnqueueParams{
+				SubjectKind: "video", SubjectID: videoID, Stage: "enrich", Force: true,
+				Reason: queues.ReasonFor(ctx, "find_metadata", reason),
+			})
+			return err
+		}
+	}
 	enrichHandler.Mount(r)
 	if d.EnrichAutoAcceptCtx != nil && d.DB != nil {
 		go enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
@@ -300,11 +311,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	reportsHandler.Mount(r)
 
-	// GraphQL — SDL endpoint + live resolvers for the 10-foot TV
-	// clients (Epic 14). Resolvers reuse the recommendations + search
-	// DB logic so REST and GraphQL return identical data; other root
-	// fields still answer the honest schema-only 501.
-	gqlHandler := graphql.Handler{Resolvers: graphql.NewResolvers(d.DB)}
+	// GraphQL (Story 7.17): one schema over these REST handlers. Each
+	// root field runs its REST route in process through r, so access,
+	// rate limits, Idempotency-Key replay and audit are the REST ones;
+	// subscriptions read this hub. GET /graphql is the
+	// graphql-transport-ws upgrade.
+	gqlHandler := graphql.NewHandlerFromEnv(graphql.NewResolvers(r, d.DB, hub))
 	r.Method(http.MethodPost, "/graphql", gqlHandler)
+	r.Method(http.MethodGet, "/graphql", gqlHandler)
 	r.Method(http.MethodGet, "/graphql/schema", gqlHandler)
 }

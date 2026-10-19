@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from ..enrich import EnrichSettings, ProviderKey, should_enqueue_enrich
+from ..enrich.gating import INTERNAL_PROVIDER
 from ..enrich.jobs import Conn, enqueue_enrich
 from ..log import get_logger
 from . import title_parser
@@ -95,7 +96,7 @@ async def run_classify(
     filename: str,
     dirnames: Sequence[str] = (),
     settings: EnrichSettings,
-    providers: Sequence[ProviderKey],
+    providers: Sequence[ProviderKey] = (),
     scheduler: GroupScheduler | None = None,
 ) -> ClassifyResult:
     """Run the classify stage body for one video.
@@ -118,7 +119,8 @@ async def run_classify(
     # Ordering guarantee: enrich is enqueued only after classify ran, and
     # only when enabled + a provider key exists (D4).
     enrich_enqueued = False
-    if should_enqueue_enrich(settings, providers):
+    # Maktaba's own intel is always a provider: the web search and the model are extras
+    if should_enqueue_enrich(settings, (INTERNAL_PROVIDER, *providers)):
         try:
             enqueued = await enqueue_enrich(conn, video_id)
             enrich_enqueued = enqueued is not None

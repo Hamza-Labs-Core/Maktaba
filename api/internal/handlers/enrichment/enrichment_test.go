@@ -105,14 +105,13 @@ func TestAccept_NilDB_Unavailable(t *testing.T) {
 	}
 }
 
-// Manual search never auto-applies; with a nil DB it returns an empty,
-// well-formed candidate set (the "videos unchanged" guarantee holds
-// trivially with no DB).
-func TestSearch_NoAutoApply_NilDB(t *testing.T) {
+// Manual search queues the metadata provider (a mutation): with a nil DB
+// it answers 503 like the other mutations, and never applies anything.
+func TestSearch_NilDB_Unavailable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mount().ServeHTTP(rec, req(http.MethodPost, "/api/videos/"+okID+"/enrichment/search",
 		`{"query":"the matrix","year":1999}`, true))
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

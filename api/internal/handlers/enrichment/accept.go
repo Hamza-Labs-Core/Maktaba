@@ -1,12 +1,13 @@
 package enrichment
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -58,7 +59,7 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
-	res, e := h.applyAccept(r.Context(), actorID(r), id, req.ExternalID, req.Version, "accept")
+	res, e := h.applyAccept(r, id, req.ExternalID, req.Version, "accept")
 	if e != nil {
 		httperror.Write(w, r, e)
 		return
@@ -68,11 +69,11 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 
 // applyAccept is the transactional promotion shared by Accept and
 // AcceptAll. It honours optimistic concurrency (409 on a stale version)
-// and per-field provenance. actor is the deciding user's id (nil for the
-// auto-accept sweep); action is "accept" or "auto_accept".
-func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalID, version, action string) (AcceptResult, *httperror.Error) {
+// and per-field provenance. action is "accept", or "auto_accept" for the
+// review-queue sweep (autoaccept.go), whose request carries no principal.
+func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, action string) (AcceptResult, *httperror.Error) {
 	res := AcceptResult{VideoID: videoID, Applied: []string{}, Skipped: []string{}}
-	v, err := h.loadVideo(ctx, videoID)
+	v, err := h.loadVideo(r, videoID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return res, httperror.NotFound("video " + videoID)
@@ -82,7 +83,7 @@ func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalI
 	if version != "" && !versionMatches(v.UpdatedAt, version) {
 		return res, httperror.Conflict("https://maktaba.dev/problems/stale-version", "video changed since you loaded it")
 	}
-	cands, err := h.loadCandidates(ctx, videoID, externalID)
+	cands, err := h.loadCandidates(r, videoID, externalID)
 	if err != nil {
 		return res, httperror.Internal("load candidate")
 	}
@@ -90,9 +91,9 @@ func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalI
 		return res, httperror.NotFound("candidate " + externalID)
 	}
 	cand := cands[0]
-	prot := h.protectedFields(ctx, videoID)
+	prot := h.protectedFields(r, videoID)
 
-	tx, err := h.DB.BeginTx(ctx, nil)
+	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		return res, httperror.Internal("tx")
 	}
@@ -102,7 +103,7 @@ func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalI
 		// Claim the candidate first: a second sweep (another replica) racing
 		// this one finds it already accepted and stops, so the recorded
 		// previous values stay the originals Revert restores.
-		claim, err := tx.ExecContext(ctx,
+		claim, err := tx.ExecContext(r.Context(),
 			`UPDATE media_metadata_enrichment SET is_accepted = true
 			 WHERE video_id = $1 AND external_id = $2 AND is_accepted = false`, videoID, externalID)
 		if err != nil {
@@ -124,22 +125,22 @@ func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalI
 			continue
 		}
 		prev := v.field(f)
-		if _, err := tx.ExecContext(ctx,
+		if _, err := tx.ExecContext(r.Context(),
 			`UPDATE videos SET `+f+` = $1, updated_at = $2 WHERE id = $3`, val, now, videoID); err != nil {
 			return res, httperror.Internal("write field")
 		}
-		if err := upsertProvenance(ctx, tx, videoID, f, "enrichment", prev, externalID, now); err != nil {
+		if err := upsertProvenance(r, tx, videoID, f, "enrichment", prev, externalID, now); err != nil {
 			return res, httperror.Internal("write provenance")
 		}
 		res.Applied = append(res.Applied, f)
 	}
 
-	if _, err := tx.ExecContext(ctx,
+	if _, err := tx.ExecContext(r.Context(),
 		`UPDATE media_metadata_enrichment SET is_accepted = true WHERE video_id = $1 AND external_id = $2`,
 		videoID, externalID); err != nil {
 		return res, httperror.Internal("mark accepted")
 	}
-	if err := writeDecision(ctx, tx, actor, videoID, externalID, action, res.Applied, res.Skipped, now); err != nil {
+	if err := writeDecision(r, tx, videoID, externalID, action, res.Applied, res.Skipped, now); err != nil {
 		return res, httperror.Internal("write decision")
 	}
 	if err := tx.Commit(); err != nil {
@@ -265,27 +266,63 @@ func (h *Handler) Revert(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reverted": reverted})
 }
 
-// Search runs a manual re-search. The 26.5 provider service is not yet
-// wired, so v1 clears any dismissals for the video (so previously hidden
-// candidates resurface) and returns the current candidate set WITHOUT
-// applying anything — satisfying "manual search returns candidates;
-// videos unchanged until an explicit accept" (Story 26.6 AC).
+// searchRequest is the POST …/search body: the librarian's words and,
+// optionally, a year. An empty query re-searches from the video's own
+// intel (title, series, the book, the presenter).
+type searchRequest struct {
+	Query string `json:"query"`
+	Year  *int   `json:"year,omitempty"`
+}
+
+// maxQueryRunes bounds a manual search (the pipeline cuts it at 150 too).
+const maxQueryRunes = 200
+
+// Search runs a manual search (Find metadata, stub audit #4). The metadata
+// provider is the pipeline's `enrich` stage (internal intel plus, when
+// configured, a web search a language model reads; no outside catalogue):
+// this queues the video's enrich job with the query, enqueues the engine
+// job so it runs now and shows in the control centre, clears dismissals
+// (hidden candidates resurface) and answers 202 with the current
+// candidates and the job. Nothing is applied to the video until an
+// explicit accept (Story 26.6 AC); the panel polls GET …/enrichment until
+// the job is done.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
-	// Body is accepted but the {query, year, provider} fields are only
-	// consumed once the provider search service (26.5) is wired.
-	var body map[string]any
-	_ = common.ReadJSON(r, &body, 4<<10)
+	var body searchRequest
+	if e := common.ReadJSON(r, &body, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	body.Query = strings.TrimSpace(body.Query)
+	var errs []httperror.FieldError
+	if utf8.RuneCountInString(body.Query) > maxQueryRunes {
+		errs = append(errs, httperror.FieldError{Field: "query", Message: "at most 200 characters"})
+	}
+	if body.Year != nil && (*body.Year < 1000 || *body.Year > 2200) {
+		errs = append(errs, httperror.FieldError{Field: "year", Message: "a year such as 2019"})
+	}
+	if len(errs) > 0 {
+		httperror.Write(w, r, httperror.Unprocessable(errs))
+		return
+	}
 	if e := h.canEdit(r); e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
 	if h.DB == nil {
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}, "reason": "no_db"})
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
+	if _, err := h.loadVideo(r, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("video "+id))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load video"))
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -293,17 +330,26 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("clear dismissals"))
 		return
 	}
-	cands, err := h.loadCandidates(r.Context(), id, "")
+	note, err := h.queueEnrich(r, id, "manual", body.Query, body.Year)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("queue search"))
+		return
+	}
+	cands, err := h.loadCandidates(r, id, "")
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load candidates"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands})
+	out := map[string]any{"queued": true, "candidates": cands, "job": h.jobStatus(r, id)}
+	if note != "" {
+		out["note"] = note
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, out)
 }
 
-// Reenrich enqueues a fresh out-of-band enrich job (Story 26.7). The
-// enrich worker refreshes by stored external_id where one is accepted,
-// else re-searches.
+// Reenrich queues a fresh out-of-band enrich job (Story 26.7) and enqueues
+// the engine's `enrich` stage for it, so it runs now and shows in the
+// control centre (stub audit #4: nothing ran these jobs).
 func (h *Handler) Reenrich(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
@@ -318,21 +364,110 @@ func (h *Handler) Reenrich(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
-	// Clear any dismissal and enqueue a forced enrich job. The partial
-	// unique index keeps at most one open job per video; ON CONFLICT
-	// re-arms the existing row instead of erroring.
 	_, _ = h.DB.ExecContext(r.Context(),
 		`UPDATE media_metadata_enrichment SET is_dismissed = false WHERE video_id = $1`, id)
-	if _, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO enrich_jobs (id, video_id, status, force, not_before, created_at, updated_at)
-		 VALUES ($1,$2,'pending',true,$3,$3,$3)`,
-		uuid.NewString(), id, h.now()); err != nil {
-		// A live open job already exists (open-video unique index) — that
-		// is the desired idempotent outcome, not an error.
-		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"enqueued": true, "note": "job already pending"})
+	note, err := h.queueEnrich(r, id, "reenrich", "", nil)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("queue enrich"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"enqueued": true})
+	out := map[string]any{"enqueued": true, "job": h.jobStatus(r, id)}
+	if note != "" {
+		out["note"] = note
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, out)
+}
+
+// queueEnrich makes the video's open enrich job carry this request (a
+// waiting one is re-armed for now with the new query; a new one is
+// inserted), then enqueues the engine job. The partial unique index keeps
+// one open job per video, so a job already running keeps its query: the
+// note says so. The engine enqueue is best effort: the home's sweep picks
+// the queued row up within 30 s anyway.
+func (h *Handler) queueEnrich(r *http.Request, videoID, origin, query string, year *int) (string, error) {
+	ctx := r.Context()
+	now := h.now()
+	var y any
+	if year != nil {
+		y = *year
+	}
+	res, err := h.DB.ExecContext(ctx, `
+		UPDATE enrich_jobs SET force = true, origin = $2, query = $3, year = $4,
+		       status = 'pending', not_before = $5, updated_at = $5
+		WHERE video_id = $1 AND status IN ('pending', 'deferred')`,
+		videoID, origin, nullStr(query), y, now)
+	if err != nil {
+		return "", err
+	}
+	note := ""
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := h.DB.ExecContext(ctx, `
+			INSERT INTO enrich_jobs (id, video_id, status, force, attempts, not_before, created_at, updated_at, origin, query, year)
+			VALUES ($1,$2,'pending',true,0,$3,$3,$3,$4,$5,$6)`,
+			uuid.NewString(), videoID, now, origin, nullStr(query), y); err != nil {
+			// the open-video unique index: a job is running right now
+			note = "a search for this video is running; its suggestions replace these when it finishes"
+		}
+	}
+	if h.Enqueue != nil {
+		if err := h.Enqueue(ctx, videoID, map[string]any{"origin": origin}); err != nil && h.Logger != nil {
+			h.Logger.Warn("enrichment: engine enqueue failed; the sweep picks the job up",
+				"video_id", videoID, "err", err)
+		}
+	}
+	return note, nil
+}
+
+// JobStatus is the video's latest enrich job, for the panel's "searching…"
+// state and the reason a web part waits (a daily cap, a quota).
+type JobStatus struct {
+	Status    string `json:"status"`
+	Origin    string `json:"origin"`
+	Query     string `json:"query,omitempty"`
+	Year      *int   `json:"year,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+	NotBefore string `json:"not_before,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// jobStatus returns the latest enrich job of a video, or nil.
+func (h *Handler) jobStatus(r *http.Request, videoID string) *JobStatus {
+	if h.DB == nil {
+		return nil
+	}
+	var (
+		j              JobStatus
+		query, lastErr sql.NullString
+		year           sql.NullInt64
+		nb, up         any
+	)
+	if e := h.DB.QueryRowContext(r.Context(), `
+		SELECT status, origin, query, year, last_error, not_before, updated_at
+		FROM enrich_jobs WHERE video_id = $1 ORDER BY created_at DESC LIMIT 1`, videoID).
+		Scan(&j.Status, &j.Origin, &query, &year, &lastErr, &nb, &up); e != nil {
+		return nil
+	}
+	j.Query, j.LastError = query.String, lastErr.String
+	if year.Valid {
+		v := int(year.Int64)
+		j.Year = &v
+	}
+	j.NotBefore, j.UpdatedAt = tsString(nb), tsString(up)
+	return &j
+}
+
+// tsString formats a timestamp column whatever the driver hands back
+// (time.Time on Postgres, text on SQLite).
+func tsString(v any) string {
+	switch t := v.(type) {
+	case time.Time:
+		return t.UTC().Format(time.RFC3339)
+	case []byte:
+		return string(t)
+	case string:
+		return t
+	}
+	return ""
 }
 
 // AcceptAll batch-accepts the best episode match for every episode in a
@@ -375,12 +510,12 @@ func (h *Handler) AcceptAll(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := []episodeResult{}
 	for _, vid := range videoIDs {
-		best, e := h.bestCandidate(r.Context(), vid)
+		best, e := h.bestCandidate(r, vid)
 		if e != nil || best == "" {
 			summary = append(summary, episodeResult{VideoID: vid, Failed: "no candidate"})
 			continue
 		}
-		res, ee := h.applyAccept(r.Context(), actorID(r), vid, best, "", "accept")
+		res, ee := h.applyAccept(r, vid, best, "", "accept")
 		if ee != nil {
 			summary = append(summary, episodeResult{VideoID: vid, Failed: ee.Title})
 			continue
@@ -392,9 +527,9 @@ func (h *Handler) AcceptAll(w http.ResponseWriter, r *http.Request) {
 
 // bestCandidate returns the highest-confidence non-dismissed external_id
 // for a video, or "" if none.
-func (h *Handler) bestCandidate(ctx context.Context, videoID string) (string, error) {
+func (h *Handler) bestCandidate(r *http.Request, videoID string) (string, error) {
 	var ext string
-	err := h.DB.QueryRowContext(ctx,
+	err := h.DB.QueryRowContext(r.Context(),
 		`SELECT external_id FROM media_metadata_enrichment
 		 WHERE video_id = $1 AND is_dismissed = false
 		 ORDER BY confidence DESC LIMIT 1`, videoID).Scan(&ext)
@@ -404,8 +539,8 @@ func (h *Handler) bestCandidate(ctx context.Context, videoID string) (string, er
 	return ext, err
 }
 
-func upsertProvenance(ctx context.Context, tx *sql.Tx, videoID, field, origin, prev, sourceID string, now time.Time) error {
-	_, err := tx.ExecContext(ctx, `
+func upsertProvenance(r *http.Request, tx *sql.Tx, videoID, field, origin, prev, sourceID string, now time.Time) error {
+	_, err := tx.ExecContext(r.Context(), `
 		INSERT INTO media_field_provenance (video_id, field, origin, prev_value, source_id, set_at)
 		VALUES ($1,$2,$3,$4,$5,$6)
 		ON CONFLICT (video_id, field) DO UPDATE
@@ -415,11 +550,11 @@ func upsertProvenance(ctx context.Context, tx *sql.Tx, videoID, field, origin, p
 	return err
 }
 
-func writeDecision(ctx context.Context, tx *sql.Tx, actor any, videoID, externalID, action string, applied, skipped []string, now time.Time) error {
-	_, err := tx.ExecContext(ctx, `
+func writeDecision(r *http.Request, tx *sql.Tx, videoID, externalID, action string, applied, skipped []string, now time.Time) error {
+	_, err := tx.ExecContext(r.Context(), `
 		INSERT INTO enrichment_decisions (id, video_id, external_id, action, actor_user_id, applied, skipped, created_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-	`, uuid.NewString(), videoID, nullStr(externalID), action, actor, jsonArray(applied), jsonArray(skipped), now)
+	`, uuid.NewString(), videoID, nullStr(externalID), action, actorID(r), jsonArray(applied), jsonArray(skipped), now)
 	return err
 }
 

@@ -9,7 +9,7 @@
 // j/k move the selection, a accepts and d dismisses the selected match
 // (the panel's shortcuts), then the queue reloads and the next video is
 // selected, so the reviewer can clear the queue quickly. Matches at or
-// above rules.enrichment.auto_accept_threshold (Settings > Rules; 0 =
+// above rules.enrich.auto_accept_threshold (Settings > Rules; 0 =
 // off) are accepted by the server's sweep and never reach the queue.
 import { useEffect, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";

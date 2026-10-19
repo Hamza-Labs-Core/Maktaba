@@ -6,18 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 )
 
-// AutoAcceptSettingsKey is the rules section of the review queue (story
-// 26.6): app_settings key rules.enrichment holds only the values that differ
-// from the defaults (pipeline/src/maktaba_pipeline/enrichment_settings.py).
-const AutoAcceptSettingsKey = "rules.enrichment"
+// AutoAcceptSettingsKey is the rules section that holds the review queue's
+// auto_accept_threshold (story 26.6): app_settings key rules.enrich, only
+// the values that differ from the defaults
+// (pipeline/src/maktaba_pipeline/enrich/config.py).
+const AutoAcceptSettingsKey = "rules.enrich"
 
 // DefaultAutoAcceptInterval is how often RunAutoAccept sweeps the queue.
 const DefaultAutoAcceptInterval = time.Minute
 
-// LoadAutoAcceptThreshold reads rules.enrichment.auto_accept_threshold. No
+// LoadAutoAcceptThreshold reads rules.enrich.auto_accept_threshold. No
 // row, no value, or a value outside (0, 1] is 0: off (the default).
 func LoadAutoAcceptThreshold(ctx context.Context, db *sql.DB) (float64, error) {
 	if db == nil {
@@ -103,8 +105,14 @@ func (h *Handler) AutoAcceptOnce(ctx context.Context) (AutoAcceptResult, error) 
 		return out, err
 	}
 	_ = rows.Close()
+	// applyAccept reads its context from a request; this one carries no
+	// principal, so the decision is recorded without an actor.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/", nil)
+	if err != nil {
+		return out, err
+	}
 	for _, p := range picks {
-		res, e := h.applyAccept(ctx, nil, p.video, p.ext, "", "auto_accept")
+		res, e := h.applyAccept(req, p.video, p.ext, "", "auto_accept")
 		if e != nil {
 			continue // a video removed or changed mid-sweep waits for the next one
 		}

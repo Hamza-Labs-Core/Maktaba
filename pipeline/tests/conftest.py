@@ -43,6 +43,21 @@ def _no_model_or_encyclopedia_calls(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_web_metadata_calls() -> object:
+    """No test reaches Google, Ollama's web search, a model server or a web page through
+    the metadata provider (the enrich stage): a test that runs it passes fakes."""
+    from maktaba_pipeline.enrich import providers
+    from maktaba_pipeline.enrich.web import HttpResponse
+
+    async def refuse(*_a: object, **_k: object) -> HttpResponse:
+        raise RuntimeError("a test must stand in for the web search / model / page")
+
+    providers.use_network(refuse, lambda _host: False)
+    yield
+    providers.use_network()
+
+
+@pytest.fixture(autouse=True)
 def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
     """thumb_small and review_pages write the app's media cache: never the real home."""
     from maktaba_pipeline.engine.stages import thumb_small

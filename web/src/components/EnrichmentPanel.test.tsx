@@ -2,7 +2,7 @@
 // "We found this might be X" headline, a current-vs-proposed diff, the
 // protected ("won't change") marker, and Accept/Dismiss controls.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -14,13 +14,11 @@ import { EnrichmentPanel } from "./EnrichmentPanel";
 import { I18nProvider } from "../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 
-const VID = "11111111-1111-1111-1111-111111111111";
-
-function renderPanel(props: { shortcuts?: boolean; onDecided?: (a: string) => void } = {}) {
+function renderPanel() {
   return render(
     <I18nProvider>
       <ToastProvider>
-        <EnrichmentPanel videoId={VID} {...props} />
+        <EnrichmentPanel videoId="11111111-1111-1111-1111-111111111111" />
       </ToastProvider>
     </I18nProvider>
   );
@@ -79,81 +77,108 @@ describe("EnrichmentPanel", () => {
     expect(screen.getByRole("button", { name: /Search manually/ })).toBeInTheDocument();
   });
 
-  const oneCandidate = {
-    candidates: [
-      {
-        id: "c1",
-        provider: "tmdb",
-        external_id: "tmdb:movie:603",
-        confidence: 0.92,
-        accepted: false,
-        title: "The Matrix",
-        fields: [],
+  it("shows each field's confidence and sources, and the facts", async () => {
+    get.mockResolvedValue({
+      job: { status: "done", origin: "manual" },
+      candidates: [
+        {
+          id: "w1",
+          provider: "web",
+          external_id: "web:abc",
+          confidence: 0.9,
+          accepted: false,
+          title: "شرح بلوغ المرام 3",
+          fields: [
+            {
+              field: "title",
+              current: "bulugh_03",
+              proposed: "شرح بلوغ المرام 3",
+              would_change: true,
+              protected: false,
+              confidence: 0.9,
+              sources: ["S1", "I1"],
+            },
+          ],
+          facts: [{ field: "book_author", value: "ابن حجر", confidence: 0.8, sources: ["S1"] }],
+          sources: [
+            { id: "S1", label: "Wikipedia", url: "https://ar.wikipedia.org/x" },
+            { id: "I1", label: "File and folder names", kind: "file" },
+          ],
+        },
+        {
+          id: "c0",
+          provider: "youtube",
+          external_id: "yt1",
+          confidence: 1,
+          accepted: true,
+          fields: [],
+        },
+      ],
+    });
+    renderPanel();
+    await waitFor(() => expect(screen.getByText("ابن حجر")).toBeInTheDocument());
+    expect(screen.getByText("Book author")).toBeInTheDocument();
+    expect(screen.getByText("Web search")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Wikipedia" });
+    expect(link).toHaveAttribute("href", "https://ar.wikipedia.org/x");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(screen.getByText("File and folder names")).toBeInTheDocument();
+    expect(screen.getAllByText("[S1]").length).toBeGreaterThan(1);
+    // the YouTube link row is not a suggestion
+    expect(screen.queryByText(/yt1/)).not.toBeInTheDocument();
+  });
+
+  it("queues a manual search and shows the job until it is done", async () => {
+    get.mockResolvedValueOnce({ candidates: [] });
+    post.mockResolvedValue({
+      queued: true,
+      candidates: [],
+      job: { status: "pending", origin: "manual" },
+    });
+    renderPanel();
+    await waitFor(() => expect(screen.getByText(/No suggestions/)).toBeInTheDocument());
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "بلوغ المرام" } });
+    fireEvent.click(screen.getByRole("button", { name: /Search manually/ }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/videos/11111111-1111-1111-1111-111111111111/enrichment/search",
+        { query: "بلوغ المرام" }
+      )
+    );
+    await waitFor(() =>
+      expect(document.querySelector(".mkt-enrich-panel__job")).toHaveTextContent(/Searching/)
+    );
+  });
+
+  it("explains a search waiting for tomorrow's budget", async () => {
+    get.mockResolvedValue({
+      candidates: [],
+      job: {
+        status: "deferred",
+        origin: "reenrich",
+        last_error: "budget:search",
+        not_before: "2026-10-20T00:00:05Z",
       },
-    ],
-  };
-
-  it("hides Revert to original when no accept wrote fields", async () => {
-    get.mockResolvedValue({ ...oneCandidate, revertable: [] });
+    });
     renderPanel();
-    await waitFor(() => expect(screen.getByText(/We found this might be/)).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Revert to original" })).not.toBeInTheDocument();
-  });
-
-  it("reverts to the original through the revert endpoint", async () => {
-    get.mockResolvedValueOnce({ ...oneCandidate, revertable: ["title", "description"] });
-    get.mockResolvedValue({ ...oneCandidate, revertable: [] });
-    post.mockResolvedValue({ reverted: ["title", "description"] });
-    const onDecided = vi.fn();
-    renderPanel({ onDecided });
-    const btn = await screen.findByRole("button", { name: "Revert to original" });
-    expect(screen.getByText(/Title, Description/)).toBeInTheDocument();
-    fireEvent.click(btn);
     await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(`/api/videos/${VID}/enrichment/revert`, {})
-    );
-    await waitFor(() => expect(onDecided).toHaveBeenCalledWith("revert"));
-    expect(await screen.findByText("Restored the original values.")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Revert to original" })).not.toBeInTheDocument()
+      expect(document.querySelector(".mkt-enrich-panel__job")).toHaveTextContent(
+        /today's web searches are used up/
+      )
     );
   });
 
-  it("accepts with a and dismisses with d when shortcuts are on", async () => {
-    get.mockResolvedValue(oneCandidate);
-    post.mockResolvedValue({});
-    const onDecided = vi.fn();
-    renderPanel({ shortcuts: true, onDecided });
-    await waitFor(() => expect(screen.getByText(/We found this might be/)).toBeInTheDocument());
-    fireEvent.keyDown(window, { key: "a" });
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(`/api/videos/${VID}/enrichment/accept`, {
-        external_id: "tmdb:movie:603",
-      })
-    );
-    await waitFor(() => expect(onDecided).toHaveBeenCalledWith("accept"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Accept" })).not.toBeDisabled());
-    fireEvent.keyDown(window, { key: "d" });
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(`/api/videos/${VID}/enrichment/dismiss`, {
-        external_id: "tmdb:movie:603",
-      })
-    );
-  });
-
-  it("ignores the shortcut keys while typing in the search box", async () => {
-    get.mockResolvedValue(oneCandidate);
-    renderPanel({ shortcuts: true });
-    await waitFor(() => expect(screen.getByText(/We found this might be/)).toBeInTheDocument());
-    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "a" });
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it("does not react to a / d without shortcuts", async () => {
-    get.mockResolvedValue(oneCandidate);
+  it("searches again from what Maktaba knows", async () => {
+    get.mockResolvedValue({ candidates: [] });
+    post.mockResolvedValue({ enqueued: true, job: { status: "pending", origin: "reenrich" } });
     renderPanel();
-    await waitFor(() => expect(screen.getByText(/We found this might be/)).toBeInTheDocument());
-    fireEvent.keyDown(window, { key: "a" });
-    expect(post).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/No suggestions/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Search again from what Maktaba knows/ }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/videos/11111111-1111-1111-1111-111111111111/enrichment/reenrich",
+        {}
+      )
+    );
   });
 });

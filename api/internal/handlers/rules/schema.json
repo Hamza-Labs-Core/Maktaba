@@ -4484,6 +4484,204 @@
    ]
   },
   {
+   "key": "enrich",
+   "title": "Finding metadata",
+   "what": "Find metadata and Re-enrich: Maktaba's own intel (transcripts, chapters, the book, file and folder names, sibling episodes) and a web search a language model reads; the daily caps",
+   "fields": [
+    {
+     "name": "auto",
+     "kind": "bool",
+     "group": "Finding metadata",
+     "label": "Find metadata for new videos by themselves",
+     "help": "Off: only when someone presses Find metadata or Re-enrich. On: a few videos without suggestions per sweep, within the daily caps.",
+     "default": false
+    },
+    {
+     "name": "auto_batch",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Videos per sweep (automatic)",
+     "help": "",
+     "default": 5,
+     "minimum": 1
+    },
+    {
+     "name": "search",
+     "kind": "str",
+     "group": "Finding metadata",
+     "label": "Web search",
+     "help": "auto: Google Programmable Search when its key and engine id are saved (extension Web search), else Ollama's web search when its key is; off: Maktaba's own intel only (transcripts, chapters, the book, file and folder names, sibling episodes).",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "google",
+      "ollama",
+      "off"
+     ]
+    },
+    {
+     "name": "llm",
+     "kind": "str",
+     "group": "Finding metadata",
+     "label": "Language model",
+     "help": "tagcheck: the Ollama server and model of the tag check; cluster: a model any machine of the cluster serves; off: no model (no web suggestion, internal intel only).",
+     "default": "tagcheck",
+     "choices": [
+      "tagcheck",
+      "cluster",
+      "off"
+     ]
+    },
+    {
+     "name": "model",
+     "kind": "str",
+     "group": "Finding metadata",
+     "label": "Cluster model",
+     "help": "With language model = cluster. Empty: the tag check's model.",
+     "default": ""
+    },
+    {
+     "name": "results",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Web results per search",
+     "help": "",
+     "default": 5,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
+     "name": "read_pages",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Pages read per search",
+     "help": "Of the results, the pages opened and shown to the model (0: the result snippets only).",
+     "default": 3,
+     "minimum": 0,
+     "maximum": 10
+    },
+    {
+     "name": "page_chars",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Characters read per page",
+     "help": "",
+     "default": 4000,
+     "minimum": 200
+    },
+    {
+     "name": "min_confidence",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Keep suggestions from (confidence)",
+     "help": "",
+     "default": 0.35,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "max_searches_per_day",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Searches per day (most)",
+     "help": "",
+     "default": 100,
+     "minimum": 0
+    },
+    {
+     "name": "max_pages_per_day",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Pages read per day (most)",
+     "help": "",
+     "default": 300,
+     "minimum": 0
+    },
+    {
+     "name": "max_llm_calls_per_day",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Model questions per day (most)",
+     "help": "",
+     "default": 200,
+     "minimum": 0
+    },
+    {
+     "name": "max_usd_per_day",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Spend per day (most, $)",
+     "help": "Searches and model tokens at the prices below. Over a cap the web part waits for the next day; the internal suggestion is still made.",
+     "default": 1.0,
+     "minimum": 0
+    },
+    {
+     "name": "search_usd",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Price of one search ($)",
+     "help": "",
+     "default": 0.005,
+     "minimum": 0
+    },
+    {
+     "name": "llm_usd_per_1k_tokens",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Price of 1000 model tokens ($)",
+     "help": "0 for a local model.",
+     "default": 0.0,
+     "minimum": 0
+    },
+    {
+     "name": "min_search_gap_s",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Seconds between two searches",
+     "help": "",
+     "default": 1.0,
+     "minimum": 0
+    },
+    {
+     "name": "cache_days",
+     "kind": "int",
+     "group": "Finding metadata",
+     "label": "Reuse searches and answers for (days)",
+     "help": "",
+     "default": 30,
+     "minimum": 0
+    },
+    {
+     "name": "timeout_s",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Search and page timeout (s)",
+     "help": "",
+     "default": 30.0,
+     "minimum": 1
+    },
+    {
+     "name": "llm_timeout_s",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Model answer timeout (s)",
+     "help": "",
+     "default": 180.0,
+     "minimum": 1
+    },
+    {
+     "name": "auto_accept_threshold",
+     "kind": "float",
+     "group": "Finding metadata",
+     "label": "Accept matches by themselves from (confidence)",
+     "help": "A match waiting in the review queue whose confidence is at least this (0 to 1, 0.9 is 90%) is accepted without a person, checked every minute. Fields you edited yourself are never replaced, and an accepted match can be reverted to the original. 0: off, every match waits for review.",
+     "default": 0.0,
+     "minimum": 0,
+     "maximum": 1
+    }
+   ]
+  },
+  {
    "key": "display_titles",
    "title": "Display titles",
    "what": "short, clean on-air titles for the guide, the channel strip and the dizqueTV export",
@@ -5202,23 +5400,6 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
-    }
-   ]
-  },
-  {
-   "key": "enrichment",
-   "title": "Metadata review",
-   "what": "what happens to a metadata match waiting in the review queue: accepted by itself above a confidence, or left for a person",
-   "fields": [
-    {
-     "name": "auto_accept_threshold",
-     "kind": "float",
-     "group": "Metadata review",
-     "label": "Accept matches by themselves from (confidence)",
-     "help": "A match waiting in the review queue whose confidence is at least this (0 to 1, 0.9 is 90%) is accepted without a person, checked every minute. Fields you edited yourself are never replaced, and an accepted match can be reverted to the original. 0: off, every match waits for review.",
-     "default": 0.0,
-     "minimum": 0,
-     "maximum": 1
     }
    ]
   },

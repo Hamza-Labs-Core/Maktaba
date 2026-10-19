@@ -87,6 +87,8 @@ CHAPTER_VERSION = 1
 CHAPTER_THUMBS_VERSION = 1
 TOPIC_ASSIGN_VERSION = 1
 TOPIC_RECLUSTER_VERSION = 1
+#: enrich (stages/enrich.py): the metadata provider
+ENRICH_VERSION = 1
 
 EdgeMap = Literal[
     "same",
@@ -802,6 +804,20 @@ GRAPH: tuple[StageDef, ...] = (
         max_attempts=1,
     ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
+    # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel
+    # and, when configured, a web search a language model reads. The API (Find metadata,
+    # Re-enrich) and the home's sweep of enrich_jobs enqueue it; nothing waits for it. The
+    # search keys are in home_secrets, so the home runs it.
+    StageDef(
+        name="enrich",
+        label="Find metadata",
+        subject_kinds=("video",),
+        pool="lookup",
+        lane="media",
+        lane_order=12,
+        version=ENRICH_VERSION,
+        placement="home",
+    ),
 )
 
 #: Stages on which a request cycle (detect -> fingerprint -> detect ...) is allowed,

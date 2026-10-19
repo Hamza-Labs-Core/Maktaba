@@ -9,7 +9,7 @@ import (
 func TestWireExtensionTesters(t *testing.T) {
 	q := &queues.Handler{}
 	WireExtensionTesters(q, nil, nil, nil)
-	for _, name := range []string{"plex", "dizquetv"} {
+	for _, name := range []string{"plex", "dizquetv", "web_search"} {
 		if q.Testers[name] == nil {
 			t.Errorf("no tester for %s", name)
 		}

@@ -565,7 +565,7 @@ func TestExtensions(t *testing.T) {
 		}
 		var out struct{ Extensions []Extension }
 		decode(t, rec, &out)
-		if len(out.Extensions) != 3 || out.Extensions[0].Name != "cloudflare_stream" || out.Extensions[1].Name != "dizquetv" {
+		if len(out.Extensions) != 4 || out.Extensions[0].Name != "cloudflare_stream" || out.Extensions[1].Name != "dizquetv" {
 			t.Fatalf("extensions = %+v", out.Extensions)
 		}
 		plex := out.Extensions[2]

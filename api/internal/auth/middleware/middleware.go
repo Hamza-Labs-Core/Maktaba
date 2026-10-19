@@ -220,6 +220,13 @@ func DefaultPublicAllowlist() map[string]struct{} {
 func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// A session whose password an admin reset may only change it
+			// (passwordchange.go); checked before the public allowlist so
+			// it holds on every path, as on the home's cookie path before.
+			if PasswordChangeBlocked(r) {
+				WritePasswordChangeRequired(w)
+				return
+			}
 			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) {
 				next.ServeHTTP(w, r)
 				return

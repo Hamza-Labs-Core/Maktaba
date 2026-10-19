@@ -244,24 +244,14 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, language, format, source FROM subtitle_files
-		WHERE video_id = $1 AND deleted_at IS NULL
-		ORDER BY language ASC, format ASC
-	`, id)
+	subs, err := SubtitlesByVideo(r.Context(), h.DB, []string{id})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("query subtitles"))
 		return
 	}
-	defer rows.Close()
-	items := []Subtitle{}
-	for rows.Next() {
-		var s Subtitle
-		if err := rows.Scan(&s.ID, &s.Language, &s.Format, &s.Source); err != nil {
-			continue
-		}
-		s.URL = "/stream/subtitles/" + id + "/" + s.Language + "." + s.Format
-		items = append(items, s)
+	items := subs[id]
+	if items == nil {
+		items = []Subtitle{}
 	}
 
 	// the library's default_subtitle_lang (Story 9.1) marks its track the default;
@@ -340,22 +330,14 @@ func (h *Handler) Chapters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, seq, start_sec, end_sec, title, source FROM chapters
-		WHERE video_id = $1 ORDER BY seq ASC
-	`, id)
+	chapters, err := ChaptersByVideo(r.Context(), h.DB, []string{id})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("query chapters"))
 		return
 	}
-	defer rows.Close()
-	items := []Chapter{}
-	for rows.Next() {
-		var c Chapter
-		if err := rows.Scan(&c.ID, &c.Seq, &c.StartSec, &c.EndSec, &c.Title, &c.Source); err != nil {
-			continue
-		}
-		items = append(items, c)
+	items := chapters[id]
+	if items == nil {
+		items = []Chapter{}
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
