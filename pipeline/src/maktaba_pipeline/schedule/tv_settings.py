@@ -9,7 +9,8 @@ until it is switched on here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from maktaba_pipeline.settings import Help, register
 
@@ -35,6 +36,8 @@ TVG = "Guide"
 TVO = "Maktaba TV output"
 TVN = "Hardware encoder"
 TVC = "Channels on air"
+TCL = "Streaming machines"
+TCP = "Placement"
 PL = "Plex Live TV"
 
 
@@ -130,6 +133,30 @@ class MaktabaTvOutputConfig:
     nvenc_max_sessions: int = 6
     #: VideoToolbox sessions at once (0: no cap)
     videotoolbox_max_sessions: int = 0
+
+
+@dataclass(frozen=True)
+class MaktabaTvClusterConfig:
+    """Maktaba TV across the cluster (Epic 32): which machines encode channels and how the
+    home spreads them. One encode per channel in the whole cluster; the home stays the one
+    address clients see and forwards each channel to the machine that encodes it."""
+
+    #: machines other than the home may stream (each also needs "Stream on this machine")
+    nodes_stream: bool = False
+    #: ``home_first``: the home until it is full, then the least loaded machine;
+    #: ``balanced``: always the least loaded machine
+    policy: str = "home_first"
+    #: home_first: the percent of the home's channels in use before others take channels
+    spill_at: int = 100
+    #: ``proxy``: the home forwards every HLS segment; ``redirect``: segments are sent
+    #: straight from the encoding machine (playlists stay on the home)
+    hls_mode: str = "proxy"
+    #: move the channels of a machine that stopped answering to another one
+    failover: bool = True
+    #: seconds without a heartbeat before a machine counts as down
+    dead_after_seconds: int = 15
+    #: channel slug -> the machine name it prefers (one name)
+    pins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
@@ -390,6 +417,61 @@ register(
             "no limit.",
             minimum=0,
             maximum=64,
+        ),
+    },
+)
+register(
+    MaktabaTvClusterConfig,
+    {
+        "nodes_stream": Help(
+            TCL,
+            "Other machines may stream",
+            "Machines that joined this home may encode channels too, so more channels can "
+            "be on air at once. Each machine also needs \"Stream on this machine\" on the "
+            "Live TV page. Off: the home encodes every channel.",
+        ),
+        "policy": Help(
+            TCP,
+            "Where channels go",
+            "home_first: the home until it is full (see below), then the machine with the "
+            "most room. balanced: always the machine with the most room. A channel on air "
+            "is never moved to even out the load.",
+            choices=("home_first", "balanced"),
+        ),
+        "spill_at": Help(
+            TCP,
+            "Home full at (%)",
+            "home_first: the share of the home's channels in use before other machines "
+            "take new channels.",
+            minimum=1,
+            maximum=100,
+        ),
+        "hls_mode": Help(
+            TCP,
+            "Web video path",
+            "proxy: the home forwards every piece of video (one address, works everywhere). "
+            "redirect: the browser fetches the video pieces from the encoding machine "
+            "itself; only when every viewer can reach every machine.",
+            choices=("proxy", "redirect"),
+        ),
+        "failover": Help(
+            TCP,
+            "Move channels off a machine that stops",
+            "A channel being watched on a machine that stops answering continues on another "
+            "one at the same point of its schedule.",
+        ),
+        "dead_after_seconds": Help(
+            TCP,
+            "Machine down after (seconds)",
+            "Without a heartbeat for this long a machine counts as down.",
+            minimum=5,
+            maximum=300,
+        ),
+        "pins": Help(
+            TCP,
+            "Preferred machine per channel",
+            "Channel (its slug) -> the machine that should encode it while it is up and has "
+            "room. Set it on the channel's page.",
         ),
     },
 )

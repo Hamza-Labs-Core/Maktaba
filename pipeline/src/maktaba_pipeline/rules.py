@@ -34,6 +34,7 @@ from .schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvClusterConfig,
     MaktabaTvConfig,
     MaktabaTvOutputConfig,
     PlexLiveConfig,
@@ -78,6 +79,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_output": (MaktabaTvOutputConfig, "Maktaba TV output", "how a channel on air is "
                   "encoded: encoder, picture, bitrates, how many channels and NVENC "
                   "sessions at once"),
+    "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
+                   "channels and how the home spreads them; one encode per channel"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
     "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),
