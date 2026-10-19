@@ -85,6 +85,17 @@ func (c *Controller) canRead(ch channelInfo, v Viewer) bool {
 	return v.CanRead(ch.LibraryID)
 }
 
+// named fills the viewer's username when the viewers rule lists names.
+func (c *Controller) named(ctx context.Context, s Settings, v Viewer) Viewer {
+	if s.Viewers == ViewersListed && v.Name == "" {
+		var name ns
+		if c.DB.QueryRowContext(ctx, `SELECT username FROM users WHERE id = $1`, v.UserID).Scan(&name) == nil {
+			v.Name = name.S
+		}
+	}
+	return v
+}
+
 // Tune opens (or resumes) a remote session for a channel (design §7.5). The
 // gates run in this order: remote ready, viewer allowed, channel readable,
 // budget (402, new tunes only), the user's streams (429), then for a channel
@@ -100,12 +111,7 @@ func (c *Controller) Tune(ctx context.Context, v Viewer, channelID, device strin
 		return Tuned{}, refuse(http.StatusServiceUnavailable, "remote_unavailable", why)
 	}
 	s := c.settings(ctx)
-	if s.Viewers == ViewersListed && v.Name == "" {
-		var name ns
-		if c.DB.QueryRowContext(ctx, `SELECT username FROM users WHERE id = $1`, v.UserID).Scan(&name) == nil {
-			v.Name = name.S
-		}
-	}
+	v = c.named(ctx, s, v)
 	if !viewerAllowed(s, v) {
 		return Tuned{}, refuse(http.StatusForbidden, "remote_not_allowed", "you may not watch away from home")
 	}
@@ -338,8 +344,9 @@ func (c *Controller) mint(ctx context.Context, s Settings, videoUID string) (str
 	return tok, exp, key.ID, cl.ManifestURL(code, tok), nil
 }
 
-// Heartbeat keeps a session (every 60 s, owner only) and returns a fresh
-// token past half its life, after a new video, or after a key rotation.
+// Heartbeat keeps a session (every 60 s, owner only, while the tune's gates
+// still let them watch) and returns a fresh token past half its life, after
+// a new video, or after a key rotation.
 func (c *Controller) Heartbeat(ctx context.Context, v Viewer, sessionID string) (Beat, error) {
 	c.init()
 	x, err := c.st.session(ctx, sessionID)
@@ -353,8 +360,11 @@ func (c *Controller) Heartbeat(ctx context.Context, v Viewer, sessionID string) 
 		return Beat{State: "ended"}, refuse(http.StatusGone, "session_ended", "the session ended: tune again")
 	}
 	now := c.now()
+	s := c.settings(ctx)
+	// the tune's gates hold for the whole session: a viewer taken off the
+	// viewers rule, or a channel switched off, gets no fresh token
 	ch, err := c.st.channel(ctx, x.ChannelID)
-	if err != nil || !c.canRead(ch, v) {
+	if err != nil || !ch.enabled || !c.canRead(ch, v) || !viewerAllowed(s, c.named(ctx, s, v)) {
 		_ = c.st.setSession(ctx, x.ID, map[string]any{"ended_at": now, "end_reason": "access_lost"})
 		c.Wake()
 		return Beat{State: "ended"}, refuse(http.StatusForbidden, "remote_not_allowed", "you may no longer watch this channel")
@@ -385,7 +395,6 @@ func (c *Controller) Heartbeat(ctx context.Context, v Viewer, sessionID string) 
 	if p.State != PushLive || p.VideoUID == "" {
 		return b, nil
 	}
-	s := c.settings(ctx)
 	b.State = "live"
 	due := x.TokenExp == nil || x.VideoUID != p.VideoUID || !now.Before(x.TokenExp.Add(-s.TokenTTL/2))
 	if !due {
