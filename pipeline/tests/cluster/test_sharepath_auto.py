@@ -209,7 +209,7 @@ async def test_the_full_automatic_flow(db: Any, tmp_path: Path) -> None:
     )
     assert await auto.due(db, home.env()) is None
     # a new legacy path (an old scanner) is a change: due again
-    await make_video(db, ids["lib"], path=home.file("Chan/new.mp4"))  # type: ignore[arg-type]
+    await make_video(db, ids["lib"], path=home.file("Chan/new.mp4"))
     assert await auto.due(db, home.env()) == "changed"
 
 
@@ -280,7 +280,7 @@ async def test_a_run_cut_short_resumes_with_the_same_batch(db: Any, tmp_path: Pa
         kw["chunk_size"] = 2
         return await real_apply(*a, **kw)
 
-    auto.mig.apply = small_chunks  # type: ignore[assignment]
+    setattr(migrate, "apply", small_chunks)  # noqa: B010
     try:
 
         async def stop(done: int, total: int) -> None:
@@ -301,7 +301,7 @@ async def test_a_run_cut_short_resumes_with_the_same_batch(db: Any, tmp_path: Pa
 
         state = await auto.run_once(db, home.env())
     finally:
-        auto.mig.apply = real_apply  # type: ignore[assignment]
+        setattr(migrate, "apply", real_apply)  # noqa: B010
     assert state["phase"] == "done"
     assert state["last"]["batch"] == batch
     assert len(await mig.batches(db)) == 1
