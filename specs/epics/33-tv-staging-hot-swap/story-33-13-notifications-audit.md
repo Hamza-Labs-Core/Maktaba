@@ -9,7 +9,7 @@ Design: [design.md](design.md) §11.1, README R12.
 
 ## Acceptance criteria
 
-- **AC1** In-app notifications (slot 0125 `notifications`, audience admins) for: change ready (needs
+- **AC1** In-app notifications (slot 0126 `notifications`, audience admins) for: change ready (needs
   approval), verification failed, auto-promote scheduled (only when an admin switched a rule on), swapped, failover to the hot standby, rolled back (manual /
   automatic with cause), staging slot crash loop, rollback point expiring in 1 h, a `ready` change waiting
   more than a day.

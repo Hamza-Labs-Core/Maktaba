@@ -1,7 +1,7 @@
 # Plan 33.13 — Notifications and audit — implementation
 
 > Implementation plan for [story-33-13](story-33-13-notifications-audit.md).
-> Migration: slot 0125 (`notifications`, `notification_reads`).
+> Migration: slot 0126 (`notifications`, `notification_reads`).
 
 ## 0. Decisions
 
@@ -14,7 +14,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0125_notifications.sql` (+ sqlite)
+- `shared/db/migrations/0126_notifications.sql` (+ sqlite)
 - `api/internal/notify/` — `notify.go` (interface, subscribers, DB sink, rate limit), handlers `GET /api/notifications`, `POST /api/notifications/{id}/read`
 - `web/src/components/NotificationsBell.tsx`
 - tests

@@ -395,16 +395,16 @@ Three instances (`blue`, `green`, `amber`) carry these roles; at most one each o
 
 ## Data model (proposed migrations)
 
-Slots after the highest on `main` (0118 `channel_edited_at`) and after Epic 32's reserved
-0119–0121. Provisional; `MANIFEST.md` gets rows only when the files exist (its rule). Each has a
+Slots after the highest on `main` (0119 `cluster_cache`, merged after Epic 32 was written, so Epic
+32's reserved 0119–0121 move to 0120–0122) and after those. Provisional; `MANIFEST.md` gets rows only when the files exist (its rule). Each has a
 `.sqlite.sql` sibling like every channel migration.
 
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
-| 0122 | 33.2, 33.10 | `0122_tv_releases_changes.sql` | `tv_releases` (id uuid, digest unique, kind text[], sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id, def jsonb, art jsonb, sched_changed bool, PK both); `tv_changes` (id, release_id, base_release_id, state, kinds text[], title, source jsonb, change_set jsonb, digest, diff jsonb, verify_report jsonb, auto_rule, approved_by uuid[], approved_at, swap_at, swap_wait, created_by, created_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, previous_until); sequence `tv_sched_gen_seq` (starts at 1; generation 0 = everything today). |
-| 0123 | 33.3 | `0123_tv_sched_generations.sql` (NO TRANSACTION) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`. |
-| 0124 | 33.1, 33.7 | `0124_tv_slots.sql` | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (slot 0120) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
-| 0125 | 33.13 | `0125_notifications.sql` | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`) — the first user of a general in-app table (decision 8). |
+| 0123 | 33.2, 33.10 | `0123_tv_releases_changes.sql` | `tv_releases` (id uuid, digest unique, kind text[], sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id, def jsonb, art jsonb, sched_changed bool, PK both); `tv_changes` (id, release_id, base_release_id, state, kinds text[], title, source jsonb, change_set jsonb, digest, diff jsonb, verify_report jsonb, auto_rule, approved_by uuid[], approved_at, swap_at, swap_wait, created_by, created_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, previous_until); sequence `tv_sched_gen_seq` (starts at 1; generation 0 = everything today). |
+| 0124 | 33.3 | `0124_tv_sched_generations.sql` (NO TRANSACTION) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`. |
+| 0125 | 33.1, 33.7 | `0125_tv_slots.sql` | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (Epic 32 placements, now proposed 0121) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
+| 0126 | 33.13 | `0126_notifications.sql` | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`) — the first user of a general in-app table (decision 8). |
 
 `channel_runtime` (0083/0117) gains nothing: a slot writes its rows with `host_id = <host>/<slot>`
 so the On air page (Epic 32.5) shows both slots during a swap.
@@ -525,7 +525,7 @@ while a change is in flight; the channel editor shows "editing draft change #42"
 ## Dependencies
 
 - `feat/tv-core` merged (output settings, NVENC/VideoToolbox caps, `streaming_hosts`, 0117).
-- Epic 32 32.2 (placements, slot 0120) and 32.3 (front door package `streaming/internal/frontdoor`).
+- Epic 32 32.2 (placements, Epic 32 slot 0121) and 32.3 (front door package `streaming/internal/frontdoor`).
   33.1 can land first on a single host; whichever story lands first creates `frontdoor`.
   32.7's pusher moves into the front door's relay (33.8) — Epic 32 plan-32-07 should be amended
   accordingly if 33.8 lands first, or 33.8 moves it.
@@ -582,7 +582,7 @@ capacity (future).
    encoded twice); a live crash fails over instantly to it. The standby **stays** while a change is
    staged; staging is a **third slot**, warmed only while a change is staged; all within tv-core's
    encoder caps (see "Resources and capacity").
-8. **Notifications table — accepted default.** Create the general `notifications` table (slot 0125).
+8. **Notifications table — accepted default.** Create the general `notifications` table (slot 0126).
 9. **Retention — accepted default.** 24 h rollback retention.
 10. **Preview — accepted default.** Browser preview only (plus the staging M3U/XMLTV URLs for VLC); no
     staging HDHomeRun device.

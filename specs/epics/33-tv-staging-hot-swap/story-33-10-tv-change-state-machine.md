@@ -13,7 +13,7 @@ Design: [design.md](design.md) §11.
 
 ## Acceptance criteria
 
-- **AC1** `tv_changes` and `tv_change_events` (slot 0122); every transition writes an event (from, to,
+- **AC1** `tv_changes` and `tv_change_events` (slot 0123); every transition writes an event (from, to,
   actor, source, detail) and an `audit_log` row for admin actions.
 - **AC2** States and transitions exactly as design §11.2; an invalid transition answers 409 with the
   current state.

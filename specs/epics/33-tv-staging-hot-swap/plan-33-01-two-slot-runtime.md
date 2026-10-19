@@ -1,7 +1,7 @@
 # Plan 33.1 — Slot TV runtime (live, hot standby, staging) — implementation
 
 > Implementation plan for [story-33-01](story-33-01-two-slot-runtime.md).
-> Design: [design.md](design.md) §1, §2. Migration: slot 0124 (`tv_slots`, placement `track`/`slot`).
+> Design: [design.md](design.md) §1, §2. Migration: slot 0125 (`tv_slots`, placement `track`/`slot`).
 
 ## 0. Decisions
 
@@ -23,7 +23,7 @@
 - `streaming/internal/slot/beat.go` — `tv_slot_beat` loop
 - `streaming/internal/frontdoor/route.go` — `Route(channel) → upstream{host, slot, base, epoch}` from `tv_routing` + placements, cache 2 s, LISTEN `tv_routing`/`tv_placement`
 - `streaming/internal/frontdoor/standby.go` — standby warm set (budget order live → standby), failover on live-slot loss (epoch + 1, all channels switch at once)
-- `shared/db/migrations/0124_tv_slots.sql` (+ `.sqlite.sql`)
+- `shared/db/migrations/0125_tv_slots.sql` (+ `.sqlite.sql`)
 - tests
 
 **Modify**
@@ -37,8 +37,8 @@
 
 ## 2. Steps
 
-1. Migration 0124: `tv_slots`, `tv_slot_beat`, `tv_channel_switch`, placement columns, PK change
-   (if 0120 is not merged yet, fold the columns into 0120 and keep 0124 for the rest).
+1. Migration 0125: `tv_slots`, `tv_slot_beat`, `tv_channel_switch`, placement columns, PK change
+   (if Epic 32's placement migration (0121) is not merged yet, fold the columns into it and keep 0125 for the rest).
 2. `slot` subcommand with the existing Engine; output root `<cache>/tv/<slot>`.
 3. Front door router: a single-host install has placements implicitly `home/blue/live`
    (no placement rows needed when Epic 32 is not on; `Route` answers the live slot).

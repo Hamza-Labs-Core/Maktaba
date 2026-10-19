@@ -14,7 +14,7 @@ Design: [design.md](design.md) §4.
 
 ## Acceptance criteria
 
-- **AC1** Migration 0123 adds `sched_gen` (default 0) with the new unique and time indexes built
+- **AC1** Migration 0124 adds `sched_gen` (default 0) with the new unique and time indexes built
   concurrently; existing data is generation 0; `tv_live_gen()` answers 0 without a routing row.
 - **AC2** Every live reader listed in design §4.2 reads `channel_programs_live` or passes a generation;
   a test seeds two generations and checks each reader returns only the live one.

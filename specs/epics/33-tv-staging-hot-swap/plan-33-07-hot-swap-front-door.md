@@ -1,7 +1,7 @@
 # Plan 33.7 — Atomic hot swap in the front door — implementation
 
 > Implementation plan for [story-33-07](story-33-07-hot-swap-front-door.md).
-> Design: [design.md](design.md) §8. No new migration (`tv_routing` 0122, `tv_channel_switch` 0124).
+> Design: [design.md](design.md) §8. No new migration (`tv_routing` 0123, `tv_channel_switch` 0125).
 
 ## 0. Decisions
 
