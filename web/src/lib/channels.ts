@@ -145,8 +145,18 @@ export interface StripSettings {
   height_pct: number;
   bg_color: string;
   bg_opacity: number;
+  /** the rule along the bar and the clock's box */
   accent_color: string;
+  /** the accent line along the edge facing the picture (% of the bar height; 0: none) */
+  rule_height: number;
+  /** the title */
   text_color: string;
+  /** the «التالي» line */
+  next_color: string;
+  /** the clock's label and time and the channel name, on the accent */
+  clock_text_color: string;
+  /** the page number */
+  indicator_color: string;
   font_size_pct: number;
   direction: "auto" | "rtl" | "ltr";
   show_next: boolean;

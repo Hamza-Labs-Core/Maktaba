@@ -21,8 +21,14 @@ import {
   type StripSettings,
 } from "../../../lib/channels";
 import { rulesApi } from "../../../lib/rulesApi";
-import { DEFAULT_STRIP, effectiveStrip, stripDefaultsFromRules } from "../../../lib/strip";
+import {
+  DEFAULT_STRIP,
+  effectiveStrip,
+  stripColors,
+  stripDefaultsFromRules,
+} from "../../../lib/strip";
 import { StripPreview } from "./StripPreview";
+import { StripColorsEditor } from "./StripColors";
 
 type EnabledMode = "follow" | "on" | "off";
 
@@ -36,7 +42,17 @@ export const STRIP_RANGES: Partial<Record<keyof StripSettings, [number, number]>
   every_minutes: [1, 240],
   clock_seconds: [2, 120],
   page_seconds: [2, 30],
+  rule_height: [0, 20],
 };
+
+const COLOR_FIELDS = [
+  "bg_color",
+  "accent_color",
+  "text_color",
+  "next_color",
+  "clock_text_color",
+  "indicator_color",
+] as const;
 
 const MAX_CLOCKS = 8;
 
@@ -128,7 +144,7 @@ export function StripSection({
       if (!Number.isFinite(v) || v < lo || v > hi)
         out[k] = t("channels.strip.err.range", { lo, hi });
     }
-    for (const k of ["bg_color", "accent_color", "text_color"] as const) {
+    for (const k of COLOR_FIELDS) {
       if (!/^#[0-9a-f]{6}$/i.test(draft[k])) out[k] = t("channels.strip.err.color");
     }
     draft.clocks.forEach((c, i) => {
@@ -257,25 +273,6 @@ export function StripSection({
         <Input label={t("channels.strip.height")} step="0.5" {...num("height_pct")} />
         <Input label={t("channels.strip.fontSize")} {...num("font_size_pct")} />
         <Input
-          label={t("channels.strip.bgColor")}
-          value={draft.bg_color}
-          error={errors.bg_color}
-          onChange={(e) => set("bg_color", e.target.value)}
-        />
-        <Input label={t("channels.strip.bgOpacity")} step="0.05" {...num("bg_opacity")} />
-        <Input
-          label={t("channels.strip.textColor")}
-          value={draft.text_color}
-          error={errors.text_color}
-          onChange={(e) => set("text_color", e.target.value)}
-        />
-        <Input
-          label={t("channels.strip.accentColor")}
-          value={draft.accent_color}
-          error={errors.accent_color}
-          onChange={(e) => set("accent_color", e.target.value)}
-        />
-        <Input
           label={t("channels.strip.fillerLabel")}
           value={draft.filler_label}
           placeholder={t("channels.strip.fillerLabel.placeholder")}
@@ -283,6 +280,16 @@ export function StripSection({
           onChange={(e) => set("filler_label", e.target.value)}
         />
       </div>
+      <StripColorsEditor
+        value={stripColors(draft)}
+        defaults={stripColors(global)}
+        errors={errors}
+        onChange={(c) => {
+          setTouched(true);
+          setDraft((d) => ({ ...d, ...c }));
+        }}
+      />
+      <Input label={t("channels.strip.ruleHeight")} step="0.5" {...num("rule_height")} />
       {draft.overflow === "cycle" && (
         <Toggle
           checked={draft.page_indicator}

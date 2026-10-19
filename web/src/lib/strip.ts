@@ -10,10 +10,14 @@ export const DEFAULT_STRIP: StripSettings = {
   enabled: false,
   position: "bottom",
   height_pct: 9,
-  bg_color: "#0b1f3a",
-  bg_opacity: 0.85,
-  accent_color: "#c8a24a",
+  bg_color: "#0b5d3b",
+  bg_opacity: 0.9,
+  accent_color: "#c9a227",
+  rule_height: 4,
   text_color: "#ffffff",
+  next_color: "#e8d9a8",
+  clock_text_color: "#0b3d27",
+  indicator_color: "#eac85e",
   font_size_pct: 42,
   direction: "auto",
   show_next: true,
@@ -41,6 +45,83 @@ export const DEFAULT_STRIP: StripSettings = {
 };
 
 const KEYS = Object.keys(DEFAULT_STRIP) as (keyof StripSettings)[];
+
+/** The strip's colour settings (what a palette sets). */
+export const STRIP_COLOR_KEYS = [
+  "bg_color",
+  "bg_opacity",
+  "accent_color",
+  "text_color",
+  "next_color",
+  "clock_text_color",
+  "indicator_color",
+] as const;
+export type StripColors = Pick<StripSettings, (typeof STRIP_COLOR_KEYS)[number]>;
+
+/** Ready-made palettes; the first is the default. */
+export const STRIP_PALETTES: { id: string; colors: StripColors }[] = [
+  {
+    id: "green_gold",
+    colors: {
+      bg_color: "#0b5d3b",
+      bg_opacity: 0.9,
+      accent_color: "#c9a227",
+      text_color: "#ffffff",
+      next_color: "#e8d9a8",
+      clock_text_color: "#0b3d27",
+      indicator_color: "#eac85e",
+    },
+  },
+  {
+    id: "navy",
+    colors: {
+      bg_color: "#0b1f3a",
+      bg_opacity: 0.85,
+      accent_color: "#c8a24a",
+      text_color: "#ffffff",
+      next_color: "#d9e2f2",
+      clock_text_color: "#0b1f3a",
+      indicator_color: "#e6c76a",
+    },
+  },
+  {
+    id: "black",
+    colors: {
+      bg_color: "#000000",
+      bg_opacity: 0.8,
+      accent_color: "#e0b84c",
+      text_color: "#ffffff",
+      next_color: "#d0d0d0",
+      clock_text_color: "#111111",
+      indicator_color: "#e0b84c",
+    },
+  },
+  {
+    id: "maroon_gold",
+    colors: {
+      bg_color: "#5c0f1d",
+      bg_opacity: 0.9,
+      accent_color: "#c9a227",
+      text_color: "#ffffff",
+      next_color: "#f0dfb0",
+      clock_text_color: "#3a0a12",
+      indicator_color: "#e8c35a",
+    },
+  },
+];
+
+/** The colours of `s`, for comparing with a palette. */
+export function stripColors(s: StripSettings): StripColors {
+  const out: Record<string, unknown> = {};
+  for (const k of STRIP_COLOR_KEYS) out[k] = s[k];
+  return out as StripColors;
+}
+
+/** The accent rule's thickness in pixels for a bar `h` high (0: none). */
+export function ruleThickness(h: number, rulePct: number): number {
+  if (!(rulePct > 0)) return 0;
+  return Math.max(1, Math.round((h * rulePct) / 100));
+}
 
 /** The global strip settings: the rules section tv_strip's values over the defaults. */
 export function stripDefaultsFromRules(sections: RuleSection[] | undefined): StripSettings {

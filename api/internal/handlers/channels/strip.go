@@ -53,6 +53,7 @@ var stripNumbers = map[string]stripRange{
 	"every_minutes": {1, 240},
 	"clock_seconds": {2, 120},
 	"page_seconds":  {2, 30},
+	"rule_height":   {0, 20},
 }
 
 var stripInts = map[string]bool{"scroll_speed": true, "show_seconds": true, "every_minutes": true, "clock_seconds": true, "page_seconds": true}
@@ -70,7 +71,10 @@ var stripChoices = map[string][]string{
 	"digits":       {"auto", "arabic", "western"},
 }
 
-var stripColors = map[string]bool{"bg_color": true, "accent_color": true, "text_color": true}
+var stripColors = map[string]bool{
+	"bg_color": true, "accent_color": true, "text_color": true,
+	"next_color": true, "clock_text_color": true, "indicator_color": true,
+}
 
 // stripTexts: label settings and their rune limits.
 var stripTexts = map[string]int{"next_label_ar": 40, "next_label_en": 40, "filler_label": 60}

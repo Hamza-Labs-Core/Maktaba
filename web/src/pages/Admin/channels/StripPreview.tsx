@@ -17,6 +17,7 @@ import {
   pageIndicator,
   pageLine,
   pageSeconds,
+  ruleThickness,
   estimateWidth,
   stripDirection,
   stripLayout,
@@ -143,6 +144,8 @@ export function StripPreview({
     color: s.text_color,
     [s.position === "top" ? "top" : "bottom"]: 0,
   };
+  // the accent rule along the edge facing the picture: the top of a bottom bar
+  const rule = ruleThickness(geo.h, s.rule_height);
   // the engine's pixel sizes on the 1920×1080 frame, scaled to the preview
   const cqh = (px: number) => `${(px / FRAME_H) * 100}cqh`;
   const cqw = (px: number) => `${(px / FRAME_W) * 100}cqw`;
@@ -153,7 +156,7 @@ export function StripPreview({
         className="mkt-strip-preview__page"
         data-testid={testid}
         dir="ltr"
-        style={{ fontSize: cqh(geo.indicatorPx) }}
+        style={{ fontSize: cqh(geo.indicatorPx), color: s.indicator_color }}
       >
         {pageIndicator(k, n, indic)}
       </span>
@@ -173,11 +176,28 @@ export function StripPreview({
         dir={dir}
         style={bar}
       >
+        {rule > 0 && (
+          <span
+            className="mkt-strip-preview__rule"
+            data-testid="strip-rule"
+            data-edge={s.position === "top" ? "bottom" : "top"}
+            style={{
+              height: cqh(rule),
+              background: s.accent_color,
+              [s.position === "top" ? "bottom" : "top"]: 0,
+            }}
+          />
+        )}
         {geo.nameW > 0 && (
           <span
             className="mkt-strip-preview__channel"
             data-testid="strip-channel"
-            style={{ width: cqw(geo.nameW), fontSize: titleSize }}
+            style={{
+              width: cqw(geo.nameW),
+              fontSize: titleSize,
+              background: s.accent_color,
+              color: s.clock_text_color,
+            }}
           >
             {channelName}
           </span>
@@ -200,7 +220,7 @@ export function StripPreview({
             <span className="mkt-strip-preview__line">
               <span
                 className="mkt-strip-preview__next"
-                style={{ fontSize: cqh(geo.nextPx) }}
+                style={{ fontSize: cqh(geo.nextPx), color: s.next_color }}
                 data-testid="strip-next"
                 data-pages={nextPaging.pages.length}
               >
@@ -214,7 +234,11 @@ export function StripPreview({
           <div
             className="mkt-strip-preview__clock"
             data-testid="strip-clock"
-            style={{ background: s.accent_color, width: cqw(geo.clockW) }}
+            style={{
+              background: s.accent_color,
+              color: s.clock_text_color,
+              width: cqw(geo.clockW),
+            }}
           >
             <span className="mkt-strip-preview__city" style={{ fontSize: cqh(geo.clockLabelPx) }}>
               {clockLabel(city, dir)}
