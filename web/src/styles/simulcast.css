@@ -1,0 +1,46 @@
+/* Admin → Live TV → Simulcast (story 32.13). App tokens only (dark mode
+   follows); logical properties keep it right in Arabic; the tables scroll
+   inside their own box so nothing overflows a phone. */
+.mkt-simulcast {
+  min-inline-size: 0;
+}
+.mkt-simulcast table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+.mkt-simulcast code {
+  overflow-wrap: anywhere;
+}
+.mkt-simulcast__pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.mkt-simulcast__att {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-block-end: var(--space-3);
+  min-inline-size: 0;
+}
+.mkt-simulcast__rules {
+  display: grid;
+  gap: var(--space-3);
+}
+.mkt-simulcast__rule {
+  display: grid;
+  gap: var(--space-2);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--color-border);
+}
+.mkt-simulcast__days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-simulcast__outputs td,
+.mkt-simulcast__dests td {
+  vertical-align: top;
+}

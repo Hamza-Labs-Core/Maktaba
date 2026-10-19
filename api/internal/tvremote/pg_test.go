@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,4 +146,104 @@ func TestPushCredentialsOnlyForHome(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO tv_remote_pushes (channel_id, state) VALUES ($1, 'requested')`, ch); err == nil {
 		t.Error("a second running push of the channel was accepted")
 	}
+}
+
+// Slot 0126 on Postgres (story 32.13 TC1): the simulcast tables on the
+// production types, and a machine's login reads none of them nor the
+// destinations' keys in home_secrets.
+func TestSimulcastOnPostgres(t *testing.T) {
+	db, dsn := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	f := cftest.New(t)
+	ch := uuid.NewString()
+	if _, err := db.Exec(`INSERT INTO channels (id, number, name, slug, mode) VALUES ($1, 101, 'One', 'one', 'shuffle')`, ch); err != nil {
+		t.Fatal(err)
+	}
+	store := secrets.NewMemory()
+	_ = store.Put(ctx, tvremote.SecretAPIToken, []byte("tok-secret"), "")
+	in := &tvremote.Integration{DB: db, Secrets: store, NewClient: f.Client,
+		Ext: &fakeExt{settings: map[string]any{"account_id": "acc1", "customer_code": "abc123xyz"}}}
+	for _, kv := range [][2]string{{tvremote.SettingLastTest, `{"ok":true,"checked_at":"2026-10-19T00:00:00Z","lines":[]}`},
+		{tvremote.SimulcastSettingsKey, `{"enabled":true}`}} {
+		if _, err := db.Exec(`INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())`, kv[0], kv[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := &tvremote.Controller{DB: db, Integration: in, TuneWait: -1}
+	key := "pg-key-0123456789"
+	d, err := c.CreateDestination(ctx, "admin", tvremote.DestinationInput{Name: sp("YT"), Kind: sp("youtube"), StreamKey: &key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.SetChannelSimulcast(ctx, "admin", ch, []tvremote.AttachmentInput{{DestinationID: d.ID,
+		Mode: tvremote.ModeSchedule, Rules: []byte(`[{"kind":"window","start":"00:00","end":"00:00"},{"kind":"live"}]`),
+		Enabled: true, RightsConfirmed: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var push, input string
+	if err := db.QueryRow(`SELECT p.id, i.cf_uid FROM tv_remote_pushes p JOIN tv_remote_inputs i ON i.id = p.input_id
+		WHERE p.channel_id = $1`, ch).Scan(&push, &input); err != nil {
+		t.Fatalf("no push for the simulcast: %v", err)
+	}
+	if _, err := db.Exec(`SELECT tv_push_report($1, 'connecting', '')`, push); err != nil {
+		t.Fatal(err)
+	}
+	f.GoLive(input)
+	for i := 0; i < 2; i++ {
+		if err := c.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if outs := f.InputOutputs(input); len(outs) != 1 || outs[0].StreamKey != key {
+		t.Fatalf("outputs %+v", outs)
+	}
+	var holds string
+	_ = db.QueryRow(`SELECT holds::text FROM tv_remote_pushes WHERE id = $1`, push).Scan(&holds)
+	if !strings.Contains(holds, "simulcast") {
+		t.Errorf("holds %s", holds)
+	}
+	if _, err := c.SimulcastStatus(ctx, ""); err != nil {
+		t.Fatalf("status on Postgres: %v", err)
+	}
+	if err := c.StopOutput(ctx, "admin", mustAttachment(t, db, ch)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.OutputCount() != 0 {
+		t.Fatal("output not deleted")
+	}
+
+	if _, err := db.Exec(`DROP ROLE IF EXISTS e32_sim_node`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE ROLE e32_sim_node LOGIN PASSWORD 'nodepw' IN ROLE maktaba_worker`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DROP ROLE IF EXISTS e32_sim_node`) })
+	node, err := sql.Open("postgres", clustertest.WithUser(t, dsn, "e32_sim_node", "nodepw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = node.Close() })
+	var x any
+	for _, q := range []string{`SELECT count(*) FROM tv_simulcast_destinations`, `SELECT count(*) FROM tv_simulcast_attachments`,
+		`SELECT count(*) FROM tv_simulcast_outputs`, `SELECT count(*) FROM home_secrets`} {
+		if err := node.QueryRow(q).Scan(&x); !pgDenied(err) {
+			t.Errorf("%s as a machine: %v, want permission denied", q, err)
+		}
+	}
+}
+
+func mustAttachment(t *testing.T, db *sql.DB, ch string) string {
+	t.Helper()
+	var id string
+	if err := db.QueryRow(`SELECT id FROM tv_simulcast_attachments WHERE channel_id = $1`, ch).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

@@ -44,6 +44,7 @@ TRV = "Remote viewers"
 TRL = "Remote limits"
 TRB = "Remote budget"
 TRP = "Remote push"
+TSM = "Simulcast"
 PL = "Plex Live TV"
 TS = "Channel strip"
 TSL = "Strip look"
@@ -210,6 +211,27 @@ class MaktabaTvRemoteConfig:
     #: ``relay``: requests through the Maktaba relay are remote; ``relay_or_public_ip``:
     #: a public client address counts as remote too
     remote_detection: str = "relay"
+
+
+@dataclass(frozen=True)
+class MaktabaTvSimulcastConfig:
+    """Simulcast to YouTube, Facebook or any RTMP/RTMPS destination (Epic 32, story 32.13):
+    Cloudflare retransmits a channel's one push to each destination attached to it, always
+    or on a schedule. Destinations and attachments are set on the Live TV page (each needs
+    the admin's rights confirmation); these are the limits."""
+
+    #: simulcast at all (needs Cloudflare Stream set up with a passed test; independent of
+    #: remote viewing being on)
+    enabled: bool = False
+    #: destinations attached to one channel (Cloudflare allows 50 outputs per input)
+    max_outputs_per_channel: int = 3
+    #: output-hours per calendar month (UTC) across all destinations; at 100 % no output
+    #: starts and always-on outputs stop
+    max_hours_per_month: float = 60.0
+    #: start an output this many seconds before a scheduled window
+    lead_seconds: int = 60
+    #: stop an output this many seconds after a scheduled window
+    tail_seconds: int = 30
 
 
 @dataclass(frozen=True)
@@ -720,6 +742,43 @@ register(
             "from a public address (your own reverse proxy or tunnel).",
             choices=("relay", "relay_or_public_ip"),
         ),
+    },
+)
+register(
+    MaktabaTvSimulcastConfig,
+    {
+        "enabled": Help(
+            TSM,
+            "Simulcast to YouTube, Facebook and RTMP",
+            "Cloudflare sends a channel on to the destinations attached to it on the Live TV "
+            "page; the home still uploads it once. Needs Cloudflare Stream set up with a "
+            "passed Test connection; works with remote viewing off.",
+        ),
+        "max_outputs_per_channel": Help(
+            TSM,
+            "Destinations per channel",
+            "Cloudflare allows 50 per channel.",
+            minimum=1,
+            maximum=50,
+        ),
+        "max_hours_per_month": Help(
+            TSM,
+            "Output-hours a month",
+            "Across all destinations, per calendar month (UTC). Each output is billed as "
+            "minutes watched: one always-on output is about 720 hours (about $43) a month. "
+            "At 80 % the admin is told; at 100 % no output starts and always-on outputs "
+            "stop (scheduled ones finish their window).",
+            minimum=0,
+            maximum=10000,
+        ),
+        "lead_seconds": Help(
+            TSM,
+            "Start before a window (seconds)",
+            "So the platform has the stream before the programme starts.",
+            minimum=0,
+            maximum=3600,
+        ),
+        "tail_seconds": Help(TSM, "Stop after a window (seconds)", minimum=0, maximum=3600),
     },
 )
 register(

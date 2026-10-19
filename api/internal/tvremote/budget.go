@@ -23,7 +23,12 @@ type Estimate struct {
 	DeliveredMinutes float64 `json:"delivered_minutes"`
 	// RunningMinutes is the open sessions' minutes since the last usage poll:
 	// added so the estimate errs high, never low.
-	RunningMinutes       float64 `json:"running_minutes"`
+	RunningMinutes float64 `json:"running_minutes"`
+	// SimulcastMinutes are this month's live output minutes (32.13): billed
+	// as minutes delivered. Added on top of the analytics too, so the
+	// estimate errs high (whether Cloudflare's per-video analytics already
+	// include output minutes is for the spike to show).
+	SimulcastMinutes     float64 `json:"simulcast_minutes"`
 	DeliveryUSD          float64 `json:"delivery_usd"`
 	StorageUSD           float64 `json:"storage_usd"`
 	TotalUSD             float64 `json:"total_usd"`
@@ -76,7 +81,8 @@ func (c *Controller) Estimate(ctx context.Context, s Settings, now time.Time) (E
 			e.RunningMinutes += now.Sub(from).Minutes()
 		}
 	}
-	e.DeliveryUSD = (e.DeliveredMinutes + e.RunningMinutes) * s.DeliveryUSDPer1000 / 1000
+	e.SimulcastMinutes = c.simulcastMinutes(ctx, now)
+	e.DeliveryUSD = (e.DeliveredMinutes + e.RunningMinutes + e.SimulcastMinutes) * s.DeliveryUSDPer1000 / 1000
 	e.StorageUSD = float64(s.StoragePlanMinutes) / 1000 * s.StorageUSDPer1000
 	e.TotalUSD = e.DeliveryUSD + e.StorageUSD
 	if s.MonthlyBudgetUSD > 0 {
