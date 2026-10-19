@@ -49,32 +49,24 @@ async def test_a_job_waits_while_memory_is_short(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_registered_metrics_and_memory_are_sampled(db: Database) -> None:
+async def test_registered_metrics_and_memory_are_measured() -> None:
     health.register_metric("stt.test_gauge", lambda: 4.5)
-    got = await health.sample_once(db, health.HealthCollector(), host="h1")
-    assert got["stt.test_gauge"] == 4.5
-    assert 0 < got["mem.free_pct"] <= 100
-    n = await db.fetchval(
-        "SELECT count(*) FROM health_samples WHERE host = 'h1' AND metric = 'stt.test_gauge'"
-    )
-    assert n == 1
-    health._METRICS.pop("stt.test_gauge", None)
+    try:
+        got = await health.measure(health.HealthCollector())
+        assert got["stt.test_gauge"] == 4.5
+        assert 0 < got["mem.free_pct"] <= 100
+        assert health.health_frame(health.HealthCollector())["stt.test_gauge"] == 4.5
+    finally:
+        health._METRICS.pop("stt.test_gauge", None)
 
 
 @pytest.mark.asyncio
-async def test_the_sampler_takes_a_last_round_with_the_final_readings(db: Database) -> None:
-    import asyncio
-
+async def test_the_final_readings_at_shutdown() -> None:
     health.register_metric("stt.test_lost", lambda: 1.0, final=lambda: 9.0)
-    stop = asyncio.Event()
-    stop.set()  # stops at once: one round, then the final one
     try:
-        await health.run_sampler(db, health.HealthCollector(), stop, host="h2")
-        values = await db.fetch(
-            "SELECT value FROM health_samples WHERE host = 'h2' AND metric = 'stt.test_lost'"
-            " ORDER BY at"
-        )
-        assert [float(r["value"]) for r in values][-1] == 9.0
+        assert (await health.measure(health.HealthCollector()))["stt.test_lost"] == 1.0
+        final = await health.measure(health.HealthCollector(), final=True)
+        assert final["stt.test_lost"] == 9.0  # what a stop now throws away
     finally:
         health._METRICS.pop("stt.test_lost", None)
         health._FINAL.pop("stt.test_lost", None)

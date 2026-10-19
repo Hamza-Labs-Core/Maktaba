@@ -22,7 +22,7 @@ from ..engine.paths import PathMap, set_active_path_map
 from ..engine.sync import stages_ahead
 from ..engine.workers import update_worker_stages
 from ..log import get_logger
-from . import nodes_db
+from . import exitcodes, nodes_db
 from .stages import StageSelector
 from .storage import LibrarySample, candidate_roots, check_storage, infer_path_map, load_samples
 
@@ -78,6 +78,8 @@ class WorkerAgent:
             )
         if beat.state != "approved":
             _log.error("cluster_node_not_approved", state=beat.state)
+            if beat.state in ("revoked", "rejected"):
+                exitcodes.mark_refused(f"this machine is {beat.state} on the home")
             self.shutdown.set()
         self.selector.drain = beat.drain
         self.samples = await load_samples(self.db)
@@ -159,11 +161,13 @@ class WorkerAgent:
         except Exception as exc:
             if type(exc).__name__ in _AUTH_ERRORS:
                 _log.error("cluster_node_login_refused_stopping", error=str(exc))
+                exitcodes.mark_refused("the home's database refused this machine's login")
                 self.shutdown.set()
                 return
             raise
         if beat is None or beat.state in ("revoked", "rejected"):
             _log.warning("cluster_node_revoked_stopping", state=None if beat else "removed")
+            exitcodes.mark_refused(f"this machine is {beat.state if beat else 'removed'}")
             self.shutdown.set()
             return
         if beat.drain != self.selector.drain:

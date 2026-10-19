@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import traceback
 from collections.abc import Mapping
 from typing import Any
 
+from ..cluster.agent import jobs as job_events
 from ..db.jobs import Job
 from ..db.jobs_state import StageError, mark_cancelled, mark_failed_or_retry
 from ..log import get_logger
@@ -39,9 +41,37 @@ async def execute(
     graph: Mapping[str, StageDef],
     ctx: StageContext,
 ) -> None:
-    """Skip check, handler, then propagation. Failures go through ``mark_failed_or_retry``."""
+    """Skip check, handler, then propagation. Failures go through ``mark_failed_or_retry``.
+
+    Every step of the job's life is also reported to the cluster agent (``job`` events,
+    design-agent.md section 3); a job that ends without a result (the worker stopped,
+    the database went away) is reported as such."""
+    try:
+        await _execute(db, job, stage=stage, graph=graph, ctx=ctx)
+    except asyncio.CancelledError:
+        job_events.finished(
+            job.id,
+            "paused",
+            outcome=job_events.failure("interrupted", "worker stopping", retryable=True),
+        )
+        raise
+    finally:
+        job_events.finished(
+            job.id, "failed", outcome=job_events.failure("interrupted", "no result", retryable=True)
+        )
+
+
+async def _execute(
+    db: Any,
+    job: Job,
+    *,
+    stage: StageDef,
+    graph: Mapping[str, StageDef],
+    ctx: StageContext,
+) -> None:
     impl = get_impl(stage.name)
     if impl is None or impl.run is None:
+        job_events.claimed(job)
         await mark_failed_or_retry(
             db,
             job_id=job.id,
@@ -51,9 +81,15 @@ async def execute(
                 retryable=False,
             ),
         )
+        job_events.finished(
+            job.id,
+            "failed",
+            outcome=job_events.failure("dispatch_unknown_stage", stage.name, retryable=False),
+        )
         return
     if not await _mark_running(db, job):
         return  # cancelled or reaped between claim and start
+    job_events.claimed(job)
 
     try:
         input_hash: str | None = None
@@ -76,9 +112,12 @@ async def execute(
                         input_hash=input_hash,
                         skipped_from=prev,
                     )
+                    job_events.finished(job.id, "skipped")
                     return
 
         ref = await job_ref(db, job.id)
+        if ref is not None:
+            job_events.tracker().set_title(job.id, ref.get("subject_label"))
         await publish(db, "job.started", {"job": ref})
         await log_event(
             db,
@@ -110,10 +149,17 @@ async def execute(
                 else result.summary
             ),
         )
+        job_events.finished(job.id, "done", output=result.summary)
     except JobCancelled:
         await mark_cancelled(db, job_id=job.id)
+        job_events.finished(
+            job.id, "failed", outcome=job_events.failure("cancelled", None, retryable=False)
+        )
     except JobDeferred as exc:
         await _defer(db, job, stage, exc)
+        job_events.finished(
+            job.id, "deferred", outcome=job_events.failure("deferred", exc.reason, retryable=True)
+        )
     except StageFailure as exc:
         await mark_failed_or_retry(
             db,
@@ -125,11 +171,21 @@ async def execute(
                 retryable=exc.retryable,
             ),
         )
+        job_events.finished(
+            job.id,
+            "failed",
+            outcome=job_events.failure(exc.kind, exc.message, retryable=exc.retryable),
+        )
     except GraphViolation as exc:
         await mark_failed_or_retry(
             db,
             job_id=job.id,
             error=StageError(kind="graph_violation", message=str(exc), retryable=False),
+        )
+        job_events.finished(
+            job.id,
+            "failed",
+            outcome=job_events.failure("graph_violation", str(exc), retryable=False),
         )
     except Exception as exc:  # noqa: BLE001 - every handler failure becomes a classified job failure
         _log.exception("stage_handler_failed", job_id=job.id, stage=stage.name)
@@ -142,6 +198,11 @@ async def execute(
                 traceback=traceback.format_exc(),
                 retryable=True,
             ),
+        )
+        job_events.finished(
+            job.id,
+            "failed",
+            outcome=job_events.failure(type(exc).__name__, str(exc), retryable=True),
         )
 
 

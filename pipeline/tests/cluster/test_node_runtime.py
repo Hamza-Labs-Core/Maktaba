@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from maktaba_pipeline.cluster import nodes_db
+from maktaba_pipeline.cluster import exitcodes, nodes_db
 from maktaba_pipeline.cluster.node import WorkerAgent
 from maktaba_pipeline.cluster.stages import StageSelector
 from maktaba_pipeline.db.jobs import DBConn, Job, Stage
@@ -292,9 +292,11 @@ async def test_revoked_at_the_heartbeat_stops_the_worker(db: Database) -> None:
     agent, stop = await _agent(db, node_id)
     await agent.beat()
     assert not stop.is_set()
+    assert exitcodes.exit_code(0) == 0
     await db.execute("UPDATE cluster_nodes SET state = 'revoked' WHERE id = $1", node_id)
     await agent.beat()
     assert stop.is_set()
+    assert exitcodes.exit_code(0) == 77  # refused for good: the service stops restarting
 
 
 @pytest.mark.asyncio
