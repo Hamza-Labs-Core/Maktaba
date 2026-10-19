@@ -94,7 +94,10 @@ describe("QueueOverview", () => {
       "/queue/probe"
     );
     // health strip
-    expect(screen.getByText("2 of 2 slots busy")).toBeInTheDocument();
+    const nas = screen.getByRole("group", { name: "NAS reads" });
+    expect(nas).toHaveTextContent("2of 2 slots busy");
+    expect(nas).toHaveClass("mkt-q-stat--warn");
+    expect(screen.getByRole("group", { name: "Network" })).toHaveTextContent("2of 3 reachable");
     expect(screen.getByText("3 NAS timeouts in 10 min")).toBeInTheDocument();
     expect(screen.getByText("unreachable")).toBeInTheDocument();
     // workers
