@@ -2958,6 +2958,7 @@
   "tvchanges.rollback.none.no_rollback_point": "لا نقطة تراجع: لم يُبثّ شيء قبل هذا.",
   "tvchanges.rollback.none.retention_expired": "انتهت مدة الاحتفاظ بنقطة التراجع.",
   "tvchanges.rollback.none.no_live_change": "لا شيء للتراجع عنه.",
+  "tvchanges.rollback.none.swap_not_committed": "ما زال التبديل قيد الاعتماد: حاول مرة أخرى بعد لحظة.",
   "tvchanges.rollback.none.no_controller": "التراجع غير متاح على هذا الخادم.",
   "tvchanges.dialog.rollback.title": "التراجع عن التغيير رقم {n}؟",
   "tvchanges.dialog.rollback.confirm": "تراجع",

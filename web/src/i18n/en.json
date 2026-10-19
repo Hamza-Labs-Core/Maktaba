@@ -2958,6 +2958,7 @@
   "tvchanges.rollback.none.no_rollback_point": "No rollback point: nothing went on the air before this.",
   "tvchanges.rollback.none.retention_expired": "The rollback point expired (kept for the rollback window).",
   "tvchanges.rollback.none.no_live_change": "Nothing to roll back.",
+  "tvchanges.rollback.none.swap_not_committed": "The swap is still being committed: try again in a moment.",
   "tvchanges.rollback.none.no_controller": "Rollback is not available on this server.",
   "tvchanges.dialog.rollback.title": "Roll back change #{n}?",
   "tvchanges.dialog.rollback.confirm": "Roll back",
