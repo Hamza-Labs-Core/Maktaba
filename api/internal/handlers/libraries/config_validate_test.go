@@ -49,10 +49,9 @@ func TestValidateLibrarySettings_LanguageVocabulary(t *testing.T) {
 
 func TestValidateLibrarySettings_TypeMismatches(t *testing.T) {
 	cases := []struct{ blob, path string }{
-		{`{"multi_audio":"yes"}`, "settings/multi_audio"},
+		{`{"diarize":"yes"}`, "settings/diarize"},
 		{`{"sweep_interval_sec":-5}`, "settings/sweep_interval_sec"},
 		{`{"sweep_interval_sec":1.5}`, "settings/sweep_interval_sec"},
-		{`{"speaker_match_threshold":2}`, "settings/speaker_match_threshold"},
 		{`{"topic_clusters":0}`, "settings/topic_clusters"},
 		{`{"ignore_globs":["ok",3]}`, "settings/ignore_globs"},
 		{`{"embedding":{"device":"tpu"}}`, "settings/embedding/device"},
@@ -76,6 +75,22 @@ func TestValidateLibrarySettings_UnknownKeyIsWarningNotError(t *testing.T) {
 	joined := strings.Join(warns, "|")
 	if !strings.Contains(joined, "made_up_key") || !strings.Contains(joined, "stt/made_up") {
 		t.Errorf("warnings missing expected keys: %v", warns)
+	}
+}
+
+// multi_audio, speaker_match_threshold and stt.max_usd_per_month had no effect
+// and are no settings (config.py): a stored one is a warning, never an error.
+func TestValidateLibrarySettings_RemovedSettingsAreUnknownKeys(t *testing.T) {
+	errs, warns := ValidateLibrarySettings(decode(t,
+		`{"multi_audio":"yes","speaker_match_threshold":2,"stt":{"max_usd_per_month":-1}}`))
+	if len(errs) != 0 {
+		t.Fatalf("removed settings must not be errors: %+v", errs)
+	}
+	joined := strings.Join(warns, "|")
+	for _, k := range []string{"multi_audio", "speaker_match_threshold", "stt/max_usd_per_month"} {
+		if !strings.Contains(joined, k) {
+			t.Errorf("no warning for %s: %v", k, warns)
+		}
 	}
 }
 

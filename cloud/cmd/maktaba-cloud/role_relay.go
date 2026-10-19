@@ -45,7 +45,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	retention := privacy.NewRetention(pool.DB)
 	runner := metricspkg.NewRunner(
 		collector, metricsStore,
-		func() (int, int) { n := registry.Len(); return n, n },
+		registry.Counts,
 		retention.PurgeHourly,
 		logger,
 	)

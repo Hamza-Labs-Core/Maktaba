@@ -17,12 +17,10 @@ from maktaba_pipeline.library_mgmt.config import (
 def test_validate_recognises_full_settings_blob() -> None:
     settings = {
         "language": "ar",
-        "multi_audio": True,
         "stt": {
             "backend": "whisper-mlx",
             "model": "large-v3",
             "profile": "default",
-            "max_usd_per_month": 50,
         },
         "embedding": {"model": "intfloat/multilingual-e5-large", "device": "auto"},
         "diarize": True,
@@ -31,7 +29,6 @@ def test_validate_recognises_full_settings_blob() -> None:
         "default_subtitle_lang": "en",
         "ignore_globs": ["**/raw/**"],
         "sweep_interval_sec": 3600,
-        "speaker_match_threshold": 0.4,
         "topic_clusters": 16,
     }
     result = validate(settings)
@@ -97,11 +94,18 @@ def test_validate_rejects_ignore_globs_non_string() -> None:
 
 
 @pytest.mark.unit
-def test_validate_rejects_speaker_match_threshold_out_of_range() -> None:
-    result = validate({"speaker_match_threshold": 1.5})
-    assert not result.ok
-    result2 = validate({"speaker_match_threshold": -0.1})
-    assert not result2.ok
+def test_removed_settings_are_unknown_keys() -> None:
+    """multi_audio, speaker_match_threshold and stt.max_usd_per_month had no effect and
+    are no settings: a stored one round-trips with a warning, never an error."""
+    result = validate(
+        {"multi_audio": True, "speaker_match_threshold": 0.4, "stt": {"max_usd_per_month": 5}}
+    )
+    assert result.ok
+    assert sorted(w.path for w in result.warnings) == [
+        "multi_audio",
+        "speaker_match_threshold",
+        "stt/max_usd_per_month",
+    ]
 
 
 @pytest.mark.unit
@@ -146,7 +150,7 @@ def test_effective_config_with_no_overrides_returns_defaults() -> None:
     eff = effective_config({})
     assert eff["language"] == "auto"
     assert eff["chapter_inference"] is True
-    assert eff["sweep_interval_sec"] == 6 * 60 * 60
+    assert eff["sweep_interval_sec"] == 0  # no periodic sweep unless a library sets one
 
 
 @pytest.mark.unit

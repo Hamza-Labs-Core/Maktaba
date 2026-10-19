@@ -72,6 +72,7 @@ func SQLite(t *testing.T) *sql.DB {
 	stmts := splitSQL(base)
 	stmts = append(stmts, slot(t, "0127_tv_releases_changes.sqlite.sql")...)
 	stmts = append(stmts, slot(t, "0130_notifications.sqlite.sql")...)
+	stmts = append(stmts, slot(t, "0137_tv_slot_events.sqlite.sql")...)
 	for _, s := range stmts {
 		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(s)), "INSERT INTO JOB_STAGES") {
 			continue

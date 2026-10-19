@@ -30,6 +30,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // Event is the AC-3 envelope: “{type, at, ...payload}“.
@@ -147,6 +148,20 @@ type Handler struct {
 	// is written right after connect (the /ws/queues snapshot). It is
 	// sent before replay and live events; nil -> nothing extra.
 	Initial func(ctx context.Context, channel string) *Event
+	// Settings holds the runtime heartbeat interval
+	// (ws.heartbeat_interval_sec; nil or unset: 30 s).
+	Settings *runtimecfg.Reader
+}
+
+// DefaultHeartbeat is the SSE keep-alive comment interval.
+const DefaultHeartbeat = 30 * time.Second
+
+// heartbeat is the keep-alive interval a new connection uses.
+func (h *Handler) heartbeat(ctx context.Context) time.Duration {
+	if d, ok := h.Settings.Seconds(ctx, runtimecfg.WSHeartbeat); ok {
+		return d
+	}
+	return DefaultHeartbeat
 }
 
 // Mount wires the SSE routes. WebSocket is intentionally absent here;
@@ -222,7 +237,7 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	heartbeat := time.NewTicker(30 * time.Second)
+	heartbeat := time.NewTicker(h.heartbeat(ctx))
 	defer heartbeat.Stop()
 	for {
 		select {

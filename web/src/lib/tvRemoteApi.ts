@@ -154,7 +154,15 @@ export interface RemoteControllerStatus {
     max_streams_per_user: number;
     upload_mbps: number;
   };
-  budget_notice?: { month: string; level: number } | null;
+  /** The highest budget threshold (80 / 100 %) reached this month (32.10 AC4). */
+  budget_notice?: {
+    month: string;
+    level: number;
+    at?: string;
+    total_usd?: number;
+    budget_usd?: number;
+    action?: string;
+  } | null;
 }
 
 export interface RotateResult {

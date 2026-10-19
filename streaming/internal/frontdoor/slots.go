@@ -60,6 +60,10 @@ type Slots struct {
 	// StreamSample is how much of a staging channel's live.ts a sample reads
 	// (0: 3 s; tests shorten it).
 	StreamSample time.Duration
+	// OnEvent receives the failover and staging crash-loop events for the bell
+	// (story 33.13 AC1; nil: they are written to tv_slot_events when Pool is set,
+	// where the API's TV change controller turns them into notices).
+	OnEvent func(ctx context.Context, e SlotEvent)
 
 	clientOnce sync.Once
 	mu         sync.Mutex
@@ -94,6 +98,83 @@ type slotHealth struct {
 	status   slot.Status
 	upAt     time.Time // first good probe after a bad one
 	reported bool      // an exit report from the supervisor
+	// staging crash loop (story 33.13 AC1): the process id the last good probe
+	// saw, the restarts within crashLoopWindow, and whether the loop was reported
+	pid      int
+	restarts []time.Time
+	looped   bool
+}
+
+// SlotEvent is a front-door event for the bell (tv_slot_events, slot 0137).
+type SlotEvent struct {
+	Kind   string
+	Slot   string
+	Detail map[string]any
+}
+
+// Slot event kinds.
+const (
+	SlotEventFailover  = "failover"
+	SlotEventCrashLoop = "crash_loop"
+)
+
+// A staging slot restarted crashLoopRestarts times within crashLoopWindow is in a
+// crash loop (the verification's own bound is the same three restarts).
+const (
+	crashLoopRestarts = 3
+	crashLoopWindow   = 10 * time.Minute
+)
+
+// emit hands an event to OnEvent, or writes it to tv_slot_events (best effort,
+// off the probe path).
+func (s *Slots) emit(ctx context.Context, e SlotEvent) {
+	if s.OnEvent != nil {
+		s.OnEvent(ctx, e)
+		return
+	}
+	if s.Pool == nil {
+		return
+	}
+	detail := e.Detail
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	blob, _ := json.Marshal(detail)
+	go func() {
+		qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if _, err := s.Pool.Exec(qctx, `INSERT INTO tv_slot_events (host_id, kind, slot, detail) VALUES ($1, $2, $3, $4::jsonb)`,
+			s.Host, e.Kind, e.Slot, string(blob)); err != nil {
+			s.log().Warn("tv: the slot event was not written", "kind", e.Kind, "slot", e.Slot, "err", err.Error(),
+				"event", "tv_slot_event_failed")
+		}
+	}()
+}
+
+// noteRestart records a restart of the staging slot and reports a crash loop once
+// (until the restarts within the window drop below the bound again). Under s.mu;
+// returns the event to emit after unlocking.
+func (s *Slots) noteRestartLocked(h *slotHealth, name string, now time.Time) *SlotEvent {
+	h.restarts = append(h.restarts, now)
+	keep := h.restarts[:0]
+	for _, t := range h.restarts {
+		if now.Sub(t) <= crashLoopWindow {
+			keep = append(keep, t)
+		}
+	}
+	h.restarts = keep
+	if len(h.restarts) < crashLoopRestarts {
+		h.looped = false
+		return nil
+	}
+	if h.looped {
+		return nil
+	}
+	h.looped = true
+	s.log().Warn("tv: the staging slot keeps crashing", "slot", name, "restarts", len(h.restarts),
+		"window", crashLoopWindow.String(), "event", "tv_slot_crash_loop")
+	return &SlotEvent{Kind: SlotEventCrashLoop, Slot: name, Detail: map[string]any{
+		"restarts": len(h.restarts), "window_sec": int(crashLoopWindow.Seconds())}}
 }
 
 // ErrNoLiveSlot: no slot answers for the host's channels.
@@ -430,9 +511,22 @@ func (s *Slots) check(ctx context.Context, name string) bool {
 		h = &slotHealth{}
 		s.health[name] = h
 	}
+	var loop *SlotEvent
 	if err == nil {
 		if !h.ok {
 			h.upAt = now
+		}
+		if name == s.staging {
+			// a new process id without an exit report is a restart the supervisor
+			// did not tell (an exit report already counted it)
+			if h.pid != 0 && st.PID != 0 && st.PID != h.pid && !h.reported {
+				loop = s.noteRestartLocked(h, name, now)
+			}
+		} else {
+			h.restarts, h.looped = nil, false
+		}
+		if st.PID != 0 {
+			h.pid = st.PID
 		}
 		h.ok, h.fails, h.status, h.reported = true, 0, st, false
 	} else {
@@ -443,6 +537,9 @@ func (s *Slots) check(ctx context.Context, name string) bool {
 	fails, reported := h.fails, h.reported
 	isLive := name == s.live || (s.op != nil && name == s.op.To)
 	s.mu.Unlock()
+	if loop != nil {
+		s.emit(ctx, *loop)
+	}
 	if err != nil && isLive && (fails >= s.failAfter() || reported) {
 		s.Failover(ctx, name, "probe: "+err.Error())
 	}
@@ -469,11 +566,23 @@ func (s *Slots) Suspect(ctx context.Context, name string) {
 // Exited is the supervisor's report that a slot process ended.
 func (s *Slots) Exited(ctx context.Context, name string) {
 	s.mu.Lock()
-	if h := s.health[name]; h != nil {
+	var loop *SlotEvent
+	h := s.health[name]
+	if h == nil && name != "" && name == s.staging {
+		h = &slotHealth{}
+		s.health[name] = h
+	}
+	if h != nil {
 		h.ok, h.reported = false, true
+		if name == s.staging {
+			loop = s.noteRestartLocked(h, name, time.Now())
+		}
 	}
 	isLive := name == s.live || (s.op != nil && name == s.op.To)
 	s.mu.Unlock()
+	if loop != nil {
+		s.emit(ctx, *loop)
+	}
 	if isLive {
 		s.Failover(ctx, name, "exited")
 	}
@@ -530,6 +639,7 @@ func (s *Slots) Failover(ctx context.Context, from, why string) bool {
 	if s.OnSwitch != nil {
 		s.OnSwitch(from, to, epoch)
 	}
+	s.emit(ctx, SlotEvent{Kind: SlotEventFailover, Slot: from, Detail: map[string]any{"to": to, "epoch": epoch, "why": why}})
 	go func() {
 		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()

@@ -4,11 +4,37 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 )
+
+// recNotifier records the notices a controller sends to the bell.
+type recNotifier struct {
+	mu   sync.Mutex
+	sent []sentNotice
+}
+
+type sentNotice struct {
+	kind string
+	p    notify.Payload
+}
+
+func (r *recNotifier) Notify(_ context.Context, kind string, p notify.Payload) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sent = append(r.sent, sentNotice{kind, p})
+	return nil
+}
+
+func (r *recNotifier) all() []sentNotice {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]sentNotice(nil), r.sent...)
+}
 
 // TC1 (32.10): the rules section's ranges; a bad value keeps its default.
 func TestRemoteSettingsValidation(t *testing.T) {
@@ -116,10 +142,12 @@ func TestBudgetThresholds(t *testing.T) {
 		return n.Level
 	}
 	fx := newRemote(t)
+	bell := &recNotifier{}
+	fx.c.Notifier = bell
 	r := fx.liveTune("running", fx.chans[0])
 	at(fx, 2900) // 79 %
 	fx.reconcile()
-	if notice(fx) != 0 {
+	if notice(fx) != 0 || len(bell.all()) != 0 {
 		t.Fatal("notice at 79 %")
 	}
 	if _, te := fx.tune("u2", fx.chans[1], ""); te != nil {
@@ -130,10 +158,29 @@ func TestBudgetThresholds(t *testing.T) {
 	if notice(fx) != 80 {
 		t.Fatalf("no 80 %% notice (%d)", notice(fx))
 	}
+	// the bell gets the crossing once (32.10 AC4): later ticks at 80 % send nothing
+	fx.reconcile()
+	fx.reconcile()
+	if got := bell.all(); len(got) != 1 || got[0].kind != tvremote.NotifyBudget || got[0].p.Params["level"] != 80 ||
+		got[0].p.Severity != notify.SeverityWarn || got[0].p.Link != "/admin/live-tv" || got[0].p.Subject == "" {
+		t.Fatalf("80 %% bell notices %+v", got)
+	}
 	at(fx, 5000) // 100 %
 	fx.reconcile()
 	if notice(fx) != 100 {
 		t.Fatal("no 100 % notice")
+	}
+	fx.reconcile()
+	if got := bell.all(); len(got) != 2 || got[1].kind != tvremote.NotifyBudget || got[1].p.Params["level"] != 100 ||
+		got[1].p.Severity != notify.SeverityError || got[1].p.Subject == got[0].p.Subject {
+		t.Fatalf("100 %% bell notices %+v", got)
+	}
+	// a second API process over the same database repeats nothing this month
+	other := &recNotifier{}
+	c2 := &tvremote.Controller{DB: fx.db, Integration: fx.in, Now: fx.clock, TuneWait: -1, Notifier: other}
+	_ = c2.Reconcile(ctx)
+	if len(other.all()) != 0 {
+		t.Fatalf("repeated by a second controller: %+v", other.all())
 	}
 	// a new tune is refused, also of a channel already pushing
 	if _, te := fx.tune("u3", fx.chans[0], ""); te == nil || te.Status != 402 {

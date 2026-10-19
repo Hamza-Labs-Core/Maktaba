@@ -142,3 +142,46 @@ func TestProxy_BodyCloseUnregistersStream(t *testing.T) {
 		t.Fatal("read loop wedged after body close")
 	}
 }
+
+// Stub audit #21: the registry gauges are distinct connected servers and
+// tunnels carrying a proxied request right now, not the same number.
+func TestRegistryCounts(t *testing.T) {
+	reg := NewRegistry()
+	if s, tu := reg.Counts(); s != 0 || tu != 0 {
+		t.Fatalf("empty registry: %d %d", s, tu)
+	}
+	connA, connB, connC := newChanConn(), newChanConn(), newChanConn()
+	a := NewTunnel("srv-a", "a", connA)
+	b := NewTunnel("srv-b", "b", connB)
+	b2 := NewTunnel("srv-b", "b-alt", connC) // the same server under a second slug
+	defer a.Close()
+	defer b.Close()
+	defer b2.Close()
+	reg.Register("a", a)
+	reg.Register("b", b)
+	reg.Register("b-alt", b2)
+	if s, tu := reg.Counts(); s != 2 || tu != 0 {
+		t.Fatalf("idle: servers=%d tunnels=%d, want 2/0", s, tu)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() {
+		id := awaitRequestEOF(t, connA)
+		connA.in <- Frame{Kind: KindResponseHead, StreamID: id, Payload: []byte("HTTP/1.1 200 OK\r\n\r\n")}
+	}()
+	resp, err := a.Proxy(ctx, httptest.NewRequest(http.MethodGet, "http://a/x", nil))
+	if err != nil {
+		t.Fatalf("Proxy: %v", err)
+	}
+	if s, tu := reg.Counts(); s != 2 || tu != 1 {
+		t.Fatalf("one request in flight: servers=%d tunnels=%d, want 2/1", s, tu)
+	}
+	_ = resp.Body.Close()
+	if s, tu := reg.Counts(); s != 2 || tu != 0 {
+		t.Fatalf("after the response: servers=%d tunnels=%d, want 2/0", s, tu)
+	}
+	if a.Busy() {
+		t.Fatal("tunnel still busy after Body.Close")
+	}
+}

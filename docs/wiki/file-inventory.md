@@ -3,7 +3,7 @@
 > Annotated tree of every project file: mockups, API spec, specs (architecture, epics, stories, plans), reviews, diagrams, infra, and the wiki itself.
 
 
-**Total files indexed:** 581
+**Total files indexed:** 579
 
 ## Documentation (2)
 
@@ -13,13 +13,8 @@
 ## Infrastructure & build (3)
 
 - [.gitignore](../../.gitignore) — Git ignore rules.
-- [pyproject.toml](../../pyproject.toml) — Python project metadata (pipeline service).
+- [pyproject.toml](../../pyproject.toml) — Repo-root pytest config (the pipeline package is pipeline/pyproject.toml).
 - [shared/db/migrations/MANIFEST.md](../../shared/db/migrations/MANIFEST.md) — Canonical migration-slot manifest (resolved from PLAN_REVIEW.md §1).
-
-## Code skeleton (2)
-
-- [maktaba/__init__.py](../../maktaba/__init__.py) — Pipeline package init.
-- [maktaba/cli.py](../../maktaba/cli.py) — Pipeline CLI entrypoint.
 
 ## API specification (2)
 
@@ -772,7 +767,6 @@
 |----------|------:|
 | Documentation | 2 |
 | Infrastructure & build | 3 |
-| Code skeleton | 2 |
 | API specification | 2 |
 | Architecture spec | 1 |
 | Reviews | 5 |
@@ -782,4 +776,4 @@
 | Diagrams (.drawio) | 14 |
 | HTML mockups | 49 |
 | Wiki pages (this directory) | 6 |
-| **Total** | **581** |
+| **Total** | **579** |

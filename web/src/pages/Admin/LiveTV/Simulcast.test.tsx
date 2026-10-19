@@ -125,6 +125,31 @@ describe("SimulcastPanel", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
   });
 
+  it("shows the 80 % and 100 % cap notices (32.13 AC9)", async () => {
+    setup(view({ notice: { month: "2026-10", level: 80, hours: 48, cap_hours: 60 } }));
+    const { unmount } = render(
+      <I18nProvider>
+        <SimulcastPanel />
+      </I18nProvider>
+    );
+    expect(await screen.findByTestId("simulcast-cap-notice")).toHaveTextContent(
+      "simulcast used 80% of the monthly output hours (48 of 60 h)"
+    );
+    unmount();
+    setup(view({ notice: { month: "2026-10", level: 100, hours: 60, cap_hours: 60 } }));
+    renderPanel();
+    expect(await screen.findByTestId("simulcast-cap-notice")).toHaveTextContent(
+      /used all of the monthly output hours \(60 of 60 h\)\. Outputs stop/
+    );
+  });
+
+  it("shows no cap notice without one", async () => {
+    setup();
+    renderPanel();
+    await screen.findByRole("heading", { name: "Simulcast" });
+    expect(screen.queryByTestId("simulcast-cap-notice")).toBeNull();
+  });
+
   it("stops and starts an output", async () => {
     const user = userEvent.setup();
     setup();

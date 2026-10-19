@@ -7,7 +7,7 @@ import (
 )
 
 // GaugeSource supplies the live connection gauges each collector tick.
-// Backed by relay.Registry.Len() in production.
+// Backed by relay.Registry.Counts in production.
 type GaugeSource func() (servers, tunnels int)
 
 // HourlyPurger deletes hourly rows past the retention window. The privacy
@@ -65,6 +65,24 @@ func (r *Runner) Run(ctx context.Context) {
 			r.rollupOnce(ctx)
 		case <-daily.C:
 			r.purgeHourlyOnce(ctx)
+		}
+	}
+}
+
+// RunFlushOnly flushes the collector every FlushInterval (and once more
+// when ctx ends) without the rollup and purge ticks. It is for a second
+// process (the api role, which sends pushes) that records counters into
+// the same tables the relay role's Run rolls up.
+func (r *Runner) RunFlushOnly(ctx context.Context) {
+	flush := time.NewTicker(r.FlushInterval)
+	defer flush.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			r.flushOnce(context.Background())
+			return
+		case <-flush.C:
+			r.flushOnce(ctx)
 		}
 	}
 }

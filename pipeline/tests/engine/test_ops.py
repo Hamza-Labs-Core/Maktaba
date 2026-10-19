@@ -111,6 +111,34 @@ async def test_reconciler_schedules_youtube_refresh(db: Database) -> None:
     assert other
 
 
+@pytest.mark.asyncio
+async def test_reconciler_sweeps_a_library_at_its_sweep_interval(db: Database) -> None:
+    from maktaba_pipeline.engine.sql import dumps, is_pg
+
+    await sync_graph(db, GRAPH)
+    graph = {s.name: s for s in GRAPH}
+    lib = await make_library(db)
+    quiet = await make_library(db)  # no sweep_interval_sec: the default (0) never sweeps
+    await db.execute(
+        "UPDATE libraries SET settings = $2" + ("::jsonb" if is_pg(db) else "") + " WHERE id = $1",
+        str(lib),
+        dumps({"sweep_interval_sec": 3600}),
+    )
+    assert (await reconcile_once(db, graph)).library_sweep == 1
+    q = await rows(db, "scan")
+    assert len(q) == 1 and str(q[0]["subject_id"]) == str(lib)
+    assert (await reconcile_once(db, graph)).library_sweep == 0  # one is already queued
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', finished_at = $1", to_ts(db, now())
+    )
+    assert (await reconcile_once(db, graph)).library_sweep == 0  # swept within the hour
+    await db.execute(
+        "UPDATE processing_jobs SET finished_at = $1", to_ts(db, now() - timedelta(hours=2))
+    )
+    assert (await reconcile_once(db, graph)).library_sweep == 1
+    assert all(str(r["subject_id"]) != str(quiet) for r in await rows(db, "scan"))
+
+
 # ------------------------------------------------------------------ retention
 
 

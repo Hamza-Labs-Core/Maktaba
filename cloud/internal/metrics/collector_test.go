@@ -119,3 +119,15 @@ func TestKindOf(t *testing.T) {
 		}
 	}
 }
+
+func TestGaugeReading(t *testing.T) {
+	for _, c := range []struct {
+		sum     int64
+		samples int
+		want    int
+	}{{0, 0, 0}, {7, 1, 7}, {9, 2, 5}, {8, 2, 4}, {5, -1, 0}} {
+		if got := gaugeReading(c.sum, c.samples); got != c.want {
+			t.Errorf("gaugeReading(%d, %d) = %d, want %d", c.sum, c.samples, got, c.want)
+		}
+	}
+}

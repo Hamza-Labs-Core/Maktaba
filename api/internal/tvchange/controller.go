@@ -226,6 +226,10 @@ func (c *Controller) Tick(ctx context.Context) error {
 	if err := c.notifyEvents(ctx, cfg); err != nil {
 		c.Logger.Warn("tv change event feed failed", "event", "tv_change_feed_failed", "error", err.Error())
 	}
+	// story 33.13 AC1: the front door's failovers and staging crash loops
+	if err := c.notifySlotEvents(ctx); err != nil {
+		c.Logger.Warn("tv slot event feed failed", "event", "tv_slot_feed_failed", "error", err.Error())
+	}
 	if err := c.notifyTimers(ctx, open); err != nil {
 		c.Logger.Warn("tv change timed notices failed", "event", "tv_change_timers_failed", "error", err.Error())
 	}

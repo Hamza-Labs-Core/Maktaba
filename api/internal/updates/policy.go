@@ -28,6 +28,10 @@ const Section = "updates"
 // (phase B), or flipped to "true" in the source when 35.4 lands.
 var autoInstallEnabled = "false"
 
+// AutoInstallPendingMessage is what Update now answers while AutoInstallAvailable is
+// false (the web shows the same text from updates.settings.notBuilt).
+const AutoInstallPendingMessage = "Automatic install arrives with the update orchestrator"
+
 // AutoInstallAvailable reports whether this build may install releases by itself.
 func AutoInstallAvailable() bool { return autoInstallEnabled == "true" }
 

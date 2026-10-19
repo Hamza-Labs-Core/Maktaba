@@ -162,6 +162,7 @@ class SqlScanStore:
             roots=roots,
             disabled=bool(settings.get("disabled", False)),
             follow_symlinks=bool(settings.get("follow_symlinks", False)),
+            ignore_globs=_ignore_globs(settings.get("ignore_globs")),
         )
 
     async def find_video_by_path(
@@ -271,6 +272,13 @@ def _decode_roots(value: Any) -> tuple[str, ...]:
         parsed = json.loads(value)
         return tuple(str(v) for v in parsed)
     raise TypeError(f"unexpected roots column type: {type(value).__name__}")
+
+
+def _ignore_globs(value: Any) -> tuple[str, ...]:
+    """``settings.ignore_globs``: the non-empty strings of a list (anything else: none)."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(g for g in value if isinstance(g, str) and g)
 
 
 def _decode_settings(value: Any) -> dict[str, Any]:

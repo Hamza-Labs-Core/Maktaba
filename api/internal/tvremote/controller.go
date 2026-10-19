@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/cf"
 )
 
@@ -53,6 +54,9 @@ type Controller struct {
 	Logger      *slog.Logger
 	// Audit records tunes, ends and key rotations (audit_log); nil: none.
 	Audit func(ctx context.Context, action, actor, target string, payload map[string]any)
+	// Notifier receives the 80 % / 100 % budget and simulcast-cap notices (the
+	// bell; stories 32.10 AC4, 32.13 AC9); nil sends none.
+	Notifier notify.Notifier
 	// TuneWait is how long a tune waits for its push to go live (default 20 s).
 	TuneWait time.Duration
 	// PollEvery is the long poll's step (default 250 ms).

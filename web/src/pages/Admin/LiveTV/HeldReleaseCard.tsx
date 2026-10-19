@@ -2,7 +2,9 @@
 // its database changes break the previous home release, so binaries cannot roll back
 // and the updater does not install it by itself. Approving here is "Update now" for that
 // version (POST /api/cluster/updates/run); Skip never installs it automatically.
-// Renders nothing when nothing is held or the updates API is not there.
+// Renders nothing when nothing is held or the updates API is not there. On a build
+// without the update orchestrator (auto_install_available false) approving cannot
+// install anything, so the card says so instead of offering the button.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { ApiError } from "../../../lib/api";
@@ -12,6 +14,7 @@ import { updatesApi, type CatalogRelease } from "../../../lib/updatesApi";
 export function HeldReleaseCard() {
   const { t } = useI18n();
   const [held, setHeld] = useState<CatalogRelease | null>(null);
+  const [canInstall, setCanInstall] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -19,8 +22,10 @@ export function HeldReleaseCard() {
     try {
       const o = await updatesApi.overview();
       setHeld(o.plan.held && o.plan.target ? o.plan.target : null);
+      setCanInstall(o.auto_install_available);
     } catch {
       setHeld(null);
+      setCanInstall(false);
     }
   }, []);
 
@@ -67,19 +72,26 @@ export function HeldReleaseCard() {
           {note.text}
         </p>
       )}
+      {!canInstall && (
+        <p className="mkt-muted" data-testid="held-not-built">
+          {t("updates.settings.notBuilt")}
+        </p>
+      )}
       <div className="mkt-tvx-actions">
-        <Button
-          variant="primary"
-          disabled={busy}
-          onClick={() =>
-            act(
-              () => updatesApi.runNow(held.version),
-              t("updates.held.started", { version: held.version })
-            )
-          }
-        >
-          {t("updates.held.approve")}
-        </Button>
+        {canInstall && (
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() =>
+              act(
+                () => updatesApi.runNow(held.version),
+                t("updates.held.started", { version: held.version })
+              )
+            }
+          >
+            {t("updates.held.approve")}
+          </Button>
+        )}
         <Button
           variant="secondary"
           disabled={busy}

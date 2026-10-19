@@ -495,11 +495,21 @@ describe("Changes page (test-cases/admin-live-tv-changes.md)", () => {
 
   describe("LTC-15: the held release", () => {
     const held = {
+      auto_install_available: true,
       plan: {
         held: true,
         target: { version: "1.9.0", release_url: "https://example.org/r/1.9.0" },
       },
     };
+
+    it("a build that cannot install says so and offers no Approve", async () => {
+      routeGets({ "/api/cluster/updates": () => ({ ...held, auto_install_available: false }) });
+      renderPage(<HeldReleaseCard />, { path: "/x" });
+      expect(await screen.findByTestId("held-not-built")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Approve and update now" })
+      ).not.toBeInTheDocument();
+    });
 
     it("a region named by the version; the release link opens a new tab", async () => {
       routeGets({ "/api/cluster/updates": () => held });

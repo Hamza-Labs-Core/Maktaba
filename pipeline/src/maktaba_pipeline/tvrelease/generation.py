@@ -78,6 +78,7 @@ async def release_view(db: Any, rel: Release, pending: dict[str, Any] | None = N
         defs=rel.defs,
         tv=dict(rel.settings.get("tv") or {}),
         pools=await pool_overlay(db, pending or {}),
+        filler=dict((pending or {}).get("filler") or {}),
     )
 
 

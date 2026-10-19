@@ -44,16 +44,42 @@ async def live_gen(db: Any) -> int:
     return int(v or 0)
 
 
+def _hand_pools(rows: list[Any], hand: dict[str, Any]) -> list[Any]:
+    """The pool rows as a change's hand-made filler edits leave them: a removed pool is
+    gone, an edited one tied to its new channel, an added one present."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for r in rows:
+        pid = str(r["id"])
+        seen.add(pid)
+        row = {"id": r["id"], "external_key": r["external_key"], "channel_id": r["channel_id"]}
+        if pid in hand:
+            d = hand[pid]
+            if d is None:
+                continue
+            if "channel_id" in d:
+                row["channel_id"] = d["channel_id"]
+        out.append(row)
+    for pid, d in sorted(hand.items()):
+        if isinstance(d, dict) and pid not in seen:
+            # an added pool, or a live one with no channel the edit ties to one
+            out.append({"id": pid, "external_key": None, "channel_id": d.get("channel_id")})
+    return out
+
+
 @dataclass(slots=True)
 class ReleaseView:
     """What a generation that is not the live one plans from (Epic 33): its release's
     channel definitions (``tv_release_channels.def`` by channel id), its ``rules.tv``
-    overrides, and the filler pools a pending ``write_channels`` change will write
-    (``pool key -> items``, each ``(filler item id, video id, duration ms)``)."""
+    overrides, the filler pools a pending ``write_channels`` change will write
+    (``pool key -> items``, each ``(filler item id, video id, duration ms)``), and the
+    hand-made filler edits the change carries (``pending["filler"]``: ``pools`` and
+    ``items`` by id, a None value removed; story 33.12 AC6)."""
 
     defs: dict[str, dict[str, Any]]
     tv: dict[str, Any] | None = None
     pools: dict[str, list[tuple[str, str, int]]] = field(default_factory=dict)
+    filler: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -430,15 +456,17 @@ class SqlRepo:
         """``ref -> (pool id, its playable clips)`` for each ref (a plan pool key or a
         pool id) that names a pool, plus ``channel:<id>`` for the pools tied to the
         channel. A clip whose video is gone is left out."""
-        rows = await self._c.fetch(
+        rows: list[Any] = await self._c.fetch(
             "SELECT id, external_key, channel_id FROM filler_pools"
             " WHERE external_key IS NOT NULL OR channel_id IS NOT NULL"
         )
         want = set(refs)
         overlay = self.release.pools if self.release is not None else {}
+        hand = self.release.filler if self.release is not None else {}
         rows = [
             r for r in rows if r["external_key"] is None or str(r["external_key"]) not in overlay
         ]
+        rows = _hand_pools(rows, hand.get("pools") or {})
         by_ref: dict[str, str] = {}
         for r in rows:
             pid = str(r["id"])
@@ -454,6 +482,7 @@ class SqlRepo:
         if not ids and not staged:
             return {}
         items: dict[str, list[FillerItem]] = {pid: [] for pid in ids}
+        hand_items: dict[str, Any] = hand.get("items") or {}
         cast = "::uuid" if self._pg else ""
         for i in range(0, len(ids), 200):
             part = ids[i : i + 200]
@@ -466,6 +495,8 @@ class SqlRepo:
                 *part,
             )
             for r in got:
+                if str(r["id"]) in hand_items and hand_items[str(r["id"])] is None:
+                    continue  # the change removes this clip
                 ms = r["duration_ms"]
                 if ms is None and r["duration_sec"] is not None:
                     ms = int(float(r["duration_sec"]) * 1000)
@@ -481,6 +512,7 @@ class SqlRepo:
                         snapshot={"title": _bare(r["title"] or ""), "duration_ms": int(ms)},
                     )
                 )
+        await self._hand_items(hand_items, items)
         out = {ref: (pid, tuple(items[pid])) for ref, pid in by_ref.items()}
         for key, clips in staged.items():  # a pool the staged change writes (Epic 33)
             titles = await self._live_videos(sorted({v for _, v, _ in clips}))
@@ -499,6 +531,40 @@ class SqlRepo:
                 ),
             )
         return out
+
+    async def _hand_items(self, hand: dict[str, Any], items: dict[str, list[FillerItem]]) -> None:
+        """The clips a change adds to hand-made pools (story 33.12 AC6), with their ids
+        as the swap inserts them; a clip whose video is gone or has no length is left
+        out, as a live one is."""
+        add = [
+            (iid, d)
+            for iid, d in sorted(hand.items())
+            if isinstance(d, dict) and str(d.get("pool_id")) in items
+        ]
+        if not add:
+            return
+        vids = sorted({str(d["video_id"]) for _, d in add})
+        titles = await self._live_videos(vids)
+        lengths: dict[str, float] = {}
+        for vid in vids:
+            row = await self._c.fetchrow("SELECT duration_sec FROM videos WHERE id = $1", vid)
+            if row is not None and row["duration_sec"] is not None:
+                lengths[vid] = float(row["duration_sec"])
+        for iid, d in add:
+            vid = str(d["video_id"])
+            ms = int(lengths.get(vid, 0.0) * 1000)
+            if vid not in titles or ms <= 0:
+                continue
+            kind = BlockKind.BUMPER if d.get("type") == "bumper" else BlockKind.FILLER
+            items[str(d["pool_id"])].append(
+                FillerItem(
+                    filler_item_id=UUID(iid),
+                    video_id=UUID(vid),
+                    duration_ms=ms,
+                    kind=kind,
+                    snapshot={"title": _bare(titles[vid]), "duration_ms": ms},
+                )
+            )
 
     async def load_tv(self) -> MaktabaTvConfig:
         """The ``tv`` rules, with the dizqueTV export's live broadcasts when Maktaba TV

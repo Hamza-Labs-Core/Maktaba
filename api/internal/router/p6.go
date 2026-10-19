@@ -41,6 +41,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
@@ -129,6 +130,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	if hub == nil {
 		hub = ws.NewHub()
 	}
+	// the runtime settings PATCH /api/settings stores (search weights, TTLs,
+	// pause grace, heartbeat): one reader, its cache dropped by the PATCH
+	runtimeSettings := runtimecfg.New(d.DB)
 
 	// Story 9.6 AC-1: inject the concrete library-scoped scan
 	// enqueuer so POST /api/libraries/{id}/scan actually creates a
@@ -169,18 +173,20 @@ func MountP6(r chi.Router, d P6Deps) {
 		Semantic:       searchSemantic(d),
 		EmbedCache:     embedCache,
 		SemanticBudget: d.SearchSemanticBudget,
+		Settings:       runtimeSettings,
 	}
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}
 	streamHandler := &streaming.Handler{
-		DB:      d.DB,
-		Service: streamSvc,
-		Signer:  d.URLSigner,
+		DB:       d.DB,
+		Service:  streamSvc,
+		Signer:   d.URLSigner,
+		Settings: runtimeSettings,
 	}
 	streamHandler.Mount(r)
 
-	jobsHandler := &jobs.Handler{DB: d.DB}
+	jobsHandler := &jobs.Handler{DB: d.DB, Settings: runtimeSettings}
 	jobsHandler.Mount(r)
 
 	colHandler := &collections.Handler{DB: d.DB}
@@ -192,7 +198,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	tagsHandler.Mount(r)
 
 	// Story 27.10 — filler & bumper pools/items (Epic 27 receiver batch).
-	fillerHandler := &filler.Handler{DB: d.DB}
+	fillerHandler := &filler.Handler{DB: d.DB, Drafts: tvchange.NewDrafts(d.DB)} // Epic 33: drafts while staging is on
 	fillerHandler.Mount(r)
 
 	speakerHandler := &speakers.Handler{DB: d.DB}
@@ -202,6 +208,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		DB:         d.DB,
 		Pipeline:   pipelineSettingsAdapter{client: d.PipelineClient},
 		FileEnvCfg: map[string]any{},
+		Settings:   runtimeSettings,
 	}
 	settingsHandler.Mount(r)
 
@@ -221,7 +228,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	modelsHandler := models.New(modelPipelineClient(d.PipelineClient))
 	modelsHandler.Mount(r)
 
-	recHandler := &recommendations.Handler{DB: d.DB}
+	recHandler := &recommendations.Handler{DB: d.DB, Settings: runtimeSettings}
 	recHandler.Mount(r)
 
 	// Epic 26 — Content Intelligence (batch 2). Enrichment review
@@ -244,7 +251,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Story 12.11 downloaded-flag sync routes (slot 0063).
 	devHandler.MountDownloads(r)
 
-	wsHandler := &ws.Handler{Hub: hub}
+	wsHandler := &ws.Handler{Hub: hub, Settings: runtimeSettings}
 	// Cross-replica WS event bus (Epic 19 Story 19.2 / HLB-353).
 	// When a DSN + ctx are supplied, every replica appends events to
 	// the durable slot-0061 `events` table; the slot-0061 trigger

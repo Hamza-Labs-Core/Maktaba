@@ -199,6 +199,15 @@ export function SimulcastPanel() {
           u.percent >= 80 && <span className="mkt-q-status--off">{t("simulcast.near")}</span>
         )}
       </p>
+      {view.notice && view.notice.level >= 80 && (
+        <p role="alert" className="mkt-q-banner" data-testid="simulcast-cap-notice">
+          {t(view.notice.level >= 100 ? "simulcast.capNotice100" : "simulcast.capNotice80", {
+            month: view.notice.month,
+            hours: n(Math.round((view.notice.hours ?? u.hours) * 10) / 10),
+            cap: n(view.notice.cap_hours ?? u.cap_hours),
+          })}
+        </p>
+      )}
       {u.budget_exhausted && (
         <p role="alert" className="mkt-q-status--bad">
           {t("simulcast.budget")}

@@ -7,6 +7,7 @@
 package metrics
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -26,9 +27,11 @@ type Deps struct {
 	Users         *stores.Users
 	AllowedDomain string
 	Store         *metricspkg.Store
-	// Live optionally returns the collector's last-sampled gauges when the
-	// reader is co-located with the relay; nil falls back to the DB.
-	Live func() (servers, tunnels int)
+	// Live returns the live connection gauges: the collector's when the
+	// reader shares a process with the relay, else the relay's newest
+	// flushed sample (LiveFromStore). nil falls back to the newest sample
+	// in Store.
+	Live func(ctx context.Context) (servers, tunnels int)
 	// Deletion backs the right-to-erasure admin endpoint (Story 30.2).
 	Deletion *privacy.DataSubjectService
 }
@@ -163,11 +166,29 @@ func (d *Deps) DeleteUserData(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-func (d *Deps) live(_ *http.Request) (int, int) {
+func (d *Deps) live(r *http.Request) (int, int) {
 	if d.Live != nil {
-		return d.Live()
+		return d.Live(r.Context())
+	}
+	if d.Store != nil {
+		return LiveFromStore(d.Store, time.Now)(r.Context())
 	}
 	return 0, 0
+}
+
+// LiveFromStore reads the gauges the relay role flushed to the shared
+// database (the api and relay roles are separate processes, README D8).
+// A missing or stale sample reads as nothing connected.
+func LiveFromStore(st interface {
+	LatestGauges(ctx context.Context, now time.Time, maxAge time.Duration) (int, int, bool, error)
+}, now func() time.Time) func(ctx context.Context) (int, int) {
+	return func(ctx context.Context) (int, int) {
+		servers, tunnels, _, err := st.LatestGauges(ctx, now(), metricspkg.LiveSampleMaxAge)
+		if err != nil {
+			return 0, 0
+		}
+		return servers, tunnels
+	}
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────

@@ -46,6 +46,17 @@ func NewTunnel(serverID, slug string, conn FrameConn) *Tunnel {
 	return t
 }
 
+// Busy reports whether the tunnel is carrying at least one proxied
+// request (a stream registered and not yet released).
+func (t *Tunnel) Busy() bool {
+	busy := false
+	t.streams.Range(func(_, _ any) bool {
+		busy = true
+		return false
+	})
+	return busy
+}
+
 // Close shuts down the tunnel and unblocks all pending streams.
 func (t *Tunnel) Close() {
 	t.closeOnce.Do(func() {

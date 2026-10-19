@@ -85,6 +85,7 @@ _Submission = tuple[
     Checkpoint | None,
     FileProgress | None,
     float,
+    str | None,
 ]
 
 
@@ -118,6 +119,9 @@ class _Job:
     #: seconds of the caller's audio per second decoded here (the speech-only audio
     #: stands for more): progress is counted in the caller's seconds
     scale: float = 1.0
+    #: Whisper's ``initial_prompt`` for this file (the library's ``stt.initial_prompt``):
+    #: names and terms that bias every window's decoding; None: no prompt
+    prompt: str | None = None
 
     @property
     def done(self) -> bool:
@@ -346,15 +350,17 @@ class BatchedTranscriber:
         resume: Checkpoint | None = None,
         progress: FileProgress | None = None,
         scale: float = 1.0,
+        prompt: str | None = None,
     ) -> Transcript:
         """``audio``: mono float32 at 16 kHz. ``resume`` continues an earlier run from its
         checkpoint; ``progress`` receives this file's progress after every pass; ``scale``
         is how many seconds of the caller's audio one second of ``audio`` stands for
-        (speech-only audio), for the live counters."""
+        (speech-only audio), for the live counters. ``prompt``: text that biases the
+        decoding of every window of this file (Whisper's ``initial_prompt``)."""
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Transcript] = loop.create_future()
         self._ensure_thread()
-        self._inbox.put((audio, fut, loop, resume, progress, scale))
+        self._inbox.put((audio, fut, loop, resume, progress, scale, prompt or None))
         return await fut
 
     # --- the GPU thread ---------------------------------------------------------
@@ -460,13 +466,16 @@ class BatchedTranscriber:
             rows = [fresh[at[k]] if k in at else cached[k] for k in range(len(windows))]
             return mx.stack(rows)
 
-        def run_decode(features: Any, temps: Sequence[float]) -> Sequence[_Decoded]:
+        def run_decode(
+            features: Any, temps: Sequence[float], prompt: str | None = None
+        ) -> Sequence[_Decoded]:
             opts = DecodingOptions(
                 language=s.language,
                 task="transcribe",
                 temperature=max(temps) or 0.0,
                 without_timestamps=False,
                 fp16=True,
+                prompt=prompt,
             )
             task = DecodingTask(model, opts)
             if any(t > 0 for t in temps):
@@ -501,7 +510,7 @@ class BatchedTranscriber:
     def _admit(self, jobs: list[_Job], block: bool) -> None:
         while len(jobs) < self.settings.max_batch:
             try:
-                audio, fut, loop, resume, progress, scale = self._inbox.get(
+                audio, fut, loop, resume, progress, scale, prompt = self._inbox.get(
                     block=block and not jobs, timeout=1.0
                 )
             except queue.Empty:
@@ -520,6 +529,7 @@ class BatchedTranscriber:
                     admitted=time.monotonic(),
                     progress=progress,
                     scale=scale,
+                    prompt=prompt,
                 )
                 if resume is not None:
                     job.seek = min(resume.seek, job.content_frames)
@@ -537,7 +547,7 @@ class BatchedTranscriber:
             _log.exception("whisper.load_failed")
             while True:
                 try:
-                    _, fut, loop, _, _, _ = self._inbox.get_nowait()
+                    _, fut, loop, _, _, _, _ = self._inbox.get_nowait()
                 except queue.Empty:
                     break
                 loop.call_soon_threadsafe(_set_exception, fut, exc)
@@ -579,6 +589,38 @@ class BatchedTranscriber:
                     continue
                 j.loop.call_soon_threadsafe(_set_result, j.future, result)
 
+    def _decode_rows(
+        self, features: Any, temps: list[float], prompts: list[str | None]
+    ) -> list[_Decoded]:
+        """The pass's decode. Files with a prompt are decoded apart, one call per
+        prompt (a prompt is the decoder's prefix, the same for every row of a call);
+        without prompts this is the one call it always was."""
+        assert self._decode is not None
+        if not any(prompts):
+            return list(self._decode(features, temps))
+        groups: dict[str | None, list[int]] = {}
+        for k, p in enumerate(prompts):
+            groups.setdefault(p, []).append(k)
+        out: list[Any] = [None] * len(temps)
+        for p, rows in groups.items():
+            sub = self._take(features, rows)
+            got = (
+                self._decode(sub, [temps[k] for k in rows])
+                if p is None
+                else self._decode(sub, [temps[k] for k in rows], p)  # type: ignore[call-arg]
+            )
+            for k, r in zip(rows, got, strict=True):
+                out[k] = r
+        return out
+
+    def _take(self, features: Any, rows: list[int]) -> Any:
+        """Rows of the pass's encoder output (an MLX array) or of its windows (a list)."""
+        if isinstance(features, list):
+            return [features[k] for k in rows]
+        if self._mx is not None:
+            return self._mx.take(features, self._mx.array(rows), axis=0)
+        return features[rows]
+
     def _pass(self, jobs: list[_Job]) -> None:
         """One GPU pass: one window of every active file, each at the temperature its
         window has reached (a fallback re-decodes the same window, warmer, next pass)."""
@@ -603,7 +645,8 @@ class BatchedTranscriber:
                     live[k].language = lang
         else:
             features = windows
-        results = self._decode(features, [s.temperatures[j.temp_idx] for j in live])
+        results = self._decode_rows(features, [s.temperatures[j.temp_idx] for j in live],
+                                    [j.prompt for j in live])  # fmt: skip
         self.passes += 1
         self.windows += len(windows)
         pending: list[tuple[_Job, list[dict[str, Any]], bool, float, Any, int, int]] = []

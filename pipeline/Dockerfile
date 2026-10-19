@@ -80,8 +80,8 @@ COPY --from=builder /src/pipeline /src/pipeline
 WORKDIR /src/pipeline
 USER maktaba
 
-# `maktaba-pipeline doctor --quiet` is the compose healthcheck (per the
-# 22.3 plan §2.7). The CLI is not yet implemented (lands with Epic 03);
-# until then we expose `python -m maktaba_pipeline` as the entrypoint
-# stub so the container has a valid PID 1.
+# `python -m maktaba_pipeline` runs the worker (`run` is the default
+# subcommand); `python -m maktaba_pipeline doctor` is the compose
+# healthcheck (database, schema, queue, ffmpeg, storage; exit 1 on a
+# failure).
 ENTRYPOINT ["python", "-m", "maktaba_pipeline"]

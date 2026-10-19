@@ -229,7 +229,12 @@ PLANNER_HELP: dict[str, Help] = {
     "min_slot_minutes": Help(GRID, "Shortest slot (min)"),
     "max_slot_minutes": Help(GRID, "Longest slot (min)"),
     "slot_round_minutes": Help(GRID, "Slot step (min)", "Slot lengths are rounded up to this."),
-    "max_lanes_per_daypart": Help(GRID, "Shows per daypart (most)"),
+    "max_lanes_per_daypart": Help(
+        GRID,
+        "Shows per daypart (most)",
+        "The most shows one daypart holds on a day; once reached, its last show runs on "
+        "to the daypart's end. 0: no limit.",
+    ),
     "overrun_tolerance_minutes": Help(
         GRID,
         "Overrun allowed (min)",
@@ -481,7 +486,7 @@ PLANNER_HELP: dict[str, Help] = {
 #: median of nothing or schedules nothing
 _MINIMUM: dict[str, float] = {
     "cadence_min_gaps": 1, "strip_max_gap_days": 0.1, "min_slot_minutes": 5,
-    "max_slot_minutes": 5, "slot_round_minutes": 1, "max_lanes_per_daypart": 1,
+    "max_slot_minutes": 5, "slot_round_minutes": 1, "max_lanes_per_daypart": 0,
     "overrun_tolerance_minutes": 0, "theme_min_hours": 0, "mix_min_hours": 0,
     "presenter_min_hours": 0, "presenter_min_genres": 1, "short_series_max_minutes": 0,
     "loose_program_min_minutes": 0, "loose_min_group_videos": 1, "filler_max_minutes": 0,

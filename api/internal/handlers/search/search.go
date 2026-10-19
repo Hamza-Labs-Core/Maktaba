@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // DefaultSemanticBudget is the hard per-request wall-clock budget for the
@@ -175,6 +176,10 @@ type Handler struct {
 	// Nil ⇒ the feature is off: include=youtube yields an empty block
 	// with reason "disabled" and never blocks or alters local results.
 	YouTube YouTubeSearcher
+
+	// Settings holds the runtime fusion weights (search.fts_weight,
+	// search.semantic_weight; nil or unset: 1 each, plain RRF).
+	Settings *runtimecfg.Reader
 }
 
 // semanticBudget returns the effective per-request semantic deadline.
@@ -357,7 +362,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	case "semantic":
 		fused = semHits
 	default:
-		fused = RRFuse(ftsHits, semHits, 60)
+		fused = h.fuse(r.Context(), ftsHits, semHits)
 	}
 	if len(fused) > req.Limit {
 		fused = fused[:req.Limit]
@@ -696,18 +701,42 @@ func (h *Handler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 // RRFuse fuses two ranked lists by Reciprocal Rank Fusion (k=60 by
 // default). Order preserved is sum of 1/(k+rank) across sources.
 // Story 7.8 AC-1.
-func RRFuse(a, b []Hit, k int) []Hit {
+func RRFuse(a, b []Hit, k int) []Hit { return RRFuseWeighted(a, b, k, 1, 1) }
+
+// weights are the runtime fusion weights of the FTS and semantic lists
+// (search.fts_weight / search.semantic_weight; unset: 1 each).
+func (h *Handler) weights(ctx context.Context) (float64, float64) {
+	wFTS, wSem := 1.0, 1.0
+	if f, ok := h.Settings.Float(ctx, runtimecfg.SearchFTSWeight); ok {
+		wFTS = f
+	}
+	if f, ok := h.Settings.Float(ctx, runtimecfg.SearchSemanticWeight); ok {
+		wSem = f
+	}
+	return wFTS, wSem
+}
+
+// fuse is the hybrid ranking: RRF of the FTS and semantic lists with the
+// runtime weights.
+func (h *Handler) fuse(ctx context.Context, fts, sem []Hit) []Hit {
+	wFTS, wSem := h.weights(ctx)
+	return RRFuseWeighted(fts, sem, 60, wFTS, wSem)
+}
+
+// RRFuseWeighted is RRFuse with a weight per list: a hit scores
+// wa/(k+rank) from a and wb/(k+rank) from b (weights 1, 1: plain RRF).
+func RRFuseWeighted(a, b []Hit, k int, wa, wb float64) []Hit {
 	if k <= 0 {
 		k = 60
 	}
 	scores := map[int64]float64{}
 	rec := map[int64]Hit{}
 	for rank, h := range a {
-		scores[h.SegmentID] += 1.0 / float64(k+rank+1)
+		scores[h.SegmentID] += wa / float64(k+rank+1)
 		rec[h.SegmentID] = h
 	}
 	for rank, h := range b {
-		scores[h.SegmentID] += 1.0 / float64(k+rank+1)
+		scores[h.SegmentID] += wb / float64(k+rank+1)
 		if _, ok := rec[h.SegmentID]; !ok {
 			rec[h.SegmentID] = h
 		}

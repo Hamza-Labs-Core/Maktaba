@@ -58,6 +58,25 @@ export function LineupDiff({
             <li key={s}>{t(`tvchanges.settings.section.${s}`)}</li>
           ))}
         </Group>
+        <Group title={t("tvchanges.lineup.draftFiller")} empty={!pending.filler?.length}>
+          {(pending.filler ?? []).map((f) => (
+            <li key={f.id}>
+              <span className={`mkt-tvx-op mkt-tvx-op--${f.op}`}>
+                {tk(`tvchanges.fillerOp.${f.op}`, f.op)}
+              </span>{" "}
+              {f.name || f.id.slice(0, 8)}
+              {(f.items_added > 0 || f.items_removed > 0) && (
+                <span className="mkt-tvx-muted">
+                  {" "}
+                  {t("tvchanges.lineup.fillerClips", {
+                    added: n(f.items_added),
+                    removed: n(f.items_removed),
+                  })}
+                </span>
+              )}
+            </li>
+          ))}
+        </Group>
       </div>
     );
   }

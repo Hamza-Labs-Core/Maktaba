@@ -206,9 +206,9 @@ services:
     group_add:
       - "65532"
     healthcheck:
-      # `python -m maktaba_pipeline doctor` is the stub probe (Story
-      # 22.3 plan §2.7); Epic 03 swaps it for the real doctor that
-      # checks DB / Chroma / ffmpeg / MLX.
+      # `python -m maktaba_pipeline doctor` checks the database, schema
+      # revision, job queue, ffmpeg/ffprobe and writable storage, and
+      # exits 1 when any fails (maktaba_pipeline/doctor.py).
       test: ["CMD", "python", "-m", "maktaba_pipeline", "doctor"]
       interval: 30s
       timeout: 10s

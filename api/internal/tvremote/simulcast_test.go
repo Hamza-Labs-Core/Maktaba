@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 )
 
@@ -550,6 +551,8 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 	t.Run("always stops at once at the cap", func(t *testing.T) {
 		fx := newSim(t)
 		fx.simRules(map[string]any{"enabled": true, "max_hours_per_month": 1})
+		bell := &recNotifier{}
+		fx.c.Notifier = bell
 		ch, ch2 := fx.chans[0], fx.chans[1]
 		d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-aaaaaaaaaa")
 		att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
@@ -567,6 +570,19 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 		if n.Level != 80 || !fx.hasOpen(att) {
 			t.Fatalf("at 80 %%: notice %s, output open %v", raw, fx.hasOpen(att))
 		}
+		// one bell notice for the 80 % crossing (32.13 AC9), not one per tick
+		capNotices := func() []sentNotice {
+			var out []sentNotice
+			for _, x := range bell.all() {
+				if x.kind == tvremote.NotifySimulcastCap {
+					out = append(out, x)
+				}
+			}
+			return out
+		}
+		if got := capNotices(); len(got) != 1 || got[0].p.Params["level"] != 80 || got[0].p.Severity != notify.SeverityWarn {
+			t.Fatalf("80 %% bell notices %+v", got)
+		}
 		fx.advance(13 * time.Minute) // 61 minutes
 		fx.reconcile()
 		if fx.hasOpen(att) || fx.f.OutputCount() != 0 {
@@ -579,6 +595,10 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 		_ = json.Unmarshal([]byte(raw), &n)
 		if n.Level != 100 {
 			t.Errorf("notice %s", raw)
+		}
+		if got := capNotices(); len(got) != 2 || got[1].p.Params["level"] != 100 || got[1].p.Severity != notify.SeverityError ||
+			got[1].p.Params["cap_hours"] != 1.0 {
+			t.Fatalf("100 %% bell notices %+v", got)
 		}
 		// no new output starts
 		att2 := fx.attach(ch2, d.ID, tvremote.ModeAlways, nil)

@@ -304,6 +304,66 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 	return DraftRef{ID: c.ID, Number: num, State: StateDraft}, nil
 }
 
+// Filler pool and item edits (story 33.12 AC6): pending["filler"] holds
+// {"pools": {pool id: {"name", "channel_id", "created"} | null},
+//  "items": {item id: {"pool_id", "video_id", "type"} | null}}, applied at the
+// swap (pipeline tvrelease/commit.py). A null value removes the live row.
+
+func (p *Pending) filler(key string) map[string]any {
+	f := p.sub("filler")
+	m, _ := f[key].(map[string]any)
+	if m == nil {
+		m = map[string]any{}
+		f[key] = m
+	}
+	return m
+}
+
+func (p *Pending) fillerView(key string) map[string]any {
+	if p.M == nil {
+		return map[string]any{}
+	}
+	f, _ := p.M["filler"].(map[string]any)
+	m, _ := f[key].(map[string]any)
+	if m == nil {
+		return map[string]any{}
+	}
+	return m
+}
+
+// FillerPools is the pending pools by id (a nil value: removed).
+func (p *Pending) FillerPools() map[string]any { return p.fillerView("pools") }
+
+// FillerItems is the pending items by id (a nil value: removed).
+func (p *Pending) FillerItems() map[string]any { return p.fillerView("items") }
+
+// SetFillerPool records pool id as it will be.
+func (p *Pending) SetFillerPool(id string, def map[string]any) { p.filler("pools")[id] = def }
+
+// RemoveFillerPool records the removal of pool id (and of its items).
+func (p *Pending) RemoveFillerPool(id string) { p.filler("pools")[id] = nil }
+
+// DropFillerPool forgets pool id (a pool added in this draft, then deleted) and the
+// items the draft added to it.
+func (p *Pending) DropFillerPool(id string) {
+	delete(p.filler("pools"), id)
+	items := p.filler("items")
+	for iid, v := range items {
+		if d, _ := v.(map[string]any); d != nil && d["pool_id"] == id {
+			delete(items, iid)
+		}
+	}
+}
+
+// SetFillerItem records item id as it will be.
+func (p *Pending) SetFillerItem(id string, def map[string]any) { p.filler("items")[id] = def }
+
+// RemoveFillerItem records the removal of item id.
+func (p *Pending) RemoveFillerItem(id string) { p.filler("items")[id] = nil }
+
+// DropFillerItem forgets item id (added in this draft, then removed).
+func (p *Pending) DropFillerItem(id string) { delete(p.filler("items"), id) }
+
 // Summarize counts a draft's pending edits (shown before it is staged).
 func Summarize(pd *Pending) map[string]any {
 	removed, changed := 0, 0
@@ -320,6 +380,7 @@ func Summarize(pd *Pending) map[string]any {
 		"art":              len(mapOf(pd.M["art"])),
 		"sched":            len(pd.Sched()),
 		"settings":         sortedKeys(pd.Settings()),
+		"filler":           len(pd.FillerPools()) + len(pd.FillerItems()),
 		"at":               time.Now().UTC().Format(time.RFC3339),
 	}
 }

@@ -288,6 +288,45 @@ def test_series_play_in_first_air_order_within_a_lane() -> None:
         assert airs == sorted(airs)
 
 
+def _shows_per_daypart(p: PlanResult) -> dict[tuple[str, str, str], set[str]]:
+    """(channel, day, daypart) -> the program lanes that air in it."""
+    out: dict[tuple[str, str, str], set[str]] = {}
+    for c in p.channels:
+        for sl in c.slots:
+            # a block past midnight belongs to the day before (counted there)
+            if sl.kind != "program" or sl.lane is None or sl.start == 0:
+                continue
+            for day in WEEKDAYS:
+                if sl.on(day):
+                    out.setdefault((c.key, day, sl.daypart), set()).add(sl.lane)
+    return out
+
+
+def test_max_lanes_per_daypart_caps_the_shows_of_a_daypart() -> None:
+    # many 30-minute shows: every daypart could take several of them
+    seasons = [
+        season(f"s-{i}", f"Show {i}", tier=2, minutes=30, n=40, first_air=f"20{10 + i}-01-01")
+        for i in range(12)
+    ]
+    free = _shows_per_daypart(plan(seasons, dawn_quran=False))
+    assert max(len(v) for v in free.values()) > 1  # the default (0) sets no limit
+    capped = plan(seasons, dawn_quran=False, max_lanes_per_daypart=1)
+    got = _shows_per_daypart(capped)
+    assert got and max(len(v) for v in got.values()) == 1
+    # the capped daypart's time is still covered (its last show runs on)
+    for slots in (c.slots for c in capped.channels):
+        for day in WEEKDAYS:
+            covered = sorted((s.start, s.end) for s in slots if s.on(day))
+            assert covered[0][0] == 0 and covered[-1][1] == DAY_MINUTES
+
+
+def test_max_lanes_per_daypart_default_keeps_the_plan() -> None:
+    a = plan()
+    b = plan(max_lanes_per_daypart=0)
+    assert [(c.key, c.slots) for c in a.channels] == [(c.key, c.slots) for c in b.channels]
+    assert PlannerConfig().max_lanes_per_daypart == 0
+
+
 def test_group_series_orders_seasons() -> None:
     lib = library()
     groups = group_series(lib)

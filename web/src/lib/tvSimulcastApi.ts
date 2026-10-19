@@ -97,7 +97,8 @@ export interface SimulcastView {
   destinations: Destination[];
   attachments: AttachmentView[];
   usage: SimulcastUsage;
-  notice?: { month: string; level: number } | null;
+  /** The highest cap threshold (80 / 100 %) reached this month (32.13 AC9). */
+  notice?: { month: string; level: number; at?: string; hours?: number; cap_hours?: number } | null;
   default_ingest: Partial<Record<DestinationKind, string>>;
 }
 

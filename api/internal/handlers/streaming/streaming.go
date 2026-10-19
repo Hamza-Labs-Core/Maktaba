@@ -29,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // SessionService is the gRPC-backed surface for OpenSession / CloseSession
@@ -101,10 +102,13 @@ type Slots struct {
 // Handler bundles deps. Service is mandatory in production; tests can
 // inject a fake. NowFunc / TTL are testable.
 type Handler struct {
-	DB           *sql.DB
-	Service      SessionService
-	Signer       URLSigner
-	SessionTTL   time.Duration
+	DB         *sql.DB
+	Service    SessionService
+	Signer     URLSigner
+	SessionTTL time.Duration
+	// Settings holds the runtime session URL TTL (session.url_ttl_sec; nil
+	// or unset: SessionTTL, else 30 min).
+	Settings     *runtimecfg.Reader
 	NowFunc      func() time.Time
 	CapCache     *capCache
 	debounce     *sessionDebouncer
@@ -195,7 +199,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		resp = OpenSessionResponse{
 			SessionID:   sid,
 			Mode:        "transcode",
-			ExpiresAt:   h.now().Add(h.ttl()),
+			ExpiresAt:   h.now().Add(h.ttl(r.Context())),
 			ManifestURL: "/stream/" + sid + "/manifest.m3u8",
 		}
 	}
@@ -205,7 +209,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	// but no byte plays. The URL lives as long as the session can: the
 	// session TTL, or the video's length plus an hour when that is longer.
 	if h.Signer != nil {
-		ttl := h.urlTTL(duration)
+		ttl := h.urlTTL(r.Context(), duration)
 		for _, u := range []*string{&resp.ManifestURL, &resp.DirectURL} {
 			if *u == "" {
 				continue
@@ -420,7 +424,10 @@ func (h *Handler) now() time.Time {
 	return time.Now().UTC()
 }
 
-func (h *Handler) ttl() time.Duration {
+func (h *Handler) ttl(ctx context.Context) time.Duration {
+	if d, ok := h.Settings.Seconds(ctx, runtimecfg.SessionURLTTL); ok {
+		return d
+	}
 	if h.SessionTTL > 0 {
 		return h.SessionTTL
 	}
@@ -430,8 +437,8 @@ func (h *Handler) ttl() time.Duration {
 // urlTTL is a signed stream URL's lifetime: the session TTL, or the video's
 // length plus an hour when that is longer (the native player cannot ask for a
 // fresh URL mid-video), capped by the signer (24 h).
-func (h *Handler) urlTTL(duration sql.NullFloat64) time.Duration {
-	ttl := h.ttl()
+func (h *Handler) urlTTL(ctx context.Context, duration sql.NullFloat64) time.Duration {
+	ttl := h.ttl(ctx)
 	if duration.Valid && duration.Float64 > 0 {
 		if d := time.Duration(duration.Float64*float64(time.Second)) + time.Hour; d > ttl {
 			ttl = d
