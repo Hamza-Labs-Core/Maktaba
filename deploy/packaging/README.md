@@ -19,6 +19,8 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba.rb` (Homebrew formula) | `sign-and-release` | macOS arm64 + amd64 |
 | `maktaba-cloud-<os>-<arch>` (relay) | `build-artifacts` | linux/{amd64,arm64} |
 | `maktaba-web-<tag>.tar.gz` (web bundle) | `build-artifacts` | n/a |
+| `maktaba-node-<ver>.tar.gz` / `.zip` (node installer + wheel) | `package-node` | macOS + Linux / Windows; see [`node/README.md`](node/README.md#getting-the-installer) |
+| `maktaba_pipeline-<ver>-py3-none-any.whl` + `maktaba-pipeline-<ver>-constraints.txt` | `package-node` | any (pure Python, 3.12+) |
 | `checksums.txt` + `.sig` + `.pem` | `sign-and-release` | keyless cosign |
 | Container images (multi-arch) | `build-images` | linux/{amd64,arm64} on GHCR |
 
@@ -40,7 +42,7 @@ Linux — the systemd unit.
 | `homebrew/maktaba.rb` | Homebrew formula **template** (`__VERSION__` / `__SHA256_*__` filled at release) |
 | `launchd/com.maktaba.*.plist` | macOS launchd units |
 | `install.sh` | curl-pipe-bash installer (detect OS/arch, download, verify, install) |
-| `node/` | worker-only install for a machine that joined a home (Epic 31): launchd agent, systemd units, Windows task/service, installers — see [`node/README.md`](node/README.md) |
+| `node/` | worker-only install for a machine that joined a home (Epic 31): launchd agent, systemd units, Windows task/service, installers, and `build-release.sh` for the release's node assets — see [`node/README.md`](node/README.md) |
 
 ## Install paths (.deb / .rpm)
 
