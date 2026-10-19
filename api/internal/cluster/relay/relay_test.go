@@ -418,17 +418,19 @@ func TestAnswerSizeLimitAndTimeout(t *testing.T) {
 	h := newHarness(t)
 	h.plex.handle = func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/identity" {
-			time.Sleep(1500 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 			return
 		}
-		_, _ = w.Write(bytes.Repeat([]byte("x"), 2<<20))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 1<<20+64<<10))
 	}
-	h.set(func(h *harness) { h.settings.MaxResponseMB = 1; h.settings.TimeoutSec = 1 })
+	h.set(func(h *harness) { h.settings.MaxResponseMB = 1 })
 	res, body := h.call("GET", "/library/sections")
 	if res.Err == nil || res.Err.Code != CodeTooLarge || len(body) > 1<<20 {
 		t.Fatalf("too large: %+v (%d bytes)", res, len(body))
 	}
-	res, _ = h.call("GET", "/identity")
+	// the caller's own time limit applies when it is shorter than the setting
+	res = h.door.Serve(context.Background(), node, Request{Ext: "plex", Method: "GET", Target: "/identity",
+		Timeout: 150 * time.Millisecond}, &bufSink{})
 	if res.Err == nil || res.Err.Code != CodeTimeout {
 		t.Fatalf("timeout: %+v", res)
 	}
