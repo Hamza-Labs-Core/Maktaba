@@ -34,11 +34,11 @@ const (
 
 // Timings of design-agent §4.5.
 var (
-	pingEvery    = 15 * time.Second
-	silenceLimit = 45 * time.Second
-	handshakeMax = 10 * time.Second
+	pingEvery      = 15 * time.Second
+	silenceLimit   = 45 * time.Second
+	handshakeMax   = 10 * time.Second
 	backoffFloor   = time.Second
-	backoffCeiling   = 30 * time.Second
+	backoffCeiling = 30 * time.Second
 )
 
 // Identity is what the agent connects as (from node.json; never logged).

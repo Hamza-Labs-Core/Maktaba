@@ -89,7 +89,6 @@ func (l *HTTPLink) now() time.Time {
 	return time.Now()
 }
 
-
 // SetKey installs the delegation key (from the machine agent).
 func (l *HTTPLink) SetKey(k delegation.Key) {
 	l.key.Store(&k)
