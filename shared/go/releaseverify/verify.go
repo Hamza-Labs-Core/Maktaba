@@ -31,6 +31,7 @@ import (
 
 	protobundle "github.com/sigstore/protobuf-specs/gen/pb-go/bundle/v1"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
+	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -89,7 +90,7 @@ func Verify(in Input) (*Result, error) {
 			return nil, err
 		}
 	}
-	signedAt, san, err := verifySignature(tm, in.Identity, in.Tag, in.Bundle, in.Checksums)
+	signedAt, cert, err := verifySignature(tm, in.Identity, in.Tag, in.Bundle, in.Checksums)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +112,11 @@ func Verify(in Input) (*Result, error) {
 	if err := m.Validate(in.Tag, sums); err != nil {
 		return nil, err
 	}
+	// release.json names the commit it was built from; the certificate names
+	// the commit the signing workflow ran on. They are the same run.
+	if cert.SourceRepositoryDigest != "" && cert.SourceRepositoryDigest != m.Commit {
+		return nil, fail(ErrManifest, ManifestFile, fmt.Sprintf("commit %s, but the release was signed from %s", m.Commit, cert.SourceRepositoryDigest), nil)
+	}
 	for _, a := range in.Artifacts {
 		if err := checkArtifact(a, sums, m); err != nil {
 			return nil, err
@@ -121,7 +127,7 @@ func Verify(in Input) (*Result, error) {
 		Checksums:       sums,
 		ChecksumsSHA256: sha256Hex(in.Checksums),
 		SignedAt:        signedAt,
-		Identity:        san,
+		Identity:        cert.SubjectAlternativeName,
 	}, nil
 }
 
@@ -160,50 +166,51 @@ func checkArtifact(a Artifact, sums Checksums, m *Manifest) error {
 }
 
 // verifySignature is design §3.2 steps 1–2.
-func verifySignature(tm root.TrustedMaterial, id Identity, tag string, rawBundle, checksums []byte) (time.Time, string, error) {
+func verifySignature(tm root.TrustedMaterial, id Identity, tag string, rawBundle, checksums []byte) (time.Time, certificate.Summary, error) {
+	var none certificate.Summary
 	if len(rawBundle) == 0 {
-		return time.Time{}, "", fail(ErrSignature, BundleFile,
+		return time.Time{}, none, fail(ErrSignature, BundleFile,
 			"missing (a release published before story 35.1 has no Sigstore bundle: install it by hand)", nil)
 	}
 	if len(rawBundle) > maxBundle {
-		return time.Time{}, "", fail(ErrSignature, BundleFile, "too large", nil)
+		return time.Time{}, none, fail(ErrSignature, BundleFile, "too large", nil)
 	}
 	var pb protobundle.Bundle
 	if err := protojson.Unmarshal(rawBundle, &pb); err != nil {
-		return time.Time{}, "", fail(ErrSignature, BundleFile, "decode", err)
+		return time.Time{}, none, fail(ErrSignature, BundleFile, "decode", err)
 	}
 	// Offline verification needs the Rekor inclusion proof in the bundle itself:
 	// refuse a bundle without one before sigstore-go would.
 	entries := pb.GetVerificationMaterial().GetTlogEntries()
 	if len(entries) == 0 {
-		return time.Time{}, "", fail(ErrTlog, BundleFile, "no transparency log entry", nil)
+		return time.Time{}, none, fail(ErrTlog, BundleFile, "no transparency log entry", nil)
 	}
 	for _, e := range entries {
 		if e.GetInclusionProof() == nil {
-			return time.Time{}, "", fail(ErrTlog, BundleFile, "transparency log entry without an inclusion proof", nil)
+			return time.Time{}, none, fail(ErrTlog, BundleFile, "transparency log entry without an inclusion proof", nil)
 		}
 	}
 	b, err := bundle.NewBundle(&pb)
 	if err != nil {
-		return time.Time{}, "", fail(ErrSignature, BundleFile, "invalid bundle", err)
+		return time.Time{}, none, fail(ErrSignature, BundleFile, "invalid bundle", err)
 	}
 	certID, err := id.certificateIdentity(tag)
 	if err != nil {
-		return time.Time{}, "", fail(ErrIdentity, BundleFile, "build expected identity", err)
+		return time.Time{}, none, fail(ErrIdentity, BundleFile, "build expected identity", err)
 	}
 	v, err := verify.NewVerifier(tm,
 		verify.WithTransparencyLog(1),    // ≥1 Rekor entry, inclusion proof checked
 		verify.WithObserverTimestamps(1), // a signed time: Rekor SET or RFC 3161 TSA
 	)
 	if err != nil {
-		return time.Time{}, "", fail(ErrSignature, BundleFile, "verifier", err)
+		return time.Time{}, none, fail(ErrSignature, BundleFile, "verifier", err)
 	}
 	res, err := v.Verify(b, verify.NewPolicy(
 		verify.WithArtifact(bytes.NewReader(checksums)),
 		verify.WithCertificateIdentity(certID),
 	))
 	if err != nil {
-		return time.Time{}, "", classify(err)
+		return time.Time{}, none, classify(err)
 	}
 	var signedAt time.Time
 	for _, ts := range res.VerifiedTimestamps {
@@ -211,11 +218,11 @@ func verifySignature(tm root.TrustedMaterial, id Identity, tag string, rawBundle
 			signedAt = ts.Timestamp
 		}
 	}
-	san := ""
+	var cert certificate.Summary
 	if res.Signature != nil && res.Signature.Certificate != nil {
-		san = res.Signature.Certificate.SubjectAlternativeName
+		cert = *res.Signature.Certificate
 	}
-	return signedAt.UTC(), san, nil
+	return signedAt.UTC(), cert, nil
 }
 
 // classify maps sigstore-go's errors onto the failure kinds.

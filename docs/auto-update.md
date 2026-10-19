@@ -103,8 +103,13 @@ network needed):
    `https://token.actions.githubusercontent.com`, SAN
    `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<tag>`,
    source repository `https://github.com/Hamza-Labs-Core/Maktaba`, ref
-   `refs/tags/<tag>`, trigger `push`. A fork, another workflow, a branch
-   run or another tag's signature is refused;
+   `refs/tags/<tag>`, trigger `push`, build config (the workflow the tag
+   push started) the same `release.yml@refs/tags/<tag>`, a GitHub-hosted
+   runner, and GitHub's numeric repository and owner ids (so a repository
+   re-registered under the same name after a rename is refused). A fork,
+   another workflow (also one calling `release.yml`), a branch run, a
+   self-hosted runner or another tag's signature is refused; `release.json`'s
+   `commit` must be the commit the signing run was built from;
 3. `checksums.txt` (duplicates or bad digests are refused), then
    `release.json` against it and against the tag, every downloaded file
    against `checksums.txt`, the extracted `maktaba-server` against
@@ -127,6 +132,16 @@ anchored on the TUF root compiled into sigstore-go, into
 `<data_dir>/sigstore/`; the CLI refreshes into the user cache directory
 before it verifies. A failed refresh keeps the last good root; a root not
 refreshed for 180 days is treated as expired and verification fails closed.
+The cache is trusted only while no other user can write it (the directory
+and its parents owned by the running user or root and not group/other
+writable, no symlinked files) and its `fetched_at` is not in the future;
+otherwise the embedded root is used. So `sudo maktaba-server update` with
+the invoking user's `$HOME` never trusts a root that user could have planted.
+
+`install.sh` fails closed as well: a release missing `checksums.txt`, its
+Sigstore bundle or the archive's entry is refused (`MAKTABA_NO_VERIFY=1`
+overrides). Without `cosign` installed it can only check the SHA-256 (it
+warns); `MAKTABA_REQUIRE_COSIGN=1` makes a missing cosign fatal.
 
 ## Verifying server artifacts manually
 

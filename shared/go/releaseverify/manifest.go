@@ -65,6 +65,7 @@ var (
 	hexRe      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	commitRe   = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	platformRe = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+$`)
+	commentRe  = regexp.MustCompile(`(^|\s)#`)
 )
 
 // ParseChecksums reads a sha256sum-format file ("<hex>  <name>", optional "*"
@@ -218,11 +219,11 @@ func CheckConstraints(name string, b []byte) error {
 	var cur strings.Builder
 	for _, raw := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
 		line := raw
-		if i := strings.Index(line, " #"); i >= 0 {
-			line = line[:i]
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			line = ""
+		// pip strips a comment that starts the line or follows any whitespace
+		// (its COMMENT_RE is `(^|\s+)#.*$`), tab included: "foo==1<TAB>#--hash=…"
+		// has no hash for pip and must have none here.
+		if loc := commentRe.FindStringIndex(line); loc != nil {
+			line = line[:loc[0]]
 		}
 		trimmed := strings.TrimSpace(line)
 		if strings.HasSuffix(trimmed, "\\") {

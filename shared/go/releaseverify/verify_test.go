@@ -362,7 +362,13 @@ func TestCheckConstraints(t *testing.T) {
 	if err := rv.CheckConstraints("c.txt", []byte(ok)); err != nil {
 		t.Fatalf("CheckConstraints(ok): %v", err)
 	}
-	for _, bad := range []string{"", "# only comments\n", "foo==1\n", "foo==1 \\\n  --hash=md5:abc\n"} {
+	h := strings.Repeat("a", 64)
+	for _, bad := range []string{"", "# only comments\n", "foo==1\n", "foo==1 \\\n  --hash=md5:abc\n",
+		// pip reads "#" after any whitespace (tab too) as a comment: no hash.
+		"foo==1\t#--hash=sha256:" + h + "\n",
+		"foo==1\t# --hash=sha256:" + h + "\n",
+		"foo==1 \\\n#--hash=sha256:" + h + "\n",
+	} {
 		if err := rv.CheckConstraints("c.txt", []byte(bad)); !errors.Is(err, rv.ErrNoHashes) {
 			t.Errorf("CheckConstraints(%q) = %v, want ErrNoHashes", bad, err)
 		}
@@ -402,5 +408,71 @@ func TestExtractBinary(t *testing.T) {
 	}
 	if _, _, err := rv.ExtractBinary("x.rar", nil, "maktaba-server"); err == nil {
 		t.Fatal("unsupported archive accepted")
+	}
+}
+
+// Repo-jacking: the organisation renamed or deleted and its name registered
+// again by someone else, whose own Maktaba repository's release workflow signs
+// with the very same SAN, repository URI, ref and trigger. Only GitHub's
+// numeric ids tell the two apart.
+func TestVerifyReRegisteredRepoName(t *testing.T) {
+	for name, edit := range map[string]func(*releaseverifytest.SignOptions){
+		"repository id": func(o *releaseverifytest.SignOptions) { o.RepositoryID = "999" },
+		"owner id":      func(o *releaseverifytest.SignOptions) { o.OwnerID = "999" },
+		"owner uri":     func(o *releaseverifytest.SignOptions) { o.OwnerURI = "https://github.com/someone-else" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			_, err := rv.Verify(resigned(t, f, edit))
+			wantKind(t, err, rv.ErrIdentity)
+		})
+	}
+}
+
+// release.yml reached through another workflow (a workflow_call from a
+// workflow the tag push started) carries release.yml in the SAN but the
+// caller in BuildConfigURI.
+func TestVerifyCalledFromOtherWorkflow(t *testing.T) {
+	f := newFixture(t)
+	_, err := rv.Verify(resigned(t, f, func(o *releaseverifytest.SignOptions) {
+		o.BuildConfigURI = "https://github.com/" + repo + "/.github/workflows/ci.yml@refs/tags/" + tag
+	}))
+	wantKind(t, err, rv.ErrIdentity)
+}
+
+func TestVerifySelfHostedRunner(t *testing.T) {
+	f := newFixture(t)
+	_, err := rv.Verify(resigned(t, f, func(o *releaseverifytest.SignOptions) { o.RunnerEnvironment = "self-hosted" }))
+	wantKind(t, err, rv.ErrIdentity)
+}
+
+// release.json must name the commit the signing run was built from.
+func TestManifestCommitNotTheSignedOne(t *testing.T) {
+	f := newFixture(t)
+	f.rel.Manifest["commit"] = strings.Repeat("1b", 20)
+	if err := f.rel.Rebuild(f.ss, releaseverifytest.GitHubRelease(repo, tag)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rv.Verify(f.input())
+	wantKind(t, err, rv.ErrManifest)
+}
+
+// A fork named by MAKTABA_UPDATE_REPO is pinned by name only (its ids are not
+// known here), so its own releases still verify.
+func TestForkIdentityNotPinnedByID(t *testing.T) {
+	ss := releaseverifytest.MustNew()
+	tm, err := ss.TrustedRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel := ss.MustRelease("someone/Maktaba", tag, platform)
+	id, err := rv.NewIdentity("someone/Maktaba")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = rv.Verify(rv.Input{Tag: tag, Identity: id, TrustedMaterial: tm,
+		Checksums: rel.Files["checksums.txt"], Bundle: rel.Files["checksums.txt.sigstore.json"], Manifest: rel.Files["release.json"]})
+	if err != nil {
+		t.Fatalf("fork release: %v", err)
 	}
 }
