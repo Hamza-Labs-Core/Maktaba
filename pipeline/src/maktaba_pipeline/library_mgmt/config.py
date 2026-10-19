@@ -96,7 +96,8 @@ EFFECTIVE_DEFAULTS: dict[str, Any] = {
     "diarize": False,
     "chapter_inference": True,
     "auto_tag_topics": True,
-    "default_subtitle_lang": "en",
+    # default_subtitle_lang has no default: unset, no subtitle track is the default
+    # (the API marks that language's tracks is_default when a library sets it)
     "ignore_globs": [],
     # 0: no periodic sweep (scans run when asked for); the reconciler sweeps a
     # library that sets it (architecture §3.1 suggests 6 h)

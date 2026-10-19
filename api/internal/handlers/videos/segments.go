@@ -1,7 +1,9 @@
 package videos
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -262,6 +264,14 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		items = append(items, s)
 	}
 
+	// the library's default_subtitle_lang (Story 9.1) marks its track the default;
+	// a library that sets none has no default track
+	if def := h.defaultSubtitleLang(r.Context(), v.LibraryID); def != "" {
+		for i := range items {
+			items[i].IsDefault = strings.EqualFold(items[i].Language, def)
+		}
+	}
+
 	// AC-1 trailing rule: order by Accept-Language language preference.
 	if accept := r.Header.Get("Accept-Language"); accept != "" {
 		preferred := strings.Split(strings.ToLower(strings.Split(accept, ",")[0]), "-")[0]
@@ -281,6 +291,22 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// defaultSubtitleLang is libraries.settings.default_subtitle_lang ("" when unset
+// or not a string).
+func (h *Handler) defaultSubtitleLang(ctx context.Context, libraryID string) string {
+	var raw sql.NullString
+	if err := h.DB.QueryRowContext(ctx, `SELECT settings FROM libraries WHERE id = $1`, libraryID).
+		Scan(&raw); err != nil || !raw.Valid {
+		return ""
+	}
+	var settings map[string]any
+	if json.Unmarshal([]byte(raw.String), &settings) != nil {
+		return ""
+	}
+	lang, _ := settings["default_subtitle_lang"].(string)
+	return strings.TrimSpace(lang)
 }
 
 // Chapter is one row in GET /api/videos/{id}/chapters (Story 7.7 AC-2).
