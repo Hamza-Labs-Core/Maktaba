@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 )
 
@@ -111,8 +112,11 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// filesystem boundary so a corrupt/poisoned probe row cannot widen
 	// the open and so the Clean + containment barrier is visible to
 	// static analysis (CodeQL go/path-injection).
-	mediaPath := filepath.Clean(row.Path)
-	if !filepath.IsAbs(mediaPath) || mediaPath != filepath.Clean(row.Path) || pathHasTraversal(mediaPath) {
+	// Story 31.3: a canonical smb://server/share/... path is this
+	// machine's mount of the share.
+	local := pathmap.Resolve(row.Path)
+	mediaPath := filepath.Clean(local)
+	if !filepath.IsAbs(mediaPath) || mediaPath != filepath.Clean(local) || pathHasTraversal(mediaPath) {
 		httpx.Write(w, http.StatusNotFound, "video-bytes-missing", "video file not on disk", "")
 		return
 	}

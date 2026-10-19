@@ -49,6 +49,8 @@ import {
 } from "../../components/cluster/machineSummary";
 import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
+import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
 import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
@@ -61,7 +63,9 @@ import {
   type ClusterHome,
   type ClusterNode,
   type ClusterView,
+  type NodeStorage,
   type NodeUpdate,
+  type StorageServer,
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import "../../styles/queue.css";
@@ -141,7 +145,12 @@ function MachinesPage() {
             id: "machines",
             label: t("cluster.tabs.machines"),
             content: (
-              <MachinesOverview stream={stream} queueLabel={queueLabel} onOpenLogs={openLogs} />
+              <MachinesOverview
+                stream={stream}
+                queueLabel={queueLabel}
+                onOpenLogs={openLogs}
+                extra={<RelayDoorCard />}
+              />
             ),
           },
           {
@@ -170,6 +179,11 @@ function MachinesPage() {
             id: "llm",
             label: t("cluster.tabs.llm"),
             content: <LlmPanel stream={stream} />,
+          },
+          {
+            id: "relay",
+            label: t("cluster.tabs.relay"),
+            content: <RelayPanel />,
           },
         ]}
       />
@@ -393,9 +407,159 @@ const HomeCard = memo(function HomeCard({
             : t("machines.home.closed")}
         </p>
       )}
+      {home.storage !== undefined && (
+        <>
+          <StorageCheck storage={home.storage} />
+          <PathMapEditor
+            entries={home.path_map ?? home.storage?.path_map ?? null}
+            source={home.path_map ? "admin" : home.storage?.path_map ? "inferred" : null}
+            busy={busy}
+            onSave={(pm) => {
+              setBusy(true);
+              clusterApi
+                .setHomePathMap(pm)
+                .then(onChanged)
+                .catch(showError)
+                .finally(() => setBusy(false));
+            }}
+          />
+          <StorageServers />
+        </>
+      )}
     </section>
   );
 });
+
+// The storage servers (story 31.3): the name a stored smb://<name>/... path
+// uses and the addresses it is reached by (an IP change is one edit here).
+function StorageServers() {
+  const { t } = useI18n();
+  const showError = useErrorToast();
+  const [servers, setServers] = useState<StorageServer[] | null>(null);
+  const [draft, setDraft] = useState<{ name: string; addresses: string; char_map: string } | null>(
+    null
+  );
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(
+    () =>
+      clusterApi
+        .listServers()
+        .then((r) => setServers(Array.isArray(r?.servers) ? r.servers : []))
+        .catch(() => setServers([])),
+    []
+  );
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    if (!draft || !draft.name.trim()) return;
+    setBusy(true);
+    clusterApi
+      .putServer(draft.name.trim(), {
+        addresses: draft.addresses
+          .split(/[\s,]+/)
+          .map((a) => a.trim())
+          .filter(Boolean),
+        char_map: draft.char_map,
+      })
+      .then(() => {
+        setDraft(null);
+        return load();
+      })
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+  const remove = (name: string) => {
+    setBusy(true);
+    clusterApi
+      .deleteServer(name)
+      .then(load)
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="mkt-mc-sub" aria-label={t("machines.servers.title")}>
+      <h4 className="mkt-mc-sub__title">{t("machines.servers.title")}</h4>
+      {servers === null ? null : servers.length === 0 ? (
+        <p className="mkt-mc-muted">{t("machines.servers.none")}</p>
+      ) : (
+        <ul className="mkt-mc-map">
+          {servers.map((s) => (
+            <li key={s.name} dir="ltr">
+              <code>{`smb://${s.name}/`}</code> <span>{s.addresses.join(", ") || "-"}</span>
+              {s.char_map !== "none" && <span className="mkt-mc-muted"> ({s.char_map})</span>}{" "}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  setDraft({
+                    name: s.name,
+                    addresses: s.addresses.join(", "),
+                    char_map: s.char_map,
+                  })
+                }
+              >
+                {t("machines.servers.edit", { name: s.name })}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(s.name)}>
+                {t("machines.servers.remove", { name: s.name })}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {draft === null ? (
+        <div className="mkt-mc-actions">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => setDraft({ name: "", addresses: "", char_map: "none" })}
+          >
+            {t("machines.servers.add")}
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={save} className="mkt-mc-map-form">
+          <div className="mkt-mc-map-row" dir="ltr">
+            <Input
+              label={t("machines.servers.name")}
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+            />
+            <Input
+              label={t("machines.servers.addresses")}
+              value={draft.addresses}
+              onChange={(e) => setDraft({ ...draft, addresses: e.currentTarget.value })}
+            />
+            <Select
+              label={t("machines.servers.charMap")}
+              value={draft.char_map}
+              onChange={(e) => setDraft({ ...draft, char_map: e.currentTarget.value })}
+              options={[
+                { value: "none", label: t("machines.servers.charMap.none") },
+                { value: "fullwidth", label: t("machines.servers.charMap.fullwidth") },
+                { value: "sfm", label: t("machines.servers.charMap.sfm") },
+              ]}
+            />
+          </div>
+          <div className="mkt-mc-actions">
+            <Button size="sm" type="submit" disabled={busy}>
+              {t("common.save")}
+            </Button>
+            <Button size="sm" variant="secondary" type="button" onClick={() => setDraft(null)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
 
 // ---------------------------------------------------------------- pending
 
@@ -610,8 +774,13 @@ const MachineCard = memo(function MachineCard({
         )}
         {active && (
           <>
-            <StorageCheck node={node} />
-            <PathMapEditor node={node} busy={busy} onSave={update} />
+            <StorageCheck storage={node.storage} />
+            <PathMapEditor
+              entries={node.path_map}
+              source={node.path_map_source}
+              busy={busy}
+              onSave={(path_map) => update({ path_map })}
+            />
             <StageTable node={node} busy={busy} onSet={update} queueLabel={queueLabel} />
           </>
         )}
@@ -669,10 +838,10 @@ const MachineCard = memo(function MachineCard({
   );
 });
 
-function StorageCheck({ node }: { node: ClusterNode }) {
+function StorageCheck({ storage }: { storage: NodeStorage | null | undefined }) {
   const { t } = useI18n();
   const cf = useClusterFmt();
-  const s = node.storage;
+  const s = storage && Object.keys(storage).length > 0 ? storage : null;
   const word = (v: string) =>
     v === "ok" || v === "error" || v === "skipped" ? t(`machines.storage.${v}`) : v;
   return (
@@ -681,20 +850,47 @@ function StorageCheck({ node }: { node: ClusterNode }) {
       {!s ? (
         <p className="mkt-mc-muted">{t("machines.storage.unknown")}</p>
       ) : (
-        <p className="mkt-mc-storage">
-          <span className={`mkt-mc-check mkt-mc-check--${s.read}`}>
-            {t("machines.storage.read", { v: word(s.read) })}
-          </span>
-          <span className={`mkt-mc-check mkt-mc-check--${s.write}`}>
-            {t("machines.storage.write", { v: word(s.write) })}
-          </span>
-          {s.checked_at && (
-            <span className="mkt-mc-muted">
-              {t("machines.storage.checkedAt", { time: cf.time(Date.parse(s.checked_at)) })}
+        <>
+          <p className="mkt-mc-storage">
+            <span className={`mkt-mc-check mkt-mc-check--${s.read}`}>
+              {t("machines.storage.read", { v: word(s.read) })}
             </span>
+            <span className={`mkt-mc-check mkt-mc-check--${s.write}`}>
+              {t("machines.storage.write", { v: word(s.write) })}
+            </span>
+            {s.checked_at && (
+              <span className="mkt-mc-muted">
+                {t("machines.storage.checkedAt", { time: cf.time(Date.parse(s.checked_at)) })}
+              </span>
+            )}
+            {s.detail && <span className="mkt-mc-muted">{s.detail}</span>}
+          </p>
+          {s.shares && s.shares.length > 0 && (
+            <ul className="mkt-mc-shares" aria-label={t("machines.storage.shares")}>
+              {s.shares.map((sh) => (
+                <li key={sh.share} className="mkt-mc-share">
+                  <code dir="ltr">{sh.share}</code>{" "}
+                  {sh.local ? (
+                    <>
+                      <span aria-hidden="true">→</span>
+                      <span className="mkt-visually-hidden">{t("machines.pathMap.to")}</span>{" "}
+                      <code dir="ltr">{sh.local}</code>
+                    </>
+                  ) : (
+                    <span className="mkt-mc-muted">{t("machines.storage.notMounted")}</span>
+                  )}{" "}
+                  <span className={`mkt-mc-check mkt-mc-check--${sh.read}`}>
+                    {t("machines.storage.read", { v: word(sh.read) })}
+                  </span>{" "}
+                  <span className={`mkt-mc-check mkt-mc-check--${sh.write}`}>
+                    {t("machines.storage.write", { v: word(sh.write) })}
+                  </span>
+                  {sh.detail && sh.local && <span className="mkt-mc-muted"> {sh.detail}</span>}
+                </li>
+              ))}
+            </ul>
           )}
-          {s.detail && <span className="mkt-mc-muted">{s.detail}</span>}
-        </p>
+        </>
       )}
     </section>
   );
@@ -705,22 +901,27 @@ interface MapRow {
   to: string;
 }
 
+// "share -> local mount" (story 31.3): the shares a machine resolves the
+// stored smb://server/share/... paths through; the admin's rows override
+// what it works out from its own mounts.
 function PathMapEditor({
-  node,
+  entries: map,
+  source: from,
   busy,
   onSave,
 }: {
-  node: ClusterNode;
+  entries: Record<string, string> | null | undefined;
+  source: "inferred" | "admin" | null | undefined;
   busy: boolean;
-  onSave: (body: NodeUpdate) => void;
+  onSave: (pathMap: Record<string, string> | null) => void;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<MapRow[] | null>(null);
-  const entries = Object.entries(node.path_map ?? {});
+  const entries = Object.entries(map ?? {});
   const source =
-    node.path_map_source === "admin"
+    from === "admin"
       ? t("machines.pathMap.admin")
-      : node.path_map_source === "inferred"
+      : from === "inferred"
         ? t("machines.pathMap.inferred")
         : null;
 
@@ -734,7 +935,7 @@ function PathMapEditor({
     for (const r of draft) {
       if (r.from.trim() && r.to.trim()) map[r.from.trim()] = r.to.trim();
     }
-    onSave({ path_map: map });
+    onSave(map);
     setDraft(null);
   };
 
@@ -774,13 +975,8 @@ function PathMapEditor({
             >
               {t("machines.pathMap.edit")}
             </Button>
-            {node.path_map_source === "admin" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => onSave({ path_map: null })}
-              >
+            {from === "admin" && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => onSave(null)}>
                 {t("machines.pathMap.reset")}
               </Button>
             )}

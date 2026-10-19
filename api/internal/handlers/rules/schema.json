@@ -4514,6 +4514,71 @@
      "minimum": 1
     }
    ]
+  },
+  {
+   "key": "relay",
+   "title": "Extension relay",
+   "what": "machines run the Plex stages through the home, which adds the Plex token they never see; limits per machine",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Extension relay",
+     "label": "Relay extension calls for machines",
+     "help": "Machines run the Plex stages (index, collections) through the home, which adds the Plex token; the token never leaves the home. Off: those stages run on the home only.",
+     "default": true
+    },
+    {
+     "name": "requests_per_minute",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Calls a minute per machine",
+     "help": "",
+     "default": 600,
+     "minimum": 1,
+     "maximum": 100000
+    },
+    {
+     "name": "burst",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Burst per machine",
+     "help": "Calls above the rate a machine may make at once.",
+     "default": 60,
+     "minimum": 1,
+     "maximum": 10000
+    },
+    {
+     "name": "max_in_flight",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Calls at once per machine",
+     "help": "",
+     "default": 4,
+     "minimum": 1,
+     "maximum": 64
+    },
+    {
+     "name": "max_response_mb",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Largest answer (MB)",
+     "help": "",
+     "default": 256,
+     "minimum": 1,
+     "maximum": 4096
+    },
+    {
+     "name": "timeout_sec",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Time limit per call (s)",
+     "help": "",
+     "default": 120,
+     "minimum": 1,
+     "maximum": 3600
+    }
+   ]
   }
  ]
 }

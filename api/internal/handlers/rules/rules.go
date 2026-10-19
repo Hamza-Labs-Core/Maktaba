@@ -354,3 +354,49 @@ func (h *Handler) now() time.Time {
 	}
 	return time.Now().UTC()
 }
+
+var (
+	embeddedOnce   sync.Once
+	embeddedSchema *Schema
+	embeddedErr    error
+)
+
+// Effective is a section's effective values (the schema's defaults with
+// the stored overrides that are valid), for Go code that follows a rules
+// section (the extension relay reads rules.relay). Numbers are
+// json.Number. A database without the table, or no row, gives the
+// defaults.
+func Effective(ctx context.Context, db *sql.DB, section string) (map[string]any, error) {
+	embeddedOnce.Do(func() { embeddedSchema, embeddedErr = ParseSchema(schemaJSON) })
+	if embeddedErr != nil {
+		return nil, embeddedErr
+	}
+	sec := embeddedSchema.section(section)
+	if sec == nil {
+		return nil, fmt.Errorf("rules: no section %q", section)
+	}
+	out := make(map[string]any, len(sec.Fields))
+	for _, f := range sec.Fields {
+		out[f.Name] = f.def
+	}
+	if db == nil {
+		return out, nil
+	}
+	st, err := loadOne(ctx, db, KeyPrefix+section)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "app_settings") {
+			return out, nil
+		}
+		return nil, err
+	}
+	for name, raw := range st.values {
+		f := sec.field(name)
+		if f == nil {
+			continue
+		}
+		if v, verr := decodeValue(raw); verr == nil && f.Validate(v) == nil {
+			out[name] = v
+		}
+	}
+	return out, nil
+}

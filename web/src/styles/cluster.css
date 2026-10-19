@@ -373,3 +373,42 @@
 .mkt-cl-proc__since {
   min-inline-size: 16ch;
 }
+
+/* the extension relay's allow-list */
+.mkt-cl-relay-allow {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+/* the relay door on the Machines tab: fixed counters and five fixed rows */
+.mkt-cl-door__counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.mkt-cl-door__counts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-cl-door__calls {
+  table-layout: fixed;
+  inline-size: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-cl-door__calls tr {
+  block-size: 2rem;
+}
+.mkt-cl-door__calls td {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mkt-cl-door__calls tr[data-empty] td {
+  color: var(--color-muted);
+}
+.mkt-cl-door__bad {
+  color: var(--color-warn, inherit);
+}

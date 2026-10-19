@@ -15,9 +15,11 @@ day directory is the record's UTC date. Each file is capped at ``MAKTABA_CLUSTER
 (past it records are counted, not written); the machine's day folders older than
 ``MAKTABA_CLUSTER_RETENTION_DAYS`` are removed (:meth:`ClusterFiles.prune`). Directories
 are created ``0775`` (the hub and the home's workers share a group), files ``0644``.
-When the share cannot be written the files go to
-``~/.maktaba/cluster`` and :meth:`ClusterFiles.status` says so (the metrics ``files`` key);
-the share is tried again every 5 minutes.
+A failed write is tried once more with fresh handles (an SMB session that dropped and
+reconnected leaves every open handle dead). When the share cannot be written the files go
+to ``~/.maktaba/cluster`` (the records of the failed write too) and
+:meth:`ClusterFiles.status` says so (the metrics ``files`` key); the share is tried again
+every 5 minutes, 15 s after a share in use failed a write.
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ STREAMS = ("logs", "metrics", "llm", "jobs")
 FLUSH_SEC = 1.0
 MAX_PENDING = 100_000
 RETRY_SHARE_SEC = 300.0
+RETRY_AFTER_WRITE_SEC = 15.0  #: after a share that was in use failed a write
 PRUNE_SEC = 86_400.0  #: retention runs at start and once a day
 IDENTITY_SEC = 60.0
 ERROR_LOG_SEC = 60.0
@@ -86,6 +89,16 @@ def _last_seen(path: Path) -> datetime | None:
         return datetime.fromtimestamp(os.lstat(path).st_mtime, tz=UTC)
     except OSError:
         return None
+
+
+def _ends_with_newline(path: Path) -> bool:
+    """The file's last byte is ``\\n`` (true when it cannot be read: nothing is added)."""
+    try:
+        with safefs.open_read_binary(path) as fh:
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) == b"\n"
+    except OSError:
+        return True
 
 
 def _iso_now() -> str:
@@ -342,35 +355,60 @@ class ClusterFiles:
         for stream, day, line in batch:
             grouped.setdefault((stream, day), []).append(line)
         for key, lines in grouped.items():
-            stream = key[0]
             try:
-                fh = self._open(key)
-                size = self._sizes[key]
-                out: list[str] = []
-                for line in lines:
-                    n = len(line.encode("utf-8")) + 1
-                    if self.file_cap and size + n > self.file_cap:
-                        self.capped[stream] += 1
-                        continue
-                    size += n
-                    out.append(line)
-                if out:
-                    fh.write("\n".join(out) + "\n")
-                    fh.flush()
-                self._sizes[key] = size
-                written += len(out)
+                written += self._append(key, lines)
+                continue
+            except OSError:
+                # An SMB session that dropped and came back (a NAS's I/O timeout) leaves
+                # every open handle dead; on Windows such a write fails with a bare
+                # "[Errno 22] Invalid argument" (the C runtime's default for a network
+                # error it has no errno for). Fresh handles, one more try.
+                self._close_files()
+            try:
+                written += self._append(key, lines)
+                continue
+            except OSError as exc:
+                self._close_files()
+                self._error("cluster_files_write_failed", exc)
+                if not self.on_share:
+                    self.failed += len(lines)
+                    continue
+                self.reason = f"write failed: {exc}"
+                self._switch(self.fallback_dir, on_share=False)
+                # a dropped share usually comes back within seconds: try it again soon
+                self._last_share_try = self.clock() - RETRY_SHARE_SEC + RETRY_AFTER_WRITE_SEC
+            try:  # the records go to the local folder, not lost
+                written += self._append(key, lines)
             except OSError as exc:
                 self.failed += len(lines)
-                self._drop_handle(key)
+                self._close_files()
                 self._error("cluster_files_write_failed", exc)
-                if self.on_share:
-                    self.reason = f"write failed: {exc}"
-                    self._switch(self.fallback_dir, on_share=False)
         # days no longer written: close their handles
         today = {k for k in grouped}
         for key in [k for k in self._files if k not in today and k[1] < _utc_day()]:
             self._drop_handle(key)
         return written
+
+    def _append(self, key: tuple[str, str], lines: list[str]) -> int:
+        """Append ``lines`` (within the file cap) to ``key``'s file; the number written."""
+        stream = key[0]
+        fh = self._open(key)
+        size = self._sizes[key]
+        out: list[str] = []
+        capped = 0
+        for line in lines:
+            n = len(line.encode("utf-8")) + 1
+            if self.file_cap and size + n > self.file_cap:
+                capped += 1
+                continue
+            size += n
+            out.append(line)
+        if out:
+            fh.write("\n".join(out) + "\n")
+            fh.flush()
+        self._sizes[key] = size
+        self.capped[stream] += capped  # counted once the write went through
+        return len(out)
 
     def _open(self, key: tuple[str, str]) -> IO[str]:
         fh = self._files.get(key)
@@ -380,11 +418,23 @@ class ClusterFiles:
         d = self._under([self.ip, stream, day])
         path = d / f"{self.name}.jsonl"
         fh = safefs.open_append(path)  # never through a link
-        self._files[key] = fh
         try:
-            self._sizes[key] = os.fstat(fh.fileno()).st_size
+            size = os.fstat(fh.fileno()).st_size
         except OSError:
-            self._sizes[key] = 0
+            size = 0
+        if size and not _ends_with_newline(path):
+            # a write cut short (the share dropped mid-write): end that line, so the
+            # next record starts on its own
+            try:
+                fh.write("\n")
+                fh.flush()
+            except OSError:
+                with contextlib.suppress(OSError):
+                    fh.close()
+                raise
+            size += 1
+        self._files[key] = fh
+        self._sizes[key] = size
         return fh
 
     def _drop_handle(self, key: tuple[str, str]) -> None:

@@ -197,6 +197,15 @@ function setup() {
     "/api/cluster/files/10.0.0.5/logs": logsRoute,
     "/api/cluster/files/10.0.0.5/queues": { samples: [] },
     "/api/cluster/files/10.0.0.5/library": { samples: [] },
+    "/api/cluster/relay": {
+      available: true,
+      enabled: true,
+      settings: {},
+      extensions: [],
+      home_only: [],
+      calls: [],
+      totals: [],
+    },
   });
   const utils = render(
     <I18nProvider>
@@ -248,6 +257,9 @@ describe("Cluster views", () => {
       expect.arrayContaining(["processes", "metrics", "llm", "jobs", "queues", "library"])
     );
     expect(screen.getByText("Live")).toBeInTheDocument();
+    // the relay door sits between the approvals and the live machines (the extra slot)
+    const door = screen.getByRole("region", { name: "Extension relay" });
+    expect(await within(door).findByText("On")).toBeInTheDocument();
 
     const nas = machine("nas");
     expect(within(nas).getByText("Home")).toBeInTheDocument();

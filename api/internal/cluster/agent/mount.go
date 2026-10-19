@@ -36,6 +36,7 @@ func (h *Hub) Mount(r chi.Router) {
 	r.Get("/api/cluster/files", h.Files)
 	r.Get("/api/cluster/files/{ip}/{kind}", h.History)
 	r.With(mw.BodyLimit(64<<10)).Post("/api/cluster/processes/{session}/cmd", h.CmdHTTP)
+	r.Get("/api/cluster/relay", h.RelayHTTP)
 	r.Get("/api/cluster/llm/v1/models", h.LLMModels)
 	r.Post("/api/cluster/llm/v1/chat/completions", h.LLMChat)
 	r.Post("/api/cluster/llm/v1/embeddings", h.LLMEmbeddings)

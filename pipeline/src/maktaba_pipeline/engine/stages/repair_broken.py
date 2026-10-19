@@ -39,6 +39,7 @@ from ..context import StageContext
 from ..graph import Request, StageResult, Subject
 from ..hashing import canonical_hash
 from ..media import FFMPEG, FFPROBE
+from ..paths import to_db
 from ..sql import is_pg, now, to_ts, uid
 from .registry import StageImpl
 
@@ -127,7 +128,7 @@ async def _record(
         b.youtube_id,
         state,
         message[:500],
-        None if backup is None else str(backup),
+        None if backup is None else to_db(str(backup)),  # canonical on a share
         to_ts(db, now()),
     )
 

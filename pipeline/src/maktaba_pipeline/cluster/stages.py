@@ -8,7 +8,8 @@ reason is stored as a code in ``workers.stages_off`` (the Machines page translat
 3. ``unavailable``: cannot run here (no handler; ``StageImpl.unavailable()``; the
    detail is logged and kept in :attr:`StageSelector.detail`)
 4. ``home_only``: ``placement == "home"`` on a node (a stage with ``model_rules`` is
-   lifted when those settings name a model server that is not localhost: ``lifted``)
+   lifted when those settings name a model server that is not localhost, a stage with
+   ``relay`` while the home's extension relay is on: ``lifted``)
 5. ``storage``: storage not reachable (``nas_read`` stages need the read check,
    ``nas_write`` the write check)
 6. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
@@ -136,14 +137,31 @@ def is_shared_url(url: str) -> bool:
 
 
 async def lifted_placements(db: Any, graph: Iterable[StageDef]) -> frozenset[str]:
-    """The home-only stages with ``model_rules`` whose settings name a shared model server
-    (:func:`is_shared_url`): a node may run those. Settings that cannot be read lift
-    nothing (the stage stays on the home)."""
+    """The home-only stages a node may run all the same:
+
+    - a stage with ``model_rules`` whose settings name a shared model server
+      (:func:`is_shared_url`);
+    - a stage with ``relay`` (its only home need is an extension secret, the Plex token)
+      while the home's extension relay is on (rules ``relay``, on by default) and this
+      worker runs the agent that carries the calls (story 31.R).
+
+    Settings that cannot be read lift nothing (the stage stays on the home)."""
     from ..rules import read as read_rules
 
     out: set[str] = set()
+    relay_on: bool | None = None
     for st in graph:
-        if st.placement != "home" or not st.model_rules:
+        if st.placement != "home":
+            continue
+        if st.relay:
+            if relay_on is None:
+                from .. import relay
+
+                relay_on = relay.node_may_relay() and await relay.enabled_in(db)
+            if relay_on:
+                out.add(st.name)
+            continue
+        if not st.model_rules:
             continue
         try:
             cfg = (await read_rules(db, st.model_rules))[0]
